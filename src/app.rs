@@ -40,34 +40,67 @@ impl eframe::App for App {
         }
 
         if let Some(update) = latest {
-            match renderer::build_shader_space_from_scene(
-                &update.scene,
-                Arc::new(render_state.device.clone()),
-                Arc::new(render_state.queue.clone()),
-            ) {
-                Ok((shader_space, resolution, output_texture_name, passes)) => {
-                    self.shader_space = shader_space;
-                    self.resolution = resolution;
-                    self.output_texture_name = output_texture_name;
-                    self.passes = passes;
-                    self.color_attachment = None;
+            match update {
+                ws::SceneUpdate::Parsed { scene, request_id } => {
+                    match renderer::build_shader_space_from_scene(
+                        &scene,
+                        Arc::new(render_state.device.clone()),
+                        Arc::new(render_state.queue.clone()),
+                    ) {
+                        Ok((shader_space, resolution, output_texture_name, passes)) => {
+                            self.shader_space = shader_space;
+                            self.resolution = resolution;
+                            self.output_texture_name = output_texture_name;
+                            self.passes = passes;
+                            self.color_attachment = None;
 
-                    if let Ok(mut g) = self.last_good.lock() {
-                        *g = Some(update.scene);
+                            if let Ok(mut g) = self.last_good.lock() {
+                                *g = Some(scene);
+                            }
+                        }
+                        Err(e) => {
+                            let msg = protocol::WSMessage {
+                                msg_type: "error".to_string(),
+                                timestamp: protocol::now_millis(),
+                                request_id,
+                                payload: Some(protocol::ErrorPayload {
+                                    code: "VALIDATION_ERROR".to_string(),
+                                    message: format!("{e:#}"),
+                                }),
+                            };
+                            if let Ok(text) = serde_json::to_string(&msg) {
+                                self.ws_hub.broadcast(text);
+                            }
+
+                            if let Ok((shader_space, resolution, output_texture_name, passes)) =
+                                renderer::build_error_shader_space(
+                                    Arc::new(render_state.device.clone()),
+                                    Arc::new(render_state.queue.clone()),
+                                    self.resolution,
+                                )
+                            {
+                                self.shader_space = shader_space;
+                                self.resolution = resolution;
+                                self.output_texture_name = output_texture_name;
+                                self.passes = passes;
+                                self.color_attachment = None;
+                            }
+                        }
                     }
                 }
-                Err(e) => {
-                    let msg = protocol::WSMessage {
-                        msg_type: "error".to_string(),
-                        timestamp: protocol::now_millis(),
-                        request_id: update.request_id,
-                        payload: Some(protocol::ErrorPayload {
-                            code: "VALIDATION_ERROR".to_string(),
-                            message: format!("{e:#}"),
-                        }),
-                    };
-                    if let Ok(text) = serde_json::to_string(&msg) {
-                        self.ws_hub.broadcast(text);
+                ws::SceneUpdate::ParseError { .. } => {
+                    if let Ok((shader_space, resolution, output_texture_name, passes)) =
+                        renderer::build_error_shader_space(
+                            Arc::new(render_state.device.clone()),
+                            Arc::new(render_state.queue.clone()),
+                            self.resolution,
+                        )
+                    {
+                        self.shader_space = shader_space;
+                        self.resolution = resolution;
+                        self.output_texture_name = output_texture_name;
+                        self.passes = passes;
+                        self.color_attachment = None;
                     }
                 }
             }
@@ -75,9 +108,9 @@ impl eframe::App for App {
 
         let t = self.start.elapsed().as_secs_f32();
         for pass in &mut self.passes {
-            let mut g = pass.base_globals;
-            g.time = t;
-            let _ = renderer::update_pass_vm(&self.shader_space, pass, Some(&g), None, None);
+            let mut p = pass.base_params;
+            p.time = t;
+            let _ = renderer::update_pass_params(&self.shader_space, pass, &p);
         }
 
         self.shader_space.render();

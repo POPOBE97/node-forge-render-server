@@ -16,9 +16,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct SceneUpdate {
-    pub scene: SceneDSL,
-    pub request_id: Option<String>,
+pub enum SceneUpdate {
+    Parsed {
+        scene: SceneDSL,
+        request_id: Option<String>,
+    },
+    ParseError {
+        message: String,
+        request_id: Option<String>,
+    },
 }
 
 #[derive(Clone, Default)]
@@ -157,7 +163,16 @@ fn handle_text_message(
     let msg: WSMessage<Value> = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
-            send_error(ws, None, "PARSE_ERROR", &format!("invalid json: {e}"));
+            let message = format!("invalid json: {e}");
+            send_error(ws, None, "PARSE_ERROR", &message);
+            send_scene_update(
+                scene_tx,
+                scene_drop_rx,
+                SceneUpdate::ParseError {
+                    message,
+                    request_id: None,
+                },
+            );
             return Ok(());
         }
     };
@@ -190,7 +205,16 @@ fn handle_text_message(
             let payload = match msg.payload {
                 Some(p) => p,
                 None => {
-                    send_error(ws, msg.request_id, "PARSE_ERROR", "missing payload");
+                    let message = "missing payload".to_string();
+                    send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                    send_scene_update(
+                        scene_tx,
+                        scene_drop_rx,
+                        SceneUpdate::ParseError {
+                            message,
+                            request_id: msg.request_id,
+                        },
+                    );
                     return Ok(());
                 }
             };
@@ -198,21 +222,29 @@ fn handle_text_message(
             let scene: SceneDSL = match serde_json::from_value(payload) {
                 Ok(s) => s,
                 Err(e) => {
-                    send_error(ws, msg.request_id, "PARSE_ERROR", &format!("invalid SceneDSL: {e}"));
+                    let message = format!("invalid SceneDSL: {e}");
+                    send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                    send_scene_update(
+                        scene_tx,
+                        scene_drop_rx,
+                        SceneUpdate::ParseError {
+                            message,
+                            request_id: msg.request_id,
+                        },
+                    );
                     return Ok(());
                 }
             };
 
             // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
-            let update = SceneUpdate {
-                scene,
-                request_id: msg.request_id,
-            };
-
-            if scene_tx.try_send(update.clone()).is_err() {
-                while scene_drop_rx.try_recv().is_ok() {}
-                let _ = scene_tx.try_send(update);
-            }
+            send_scene_update(
+                scene_tx,
+                scene_drop_rx,
+                SceneUpdate::Parsed {
+                    scene,
+                    request_id: msg.request_id,
+                },
+            );
         }
         other => {
             send_error(ws, msg.request_id, "PARSE_ERROR", &format!("unknown message type: {other}"));
@@ -240,5 +272,12 @@ fn send_error(
 
     if let Ok(text) = serde_json::to_string(&err) {
         let _ = ws.send(Message::Text(text));
+    }
+}
+
+fn send_scene_update(scene_tx: &Sender<SceneUpdate>, scene_drop_rx: &Receiver<SceneUpdate>, update: SceneUpdate) {
+    if scene_tx.try_send(update.clone()).is_err() {
+        while scene_drop_rx.try_recv().is_ok() {}
+        let _ = scene_tx.try_send(update);
     }
 }
