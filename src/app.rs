@@ -141,13 +141,15 @@ impl eframe::App for App {
             ));
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        let f = egui::Frame::default().fill(egui::Color32::BLACK);
+        egui::CentralPanel::default().frame(f).show(ctx, |ui| {
+            let avail_rect = ui.available_rect_before_wrap();
             ui.centered_and_justified(|ui| {
                 ui.painter().image(
                     self.color_attachment.unwrap(),
                     Rect::from_min_max(
                         pos2(0.0, 0.0),
-                        pos2(self.resolution[0] as f32, self.resolution[1] as f32),
+                        pos2(avail_rect.width() as f32, avail_rect.height()as f32),
                     ),
                     Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
                     Color32::WHITE,
