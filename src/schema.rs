@@ -96,6 +96,12 @@ pub enum PortTypeSpec {
 
 impl PortTypeSpec {
     fn overlaps(&self, other: &PortTypeSpec) -> bool {
+        // DSL port type `any` is a wildcard: it can connect to anything.
+        // This is important for nodes like `Attribute` whose output type depends on params.
+        if self.contains_any() || other.contains_any() {
+            return true;
+        }
+
         match (self, other) {
             (PortTypeSpec::One(a), PortTypeSpec::One(b)) => a == b,
             (PortTypeSpec::One(a), PortTypeSpec::Many(bs)) => bs.iter().any(|b| b == a),
@@ -103,6 +109,13 @@ impl PortTypeSpec {
             (PortTypeSpec::Many(as_), PortTypeSpec::Many(bs)) => {
                 as_.iter().any(|a| bs.iter().any(|b| b == a))
             }
+        }
+    }
+
+    fn contains_any(&self) -> bool {
+        match self {
+            PortTypeSpec::One(s) => s == "any",
+            PortTypeSpec::Many(v) => v.iter().any(|s| s == "any"),
         }
     }
 }

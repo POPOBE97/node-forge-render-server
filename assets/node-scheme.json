@@ -357,7 +357,7 @@
         {
           "id": "image",
           "name": "Image",
-          "type": "color"
+          "type": "pass"
         },
         {
           "id": "target",
