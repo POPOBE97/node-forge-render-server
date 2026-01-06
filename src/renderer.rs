@@ -588,13 +588,18 @@ pub fn build_shader_space_from_scene(
         bail!("no RenderPass reachable from CompositeOutput");
     }
 
+    // New DSL: render target is provided by CompositeOutput.target.
+    // For backward compatibility with older scenes, fall back to RenderPass.target if present.
     let last_pass_id: String = render_passes_in_order
         .last()
         .cloned()
         .unwrap_or_else(|| render_pass_id.clone());
-    let output_texture_node_id: String = incoming_connection(scene, &last_pass_id, "target")
+    let output_texture_node_id: String = incoming_connection(scene, &output_node_id, "target")
+        .or_else(|| incoming_connection(scene, &last_pass_id, "target"))
         .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("RenderPass.target has no incoming connection"))?;
+        .ok_or_else(|| {
+            anyhow!("CompositeOutput.target (or legacy RenderPass.target) has no incoming connection")
+        })?;
 
     let output_texture_name: ResourceName = ids
         .get(&output_texture_node_id)
@@ -662,9 +667,11 @@ pub fn build_shader_space_from_scene(
         let geometry_node_id = incoming_connection(scene, pass_id, "geometry")
             .map(|c| c.from.node_id.clone())
             .ok_or_else(|| anyhow!("RenderPass.geometry missing for {pass_id}"))?;
+        // RenderPass no longer has an explicit target input in the updated DSL.
+        // Use the CompositeOutput-provided target texture (or legacy per-pass target if present).
         let target_texture_id = incoming_connection(scene, pass_id, "target")
             .map(|c| c.from.node_id.clone())
-            .ok_or_else(|| anyhow!("RenderPass.target missing for {pass_id}"))?;
+            .unwrap_or_else(|| output_texture_node_id.clone());
 
         let geometry_node = find_node(&nodes_by_id, &geometry_node_id)?;
         if geometry_node.node_type != "Rect2DGeometry" {
@@ -838,7 +845,7 @@ pub fn build_error_shader_space(
     shader_space.declare_buffers(vec![BufferSpec::Init {
         name: geometry_buffer.clone(),
         contents: plane_bytes,
-        usage: wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
     }]);
 
     shader_space.declare_textures(vec![FiberTextureSpec::Texture {
@@ -864,7 +871,7 @@ fn vs_main(@location(0) position: vec3f) -> VSOut {
 }
 
 @fragment
-fn fs_main(_: VSOut) -> @location(0) vec4f {
+fn fs_main(_in: VSOut) -> @location(0) vec4f {
     // Purple error screen.
     return vec4f(1.0, 0.0, 1.0, 1.0);
 }
