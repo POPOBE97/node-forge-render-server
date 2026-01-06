@@ -75,8 +75,8 @@
       },
       "label": "Render Texture",
       "params": {
-        "width": 400,
-        "height": 400,
+        "width": 1080,
+        "height": 2400,
         "format": "rgba8unorm"
       }
     },
@@ -89,8 +89,8 @@
       },
       "label": "Screen",
       "params": {
-        "width": 1080,
-        "height": 2400
+        "width": 392,
+        "height": 871
       }
     }
   ],
