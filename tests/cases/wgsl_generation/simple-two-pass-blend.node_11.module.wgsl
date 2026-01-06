@@ -41,5 +41,5 @@ fn vs_main(@location(0) position: vec3f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(img_tex_node_8, img_samp_node_8, in.uv);
+    return textureSample(img_tex_node_8, img_samp_node_8, vec2f((in.uv).x, 1.0 - (in.uv).y));
 }

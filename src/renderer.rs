@@ -1,6 +1,7 @@
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
+use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
     eframe::wgpu::{
@@ -49,6 +50,73 @@ fn as_bytes_slice<T>(v: &[T]) -> &[u8] {
     unsafe {
         core::slice::from_raw_parts(v.as_ptr() as *const u8, core::mem::size_of::<T>() * v.len())
     }
+}
+
+fn percent_decode_to_bytes(s: &str) -> Result<Vec<u8>> {
+    // Minimal percent-decoder for data URLs with non-base64 payloads.
+    // (We keep it strict: invalid percent sequences error.)
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => {
+                if i + 2 >= bytes.len() {
+                    bail!("invalid percent-encoding: truncated");
+                }
+                let hi = bytes[i + 1];
+                let lo = bytes[i + 2];
+                let hex = |b: u8| -> Option<u8> {
+                    match b {
+                        b'0'..=b'9' => Some(b - b'0'),
+                        b'a'..=b'f' => Some(b - b'a' + 10),
+                        b'A'..=b'F' => Some(b - b'A' + 10),
+                        _ => None,
+                    }
+                };
+                let Some(hi) = hex(hi) else { bail!("invalid percent-encoding"); };
+                let Some(lo) = hex(lo) else { bail!("invalid percent-encoding"); };
+                out.push((hi << 4) | lo);
+                i += 3;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn decode_data_url(data_url: &str) -> Result<Vec<u8>> {
+    let s = data_url.trim();
+    if !s.starts_with("data:") {
+        bail!("not a data URL");
+    }
+
+    let (_, rest) = s.split_at("data:".len());
+    let (meta, data) = rest
+        .split_once(',')
+        .ok_or_else(|| anyhow!("invalid data URL: missing comma"))?;
+
+    let is_base64 = meta
+        .split(';')
+        .any(|t| t.trim().eq_ignore_ascii_case("base64"));
+
+    if is_base64 {
+        // Some producers use URL-safe base64; try both.
+        general_purpose::STANDARD
+            .decode(data.trim())
+            .or_else(|_| general_purpose::URL_SAFE.decode(data.trim()))
+            .map_err(|e| anyhow!("invalid base64 in data URL: {e}"))
+    } else {
+        percent_decode_to_bytes(data)
+    }
+}
+
+fn load_image_from_data_url(data_url: &str) -> Result<DynamicImage> {
+    let bytes = decode_data_url(data_url)?;
+    image::load_from_memory(&bytes).map_err(|e| anyhow!("failed to decode image bytes: {e}"))
 }
 
 pub fn update_pass_params(
@@ -297,7 +365,11 @@ fn compile_material_expr(
 
             let tex_var = MaterialCompileContext::tex_var_name(node_id);
             let samp_var = MaterialCompileContext::sampler_var_name(node_id);
-            let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
+            // WebGPU texture coordinates have (0,0) at the *top-left* of the image.
+            // Our synthesized UV (from clip-space position) maps y=-1(bottom)->0 and y=+1(top)->1,
+            // so we flip the y axis at sampling time.
+            let flipped_uv = format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr);
+            let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
 
             match out_port.unwrap_or("color") {
                 "color" => typed_time(sample_expr, ValueType::Vec4, uv_expr.uses_time),
@@ -1148,6 +1220,16 @@ pub fn build_shader_space_from_scene(
         placeholder_image()
     }
 
+    fn ensure_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
+        // rust-wgpu-fiber's image texture path selects wgpu texture format based on image.color().
+        // For RGB images it maps to RGBA formats (because wgpu has no RGB8), so we must ensure
+        // the pixel buffer is actually RGBA to keep bytes_per_row consistent.
+        if image.color() == image::ColorType::Rgba8 {
+            return image;
+        }
+        Arc::new(DynamicImage::ImageRgba8(image.as_ref().to_rgba8()))
+    }
+
     let rel_base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen_image_nodes: HashSet<String> = HashSet::new();
     for pass in &render_pass_specs {
@@ -1160,8 +1242,24 @@ pub fn build_shader_space_from_scene(
                 bail!("expected ImageTexture node for {node_id}, got {}", node.node_type);
             }
 
-            let path = node.params.get("path").and_then(|v| v.as_str());
-            let image = load_image_with_fallback(&rel_base, path);
+            // Prefer inlined data URL (data:image/...;base64,...) if present.
+            // Fallback to file path lookup.
+            let data_url = node
+                .params
+                .get("dataUrl")
+                .and_then(|v| v.as_str())
+                .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+
+            let image = match data_url {
+                Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
+                    Ok(img) => ensure_rgba8(Arc::new(img)),
+                    Err(_e) => placeholder_image(),
+                },
+                _ => {
+                    let path = node.params.get("path").and_then(|v| v.as_str());
+                    ensure_rgba8(load_image_with_fallback(&rel_base, path))
+                }
+            };
 
             let name = ids
                 .get(node_id)
@@ -1300,6 +1398,26 @@ mod tests {
         let params: HashMap<String, serde_json::Value> = HashMap::new();
         let got = parse_render_pass_blend_state(&params).unwrap();
         assert_eq!(format!("{got:?}"), format!("{:?}", BlendState::REPLACE));
+    }
+
+    #[test]
+    fn data_url_decodes_png_bytes() {
+        use image::codecs::png::PngEncoder;
+        use image::{ExtendedColorType, ImageEncoder};
+
+        // Build a valid 1x1 PNG in memory, then wrap it as a data URL.
+        let src = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0]));
+        let mut png_bytes: Vec<u8> = Vec::new();
+        PngEncoder::new(&mut png_bytes)
+            .write_image(src.as_raw(), 1, 1, ExtendedColorType::Rgba8)
+            .unwrap();
+
+        let b64 = general_purpose::STANDARD.encode(&png_bytes);
+        let data_url = format!("data:image/png;base64,{b64}");
+
+        let img = load_image_from_data_url(&data_url).unwrap();
+        assert_eq!(img.width(), 1);
+        assert_eq!(img.height(), 1);
     }
 }
 
