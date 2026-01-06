@@ -1,0 +1,1369 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-01-06T13:47:24.300Z",
+  "dslPackage": {
+    "name": "@node-forge/dsl",
+    "version": "0.1.0"
+  },
+  "nodeTypes": [
+    "Attribute",
+    "CheckerTexture",
+    "ColorInput",
+    "ColorMix",
+    "ColorRamp",
+    "CompositeOutput",
+    "ComputePass",
+    "CrossProduct",
+    "DataNode",
+    "DotProduct",
+    "EmissionShader",
+    "FloatInput",
+    "GeometryFromFile",
+    "GeometryPrimitive",
+    "GradientTexture",
+    "HSVAdjust",
+    "ImageTexture",
+    "InstancedGeometry",
+    "IntInput",
+    "MaterialFromShader",
+    "MaterialOutput",
+    "MathAdd",
+    "MathClamp",
+    "MathClosure",
+    "MathMultiply",
+    "MathPower",
+    "MixShader",
+    "NoiseTexture",
+    "Normalize",
+    "PBRMaterial",
+    "PrincipledBSDF",
+    "Rect2DGeometry",
+    "RenderPass",
+    "RenderTexture",
+    "Screen",
+    "ShaderMaterial",
+    "TextureInput",
+    "Vector2Input",
+    "Vector3Input",
+    "VectorMath"
+  ],
+  "portTypes": [
+    "any",
+    "bool",
+    "color",
+    "float",
+    "geometry",
+    "int",
+    "material",
+    "pass",
+    "renderTexture",
+    "shader",
+    "texture",
+    "vector2",
+    "vector3"
+  ],
+  "gpuTextureFormats": [
+    "r8unorm",
+    "r8snorm",
+    "r8uint",
+    "r8sint",
+    "r16uint",
+    "r16sint",
+    "r16float",
+    "rg8unorm",
+    "rg8snorm",
+    "rg8uint",
+    "rg8sint",
+    "r32uint",
+    "r32sint",
+    "r32float",
+    "rg16uint",
+    "rg16sint",
+    "rg16float",
+    "rgba8unorm",
+    "rgba8unorm-srgb",
+    "rgba8snorm",
+    "rgba8uint",
+    "rgba8sint",
+    "bgra8unorm",
+    "bgra8unorm-srgb",
+    "rgb10a2unorm",
+    "rg11b10ufloat",
+    "rgb9e5ufloat",
+    "rg32uint",
+    "rg32sint",
+    "rg32float",
+    "rgba16uint",
+    "rgba16sint",
+    "rgba16float",
+    "rgba32uint",
+    "rgba32sint",
+    "rgba32float",
+    "stencil8",
+    "depth16unorm",
+    "depth24plus",
+    "depth24plus-stencil8",
+    "depth32float",
+    "depth32float-stencil8",
+    "bc1-rgba-unorm",
+    "bc1-rgba-unorm-srgb",
+    "bc2-rgba-unorm",
+    "bc2-rgba-unorm-srgb",
+    "bc3-rgba-unorm",
+    "bc3-rgba-unorm-srgb",
+    "bc4-r-unorm",
+    "bc4-r-snorm",
+    "bc5-rg-unorm",
+    "bc5-rg-snorm",
+    "bc6h-rgb-ufloat",
+    "bc6h-rgb-float",
+    "bc7-rgba-unorm",
+    "bc7-rgba-unorm-srgb",
+    "etc2-rgb8unorm",
+    "etc2-rgb8unorm-srgb",
+    "etc2-rgb8a1unorm",
+    "etc2-rgb8a1unorm-srgb",
+    "etc2-rgba8unorm",
+    "etc2-rgba8unorm-srgb",
+    "eac-r11unorm",
+    "eac-r11snorm",
+    "eac-rg11unorm",
+    "eac-rg11snorm",
+    "astc-4x4-unorm",
+    "astc-4x4-unorm-srgb",
+    "astc-5x4-unorm",
+    "astc-5x4-unorm-srgb",
+    "astc-5x5-unorm",
+    "astc-5x5-unorm-srgb",
+    "astc-6x5-unorm",
+    "astc-6x5-unorm-srgb",
+    "astc-6x6-unorm",
+    "astc-6x6-unorm-srgb",
+    "astc-8x5-unorm",
+    "astc-8x5-unorm-srgb",
+    "astc-8x6-unorm",
+    "astc-8x6-unorm-srgb",
+    "astc-8x8-unorm",
+    "astc-8x8-unorm-srgb",
+    "astc-10x5-unorm",
+    "astc-10x5-unorm-srgb",
+    "astc-10x6-unorm",
+    "astc-10x6-unorm-srgb",
+    "astc-10x8-unorm",
+    "astc-10x8-unorm-srgb",
+    "astc-10x10-unorm",
+    "astc-10x10-unorm-srgb",
+    "astc-12x10-unorm",
+    "astc-12x10-unorm-srgb",
+    "astc-12x12-unorm",
+    "astc-12x12-unorm-srgb"
+  ],
+  "nodes": [
+    {
+      "type": "Attribute",
+      "label": "Attribute",
+      "category": "Input",
+      "description": "Read a named attribute with a chosen GLSL type",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {
+        "name": "attribute",
+        "glslType": "float"
+      }
+    },
+    {
+      "type": "CheckerTexture",
+      "label": "Checker Texture",
+      "category": "Texture",
+      "description": "Generate checker pattern",
+      "inputs": [
+        {
+          "id": "scale",
+          "name": "Scale",
+          "type": "float",
+          "default": 5
+        },
+        {
+          "id": "color1",
+          "name": "Color 1",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "color2",
+          "name": "Color 2",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float"
+        },
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "ColorInput",
+      "label": "Color Input",
+      "category": "Input",
+      "description": "Define a constant color value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "type": "ColorMix",
+      "label": "Color Mix",
+      "category": "Color",
+      "description": "Mix two colors",
+      "inputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "color1",
+          "name": "Color 1",
+          "type": "color",
+          "default": [
+            1,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "color2",
+          "name": "Color 2",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "blendMode": "mix"
+      }
+    },
+    {
+      "type": "ColorRamp",
+      "label": "Color Ramp",
+      "category": "Color",
+      "description": "Map value to color gradient",
+      "inputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float",
+          "default": 0.5
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "stops": [
+          {
+            "position": 0,
+            "color": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "position": 1,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "CompositeOutput",
+      "label": "Composite",
+      "category": "Output",
+      "description": "Final composite output",
+      "inputs": [
+        {
+          "id": "image",
+          "name": "Image",
+          "type": "color"
+        },
+        {
+          "id": "target",
+          "name": "Render Target",
+          "type": "renderTexture"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "ComputePass",
+      "label": "Compute Pass",
+      "category": "PipelineControl",
+      "description": "Defines a compute pass in the pipeline",
+      "inputs": [],
+      "outputs": [],
+      "defaultParams": {
+        "name": "Compute Pass"
+      }
+    },
+    {
+      "type": "CrossProduct",
+      "label": "Cross Product",
+      "category": "Vector",
+      "description": "Calculate cross product of two vectors",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "vector3"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "vector3"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "DataNode",
+      "label": "Data",
+      "category": "Input",
+      "description": "Load or edit text data with optional JSON syntax highlighting",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "data",
+          "name": "Data",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {
+        "text": "",
+        "syntax": "plain",
+        "fileName": ""
+      }
+    },
+    {
+      "type": "DotProduct",
+      "label": "Dot Product",
+      "category": "Vector",
+      "description": "Calculate dot product of two vectors",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "vector3"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "vector3"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "EmissionShader",
+      "label": "Emission",
+      "category": "Shader",
+      "description": "Emissive light shader",
+      "inputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "strength",
+          "name": "Strength",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "shader",
+          "name": "Shader",
+          "type": "shader"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "FloatInput",
+      "label": "Float Input",
+      "category": "Input",
+      "description": "Define a constant float value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "value": 0
+      }
+    },
+    {
+      "type": "GeometryFromFile",
+      "label": "Geometry From File",
+      "category": "Geometry",
+      "description": "Load geometry from an external file",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "path": ""
+      }
+    },
+    {
+      "type": "GeometryPrimitive",
+      "label": "Geometry Primitive",
+      "category": "Geometry",
+      "description": "Create a built-in primitive geometry",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "primitive": "cube"
+      }
+    },
+    {
+      "type": "GradientTexture",
+      "label": "Gradient Texture",
+      "category": "Texture",
+      "description": "Generate gradient pattern",
+      "inputs": [
+        {
+          "id": "vector",
+          "name": "Vector",
+          "type": "vector3"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float"
+        },
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "gradientType": "linear"
+      }
+    },
+    {
+      "type": "HSVAdjust",
+      "label": "HSV Adjust",
+      "category": "Color",
+      "description": "Adjust hue, saturation, and value",
+      "inputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "hue",
+          "name": "Hue",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "saturation",
+          "name": "Saturation",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "ImageTexture",
+      "label": "Image Texture",
+      "category": "Texture",
+      "description": "Load and sample an image texture",
+      "inputs": [
+        {
+          "id": "uv",
+          "name": "UV",
+          "type": "vector2"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "path": "",
+        "interpolation": "linear",
+        "extension": "repeat"
+      }
+    },
+    {
+      "type": "InstancedGeometry",
+      "label": "Instanced Geometry",
+      "category": "Geometry",
+      "description": "Wrap a base geometry as instanced geometry (still outputs geometry)",
+      "inputs": [
+        {
+          "id": "base",
+          "name": "Base",
+          "type": "geometry"
+        },
+        {
+          "id": "count",
+          "name": "Instance Count",
+          "type": "int",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "mode": "count"
+      }
+    },
+    {
+      "type": "IntInput",
+      "label": "Int Input",
+      "category": "Input",
+      "description": "Define a constant integer value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "int"
+        }
+      ],
+      "defaultParams": {
+        "value": 0
+      }
+    },
+    {
+      "type": "MaterialFromShader",
+      "label": "Material From Shader",
+      "category": "Material",
+      "description": "Convert a shader output to a renderable material",
+      "inputs": [
+        {
+          "id": "shader",
+          "name": "Shader",
+          "type": "shader"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MaterialOutput",
+      "label": "Material Output",
+      "category": "Output",
+      "description": "Final material output",
+      "inputs": [
+        {
+          "id": "surface",
+          "name": "Surface",
+          "type": "shader"
+        },
+        {
+          "id": "volume",
+          "name": "Volume",
+          "type": "shader"
+        },
+        {
+          "id": "displacement",
+          "name": "Displacement",
+          "type": "vector3"
+        }
+      ],
+      "outputs": [],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathAdd",
+      "label": "Add",
+      "category": "Math",
+      "description": "Add two values",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "float",
+          "default": 0
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathClamp",
+      "label": "Clamp",
+      "category": "Math",
+      "description": "Clamp value between min and max",
+      "inputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "min",
+          "name": "Min",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "max",
+          "name": "Max",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathClosure",
+      "label": "Math Closure",
+      "category": "Math",
+      "description": "Encapsulate a custom math expression",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "source": "// output = input1 + input2;"
+      }
+    },
+    {
+      "type": "MathMultiply",
+      "label": "Multiply",
+      "category": "Math",
+      "description": "Multiply two values",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathPower",
+      "label": "Power",
+      "category": "Math",
+      "description": "Raise base to exponent",
+      "inputs": [
+        {
+          "id": "base",
+          "name": "Base",
+          "type": "float",
+          "default": 2
+        },
+        {
+          "id": "exponent",
+          "name": "Exponent",
+          "type": "float",
+          "default": 2
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MixShader",
+      "label": "Mix Shader",
+      "category": "Shader",
+      "description": "Mix two shaders together",
+      "inputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "shader1",
+          "name": "Shader 1",
+          "type": "shader"
+        },
+        {
+          "id": "shader2",
+          "name": "Shader 2",
+          "type": "shader"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "shader",
+          "name": "Shader",
+          "type": "shader"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "NoiseTexture",
+      "label": "Noise Texture",
+      "category": "Texture",
+      "description": "Generate procedural noise",
+      "inputs": [
+        {
+          "id": "scale",
+          "name": "Scale",
+          "type": "float",
+          "default": 5
+        },
+        {
+          "id": "detail",
+          "name": "Detail",
+          "type": "float",
+          "default": 2
+        },
+        {
+          "id": "roughness",
+          "name": "Roughness",
+          "type": "float",
+          "default": 0.5
+        }
+      ],
+      "outputs": [
+        {
+          "id": "factor",
+          "name": "Factor",
+          "type": "float"
+        },
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "noiseType": "perlin"
+      }
+    },
+    {
+      "type": "Normalize",
+      "label": "Normalize",
+      "category": "Vector",
+      "description": "Normalize a vector",
+      "inputs": [
+        {
+          "id": "vector",
+          "name": "Vector",
+          "type": "vector3"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "PBRMaterial",
+      "label": "PBR Material",
+      "category": "Material",
+      "description": "Preset physically-based material (outputs material)",
+      "inputs": [
+        {
+          "id": "baseColor",
+          "name": "Base Color",
+          "type": "color",
+          "default": [
+            0.8,
+            0.8,
+            0.8,
+            1
+          ]
+        },
+        {
+          "id": "metallic",
+          "name": "Metallic",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "roughness",
+          "name": "Roughness",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "normal",
+          "name": "Normal",
+          "type": "vector3"
+        },
+        {
+          "id": "emission",
+          "name": "Emission",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "defaultParams": {
+        "model": "pbr"
+      }
+    },
+    {
+      "type": "PrincipledBSDF",
+      "label": "Principled BSDF",
+      "category": "Shader",
+      "description": "Physically-based rendering shader",
+      "inputs": [
+        {
+          "id": "baseColor",
+          "name": "Base Color",
+          "type": "color",
+          "default": [
+            0.8,
+            0.8,
+            0.8,
+            1
+          ]
+        },
+        {
+          "id": "metallic",
+          "name": "Metallic",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "roughness",
+          "name": "Roughness",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "specular",
+          "name": "Specular",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "normal",
+          "name": "Normal",
+          "type": "vector3"
+        },
+        {
+          "id": "emission",
+          "name": "Emission",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1
+        }
+      ],
+      "outputs": [
+        {
+          "id": "shader",
+          "name": "Shader",
+          "type": "shader"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "Rect2DGeometry",
+      "label": "2D Rect",
+      "category": "Geometry",
+      "description": "Create a 2D rectangle geometry with optional rounded corners",
+      "inputs": [
+        {
+          "id": "width",
+          "name": "Width",
+          "type": "int",
+          "default": 100
+        },
+        {
+          "id": "height",
+          "name": "Height",
+          "type": "int",
+          "default": 100
+        },
+        {
+          "id": "x",
+          "name": "X",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "radius",
+          "name": "Corner Radius",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "smooth",
+          "name": "Smooth Corners",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "RenderPass",
+      "label": "Render Pass",
+      "category": "PipelineControl",
+      "description": "Render a geometry with a material (PBR preset or shader-based)",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        },
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "type": "RenderTexture",
+      "label": "Render Texture",
+      "category": "Texture",
+      "description": "Create a GPU render target texture (WebGPU GPUTextureFormat)",
+      "inputs": [
+        {
+          "id": "width",
+          "name": "Width",
+          "type": "int",
+          "default": 1024
+        },
+        {
+          "id": "height",
+          "name": "Height",
+          "type": "int",
+          "default": 1024
+        }
+      ],
+      "outputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "renderTexture"
+        }
+      ],
+      "defaultParams": {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "type": "Screen",
+      "label": "Screen",
+      "category": "RenderTarget",
+      "description": "Present a pass to the default screen framebuffer",
+      "inputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "width",
+          "name": "Width",
+          "type": "int",
+          "default": 1080
+        },
+        {
+          "id": "height",
+          "name": "Height",
+          "type": "int",
+          "default": 2400
+        }
+      ],
+      "outputs": [],
+      "defaultParams": {}
+    },
+    {
+      "type": "ShaderMaterial",
+      "label": "Shader Material",
+      "category": "Material",
+      "description": "Custom shader-based material (outputs material)",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "defaultParams": {
+        "language": "glsl",
+        "vertex": "// vertex shader\n",
+        "fragment": "// fragment shader\n"
+      }
+    },
+    {
+      "type": "TextureInput",
+      "label": "Texture Input",
+      "category": "Input",
+      "description": "Load an external texture file",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "path": ""
+      }
+    },
+    {
+      "type": "Vector2Input",
+      "label": "Vector2 Input",
+      "category": "Input",
+      "description": "Define a 2D vector value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "vector",
+          "name": "Vector",
+          "type": "vector2"
+        }
+      ],
+      "defaultParams": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "Vector3Input",
+      "label": "Vector3 Input",
+      "category": "Input",
+      "description": "Define a 3D vector value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "vector",
+          "name": "Vector",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "type": "VectorMath",
+      "label": "Vector Math",
+      "category": "Vector",
+      "description": "Perform vector operations",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {
+        "operation": "add"
+      }
+    }
+  ]
+}
