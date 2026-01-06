@@ -7,28 +7,24 @@
 
 ---
 
-## 1. 用例目录结构（每个 test 一个 dedicated 文件夹）
+## 1. 用例目录结构（支持一组测试里包含多个输入 case）
 
-每个测试用例放在自己的目录：
+当前 `wgsl_generation` 测试会扫描目录 `tests/cases/wgsl_generation/` 下所有 `*.json`：
 
-- `tests/cases/<case_name>/`
+- 每个 `*.json` 都是一组输入 case，例如：`simple_1.json`、`blend_2.json`。
 
-其中最少包含：
+并且会为每个 RenderPass 生成/维护对应的 golden 文件（按 case + pass 的 nodeId 命名）：
 
-- `input.json`：输入的 SceneDSL JSON
-
-并且会为每个 RenderPass 生成/维护对应的 golden 文件（按 pass 的 nodeId 命名）：
-
-- `<pass_id>.vertex.wgsl`
-- `<pass_id>.fragment.wgsl`
-- `<pass_id>.module.wgsl`
+- `<case>.<pass_id>.vertex.wgsl`
+- `<case>.<pass_id>.fragment.wgsl`
+- `<case>.<pass_id>.module.wgsl`
 
 示例：
 
-- `tests/cases/wgsl_generation/input.json`
-- `tests/cases/wgsl_generation/node_2.vertex.wgsl`
-- `tests/cases/wgsl_generation/node_2.fragment.wgsl`
-- `tests/cases/wgsl_generation/node_2.module.wgsl`
+- `tests/cases/wgsl_generation/simple_1.json`
+- `tests/cases/wgsl_generation/simple_1.node_2.vertex.wgsl`
+- `tests/cases/wgsl_generation/simple_1.node_2.fragment.wgsl`
+- `tests/cases/wgsl_generation/simple_1.node_2.module.wgsl`
 
 > 说明：当前实现以 RenderPass 的 nodeId 作为 pass_id，因此 golden 文件名直接用 nodeId。
 
@@ -46,7 +42,7 @@ cargo test
 
 ## 3. 生成/更新 golden 输出（第一次建用例、或 WGSL 预期变更时）
 
-当你新增节点、调整 WGSL 输出格式，或者第一次创建某个 case 时：
+当你新增节点、调整 WGSL 输出格式，或者第一次创建/新增某个 `*.json` case 时：
 
 ```bash
 UPDATE_GOLDENS=1 cargo test
@@ -54,9 +50,9 @@ UPDATE_GOLDENS=1 cargo test
 
 行为：
 
-- 测试会读取 `tests/cases/<case_name>/input.json`
-- 生成所有可达的 RenderPass 的 WGSL
-- 把输出写入对应的 `*.wgsl` golden 文件
+- 测试会遍历 `tests/cases/wgsl_generation/*.json`
+- 对每个输入生成所有可达的 RenderPass 的 WGSL
+- 把输出写入对应的 `*.wgsl` golden 文件（见上面的命名规则）
 
 之后再跑一次普通测试确认对比稳定：
 
@@ -68,19 +64,17 @@ cargo test
 
 ## 4. 如何新增一个测试 case（推荐流程）
 
-1) 新建目录：
+1) 在 `tests/cases/wgsl_generation/` 下新增一个输入文件：
 
-- `tests/cases/<your_case_name>/`
+- `<your_case>.json`
 
-2) 放入 `input.json`（SceneDSL JSON）。
-
-3)（可选但推荐）先跑一次生成 golden：
+2)（可选但推荐）先跑一次生成/更新 golden：
 
 ```bash
 UPDATE_GOLDENS=1 cargo test
 ```
 
-4) 再跑一次确认通过：
+3) 再跑一次确认通过：
 
 ```bash
 cargo test

@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-06T13:56:53.910Z",
-    "modified": "2026-01-06T13:56:53.910Z"
+    "created": "2026-01-06T15:56:56.821Z",
+    "modified": "2026-01-06T15:56:56.821Z"
   },
   "nodes": [
     {
@@ -75,8 +75,8 @@
       },
       "label": "Render Texture",
       "params": {
-        "width": 400,
-        "height": 400,
+        "width": 1080,
+        "height": 2400,
         "format": "rgba8unorm"
       }
     },
@@ -89,8 +89,8 @@
       },
       "label": "Screen",
       "params": {
-        "width": 1080,
-        "height": 2400
+        "width": 392,
+        "height": 871
       }
     }
   ],
