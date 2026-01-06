@@ -11,6 +11,69 @@
 
 ---
 
+## 0. Instruction（渲染端建议直接对齐的最新 API）
+
+本文档默认你使用 `@node-forge/dsl` 作为 **Schema / Types / NodeDefinition 真相来源**。
+
+> 本节内容应保持与当前仓库代码一致（以 `packages/dsl/src/index.ts` 的 export 为准）。
+
+推荐入口：
+
+```ts
+import {
+  parseDSL,
+  validateSceneDSL,
+  NODE_DEFINITIONS,
+  type SceneDSL,
+  type NodeDefinition,
+} from '@node-forge/dsl';
+
+// 1) 解析 JSON 字符串（schema 校验）
+const { data: scene, error } = parseDSL(jsonString);
+if (!scene) throw new Error(error ?? 'Invalid DSL');
+
+// 2) 语义级轻量校验（ID/存在性 + 少量规则）
+const validation = validateSceneDSL(scene);
+if (!validation.valid) {
+  throw new Error('SceneDSL failed validation');
+}
+
+// 3) NodeDefinition：渲染端静态真相来源
+const def: NodeDefinition = NODE_DEFINITIONS[scene.nodes[0]!.type];
+```
+
+---
+
+## Changelog（增量：DSL 格式 / 解析语义 / API 变化）
+
+> 目的：render-server 实现者可以按条目快速评估“需要更新解析器/执行器哪里”。
+
+- `58a13e2`（dsl: update nodes/schema/validator and generator）
+  - `generateDSL` 现在会：
+    - 先合并 `NodeDefinition.defaultParams` → 再覆盖 editor 的 `node.data.params`
+    - 过滤掉 `undefined`（不会把 `undefined` 写进 DSL JSON）
+    - 对未连接的输入口：若 `Port.default` 存在，则把该默认值写入 `node.params[portId]`
+  - `outputs` 当前由生成器**始终返回**（可能为空对象 `{}`）；但 schema 仍允许缺失，渲染端应兼容“缺失/空对象”。
+  - 新增/更新了一批节点定义与端口默认值（例如 `DataNode`、`ImageTexture` 等）。
+
+- `cea8e14`（dsl: include port defaults in exported params）
+  - 导出 DSL 时开始补齐一部分端口默认值（用于 render-server 无需依赖 UI 状态也能得到稳定输入）。
+
+- `ea48f09`（dsl: add pass port type）
+  - `PortType` 增加 `pass`（用于 RenderPass/Screen/Composite 等链路）。
+
+- `282279b`（dsl: add Attribute node）
+  - 增加 `Attribute` 节点类型（读取 geometry attribute，常用于材质/渲染输入）。
+
+- `2fa7f41`（feat(dsl): add numeric ranges for ports）
+  - `Port.range`（min/max/step）加入 schema；渲染端可忽略，但解析器应允许该字段存在。
+
+- `498d757`（feat(dsl): add render textures + WebGPU formats）
+  - 增加 WebGPU `GPUTextureFormat` 相关 schema/常量，及与 render target 相关节点/端口类型。
+
+- `be04454`（feat(dsl): add input bindings support for closure-style nodes）
+  - `Node.inputBindings` / `SourceBinding` / `InputBinding` 加入 schema，用于闭包节点变量绑定。
+
 ## 1. DSL 从哪里来（传输层）
 
 在现有工程里，Editor 通过 WebSocket 发消息：
@@ -45,6 +108,7 @@ interface SceneDSL {
 
 - 该字段是可选的。
 - 当前生成逻辑会在图中存在 `MaterialOutput` / `CompositeOutput` 时填充（见 [packages/dsl/src/validator.ts](packages/dsl/src/validator.ts) 的 `generateDSL`）。
+- 当前生成器会返回 `outputs`（可能为空对象 `{}`）；但渲染端依然需要兼容旧数据里 `outputs` 缺失的情况。
 - 渲染端可以：
   - **优先**使用 `outputs` 指定的 nodeId 作为“最终输出”，或
   - 自己扫描 `nodes` 里 type 为 `MaterialOutput` / `CompositeOutput` 的节点作为输出节点。
@@ -102,7 +166,7 @@ interface Connection {
 如果你的 render server 也是 Node/TS 环境，最快路径是直接依赖 workspace 的 `@node-forge/dsl`：
 
 ```ts
-import { parseDSL, validateSceneDSL, NODE_DEFINITIONS } from '@node-forge/dsl';
+import { parseDSL, validateSceneDSL, NODE_DEFINITIONS, type SceneDSL } from '@node-forge/dsl';
 
 const { data: scene, error } = parseDSL(jsonString);
 if (!scene) throw new Error(error ?? 'Invalid DSL');
@@ -143,7 +207,7 @@ interface NodeDefinition {
 }
 ```
 
-渲染端通常会做一次“归一化”：
+渲染端通常会做一次“归一化”（建议保留：兼容旧 DSL / 兼容未来 defaultParams 变更）：
 
 - `effectiveParams = { ...definition.defaultParams, ...node.params }`
 - `effectiveInputs = definition.inputs + (node.inputs ?? [])`（用于支持动态输入口）
@@ -157,14 +221,15 @@ Editor 里的约定（见 [packages/editor/docs/inline-inputs.md](packages/edito
 - inline 值写入 `node.data.params[portId]`
 - 如果某个输入口有入边（已连接），inline 控件应隐藏/禁用（即“连线优先”）
 
-因此渲染端解析某个节点输入口时，建议用如下优先级：
+因此渲染端解析某个节点输入口时，建议用如下优先级（并兼容新旧导出行为）：
 
 1. **如果 `connections` 里存在 `to.nodeId === node.id && to.portId === portId` 的连线**：
    - 输入来自上游节点的 `from.portId`
 2. 否则，如果 `node.params` 里有同名键（`portId`）存在：
    - 输入来自 inline 常量（例如 number / vector / color）
-3. 否则，如果 `Port.default` 存在：
-   - 使用端口默认值
+  - 注意：自 `58a13e2` 起，导出时可能已经把 `Port.default` 写进 `node.params[portId]`，因此此分支也可能代表“端口默认值被预填充”。
+3. 否则，如果 `Port.default` 存在（从 `NODE_DEFINITIONS[node.type].inputs` 或 `node.inputs` 里查）：
+  - 使用端口默认值（主要用于兼容旧 DSL 或手写 DSL）
 4. 否则：
    - 该输入缺失（你可以报错或按节点语义给 fallback）
 
