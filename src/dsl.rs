@@ -106,3 +106,13 @@ pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Resu
         other => bail!("unsupported RenderTexture.format: {other}"),
     }
 }
+
+pub fn screen_resolution(scene: &SceneDSL) -> Option<[u32; 2]> {
+    let screen = scene.nodes.iter().find(|n| n.node_type == "Screen")?;
+    let w = parse_u32(&screen.params, "width")?;
+    let h = parse_u32(&screen.params, "height")?;
+    if w == 0 || h == 0 {
+        return None;
+    }
+    Some([w, h])
+}

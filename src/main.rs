@@ -15,17 +15,7 @@ fn main() -> Result<()> {
 
     let resolution_hint = scene
         .as_ref()
-        .and_then(|scene| {
-            scene
-                .nodes
-                .iter()
-                .find(|n| n.node_type == "RenderTexture")
-                .map(|n| {
-                    let w = dsl::parse_u32(&n.params, "width").unwrap_or(1024);
-                    let h = dsl::parse_u32(&n.params, "height").unwrap_or(1024);
-                    [w, h]
-                })
-        })
+        .and_then(dsl::screen_resolution)
         .unwrap_or([1024, 1024]);
 
     let native_options = eframe::NativeOptions {
