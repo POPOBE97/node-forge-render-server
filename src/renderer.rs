@@ -768,8 +768,6 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
         .map(|n| (n.id.clone(), n))
         .collect();
 
-    let order = topo_sort(scene)?;
-
     // Match build_shader_space_from_scene: prefer outputs.composite, otherwise fallback to the first CompositeOutput.
     let output_node_id: String = scene
         .outputs
@@ -784,24 +782,61 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
         })
         .ok_or_else(|| anyhow!("no outputs.composite and no CompositeOutput node"))?;
 
-    let reachable = upstream_reachable(scene, &output_node_id);
+    // Important: pass execution order should follow CompositeOutput's layering order:
+    // image first, then dynamic_0, dynamic_1, ...
+    let render_passes_in_draw_order = composite_render_passes_in_draw_order(scene, &nodes_by_id, &output_node_id)?;
 
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
-    for node_id in order {
-        if !reachable.contains(&node_id) {
-            continue;
-        }
-        let node = match nodes_by_id.get(&node_id) {
-            Some(n) => n,
-            None => continue,
-        };
-        if node.node_type != "RenderPass" {
-            continue;
-        }
-        let bundle = build_pass_wgsl_bundle(scene, &nodes_by_id, &node_id)?;
-        out.push((node_id, bundle));
+    for pass_id in render_passes_in_draw_order {
+        let bundle = build_pass_wgsl_bundle(scene, &nodes_by_id, &pass_id)?;
+        out.push((pass_id, bundle));
     }
     Ok(out)
+}
+
+fn composite_render_passes_in_draw_order(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    output_node_id: &str,
+) -> Result<Vec<String>> {
+    let output_node = find_node(nodes_by_id, output_node_id)?;
+    if output_node.node_type != "CompositeOutput" {
+        bail!("output node must be CompositeOutput, got {}", output_node.node_type);
+    }
+
+    // 1) image is always the base layer.
+    let base_pass_id: String = incoming_connection(scene, output_node_id, "image")
+        .map(|c| c.from.node_id.clone())
+        .ok_or_else(|| anyhow!("CompositeOutput.image has no incoming connection"))?;
+
+    // 2) dynamic layers follow CompositeOutput.inputs array order (only dynamic_* ports).
+    // Note: the server does not infer ordering from port ids; it trusts the JSON ordering.
+    let mut ordered: Vec<String> = Vec::new();
+    ordered.push(base_pass_id);
+
+    for port in &output_node.inputs {
+        if !port.id.starts_with("dynamic_") {
+            continue;
+        }
+        if let Some(conn) = incoming_connection(scene, output_node_id, &port.id) {
+            let pass_id = conn.from.node_id.clone();
+            if !ordered.contains(&pass_id) {
+                ordered.push(pass_id);
+            }
+        }
+    }
+
+    for pass_id in &ordered {
+        let node = find_node(nodes_by_id, pass_id)?;
+        if node.node_type != "RenderPass" {
+            bail!(
+                "CompositeOutput inputs must come from RenderPass nodes, got {} for {pass_id}",
+                node.node_type
+            );
+        }
+    }
+
+    Ok(ordered)
 }
 
 #[derive(Clone)]
@@ -960,21 +995,14 @@ pub fn build_shader_space_from_scene(
         })
         .ok_or_else(|| anyhow!("no outputs.composite and no CompositeOutput node"))?;
 
-    let render_pass_id: String = incoming_connection(scene, &output_node_id, "image")
-        .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("CompositeOutput.image has no incoming connection"))?;
+    let render_passes_in_order: Vec<String> =
+        composite_render_passes_in_draw_order(scene, &nodes_by_id, &output_node_id)?;
+    let render_pass_id: String = render_passes_in_order
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow!("no RenderPass reachable from CompositeOutput"))?;
 
     let reachable = upstream_reachable(scene, &output_node_id);
-    let render_passes_in_order: Vec<String> = order
-        .iter()
-        .filter(|id| reachable.contains(*id))
-        .filter(|id| {
-            nodes_by_id
-                .get(*id)
-                .is_some_and(|n| n.node_type == "RenderPass")
-        })
-        .cloned()
-        .collect();
     if render_passes_in_order.is_empty() {
         bail!("no RenderPass reachable from CompositeOutput");
     }
@@ -1337,13 +1365,22 @@ pub fn build_shader_space_from_scene(
         });
     }
 
-    shader_space.composite(move |composer| {
-        let mut c = composer;
-        for pass in &composite_passes {
-            c = c.pass(pass.clone());
+    fn compose_in_strict_order(
+        composer: rust_wgpu_fiber::composition::CompositionBuilder,
+        ordered_passes: &[ResourceName],
+    ) -> rust_wgpu_fiber::composition::CompositionBuilder {
+        match ordered_passes {
+            [] => composer,
+            [only] => composer.pass(only.clone()),
+            _ => {
+                let (deps, last) = ordered_passes.split_at(ordered_passes.len() - 1);
+                let last = last[0].clone();
+                composer.pass_with_deps(last, move |c| compose_in_strict_order(c, deps))
+            }
         }
-        c
-    });
+    }
+
+    shader_space.composite(move |composer| compose_in_strict_order(composer, &composite_passes));
 
     shader_space.prepare();
 
@@ -1418,6 +1455,102 @@ mod tests {
         let img = load_image_from_data_url(&data_url).unwrap();
         assert_eq!(img.width(), 1);
         assert_eq!(img.height(), 1);
+    }
+
+    #[test]
+    fn composite_draw_order_is_image_then_dynamic_indices() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                crate::dsl::Node {
+                    id: "out".to_string(),
+                    node_type: "CompositeOutput".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![
+                        crate::dsl::NodePort {
+                            id: "dynamic_1".to_string(),
+                            name: Some("image2".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                        crate::dsl::NodePort {
+                            id: "dynamic_0".to_string(),
+                            name: Some("image1".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                    ],
+                },
+                crate::dsl::Node {
+                    id: "p_img".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                },
+                crate::dsl::Node {
+                    id: "p0".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                },
+                crate::dsl::Node {
+                    id: "p1".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                },
+            ],
+            connections: vec![
+                crate::dsl::Connection {
+                    id: "c_img".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "p_img".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "image".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_dyn1".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "p1".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "dynamic_1".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_dyn0".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "p0".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "dynamic_0".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(HashMap::from([(String::from("composite"), String::from("out"))])),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let got = composite_render_passes_in_draw_order(&scene, &nodes_by_id, "out").unwrap();
+        // inputs array order: dynamic_1 then dynamic_0
+        assert_eq!(got, vec!["p_img", "p1", "p0"]);
     }
 }
 

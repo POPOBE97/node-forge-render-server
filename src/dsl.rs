@@ -27,6 +27,20 @@ pub struct Node {
     pub node_type: String,
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
+
+    // Optional editor metadata used for ordering / UI; we only consume `inputs` ordering
+    // for CompositeOutput draw order.
+    #[serde(default)]
+    pub inputs: Vec<NodePort>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NodePort {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(rename = "type", default)]
+    pub port_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
