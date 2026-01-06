@@ -16,14 +16,13 @@
 - 最小 WGSL：`src/shaders/simple_rect.wgsl`
   - 当前仅输出纯色（用于验证管线与 attachment 写入正确）
 
-> 更新：目前默认渲染已切到“VM Shader（固定 WGSL）+ storage buffers”，不再使用“按节点拼 WGSL”。
+> 更新：目前默认渲染已切回“按节点/材质子图拼 WGSL → 为每个 RenderPass 生成专用 shader”的方案。
 
-- VM WGSL：`src/shaders/bytecode_vm.wgsl`
-  - 固定不变的解释器 shader
-  - 从 storage buffer 读取 `globals/program/consts` 并在 fragment 中解释执行
-- （历史）UBO WGSL：`src/shaders/fixed_ubo_rect.wgsl`
-  - 旧方案：固定 WGSL + per-pass UBO
-  - 目前已被 VM 方案替代，可作为参考保留
+- （参考保留）VM WGSL：`src/shaders/bytecode_vm.wgsl`
+  - 旧实验：固定解释器 shader + storage buffers
+  - 当前默认路径不再使用（保留文件用于对比/后续研究）
+- （参考保留）UBO WGSL：`src/shaders/fixed_ubo_rect.wgsl`
+  - 固定 WGSL + per-pass uniform 的参考版本
 
 ---
 
@@ -131,77 +130,12 @@
     - 解析 `RenderPass.geometry` 入边：必须来自 `Rect2DGeometry`
     - 解析 `RenderPass.target` 入边：必须来自 `RenderTexture`
     - `render_pass(passId, |builder| ...)`：
-      - 使用 `src/shaders/bytecode_vm.wgsl`（固定）
+      - 运行时生成该 pass 的 WGSL（根据 `RenderPass.material` 上游节点）
       - 绑定几何 vertex buffer
       - 绑定 color attachment 为 target texture
-      - 绑定 3 个 storage buffer（见 4.3）
+      - 绑定 1 个 uniform buffer：`params_<passId>`（scale/time/color）
       - 清屏透明，blend 用 `REPLACE`
-
-- `CompositeOutput`
-  - 本实现把“最终显示的输出纹理”定义为：
-    - **最后一个可达 RenderPass 的 target RenderTexture**
-  - 在 `eframe::App::update` 的首帧把该纹理注册为 egui `TextureId`，之后复用
-
-  ---
-
-  ## 4.3 VM Shader（参数表 + 指令序列）执行模型
-
-  为什么要 VM？
-
-  - 不再“按节点拼 WGSL”，避免 shader/pipeline 频繁重建
-  - 节点与参数保留在 CPU，实时更新/动画只需要更新 buffer
-  - 更通用：CPU 可以把任意材质子图编译成 bytecode（program）+ 常量表（consts）
-
-  ### 4.3.1 绑定的 3 个 buffer
-
-  每个 `RenderPass` 创建并绑定以下 3 个 **storage buffer**（而不是 UBO）：
-
-  1) `globals_<passId>`（binding 0）
-    - 结构：`scale/time/prog_len/const_len` 等（`Globals`）
-    - 每帧更新：只更新 `time`（示例里用于动画）
-  2) `program_<passId>`（binding 1）
-    - `u32` 数组
-    - VM 以 `word0 + imm`（两 u32）为一条指令读取
-  3) `consts_<passId>`（binding 2）
-    - `vec4f` 常量表（Rust 侧用 `[f32;4]`）
-
-  Rust 侧命名规则：
-
-  - `globals_<RenderPassNodeId>`
-  - `program_<RenderPassNodeId>`
-  - `consts_<RenderPassNodeId>`
-
-  ### 4.3.2 指令格式（当前最小集）
-
-  在 `program` 里，每条指令占 2 个 u32：
-
-  - `word0`: 打包字段
-    - `op`  : bits 0..7
-    - `dst` : bits 8..15
-    - `a`   : bits 16..23
-    - `b`   : bits 24..31
-  - `imm`: 立即数（例如常量索引）
-
-  寄存器：`vec4f regs[16]`。
-
-  目前实现的 opcode：
-
-  - `OP_LOAD_CONST (1)`: `regs[dst] = consts[imm]`
-  - `OP_UV (2)`: `regs[dst] = vec4f(uv, 0, 1)`（uv 由 vertex position 合成）
-  - `OP_MUL (3)`: `regs[dst] = regs[a] * regs[b]`
-  - `OP_ADD (4)`: `regs[dst] = regs[a] + regs[b]`
-  - `OP_SIN_TIME (5)`: `regs[dst] = vec4f(k,k,k,1)`，其中 `k = 0.6 + 0.4*sin(time)`
-  - `OP_OUTPUT (255)`: 输出 `regs[a]` 并结束
-
-  ### 4.3.3 目前 CPU 侧的“编译器”做了什么
-
-  当前只是最小 demo 编译：
-
-  - 如果 `RenderPass.material` 连到 `Attribute`：生成 `program_uv_debug()`
-  - 否则：生成 `program_constant_animated()`（常量色 * sin(time)）
-
-  你后续可以把完整 material 子图（从 `RenderPass.material` 向上游回溯）编译成：
-
+---
   - `consts`: 常量池（颜色、float、vec2/vec3/vec4 等统一装进 vec4）
   - `program`: 指令序列（后序遍历/拓扑遍历生成）
 
@@ -226,10 +160,10 @@ cargo run
 ## 6. 当前限制（故意保持最小）
 
 - 只支持示例里的最小节点集（Rect2DGeometry / RenderTexture / RenderPass / CompositeOutput）
-- `Attribute -> material` 目前只支持“UV debug”这一个最小语义（作为 VM 编译示例）
+- `Attribute -> material` 目前只支持“UV debug”这一个最小语义
 - 未实现端口类型兼容检查、端口存在性检查（只做了“必须存在关键入边”的硬性校验）
 - 使用 `Box::leak` 处理 name 的 'static 生命周期（适用于 demo，不适合频繁 hot-reload）
-- VM 指令集极小（只够验证“参数表 + bytecode + 动画 time”链路）
+- 材质节点集极小（只够验证“按材质子图生成 WGSL + time 动画”链路）
 
 ---
 
@@ -241,15 +175,15 @@ cargo run
    - 端口存在性 + 类型兼容
    - 必填输入检查
 
-2) VM 指令集扩展（推荐优先级）
+2) WGSL 生成器扩展（推荐优先级）
   - 常量与基础算子：Float/Vec2/Vec3/Vec4、Add/Mul/Clamp/Mix
   - 时间与动画：Time、Sin/Cos、Smoothstep
   - 纹理采样：Texture2D + Sampler（需要补 texture/sampler bindings）
 
-3) DSL → Bytecode 编译器
+3) DSL → fragment WGSL（材质子图编译）
   - 从 `RenderPass.material` 往上游回溯材质子图
-  - 生成 `consts`（常量池）与 `program`（指令序列）
-  - 参数变化：只更新 buffers；结构变化：重建一次 pipeline/prepare
+  - 生成一段 `fs_main`（以及必要的 helper 函数）
+  - 参数变化：只更新 uniform；结构变化：重建一次 pipeline/prepare
 
 4) Scene 更新
    - 接入 WebSocket `scene_update`（未来再把“构建 + prepare”变成可重入/可替换）
