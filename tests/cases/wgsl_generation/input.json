@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-06T08:12:21.149Z",
-    "modified": "2026-01-06T08:12:21.149Z"
+    "created": "2026-01-06T13:56:53.910Z",
+    "modified": "2026-01-06T13:56:53.910Z"
   },
   "nodes": [
     {
@@ -15,8 +15,7 @@
       },
       "label": "Composite Output",
       "params": {
-        "width": 400,
-        "height": 400
+        "alpha": 1
       }
     },
     {
@@ -28,7 +27,13 @@
       },
       "label": "Render Pass",
       "params": {
-        "name": "Render Pass"
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
       }
     },
     {
@@ -74,6 +79,19 @@
         "height": 400,
         "format": "rgba8unorm"
       }
+    },
+    {
+      "id": "node_6",
+      "type": "Screen",
+      "position": {
+        "x": 660,
+        "y": 380
+      },
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
     }
   ],
   "connections": [
@@ -117,7 +135,7 @@
         "portId": "texture"
       },
       "to": {
-        "nodeId": "node_2",
+        "nodeId": "node_1",
         "portId": "target"
       }
     },
@@ -130,6 +148,17 @@
       "to": {
         "nodeId": "node_2",
         "portId": "material"
+      }
+    },
+    {
+      "id": "edge_9",
+      "from": {
+        "nodeId": "node_1",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_6",
+        "portId": "pass"
       }
     }
   ],
