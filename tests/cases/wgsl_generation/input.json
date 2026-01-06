@@ -1,0 +1,139 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-01-06T08:12:21.149Z",
+    "modified": "2026-01-06T08:12:21.149Z"
+  },
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "CompositeOutput",
+      "position": {
+        "x": 460,
+        "y": 380
+      },
+      "label": "Composite Output",
+      "params": {
+        "width": 400,
+        "height": 400
+      }
+    },
+    {
+      "id": "node_2",
+      "type": "RenderPass",
+      "position": {
+        "x": 280,
+        "y": 380
+      },
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass"
+      }
+    },
+    {
+      "id": "node_3",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -80,
+        "y": 380
+      },
+      "label": "2D Rect",
+      "params": {
+        "width": 100,
+        "height": 100,
+        "x": 0,
+        "y": 0,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "node_4",
+      "type": "Attribute",
+      "position": {
+        "x": 100,
+        "y": 380
+      },
+      "label": "Attribute",
+      "params": {
+        "name": "uv",
+        "glslType": "vec2"
+      }
+    },
+    {
+      "id": "node_5",
+      "type": "RenderTexture",
+      "position": {
+        "x": 100,
+        "y": 520
+      },
+      "label": "Render Texture",
+      "params": {
+        "width": 400,
+        "height": 400,
+        "format": "rgba8unorm"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_1",
+      "from": {
+        "nodeId": "node_2",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_1",
+        "portId": "image"
+      }
+    },
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "node_3",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "node_2",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "node_3",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "node_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "node_5",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "node_2",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_8",
+      "from": {
+        "nodeId": "node_4",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "node_2",
+        "portId": "material"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "node_1"
+  }
+}

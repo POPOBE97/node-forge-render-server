@@ -14,6 +14,10 @@ cargo run --release
 
 > 默认会从 `assets/` 读取示例场景作为初始 scene。
 
+## 测试
+
+- WGSL 生成测试（如何新增/更新测试用例）：见 [docs/testing-wgsl-generation.md](docs/testing-wgsl-generation.md)
+
 ## WebSocket 协议（最小集合）
 
 所有消息统一结构：
