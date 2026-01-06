@@ -86,6 +86,7 @@ fn main() -> Result<()> {
             Ok(Box::new(app::App {
                 shader_space,
                 resolution,
+                window_resolution: resolution_hint,
                 output_texture_name,
                 color_attachment: None,
                 start: Instant::now(),

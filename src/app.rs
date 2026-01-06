@@ -19,6 +19,7 @@ use crate::{protocol, renderer, ws};
 pub struct App {
     pub shader_space: ShaderSpace,
     pub resolution: [u32; 2],
+    pub window_resolution: [u32; 2],
     pub output_texture_name: ResourceName,
     pub color_attachment: Option<TextureId>,
     pub start: Instant,
@@ -42,6 +43,15 @@ impl eframe::App for App {
         if let Some(update) = latest {
             match update {
                 ws::SceneUpdate::Parsed { scene, request_id } => {
+                    if let Some([w, h]) = crate::dsl::screen_resolution(&scene) {
+                        if [w, h] != self.window_resolution {
+                            self.window_resolution = [w, h];
+                            let size = egui::vec2(w as f32, h as f32);
+                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(size));
+                        }
+                    }
+
                     match renderer::build_shader_space_from_scene(
                         &scene,
                         Arc::new(render_state.device.clone()),
