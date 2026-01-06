@@ -1,12 +1,14 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
+use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
     eframe::wgpu::{
         self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
     },
     pool::{
         buffer_pool::BufferSpec,
+        sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
@@ -15,7 +17,8 @@ use rust_wgpu_fiber::{
 
 use crate::{
     dsl::{
-        find_node, incoming_connection, parse_f32, parse_texture_format, parse_u32, Node, SceneDSL,
+        find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32, Node,
+        SceneDSL,
     },
     graph::{topo_sort, upstream_reachable},
     schema,
@@ -115,6 +118,67 @@ fn typed_time(expr: impl Into<String>, ty: ValueType, uses_time: bool) -> TypedE
     }
 }
 
+#[derive(Default)]
+struct MaterialCompileContext {
+    image_textures: Vec<String>,
+    image_index_by_node: HashMap<String, usize>,
+}
+
+impl MaterialCompileContext {
+    fn register_image_texture(&mut self, node_id: &str) -> usize {
+        if let Some(i) = self.image_index_by_node.get(node_id).copied() {
+            return i;
+        }
+        let i = self.image_textures.len();
+        self.image_textures.push(node_id.to_string());
+        self.image_index_by_node.insert(node_id.to_string(), i);
+        i
+    }
+
+    fn tex_var_name(node_id: &str) -> String {
+        format!("img_tex_{}", sanitize_wgsl_ident(node_id))
+    }
+
+    fn sampler_var_name(node_id: &str) -> String {
+        format!("img_samp_{}", sanitize_wgsl_ident(node_id))
+    }
+
+    fn wgsl_decls(&self) -> String {
+        if self.image_textures.is_empty() {
+            return String::new();
+        }
+        let mut out = String::new();
+        for (i, node_id) in self.image_textures.iter().enumerate() {
+            let tex_binding = (i as u32) * 2;
+            let samp_binding = tex_binding + 1;
+            out.push_str(&format!(
+                "@group(1) @binding({tex_binding})\nvar {}: texture_2d<f32>;\n\n",
+                Self::tex_var_name(node_id)
+            ));
+            out.push_str(&format!(
+                "@group(1) @binding({samp_binding})\nvar {}: sampler;\n\n",
+                Self::sampler_var_name(node_id)
+            ));
+        }
+        out
+    }
+}
+
+fn sanitize_wgsl_ident(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        out.push('_');
+    }
+    out
+}
+
 fn splat_f32(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
     if x.ty != ValueType::F32 {
         bail!("expected f32 for splat, got {:?}", x.ty);
@@ -183,6 +247,7 @@ fn compile_material_expr(
     nodes_by_id: &HashMap<String, Node>,
     node_id: &str,
     out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
     cache: &mut HashMap<(String, String), TypedExpr>,
 ) -> Result<TypedExpr> {
     let key = (
@@ -205,6 +270,43 @@ fn compile_material_expr(
             match name.as_str() {
                 "uv" => typed("in.uv".to_string(), ValueType::Vec2),
                 other => bail!("unsupported Attribute.name: {other}"),
+            }
+        }
+
+        "ImageTexture" => {
+            // WGSL is emitted to actually sample a bound texture. The runtime will bind the
+            // texture + sampler; for headless tests we only need valid WGSL.
+            let _image_index = ctx.register_image_texture(node_id);
+
+            // If an explicit UV input is provided, respect it; otherwise default to the fragment input uv.
+            let uv_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, node_id, "uv") {
+                compile_material_expr(
+                    scene,
+                    nodes_by_id,
+                    &conn.from.node_id,
+                    Some(&conn.from.port_id),
+                    ctx,
+                    cache,
+                )?
+            } else {
+                typed("in.uv".to_string(), ValueType::Vec2)
+            };
+            if uv_expr.ty != ValueType::Vec2 {
+                bail!("ImageTexture.uv must be vector2, got {:?}", uv_expr.ty);
+            }
+
+            let tex_var = MaterialCompileContext::tex_var_name(node_id);
+            let samp_var = MaterialCompileContext::sampler_var_name(node_id);
+            let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
+
+            match out_port.unwrap_or("color") {
+                "color" => typed_time(sample_expr, ValueType::Vec4, uv_expr.uses_time),
+                "alpha" => typed_time(
+                    format!("({sample_expr}).w"),
+                    ValueType::F32,
+                    uv_expr.uses_time,
+                ),
+                other => bail!("unsupported ImageTexture output port: {other}"),
             }
         }
 
@@ -235,7 +337,14 @@ fn compile_material_expr(
                 .or_else(|| incoming_connection(scene, node_id, "value"))
                 .or_else(|| incoming_connection(scene, node_id, "in"))
                 .ok_or_else(|| anyhow!("Sin missing input"))?;
-            let x = compile_material_expr(scene, nodes_by_id, &input.from.node_id, Some(&input.from.port_id), cache)?;
+            let x = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &input.from.node_id,
+                Some(&input.from.port_id),
+                ctx,
+                cache,
+            )?;
             typed_time(format!("sin({})", x.expr), x.ty, x.uses_time)
         }
 
@@ -244,7 +353,14 @@ fn compile_material_expr(
                 .or_else(|| incoming_connection(scene, node_id, "value"))
                 .or_else(|| incoming_connection(scene, node_id, "in"))
                 .ok_or_else(|| anyhow!("Cos missing input"))?;
-            let x = compile_material_expr(scene, nodes_by_id, &input.from.node_id, Some(&input.from.port_id), cache)?;
+            let x = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &input.from.node_id,
+                Some(&input.from.port_id),
+                ctx,
+                cache,
+            )?;
             typed_time(format!("cos({})", x.expr), x.ty, x.uses_time)
         }
 
@@ -255,8 +371,22 @@ fn compile_material_expr(
             let b_conn = incoming_connection(scene, node_id, "b")
                 .or_else(|| incoming_connection(scene, node_id, "y"))
                 .ok_or_else(|| anyhow!("Add missing input b"))?;
-            let a = compile_material_expr(scene, nodes_by_id, &a_conn.from.node_id, Some(&a_conn.from.port_id), cache)?;
-            let b = compile_material_expr(scene, nodes_by_id, &b_conn.from.node_id, Some(&b_conn.from.port_id), cache)?;
+            let a = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &a_conn.from.node_id,
+                Some(&a_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let b = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &b_conn.from.node_id,
+                Some(&b_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
             let (aa, bb, ty) = coerce_for_binary(a, b)?;
             typed_time(
                 format!("({} + {})", aa.expr, bb.expr),
@@ -272,8 +402,22 @@ fn compile_material_expr(
             let b_conn = incoming_connection(scene, node_id, "b")
                 .or_else(|| incoming_connection(scene, node_id, "y"))
                 .ok_or_else(|| anyhow!("Mul missing input b"))?;
-            let a = compile_material_expr(scene, nodes_by_id, &a_conn.from.node_id, Some(&a_conn.from.port_id), cache)?;
-            let b = compile_material_expr(scene, nodes_by_id, &b_conn.from.node_id, Some(&b_conn.from.port_id), cache)?;
+            let a = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &a_conn.from.node_id,
+                Some(&a_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let b = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &b_conn.from.node_id,
+                Some(&b_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
             let (aa, bb, ty) = coerce_for_binary(a, b)?;
             typed_time(
                 format!("({} * {})", aa.expr, bb.expr),
@@ -294,9 +438,30 @@ fn compile_material_expr(
                 .or_else(|| incoming_connection(scene, node_id, "factor"))
                 .ok_or_else(|| anyhow!("Mix missing input t"))?;
 
-            let a = compile_material_expr(scene, nodes_by_id, &a_conn.from.node_id, Some(&a_conn.from.port_id), cache)?;
-            let b = compile_material_expr(scene, nodes_by_id, &b_conn.from.node_id, Some(&b_conn.from.port_id), cache)?;
-            let t = compile_material_expr(scene, nodes_by_id, &t_conn.from.node_id, Some(&t_conn.from.port_id), cache)?;
+            let a = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &a_conn.from.node_id,
+                Some(&a_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let b = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &b_conn.from.node_id,
+                Some(&b_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let t = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &t_conn.from.node_id,
+                Some(&t_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
             if t.ty != ValueType::F32 {
                 bail!("Mix.t must be f32, got {:?}", t.ty);
             }
@@ -324,9 +489,30 @@ fn compile_material_expr(
             let max_conn = incoming_connection(scene, node_id, "max")
                 .or_else(|| incoming_connection(scene, node_id, "hi"))
                 .ok_or_else(|| anyhow!("Clamp missing input max"))?;
-            let x = compile_material_expr(scene, nodes_by_id, &x_conn.from.node_id, Some(&x_conn.from.port_id), cache)?;
-            let minv = compile_material_expr(scene, nodes_by_id, &min_conn.from.node_id, Some(&min_conn.from.port_id), cache)?;
-            let maxv = compile_material_expr(scene, nodes_by_id, &max_conn.from.node_id, Some(&max_conn.from.port_id), cache)?;
+            let x = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &x_conn.from.node_id,
+                Some(&x_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let minv = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &min_conn.from.node_id,
+                Some(&min_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let maxv = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &max_conn.from.node_id,
+                Some(&max_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
             let (xx, mn, ty) = coerce_for_binary(x, minv)?;
             let (xx2, mx, _) = coerce_for_binary(xx, maxv)?;
             typed_time(
@@ -346,9 +532,30 @@ fn compile_material_expr(
             let x_conn = incoming_connection(scene, node_id, "x")
                 .or_else(|| incoming_connection(scene, node_id, "value"))
                 .ok_or_else(|| anyhow!("Smoothstep missing input x"))?;
-            let e0 = compile_material_expr(scene, nodes_by_id, &e0_conn.from.node_id, Some(&e0_conn.from.port_id), cache)?;
-            let e1 = compile_material_expr(scene, nodes_by_id, &e1_conn.from.node_id, Some(&e1_conn.from.port_id), cache)?;
-            let x = compile_material_expr(scene, nodes_by_id, &x_conn.from.node_id, Some(&x_conn.from.port_id), cache)?;
+            let e0 = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &e0_conn.from.node_id,
+                Some(&e0_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let e1 = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &e1_conn.from.node_id,
+                Some(&e1_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
+            let x = compile_material_expr(
+                scene,
+                nodes_by_id,
+                &x_conn.from.node_id,
+                Some(&x_conn.from.port_id),
+                ctx,
+                cache,
+            )?;
             let (e0c, e1c, ty01) = coerce_for_binary(e0, e1)?;
             let (xc, _, ty) = coerce_for_binary(x, e0c.clone())?;
             if ty != ty01 {
@@ -368,10 +575,6 @@ fn compile_material_expr(
     Ok(result)
 }
 
-fn build_pass_wgsl(scene: &SceneDSL, nodes_by_id: &HashMap<String, Node>, pass_id: &str) -> Result<String> {
-    Ok(build_pass_wgsl_bundle(scene, nodes_by_id, pass_id)?.module)
-}
-
 #[derive(Clone, Debug)]
 pub struct WgslShaderBundle {
     /// WGSL declarations shared between stages (types, bindings, structs).
@@ -384,6 +587,9 @@ pub struct WgslShaderBundle {
     pub compute: Option<String>,
     /// A combined WGSL module containing all emitted entry points.
     pub module: String,
+
+    /// ImageTexture node ids referenced by this pass's material graph, in binding order.
+    pub image_textures: Vec<String>,
 }
 
 pub fn build_pass_wgsl_bundle(
@@ -393,6 +599,7 @@ pub fn build_pass_wgsl_bundle(
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
+    let mut material_ctx = MaterialCompileContext::default();
     let fragment_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, pass_id, "material") {
         let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
         compile_material_expr(
@@ -400,16 +607,19 @@ pub fn build_pass_wgsl_bundle(
             nodes_by_id,
             &conn.from.node_id,
             Some(&conn.from.port_id),
+            &mut material_ctx,
             &mut cache,
         )?
     } else {
         typed("params.color".to_string(), ValueType::Vec4)
     };
 
+    let image_textures = material_ctx.image_textures.clone();
+
     let out_color = to_vec4_color(fragment_expr);
     let fragment_body = format!("return {};", out_color.expr);
 
-    let common = r#"
+    let mut common = r#"
 struct Params {
     target_size: vec2f,
     geo_size: vec2f,
@@ -428,6 +638,8 @@ struct VSOut {
 };
 "#
     .to_string();
+
+    common.push_str(&material_ctx.wgsl_decls());
 
     let vertex_entry = r#"
 @vertex
@@ -469,6 +681,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         fragment,
         compute,
         module,
+        image_textures,
     })
 }
 
@@ -534,6 +747,111 @@ struct RenderPassSpec {
     params_buffer: ResourceName,
     params: Params,
     shader_wgsl: String,
+    image_textures: Vec<String>,
+    blend_state: BlendState,
+}
+
+fn normalize_blend_token(s: &str) -> String {
+    s.trim().to_ascii_lowercase().replace('_', "-")
+}
+
+fn parse_blend_operation(op: &str) -> Result<wgpu::BlendOperation> {
+    let op = normalize_blend_token(op);
+    Ok(match op.as_str() {
+        "add" => wgpu::BlendOperation::Add,
+        "subtract" => wgpu::BlendOperation::Subtract,
+        "reverse-subtract" | "rev-subtract" => wgpu::BlendOperation::ReverseSubtract,
+        "min" => wgpu::BlendOperation::Min,
+        "max" => wgpu::BlendOperation::Max,
+        other => bail!("unsupported blendfunc/blend operation: {other}"),
+    })
+}
+
+fn parse_blend_factor(f: &str) -> Result<wgpu::BlendFactor> {
+    let f = normalize_blend_token(f);
+    Ok(match f.as_str() {
+        "zero" => wgpu::BlendFactor::Zero,
+        "one" => wgpu::BlendFactor::One,
+
+        "src" | "src-color" => wgpu::BlendFactor::Src,
+        "one-minus-src" | "one-minus-src-color" => wgpu::BlendFactor::OneMinusSrc,
+
+        "src-alpha" => wgpu::BlendFactor::SrcAlpha,
+        "one-minus-src-alpha" => wgpu::BlendFactor::OneMinusSrcAlpha,
+
+        "dst" | "dst-color" => wgpu::BlendFactor::Dst,
+        "one-minus-dst" | "one-minus-dst-color" => wgpu::BlendFactor::OneMinusDst,
+
+        "dst-alpha" => wgpu::BlendFactor::DstAlpha,
+        "one-minus-dst-alpha" => wgpu::BlendFactor::OneMinusDstAlpha,
+
+        "src-alpha-saturated" => wgpu::BlendFactor::SrcAlphaSaturated,
+        "constant" | "blend-color" => wgpu::BlendFactor::Constant,
+        "one-minus-constant" | "one-minus-blend-color" => wgpu::BlendFactor::OneMinusConstant,
+        other => bail!("unsupported blend factor: {other}"),
+    })
+}
+
+fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
+    let preset = normalize_blend_token(preset);
+    Ok(match preset.as_str() {
+        "alpha" => BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+        "add" | "additive" => BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+        "opaque" | "none" | "off" | "replace" => BlendState::REPLACE,
+        other => bail!("unsupported blend_preset: {other}"),
+    })
+}
+
+fn parse_render_pass_blend_state(params: &HashMap<String, serde_json::Value>) -> Result<BlendState> {
+    // Start with preset if present; otherwise default to REPLACE.
+    let mut state = if let Some(preset) = parse_str(params, "blend_preset") {
+        default_blend_state_for_preset(preset)?
+    } else {
+        BlendState::REPLACE
+    };
+
+    // Override with explicit params if present.
+    if let Some(op) = parse_str(params, "blendfunc") {
+        let op = parse_blend_operation(op)?;
+        state.color.operation = op;
+        state.alpha.operation = op;
+    }
+    if let Some(src) = parse_str(params, "src_factor") {
+        state.color.src_factor = parse_blend_factor(src)?;
+    }
+    if let Some(dst) = parse_str(params, "dst_factor") {
+        state.color.dst_factor = parse_blend_factor(dst)?;
+    }
+    if let Some(src) = parse_str(params, "src_alpha_factor") {
+        state.alpha.src_factor = parse_blend_factor(src)?;
+    }
+    if let Some(dst) = parse_str(params, "dst_alpha_factor") {
+        state.alpha.dst_factor = parse_blend_factor(dst)?;
+    }
+
+    Ok(state)
 }
 
 pub fn build_shader_space_from_scene(
@@ -664,6 +982,9 @@ pub fn build_shader_space_from_scene(
             .cloned()
             .ok_or_else(|| anyhow!("missing name for node: {pass_id}"))?;
 
+        let pass_node = find_node(&nodes_by_id, pass_id)?;
+        let blend_state = parse_render_pass_blend_state(&pass_node.params)?;
+
         let geometry_node_id = incoming_connection(scene, pass_id, "geometry")
             .map(|c| c.from.node_id.clone())
             .ok_or_else(|| anyhow!("RenderPass.geometry missing for {pass_id}"))?;
@@ -720,7 +1041,9 @@ pub fn build_shader_space_from_scene(
             color: [0.9, 0.2, 0.2, 1.0],
         };
 
-        let shader_wgsl = build_pass_wgsl(scene, &nodes_by_id, pass_id)?;
+        let bundle = build_pass_wgsl_bundle(scene, &nodes_by_id, pass_id)?;
+        let shader_wgsl = bundle.module;
+        let image_textures = bundle.image_textures;
 
         render_pass_specs.push(RenderPassSpec {
             name: pass_name.clone(),
@@ -729,6 +1052,8 @@ pub fn build_shader_space_from_scene(
             params_buffer: params_name,
             params,
             shader_wgsl,
+            image_textures,
+            blend_state,
         });
         composite_passes.push(pass_name);
     }
@@ -766,7 +1091,7 @@ pub fn build_shader_space_from_scene(
     shader_space.declare_buffers(buffer_specs);
 
     // 2) Textures
-    let texture_specs: Vec<FiberTextureSpec> = textures
+    let mut texture_specs: Vec<FiberTextureSpec> = textures
         .iter()
         .map(|t| FiberTextureSpec::Texture {
             name: t.name.clone(),
@@ -777,19 +1102,101 @@ pub fn build_shader_space_from_scene(
                 | TextureUsages::COPY_SRC,
         })
         .collect();
+
+    // ImageTexture resources (sampled textures) referenced by any reachable RenderPass.
+    fn placeholder_image() -> Arc<DynamicImage> {
+        let img = RgbaImage::from_pixel(1, 1, Rgba([255, 0, 255, 255]));
+        Arc::new(DynamicImage::ImageRgba8(img))
+    }
+
+    fn load_image_with_fallback(rel_base: &PathBuf, path: Option<&str>) -> Arc<DynamicImage> {
+        let Some(p) = path.filter(|s| !s.trim().is_empty()) else {
+            return placeholder_image();
+        };
+
+        let candidates: Vec<PathBuf> = {
+            let pb = PathBuf::from(p);
+            if pb.is_absolute() {
+                vec![pb]
+            } else {
+                vec![pb.clone(), rel_base.join(&pb), rel_base.join("assets").join(&pb)]
+            }
+        };
+
+        for cand in candidates {
+            if let Ok(img) = image::open(&cand) {
+                return Arc::new(img);
+            }
+        }
+        placeholder_image()
+    }
+
+    let rel_base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut seen_image_nodes: HashSet<String> = HashSet::new();
+    for pass in &render_pass_specs {
+        for node_id in &pass.image_textures {
+            if !seen_image_nodes.insert(node_id.clone()) {
+                continue;
+            }
+            let node = find_node(&nodes_by_id, node_id)?;
+            if node.node_type != "ImageTexture" {
+                bail!("expected ImageTexture node for {node_id}, got {}", node.node_type);
+            }
+
+            let path = node.params.get("path").and_then(|v| v.as_str());
+            let image = load_image_with_fallback(&rel_base, path);
+
+            let name = ids
+                .get(node_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
+
+            texture_specs.push(FiberTextureSpec::Image {
+                name,
+                image,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            });
+        }
+    }
+
     shader_space.declare_textures(texture_specs);
+
+    // 3) Samplers
+    let nearest_sampler: ResourceName = "sampler_nearest".into();
+    shader_space.declare_samplers(vec![SamplerSpec {
+        name: nearest_sampler.clone(),
+        desc: wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        },
+    }]);
 
     for spec in &render_pass_specs {
         let geometry_buffer = spec.geometry_buffer.clone();
         let target_texture = spec.target_texture.clone();
         let params_buffer = spec.params_buffer.clone();
         let shader_wgsl = spec.shader_wgsl.clone();
+        let blend_state = spec.blend_state;
+
+        let image_texture_names: Vec<ResourceName> = spec
+            .image_textures
+            .iter()
+            .filter_map(|id| ids.get(id).cloned())
+            .collect();
+
+        let nearest_sampler = nearest_sampler.clone();
+
         let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
             label: Some("node-forge-pass"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl)),
         };
         shader_space.render_pass(spec.name.clone(), move |builder| {
-            builder
+            let mut b = builder
                 .shader(shader_desc)
                 .bind_uniform_buffer(0, 0, params_buffer, ShaderStages::VERTEX_FRAGMENT)
                 .bind_attribute_buffer(
@@ -798,8 +1205,18 @@ pub fn build_shader_space_from_scene(
                     wgpu::VertexStepMode::Vertex,
                     vertex_attr_array![0 => Float32x3].to_vec(),
                 )
-                .bind_color_attachment(target_texture)
-                .blending(BlendState::REPLACE)
+                ;
+
+            for (i, tex_name) in image_texture_names.iter().enumerate() {
+                let tex_binding = (i as u32) * 2;
+                let samp_binding = tex_binding + 1;
+                b = b
+                    .bind_texture(1, tex_binding, tex_name.clone(), ShaderStages::FRAGMENT)
+                    .bind_sampler(1, samp_binding, nearest_sampler.clone(), ShaderStages::FRAGMENT);
+            }
+
+            b.bind_color_attachment(target_texture)
+                .blending(blend_state)
                 .load_op(wgpu::LoadOp::Clear(Color::TRANSPARENT))
         });
     }
@@ -819,6 +1236,53 @@ pub fn build_shader_space_from_scene(
     }
 
     Ok((shader_space, resolution, output_texture_name, pass_bindings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn render_pass_blend_state_from_explicit_params() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blendfunc".to_string(), json!("add"));
+        params.insert("src_factor".to_string(), json!("src-alpha"));
+        params.insert("dst_factor".to_string(), json!("one-minus-src-alpha"));
+        params.insert("src_alpha_factor".to_string(), json!("one"));
+        params.insert("dst_alpha_factor".to_string(), json!("one-minus-src-alpha"));
+
+        let got = parse_render_pass_blend_state(&params).unwrap();
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        assert_eq!(format!("{got:?}"), format!("{expected:?}"));
+    }
+
+    #[test]
+    fn render_pass_blend_state_from_preset_alpha() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("alpha"));
+        let got = parse_render_pass_blend_state(&params).unwrap();
+        let expected = default_blend_state_for_preset("alpha").unwrap();
+        assert_eq!(format!("{got:?}"), format!("{expected:?}"));
+    }
+
+    #[test]
+    fn render_pass_blend_state_defaults_to_replace() {
+        let params: HashMap<String, serde_json::Value> = HashMap::new();
+        let got = parse_render_pass_blend_state(&params).unwrap();
+        assert_eq!(format!("{got:?}"), format!("{:?}", BlendState::REPLACE));
+    }
 }
 
 pub fn build_error_shader_space(

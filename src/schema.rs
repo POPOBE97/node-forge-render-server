@@ -268,15 +268,43 @@ fn validate_connection(
         return;
     };
 
-    let Some(to_ty) = to_scheme.inputs.get(&c.to.port_id) else {
-        errors.push(format!(
-            "connection '{}' uses unknown to port '{}.{}' (type {})",
-            c.id, c.to.node_id, c.to.port_id, to_node.node_type
-        ));
-        return;
+    // Forward-compatibility shims for newer Node Forge DSL exports.
+    // - CompositeOutput can have editor-generated dynamic_* input ports.
+    // - RenderPass.material is treated as an expression input by the WGSL generator, so it can
+    //   accept colors/scalars/vectors directly (not only nodes outputting `material`).
+    let mut to_ty_override: Option<PortTypeSpec> = None;
+    if to_scheme.inputs.get(&c.to.port_id).is_none() {
+        if to_node.node_type == "CompositeOutput" && c.to.port_id.starts_with("dynamic_") {
+            to_ty_override = Some(PortTypeSpec::One("pass".to_string()));
+        }
+    }
+    if to_node.node_type == "RenderPass" && c.to.port_id == "material" {
+        to_ty_override = Some(PortTypeSpec::Many(vec![
+            "material".to_string(),
+            "color".to_string(),
+            "float".to_string(),
+            "vector2".to_string(),
+            "vector3".to_string(),
+            "int".to_string(),
+            "bool".to_string(),
+            "any".to_string(),
+        ]));
+    }
+
+    let to_ty_ref: &PortTypeSpec = if let Some(ref override_ty) = to_ty_override {
+        override_ty
+    } else {
+        let Some(to_ty) = to_scheme.inputs.get(&c.to.port_id) else {
+            errors.push(format!(
+                "connection '{}' uses unknown to port '{}.{}' (type {})",
+                c.id, c.to.node_id, c.to.port_id, to_node.node_type
+            ));
+            return;
+        };
+        to_ty
     };
 
-    if !from_ty.overlaps(to_ty) {
+    if !from_ty.overlaps(to_ty_ref) {
         errors.push(format!(
             "connection '{}' type mismatch: '{}.{}' ({}) -> '{}.{}' ({})",
             c.id,
@@ -285,7 +313,7 @@ fn validate_connection(
             port_type_spec_to_string(from_ty),
             c.to.node_id,
             c.to.port_id,
-            port_type_spec_to_string(to_ty)
+            port_type_spec_to_string(to_ty_ref)
         ));
     }
 }

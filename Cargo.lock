@@ -2324,6 +2324,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
+ "image",
  "naga 0.20.0",
  "rust-wgpu-fiber",
  "serde",

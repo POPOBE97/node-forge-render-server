@@ -94,6 +94,10 @@ pub fn parse_f32(params: &HashMap<String, serde_json::Value>, key: &str) -> Opti
     }
 }
 
+pub fn parse_str<'a>(params: &'a HashMap<String, serde_json::Value>, key: &str) -> Option<&'a str> {
+    params.get(key).and_then(|v| v.as_str())
+}
+
 pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Result<TextureFormat> {
     let fmt = params
         .get("format")
