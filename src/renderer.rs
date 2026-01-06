@@ -749,6 +749,7 @@ struct RenderPassSpec {
     shader_wgsl: String,
     image_textures: Vec<String>,
     blend_state: BlendState,
+    color_load_op: wgpu::LoadOp<Color>,
 }
 
 fn normalize_blend_token(s: &str) -> String {
@@ -1054,8 +1055,24 @@ pub fn build_shader_space_from_scene(
             shader_wgsl,
             image_textures,
             blend_state,
+            // Will be adjusted after we know the full pass list.
+            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
         });
         composite_passes.push(pass_name);
+    }
+
+    // Clear each render texture only on its first write per frame.
+    // If multiple RenderPass nodes target the same RenderTexture, subsequent passes should Load so
+    // alpha blending can accumulate.
+    {
+        let mut seen_targets: HashSet<ResourceName> = HashSet::new();
+        for spec in &mut render_pass_specs {
+            if seen_targets.insert(spec.target_texture.clone()) {
+                spec.color_load_op = wgpu::LoadOp::Clear(Color::TRANSPARENT);
+            } else {
+                spec.color_load_op = wgpu::LoadOp::Load;
+            }
+        }
     }
 
     let mut shader_space = ShaderSpace::new(device, queue);
@@ -1182,6 +1199,7 @@ pub fn build_shader_space_from_scene(
         let params_buffer = spec.params_buffer.clone();
         let shader_wgsl = spec.shader_wgsl.clone();
         let blend_state = spec.blend_state;
+        let color_load_op = spec.color_load_op;
 
         let image_texture_names: Vec<ResourceName> = spec
             .image_textures
@@ -1217,7 +1235,7 @@ pub fn build_shader_space_from_scene(
 
             b.bind_color_attachment(target_texture)
                 .blending(blend_state)
-                .load_op(wgpu::LoadOp::Clear(Color::TRANSPARENT))
+                .load_op(color_load_op)
         });
     }
 
