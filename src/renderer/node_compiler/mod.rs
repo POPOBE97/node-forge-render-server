@@ -10,81 +10,91 @@ pub mod vector_nodes;
 pub mod color_nodes;
 
 use std::collections::HashMap;
-use anyhow::Result;
+use anyhow::{bail, Result};
 
-use crate::dsl::{Node, SceneDSL};
+use crate::dsl::{find_node, Node, SceneDSL};
 use super::types::{TypedExpr, MaterialCompileContext};
 
-/// Trait for compiling individual node types to WGSL expressions.
-pub trait NodeCompiler {
-    /// Compile a node to a typed WGSL expression.
-    ///
-    /// # Arguments
-    /// * `scene` - The complete scene containing all nodes and connections
-    /// * `nodes_by_id` - Map from node ID to node for fast lookup
-    /// * `node` - The node to compile
-    /// * `out_port` - Optional output port name (defaults to "value")
-    /// * `ctx` - Compilation context for tracking resources
-    /// * `cache` - Expression cache to avoid recompilation
-    /// * `compile_fn` - Recursive compilation function for compiling connected nodes
-    ///
-    /// # Returns
-    /// A `TypedExpr` containing the WGSL expression and type information
-    fn compile(
-        &self,
-        scene: &SceneDSL,
-        nodes_by_id: &HashMap<String, Node>,
-        node: &Node,
-        out_port: Option<&str>,
-        ctx: &mut MaterialCompileContext,
-        cache: &mut HashMap<(String, String), TypedExpr>,
-        compile_fn: &dyn Fn(
-            &SceneDSL,
-            &HashMap<String, Node>,
-            &str,
-            Option<&str>,
-            &mut MaterialCompileContext,
-            &mut HashMap<(String, String), TypedExpr>,
-        ) -> Result<TypedExpr>,
-    ) -> Result<TypedExpr>;
-}
-
-/// Registry of node compilers by node type.
-pub struct NodeCompilerRegistry {
-    compilers: HashMap<String, Box<dyn NodeCompiler + Send + Sync>>,
-}
-
-impl NodeCompilerRegistry {
-    /// Create a new empty registry.
-    pub fn new() -> Self {
-        Self {
-            compilers: HashMap::new(),
-        }
+/// Main dispatch function for compiling material expressions.
+/// 
+/// This is the modular replacement for the monolithic `compile_material_expr` function.
+/// It dispatches to specific node compiler modules based on node type.
+pub fn compile_material_expr(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+) -> Result<TypedExpr> {
+    // Check cache first
+    let key = (
+        node_id.to_string(),
+        out_port.unwrap_or("value").to_string(),
+    );
+    if let Some(v) = cache.get(&key) {
+        return Ok(v.clone());
     }
 
-    /// Register a compiler for a node type.
-    pub fn register(&mut self, node_type: impl Into<String>, compiler: Box<dyn NodeCompiler + Send + Sync>) {
-        self.compilers.insert(node_type.into(), compiler);
-    }
-
-    /// Get a compiler for a node type.
-    pub fn get(&self, node_type: &str) -> Option<&(dyn NodeCompiler + Send + Sync)> {
-        self.compilers.get(node_type).map(|b| b.as_ref())
-    }
-
-    /// Create a registry with all default node compilers registered.
-    pub fn with_defaults() -> Self {
-        let mut registry = Self::new();
+    let node = find_node(nodes_by_id, node_id)?;
+    
+    // Create a recursive compile function for child nodes to use
+    let compile_fn = |id: &str, port: Option<&str>, ctx: &mut MaterialCompileContext, cache: &mut HashMap<(String, String), TypedExpr>| {
+        compile_material_expr(scene, nodes_by_id, id, port, ctx, cache)
+    };
+    
+    // Dispatch to specific node compiler based on node type
+    let result = match node.node_type.as_str() {
+        // Input nodes
+        "ColorInput" => input_nodes::compile_color_input(node, out_port)?,
+        "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port)?,
+        "Vector2Input" => input_nodes::compile_vector2_input(node, out_port)?,
+        "Vector3Input" => input_nodes::compile_vector3_input(node, out_port)?,
         
-        // Register all node compilers here
-        // This will be populated as we create the individual compiler modules
+        // Attribute node
+        "Attribute" => attribute::compile_attribute(node, out_port)?,
         
-        registry
-    }
-}
-
-impl Default for NodeCompilerRegistry {
-    fn default() -> Self {
-        Self::with_defaults()
-    }
+        // Math nodes
+        "MathAdd" => math_nodes::compile_math_add(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "MathMultiply" => math_nodes::compile_math_multiply(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "MathClamp" => math_nodes::compile_math_clamp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "MathPower" => math_nodes::compile_math_power(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        
+        // Texture nodes
+        "ImageTexture" => texture_nodes::compile_image_texture(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        
+        // Trigonometry nodes
+        "Sin" => trigonometry_nodes::compile_sin(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Cos" => trigonometry_nodes::compile_cos(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Time" => trigonometry_nodes::compile_time(scene, nodes_by_id, node, out_port, ctx, cache)?,
+        
+        // Vector nodes
+        "VectorMath" => vector_nodes::compile_vector_math(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "DotProduct" => vector_nodes::compile_dot_product(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "CrossProduct" => vector_nodes::compile_cross_product(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Normalize" => vector_nodes::compile_normalize(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        
+        // Color nodes
+        "ColorMix" => color_nodes::compile_color_mix(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "ColorRamp" => color_nodes::compile_color_ramp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "HSVAdjust" => color_nodes::compile_hsv_adjust(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        
+        // Legacy nodes (for backward compatibility)
+        "Float" | "Scalar" | "Constant" => legacy_nodes::compile_float_scalar_constant(scene, nodes_by_id, node, out_port, ctx, cache)?,
+        "Vec2" => legacy_nodes::compile_vec2(scene, nodes_by_id, node, out_port, ctx, cache)?,
+        "Vec3" => legacy_nodes::compile_vec3(scene, nodes_by_id, node, out_port, ctx, cache)?,
+        "Vec4" | "Color" => legacy_nodes::compile_vec4_color(scene, nodes_by_id, node, out_port, ctx, cache)?,
+        "Add" => legacy_nodes::compile_add(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Mul" | "Multiply" => legacy_nodes::compile_mul(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Mix" => legacy_nodes::compile_mix(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Clamp" => legacy_nodes::compile_clamp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "Smoothstep" => legacy_nodes::compile_smoothstep(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        
+        // Unsupported node types
+        other => bail!("unsupported material node type: {other}"),
+    };
+    
+    // Cache the result
+    cache.insert(key, result.clone());
+    Ok(result)
 }

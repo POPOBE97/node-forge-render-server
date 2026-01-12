@@ -18,6 +18,7 @@ pub mod validation;
 // Re-export key types and functions for backward compatibility
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};
+pub use node_compiler::compile_material_expr;
 
 // Note: The bulk of the renderer logic is still in src/renderer.rs
 // This module structure is being incrementally built to organize the code better.
