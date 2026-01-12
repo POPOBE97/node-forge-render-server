@@ -3,6 +3,9 @@
 pub mod input_nodes;
 pub mod math_nodes;
 pub mod attribute;
+pub mod texture_nodes;
+pub mod trigonometry_nodes;
+pub mod legacy_nodes;
 
 use std::collections::HashMap;
 use anyhow::Result;
