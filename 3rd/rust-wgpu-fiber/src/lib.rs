@@ -1,5 +1,6 @@
-// Re-export eframe for convenience
+// Re-export eframe and wgpu for convenience
 pub use eframe;
+pub use wgpu;
 
 // Core types
 pub mod pool;

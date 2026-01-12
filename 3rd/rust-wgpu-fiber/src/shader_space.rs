@@ -186,7 +186,15 @@ impl ShaderSpace {
         self.composition = Some(Box::new(composer_fn));
     }
 
+    /// Prepare all declared resources and render passes.
+    /// This should be called once after declaring all resources.
+    /// Calling it multiple times will recreate all resources.
     pub fn prepare(&mut self) {
+        // Clear existing resources if this is called again
+        self.buffers.clear();
+        self.textures.clear();
+        self.samplers.clear();
+
         // Create buffers
         for spec in &self.buffer_specs {
             let (name, buffer) = match spec {
