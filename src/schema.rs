@@ -270,13 +270,19 @@ fn validate_connection(
 
     // Forward-compatibility shims for newer Node Forge DSL exports.
     // - CompositeOutput can have editor-generated dynamic_* input ports.
+    // - CompositeOutput.image (and dynamic layers) may be wired from a `color`-typed node in
+    //   some editor exports; the renderer can wrap this into an implicit full-screen pass.
     // - RenderPass.material is treated as an expression input by the WGSL generator, so it can
     //   accept colors/scalars/vectors directly (not only nodes outputting `material`).
     let mut to_ty_override: Option<PortTypeSpec> = None;
     if to_scheme.inputs.get(&c.to.port_id).is_none() {
         if to_node.node_type == "CompositeOutput" && c.to.port_id.starts_with("dynamic_") {
-            to_ty_override = Some(PortTypeSpec::One("pass".to_string()));
+            to_ty_override = Some(PortTypeSpec::Many(vec!["pass".to_string(), "color".to_string()]));
         }
+    }
+    if to_node.node_type == "CompositeOutput" && c.to.port_id == "image" {
+        // Allow wiring a color-producing node directly into CompositeOutput.image.
+        to_ty_override = Some(PortTypeSpec::Many(vec!["pass".to_string(), "color".to_string()]));
     }
     if to_node.node_type == "RenderPass" && c.to.port_id == "material" {
         to_ty_override = Some(PortTypeSpec::Many(vec![
