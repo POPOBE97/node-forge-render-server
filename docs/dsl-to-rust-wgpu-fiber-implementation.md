@@ -34,9 +34,9 @@
   - `Rect2DGeometry`
   - `RenderTexture`
   - `RenderPass`
-  - `CompositeOutput`
+  - `Composite`
   - `Attribute`（示例里存在，但当前实现不参与渲染逻辑）
-- Connections：用于把 `RenderPass.geometry/target` 以及 `CompositeOutput.image` 串起来
+- Connections：用于把 `RenderPass.geometry/target` 以及 `Composite.image` 串起来
 
 ### 2.1 数据结构
 
@@ -78,10 +78,10 @@
 
 - 输出节点选择：
   1) `outputs.composite`（若存在）
-  2) 否则扫描 `nodes` 里第一个 `CompositeOutput`
+  2) 否则扫描 `nodes` 里第一个 `Composite`
 
 - 在示例中：
-  - `CompositeOutput.image` 的入边来自某个 `RenderPass.pass`
+  - `Composite.image` 的入边来自某个 `RenderPass.pass`
 
 - `upstream_reachable(scene, outputNodeId)`：
   - 根据 `to.nodeId -> from.nodeId` 的反向邻接表深搜/栈遍历
@@ -159,7 +159,7 @@ cargo run
 
 ## 6. 当前限制（故意保持最小）
 
-- 只支持示例里的最小节点集（Rect2DGeometry / RenderTexture / RenderPass / CompositeOutput）
+- 只支持示例里的最小节点集（Rect2DGeometry / RenderTexture / RenderPass / Composite）
 - `Attribute -> material` 目前只支持“UV debug”这一个最小语义
 - 未实现端口类型兼容检查、端口存在性检查（只做了“必须存在关键入边”的硬性校验）
 - 使用 `Box::leak` 处理 name 的 'static 生命周期（适用于 demo，不适合频繁 hot-reload）

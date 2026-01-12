@@ -107,11 +107,11 @@ interface SceneDSL {
 ### `outputs` 字段
 
 - 该字段是可选的。
-- 当前生成逻辑会在图中存在 `MaterialOutput` / `CompositeOutput` 时填充（见 [packages/dsl/src/validator.ts](packages/dsl/src/validator.ts) 的 `generateDSL`）。
+- 当前生成逻辑会在图中存在 `MaterialOutput` / `Composite` 时填充（见 [packages/dsl/src/validator.ts](packages/dsl/src/validator.ts) 的 `generateDSL`）。
 - 当前生成器会返回 `outputs`（可能为空对象 `{}`）；但渲染端依然需要兼容旧数据里 `outputs` 缺失的情况。
 - 渲染端可以：
   - **优先**使用 `outputs` 指定的 nodeId 作为“最终输出”，或
-  - 自己扫描 `nodes` 里 type 为 `MaterialOutput` / `CompositeOutput` 的节点作为输出节点。
+  - 自己扫描 `nodes` 里 type 为 `MaterialOutput` / `Composite` 的节点作为输出节点。
 
 ---
 
@@ -358,7 +358,7 @@ for (const nodeId of order) {
 - `Rect2DGeometry` 产出 geometry
 - `RenderTexture` 作为 render target
 - `RenderPass` 把 geometry 渲到 target
-- `CompositeOutput` 作为最终输出（`outputs.composite` 指向它）
+- `Composite` 作为最终输出（`outputs.composite` 指向它）
 
 ```json
 {
@@ -422,7 +422,7 @@ for (const nodeId of order) {
     },
     {
       "id": "node_6",
-      "type": "CompositeOutput",
+      "type": "Composite",
       "position": {
         "x": 1340,
         "y": 160
@@ -497,7 +497,7 @@ for (const nodeId of order) {
 说明：
 
 - 像 `Rect2DGeometry` 这类节点的 `params` 可能只覆盖部分字段（例如这里只有 `width`），渲染端应按第 5 节规则与 `defaultParams` 合并得到最终参数。
-- 该例里 `outputs.composite` 明确指定了最终输出节点；如果缺失，你可以回退到扫描 `CompositeOutput` / `MaterialOutput`。
+- 该例里 `outputs.composite` 明确指定了最终输出节点；如果缺失，你可以回退到扫描 `Composite` / `MaterialOutput`。
 
 ---
 
