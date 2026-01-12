@@ -24,10 +24,18 @@ var src_samp: sampler;
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let sample_xy = id * 2.0 + 0.5;
-let uv = sample_xy / original;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 2.0 - vec2f(0.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 2; y = y + 1) {
+    for (var x: i32 = 0; x < 2; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+    }
+}
+
+return sum * 0.25;
 
 }

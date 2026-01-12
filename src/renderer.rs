@@ -131,6 +131,7 @@ fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
     NearestClamp,
+    NearestMirror,
     LinearMirror,
 }
 
@@ -1136,46 +1137,65 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 for step in &downsample_steps {
                     let body = match *step {
                         1 => {
-                            "return textureSample(src_tex, src_samp, vec2f(in.uv.x, 1.0 - in.uv.y));"
-                                .to_string()
+                            r#"
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let uv = dst_xy / src_resolution;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                            .to_string()
                         }
                         2 => {
                             r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let sample_xy = id * 2.0 + 0.5;
-let uv = sample_xy / original;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 2.0 - vec2f(0.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 2; y = y + 1) {
+    for (var x: i32 = 0; x < 2; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+    }
+}
+
+return sum * 0.25;
 "#
                             .to_string()
                         }
                         4 => {
                             r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let base = id * 4.0 + 0.5;
-let c = (
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 0.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 2.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 0.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 2.0)) / original, 0.0)
-) * 0.25;
-return c;
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 4.0 - vec2f(1.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 4; y = y + 1) {
+    for (var x: i32 = 0; x < 4; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+    }
+}
+
+return sum * (1.0 / 16.0);
 "#
                             .to_string()
                         }
                         8 => {
                             r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let base = id * 8.0 + 0.5;
-var c = vec4f(0.0);
-for (var oy: f32 = 0.0; oy < 8.0; oy = oy + 2.0) {
-    for (var ox: f32 = 0.0; ox < 8.0; ox = ox + 2.0) {
-        c = c + textureSampleLevel(src_tex, src_samp, (base + vec2f(ox, oy)) / original, 0.0);
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 8.0 - vec2f(3.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 8; y = y + 1) {
+    for (var x: i32 = 0; x < 8; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
     }
 }
-return c * 0.0625;
+
+return sum * (1.0 / 64.0);
 "#
                             .to_string()
                         }
@@ -1196,15 +1216,15 @@ return c * 0.0625;
                     format!(
                         r#"
 let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
+let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
 let o = {offset_wgsl};
 var color = vec4f(0.0);
 for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let coord_pos = abs(id + vec2f(o[i], 0.0));
-    let coord_neg = abs(id - vec2f(o[i], 0.0));
-    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+    let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
+    let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
+    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
 }}
 return color;
 "#
@@ -1217,15 +1237,15 @@ return color;
                     format!(
                         r#"
 let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
+let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
 let o = {offset_wgsl};
 var color = vec4f(0.0);
 for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let coord_pos = abs(id + vec2f(0.0, o[i]));
-    let coord_neg = abs(id - vec2f(0.0, o[i]));
-    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+    let uv_pos = (xy + vec2f(0.0, o[i])) / original;
+    let uv_neg = (xy - vec2f(0.0, o[i])) / original;
+    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
 }}
 return color;
 "#
@@ -1233,12 +1253,11 @@ return color;
                 };
 
                 let upsample_body = {
-                    let k = if downsample_factor == 16 { "1.5" } else { "1.0" };
                     format!(
                         r#"
-let src_size = vec2f(textureDimensions(src_tex));
-let offset = vec2f({k} / src_size.x, {k} / src_size.y);
-let uv = vec2f(in.uv.x, 1.0 - in.uv.y) + offset;
+let dst_xy = vec2f(in.position.xy);
+let dst_resolution = params.target_size;
+let uv = dst_xy / dst_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 "#
                     )
@@ -1667,46 +1686,65 @@ pub fn build_shader_space_from_scene(
                     let bundle = {
                         let body = match *step {
                             1 => {
-                                "return textureSample(src_tex, src_samp, vec2f(in.uv.x, 1.0 - in.uv.y));"
-                                    .to_string()
+                                r#"
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let uv = dst_xy / src_resolution;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                                .to_string()
                             }
                             2 => {
                                 r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let sample_xy = id * 2.0 + 0.5;
-let uv = sample_xy / original;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 2.0 - vec2f(0.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 2; y = y + 1) {
+    for (var x: i32 = 0; x < 2; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+    }
+}
+
+return sum * 0.25;
 "#
                                 .to_string()
                             }
                             4 => {
                                 r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let base = id * 4.0 + 0.5;
-let c = (
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 0.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 2.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 0.0)) / original, 0.0) +
-    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 2.0)) / original, 0.0)
-) * 0.25;
-return c;
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 4.0 - vec2f(1.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 4; y = y + 1) {
+    for (var x: i32 = 0; x < 4; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+    }
+}
+
+return sum * (1.0 / 16.0);
 "#
                                 .to_string()
                             }
                             8 => {
                                 r#"
-let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
-let base = id * 8.0 + 0.5;
-var c = vec4f(0.0);
-for (var oy: f32 = 0.0; oy < 8.0; oy = oy + 2.0) {
-    for (var ox: f32 = 0.0; ox < 8.0; ox = ox + 2.0) {
-        c = c + textureSampleLevel(src_tex, src_samp, (base + vec2f(ox, oy)) / original, 0.0);
+let src_resolution = vec2f(textureDimensions(src_tex));
+let dst_xy = vec2f(in.position.xy);
+let base = dst_xy * 8.0 - vec2f(3.5);
+
+var sum = vec4f(0.0);
+for (var y: i32 = 0; y < 8; y = y + 1) {
+    for (var x: i32 = 0; x < 8; x = x + 1) {
+        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
     }
 }
-return c * 0.0625;
+
+return sum * (1.0 / 64.0);
 "#
                                 .to_string()
                             }
@@ -1745,7 +1783,7 @@ return c * 0.0625;
                             texture: src_tex,
                             image_node_id: src_img_node,
                         }],
-                        sampler_kind: SamplerKind::LinearMirror,
+                        sampler_kind: SamplerKind::NearestMirror,
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
@@ -1763,15 +1801,15 @@ return c * 0.0625;
                     let body = format!(
                         r#"
 let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
+let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
 let o = {offset_wgsl};
 var color = vec4f(0.0);
 for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let coord_pos = abs(id + vec2f(o[i], 0.0));
-    let coord_neg = abs(id - vec2f(o[i], 0.0));
-    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+    let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
+    let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
+    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
 }}
 return color;
 "#
@@ -1811,15 +1849,15 @@ return color;
                     let body = format!(
                         r#"
 let original = vec2f(textureDimensions(src_tex));
-let id = vec2f(in.position.xy);
+let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
 let o = {offset_wgsl};
 var color = vec4f(0.0);
 for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let coord_pos = abs(id + vec2f(0.0, o[i]));
-    let coord_neg = abs(id - vec2f(0.0, o[i]));
-    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+    let uv_pos = (xy + vec2f(0.0, o[i])) / original;
+    let uv_neg = (xy - vec2f(0.0, o[i])) / original;
+    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
 }}
 return color;
 "#
@@ -1855,12 +1893,11 @@ return color;
                 // 4) Upsample bilinear back to target: v_tex -> output target
                 let params_u: ResourceName = format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
                 let bundle_u = {
-                    let k = if downsample_factor == 16 { "1.5" } else { "1.0" };
                     let body = format!(
                         r#"
-let src_size = vec2f(textureDimensions(src_tex));
-let offset = vec2f({k} / src_size.x, {k} / src_size.y);
-let uv = vec2f(in.uv.x, 1.0 - in.uv.y) + offset;
+let dst_xy = vec2f(in.position.xy);
+let dst_resolution = params.target_size;
+let uv = dst_xy / dst_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 "#
                     );
@@ -2048,6 +2085,7 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 
     // 3) Samplers
     let nearest_sampler: ResourceName = "sampler_nearest".into();
+    let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
     shader_space.declare_samplers(vec![SamplerSpec {
         name: nearest_sampler.clone(),
@@ -2058,6 +2096,18 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        },
+    },
+    SamplerSpec {
+        name: nearest_mirror_sampler.clone(),
+        desc: wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
             ..Default::default()
         },
     },
@@ -2085,6 +2135,7 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
         let texture_names: Vec<ResourceName> = spec.texture_bindings.iter().map(|b| b.texture.clone()).collect();
         let sampler_name = match spec.sampler_kind {
             SamplerKind::NearestClamp => nearest_sampler.clone(),
+            SamplerKind::NearestMirror => nearest_mirror_sampler.clone(),
             SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
         };
 

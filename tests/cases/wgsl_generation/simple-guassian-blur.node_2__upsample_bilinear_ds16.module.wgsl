@@ -41,9 +41,9 @@ fn vs_main(@location(0) position: vec3f) -> VSOut {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
-let src_size = vec2f(textureDimensions(src_tex));
-let offset = vec2f(1.5 / src_size.x, 1.5 / src_size.y);
-let uv = vec2f(in.uv.x, 1.0 - in.uv.y) + offset;
+let dst_xy = vec2f(in.position.xy);
+let dst_resolution = params.target_size;
+let uv = dst_xy / dst_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 
 }
