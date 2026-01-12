@@ -1,5 +1,7 @@
 //! Node compiler infrastructure and trait definition.
 
+pub mod input_nodes;
+
 use std::collections::HashMap;
 use anyhow::Result;
 
