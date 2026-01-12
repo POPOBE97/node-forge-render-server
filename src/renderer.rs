@@ -37,42 +37,65 @@ struct PreparedScene {
 }
 
 fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
-    // 1) Remove editor leftovers that are not even part of any edge.
-    let scene = crate::dsl::treeshake_unlinked_nodes(input);
+    // 1) Locate the RenderTarget-category node. Without it, the graph has no "main" entry.
+    let scheme = schema::load_default_scheme()?;
+    let render_targets: Vec<&Node> = input
+        .nodes
+        .iter()
+        .filter(|n| {
+            scheme
+                .nodes
+                .get(&n.node_type)
+                .and_then(|s| s.category.as_deref())
+                == Some("RenderTarget")
+        })
+        .collect();
 
-    // 2) Strict output contract (no compatibility fallbacks).
-    let output_node_id: String = scene
-        .outputs
-        .as_ref()
-        .and_then(|m| m.get("composite").cloned())
-        .ok_or_else(|| anyhow!("missing outputs.composite"))?;
-
-    // 3) Keep only the upstream subgraph that contributes to the output.
-    // This avoids validation/compile failures caused by unrelated leftover subgraphs.
-    let mut keep = upstream_reachable(&scene, &output_node_id);
-    for n in &scene.nodes {
-        if n.node_type == "Screen" {
-            keep.insert(n.id.clone());
-        }
+    if render_targets.is_empty() {
+        bail!("missing RenderTarget category node (e.g. Screen/File)");
+    }
+    if render_targets.len() != 1 {
+        let ids: Vec<String> = render_targets
+            .iter()
+            .map(|n| format!("{} ({})", n.id, n.node_type))
+            .collect();
+        bail!(
+            "expected exactly 1 RenderTarget node, got {}: {}",
+            render_targets.len(),
+            ids.join(", ")
+        );
     }
 
-    let nodes: Vec<Node> = scene
+    let render_target_id = render_targets[0].id.clone();
+
+    // 2) Keep only the upstream subgraph that contributes to the RenderTarget.
+    // This avoids validation/compile failures caused by unrelated leftover subgraphs.
+    let keep = upstream_reachable(input, &render_target_id);
+
+    let nodes: Vec<Node> = input
         .nodes
-        .into_iter()
+        .iter()
+        .cloned()
         .filter(|n| keep.contains(&n.id))
         .collect();
-    let connections = scene
+    let connections = input
         .connections
-        .into_iter()
+        .iter()
+        .cloned()
         .filter(|c| keep.contains(&c.from.node_id) && keep.contains(&c.to.node_id))
         .collect();
     let scene = SceneDSL {
-        version: scene.version,
-        metadata: scene.metadata,
+        version: input.version.clone(),
+        metadata: input.metadata.clone(),
         nodes,
         connections,
-        outputs: scene.outputs,
+        outputs: input.outputs.clone(),
     };
+
+    // 3) The RenderTarget must be driven by Composite.pass.
+    let output_node_id: String = incoming_connection(&scene, &render_target_id, "pass")
+        .map(|c| c.from.node_id.clone())
+        .ok_or_else(|| anyhow!("RenderTarget.pass has no incoming connection"))?;
 
     // 4) Validate only the kept subgraph.
     schema::validate_scene(&scene)?;
@@ -94,10 +117,18 @@ fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
     let composite_layers_in_draw_order =
         composite_layers_in_draw_order(&scene, &nodes_by_id, &output_node_id)?;
 
-    // New DSL contract: output target must be provided by CompositeOutput.target.
+    let output_node = find_node(&nodes_by_id, &output_node_id)?;
+    if output_node.node_type != "Composite" {
+        bail!(
+            "RenderTarget.pass must come from Composite, got {}",
+            output_node.node_type
+        );
+    }
+
+    // New DSL contract: output target must be provided by Composite.target.
     let output_texture_node_id: String = incoming_connection(&scene, &output_node_id, "target")
         .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("CompositeOutput.target has no incoming connection"))?;
+        .ok_or_else(|| anyhow!("Composite.target has no incoming connection"))?;
 
     let output_texture_name: ResourceName = ids
         .get(&output_texture_node_id)
@@ -107,7 +138,7 @@ fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
     let output_texture_node = find_node(&nodes_by_id, &output_texture_node_id)?;
     if output_texture_node.node_type != "RenderTexture" {
         bail!(
-            "CompositeOutput.target must come from RenderTexture, got {}",
+            "Composite.target must come from RenderTexture, got {}",
             output_texture_node.node_type
         );
     }
@@ -1277,7 +1308,7 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
                 ));
             }
             other => bail!(
-                "CompositeOutput layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
             ),
         }
     }
@@ -1290,16 +1321,16 @@ fn composite_layers_in_draw_order(
     output_node_id: &str,
 ) -> Result<Vec<String>> {
     let output_node = find_node(nodes_by_id, output_node_id)?;
-    if output_node.node_type != "CompositeOutput" {
-        bail!("output node must be CompositeOutput, got {}", output_node.node_type);
+    if output_node.node_type != "Composite" {
+        bail!("output node must be Composite, got {}", output_node.node_type);
     }
 
     // 1) image is always the base layer.
     let base_pass_id: String = incoming_connection(scene, output_node_id, "image")
         .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("CompositeOutput.image has no incoming connection"))?;
+        .ok_or_else(|| anyhow!("Composite.image has no incoming connection"))?;
 
-    // 2) dynamic layers follow CompositeOutput.inputs array order (only dynamic_* ports).
+    // 2) dynamic layers follow Composite.inputs array order (only dynamic_* ports).
     // Note: the server does not infer ordering from port ids; it trusts the JSON ordering.
     let mut ordered: Vec<String> = Vec::new();
     ordered.push(base_pass_id);
@@ -1320,7 +1351,7 @@ fn composite_layers_in_draw_order(
         let node = find_node(nodes_by_id, layer_id)?;
         if node.node_type != "RenderPass" && node.node_type != "GuassianBlurPass" {
             bail!(
-                "CompositeOutput inputs must come from RenderPass or GuassianBlurPass nodes, got {} for {layer_id}",
+                "Composite inputs must come from RenderPass or GuassianBlurPass nodes, got {} for {layer_id}",
                 node.node_type
             );
         }
@@ -1510,12 +1541,12 @@ pub fn build_shader_space_from_scene(
         Arc::from(as_bytes_slice(&verts).to_vec())
     };
 
-    // Output target texture is always CompositeOutput.target.
+    // Output target texture is always Composite.target.
     let target_texture_id = output_texture_node_id.clone();
     let target_node = find_node(&nodes_by_id, &target_texture_id)?;
     if target_node.node_type != "RenderTexture" {
         bail!(
-            "CompositeOutput.target must come from RenderTexture, got {}",
+            "Composite.target must come from RenderTexture, got {}",
             target_node.node_type
         );
     }
@@ -1932,7 +1963,7 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
                 );
             }
             other => bail!(
-                "CompositeOutput layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
             ),
         }
     }
@@ -2273,7 +2304,7 @@ mod tests {
             nodes: vec![
                 crate::dsl::Node {
                     id: "out".to_string(),
-                    node_type: "CompositeOutput".to_string(),
+                    node_type: "Composite".to_string(),
                     params: HashMap::new(),
                     inputs: vec![
                         crate::dsl::NodePort {
