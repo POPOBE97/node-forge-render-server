@@ -20,5 +20,8 @@
 **/xcuserdata/
 **/*.xcuserstate
 
+# Generated test outputs
+tests/cases/gaussian_blur/
+
 # 3rd
 /3rd/
