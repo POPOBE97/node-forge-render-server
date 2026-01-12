@@ -12,7 +12,7 @@ serde_json = "1"
 crossbeam-channel = "0.5"
 tungstenite = "0.21"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# Used for WGSL validation at runtime and in tests
+naga = { version = "0.20", features = ["wgsl-in"] }
 
 [dev-dependencies]
-# Used by tests to parse WGSL for syntax validity (no GPU required).
-naga = { version = "0.20", features = ["wgsl-in"] }
