@@ -1,0 +1,12 @@
+[package]
+name = "rust-wgpu-fiber"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.33", features = ["wgpu"] }
+wgpu = { version = "27", features = ["wgsl"] }
+image = { version = "0.25", default-features = false }
+
+[features]
+default = []
