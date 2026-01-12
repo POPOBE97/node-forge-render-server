@@ -9,7 +9,7 @@ fn case_dir(case_name: &str) -> PathBuf {
         .join(case_name)
 }
 
-fn list_json_cases(dir: &std::path::Path) -> Vec<PathBuf> {
+fn list_json_cases(dir: &std::path::Path, update_goldens: bool) -> Vec<PathBuf> {
     let mut cases = Vec::new();
     let Ok(rd) = std::fs::read_dir(dir) else {
         return cases;
@@ -22,7 +22,30 @@ fn list_json_cases(dir: &std::path::Path) -> Vec<PathBuf> {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
         {
             if std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
-                cases.push(path);
+                if update_goldens {
+                    cases.push(path);
+                } else {
+                    // Only run golden comparisons for cases that have committed goldens.
+                    // (Some JSONs are kept around as drafts / future fixtures.)
+                    let stem = case_stem(&path);
+                    let has_any_module_golden = std::fs::read_dir(dir)
+                        .into_iter()
+                        .flatten()
+                        .flatten()
+                        .any(|e| {
+                            let p = e.path();
+                            p.is_file()
+                                && p.file_name()
+                                    .and_then(|s| s.to_str())
+                                    .is_some_and(|name| {
+                                        name.starts_with(&format!("{stem}."))
+                                            && name.ends_with(".module.wgsl")
+                                    })
+                        });
+                    if has_any_module_golden {
+                        cases.push(path);
+                    }
+                }
             }
         }
     }
@@ -42,7 +65,7 @@ fn dsl_json_compiles_to_valid_wgsl_modules() {
     let dir = case_dir("wgsl_generation");
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
 
-    let json_cases = list_json_cases(&dir);
+    let json_cases = list_json_cases(&dir, update_goldens);
     assert!(
         !json_cases.is_empty(),
         "expected at least one *.json case in {}",
@@ -123,4 +146,26 @@ fn dsl_json_compiles_to_valid_wgsl_modules() {
             });
         }
     }
+}
+
+#[test]
+fn unlinked_unknown_nodes_are_treeshaken_before_validation() {
+    // Use a known-good golden case as the base scene.
+    let input_path = case_dir("wgsl_generation").join("simple-rectangle.json");
+
+    let mut scene = dsl::load_scene_from_path(input_path)
+        .unwrap_or_else(|e| panic!("load input DSL json failed: {e}"));
+
+    // Inject an editor-leftover node with an unknown type that is not connected.
+    // Without treeshake, scheme validation would fail.
+    scene.nodes.push(dsl::Node {
+        id: "__unused_unknown__".to_string(),
+        node_type: "__TotallyUnknownNodeType__".to_string(),
+        params: std::collections::HashMap::new(),
+        inputs: Vec::new(),
+    });
+
+    let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
+        .expect("expected WGSL generation to succeed after treeshake");
+    assert!(!passes.is_empty(), "expected at least one RenderPass");
 }

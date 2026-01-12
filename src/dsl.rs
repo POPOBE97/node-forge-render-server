@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
@@ -11,6 +11,43 @@ pub struct SceneDSL {
     pub nodes: Vec<Node>,
     pub connections: Vec<Connection>,
     pub outputs: Option<HashMap<String, String>>,
+}
+
+/// Drops nodes that do not participate in any connection, to avoid later stages
+/// (scheme validation / compilation) tripping over editor leftovers.
+///
+/// Keep set includes:
+/// - Any node referenced by `connections` (as either `from` or `to`)
+/// - Any node referenced by `outputs` values
+/// - Any `Screen` node (used for window sizing even if unlinked)
+pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
+    let mut keep: HashSet<&str> = HashSet::new();
+
+    for c in &scene.connections {
+        keep.insert(c.from.node_id.as_str());
+        keep.insert(c.to.node_id.as_str());
+    }
+
+    if let Some(outputs) = scene.outputs.as_ref() {
+        for node_id in outputs.values() {
+            keep.insert(node_id.as_str());
+        }
+    }
+
+    let nodes: Vec<Node> = scene
+        .nodes
+        .iter()
+        .cloned()
+        .filter(|n| n.node_type == "Screen" || keep.contains(n.id.as_str()))
+        .collect();
+
+    SceneDSL {
+        version: scene.version.clone(),
+        metadata: scene.metadata.clone(),
+        nodes,
+        connections: scene.connections.clone(),
+        outputs: scene.outputs.clone(),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
