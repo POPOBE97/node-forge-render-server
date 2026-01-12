@@ -48,6 +48,8 @@ struct GeneratedNodeDef {
     pub inputs: Vec<GeneratedPort>,
     #[serde(default)]
     pub outputs: Vec<GeneratedPort>,
+    #[serde(rename = "defaultParams", default)]
+    pub default_params: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,6 +67,8 @@ pub struct NodeTypeScheme {
     pub inputs: HashMap<String, PortTypeSpec>,
     #[serde(default)]
     pub outputs: HashMap<String, PortTypeSpec>,
+    #[serde(default)]
+    pub default_params: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub params: HashMap<String, ParamScheme>,
 }
@@ -148,6 +152,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
                         category: n.category,
                         inputs,
                         outputs,
+                        default_params: n.default_params,
                         params: HashMap::new(),
                     },
                 );
@@ -276,10 +281,10 @@ fn validate_connection(
     let to_ty: Cow<'_, PortTypeSpec> = if let Some(t) = to_scheme.inputs.get(&c.to.port_id) {
         Cow::Borrowed(t)
     } else if to_node.node_type == "Composite" && c.to.port_id.starts_with("dynamic_") {
-        // Composite supports dynamic layer inputs (dynamic_*) that behave like `image`.
+        // Composite supports dynamic layer inputs (dynamic_*) that behave like its base pass input.
         // These ports are instance-defined so they won't appear in the static scheme.
-        match to_scheme.inputs.get("image") {
-            Some(image_ty) => Cow::Borrowed(image_ty),
+        match to_scheme.inputs.get("pass") {
+            Some(pass_ty) => Cow::Borrowed(pass_ty),
             None => Cow::Owned(PortTypeSpec::One("pass".to_string())),
         }
     } else {
@@ -327,8 +332,27 @@ fn implicit_port_coercion_allows(
                 "color",
                 "float",
                 "int",
+                "bool",
                 "vector2",
                 "vector3",
+                "vector4",
+            ],
+        );
+    }
+
+    // Pass inputs can be driven directly by primitive shader values.
+    // The renderer can synthesize a default fullscreen RenderPass in this case.
+    if port_type_spec_contains(to_ty, "pass") {
+        return port_type_spec_contains_any_of(
+            from_ty,
+            &[
+                "color",
+                "vector2",
+                "vector3",
+                "vector4",
+                "float",
+                "int",
+                "bool",
             ],
         );
     }

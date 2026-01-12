@@ -36,7 +36,7 @@
   - `RenderPass`
   - `Composite`
   - `Attribute`（示例里存在，但当前实现不参与渲染逻辑）
-- Connections：用于把 `RenderPass.geometry/target` 以及 `Composite.image` 串起来
+- Connections：用于把 `RenderPass.geometry/target` 以及 `Composite.pass` 串起来
 
 ### 2.1 数据结构
 
@@ -81,7 +81,7 @@
   2) 否则扫描 `nodes` 里第一个 `Composite`
 
 - 在示例中：
-  - `Composite.image` 的入边来自某个 `RenderPass.pass`
+  - `Composite.pass` 的入边来自某个 `RenderPass.pass`
 
 - `upstream_reachable(scene, outputNodeId)`：
   - 根据 `to.nodeId -> from.nodeId` 的反向邻接表深搜/栈遍历

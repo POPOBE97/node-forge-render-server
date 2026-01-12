@@ -18,12 +18,197 @@ use rust_wgpu_fiber::{
 
 use crate::{
     dsl::{
-        find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32, Node,
-        SceneDSL,
+        find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32,
+        Connection, Endpoint, Node, SceneDSL,
     },
     graph::{topo_sort, upstream_reachable},
     schema,
 };
+
+fn port_type_contains(t: &schema::PortTypeSpec, candidate: &str) -> bool {
+    match t {
+        schema::PortTypeSpec::One(s) => s == candidate,
+        schema::PortTypeSpec::Many(v) => v.iter().any(|s| s == candidate),
+    }
+}
+
+fn port_type_contains_any_of(t: &schema::PortTypeSpec, candidates: &[&str]) -> bool {
+    candidates.iter().any(|c| port_type_contains(t, c))
+}
+
+fn get_from_port_type(
+    scheme: &schema::NodeScheme,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    port_id: &str,
+) -> Option<schema::PortTypeSpec> {
+    let node = nodes_by_id.get(node_id)?;
+    let ty = scheme.nodes.get(&node.node_type)?.outputs.get(port_id)?;
+    Some(ty.clone())
+}
+
+fn get_to_port_type(
+    scheme: &schema::NodeScheme,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    port_id: &str,
+) -> Option<schema::PortTypeSpec> {
+    let node = nodes_by_id.get(node_id)?;
+    let node_scheme = scheme.nodes.get(&node.node_type)?;
+
+    if let Some(t) = node_scheme.inputs.get(port_id) {
+        return Some(t.clone());
+    }
+
+    // Composite supports dynamic layer inputs (dynamic_*) that behave like its base pass input.
+    if node.node_type == "Composite" && port_id.starts_with("dynamic_") {
+        if let Some(pass_ty) = node_scheme.inputs.get("pass") {
+            return Some(pass_ty.clone());
+        }
+        return Some(schema::PortTypeSpec::One("pass".to_string()));
+    }
+
+    None
+}
+
+/// If a `pass`-typed input is driven by a primitive shader value (color/vec*/float/int/bool),
+/// synthesize a default fullscreen RenderPass (and geometry) and rewire the connection.
+fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
+    let nodes_by_id: HashMap<String, Node> = scene
+        .nodes
+        .iter()
+        .cloned()
+        .map(|n| (n.id.clone(), n))
+        .collect();
+
+    // Best-effort: infer output target size from outputs.composite -> Composite.target -> RenderTexture.
+    let mut target_size: Option<[f32; 2]> = None;
+    if let Some(outputs) = scene.outputs.as_ref() {
+        if let Some(composite_id) = outputs.get("composite") {
+            if let Some(conn) = incoming_connection(scene, composite_id, "target") {
+                if let Some(tgt_node) = nodes_by_id.get(&conn.from.node_id) {
+                    if tgt_node.node_type == "RenderTexture" {
+                        let w = parse_f32(&tgt_node.params, "width")
+                            .or_else(|| parse_u32(&tgt_node.params, "width").map(|x| x as f32))
+                            .unwrap_or(1024.0)
+                            .max(1.0);
+                        let h = parse_f32(&tgt_node.params, "height")
+                            .or_else(|| parse_u32(&tgt_node.params, "height").map(|x| x as f32))
+                            .unwrap_or(1024.0)
+                            .max(1.0);
+                        target_size = Some([w, h]);
+                    }
+                }
+            }
+        }
+    }
+    let [tgt_w, tgt_h] = target_size.unwrap_or([1024.0, 1024.0]);
+
+    let primitive_candidates: [&str; 10] = [
+        "color",
+        "vector2",
+        "vector3",
+        "vector4",
+        "float",
+        "int",
+        "bool",
+        // Common aliases used by some editors/schemes.
+        "vec2",
+        "vec3",
+        "vec4",
+    ];
+
+    #[derive(Clone)]
+    struct WrapPlan {
+        conn_index: usize,
+        conn_id: String,
+        original_from: Endpoint,
+        pass_id: String,
+        geo_id: String,
+    }
+
+    // Plan first (no mutation of vectors while iterating).
+    let mut plans: Vec<WrapPlan> = Vec::new();
+    for (idx, c) in scene.connections.iter().enumerate() {
+        let Some(to_ty) = get_to_port_type(scheme, &nodes_by_id, &c.to.node_id, &c.to.port_id)
+        else {
+            continue;
+        };
+        if !port_type_contains(&to_ty, "pass") {
+            continue;
+        }
+
+        let Some(from_ty) =
+            get_from_port_type(scheme, &nodes_by_id, &c.from.node_id, &c.from.port_id)
+        else {
+            continue;
+        };
+
+        if port_type_contains(&from_ty, "pass") {
+            continue;
+        }
+        if !port_type_contains_any_of(&from_ty, &primitive_candidates) {
+            continue;
+        }
+
+        plans.push(WrapPlan {
+            conn_index: idx,
+            conn_id: c.id.clone(),
+            original_from: c.from.clone(),
+            pass_id: format!("__auto_fullscreen_pass__{}", c.id),
+            geo_id: format!("__auto_fullscreen_geo__{}", c.id),
+        });
+    }
+
+    // Apply plans.
+    let mut new_connections: Vec<Connection> = Vec::new();
+    for p in &plans {
+        let mut geo_params = HashMap::new();
+        geo_params.insert("width".to_string(), serde_json::json!(tgt_w));
+        geo_params.insert("height".to_string(), serde_json::json!(tgt_h));
+        geo_params.insert("x".to_string(), serde_json::json!(0.0));
+        geo_params.insert("y".to_string(), serde_json::json!(0.0));
+
+        scene.nodes.push(Node {
+            id: p.geo_id.clone(),
+            node_type: "Rect2DGeometry".to_string(),
+            params: geo_params,
+            inputs: Vec::new(),
+        });
+        scene.nodes.push(Node {
+            id: p.pass_id.clone(),
+            node_type: "RenderPass".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+        });
+
+        new_connections.push(Connection {
+            id: format!("__auto_edge_geo__{}", p.conn_id),
+            from: Endpoint {
+                node_id: p.geo_id.clone(),
+                port_id: "geometry".to_string(),
+            },
+            to: Endpoint {
+                node_id: p.pass_id.clone(),
+                port_id: "geometry".to_string(),
+            },
+        });
+        new_connections.push(Connection {
+            id: format!("__auto_edge_mat__{}", p.conn_id),
+            from: p.original_from.clone(),
+            to: Endpoint {
+                node_id: p.pass_id.clone(),
+                port_id: "material".to_string(),
+            },
+        });
+
+        if let Some(c) = scene.connections.get_mut(p.conn_index) {
+            c.from.node_id = p.pass_id.clone();
+            c.from.port_id = "pass".to_string();
+        }
+    }
+    scene.connections.extend(new_connections);
+}
 
 struct PreparedScene {
     scene: SceneDSL,
@@ -92,13 +277,17 @@ fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
         outputs: input.outputs.clone(),
     };
 
+    // Coerce primitive shader values into passes by synthesizing a fullscreen RenderPass.
+    let mut scene = scene;
+    auto_wrap_primitive_pass_inputs(&mut scene, &scheme);
+
     // 3) The RenderTarget must be driven by Composite.pass.
     let output_node_id: String = incoming_connection(&scene, &render_target_id, "pass")
         .map(|c| c.from.node_id.clone())
         .ok_or_else(|| anyhow!("RenderTarget.pass has no incoming connection"))?;
 
     // 4) Validate only the kept subgraph.
-    schema::validate_scene(&scene)?;
+    schema::validate_scene_against(&scene, &scheme)?;
 
     let nodes_by_id: HashMap<String, Node> = scene
         .nodes
@@ -674,18 +863,62 @@ fn to_vec4_color(x: TypedExpr) -> TypedExpr {
 }
 
 fn parse_const_f32(node: &Node) -> Option<f32> {
-    // A few common param keys.
-    parse_f32(&node.params, "value")
-        .or_else(|| parse_f32(&node.params, "x"))
-        .or_else(|| parse_f32(&node.params, "v"))
+    fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
+        v.as_f64()
+            .map(|x| x as f32)
+            .or_else(|| v.as_i64().map(|x| x as f32))
+            .or_else(|| v.as_u64().map(|x| x as f32))
+    }
+
+    fn parse_num(params: &HashMap<String, serde_json::Value>, key: &str) -> Option<f32> {
+        parse_json_number_f32(params.get(key)?)
+    }
+
+    parse_num(&node.params, "value")
+        .or_else(|| parse_num(&node.params, "x"))
+        .or_else(|| parse_num(&node.params, "v"))
 }
 
 fn parse_const_vec(node: &Node, keys: [&str; 4]) -> Option<[f32; 4]> {
-    let x = parse_f32(&node.params, keys[0])?;
-    let y = parse_f32(&node.params, keys[1]).unwrap_or(0.0);
-    let z = parse_f32(&node.params, keys[2]).unwrap_or(0.0);
-    let w = parse_f32(&node.params, keys[3]).unwrap_or(1.0);
+    fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
+        v.as_f64()
+            .map(|x| x as f32)
+            .or_else(|| v.as_i64().map(|x| x as f32))
+            .or_else(|| v.as_u64().map(|x| x as f32))
+    }
+
+    let x = parse_json_number_f32(node.params.get(keys[0])?)?;
+    let y = node
+        .params
+        .get(keys[1])
+        .and_then(parse_json_number_f32)
+        .unwrap_or(0.0);
+    let z = node
+        .params
+        .get(keys[2])
+        .and_then(parse_json_number_f32)
+        .unwrap_or(0.0);
+    let w = node
+        .params
+        .get(keys[3])
+        .and_then(parse_json_number_f32)
+        .unwrap_or(1.0);
     Some([x, y, z, w])
+}
+
+fn parse_vec4_value_array(node: &Node, key: &str) -> Option<[f32; 4]> {
+    let arr = node.params.get(key)?.as_array()?;
+    let get = |i: usize, default: f32| -> f32 {
+        arr.get(i)
+            .and_then(|v| {
+                v.as_f64()
+                    .map(|x| x as f32)
+                    .or_else(|| v.as_i64().map(|x| x as f32))
+                    .or_else(|| v.as_u64().map(|x| x as f32))
+            })
+            .unwrap_or(default)
+    };
+    Some([get(0, 0.0), get(1, 0.0), get(2, 0.0), get(3, 1.0)])
 }
 
 fn compile_material_expr(
@@ -706,6 +939,27 @@ fn compile_material_expr(
 
     let node = find_node(nodes_by_id, node_id)?;
     let result = match node.node_type.as_str() {
+        // DSL input nodes (generated scheme)
+        "ColorInput" => {
+            let v = parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0]);
+            typed(format!("vec4f({}, {}, {}, {})", v[0], v[1], v[2], v[3]), ValueType::Vec4)
+        }
+
+        "FloatInput" | "IntInput" => {
+            let v = parse_const_f32(node).unwrap_or(0.0);
+            typed(format!("{v}"), ValueType::F32)
+        }
+
+        "Vector2Input" => {
+            let v = parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+            typed(format!("vec2f({}, {})", v[0], v[1]), ValueType::Vec2)
+        }
+
+        "Vector3Input" => {
+            let v = parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+            typed(format!("vec3f({}, {}, {})", v[0], v[1], v[2]), ValueType::Vec3)
+        }
+
         "Attribute" => {
             let name = node
                 .params
@@ -1325,10 +1579,10 @@ fn composite_layers_in_draw_order(
         bail!("output node must be Composite, got {}", output_node.node_type);
     }
 
-    // 1) image is always the base layer.
-    let base_pass_id: String = incoming_connection(scene, output_node_id, "image")
+    // 1) base pass is always the base layer.
+    let base_pass_id: String = incoming_connection(scene, output_node_id, "pass")
         .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("Composite.image has no incoming connection"))?;
+        .ok_or_else(|| anyhow!("Composite.pass has no incoming connection"))?;
 
     // 2) dynamic layers follow Composite.inputs array order (only dynamic_* ports).
     // Note: the server does not infer ordering from port ids; it trusts the JSON ordering.
@@ -2293,7 +2547,7 @@ mod tests {
     }
 
     #[test]
-    fn composite_draw_order_is_image_then_dynamic_indices() {
+    fn composite_draw_order_is_pass_then_dynamic_indices() {
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
@@ -2347,7 +2601,7 @@ mod tests {
                     },
                     to: crate::dsl::Endpoint {
                         node_id: "out".to_string(),
-                        port_id: "image".to_string(),
+                        port_id: "pass".to_string(),
                     },
                 },
                 crate::dsl::Connection {

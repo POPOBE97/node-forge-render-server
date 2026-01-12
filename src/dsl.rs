@@ -4,6 +4,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use serde::{Deserialize, Serialize};
 
+use crate::schema;
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SceneDSL {
     pub version: String,
@@ -105,8 +107,31 @@ pub fn load_scene_from_path(path: impl AsRef<std::path::Path>) -> Result<SceneDS
     let path = path.as_ref();
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read DSL json at {}", path.display()))?;
-    let scene: SceneDSL = serde_json::from_str(&text).context("failed to parse DSL json")?;
+    let mut scene: SceneDSL = serde_json::from_str(&text).context("failed to parse DSL json")?;
+
+    // Normalize params with defaults from the bundled node scheme.
+    // This keeps older/hand-written DSL compatible when nodes omit parameters.
+    let scheme = schema::load_default_scheme()?;
+    apply_node_default_params(&mut scene, &scheme);
+
     Ok(scene)
+}
+
+fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
+    for node in &mut scene.nodes {
+        let Some(node_scheme) = scheme.nodes.get(&node.node_type) else {
+            continue;
+        };
+        if node_scheme.default_params.is_empty() {
+            continue;
+        }
+
+        let mut merged = node_scheme.default_params.clone();
+        for (k, v) in std::mem::take(&mut node.params) {
+            merged.insert(k, v);
+        }
+        node.params = merged;
+    }
 }
 
 pub fn find_node<'a>(nodes_by_id: &'a HashMap<String, Node>, node_id: &str) -> Result<&'a Node> {

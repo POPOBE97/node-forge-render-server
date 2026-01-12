@@ -169,3 +169,95 @@ fn unlinked_unknown_nodes_are_treeshaken_before_validation() {
         .expect("expected WGSL generation to succeed after treeshake");
     assert!(!passes.is_empty(), "expected at least one RenderPass");
 }
+
+#[test]
+fn primitive_values_can_drive_pass_inputs_via_auto_fullscreen_pass() {
+    use std::collections::HashMap;
+
+    // Build a minimal scene:
+    // ColorInput.color -> Composite.pass (type pass)
+    // RenderTexture.texture -> Composite.target
+    // Composite.pass -> Screen.pass (RenderTarget)
+    let scene = dsl::SceneDSL {
+        version: "1.0".to_string(),
+        metadata: dsl::Metadata {
+            name: "auto-pass".to_string(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![
+            dsl::Node {
+                id: "out".to_string(),
+                node_type: "Composite".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+            },
+            dsl::Node {
+                id: "c".to_string(),
+                node_type: "ColorInput".to_string(),
+                params: HashMap::from([("value".to_string(), serde_json::json!([0.2, 0.3, 0.4, 1.0]))]),
+                inputs: Vec::new(),
+            },
+            dsl::Node {
+                id: "tgt".to_string(),
+                node_type: "RenderTexture".to_string(),
+                params: HashMap::from([
+                    ("width".to_string(), serde_json::json!(64)),
+                    ("height".to_string(), serde_json::json!(32)),
+                    ("format".to_string(), serde_json::json!("rgba8unorm")),
+                ]),
+                inputs: Vec::new(),
+            },
+            dsl::Node {
+                id: "screen".to_string(),
+                node_type: "Screen".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+            },
+        ],
+        connections: vec![
+            dsl::Connection {
+                id: "edge_color".to_string(),
+                from: dsl::Endpoint {
+                    node_id: "c".to_string(),
+                    port_id: "color".to_string(),
+                },
+                to: dsl::Endpoint {
+                    node_id: "out".to_string(),
+                    port_id: "pass".to_string(),
+                },
+            },
+            dsl::Connection {
+                id: "edge_target".to_string(),
+                from: dsl::Endpoint {
+                    node_id: "tgt".to_string(),
+                    port_id: "texture".to_string(),
+                },
+                to: dsl::Endpoint {
+                    node_id: "out".to_string(),
+                    port_id: "target".to_string(),
+                },
+            },
+            dsl::Connection {
+                id: "edge_present".to_string(),
+                from: dsl::Endpoint {
+                    node_id: "out".to_string(),
+                    port_id: "pass".to_string(),
+                },
+                to: dsl::Endpoint {
+                    node_id: "screen".to_string(),
+                    port_id: "pass".to_string(),
+                },
+            },
+        ],
+        outputs: Some(HashMap::from([("composite".to_string(), "out".to_string())])),
+    };
+
+    let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
+        .expect("expected primitive->pass scene to compile via auto fullscreen pass");
+    assert!(!passes.is_empty(), "expected at least one RenderPass bundle");
+    assert!(
+        passes.iter().any(|(id, _)| id.starts_with("__auto_fullscreen_pass__")),
+        "expected at least one synthesized fullscreen pass id"
+    );
+}
