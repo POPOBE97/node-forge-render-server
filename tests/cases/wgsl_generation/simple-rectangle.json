@@ -2,13 +2,13 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-06T15:56:56.821Z",
-    "modified": "2026-01-06T15:56:56.821Z"
+    "created": "2026-01-12T15:52:50.949Z",
+    "modified": "2026-01-12T15:52:50.949Z"
   },
   "nodes": [
     {
       "id": "node_1",
-      "type": "CompositeOutput",
+      "type": "Composite",
       "position": {
         "x": 460,
         "y": 380

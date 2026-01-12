@@ -16,10 +16,10 @@ struct VSOut {
     @location(0) uv: vec2f,
 };
 @group(1) @binding(0)
-var img_tex_node_8: texture_2d<f32>;
+var img_tex_node_15: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_node_8: sampler;
+var img_samp_node_15: sampler;
 
 
 @vertex
@@ -41,5 +41,5 @@ fn vs_main(@location(0) position: vec3f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(img_tex_node_8, img_samp_node_8, vec2f((in.uv).x, 1.0 - (in.uv).y));
+    return textureSample(img_tex_node_15, img_samp_node_15, vec2f((in.uv).x, 1.0 - (in.uv).y));
 }

@@ -16,10 +16,10 @@ struct VSOut {
     @location(0) uv: vec2f,
 };
 @group(1) @binding(0)
-var img_tex_node_8: texture_2d<f32>;
+var img_tex_node_15: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_node_8: sampler;
+var img_samp_node_15: sampler;
 
 
 @vertex

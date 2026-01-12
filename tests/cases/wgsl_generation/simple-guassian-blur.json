@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-07T10:22:55.594Z",
-    "modified": "2026-01-07T10:22:55.594Z"
+    "created": "2026-01-12T15:52:33.618Z",
+    "modified": "2026-01-12T15:52:33.618Z"
   },
   "nodes": [
     {
@@ -29,13 +29,13 @@
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",
-        "radius": 200,
+        "radius": 60,
         "extend": false
       }
     },
     {
       "id": "node_4",
-      "type": "CompositeOutput",
+      "type": "Composite",
       "position": {
         "x": 60,
         "y": 60
@@ -91,7 +91,7 @@
       "id": "edge_3",
       "from": {
         "nodeId": "node_2",
-        "portId": "color"
+        "portId": "pass"
       },
       "to": {
         "nodeId": "node_4",
