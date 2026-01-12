@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-12T15:53:52.433Z",
+  "generatedAt": "2026-01-12T16:44:07.792Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -357,8 +357,8 @@
       "description": "Final composite output",
       "inputs": [
         {
-          "id": "image",
-          "name": "Image",
+          "id": "pass",
+          "name": "Pass",
           "type": "pass"
         },
         {

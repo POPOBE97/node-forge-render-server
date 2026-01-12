@@ -103,7 +103,7 @@
       },
       "to": {
         "nodeId": "node_1",
-        "portId": "image"
+        "portId": "pass"
       }
     },
     {
