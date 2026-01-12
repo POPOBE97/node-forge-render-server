@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::{anyhow, bail, Result};
 use serde::Deserialize;
@@ -43,6 +43,8 @@ struct GeneratedNodeDef {
     #[serde(rename = "type")]
     pub node_type: String,
     #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
     pub inputs: Vec<GeneratedPort>,
     #[serde(default)]
     pub outputs: Vec<GeneratedPort>,
@@ -57,6 +59,8 @@ struct GeneratedPort {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeTypeScheme {
+    #[serde(default)]
+    pub category: Option<String>,
     #[serde(default)]
     pub inputs: HashMap<String, PortTypeSpec>,
     #[serde(default)]
@@ -141,6 +145,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
                 nodes.insert(
                     n.node_type,
                     NodeTypeScheme {
+                        category: n.category,
                         inputs,
                         outputs,
                         params: HashMap::new(),
@@ -268,49 +273,26 @@ fn validate_connection(
         return;
     };
 
-    // Forward-compatibility shims for newer Node Forge DSL exports.
-    // - CompositeOutput can have editor-generated dynamic_* input ports.
-    // - CompositeOutput.image (and dynamic layers) may be wired from a `color`-typed node in
-    //   some editor exports; the renderer can wrap this into an implicit full-screen pass.
-    // - RenderPass.material is treated as an expression input by the WGSL generator, so it can
-    //   accept colors/scalars/vectors directly (not only nodes outputting `material`).
-    let mut to_ty_override: Option<PortTypeSpec> = None;
-    if to_scheme.inputs.get(&c.to.port_id).is_none() {
-        if to_node.node_type == "CompositeOutput" && c.to.port_id.starts_with("dynamic_") {
-            to_ty_override = Some(PortTypeSpec::Many(vec!["pass".to_string(), "color".to_string()]));
+    let to_ty: Cow<'_, PortTypeSpec> = if let Some(t) = to_scheme.inputs.get(&c.to.port_id) {
+        Cow::Borrowed(t)
+    } else if to_node.node_type == "Composite" && c.to.port_id.starts_with("dynamic_") {
+        // Composite supports dynamic layer inputs (dynamic_*) that behave like `image`.
+        // These ports are instance-defined so they won't appear in the static scheme.
+        match to_scheme.inputs.get("image") {
+            Some(image_ty) => Cow::Borrowed(image_ty),
+            None => Cow::Owned(PortTypeSpec::One("pass".to_string())),
         }
-    }
-    if to_node.node_type == "CompositeOutput" && c.to.port_id == "image" {
-        // Allow wiring a color-producing node directly into CompositeOutput.image.
-        to_ty_override = Some(PortTypeSpec::Many(vec!["pass".to_string(), "color".to_string()]));
-    }
-    if to_node.node_type == "RenderPass" && c.to.port_id == "material" {
-        to_ty_override = Some(PortTypeSpec::Many(vec![
-            "material".to_string(),
-            "color".to_string(),
-            "float".to_string(),
-            "vector2".to_string(),
-            "vector3".to_string(),
-            "int".to_string(),
-            "bool".to_string(),
-            "any".to_string(),
-        ]));
-    }
-
-    let to_ty_ref: &PortTypeSpec = if let Some(ref override_ty) = to_ty_override {
-        override_ty
     } else {
-        let Some(to_ty) = to_scheme.inputs.get(&c.to.port_id) else {
-            errors.push(format!(
-                "connection '{}' uses unknown to port '{}.{}' (type {})",
-                c.id, c.to.node_id, c.to.port_id, to_node.node_type
-            ));
-            return;
-        };
-        to_ty
+        errors.push(format!(
+            "connection '{}' uses unknown to port '{}.{}' (type {})",
+            c.id, c.to.node_id, c.to.port_id, to_node.node_type
+        ));
+        return;
     };
 
-    if !from_ty.overlaps(to_ty_ref) {
+    if !from_ty.overlaps(to_ty.as_ref())
+        && !implicit_port_coercion_allows(from_ty, to_ty.as_ref(), to_node, &c.to.port_id)
+    {
         errors.push(format!(
             "connection '{}' type mismatch: '{}.{}' ({}) -> '{}.{}' ({})",
             c.id,
@@ -319,8 +301,49 @@ fn validate_connection(
             port_type_spec_to_string(from_ty),
             c.to.node_id,
             c.to.port_id,
-            port_type_spec_to_string(to_ty_ref)
+            port_type_spec_to_string(to_ty.as_ref())
         ));
+    }
+}
+
+fn implicit_port_coercion_allows(
+    from_ty: &PortTypeSpec,
+    to_ty: &PortTypeSpec,
+    to_node: &Node,
+    to_port_id: &str,
+) -> bool {
+    // RenderPass.material: the renderer can compile a material expression graph that starts
+    // from color/float/vector nodes directly, even if the scheme labels the input as `material`.
+    if to_node.node_type == "RenderPass"
+        && to_port_id == "material"
+        && port_type_spec_contains(to_ty, "material")
+    {
+        return port_type_spec_contains_any_of(
+            from_ty,
+            &[
+                "any",
+                "material",
+                "shader",
+                "color",
+                "float",
+                "int",
+                "vector2",
+                "vector3",
+            ],
+        );
+    }
+
+    false
+}
+
+fn port_type_spec_contains_any_of(t: &PortTypeSpec, candidates: &[&str]) -> bool {
+    candidates.iter().any(|c| port_type_spec_contains(t, c))
+}
+
+fn port_type_spec_contains(t: &PortTypeSpec, candidate: &str) -> bool {
+    match t {
+        PortTypeSpec::One(s) => s == candidate,
+        PortTypeSpec::Many(v) => v.iter().any(|s| s == candidate),
     }
 }
 
