@@ -8,7 +8,7 @@
   "nodes": [
     {
       "id": "node_1",
-      "type": "CompositeOutput",
+      "type": "Composite",
       "position": {
         "x": 460,
         "y": 380

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-07T09:17:13.732Z",
+  "generatedAt": "2026-01-12T15:53:52.433Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -11,12 +11,13 @@
     "ColorInput",
     "ColorMix",
     "ColorRamp",
-    "CompositeOutput",
+    "Composite",
     "ComputePass",
     "CrossProduct",
     "DataNode",
     "DotProduct",
     "EmissionShader",
+    "File",
     "FloatInput",
     "GeometryFromFile",
     "GeometryPrimitive",
@@ -350,7 +351,7 @@
       }
     },
     {
-      "type": "CompositeOutput",
+      "type": "Composite",
       "label": "Composite",
       "category": "Output",
       "description": "Final composite output",
@@ -496,6 +497,24 @@
       "defaultParams": {}
     },
     {
+      "type": "File",
+      "label": "File",
+      "category": "RenderTarget",
+      "description": "Render a pass to an output file",
+      "inputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "outputs": [],
+      "defaultParams": {
+        "directory": "",
+        "fileName": "output.png"
+      }
+    },
+    {
       "type": "FloatInput",
       "label": "Float Input",
       "category": "Input",
@@ -581,15 +600,16 @@
       "description": "Apply a Gaussian blur to an image",
       "inputs": [
         {
-          "id": "geometry",
-          "name": "Geometry",
-          "type": "geometry"
-        },
-        {
           "id": "mode",
           "name": "Mode",
           "type": "any",
           "default": "standard"
+        },
+        {
+          "id": "extend",
+          "name": "Extend",
+          "type": "bool",
+          "default": false
         },
         {
           "id": "image",
@@ -603,16 +623,16 @@
           "default": 5,
           "range": {
             "min": 0,
-            "max": 200,
-            "step": 1
+            "max": 60,
+            "step": 0.01
           }
         }
       ],
       "outputs": [
         {
-          "id": "color",
-          "name": "Color",
-          "type": "color"
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
         }
       ],
       "defaultParams": {
