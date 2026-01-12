@@ -25,6 +25,352 @@ use crate::{
     schema,
 };
 
+struct PreparedScene {
+    scene: SceneDSL,
+    nodes_by_id: HashMap<String, Node>,
+    ids: HashMap<String, ResourceName>,
+    topo_order: Vec<String>,
+    composite_layers_in_draw_order: Vec<String>,
+    output_texture_node_id: String,
+    output_texture_name: ResourceName,
+    resolution: [u32; 2],
+}
+
+fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
+    // 1) Remove editor leftovers that are not even part of any edge.
+    let scene = crate::dsl::treeshake_unlinked_nodes(input);
+
+    // 2) Strict output contract (no compatibility fallbacks).
+    let output_node_id: String = scene
+        .outputs
+        .as_ref()
+        .and_then(|m| m.get("composite").cloned())
+        .ok_or_else(|| anyhow!("missing outputs.composite"))?;
+
+    // 3) Keep only the upstream subgraph that contributes to the output.
+    // This avoids validation/compile failures caused by unrelated leftover subgraphs.
+    let mut keep = upstream_reachable(&scene, &output_node_id);
+    for n in &scene.nodes {
+        if n.node_type == "Screen" {
+            keep.insert(n.id.clone());
+        }
+    }
+
+    let nodes: Vec<Node> = scene
+        .nodes
+        .into_iter()
+        .filter(|n| keep.contains(&n.id))
+        .collect();
+    let connections = scene
+        .connections
+        .into_iter()
+        .filter(|c| keep.contains(&c.from.node_id) && keep.contains(&c.to.node_id))
+        .collect();
+    let scene = SceneDSL {
+        version: scene.version,
+        metadata: scene.metadata,
+        nodes,
+        connections,
+        outputs: scene.outputs,
+    };
+
+    // 4) Validate only the kept subgraph.
+    schema::validate_scene(&scene)?;
+
+    let nodes_by_id: HashMap<String, Node> = scene
+        .nodes
+        .iter()
+        .cloned()
+        .map(|n| (n.id.clone(), n))
+        .collect();
+
+    let mut ids: HashMap<String, ResourceName> = HashMap::new();
+    for n in &scene.nodes {
+        ids.insert(n.id.clone(), n.id.clone().into());
+    }
+
+    let topo_order = topo_sort(&scene)?;
+
+    let composite_layers_in_draw_order =
+        composite_layers_in_draw_order(&scene, &nodes_by_id, &output_node_id)?;
+
+    // New DSL contract: output target must be provided by CompositeOutput.target.
+    let output_texture_node_id: String = incoming_connection(&scene, &output_node_id, "target")
+        .map(|c| c.from.node_id.clone())
+        .ok_or_else(|| anyhow!("CompositeOutput.target has no incoming connection"))?;
+
+    let output_texture_name: ResourceName = ids
+        .get(&output_texture_node_id)
+        .cloned()
+        .ok_or_else(|| anyhow!("missing name for node: {}", output_texture_node_id))?;
+
+    let output_texture_node = find_node(&nodes_by_id, &output_texture_node_id)?;
+    if output_texture_node.node_type != "RenderTexture" {
+        bail!(
+            "CompositeOutput.target must come from RenderTexture, got {}",
+            output_texture_node.node_type
+        );
+    }
+
+    let width = parse_u32(&output_texture_node.params, "width").unwrap_or(1024);
+    let height = parse_u32(&output_texture_node.params, "height").unwrap_or(1024);
+    let resolution = [width, height];
+
+    Ok(PreparedScene {
+        scene,
+        nodes_by_id,
+        ids,
+        topo_order,
+        composite_layers_in_draw_order,
+        output_texture_node_id,
+        output_texture_name,
+        resolution,
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SamplerKind {
+    NearestClamp,
+    LinearMirror,
+}
+
+#[derive(Clone, Debug)]
+struct PassTextureBinding {
+    /// ResourceName of the texture to bind.
+    texture: ResourceName,
+    /// If this binding refers to an ImageTexture node id, keep it here so the loader knows
+    /// it must provide CPU image bytes.
+    image_node_id: Option<String>,
+}
+
+fn clamp_min_1(v: u32) -> u32 {
+    v.max(1)
+}
+
+fn gaussian_mip_level_and_sigma_p(sigma: f32) -> (u32, f32) {
+    // Ported from BlurMipmapGenerator.GetMipLevelAndSigmaP.
+    let mut m_sample_count: u32 = 0;
+    let mut sigma_p: f32 = sigma * sigma;
+    let step1ds8_vd_target: f32 = 20.0 * 20.0;
+    let step1ds4_vd_target: f32 = 9.5 * 9.5;
+    let mut step1ds2_vd_target: f32 = 3.6 * 3.5;
+    if sigma_p > 100.0 {
+        step1ds2_vd_target = 5.5 * 5.5;
+    }
+    if sigma_p > step1ds8_vd_target {
+        sigma_p = sigma_p / 64.0 - 0.140625;
+        m_sample_count = 3;
+    }
+    if sigma_p >= step1ds4_vd_target {
+        if m_sample_count == 0 {
+            sigma_p = sigma_p / 16.0 - 0.47265625;
+            m_sample_count = 2;
+        }
+    }
+    if sigma_p >= step1ds2_vd_target {
+        sigma_p = sigma_p / 4.0 - 0.756625;
+        if m_sample_count >= 1 {
+            m_sample_count += 1;
+        } else {
+            m_sample_count = 1;
+        }
+    }
+    (m_sample_count, sigma_p)
+}
+
+fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
+    // Ported from BlurMipmapGenerator.GetGuassianKernel.
+    let mut gaussian_kernel: [f64; 27] = [0.0; 27];
+    let narrow_band: i32 = 27;
+    let coefficient: f64 = 1.0 / f64::sqrt(sigma as f64 * std::f64::consts::PI * 2.0);
+    let mut weight_sum: f32 = 0.0;
+
+    for weight_index in 0..27 {
+        let x = (weight_index as i32 - 13) as f64;
+        let weight = f64::exp(-1.0 * x * x * 0.5 / sigma as f64) * coefficient;
+        gaussian_kernel[weight_index] = weight;
+        weight_sum += weight as f32;
+    }
+
+    for i in 0..27 {
+        gaussian_kernel[i] /= weight_sum as f64;
+    }
+    gaussian_kernel[13] /= 2.0;
+
+    let weight1 = gaussian_kernel[11] + gaussian_kernel[10];
+    let offset0 = gaussian_kernel[12] / (gaussian_kernel[13] + gaussian_kernel[12]);
+
+    let (weight1, offset1) = if (gaussian_kernel[10] + gaussian_kernel[11]) < 0.002 {
+        (0.0, 0.0)
+    } else {
+        (
+            weight1,
+            gaussian_kernel[10] / (gaussian_kernel[10] + gaussian_kernel[11]) + 2.0,
+        )
+    };
+
+    let (weight2, offset2) = if narrow_band < 11 || ((gaussian_kernel[8] + gaussian_kernel[9]) < 0.002) {
+        (0.0, 0.0)
+    } else {
+        (
+            gaussian_kernel[8] + gaussian_kernel[9],
+            gaussian_kernel[8] / (gaussian_kernel[8] + gaussian_kernel[9]) + 4.0,
+        )
+    };
+
+    let (weight3, offset3) = if narrow_band < 15 || ((gaussian_kernel[6] + gaussian_kernel[7]) < 0.002) {
+        (0.0, 0.0)
+    } else {
+        (
+            gaussian_kernel[6] + gaussian_kernel[7],
+            gaussian_kernel[6] / (gaussian_kernel[6] + gaussian_kernel[7]) + 6.0,
+        )
+    };
+
+    let (weight4, offset4) = if narrow_band < 19 || ((gaussian_kernel[4] + gaussian_kernel[5]) < 0.002) {
+        (0.0, 0.0)
+    } else {
+        (
+            gaussian_kernel[4] + gaussian_kernel[5],
+            gaussian_kernel[4] / (gaussian_kernel[4] + gaussian_kernel[5]) + 8.0,
+        )
+    };
+
+    let (weight5, offset5) = if narrow_band < 23 || ((gaussian_kernel[2] + gaussian_kernel[3]) < 0.002) {
+        (0.0, 0.0)
+    } else {
+        (
+            gaussian_kernel[2] + gaussian_kernel[3],
+            gaussian_kernel[2] / (gaussian_kernel[2] + gaussian_kernel[3]) + 10.0,
+        )
+    };
+
+    let (weight6, offset6) = if narrow_band < 27 || ((gaussian_kernel[0] + gaussian_kernel[1]) < 0.002) {
+        (0.0, 0.0)
+    } else {
+        (
+            gaussian_kernel[0] + gaussian_kernel[1],
+            gaussian_kernel[0] / (gaussian_kernel[0] + gaussian_kernel[1]) + 12.0,
+        )
+    };
+
+    let weight0 = 0.5 - (weight1 + weight2 + weight3 + weight4 + weight5 + weight6);
+
+    let kernel: [f32; 8] = [
+        weight0 as f32,
+        weight1 as f32,
+        weight2 as f32,
+        weight3 as f32,
+        weight4 as f32,
+        weight5 as f32,
+        weight6 as f32,
+        0.0,
+    ];
+    let offset: [f32; 8] = [
+        offset0 as f32,
+        offset1 as f32,
+        offset2 as f32,
+        offset3 as f32,
+        offset4 as f32,
+        offset5 as f32,
+        offset6 as f32,
+        0.0,
+    ];
+
+    let mut num: u32 = 0;
+    for i in 0..8 {
+        let w = kernel[i];
+        if w > 0.0 && w < 1.0 {
+            num += 1;
+        }
+    }
+    (kernel, offset, num)
+}
+
+fn fmt_f32(v: f32) -> String {
+    if v.is_finite() {
+        let s = format!("{v:.9}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        "0.0".to_string()
+    }
+}
+
+fn array8_f32_wgsl(values: [f32; 8]) -> String {
+    let parts: Vec<String> = values.into_iter().map(fmt_f32).collect();
+    format!("array<f32, 8>({})", parts.join(", "))
+}
+
+fn build_fullscreen_textured_bundle(fragment_body: String) -> WgslShaderBundle {
+    // Shared Params struct to match the runtime uniform.
+    let common = r#"
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+    time: f32,
+    _pad0: f32,
+    color: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+struct VSOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@group(1) @binding(0)
+var src_tex: texture_2d<f32>;
+@group(1) @binding(1)
+var src_samp: sampler;
+"#
+    .to_string();
+
+    let vertex_entry = r#"
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VSOut {
+    var out: VSOut;
+
+    // Local UV in [0,1] based on geometry size.
+    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+
+    // Geometry vertices are in local pixel units centered at (0,0). Apply center translation in pixels.
+    let p = position.xy + params.center;
+
+    // Convert pixels to clip space (assumes target_size is in pixels and (0,0) is the target center).
+    let half = params.target_size * 0.5;
+    let ndc = vec2f(p.x / half.x, p.y / half.y);
+    out.position = vec4f(ndc, position.z, 1.0);
+    return out;
+}
+"#
+    .to_string();
+
+    let fragment_entry = format!(
+        r#"
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {{
+    {fragment_body}
+}}
+"#
+    );
+
+    let vertex = format!("{common}{vertex_entry}");
+    let fragment = format!("{common}{fragment_entry}");
+    let module = format!("{common}{vertex_entry}{fragment_entry}");
+
+    WgslShaderBundle {
+        common,
+        vertex,
+        fragment,
+        compute: None,
+        module,
+        image_textures: Vec::new(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PassBindings {
     pub params_buffer: ResourceName,
@@ -760,41 +1106,166 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
 pub fn build_all_pass_wgsl_bundles_from_scene(
     scene: &SceneDSL,
 ) -> Result<Vec<(String, WgslShaderBundle)>> {
-    schema::validate_scene(scene)?;
-    let nodes_by_id: HashMap<String, Node> = scene
-        .nodes
-        .iter()
-        .cloned()
-        .map(|n| (n.id.clone(), n))
-        .collect();
-
-    // Match build_shader_space_from_scene: prefer outputs.composite, otherwise fallback to the first CompositeOutput.
-    let output_node_id: String = scene
-        .outputs
-        .as_ref()
-        .and_then(|m| m.get("composite").cloned())
-        .or_else(|| {
-            scene
-                .nodes
-                .iter()
-                .find(|n| n.node_type == "CompositeOutput")
-                .map(|n| n.id.clone())
-        })
-        .ok_or_else(|| anyhow!("no outputs.composite and no CompositeOutput node"))?;
-
-    // Important: pass execution order should follow CompositeOutput's layering order:
-    // image first, then dynamic_0, dynamic_1, ...
-    let render_passes_in_draw_order = composite_render_passes_in_draw_order(scene, &nodes_by_id, &output_node_id)?;
+    let prepared = prepare_scene(scene)?;
 
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
-    for pass_id in render_passes_in_draw_order {
-        let bundle = build_pass_wgsl_bundle(scene, &nodes_by_id, &pass_id)?;
-        out.push((pass_id, bundle));
+    for layer_id in prepared.composite_layers_in_draw_order {
+        let node = find_node(&prepared.nodes_by_id, &layer_id)?;
+        match node.node_type.as_str() {
+            "RenderPass" => {
+                let bundle =
+                    build_pass_wgsl_bundle(&prepared.scene, &prepared.nodes_by_id, &layer_id)?;
+                out.push((layer_id, bundle));
+            }
+            "GuassianBlurPass" => {
+                // Emit synthetic passes:
+                // - downsample_* (one step, or 8 then 2 when factor=16)
+                // - hblur / vblur at downsampled resolution
+                // - upsample bilinear back to original target size
+                let sigma = parse_f32(&node.params, "radius").unwrap_or(0.0).max(0.0);
+                let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+                let downsample_factor: u32 = 1 << mip_level;
+                let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
+
+                let downsample_steps: Vec<u32> = if downsample_factor == 16 {
+                    vec![8, 2]
+                } else {
+                    vec![downsample_factor]
+                };
+
+                for step in &downsample_steps {
+                    let body = match *step {
+                        1 => {
+                            "return textureSample(src_tex, src_samp, vec2f(in.uv.x, 1.0 - in.uv.y));"
+                                .to_string()
+                        }
+                        2 => {
+                            r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let sample_xy = id * 2.0 + 0.5;
+let uv = sample_xy / original;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                            .to_string()
+                        }
+                        4 => {
+                            r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let base = id * 4.0 + 0.5;
+let c = (
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 0.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 2.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 0.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 2.0)) / original, 0.0)
+) * 0.25;
+return c;
+"#
+                            .to_string()
+                        }
+                        8 => {
+                            r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let base = id * 8.0 + 0.5;
+var c = vec4f(0.0);
+for (var oy: f32 = 0.0; oy < 8.0; oy = oy + 2.0) {
+    for (var ox: f32 = 0.0; ox < 8.0; ox = ox + 2.0) {
+        c = c + textureSampleLevel(src_tex, src_samp, (base + vec2f(ox, oy)) / original, 0.0);
+    }
+}
+return c * 0.0625;
+"#
+                            .to_string()
+                        }
+                        other => {
+                            return Err(anyhow!(
+                                "GuassianBlurPass: unsupported downsample factor {other}"
+                            ));
+                        }
+                    };
+                    out.push((
+                        format!("{layer_id}__downsample_{step}"),
+                        build_fullscreen_textured_bundle(body),
+                    ));
+                }
+                let hblur_body = {
+                    let kernel_wgsl = array8_f32_wgsl(kernel);
+                    let offset_wgsl = array8_f32_wgsl(offset);
+                    format!(
+                        r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let k = {kernel_wgsl};
+let o = {offset_wgsl};
+var color = vec4f(0.0);
+for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+    let coord_pos = abs(id + vec2f(o[i], 0.0));
+    let coord_neg = abs(id - vec2f(o[i], 0.0));
+    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+}}
+return color;
+"#
+                    )
+                };
+
+                let vblur_body = {
+                    let kernel_wgsl = array8_f32_wgsl(kernel);
+                    let offset_wgsl = array8_f32_wgsl(offset);
+                    format!(
+                        r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let k = {kernel_wgsl};
+let o = {offset_wgsl};
+var color = vec4f(0.0);
+for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+    let coord_pos = abs(id + vec2f(0.0, o[i]));
+    let coord_neg = abs(id - vec2f(0.0, o[i]));
+    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+}}
+return color;
+"#
+                    )
+                };
+
+                let upsample_body = {
+                    let k = if downsample_factor == 16 { "1.5" } else { "1.0" };
+                    format!(
+                        r#"
+let src_size = vec2f(textureDimensions(src_tex));
+let offset = vec2f({k} / src_size.x, {k} / src_size.y);
+let uv = vec2f(in.uv.x, 1.0 - in.uv.y) + offset;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                    )
+                };
+
+                out.push((
+                    format!("{layer_id}__hblur_ds{downsample_factor}"),
+                    build_fullscreen_textured_bundle(hblur_body),
+                ));
+                out.push((
+                    format!("{layer_id}__vblur_ds{downsample_factor}"),
+                    build_fullscreen_textured_bundle(vblur_body),
+                ));
+                out.push((
+                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}"),
+                    build_fullscreen_textured_bundle(upsample_body),
+                ));
+            }
+            other => bail!(
+                "CompositeOutput layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+            ),
+        }
     }
     Ok(out)
 }
 
-fn composite_render_passes_in_draw_order(
+fn composite_layers_in_draw_order(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     output_node_id: &str,
@@ -826,11 +1297,11 @@ fn composite_render_passes_in_draw_order(
         }
     }
 
-    for pass_id in &ordered {
-        let node = find_node(nodes_by_id, pass_id)?;
-        if node.node_type != "RenderPass" {
+    for layer_id in &ordered {
+        let node = find_node(nodes_by_id, layer_id)?;
+        if node.node_type != "RenderPass" && node.node_type != "GuassianBlurPass" {
             bail!(
-                "CompositeOutput inputs must come from RenderPass nodes, got {} for {pass_id}",
+                "CompositeOutput inputs must come from RenderPass or GuassianBlurPass nodes, got {} for {layer_id}",
                 node.node_type
             );
         }
@@ -854,7 +1325,8 @@ struct RenderPassSpec {
     params_buffer: ResourceName,
     params: Params,
     shader_wgsl: String,
-    image_textures: Vec<String>,
+    texture_bindings: Vec<PassTextureBinding>,
+    sampler_kind: SamplerKind,
     blend_state: BlendState,
     color_load_op: wgpu::LoadOp<Color>,
 }
@@ -967,85 +1439,21 @@ pub fn build_shader_space_from_scene(
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
 ) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
-    schema::validate_scene(scene)?;
-    let nodes_by_id: HashMap<String, Node> = scene
-        .nodes
-        .iter()
-        .cloned()
-        .map(|n| (n.id.clone(), n))
-        .collect();
-
-    let mut ids: HashMap<String, ResourceName> = HashMap::new();
-    for n in &scene.nodes {
-        ids.insert(n.id.clone(), n.id.clone().into());
-    }
-
-    let order = topo_sort(scene)?;
-
-    let output_node_id: String = scene
-        .outputs
-        .as_ref()
-        .and_then(|m| m.get("composite").cloned())
-        .or_else(|| {
-            scene
-                .nodes
-                .iter()
-                .find(|n| n.node_type == "CompositeOutput")
-                .map(|n| n.id.clone())
-        })
-        .ok_or_else(|| anyhow!("no outputs.composite and no CompositeOutput node"))?;
-
-    let render_passes_in_order: Vec<String> =
-        composite_render_passes_in_draw_order(scene, &nodes_by_id, &output_node_id)?;
-    let render_pass_id: String = render_passes_in_order
-        .first()
-        .cloned()
-        .ok_or_else(|| anyhow!("no RenderPass reachable from CompositeOutput"))?;
-
-    let reachable = upstream_reachable(scene, &output_node_id);
-    if render_passes_in_order.is_empty() {
-        bail!("no RenderPass reachable from CompositeOutput");
-    }
-
-    // New DSL: render target is provided by CompositeOutput.target.
-    // For backward compatibility with older scenes, fall back to RenderPass.target if present.
-    let last_pass_id: String = render_passes_in_order
-        .last()
-        .cloned()
-        .unwrap_or_else(|| render_pass_id.clone());
-    let output_texture_node_id: String = incoming_connection(scene, &output_node_id, "target")
-        .or_else(|| incoming_connection(scene, &last_pass_id, "target"))
-        .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| {
-            anyhow!("CompositeOutput.target (or legacy RenderPass.target) has no incoming connection")
-        })?;
-
-    let output_texture_name: ResourceName = ids
-        .get(&output_texture_node_id)
-        .cloned()
-        .ok_or_else(|| anyhow!("missing name for node: {}", output_texture_node_id))?;
-
-    let output_texture_node = find_node(&nodes_by_id, &output_texture_node_id)?;
-    if output_texture_node.node_type != "RenderTexture" {
-        bail!(
-            "RenderPass.target must come from RenderTexture, got {}",
-            output_texture_node.node_type
-        );
-    }
-
-    let width = parse_u32(&output_texture_node.params, "width").unwrap_or(1024);
-    let height = parse_u32(&output_texture_node.params, "height").unwrap_or(1024);
-    let resolution = [width, height];
+    let prepared = prepare_scene(scene)?;
+    let resolution = prepared.resolution;
+    let nodes_by_id = &prepared.nodes_by_id;
+    let ids = &prepared.ids;
+    let output_texture_node_id = &prepared.output_texture_node_id;
+    let output_texture_name = prepared.output_texture_name.clone();
+    let composite_layers_in_order = &prepared.composite_layers_in_draw_order;
+    let order = &prepared.topo_order;
 
     let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
     let mut textures: Vec<TextureDecl> = Vec::new();
     let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
-    for id in &order {
-        if !reachable.contains(id) {
-            continue;
-        }
+    for id in order {
         let node = match nodes_by_id.get(id) {
             Some(n) => n,
             None => continue,
@@ -1064,8 +1472,8 @@ pub fn build_shader_space_from_scene(
                 geometry_buffers.push((name, bytes));
             }
             "RenderTexture" => {
-                let w = parse_u32(&node.params, "width").unwrap_or(width);
-                let h = parse_u32(&node.params, "height").unwrap_or(height);
+                let w = parse_u32(&node.params, "width").unwrap_or(resolution[0]);
+                let h = parse_u32(&node.params, "height").unwrap_or(resolution[1]);
                 let format = parse_texture_format(&node.params)?;
                 textures.push(TextureDecl {
                     name,
@@ -1077,88 +1485,419 @@ pub fn build_shader_space_from_scene(
         }
     }
 
-    for pass_id in &render_passes_in_order {
-        let pass_name = ids
-            .get(pass_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing name for node: {pass_id}"))?;
+    // Helper: create a fullscreen geometry buffer.
+    let make_fullscreen_geometry = |w: f32, h: f32| -> Arc<[u8]> {
+        let verts = rect2d_geometry_vertices(w, h);
+        Arc::from(as_bytes_slice(&verts).to_vec())
+    };
 
-        let pass_node = find_node(&nodes_by_id, pass_id)?;
-        let blend_state = parse_render_pass_blend_state(&pass_node.params)?;
+    // Output target texture is always CompositeOutput.target.
+    let target_texture_id = output_texture_node_id.clone();
+    let target_node = find_node(&nodes_by_id, &target_texture_id)?;
+    if target_node.node_type != "RenderTexture" {
+        bail!(
+            "CompositeOutput.target must come from RenderTexture, got {}",
+            target_node.node_type
+        );
+    }
+    let tgt_w = parse_f32(&target_node.params, "width")
+        .unwrap_or(resolution[0] as f32)
+        .max(1.0);
+    let tgt_h = parse_f32(&target_node.params, "height")
+        .unwrap_or(resolution[1] as f32)
+        .max(1.0);
+    let target_texture_name = ids
+        .get(&target_texture_id)
+        .cloned()
+        .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
 
-        let geometry_node_id = incoming_connection(scene, pass_id, "geometry")
-            .map(|c| c.from.node_id.clone())
-            .ok_or_else(|| anyhow!("RenderPass.geometry missing for {pass_id}"))?;
-        // RenderPass no longer has an explicit target input in the updated DSL.
-        // Use the CompositeOutput-provided target texture (or legacy per-pass target if present).
-        let target_texture_id = incoming_connection(scene, pass_id, "target")
-            .map(|c| c.from.node_id.clone())
-            .unwrap_or_else(|| output_texture_node_id.clone());
+    for layer_id in composite_layers_in_order {
+        let layer_node = find_node(&nodes_by_id, layer_id)?;
+        match layer_node.node_type.as_str() {
+            "RenderPass" => {
+                let pass_name = ids
+                    .get(layer_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
 
-        let geometry_node = find_node(&nodes_by_id, &geometry_node_id)?;
-        if geometry_node.node_type != "Rect2DGeometry" {
-            bail!(
-                "RenderPass.geometry must come from Rect2DGeometry, got {}",
-                geometry_node.node_type
-            );
+                let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
+
+                let geometry_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
+                    .map(|c| c.from.node_id.clone())
+                    .ok_or_else(|| anyhow!("RenderPass.geometry missing for {layer_id}"))?;
+
+                let geometry_node = find_node(&nodes_by_id, &geometry_node_id)?;
+                if geometry_node.node_type != "Rect2DGeometry" {
+                    bail!(
+                        "RenderPass.geometry must come from Rect2DGeometry, got {}",
+                        geometry_node.node_type
+                    );
+                }
+
+                let geometry_buffer = ids
+                    .get(&geometry_node_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
+
+                let geo_w = parse_f32(&geometry_node.params, "width").unwrap_or(100.0);
+                let geo_h = parse_f32(&geometry_node.params, "height").unwrap_or(geo_w);
+                let geo_x = parse_f32(&geometry_node.params, "x").unwrap_or(0.0);
+                let geo_y = parse_f32(&geometry_node.params, "y").unwrap_or(0.0);
+
+                let params_name: ResourceName = format!("params_{layer_id}").into();
+                let params = Params {
+                    target_size: [tgt_w, tgt_h],
+                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
+                    center: [geo_x, geo_y],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.9, 0.2, 0.2, 1.0],
+                };
+
+                let bundle = build_pass_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                let shader_wgsl = bundle.module;
+
+                let texture_bindings: Vec<PassTextureBinding> = bundle
+                    .image_textures
+                    .iter()
+                    .filter_map(|id| ids.get(id).cloned().map(|tex| PassTextureBinding {
+                        texture: tex,
+                        image_node_id: Some(id.clone()),
+                    }))
+                    .collect();
+
+                render_pass_specs.push(RenderPassSpec {
+                    name: pass_name.clone(),
+                    geometry_buffer,
+                    target_texture: target_texture_name.clone(),
+                    params_buffer: params_name,
+                    params,
+                    shader_wgsl,
+                    texture_bindings,
+                    sampler_kind: SamplerKind::NearestClamp,
+                    blend_state,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(pass_name);
+            }
+            "GuassianBlurPass" => {
+                // For now: GuassianBlurPass must take its image input from ImageTexture.
+                let img_conn = incoming_connection(&prepared.scene, layer_id, "image")
+                    .ok_or_else(|| anyhow!("GuassianBlurPass.image missing for {layer_id}"))?;
+                let img_node = find_node(&nodes_by_id, &img_conn.from.node_id)?;
+                if img_node.node_type != "ImageTexture" {
+                    bail!(
+                        "GuassianBlurPass.image must come from ImageTexture, got {}",
+                        img_node.node_type
+                    );
+                }
+
+                let sigma = parse_f32(&layer_node.params, "radius").unwrap_or(0.0).max(0.0);
+                let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+                let downsample_factor: u32 = 1 << mip_level;
+                let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
+
+                let downsample_steps: Vec<u32> = if downsample_factor == 16 {
+                    vec![8, 2]
+                } else {
+                    vec![downsample_factor]
+                };
+
+                let format = parse_texture_format(&target_node.params)?;
+
+                // Allocate textures (and matching fullscreen geometry) for each downsample step.
+                // step 8 -> size >> 3; step 2 after 8 -> additional >> 1.
+                let mut step_textures: Vec<(u32, ResourceName, u32, u32, ResourceName)> = Vec::new();
+                let mut cur_w: u32 = tgt_w as u32;
+                let mut cur_h: u32 = tgt_h as u32;
+                for step in &downsample_steps {
+                    let shift = match *step {
+                        1 => 0,
+                        2 => 1,
+                        4 => 2,
+                        8 => 3,
+                        other => bail!("GuassianBlurPass: unsupported downsample factor {other}"),
+                    };
+                    let next_w = clamp_min_1(cur_w >> shift);
+                    let next_h = clamp_min_1(cur_h >> shift);
+                    let tex: ResourceName = format!("{layer_id}__ds_{step}").into();
+                    textures.push(TextureDecl {
+                        name: tex.clone(),
+                        size: [next_w, next_h],
+                        format,
+                    });
+                    let geo: ResourceName = format!("{layer_id}__geo_ds_{step}").into();
+                    geometry_buffers.push((
+                        geo.clone(),
+                        make_fullscreen_geometry(next_w as f32, next_h as f32),
+                    ));
+                    step_textures.push((*step, tex, next_w, next_h, geo));
+                    cur_w = next_w;
+                    cur_h = next_h;
+                }
+
+                let ds_w = cur_w;
+                let ds_h = cur_h;
+
+                let h_tex: ResourceName = format!("{layer_id}__h_tex").into();
+                let v_tex: ResourceName = format!("{layer_id}__v_tex").into();
+
+                textures.push(TextureDecl {
+                    name: h_tex.clone(),
+                    size: [ds_w, ds_h],
+                    format,
+                });
+                textures.push(TextureDecl {
+                    name: v_tex.clone(),
+                    size: [ds_w, ds_h],
+                    format,
+                });
+
+                // Fullscreen geometry buffers for blur + upsample.
+                let geo_ds: ResourceName = format!("{layer_id}__geo_ds").into();
+                geometry_buffers
+                    .push((geo_ds.clone(), make_fullscreen_geometry(ds_w as f32, ds_h as f32)));
+                let geo_out: ResourceName = format!("{layer_id}__geo_out").into();
+                geometry_buffers.push((geo_out.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+
+                // Downsample chain
+                let mut prev_tex: Option<ResourceName> = None;
+                for (step, tex, step_w, step_h, step_geo) in &step_textures {
+                    let params_name: ResourceName = format!("params_{layer_id}__downsample_{step}").into();
+                    let bundle = {
+                        let body = match *step {
+                            1 => {
+                                "return textureSample(src_tex, src_samp, vec2f(in.uv.x, 1.0 - in.uv.y));"
+                                    .to_string()
+                            }
+                            2 => {
+                                r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let sample_xy = id * 2.0 + 0.5;
+let uv = sample_xy / original;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                                .to_string()
+                            }
+                            4 => {
+                                r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let base = id * 4.0 + 0.5;
+let c = (
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 0.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(0.0, 2.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 0.0)) / original, 0.0) +
+    textureSampleLevel(src_tex, src_samp, (base + vec2f(2.0, 2.0)) / original, 0.0)
+) * 0.25;
+return c;
+"#
+                                .to_string()
+                            }
+                            8 => {
+                                r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let base = id * 8.0 + 0.5;
+var c = vec4f(0.0);
+for (var oy: f32 = 0.0; oy < 8.0; oy = oy + 2.0) {
+    for (var ox: f32 = 0.0; ox < 8.0; ox = ox + 2.0) {
+        c = c + textureSampleLevel(src_tex, src_samp, (base + vec2f(ox, oy)) / original, 0.0);
+    }
+}
+return c * 0.0625;
+"#
+                                .to_string()
+                            }
+                            other => bail!("GuassianBlurPass: unsupported downsample factor {other}"),
+                        };
+                        build_fullscreen_textured_bundle(body)
+                    };
+
+                    let params_val = Params {
+                        target_size: [*step_w as f32, *step_h as f32],
+                        geo_size: [*step_w as f32, *step_h as f32],
+                        center: [0.0, 0.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 1.0],
+                    };
+
+                    let (src_tex, src_img_node) = match &prev_tex {
+                        None => (
+                            ids.get(&img_conn.from.node_id)
+                                .cloned()
+                                .ok_or_else(|| anyhow!("missing name for node: {}", img_conn.from.node_id))?,
+                            Some(img_conn.from.node_id.clone()),
+                        ),
+                        Some(t) => (t.clone(), None),
+                    };
+
+                    render_pass_specs.push(RenderPassSpec {
+                        name: format!("{layer_id}__downsample_{step}").into(),
+                        geometry_buffer: step_geo.clone(),
+                        target_texture: tex.clone(),
+                        params_buffer: params_name,
+                        params: params_val,
+                        shader_wgsl: bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: src_tex,
+                            image_node_id: src_img_node,
+                        }],
+                        sampler_kind: SamplerKind::LinearMirror,
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(format!("{layer_id}__downsample_{step}").into());
+                    prev_tex = Some(tex.clone());
+                }
+
+                let ds_src_tex: ResourceName = prev_tex.ok_or_else(|| anyhow!("GuassianBlurPass: missing downsample output"))?;
+
+                // 2) Horizontal blur: ds_src_tex -> h_tex
+                let params_h: ResourceName = format!("params_{layer_id}__hblur_ds{downsample_factor}").into();
+                let bundle_h = {
+                    let kernel_wgsl = array8_f32_wgsl(kernel);
+                    let offset_wgsl = array8_f32_wgsl(offset);
+                    let body = format!(
+                        r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let k = {kernel_wgsl};
+let o = {offset_wgsl};
+var color = vec4f(0.0);
+for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+    let coord_pos = abs(id + vec2f(o[i], 0.0));
+    let coord_neg = abs(id - vec2f(o[i], 0.0));
+    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+}}
+return color;
+"#
+                    );
+                    build_fullscreen_textured_bundle(body)
+                };
+                let params_h_val = Params {
+                    target_size: [ds_w as f32, ds_h as f32],
+                    geo_size: [ds_w as f32, ds_h as f32],
+                    center: [0.0, 0.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 1.0],
+                };
+                render_pass_specs.push(RenderPassSpec {
+                    name: format!("{layer_id}__hblur_ds{downsample_factor}").into(),
+                    geometry_buffer: geo_ds.clone(),
+                    target_texture: h_tex.clone(),
+                    params_buffer: params_h.clone(),
+                    params: params_h_val,
+                    shader_wgsl: bundle_h.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: ds_src_tex.clone(),
+                        image_node_id: None,
+                    }],
+                    sampler_kind: SamplerKind::LinearMirror,
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(format!("{layer_id}__hblur_ds{downsample_factor}").into());
+
+                // 3) Vertical blur: h_tex -> v_tex (still downsampled resolution)
+                let params_v: ResourceName = format!("params_{layer_id}__vblur_ds{downsample_factor}").into();
+                let bundle_v = {
+                    let kernel_wgsl = array8_f32_wgsl(kernel);
+                    let offset_wgsl = array8_f32_wgsl(offset);
+                    let body = format!(
+                        r#"
+let original = vec2f(textureDimensions(src_tex));
+let id = vec2f(in.position.xy);
+let k = {kernel_wgsl};
+let o = {offset_wgsl};
+var color = vec4f(0.0);
+for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+    let coord_pos = abs(id + vec2f(0.0, o[i]));
+    let coord_neg = abs(id - vec2f(0.0, o[i]));
+    color = color + textureSampleLevel(src_tex, src_samp, coord_pos / original, 0.0) * k[i];
+    color = color + textureSampleLevel(src_tex, src_samp, coord_neg / original, 0.0) * k[i];
+}}
+return color;
+"#
+                    );
+                    build_fullscreen_textured_bundle(body)
+                };
+                let params_v_val = Params {
+                    target_size: [ds_w as f32, ds_h as f32],
+                    geo_size: [ds_w as f32, ds_h as f32],
+                    center: [0.0, 0.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 1.0],
+                };
+                render_pass_specs.push(RenderPassSpec {
+                    name: format!("{layer_id}__vblur_ds{downsample_factor}").into(),
+                    geometry_buffer: geo_ds.clone(),
+                    target_texture: v_tex.clone(),
+                    params_buffer: params_v.clone(),
+                    params: params_v_val,
+                    shader_wgsl: bundle_v.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: h_tex.clone(),
+                        image_node_id: None,
+                    }],
+                    sampler_kind: SamplerKind::LinearMirror,
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+
+                composite_passes.push(format!("{layer_id}__vblur_ds{downsample_factor}").into());
+
+                // 4) Upsample bilinear back to target: v_tex -> output target
+                let params_u: ResourceName = format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
+                let bundle_u = {
+                    let k = if downsample_factor == 16 { "1.5" } else { "1.0" };
+                    let body = format!(
+                        r#"
+let src_size = vec2f(textureDimensions(src_tex));
+let offset = vec2f({k} / src_size.x, {k} / src_size.y);
+let uv = vec2f(in.uv.x, 1.0 - in.uv.y) + offset;
+return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+"#
+                    );
+                    build_fullscreen_textured_bundle(body)
+                };
+                let params_u_val = Params {
+                    target_size: [tgt_w, tgt_h],
+                    geo_size: [tgt_w, tgt_h],
+                    center: [0.0, 0.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 1.0],
+                };
+                render_pass_specs.push(RenderPassSpec {
+                    name: format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
+                    geometry_buffer: geo_out.clone(),
+                    target_texture: target_texture_name.clone(),
+                    params_buffer: params_u.clone(),
+                    params: params_u_val,
+                    shader_wgsl: bundle_u.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: v_tex.clone(),
+                        image_node_id: None,
+                    }],
+                    sampler_kind: SamplerKind::LinearMirror,
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+
+                composite_passes.push(
+                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
+                );
+            }
+            other => bail!(
+                "CompositeOutput layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+            ),
         }
-        let target_node = find_node(&nodes_by_id, &target_texture_id)?;
-        if target_node.node_type != "RenderTexture" {
-            bail!(
-                "RenderPass.target must come from RenderTexture, got {}",
-                target_node.node_type
-            );
-        }
-
-        let geometry_buffer = ids
-            .get(&geometry_node_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
-        let target_texture = ids
-            .get(&target_texture_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
-
-        let geo_w = parse_f32(&geometry_node.params, "width").unwrap_or(100.0);
-        let geo_h = parse_f32(&geometry_node.params, "height").unwrap_or(geo_w);
-
-        let geo_x = parse_f32(&geometry_node.params, "x").unwrap_or(0.0);
-        let geo_y = parse_f32(&geometry_node.params, "y").unwrap_or(0.0);
-
-        let tgt_w = parse_f32(&target_node.params, "width")
-            .unwrap_or(width as f32)
-            .max(1.0);
-        let tgt_h = parse_f32(&target_node.params, "height")
-            .unwrap_or(height as f32)
-            .max(1.0);
-
-        let params_name: ResourceName = format!("params_{pass_id}").into();
-        let params = Params {
-            target_size: [tgt_w, tgt_h],
-            geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-            center: [geo_x, geo_y],
-            time: 0.0,
-            _pad0: 0.0,
-            color: [0.9, 0.2, 0.2, 1.0],
-        };
-
-        let bundle = build_pass_wgsl_bundle(scene, &nodes_by_id, pass_id)?;
-        let shader_wgsl = bundle.module;
-        let image_textures = bundle.image_textures;
-
-        render_pass_specs.push(RenderPassSpec {
-            name: pass_name.clone(),
-            geometry_buffer,
-            target_texture,
-            params_buffer: params_name,
-            params,
-            shader_wgsl,
-            image_textures,
-            blend_state,
-            // Will be adjusted after we know the full pass list.
-            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-        });
-        composite_passes.push(pass_name);
     }
 
     // Clear each render texture only on its first write per frame.
@@ -1261,7 +2000,10 @@ pub fn build_shader_space_from_scene(
     let rel_base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen_image_nodes: HashSet<String> = HashSet::new();
     for pass in &render_pass_specs {
-        for node_id in &pass.image_textures {
+        for binding in &pass.texture_bindings {
+            let Some(node_id) = binding.image_node_id.as_ref() else {
+                continue;
+            };
             if !seen_image_nodes.insert(node_id.clone()) {
                 continue;
             }
@@ -1306,6 +2048,7 @@ pub fn build_shader_space_from_scene(
 
     // 3) Samplers
     let nearest_sampler: ResourceName = "sampler_nearest".into();
+    let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
     shader_space.declare_samplers(vec![SamplerSpec {
         name: nearest_sampler.clone(),
         desc: wgpu::SamplerDescriptor {
@@ -1315,6 +2058,18 @@ pub fn build_shader_space_from_scene(
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        },
+    },
+    SamplerSpec {
+        name: linear_mirror_sampler.clone(),
+        desc: wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
             ..Default::default()
         },
     }]);
@@ -1327,13 +2082,11 @@ pub fn build_shader_space_from_scene(
         let blend_state = spec.blend_state;
         let color_load_op = spec.color_load_op;
 
-        let image_texture_names: Vec<ResourceName> = spec
-            .image_textures
-            .iter()
-            .filter_map(|id| ids.get(id).cloned())
-            .collect();
-
-        let nearest_sampler = nearest_sampler.clone();
+        let texture_names: Vec<ResourceName> = spec.texture_bindings.iter().map(|b| b.texture.clone()).collect();
+        let sampler_name = match spec.sampler_kind {
+            SamplerKind::NearestClamp => nearest_sampler.clone(),
+            SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
+        };
 
         let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
             label: Some("node-forge-pass"),
@@ -1351,12 +2104,12 @@ pub fn build_shader_space_from_scene(
                 )
                 ;
 
-            for (i, tex_name) in image_texture_names.iter().enumerate() {
+            for (i, tex_name) in texture_names.iter().enumerate() {
                 let tex_binding = (i as u32) * 2;
                 let samp_binding = tex_binding + 1;
                 b = b
                     .bind_texture(1, tex_binding, tex_name.clone(), ShaderStages::FRAGMENT)
-                    .bind_sampler(1, samp_binding, nearest_sampler.clone(), ShaderStages::FRAGMENT);
+                    .bind_sampler(1, samp_binding, sampler_name.clone(), ShaderStages::FRAGMENT);
             }
 
             b.bind_color_attachment(target_texture)
@@ -1548,7 +2301,7 @@ mod tests {
             .map(|n| (n.id.clone(), n))
             .collect();
 
-        let got = composite_render_passes_in_draw_order(&scene, &nodes_by_id, "out").unwrap();
+        let got = composite_layers_in_draw_order(&scene, &nodes_by_id, "out").unwrap();
         // inputs array order: dynamic_1 then dynamic_0
         assert_eq!(got, vec!["p_img", "p1", "p0"]);
     }
