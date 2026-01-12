@@ -61,6 +61,29 @@ pub struct MaterialCompileContext {
     pub image_index_by_node: HashMap<String, usize>,
 }
 
+impl MaterialCompileContext {
+    /// Register an image texture node and return its binding index.
+    pub fn register_image_texture(&mut self, node_id: &str) -> usize {
+        if let Some(&idx) = self.image_index_by_node.get(node_id) {
+            return idx;
+        }
+        let idx = self.image_textures.len();
+        self.image_textures.push(node_id.to_string());
+        self.image_index_by_node.insert(node_id.to_string(), idx);
+        idx
+    }
+
+    /// Generate the WGSL variable name for a texture binding.
+    pub fn tex_var_name(node_id: &str) -> String {
+        format!("tex_{}", node_id.replace('-', "_"))
+    }
+
+    /// Generate the WGSL variable name for a sampler binding.
+    pub fn sampler_var_name(node_id: &str) -> String {
+        format!("samp_{}", node_id.replace('-', "_"))
+    }
+}
+
 /// Uniform parameters passed to each render pass.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

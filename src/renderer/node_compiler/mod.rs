@@ -1,6 +1,8 @@
 //! Node compiler infrastructure and trait definition.
 
 pub mod input_nodes;
+pub mod math_nodes;
+pub mod attribute;
 
 use std::collections::HashMap;
 use anyhow::Result;
