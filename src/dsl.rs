@@ -19,7 +19,6 @@ pub struct SceneDSL {
 /// Keep set includes:
 /// - Any node referenced by `connections` (as either `from` or `to`)
 /// - Any node referenced by `outputs` values
-/// - Any `Screen` node (used for window sizing even if unlinked)
 pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
     let mut keep: HashSet<&str> = HashSet::new();
 
@@ -38,7 +37,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
         .nodes
         .iter()
         .cloned()
-        .filter(|n| n.node_type == "Screen" || keep.contains(n.id.as_str()))
+        .filter(|n| keep.contains(n.id.as_str()))
         .collect();
 
     SceneDSL {
@@ -66,7 +65,7 @@ pub struct Node {
     pub params: HashMap<String, serde_json::Value>,
 
     // Optional editor metadata used for ordering / UI; we only consume `inputs` ordering
-    // for CompositeOutput draw order.
+    // for Composite draw order.
     #[serde(default)]
     pub inputs: Vec<NodePort>,
 }
