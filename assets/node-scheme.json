@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-06T13:47:24.300Z",
+  "generatedAt": "2026-01-07T09:17:13.732Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -21,6 +21,7 @@
     "GeometryFromFile",
     "GeometryPrimitive",
     "GradientTexture",
+    "GuassianBlurPass",
     "HSVAdjust",
     "ImageTexture",
     "InstancedGeometry",
@@ -571,6 +572,52 @@
       ],
       "defaultParams": {
         "gradientType": "linear"
+      }
+    },
+    {
+      "type": "GuassianBlurPass",
+      "label": "Gaussian Blur Pass",
+      "category": "Filter",
+      "description": "Apply a Gaussian blur to an image",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        },
+        {
+          "id": "mode",
+          "name": "Mode",
+          "type": "any",
+          "default": "standard"
+        },
+        {
+          "id": "image",
+          "name": "Image",
+          "type": "color"
+        },
+        {
+          "id": "radius",
+          "name": "Radius (px)",
+          "type": "int",
+          "default": 5,
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "mode": "standard",
+        "radius": 5
       }
     },
     {
