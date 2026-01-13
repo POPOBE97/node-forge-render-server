@@ -5,7 +5,6 @@ pub mod math_nodes;
 pub mod attribute;
 pub mod texture_nodes;
 pub mod trigonometry_nodes;
-pub mod legacy_nodes;
 pub mod vector_nodes;
 pub mod color_nodes;
 pub mod geometry_nodes;
@@ -79,17 +78,6 @@ pub fn compile_material_expr(
         "ColorMix" => color_nodes::compile_color_mix(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "ColorRamp" => color_nodes::compile_color_ramp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "HSVAdjust" => color_nodes::compile_hsv_adjust(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
-        
-        // Legacy nodes (for backward compatibility)
-        "Float" | "Scalar" | "Constant" => legacy_nodes::compile_float_scalar_constant(scene, nodes_by_id, node, out_port, ctx, cache)?,
-        "Vec2" => legacy_nodes::compile_vec2(scene, nodes_by_id, node, out_port, ctx, cache)?,
-        "Vec3" => legacy_nodes::compile_vec3(scene, nodes_by_id, node, out_port, ctx, cache)?,
-        "Vec4" | "Color" => legacy_nodes::compile_vec4_color(scene, nodes_by_id, node, out_port, ctx, cache)?,
-        "Add" => legacy_nodes::compile_add(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
-        "Mul" | "Multiply" => legacy_nodes::compile_mul(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
-        "Mix" => legacy_nodes::compile_mix(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
-        "Clamp" => legacy_nodes::compile_clamp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
-        "Smoothstep" => legacy_nodes::compile_smoothstep(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         
         // Unsupported node types
         other => bail!("unsupported material node type: {other}"),

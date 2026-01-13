@@ -19,11 +19,6 @@ use crate::{
     },
 };
 
-/// Helper function for backward compatibility
-fn typed(expr: impl Into<String>, ty: ValueType) -> TypedExpr {
-    TypedExpr::new(expr, ty)
-}
-
 pub(crate) fn clamp_min_1(v: u32) -> u32 {
     v.max(1)
 }
@@ -304,7 +299,7 @@ pub fn build_pass_wgsl_bundle(
             &mut cache,
         )?
     } else {
-        typed("params.color".to_string(), ValueType::Vec4)
+        TypedExpr::new("params.color".to_string(), ValueType::Vec4)
     };
 
     let image_textures = material_ctx.image_textures.clone();

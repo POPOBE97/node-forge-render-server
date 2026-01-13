@@ -50,7 +50,6 @@ The renderer refactoring has completed Phase 5! ShaderSpace construction logic h
 - ✅ **attribute.rs**: Attribute node (reads vertex attributes like UV)
 - ✅ **texture_nodes.rs**: ImageTexture (with UV flipping and binding management)
 - ✅ **trigonometry_nodes.rs**: Sin, Cos, Time
-- ✅ **legacy_nodes.rs**: Float, Scalar, Constant, Vec2, Vec3, Vec4, Color, Add, Mul, Mix, Clamp, Smoothstep
 - ✅ **vector_nodes.rs**: VectorMath, CrossProduct, DotProduct, Normalize
 - ✅ **color_nodes.rs**: ColorMix, ColorRamp, HSVAdjust
 
@@ -60,12 +59,11 @@ The renderer refactoring has completed Phase 5! ShaderSpace construction logic h
 - ✅ Recursive compilation support
 - ✅ Clean error handling
 
-#### 4. Integration with renderer.rs (Complete)
-- ✅ Removed 356-line monolithic `compile_material_expr` function
-- ✅ Removed ~100 lines of duplicate helper functions (splat_f32, coerce_for_binary, to_vec4_color, etc.)
-- ✅ Removed duplicate type definitions (ValueType, TypedExpr, MaterialCompileContext)
+#### 4. Integration (Complete)
+- ✅ Removed monolithic `compile_material_expr` function
+- ✅ Removed duplicate helper functions and type definitions
 - ✅ Updated imports to use modular versions
-- ✅ `renderer/legacy.rs` now uses `renderer::node_compiler::compile_material_expr`
+- ✅ All modules properly integrated
 
 #### 5. Dependencies
 - ✅ Moved `naga` from dev-dependencies to regular dependencies
@@ -98,8 +96,8 @@ Successfully extracted the final major component - ShaderSpace construction logi
 - Internal ShaderSpace types
 
 **Result:**
-- ✅ `shader_space.rs`: 1320 lines of focused ShaderSpace logic
-- ✅ `legacy.rs`: DELETED - no longer needed!
+- ✅ `shader_space.rs`: 1273 lines of focused ShaderSpace logic
+- ✅ Original `renderer.rs`: Completely replaced by modular structure
 - ✅ All functionality now in dedicated, focused modules
 - ✅ Clean module boundaries with proper imports/exports
 
@@ -127,22 +125,20 @@ src/renderer/
     ├── attribute.rs
     ├── texture_nodes.rs
     ├── trigonometry_nodes.rs
-    ├── legacy_nodes.rs
     ├── vector_nodes.rs
     └── color_nodes.rs
 ```
 
-**Total: ~4300 lines across 16 focused files (was 1 × 2723-line file)**
+**Total: ~4250 lines across 16 focused files (was 1 × 2723-line file)**
 
 ### Benefits Realized
 
 - When `shader_space.rs` is extracted (Phase 5), move the ShaderSpace/runtime helpers into `shader_space.rs` (or a small shared `io.rs`/`assets.rs` module if you prefer), and remove any remaining WGSL-module exports that are only needed by ShaderSpace.
 - Consider moving `MaterialCompileContext::wgsl_decls()` out of `wgsl.rs` and into `types.rs` (or `utils.rs`) so `wgsl.rs` stays purely “WGSL builders”.
-- Remove leftover unused imports/warnings in `legacy.rs` (example: `build_all_pass_wgsl_bundles_from_scene` may be unused depending on call sites), and delete any dead code that is no longer referenced.
 
 ### 📊 Current Status
 
-**Node Types Implemented**: 31 / 50 (62%)
+**Node Types Implemented**: 22 / 50 (44%)
 
 **Fully Implemented Node Types:**
 - ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input ✅
@@ -150,13 +146,10 @@ src/renderer/
 - MathAdd, MathMultiply, MathClamp, MathPower ✅
 - ImageTexture ✅
 - Sin, Cos, Time ✅
-- Float, Scalar, Constant (legacy) ✅
-- Vec2, Vec3, Vec4, Color (legacy) ✅
-- Add, Mul, Mix, Clamp, Smoothstep (legacy) ✅
 - VectorMath, CrossProduct, DotProduct, Normalize ✅
 - ColorMix, ColorRamp, HSVAdjust ✅
 
-**Remaining Node Types**: 19
+**Remaining Node Types**: 28
 See `assets/node-scheme.json` for complete list.
 
 ## How to Continue the Refactoring
@@ -326,7 +319,6 @@ pub use renderer::shader_space::*;
 mod renderer;
 ```
 
-Or even better, rename `renderer.rs` to `renderer_legacy.rs` and make the new `renderer/mod.rs` the main entry point.
 
 ### Priority Order for Remaining Nodes
 
@@ -486,7 +478,6 @@ src/renderer/
     ├── attribute.rs
     ├── texture_nodes.rs
     ├── trigonometry_nodes.rs
-    ├── legacy_nodes.rs
     ├── vector_nodes.rs
     └── color_nodes.rs
 ```
@@ -520,7 +511,6 @@ src/renderer/
 - All scene prep, WGSL generation, and node compilation in one file
 
 ### After Refactoring (Current State)
-- `legacy.rs`: 1849 lines (WGSL + ShaderSpace, to be further split)
 - `scene_prep.rs`: 386 lines (scene preparation - NEWLY EXTRACTED)
 - `types.rs`: ~150 lines (type definitions)
 - `utils.rs`: ~175 lines (utility functions)
@@ -641,7 +631,7 @@ If you have questions about:
 
 ### Step-by-Step Plan
 
-1. **Create `src/renderer/wgsl.rs`** with the following functions from `legacy.rs`:
+1. **Create `src/renderer/wgsl.rs`** with WGSL generation functions:
    - Lines 53-55: `clamp_min_1()`
    - Lines 57-86: `gaussian_mip_level_and_sigma_p()`
    - Lines 88-195: `gaussian_kernel_8()`
@@ -651,7 +641,7 @@ If you have questions about:
    - Lines 425-516: `build_pass_wgsl_bundle()`
    - Lines 518-697: `build_all_pass_wgsl_bundles_from_scene()`
 
-2. **Update `src/renderer/legacy.rs`**:
+2. **Update renderer modules**:
    - Remove the extracted functions
    - Add import: `use super::wgsl::{build_pass_wgsl_bundle, build_all_pass_wgsl_bundles_from_scene};`
    - Keep internal helper types (SamplerKind, PassTextureBinding) if only used by shader_space
@@ -670,7 +660,6 @@ If you have questions about:
 
 ### Expected Outcome
 - `wgsl.rs`: ~645 lines of WGSL generation logic
-- `legacy.rs`: ~1204 lines remaining (ShaderSpace only)
 - Clear separation between WGSL generation and ShaderSpace construction
 
 ## Next Immediate Steps for Phase 5: Extract shader_space.rs
@@ -682,7 +671,6 @@ After Phase 4 is complete, extract the remaining ShaderSpace construction code:
    - Lines 867-1771: `build_shader_space_from_scene()`
    - Lines 1772-1849: `build_error_shader_space()`
 
-2. **Remove `legacy.rs`** entirely once extraction is complete
 
 3. **Final cleanup**:
    - Remove any remaining duplicate code
@@ -693,10 +681,10 @@ After Phase 4 is complete, extract the remaining ShaderSpace construction code:
 
 ### Priority 1: Code Cleanup (Recommended Before Further Work)
 ⚠️ **Clean up compiler warnings before continuing refactoring:**
-- Unused imports in several node compiler modules (input_nodes, math_nodes, texture_nodes, color_nodes, legacy.rs)
+- Unused imports in several node compiler modules (input_nodes, math_nodes, texture_nodes, color_nodes)
 - Unused variables: `nodes_by_id` parameters in many compiler functions (prefix with `_` if intentional)
 - Unused variable `ty` in math_nodes.rs line 146
-- Dead code: `typed_time()` and `composite_layers_in_draw_order()` in legacy.rs
+- Dead code: `typed_time()` and `composite_layers_in_draw_order()` removed
 
 These warnings don't affect functionality but should be cleaned up for code quality.
 
