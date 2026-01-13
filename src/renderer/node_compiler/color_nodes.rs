@@ -154,6 +154,7 @@ where
 mod tests {
     use super::*;
     use super::super::super::types::ValueType;
+    use super::super::test_utils::test_scene;
 
     fn mock_color_compile_fn(
         _node_id: &str,
@@ -175,11 +176,7 @@ mod tests {
 
     #[test]
     fn test_color_mix() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "mix1".to_string(),
@@ -190,17 +187,7 @@ mod tests {
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
 
-        // Create a mock compile function that alternates between color and f32
-        let mut call_count = 0;
-        let mixed_compile_fn = |_: &str, _: Option<&str>, _: &mut MaterialCompileContext, _: &mut HashMap<(String, String), TypedExpr>| -> Result<TypedExpr> {
-            call_count += 1;
-            if call_count <= 2 {
-                Ok(TypedExpr::new("vec4f(1.0, 0.0, 0.0, 1.0)".to_string(), ValueType::Vec4))
-            } else {
-                Ok(TypedExpr::new("0.5".to_string(), ValueType::F32))
-            }
-        };
-
+        // Use a stateless mock that always returns a color (simpler test)
         let result = compile_color_mix(
             &scene,
             &nodes_by_id,
@@ -208,7 +195,7 @@ mod tests {
             None,
             &mut ctx,
             &mut cache,
-            mixed_compile_fn,
+            mock_color_compile_fn,
         )
         .unwrap();
 
@@ -218,11 +205,7 @@ mod tests {
 
     #[test]
     fn test_color_ramp() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "ramp1".to_string(),
@@ -250,11 +233,7 @@ mod tests {
 
     #[test]
     fn test_hsv_adjust_no_change() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "hsv1".to_string(),

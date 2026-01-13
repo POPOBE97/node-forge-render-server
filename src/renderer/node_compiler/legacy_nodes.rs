@@ -303,6 +303,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::test_utils::test_scene;
 
     #[test]
     fn test_float_scalar_constant() {
@@ -312,11 +313,7 @@ mod tests {
             params: HashMap::from([("value".to_string(), serde_json::json!(3.14))]),
             inputs: Vec::new(),
         };
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -338,11 +335,7 @@ mod tests {
             ]),
             inputs: Vec::new(),
         };
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -366,11 +359,7 @@ mod tests {
             ]),
             inputs: Vec::new(),
         };
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

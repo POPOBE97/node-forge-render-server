@@ -25,8 +25,8 @@ use crate::{
     schema,
     renderer::{
         node_compiler::compile_material_expr,
-        types::{ValueType, TypedExpr, MaterialCompileContext},
-        utils::{sanitize_wgsl_ident, to_vec4_color, coerce_for_binary},
+        types::{ValueType, TypedExpr, MaterialCompileContext, Params, PassBindings, WgslShaderBundle},
+        utils::to_vec4_color,
     },
 };
 
@@ -597,23 +597,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PassBindings {
-    pub params_buffer: ResourceName,
-    pub base_params: Params,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct Params {
-    pub target_size: [f32; 2],
-    pub geo_size: [f32; 2],
-    pub center: [f32; 2],
-    pub time: f32,
-    pub _pad0: f32,
-    pub color: [f32; 4],
-}
-
 fn as_bytes<T>(v: &T) -> &[u8] {
     unsafe { core::slice::from_raw_parts((v as *const T) as *const u8, core::mem::size_of::<T>()) }
 }
@@ -757,23 +740,6 @@ impl MaterialCompileContext {
 // - legacy_nodes.rs, vector_nodes.rs, color_nodes.rs
 // 
 // Use: renderer::node_compiler::compile_material_expr instead.
-
-#[derive(Clone, Debug)]
-pub struct WgslShaderBundle {
-    /// WGSL declarations shared between stages (types, bindings, structs).
-    pub common: String,
-    /// A standalone vertex WGSL module (common + @vertex entry).
-    pub vertex: String,
-    /// A standalone fragment WGSL module (common + @fragment entry).
-    pub fragment: String,
-    /// Optional compute WGSL module (common + @compute entry). Currently unused.
-    pub compute: Option<String>,
-    /// A combined WGSL module containing all emitted entry points.
-    pub module: String,
-
-    /// ImageTexture node ids referenced by this pass's material graph, in binding order.
-    pub image_textures: Vec<String>,
-}
 
 pub fn build_pass_wgsl_bundle(
     scene: &SceneDSL,

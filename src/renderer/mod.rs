@@ -3,7 +3,9 @@
 //! This module is organized into several submodules:
 //! - `types`: Core type definitions (ValueType, TypedExpr, Params, etc.)
 //! - `utils`: Utility functions for formatting and data conversion
-//! - `node_compiler`: Node compilation infrastructure (currently inline in renderer.rs)
+//! - `node_compiler`: Node compilation infrastructure
+//! - `validation`: WGSL validation using naga
+//! - `legacy`: The original renderer.rs code (TEMPORARY - will be split into scene_prep, wgsl, shader_space)
 //!
 //! The main entry points are:
 //! - `build_all_pass_wgsl_bundles_from_scene`: Generate WGSL for all passes
@@ -15,12 +17,26 @@ pub mod utils;
 pub mod node_compiler;
 pub mod validation;
 
+// TEMPORARY: The legacy module contains the original renderer.rs code.
+// This will be incrementally split into:
+// - scene_prep.rs (scene preparation and validation)
+// - wgsl.rs (WGSL shader bundle generation)
+// - shader_space.rs (ShaderSpace construction)
+// Once fully migrated, this module can be removed.
+mod legacy;
+
 // Re-export key types and functions for backward compatibility
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};
 pub use node_compiler::compile_material_expr;
 
-// Note: The bulk of the renderer logic is still in src/renderer.rs
-// This module structure is being incrementally built to organize the code better.
-// Eventually, scene_prep.rs, wgsl.rs, shader_space.rs, and individual node compilers
-// will be extracted into their own files.
+// Re-export legacy functions that are still used externally
+// TEMPORARY: These re-exports allow existing code to continue working.
+// They will be replaced with proper modular implementations later.
+pub use legacy::{
+    build_all_pass_wgsl_bundles_from_scene,
+    build_error_shader_space,
+    build_pass_wgsl_bundle,
+    build_shader_space_from_scene,
+    update_pass_params,
+};

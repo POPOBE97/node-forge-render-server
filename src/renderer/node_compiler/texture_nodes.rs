@@ -60,7 +60,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use super::super::test_utils::test_scene;
 
     fn mock_compile_fn(
         _node_id: &str,
@@ -74,16 +74,15 @@ mod tests {
 
     #[test]
     fn test_image_texture_default_uv() {
-        let scene = SceneDSL {
-            nodes: vec![Node {
+        let scene = test_scene(
+            vec![Node {
                 id: "img1".to_string(),
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
             }],
-            connections: Vec::new(),
-            outputs: None,
-        };
+            Vec::new(),
+        );
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -107,24 +106,23 @@ mod tests {
 
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("textureSample"));
-        assert!(result.expr.contains("tex_img1"));
-        assert!(result.expr.contains("sampler_img1"));
+        assert!(result.expr.contains("img_tex_img1"));
+        assert!(result.expr.contains("img_samp_img1"));
         assert!(result.expr.contains("1.0 - (in.uv).y")); // V-flip
         assert!(!result.uses_time);
     }
 
     #[test]
     fn test_image_texture_alpha_output() {
-        let scene = SceneDSL {
-            nodes: vec![Node {
+        let scene = test_scene(
+            vec![Node {
                 id: "img1".to_string(),
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
             }],
-            connections: Vec::new(),
-            outputs: None,
-        };
+            Vec::new(),
+        );
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()
@@ -153,16 +151,15 @@ mod tests {
 
     #[test]
     fn test_image_texture_registers_binding() {
-        let scene = SceneDSL {
-            nodes: vec![Node {
+        let scene = test_scene(
+            vec![Node {
                 id: "img1".to_string(),
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
             }],
-            connections: Vec::new(),
-            outputs: None,
-        };
+            Vec::new(),
+        );
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
             .iter()

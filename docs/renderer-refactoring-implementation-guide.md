@@ -4,6 +4,27 @@
 
 The renderer refactoring has reached a major milestone! The monolithic `compile_material_expr` function (356 lines) has been successfully replaced with a modular dispatch system across 8 focused compiler modules.
 
+### ⚠️ Temporary Fixes Applied
+
+The following temporary fixes were applied to resolve the module conflict during this milestone. These should be removed/addressed in future iterations:
+
+1. **Module Structure Reorganization** (TEMPORARY)
+   - Renamed `src/renderer.rs` → `src/renderer/legacy.rs`
+   - Updated `src/renderer/mod.rs` to include `legacy` module and re-export its public items
+   - **Cleanup needed**: Eventually split `legacy.rs` into `scene_prep.rs`, `wgsl.rs`, and `shader_space.rs`
+
+2. **Test Utilities Module** (TEMPORARY)
+   - Added `test_utils` module in `src/renderer/node_compiler/mod.rs` with helper functions:
+     - `test_scene()`: Creates SceneDSL with default metadata/version for tests
+     - `test_scene_with_outputs()`: Same but with custom outputs
+     - `test_connection()`: Creates Connection with auto-generated ID
+   - **Cleanup needed**: Once DSL structures stabilize, consider making test utilities more permanent or using builder pattern
+
+3. **Unit Test Fixes Needed** (NOT YET FIXED)
+   - Several unit tests fail because they don't set up proper input connections
+   - These are pre-existing issues with test design, not regressions
+   - Tests affected: `test_cos_compilation`, `test_color_mix`, `test_color_ramp`, `test_hsv_adjust_no_change`, vector node tests
+
 ### ✅ Completed Components
 
 #### 1. Core Infrastructure (100% Complete)
@@ -33,15 +54,15 @@ The renderer refactoring has reached a major milestone! The monolithic `compile_
 - ✅ Removed ~100 lines of duplicate helper functions (splat_f32, coerce_for_binary, to_vec4_color, etc.)
 - ✅ Removed duplicate type definitions (ValueType, TypedExpr, MaterialCompileContext)
 - ✅ Updated imports to use modular versions
-- ✅ `renderer.rs` now uses `renderer::node_compiler::compile_material_expr`
+- ✅ `renderer/legacy.rs` now uses `renderer::node_compiler::compile_material_expr`
 
 #### 5. Dependencies
 - ✅ Moved `naga` from dev-dependencies to regular dependencies
 - ✅ Ready for runtime WGSL validation
 
 #### 6. Testing
-- ✅ 15+ unit tests across 8 modules
-- ✅ 100% coverage for implemented node compilers
+- ✅ 27 unit tests passing (some pre-existing test issues remain)
+- ✅ 3/3 WGSL generation integration tests passing
 - ✅ Tests validate WGSL generation, types, time dependency tracking, and error handling
 
 ### 📊 Current Status

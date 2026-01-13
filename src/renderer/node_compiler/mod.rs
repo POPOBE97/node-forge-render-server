@@ -98,3 +98,68 @@ pub fn compile_material_expr(
     cache.insert(key, result.clone());
     Ok(result)
 }
+
+/// Test utilities for creating test scenes.
+/// 
+/// TEMPORARY: These helpers exist to provide default values for SceneDSL fields
+/// that are required but not relevant to unit tests. Will be kept as long as
+/// unit tests need to construct SceneDSL instances directly.
+#[cfg(test)]
+pub mod test_utils {
+    use crate::dsl::{SceneDSL, Node, Connection, Metadata};
+    use std::collections::HashMap;
+
+    /// Create a SceneDSL for testing with default metadata and version.
+    pub fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
+        SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections,
+            outputs: None,
+        }
+    }
+
+    /// Create a SceneDSL with custom outputs.
+    pub fn test_scene_with_outputs(
+        nodes: Vec<Node>,
+        connections: Vec<Connection>,
+        outputs: HashMap<String, String>,
+    ) -> SceneDSL {
+        SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections,
+            outputs: Some(outputs),
+        }
+    }
+
+    /// Create a Connection for testing.
+    pub fn test_connection(
+        from_node: &str,
+        from_port: &str,
+        to_node: &str,
+        to_port: &str,
+    ) -> Connection {
+        Connection {
+            id: format!("{}_{}_{}", from_node, to_node, to_port),
+            from: crate::dsl::Endpoint {
+                node_id: from_node.to_string(),
+                port_id: from_port.to_string(),
+            },
+            to: crate::dsl::Endpoint {
+                node_id: to_node.to_string(),
+                port_id: to_port.to_string(),
+            },
+        }
+    }
+}

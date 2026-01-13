@@ -75,12 +75,12 @@ impl MaterialCompileContext {
 
     /// Generate the WGSL variable name for a texture binding.
     pub fn tex_var_name(node_id: &str) -> String {
-        format!("tex_{}", node_id.replace('-', "_"))
+        format!("img_tex_{}", node_id.replace('-', "_"))
     }
 
     /// Generate the WGSL variable name for a sampler binding.
     pub fn sampler_var_name(node_id: &str) -> String {
-        format!("samp_{}", node_id.replace('-', "_"))
+        format!("img_samp_{}", node_id.replace('-', "_"))
     }
 }
 

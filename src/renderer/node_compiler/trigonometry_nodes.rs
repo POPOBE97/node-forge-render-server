@@ -82,10 +82,11 @@ pub fn compile_time(
 mod tests {
     use super::*;
     use super::super::super::types::ValueType;
+    use super::super::test_utils::{test_scene, test_connection};
 
     fn make_test_scene() -> (SceneDSL, HashMap<String, Node>) {
-        let scene = SceneDSL {
-            nodes: vec![
+        let scene = test_scene(
+            vec![
                 Node {
                     id: "sin1".to_string(),
                     node_type: "Sin".to_string(),
@@ -99,18 +100,8 @@ mod tests {
                     inputs: Vec::new(),
                 },
             ],
-            connections: vec![crate::dsl::Connection {
-                from: crate::dsl::Endpoint {
-                    node_id: "input1".to_string(),
-                    port_id: "value".to_string(),
-                },
-                to: crate::dsl::Endpoint {
-                    node_id: "sin1".to_string(),
-                    port_id: "x".to_string(),
-                },
-            }],
-            outputs: None,
-        };
+            vec![test_connection("input1", "value", "sin1", "x")],
+        );
         let nodes_by_id = scene
             .nodes
             .iter()
@@ -182,11 +173,7 @@ mod tests {
 
     #[test]
     fn test_time_compilation() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "time1".to_string(),

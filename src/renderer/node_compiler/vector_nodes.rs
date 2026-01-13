@@ -228,6 +228,7 @@ where
 mod tests {
     use super::*;
     use super::super::super::types::ValueType;
+    use super::super::test_utils::test_scene;
 
     fn mock_vec3_compile_fn(
         _node_id: &str,
@@ -240,11 +241,7 @@ mod tests {
 
     #[test]
     fn test_dot_product() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "dot1".to_string(),
@@ -272,11 +269,7 @@ mod tests {
 
     #[test]
     fn test_cross_product() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "cross1".to_string(),
@@ -304,11 +297,7 @@ mod tests {
 
     #[test]
     fn test_normalize() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "norm1".to_string(),
@@ -336,11 +325,7 @@ mod tests {
 
     #[test]
     fn test_vector_math_add() {
-        let scene = SceneDSL {
-            nodes: vec![],
-            connections: vec![],
-            outputs: None,
-        };
+        let scene = test_scene(vec![], vec![]);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "vm1".to_string(),
