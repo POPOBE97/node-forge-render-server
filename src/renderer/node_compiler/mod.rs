@@ -8,6 +8,7 @@ pub mod trigonometry_nodes;
 pub mod legacy_nodes;
 pub mod vector_nodes;
 pub mod color_nodes;
+pub mod geometry_nodes;
 
 use std::collections::HashMap;
 use anyhow::{bail, Result};

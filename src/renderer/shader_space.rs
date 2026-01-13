@@ -7,7 +7,6 @@
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
-use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
     eframe::wgpu::{
@@ -28,8 +27,10 @@ use crate::{
         Node, SceneDSL,
     },
     renderer::{
+        node_compiler::geometry_nodes::rect2d_geometry_vertices,
         scene_prep::prepare_scene,
         types::{Params, PassBindings},
+        utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         wgsl::{
             build_downsample_bundle,
             build_horizontal_blur_bundle,
@@ -60,88 +61,6 @@ struct PassTextureBinding {
     image_node_id: Option<String>,
 }
 
-
-
-fn as_bytes<T>(v: &T) -> &[u8] {
-    unsafe { core::slice::from_raw_parts((v as *const T) as *const u8, core::mem::size_of::<T>()) }
-}
-
-fn as_bytes_slice<T>(v: &[T]) -> &[u8] {
-    unsafe {
-        core::slice::from_raw_parts(v.as_ptr() as *const u8, core::mem::size_of::<T>() * v.len())
-    }
-}
-
-fn percent_decode_to_bytes(s: &str) -> Result<Vec<u8>> {
-    // Minimal percent-decoder for data URLs with non-base64 payloads.
-    // (We keep it strict: invalid percent sequences error.)
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' => {
-                if i + 2 >= bytes.len() {
-                    bail!("invalid percent-encoding: truncated");
-                }
-                let hi = bytes[i + 1];
-                let lo = bytes[i + 2];
-                let hex = |b: u8| -> Option<u8> {
-                    match b {
-                        b'0'..=b'9' => Some(b - b'0'),
-                        b'a'..=b'f' => Some(b - b'a' + 10),
-                        b'A'..=b'F' => Some(b - b'A' + 10),
-                        _ => None,
-                    }
-                };
-
-                let hi = hex(hi).ok_or_else(|| anyhow!("invalid percent-encoding"))?;
-                let lo = hex(lo).ok_or_else(|| anyhow!("invalid percent-encoding"))?;
-                out.push((hi << 4) | lo);
-                i += 3;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-
-    Ok(out)
-}
-
-fn decode_data_url(data_url: &str) -> Result<Vec<u8>> {
-    let s = data_url.trim();
-    if !s.starts_with("data:") {
-        bail!("not a data URL");
-    }
-
-    let (_, rest) = s.split_at("data:".len());
-    let (meta, data) = rest
-        .split_once(',')
-        .ok_or_else(|| anyhow!("invalid data URL: missing comma"))?;
-
-    let is_base64 = meta
-        .split(';')
-        .any(|t| t.trim().eq_ignore_ascii_case("base64"));
-
-    if is_base64 {
-        // Some producers use URL-safe base64; try both.
-        general_purpose::STANDARD
-            .decode(data.trim())
-            .or_else(|_| general_purpose::URL_SAFE.decode(data.trim()))
-            .map_err(|e| anyhow!("invalid base64 in data URL: {e}"))
-    } else {
-        percent_decode_to_bytes(data)
-    }
-}
-
-fn load_image_from_data_url(data_url: &str) -> Result<DynamicImage> {
-    let bytes = decode_data_url(data_url)?;
-    image::load_from_memory(&bytes).map_err(|e| anyhow!("failed to decode image bytes: {e}"))
-}
-
 pub fn update_pass_params(
     shader_space: &ShaderSpace,
     pass: &PassBindings,
@@ -149,21 +68,6 @@ pub fn update_pass_params(
 ) -> ShaderSpaceResult<()> {
     shader_space.write_buffer(pass.params_buffer.as_str(), 0, as_bytes(params))?;
     Ok(())
-}
-
-fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 3]; 6] {
-    let w = width.max(1.0);
-    let h = height.max(1.0);
-    let hw = w * 0.5;
-    let hh = h * 0.5;
-    [
-        [-hw, -hh, 0.0],
-        [hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, hh, 0.0],
-    ]
 }
 
 #[allow(dead_code)] // Used by tests
@@ -1010,6 +914,7 @@ mod tests {
     fn data_url_decodes_png_bytes() {
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
+        use base64::{engine::general_purpose, Engine as _};
 
         // Build a valid 1x1 PNG in memory, then wrap it as a data URL.
         let src = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0]));

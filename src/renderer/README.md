@@ -9,12 +9,20 @@ src/renderer/
 ├── mod.rs                          # Module entry point and re-exports
 ├── types.rs                        # Core type definitions
 ├── utils.rs                        # Utility functions
-├── validation.rs                   # WGSL validation using naga
+├── validation.rs                   # WGSL validation using naga (4 tests)
+├── scene_prep.rs                   # Scene preparation and validation
+├── wgsl.rs                         # WGSL shader generation
+├── shader_space.rs                 # ShaderSpace construction
 └── node_compiler/                  # Node compilation infrastructure
-    ├── mod.rs                      # Compiler framework
+    ├── mod.rs                      # Compiler framework and dispatch
     ├── input_nodes.rs              # ColorInput, FloatInput, etc. (5 tests)
     ├── math_nodes.rs               # MathAdd, MathMultiply, etc. (2 tests)
-    └── attribute.rs                # Attribute node (4 tests)
+    ├── attribute.rs                # Attribute node (4 tests)
+    ├── texture_nodes.rs            # ImageTexture (3 tests)
+    ├── trigonometry_nodes.rs       # Sin, Cos, Time (3 tests)
+    ├── vector_nodes.rs             # VectorMath, DotProduct, etc. (4 tests)
+    ├── color_nodes.rs              # ColorMix, ColorRamp, HSVAdjust (3 tests)
+    └── legacy_nodes.rs             # Backward compatibility nodes (3 tests)
 ```
 
 ## Module Responsibilities
@@ -45,12 +53,35 @@ WGSL validation using the naga library:
 - `validate_wgsl_with_context()` - Validate with contextual error messages
 - Includes 4 unit tests covering valid/invalid WGSL cases
 
+### scene_prep.rs
+Scene preparation and validation:
+- `prepare_scene()` - Prepare scene for rendering (topological sort, validation)
+- `auto_wrap_primitive_pass_inputs()` - Auto-wrap primitive values into render passes
+- Port type utilities for connection validation
+- Composite layer ordering
+
+### wgsl.rs
+WGSL shader generation:
+- `build_pass_wgsl_bundle()` - Generate WGSL bundle for a render pass
+- `build_all_pass_wgsl_bundles_from_scene()` - Generate WGSL for all passes
+- Gaussian blur utilities for post-processing effects
+- Helper functions for formatting WGSL code
+
+### shader_space.rs
+ShaderSpace construction:
+- `build_shader_space_from_scene()` - Build complete ShaderSpace from scene
+- `build_error_shader_space()` - Build error visualization ShaderSpace
+- `update_pass_params()` - Update uniform parameters for passes
+- Texture creation, geometry buffers, uniform buffers, pipelines
+- Composite layer handling
+
 ### node_compiler/
 Node compilation infrastructure and implementations:
 
 #### mod.rs
-- Compiler framework and infrastructure
-- Future: Dispatch system for routing node types to compilers
+- `compile_material_expr()` - Main dispatch function for compiling material expressions
+- Dispatches to specific node compiler modules based on node type
+- Test utilities for creating test scenes
 
 #### input_nodes.rs
 Compilers for constant input nodes:
@@ -75,6 +106,45 @@ Compiler for attribute nodes:
 - `compile_attribute()` - Read vertex attributes (currently supports UV)
 
 **Tests**: 4 unit tests covering default/case-insensitive/error cases
+
+#### texture_nodes.rs
+Compilers for texture nodes:
+- `compile_image_texture()` - ImageTexture nodes with texture sampling
+
+**Tests**: 3 unit tests covering texture binding registration
+
+#### trigonometry_nodes.rs
+Compilers for trigonometric and time nodes:
+- `compile_sin()` - Sine function
+- `compile_cos()` - Cosine function
+- `compile_time()` - Animation time value
+
+**Tests**: 3 unit tests covering sin/cos/time operations
+
+#### vector_nodes.rs
+Compilers for vector math nodes:
+- `compile_vector_math()` - Generic vector math operations
+- `compile_dot_product()` - Dot product of two vectors
+- `compile_cross_product()` - Cross product of two vec3 vectors
+- `compile_normalize()` - Normalize vector to unit length
+
+**Tests**: 4 unit tests covering vector operations
+
+#### color_nodes.rs
+Compilers for color manipulation nodes:
+- `compile_color_mix()` - Mix two colors based on a factor
+- `compile_color_ramp()` - Map scalar through color gradient
+- `compile_hsv_adjust()` - Adjust hue, saturation, value
+
+**Tests**: 3 unit tests covering color operations
+
+#### legacy_nodes.rs
+Compilers for backward compatibility with legacy node types:
+- `compile_float_scalar_constant()` - Float/Scalar/Constant nodes
+- `compile_vec2/3/4_color()` - Legacy vector/color nodes
+- `compile_add/mul/mix/clamp/smoothstep()` - Legacy math operations
+
+**Tests**: 3 unit tests covering legacy node compatibility
 
 ## Usage Examples
 
@@ -158,8 +228,13 @@ Current coverage:
 - `input_nodes.rs` - 5 tests (all input node types)
 - `math_nodes.rs` - 2 tests (add/multiply operations)
 - `attribute.rs` - 4 tests (uv attribute variations)
+- `texture_nodes.rs` - 3 tests (texture binding)
+- `trigonometry_nodes.rs` - 3 tests (sin/cos/time)
+- `vector_nodes.rs` - 4 tests (dot/cross/normalize/vector math)
+- `color_nodes.rs` - 3 tests (mix/ramp/hsv)
+- `legacy_nodes.rs` - 3 tests (backward compatibility)
 
-**Total: 15 unit tests**
+**Total: 31 unit tests**
 
 ## Adding New Node Types
 
@@ -250,7 +325,7 @@ DSL JSON
     ↓
 Schema Validation (src/schema.rs)
     ↓
-Scene Preparation (future: scene_prep.rs)
+Scene Preparation (scene_prep.rs)
     ├── Tree-shake unused nodes
     ├── Auto-wrap primitives
     └── Topological sort
@@ -261,10 +336,13 @@ Node Compilation (node_compiler/*)
     ├── Type coercion
     └── Cache results
     ↓
+WGSL Generation (wgsl.rs)
+    └── Build shader bundles
+    ↓
 WGSL Validation (validation.rs)
     └── Validate with naga
     ↓
-ShaderSpace Construction (future: shader_space.rs)
+ShaderSpace Construction (shader_space.rs)
     ├── Create GPU resources
     ├── Build pipelines
     └── Setup render order
@@ -274,14 +352,35 @@ Render (rust-wgpu-fiber)
 
 ## Current Status
 
-**Implemented**: 10 / 50 node types (20%)
-- ✅ ColorInput, FloatInput, IntInput
-- ✅ Vector2Input, Vector3Input  
-- ✅ Attribute
+**Implemented**: ~30 node types (60%)
+
+### Input Nodes (5)
+- ✅ ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input
+
+### Math Nodes (4)
 - ✅ MathAdd, MathMultiply, MathClamp, MathPower
 
-**Remaining**: 40 node types
-See `assets/node-scheme.json` for complete list and `docs/renderer-refactoring-implementation-guide.md` for roadmap.
+### Attribute Nodes (1)
+- ✅ Attribute
+
+### Texture Nodes (1)
+- ✅ ImageTexture
+
+### Trigonometry Nodes (3)
+- ✅ Sin, Cos, Time
+
+### Vector Nodes (4)
+- ✅ VectorMath, DotProduct, CrossProduct, Normalize
+
+### Color Nodes (3)
+- ✅ ColorMix, ColorRamp, HSVAdjust
+
+### Legacy Nodes (backward compatibility)
+- ✅ Float, Scalar, Constant
+- ✅ Vec2, Vec3, Vec4, Color
+- ✅ Add, Mul, Multiply, Mix, Clamp, Smoothstep
+
+**Remaining**: See `assets/node-scheme.json` for complete list and `docs/renderer-refactoring-implementation-guide.md` for roadmap.
 
 ## Documentation
 
@@ -291,11 +390,10 @@ See `assets/node-scheme.json` for complete list and `docs/renderer-refactoring-i
 
 ## Migration from renderer.rs
 
-The current `src/renderer.rs` (2723 lines) is being incrementally refactored into this modular structure. 
+The modular renderer structure is now **fully implemented**:
+- `scene_prep.rs` - Scene preparation and validation
+- `wgsl.rs` - WGSL shader generation
+- `shader_space.rs` - ShaderSpace construction (1185 lines)
+- `node_compiler/*` - All node compilers organized by category
 
-**Current approach**: Both implementations coexist
-- New code uses the modular structure
-- Legacy code remains in `renderer.rs`
-- Gradual migration as node compilers are implemented
-
-**Final state**: `renderer.rs` will be removed or reduced to simple re-exports from this module.
+The original monolithic `renderer.rs` has been successfully decomposed into this modular structure.
