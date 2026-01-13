@@ -62,6 +62,7 @@ pub fn compile_material_expr(
         
         // Texture nodes
         "ImageTexture" => texture_nodes::compile_image_texture(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "PassTexture" => texture_nodes::compile_pass_texture(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         
         // Trigonometry nodes
         "Sin" => trigonometry_nodes::compile_sin(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,

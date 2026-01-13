@@ -40,6 +40,36 @@ cargo test
 
 ---
 
+## 2.1 用命令行直接做一次 headless 渲染（给脚本用）
+
+当你在写测试脚本时，如果手里已经有一个 SceneDSL 的 JSON 文件，并且这个 scene 的 RenderTarget 是 `File`，可以直接通过命令行一次性 headless 渲染并输出到指定目录。
+
+要求：
+
+- 必须带 `--headless`
+- 必须带 `--dsl-json <scene.json>`（只支持文件路径）
+- 必须带 `--outputdir <dir>`
+- 输出文件名使用 RenderTarget(File) 节点的 `fileName`（会先应用 scheme 默认值）；`--outputdir` 会覆盖 scene 里的 `directory`
+
+示例：
+
+```bash
+cargo run -q -- \
+  --headless \
+  --outputdir ./tmp/out \
+  --dsl-json ./tests/cases/wgsl_generation/simple_1.json
+```
+
+成功时进程会输出类似：
+
+```text
+[headless] saved: <outputdir>/<fileName>
+```
+
+失败时会返回非零退出码并打印错误信息。
+
+---
+
 ## 3. 生成/更新 golden 输出（第一次建用例、或 WGSL 预期变更时）
 
 当你新增节点、调整 WGSL 输出格式，或者第一次创建/新增某个 `*.json` case 时：

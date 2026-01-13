@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema;
 
+#[derive(Debug, Clone)]
+pub struct FileRenderTarget {
+    pub directory: String,
+    pub file_name: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SceneDSL {
     pub version: String,
@@ -111,10 +117,15 @@ pub fn load_scene_from_path(path: impl AsRef<std::path::Path>) -> Result<SceneDS
 
     // Normalize params with defaults from the bundled node scheme.
     // This keeps older/hand-written DSL compatible when nodes omit parameters.
-    let scheme = schema::load_default_scheme()?;
-    apply_node_default_params(&mut scene, &scheme);
+    normalize_scene_defaults(&mut scene)?;
 
     Ok(scene)
+}
+
+pub fn normalize_scene_defaults(scene: &mut SceneDSL) -> Result<()> {
+    let scheme = schema::load_default_scheme()?;
+    apply_node_default_params(scene, &scheme);
+    Ok(())
 }
 
 fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
@@ -132,6 +143,47 @@ fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) 
         }
         node.params = merged;
     }
+}
+
+/// If the scene's (single) RenderTarget node is `File`, return its directory/fileName parameters.
+///
+/// Note: if params are missing, falls back to scheme defaults (`directory=""`, `fileName="output.png"`).
+pub fn file_render_target(scene: &SceneDSL) -> Result<Option<FileRenderTarget>> {
+    let scheme = schema::load_default_scheme()?;
+    let render_targets: Vec<&Node> = scene
+        .nodes
+        .iter()
+        .filter(|n| {
+            scheme
+                .nodes
+                .get(&n.node_type)
+                .and_then(|s| s.category.as_deref())
+                == Some("RenderTarget")
+        })
+        .collect();
+
+    if render_targets.is_empty() {
+        return Ok(None);
+    }
+    if render_targets.len() != 1 {
+        bail!("expected exactly 1 RenderTarget node, got {}", render_targets.len());
+    }
+
+    let rt = render_targets[0];
+    if rt.node_type != "File" {
+        return Ok(None);
+    }
+
+    let directory = parse_str(&rt.params, "directory").unwrap_or("").to_string();
+    let file_name = parse_str(&rt.params, "fileName")
+        .or_else(|| parse_str(&rt.params, "filename"))
+        .unwrap_or("output.png")
+        .to_string();
+
+    Ok(Some(FileRenderTarget {
+        directory,
+        file_name,
+    }))
 }
 
 pub fn find_node<'a>(nodes_by_id: &'a HashMap<String, Node>, node_id: &str) -> Result<&'a Node> {

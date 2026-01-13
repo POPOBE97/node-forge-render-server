@@ -3,6 +3,12 @@
 //! This module contains logic for building ShaderSpace instances from DSL scenes,
 //! including texture creation, geometry buffers, uniform buffers, pipelines, and
 //! composite layer handling.
+//!
+//! ## Chain Pass Support
+//! 
+//! This module supports chaining pass nodes together (e.g., GuassianBlurPass -> GuassianBlurPass).
+//! Each pass that outputs to `pass` type gets an intermediate texture allocated automatically.
+//! Resolution inheritance: downstream passes inherit upstream resolution by default, but can override.
 
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
@@ -12,6 +18,8 @@ use rust_wgpu_fiber::{
     eframe::wgpu::{
         self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
     },
+    HeadlessRenderer,
+    HeadlessRendererConfig,
     pool::{
         buffer_pool::BufferSpec,
         sampler_pool::SamplerSpec,
@@ -24,14 +32,15 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{
         find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32,
-        Node, SceneDSL,
+        SceneDSL,
     },
     renderer::{
         node_compiler::geometry_nodes::rect2d_geometry_vertices,
-        scene_prep::{prepare_scene, composite_layers_in_draw_order},
-        types::{Params, PassBindings},
+        scene_prep::prepare_scene,
+        types::{Params, PassBindings, PassOutputRegistry, PassOutputSpec},
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         wgsl::{
+            build_blur_image_wgsl_bundle,
             build_downsample_bundle,
             build_horizontal_blur_bundle,
             build_pass_wgsl_bundle,
@@ -44,6 +53,58 @@ use crate::{
         },
     },
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn render_scene_to_png_headless(
+    scene: &SceneDSL,
+    output_path: impl AsRef<std::path::Path>,
+) -> Result<()> {
+    let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
+        .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
+
+    let (shader_space, _resolution, output_texture_name, _passes) =
+        build_shader_space_from_scene(scene, renderer.device.clone(), renderer.queue.clone())?;
+
+    shader_space.render();
+    shader_space
+        .save_texture_png(output_texture_name.as_str(), output_path)
+        .map_err(|e| anyhow!("failed to save png: {e}"))?;
+    Ok(())
+}
+
+fn sampled_pass_node_ids(scene: &SceneDSL, nodes_by_id: &HashMap<String, crate::dsl::Node>) -> HashSet<String> {
+    // Any pass connected into PassTexture.pass is considered "sampled" and must have a resolvable output texture.
+    let mut out: HashSet<String> = HashSet::new();
+    for n in nodes_by_id.values() {
+        if n.node_type != "PassTexture" {
+            continue;
+        }
+        if let Some(conn) = incoming_connection(scene, &n.id, "pass") {
+            out.insert(conn.from.node_id.clone());
+        }
+    }
+    out
+}
+
+fn resolve_pass_texture_bindings(
+    pass_output_registry: &PassOutputRegistry,
+    pass_node_ids: &[String],
+) -> Result<Vec<PassTextureBinding>> {
+    let mut out: Vec<PassTextureBinding> = Vec::with_capacity(pass_node_ids.len());
+    for upstream_pass_id in pass_node_ids {
+        let Some(tex) = pass_output_registry.get_texture(upstream_pass_id) else {
+            bail!(
+                "PassTexture references upstream pass {upstream_pass_id}, but its output texture is not registered yet. \
+Ensure the upstream pass is rendered earlier in Composite draw order."
+            );
+        };
+        out.push(PassTextureBinding {
+            texture: tex.clone(),
+            image_node_id: None,
+        });
+    }
+    Ok(out)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
@@ -213,6 +274,9 @@ pub fn build_shader_space_from_scene(
     let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
+    // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
+    let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id);
+
     for id in order {
         let node = match nodes_by_id.get(id) {
             Some(n) => n,
@@ -271,6 +335,10 @@ pub fn build_shader_space_from_scene(
         .cloned()
         .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
 
+    // Track pass outputs for chain resolution.
+    let mut pass_output_registry = PassOutputRegistry::new();
+    let format = parse_texture_format(&target_node.params)?;
+
     for layer_id in composite_layers_in_order {
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
@@ -279,6 +347,20 @@ pub fn build_shader_space_from_scene(
                     .get(layer_id)
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
+
+                // If this pass is sampled downstream (PassTexture), render into a dedicated intermediate texture.
+                // This avoids aliasing the final output and gives PassTexture a stable source.
+                let pass_output_texture: ResourceName = if sampled_pass_ids.contains(layer_id) {
+                    let out_tex: ResourceName = format!("{layer_id}__out").into();
+                    textures.push(TextureDecl {
+                        name: out_tex.clone(),
+                        size: [tgt_w as u32, tgt_h as u32],
+                        format,
+                    });
+                    out_tex
+                } else {
+                    target_texture_name.clone()
+                };
 
                 let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
 
@@ -317,7 +399,7 @@ pub fn build_shader_space_from_scene(
                 let bundle = build_pass_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
                 let shader_wgsl = bundle.module;
 
-                let texture_bindings: Vec<PassTextureBinding> = bundle
+                let mut texture_bindings: Vec<PassTextureBinding> = bundle
                     .image_textures
                     .iter()
                     .filter_map(|id| ids.get(id).cloned().map(|tex| PassTextureBinding {
@@ -326,10 +408,15 @@ pub fn build_shader_space_from_scene(
                     }))
                     .collect();
 
+                texture_bindings.extend(resolve_pass_texture_bindings(
+                    &pass_output_registry,
+                    &bundle.pass_textures,
+                )?);
+
                 render_pass_specs.push(RenderPassSpec {
                     name: pass_name.clone(),
                     geometry_buffer,
-                    target_texture: target_texture_name.clone(),
+                    target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
                     params,
                     shader_wgsl,
@@ -339,18 +426,76 @@ pub fn build_shader_space_from_scene(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
                 composite_passes.push(pass_name);
+
+                // Register output so downstream PassTexture nodes can resolve it.
+                pass_output_registry.register(PassOutputSpec {
+                    node_id: layer_id.clone(),
+                    texture_name: pass_output_texture,
+                    resolution: [tgt_w as u32, tgt_h as u32],
+                    format,
+                });
             }
             "GuassianBlurPass" => {
-                // For now: GuassianBlurPass must take its image input from ImageTexture.
-                let img_conn = incoming_connection(&prepared.scene, layer_id, "image")
-                    .ok_or_else(|| anyhow!("GuassianBlurPass.image missing for {layer_id}"))?;
-                let img_node = find_node(&nodes_by_id, &img_conn.from.node_id)?;
-                if img_node.node_type != "ImageTexture" {
-                    bail!(
-                        "GuassianBlurPass.image must come from ImageTexture, got {}",
-                        img_node.node_type
-                    );
-                }
+                // GuassianBlurPass takes its source from `image` input (color type).
+                // This can be from PassTexture (sampling another pass), ImageTexture, or any color expression.
+                // We first render the image expression to an intermediate texture, then apply the blur chain.
+                
+                // Create source texture for the image input.
+                let src_tex: ResourceName = format!("{layer_id}__src").into();
+                let src_resolution = [tgt_w as u32, tgt_h as u32];
+                textures.push(TextureDecl {
+                    name: src_tex.clone(),
+                    size: src_resolution,
+                    format,
+                });
+
+                // Build a fullscreen pass to render the `image` input expression.
+                let geo_src: ResourceName = format!("{layer_id}__geo_src").into();
+                geometry_buffers.push((geo_src.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+
+                let params_src: ResourceName = format!("params_{layer_id}__src").into();
+                let params_src_val = Params {
+                    target_size: [tgt_w, tgt_h],
+                    geo_size: [tgt_w, tgt_h],
+                    center: [0.0, 0.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 1.0],
+                };
+
+                // Build WGSL for the image input expression (similar to RenderPass material).
+                let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                let mut src_texture_bindings: Vec<PassTextureBinding> = src_bundle
+                    .image_textures
+                    .iter()
+                    .filter_map(|id| ids.get(id).cloned().map(|tex| PassTextureBinding {
+                        texture: tex,
+                        image_node_id: Some(id.clone()),
+                    }))
+                    .collect();
+
+                src_texture_bindings.extend(resolve_pass_texture_bindings(
+                    &pass_output_registry,
+                    &src_bundle.pass_textures,
+                )?);
+
+                render_pass_specs.push(RenderPassSpec {
+                    name: format!("{layer_id}__src_pass").into(),
+                    geometry_buffer: geo_src,
+                    target_texture: src_tex.clone(),
+                    params_buffer: params_src.clone(),
+                    params: params_src_val,
+                    shader_wgsl: src_bundle.module,
+                    texture_bindings: src_texture_bindings,
+                    sampler_kind: SamplerKind::NearestClamp,
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(format!("{layer_id}__src_pass").into());
+
+                // Resolution: use target resolution, but allow override via params.
+                let blur_w = parse_u32(&layer_node.params, "width").unwrap_or(src_resolution[0]);
+                let blur_h = parse_u32(&layer_node.params, "height").unwrap_or(src_resolution[1]);
 
                 let sigma = parse_f32(&layer_node.params, "radius").unwrap_or(0.0).max(0.0);
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
@@ -363,13 +508,11 @@ pub fn build_shader_space_from_scene(
                     vec![downsample_factor]
                 };
 
-                let format = parse_texture_format(&target_node.params)?;
-
                 // Allocate textures (and matching fullscreen geometry) for each downsample step.
-                // step 8 -> size >> 3; step 2 after 8 -> additional >> 1.
+                // Use blur_w/blur_h as the base resolution (inherited from upstream or overridden).
                 let mut step_textures: Vec<(u32, ResourceName, u32, u32, ResourceName)> = Vec::new();
-                let mut cur_w: u32 = tgt_w as u32;
-                let mut cur_h: u32 = tgt_h as u32;
+                let mut cur_w: u32 = blur_w;
+                let mut cur_h: u32 = blur_h;
                 for step in &downsample_steps {
                     let shift = match *step {
                         1 => 0,
@@ -413,12 +556,26 @@ pub fn build_shader_space_from_scene(
                     format,
                 });
 
+                // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
+                // Otherwise, render to the final Composite.target texture.
+                let output_tex: ResourceName = if sampled_pass_ids.contains(layer_id) {
+                    let out_tex: ResourceName = format!("{layer_id}__out").into();
+                    textures.push(TextureDecl {
+                        name: out_tex.clone(),
+                        size: [blur_w, blur_h],
+                        format,
+                    });
+                    out_tex
+                } else {
+                    target_texture_name.clone()
+                };
+
                 // Fullscreen geometry buffers for blur + upsample.
                 let geo_ds: ResourceName = format!("{layer_id}__geo_ds").into();
                 geometry_buffers
                     .push((geo_ds.clone(), make_fullscreen_geometry(ds_w as f32, ds_h as f32)));
                 let geo_out: ResourceName = format!("{layer_id}__geo_out").into();
-                geometry_buffers.push((geo_out.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+                geometry_buffers.push((geo_out.clone(), make_fullscreen_geometry(blur_w as f32, blur_h as f32)));
 
                 // Downsample chain
                 let mut prev_tex: Option<ResourceName> = None;
@@ -435,14 +592,9 @@ pub fn build_shader_space_from_scene(
                         color: [0.0, 0.0, 0.0, 1.0],
                     };
 
-                    let (src_tex, src_img_node) = match &prev_tex {
-                        None => (
-                            ids.get(&img_conn.from.node_id)
-                                .cloned()
-                                .ok_or_else(|| anyhow!("missing name for node: {}", img_conn.from.node_id))?,
-                            Some(img_conn.from.node_id.clone()),
-                        ),
-                        Some(t) => (t.clone(), None),
+                    let src_tex = match &prev_tex {
+                        None => src_tex.clone(),
+                        Some(t) => t.clone(),
                     };
 
                     render_pass_specs.push(RenderPassSpec {
@@ -454,7 +606,7 @@ pub fn build_shader_space_from_scene(
                         shader_wgsl: bundle.module,
                         texture_bindings: vec![PassTextureBinding {
                             texture: src_tex,
-                            image_node_id: src_img_node,
+                            image_node_id: None,
                         }],
                         sampler_kind: SamplerKind::NearestMirror,
                         blend_state: BlendState::REPLACE,
@@ -523,12 +675,12 @@ pub fn build_shader_space_from_scene(
 
                 composite_passes.push(format!("{layer_id}__vblur_ds{downsample_factor}").into());
 
-                // 4) Upsample bilinear back to target: v_tex -> output target
+                // 4) Upsample bilinear back to output: v_tex -> output_tex
                 let params_u: ResourceName = format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
                 let bundle_u = build_upsample_bilinear_bundle();
                 let params_u_val = Params {
-                    target_size: [tgt_w, tgt_h],
-                    geo_size: [tgt_w, tgt_h],
+                    target_size: [blur_w as f32, blur_h as f32],
+                    geo_size: [blur_w as f32, blur_h as f32],
                     center: [0.0, 0.0],
                     time: 0.0,
                     _pad0: 0.0,
@@ -537,7 +689,7 @@ pub fn build_shader_space_from_scene(
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
                     geometry_buffer: geo_out.clone(),
-                    target_texture: target_texture_name.clone(),
+                    target_texture: output_tex.clone(),
                     params_buffer: params_u.clone(),
                     params: params_u_val,
                     shader_wgsl: bundle_u.module,
@@ -553,10 +705,25 @@ pub fn build_shader_space_from_scene(
                 composite_passes.push(
                     format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
                 );
+
+                // Register this GuassianBlurPass output for potential downstream chaining.
+                pass_output_registry.register(PassOutputSpec {
+                    node_id: layer_id.clone(),
+                    texture_name: output_tex,
+                    resolution: [blur_w, blur_h],
+                    format,
+                });
             }
-            other => bail!(
-                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
-            ),
+            other => {
+                // To add support for new pass types:
+                // 1. Add the type to is_pass_node() function
+                // 2. Add a match arm here with the rendering logic
+                // 3. Register the output in pass_output_registry for chain support
+                bail!(
+                    "Composite layer must be a pass node (RenderPass/GuassianBlurPass), got {other} for {layer_id}. \
+                     To enable chain support for new pass types, update is_pass_node() and add handling here."
+                )
+            },
         }
     }
 
@@ -821,7 +988,26 @@ pub fn build_shader_space_from_scene(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::Node;
+    use crate::renderer::scene_prep::composite_layers_in_draw_order;
     use serde_json::json;
+
+    #[test]
+    fn pass_textures_are_included_in_texture_bindings() {
+        // Regression: previously we only bound `bundle.image_textures`, so shaders that used PassTexture
+        // would declare @group(1) bindings that were missing from the pipeline layout.
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "upstream_pass".to_string(),
+            texture_name: "up_tex".into(),
+            resolution: [64, 64],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let bindings = resolve_pass_texture_bindings(&reg, &["upstream_pass".to_string()]).unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].texture, ResourceName::from("up_tex"));
+    }
 
     #[test]
     fn render_pass_blend_state_from_explicit_params() {

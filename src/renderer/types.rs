@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use rust_wgpu_fiber::ResourceName;
+use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 
 /// WGSL value type for shader expressions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,6 +11,80 @@ pub enum ValueType {
     Vec2,
     Vec3,
     Vec4,
+}
+
+/// Output specification for any pass node that produces a texture.
+/// 
+/// This trait enables chain composition - any node that outputs a texture
+/// can be used as input to another pass node, allowing chains like:
+/// `RenderPass -> GuassianBlurPass -> GuassianBlurPass -> ...`
+#[derive(Clone, Debug)]
+pub struct PassOutputSpec {
+    /// The node ID that produces this output.
+    pub node_id: String,
+    /// The output texture resource name.
+    pub texture_name: ResourceName,
+    /// Resolution of the output texture [width, height].
+    pub resolution: [u32; 2],
+    /// Texture format.
+    pub format: TextureFormat,
+}
+
+/// Information about a pass node's input requirements.
+#[derive(Clone, Debug)]
+pub struct PassInputSpec {
+    /// The node ID that requires this input.
+    pub node_id: String,
+    /// The port ID for the input (e.g., "pass").
+    pub port_id: String,
+    /// Expected resolution (if explicitly specified, otherwise inherited).
+    pub explicit_resolution: Option<[u32; 2]>,
+}
+
+/// Registry of pass outputs for resolving chain dependencies.
+#[derive(Default, Clone, Debug)]
+pub struct PassOutputRegistry {
+    /// Map from node_id to its output specification.
+    outputs: HashMap<String, PassOutputSpec>,
+}
+
+impl PassOutputRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a pass output.
+    pub fn register(&mut self, spec: PassOutputSpec) {
+        self.outputs.insert(spec.node_id.clone(), spec);
+    }
+
+    /// Get the output spec for a node.
+    pub fn get(&self, node_id: &str) -> Option<&PassOutputSpec> {
+        self.outputs.get(node_id)
+    }
+
+    /// Get the output texture name for a node.
+    pub fn get_texture(&self, node_id: &str) -> Option<&ResourceName> {
+        self.outputs.get(node_id).map(|s| &s.texture_name)
+    }
+
+    /// Get the resolution for a node's output.
+    pub fn get_resolution(&self, node_id: &str) -> Option<[u32; 2]> {
+        self.outputs.get(node_id).map(|s| s.resolution)
+    }
+    
+    /// Resolve the effective resolution for a pass input.
+    /// If explicit_resolution is Some, use it. Otherwise inherit from upstream.
+    pub fn resolve_resolution(
+        &self,
+        upstream_node_id: &str,
+        explicit_resolution: Option<[u32; 2]>,
+        default_resolution: [u32; 2],
+    ) -> [u32; 2] {
+        explicit_resolution
+            .or_else(|| self.get_resolution(upstream_node_id))
+            .unwrap_or(default_resolution)
+    }
 }
 
 impl ValueType {
@@ -59,6 +134,10 @@ pub struct MaterialCompileContext {
     pub image_textures: Vec<String>,
     /// Map from node ID to texture binding index.
     pub image_index_by_node: HashMap<String, usize>,
+    /// List of PassTexture node IDs (upstream pass nodes) referenced in order.
+    pub pass_textures: Vec<String>,
+    /// Map from pass node ID to texture binding index.
+    pub pass_index_by_node: HashMap<String, usize>,
 }
 
 impl MaterialCompileContext {
@@ -73,6 +152,18 @@ impl MaterialCompileContext {
         idx
     }
 
+    /// Register a pass texture node and return its binding index.
+    /// The binding index is offset by the number of image textures to avoid conflicts.
+    pub fn register_pass_texture(&mut self, pass_node_id: &str) -> usize {
+        if let Some(&idx) = self.pass_index_by_node.get(pass_node_id) {
+            return idx;
+        }
+        let idx = self.pass_textures.len();
+        self.pass_textures.push(pass_node_id.to_string());
+        self.pass_index_by_node.insert(pass_node_id.to_string(), idx);
+        idx
+    }
+
     /// Generate the WGSL variable name for a texture binding.
     pub fn tex_var_name(node_id: &str) -> String {
         format!("img_tex_{}", node_id.replace('-', "_"))
@@ -81,6 +172,16 @@ impl MaterialCompileContext {
     /// Generate the WGSL variable name for a sampler binding.
     pub fn sampler_var_name(node_id: &str) -> String {
         format!("img_samp_{}", node_id.replace('-', "_"))
+    }
+
+    /// Generate the WGSL variable name for a pass texture binding.
+    pub fn pass_tex_var_name(pass_node_id: &str) -> String {
+        format!("pass_tex_{}", pass_node_id.replace('-', "_"))
+    }
+
+    /// Generate the WGSL variable name for a pass sampler binding.
+    pub fn pass_sampler_var_name(pass_node_id: &str) -> String {
+        format!("pass_samp_{}", pass_node_id.replace('-', "_"))
     }
 }
 
@@ -118,4 +219,6 @@ pub struct WgslShaderBundle {
     pub module: String,
     /// ImageTexture node ids referenced by this pass's material graph, in binding order.
     pub image_textures: Vec<String>,
+    /// PassTexture node ids (upstream pass nodes) referenced by this pass's material graph, in binding order.
+    pub pass_textures: Vec<String>,
 }

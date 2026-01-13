@@ -3259,6 +3259,7 @@ dependencies = [
  "image",
  "log",
  "png 0.17.16",
+ "pollster",
  "tokio",
  "wasm-bindgen-futures",
  "web-sys",

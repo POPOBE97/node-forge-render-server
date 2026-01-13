@@ -11,9 +11,27 @@ use serde_json::Value;
 use tungstenite::{accept, Error as WsError, Message};
 
 use crate::{
+    dsl,
     dsl::SceneDSL,
     protocol::{now_millis, ErrorPayload, WSMessage},
 };
+
+fn spawn_server_ping_loop(hub: WsHub) {
+    thread::spawn(move || loop {
+        let ping = WSMessage::<Value> {
+            msg_type: "ping".to_string(),
+            timestamp: now_millis(),
+            request_id: None,
+            payload: None,
+        };
+
+        if let Ok(text) = serde_json::to_string(&ping) {
+            hub.broadcast(text);
+        }
+
+        thread::sleep(Duration::from_millis(200));
+    });
+}
 
 #[derive(Debug, Clone)]
 pub enum SceneUpdate {
@@ -53,23 +71,30 @@ pub fn spawn_ws_server(
     scene_drop_rx: Receiver<SceneUpdate>,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
-) -> thread::JoinHandle<()> {
-    let addr = addr.to_string();
-    thread::spawn(move || {
-        if let Err(e) = run_ws_server(&addr, scene_tx, scene_drop_rx, hub, last_good) {
+) -> Result<thread::JoinHandle<()>> {
+    let addr_str = addr.to_string();
+    let server = TcpListener::bind(addr)
+        .with_context(|| format!("failed to bind ws server at {addr}"))?;
+
+    // Editor-side heartbeat: server periodically emits {type:"ping"}.
+    // (Client may reply with {type:"pong"}, which we accept as a no-op.)
+    spawn_server_ping_loop(hub.clone());
+
+    Ok(thread::spawn(move || {
+        if let Err(e) = run_ws_server(server, &addr_str, scene_tx, scene_drop_rx, hub, last_good) {
             eprintln!("[ws] server failed: {e:?}");
         }
-    })
+    }))
 }
 
 fn run_ws_server(
+    server: TcpListener,
     addr: &str,
     scene_tx: Sender<SceneUpdate>,
     scene_drop_rx: Receiver<SceneUpdate>,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
 ) -> Result<()> {
-    let server = TcpListener::bind(addr).with_context(|| format!("failed to bind ws server at {addr}"))?;
     eprintln!("[ws] listening on ws://{addr}");
 
     for stream in server.incoming() {
@@ -187,6 +212,12 @@ fn handle_text_message(
             };
             let _ = ws.send(Message::Text(serde_json::to_string(&pong)?));
         }
+        "pong" => {
+            // No-op: clients may auto-reply to server-initiated pings.
+        }
+        "heartbeat" => {
+            // Backwards-compatibility / no-op.
+        }
         "scene_request" => {
             let scene = last_good.lock().ok().and_then(|g| g.clone());
             if let Some(scene) = scene {
@@ -219,7 +250,7 @@ fn handle_text_message(
                 }
             };
 
-            let scene: SceneDSL = match serde_json::from_value(payload) {
+            let mut scene: SceneDSL = match serde_json::from_value(payload) {
                 Ok(s) => s,
                 Err(e) => {
                     let message = format!("invalid SceneDSL: {e}");
@@ -235,6 +266,21 @@ fn handle_text_message(
                     return Ok(());
                 }
             };
+
+            // Keep client payload compact: fill in missing params from the bundled scheme.
+            if let Err(e) = dsl::normalize_scene_defaults(&mut scene) {
+                let message = format!("failed to apply default params: {e:#}");
+                send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                send_scene_update(
+                    scene_tx,
+                    scene_drop_rx,
+                    SceneUpdate::ParseError {
+                        message,
+                        request_id: msg.request_id,
+                    },
+                );
+                return Ok(());
+            }
 
             // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
             send_scene_update(

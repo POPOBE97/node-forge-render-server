@@ -31,5 +31,6 @@ pub use wgsl::{build_pass_wgsl_bundle, build_all_pass_wgsl_bundles_from_scene};
 pub use shader_space::{
     build_error_shader_space,
     build_shader_space_from_scene,
+    render_scene_to_png_headless,
     update_pass_params,
 };

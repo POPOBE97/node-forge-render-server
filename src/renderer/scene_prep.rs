@@ -370,13 +370,24 @@ pub fn composite_layers_in_draw_order(
     }
 
     // Dynamic layers (sorted by parameter index or port name)
+    let port_order: HashMap<&str, usize> = composite_node
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.id.as_str(), i))
+        .collect();
+
     let mut dynamic: Vec<(String, String)> = Vec::new();
     for conn in &scene.connections {
         if conn.to.node_id == composite_node_id && conn.to.port_id.starts_with("dynamic_") {
             dynamic.push((conn.to.port_id.clone(), conn.from.node_id.clone()));
         }
     }
-    dynamic.sort_by(|a, b| a.0.cmp(&b.0));
+    dynamic.sort_by(|a, b| {
+        let a_idx = port_order.get(a.0.as_str()).copied().unwrap_or(usize::MAX);
+        let b_idx = port_order.get(b.0.as_str()).copied().unwrap_or(usize::MAX);
+        a_idx.cmp(&b_idx).then_with(|| a.0.cmp(&b.0))
+    });
 
     for (_, node_id) in dynamic {
         layers.push(node_id);

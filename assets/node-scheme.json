@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-12T16:44:07.792Z",
+  "generatedAt": "2026-01-13T06:59:06.940Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -38,6 +38,7 @@
     "NoiseTexture",
     "Normalize",
     "PBRMaterial",
+    "PassTexture",
     "PrincipledBSDF",
     "Rect2DGeometry",
     "RenderPass",
@@ -1032,6 +1033,32 @@
           "id": "result",
           "name": "Result",
           "type": "vector3"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "PassTexture",
+      "label": "Pass Texture",
+      "category": "Texture",
+      "description": "Sample the output texture of an upstream pass node for use in material expressions",
+      "inputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uv",
+          "name": "UV",
+          "type": "vector2"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
         }
       ],
       "defaultParams": {}

@@ -185,3 +185,58 @@ mod tests {
         assert_eq!(ctx.image_textures[0], "img1");
     }
 }
+
+/// Compile a PassTexture node.
+/// 
+/// Samples the output texture of an upstream pass node for use in material expressions.
+/// This enables chain composition where one pass can sample another pass's output.
+pub fn compile_pass_texture<F>(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+{
+    // Find the upstream pass node connected to the "pass" input.
+    let pass_conn = incoming_connection(scene, &node.id, "pass")
+        .ok_or_else(|| anyhow::anyhow!("PassTexture.pass input is not connected"))?;
+    
+    let upstream_node_id = &pass_conn.from.node_id;
+    let upstream_node = nodes_by_id.get(upstream_node_id)
+        .ok_or_else(|| anyhow::anyhow!("PassTexture upstream node not found: {}", upstream_node_id))?;
+    
+    // Validate that upstream is a pass-producing node.
+    if !matches!(upstream_node.node_type.as_str(), "RenderPass" | "GuassianBlurPass") {
+        bail!("PassTexture.pass must be connected to a pass node, got {}", upstream_node.node_type);
+    }
+
+    // Register this pass texture for binding.
+    let _pass_index = ctx.register_pass_texture(upstream_node_id);
+
+    // If an explicit UV input is provided, use it; otherwise default to fragment input uv.
+    let uv_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, &node.id, "uv") {
+        compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?
+    } else {
+        TypedExpr::new("in.uv".to_string(), ValueType::Vec2)
+    };
+    
+    if uv_expr.ty != ValueType::Vec2 {
+        bail!("PassTexture.uv must be vector2, got {:?}", uv_expr.ty);
+    }
+
+    let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
+    let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
+    
+    // Pass textures typically don't need Y-flip since they're already in screen space.
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
+
+    match out_port.unwrap_or("color") {
+        "color" => Ok(TypedExpr::with_time(sample_expr, ValueType::Vec4, uv_expr.uses_time)),
+        other => bail!("unsupported PassTexture output port: {other}"),
+    }
+}

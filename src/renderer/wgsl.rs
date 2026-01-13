@@ -244,16 +244,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         compute: None,
         module,
         image_textures: Vec::new(),
+        pass_textures: Vec::new(),
     }
 }
 
 impl MaterialCompileContext {
     // Extension method for generating WGSL binding declarations
     fn wgsl_decls(&self) -> String {
-        if self.image_textures.is_empty() {
-            return String::new();
-        }
         let mut out = String::new();
+        
+        // Image texture bindings
         for (i, node_id) in self.image_textures.iter().enumerate() {
             let tex_binding = (i as u32) * 2;
             let samp_binding = tex_binding + 1;
@@ -266,6 +266,22 @@ impl MaterialCompileContext {
                 Self::sampler_var_name(node_id)
             ));
         }
+        
+        // Pass texture bindings (offset by image texture count)
+        let pass_binding_offset = (self.image_textures.len() as u32) * 2;
+        for (i, pass_node_id) in self.pass_textures.iter().enumerate() {
+            let tex_binding = pass_binding_offset + (i as u32) * 2;
+            let samp_binding = tex_binding + 1;
+            out.push_str(&format!(
+                "@group(1) @binding({tex_binding})\nvar {}: texture_2d<f32>;\n\n",
+                Self::pass_tex_var_name(pass_node_id)
+            ));
+            out.push_str(&format!(
+                "@group(1) @binding({samp_binding})\nvar {}: sampler;\n\n",
+                Self::pass_sampler_var_name(pass_node_id)
+            ));
+        }
+        
         out
     }
 }
@@ -279,6 +295,102 @@ impl MaterialCompileContext {
 // - legacy_nodes.rs, vector_nodes.rs, color_nodes.rs
 // 
 // Use: renderer::node_compiler::compile_material_expr instead.
+
+/// Build a WGSL shader bundle for the `image` input of a GuassianBlurPass.
+/// This compiles the color expression from the `image` port into a fullscreen shader.
+pub fn build_blur_image_wgsl_bundle(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    blur_pass_id: &str,
+) -> Result<WgslShaderBundle> {
+    let mut material_ctx = MaterialCompileContext::default();
+    
+    // Get the color expression from the `image` input.
+    let fragment_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, blur_pass_id, "image") {
+        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+        compile_material_expr(
+            scene,
+            nodes_by_id,
+            &conn.from.node_id,
+            Some(&conn.from.port_id),
+            &mut material_ctx,
+            &mut cache,
+        )?
+    } else {
+        // No image input - return transparent.
+        TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)".to_string(), ValueType::Vec4)
+    };
+
+    let image_textures = material_ctx.image_textures.clone();
+
+    let out_color = to_vec4_color(fragment_expr);
+    let fragment_body = format!("return {};", out_color.expr);
+
+    let mut common = r#"
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+    time: f32,
+    _pad0: f32,
+    color: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+struct VSOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+"#
+    .to_string();
+
+    common.push_str(&material_ctx.wgsl_decls());
+
+    // Fullscreen quad vertex shader - directly maps to screen space.
+    let vertex_entry = r#"
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VSOut {
+    var out: VSOut;
+
+    // Fullscreen UV: position is already in screen space, convert to [0,1] UV.
+    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+
+    // For fullscreen pass, convert to NDC directly.
+    let half = params.target_size * 0.5;
+    let ndc = vec2f(position.x / half.x, position.y / half.y);
+    out.position = vec4f(ndc, position.z, 1.0);
+    return out;
+}
+"#
+    .to_string();
+
+    let fragment_entry = format!(
+        r#"
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {{
+    {fragment_body}
+}}
+"#
+    );
+
+    let vertex = format!("{common}{vertex_entry}");
+    let fragment = format!("{common}{fragment_entry}");
+    let compute = None;
+    let module = format!("{common}{vertex_entry}{fragment_entry}");
+    let pass_textures = material_ctx.pass_textures.clone();
+
+    Ok(WgslShaderBundle {
+        common,
+        vertex,
+        fragment,
+        compute,
+        module,
+        image_textures,
+        pass_textures,
+    })
+}
 
 pub fn build_pass_wgsl_bundle(
     scene: &SceneDSL,
@@ -362,6 +474,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     let fragment = format!("{common}{fragment_entry}");
     let compute = None;
     let module = format!("{common}{vertex_entry}{fragment_entry}");
+    let pass_textures = material_ctx.pass_textures.clone();
 
     Ok(WgslShaderBundle {
         common,
@@ -370,6 +483,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         compute,
         module,
         image_textures,
+        pass_textures,
     })
 }
 
