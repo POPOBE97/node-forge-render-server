@@ -6,7 +6,8 @@
 //! - Helper functions for formatting WGSL code
 
 use std::collections::HashMap;
-use anyhow::Result;
+
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
     dsl::{find_node, incoming_connection, parse_f32, Node, SceneDSL},
@@ -23,11 +24,11 @@ fn typed(expr: impl Into<String>, ty: ValueType) -> TypedExpr {
     TypedExpr::new(expr, ty)
 }
 
-fn clamp_min_1(v: u32) -> u32 {
+pub(crate) fn clamp_min_1(v: u32) -> u32 {
     v.max(1)
 }
 
-fn gaussian_mip_level_and_sigma_p(sigma: f32) -> (u32, f32) {
+pub(crate) fn gaussian_mip_level_and_sigma_p(sigma: f32) -> (u32, f32) {
     // Ported from BlurMipmapGenerator.GetMipLevelAndSigmaP.
     let mut m_sample_count: u32 = 0;
     let mut sigma_p: f32 = sigma * sigma;
@@ -58,7 +59,7 @@ fn gaussian_mip_level_and_sigma_p(sigma: f32) -> (u32, f32) {
     (m_sample_count, sigma_p)
 }
 
-fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
+pub(crate) fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
     // Ported from BlurMipmapGenerator.GetGuassianKernel.
     let mut gaussian_kernel: [f64; 27] = [0.0; 27];
     let narrow_band: i32 = 27;
@@ -167,7 +168,7 @@ fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
     (kernel, offset, num)
 }
 
-fn fmt_f32(v: f32) -> String {
+pub(crate) fn fmt_f32(v: f32) -> String {
     if v.is_finite() {
         let s = format!("{v:.9}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()
@@ -176,12 +177,12 @@ fn fmt_f32(v: f32) -> String {
     }
 }
 
-fn array8_f32_wgsl(values: [f32; 8]) -> String {
+pub(crate) fn array8_f32_wgsl(values: [f32; 8]) -> String {
     let parts: Vec<String> = values.into_iter().map(fmt_f32).collect();
     format!("array<f32, 8>({})", parts.join(", "))
 }
 
-fn build_fullscreen_textured_bundle(fragment_body: String) -> WgslShaderBundle {
+pub(crate) fn build_fullscreen_textured_bundle(fragment_body: String) -> WgslShaderBundle {
     // Shared Params struct to match the runtime uniform.
     let common = r#"
 struct Params {
@@ -249,117 +250,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         module,
         image_textures: Vec::new(),
     }
-}
-
-fn as_bytes<T>(v: &T) -> &[u8] {
-    unsafe { core::slice::from_raw_parts((v as *const T) as *const u8, core::mem::size_of::<T>()) }
-}
-
-fn as_bytes_slice<T>(v: &[T]) -> &[u8] {
-    unsafe {
-        core::slice::from_raw_parts(v.as_ptr() as *const u8, core::mem::size_of::<T>() * v.len())
-    }
-}
-
-fn percent_decode_to_bytes(s: &str) -> Result<Vec<u8>> {
-    // Minimal percent-decoder for data URLs with non-base64 payloads.
-    // (We keep it strict: invalid percent sequences error.)
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' => {
-                if i + 2 >= bytes.len() {
-                    bail!("invalid percent-encoding: truncated");
-                }
-                let hi = bytes[i + 1];
-                let lo = bytes[i + 2];
-                let hex = |b: u8| -> Option<u8> {
-                    match b {
-                        b'0'..=b'9' => Some(b - b'0'),
-                        b'a'..=b'f' => Some(b - b'a' + 10),
-                        b'A'..=b'F' => Some(b - b'A' + 10),
-                        _ => None,
-                    }
-                };
-                let Some(hi) = hex(hi) else { bail!("invalid percent-encoding"); };
-                let Some(lo) = hex(lo) else { bail!("invalid percent-encoding"); };
-                out.push((hi << 4) | lo);
-                i += 3;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    Ok(out)
-}
-
-fn decode_data_url(data_url: &str) -> Result<Vec<u8>> {
-    let s = data_url.trim();
-    if !s.starts_with("data:") {
-        bail!("not a data URL");
-    }
-
-    let (_, rest) = s.split_at("data:".len());
-    let (meta, data) = rest
-        .split_once(',')
-        .ok_or_else(|| anyhow!("invalid data URL: missing comma"))?;
-
-    let is_base64 = meta
-        .split(';')
-        .any(|t| t.trim().eq_ignore_ascii_case("base64"));
-
-    if is_base64 {
-        // Some producers use URL-safe base64; try both.
-        general_purpose::STANDARD
-            .decode(data.trim())
-            .or_else(|_| general_purpose::URL_SAFE.decode(data.trim()))
-            .map_err(|e| anyhow!("invalid base64 in data URL: {e}"))
-    } else {
-        percent_decode_to_bytes(data)
-    }
-}
-
-fn load_image_from_data_url(data_url: &str) -> Result<DynamicImage> {
-    let bytes = decode_data_url(data_url)?;
-    image::load_from_memory(&bytes).map_err(|e| anyhow!("failed to decode image bytes: {e}"))
-}
-
-pub fn update_pass_params(
-    shader_space: &ShaderSpace,
-    pass: &PassBindings,
-    params: &Params,
-) -> ShaderSpaceResult<()> {
-    shader_space.write_buffer(pass.params_buffer.as_str(), 0, as_bytes(params))?;
-
-    Ok(())
-}
-
-fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 3]; 6] {
-    let w = width.max(1.0);
-    let h = height.max(1.0);
-    let hw = w * 0.5;
-    let hh = h * 0.5;
-    [
-        [-hw, -hh, 0.0],
-        [hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, hh, 0.0],
-    ]
-}
-
-// Helper functions for backward compatibility
-fn typed(expr: impl Into<String>, ty: ValueType) -> TypedExpr {
-    TypedExpr::new(expr, ty)
-}
-
-fn typed_time(expr: impl Into<String>, ty: ValueType, uses_time: bool) -> TypedExpr {
-    TypedExpr::with_time(expr, ty, uses_time)
 }
 
 impl MaterialCompileContext {

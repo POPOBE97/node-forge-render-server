@@ -84,6 +84,25 @@ The renderer refactoring has completed Phase 4! WGSL shader generation logic has
   - vector_nodes: Added connections for DotProduct, CrossProduct, Normalize, VectorMath tests
   - validation: Updated type error test case for current naga behavior
 
+### Temporary Fix Notes (January 13, 2026)
+
+During Phase 4 WGSL extraction, `cargo test` initially failed due to module boundary leakage between WGSL-generation code and ShaderSpace/runtime helpers. A minimal, temporary fix was applied to restore a clean boundary while keeping the current architecture stable.
+
+**What changed (temporary, to revisit in Phase 5/8):**
+
+- WGSL helper functions are intentionally shared with legacy ShaderSpace code via `pub(crate)` in `src/renderer/wgsl.rs`.
+    - Shared helpers currently used by `src/renderer/legacy.rs`: `clamp_min_1`, `gaussian_mip_level_and_sigma_p`, `gaussian_kernel_8`, `fmt_f32`, `array8_f32_wgsl`, `build_fullscreen_textured_bundle`.
+- ShaderSpace/runtime helpers were moved back to `src/renderer/legacy.rs` (they are *not* part of WGSL generation):
+    - `update_pass_params`, `rect2d_geometry_vertices`, `as_bytes`, `as_bytes_slice`
+    - data URL helpers used for `ImageTexture` loading: `decode_data_url`, `percent_decode_to_bytes`, `load_image_from_data_url`
+- The percent-decoder implementation was adjusted to avoid `let ... else { bail!(...) }` type divergence issues by using `ok_or_else(...)?`.
+
+**Follow-ups (recommended when starting Phase 5 or Phase 8 cleanup):**
+
+- When `shader_space.rs` is extracted (Phase 5), move the ShaderSpace/runtime helpers into `shader_space.rs` (or a small shared `io.rs`/`assets.rs` module if you prefer), and remove any remaining WGSL-module exports that are only needed by ShaderSpace.
+- Consider moving `MaterialCompileContext::wgsl_decls()` out of `wgsl.rs` and into `types.rs` (or `utils.rs`) so `wgsl.rs` stays purely “WGSL builders”.
+- Remove leftover unused imports/warnings in `legacy.rs` (example: `build_all_pass_wgsl_bundles_from_scene` may be unused depending on call sites), and delete any dead code that is no longer referenced.
+
 ### 📊 Current Status
 
 **Node Types Implemented**: 31 / 50 (62%)
