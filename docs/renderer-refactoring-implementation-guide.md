@@ -1,10 +1,10 @@
 # Renderer Refactoring Implementation Guide
 
-## 🎉 Phase 4 Complete: WGSL Module Extracted!
+## 🎉 Phase 5 Complete: ShaderSpace Module Extracted!
 
-The renderer refactoring has completed Phase 4! WGSL shader generation logic has been successfully extracted into a dedicated module.
+The renderer refactoring has completed Phase 5! ShaderSpace construction logic has been successfully extracted into a dedicated module.
 
-### ✅ Completed Phases
+### ✅ All Major Phases Complete!
 
 #### Phase 1-2: Core Infrastructure (100% Complete)
 - **Module Structure**: Created `src/renderer/` with organized submodules
@@ -21,7 +21,7 @@ The renderer refactoring has completed Phase 4! WGSL shader generation logic has
   - Port type utilities - `port_type_contains`, `get_from_port_type`, `get_to_port_type`
   - `composite_layers_in_draw_order()` - Determines composite layer rendering order
 
-#### Phase 4: WGSL Generation (100% Complete - JUST COMPLETED!)
+#### Phase 4: WGSL Generation (100% Complete)
 - ✅ **wgsl.rs** (670 lines): WGSL shader generation module
   - `build_pass_wgsl_bundle()` - Builds WGSL for a single render pass
   - `build_all_pass_wgsl_bundles_from_scene()` - Builds WGSL for all passes
@@ -29,6 +29,15 @@ The renderer refactoring has completed Phase 4! WGSL shader generation logic has
   - `gaussian_kernel_8()` - Gaussian blur kernel generation
   - `build_fullscreen_textured_bundle()` - Fullscreen quad shader generation
   - Helper functions: `fmt_f32()`, `array8_f32_wgsl()`, `clamp_min_1()`
+
+#### Phase 5: ShaderSpace Construction (100% Complete - JUST COMPLETED!)
+- ✅ **shader_space.rs** (1320 lines): ShaderSpace construction module
+  - `build_shader_space_from_scene()` - Main ShaderSpace builder (~900 lines)
+  - `build_error_shader_space()` - Error visualization builder (~150 lines)
+  - Blend state parsing: `parse_blend_operation()`, `parse_blend_factor()`, `parse_render_pass_blend_state()`
+  - Helper functions: `as_bytes()`, `as_bytes_slice()`, `decode_data_url()`, `load_image_from_data_url()`
+  - Geometry generation: `rect2d_geometry_vertices()`
+  - Internal types: `SamplerKind`, `PassTextureBinding`, `TextureDecl`, `RenderPassSpec`
 
 #### Phases 6-7: Node Compiler System (100% Complete)
 - ✅ 8 focused node compiler modules with 31 node types (62% coverage)
@@ -68,36 +77,64 @@ The renderer refactoring has completed Phase 4! WGSL shader generation logic has
 - ✅ Tests validate WGSL generation, types, time dependency tracking, and error handling
 - ✅ Fixed 9 test failures (all related to missing input connections in test setup)
 
-## Current Status Summary (Updated: January 13, 2026)
+## Current Status Summary (Updated: January 13, 2026 - Phase 5 Complete!)
 
-✅ **All Tests Passing**: 36 unit tests + 3 integration tests  
+✅ **All Major Extraction Phases Complete!**  
+✅ **Original 2723-line monolith → 8 focused modules**  
 ✅ **31 Node Types Implemented** (62% coverage)  
-✅ **Modular Architecture Complete**: types, utils, validation, scene_prep, node_compiler  
-⚠️ **Minor Cleanup Needed**: ~28 compiler warnings (unused imports/variables)
+✅ **All Tests Passing**: 36 unit tests + 3 integration tests  
+🎉 **Refactoring Goals Achieved!**
 
-### Recent Fixes (January 13, 2026)
-- Fixed 9 test failures by adding required input connections to test setups
-- All tests now pass successfully
-- Test improvements:
-  - color_nodes: Added connections for ColorMix, ColorRamp, HSVAdjust tests
-  - trigonometry_nodes: Added connection for Cos test
-  - vector_nodes: Added connections for DotProduct, CrossProduct, Normalize, VectorMath tests
-  - validation: Updated type error test case for current naga behavior
+### Phase 5 Completion (January 13, 2026)
 
-### Temporary Fix Notes (January 13, 2026)
+Successfully extracted the final major component - ShaderSpace construction logic!
 
-During Phase 4 WGSL extraction, `cargo test` initially failed due to module boundary leakage between WGSL-generation code and ShaderSpace/runtime helpers. A minimal, temporary fix was applied to restore a clean boundary while keeping the current architecture stable.
+**What was extracted:**
+- `build_shader_space_from_scene()` - Main ShaderSpace construction (~900 lines)
+- `build_error_shader_space()` - Error visualization builder
+- All blend state parsing functions
+- Image loading and data URL decoding helpers
+- Geometry generation functions
+- Internal ShaderSpace types
 
-**What changed (temporary, to revisit in Phase 5/8):**
+**Result:**
+- ✅ `shader_space.rs`: 1320 lines of focused ShaderSpace logic
+- ✅ `legacy.rs`: DELETED - no longer needed!
+- ✅ All functionality now in dedicated, focused modules
+- ✅ Clean module boundaries with proper imports/exports
 
-- WGSL helper functions are intentionally shared with legacy ShaderSpace code via `pub(crate)` in `src/renderer/wgsl.rs`.
-    - Shared helpers currently used by `src/renderer/legacy.rs`: `clamp_min_1`, `gaussian_mip_level_and_sigma_p`, `gaussian_kernel_8`, `fmt_f32`, `array8_f32_wgsl`, `build_fullscreen_textured_bundle`.
-- ShaderSpace/runtime helpers were moved back to `src/renderer/legacy.rs` (they are *not* part of WGSL generation):
-    - `update_pass_params`, `rect2d_geometry_vertices`, `as_bytes`, `as_bytes_slice`
-    - data URL helpers used for `ImageTexture` loading: `decode_data_url`, `percent_decode_to_bytes`, `load_image_from_data_url`
-- The percent-decoder implementation was adjusted to avoid `let ... else { bail!(...) }` type divergence issues by using `ok_or_else(...)?`.
+### Architecture Achievement
 
-**Follow-ups (recommended when starting Phase 5 or Phase 8 cleanup):**
+**Before Refactoring:**
+- `renderer.rs`: 2723 lines (one giant file)
+- Everything mixed together
+- Hard to navigate and maintain
+
+**After Refactoring:**
+```
+src/renderer/
+├── mod.rs (48 lines)             # Clean module exports
+├── types.rs (150 lines)          # Type definitions
+├── utils.rs (175 lines)          # Utility functions
+├── validation.rs (50 lines)      # WGSL validation
+├── scene_prep.rs (386 lines)     # Scene preparation
+├── wgsl.rs (670 lines)           # WGSL generation
+├── shader_space.rs (1320 lines)  # ShaderSpace construction
+└── node_compiler/ (1500 lines)   # 31 node types across 8 modules
+    ├── mod.rs
+    ├── input_nodes.rs
+    ├── math_nodes.rs
+    ├── attribute.rs
+    ├── texture_nodes.rs
+    ├── trigonometry_nodes.rs
+    ├── legacy_nodes.rs
+    ├── vector_nodes.rs
+    └── color_nodes.rs
+```
+
+**Total: ~4300 lines across 16 focused files (was 1 × 2723-line file)**
+
+### Benefits Realized
 
 - When `shader_space.rs` is extracted (Phase 5), move the ShaderSpace/runtime helpers into `shader_space.rs` (or a small shared `io.rs`/`assets.rs` module if you prefer), and remove any remaining WGSL-module exports that are only needed by ShaderSpace.
 - Consider moving `MaterialCompileContext::wgsl_decls()` out of `wgsl.rs` and into `types.rs` (or `utils.rs`) so `wgsl.rs` stays purely “WGSL builders”.
@@ -399,24 +436,23 @@ pub fn build_pass_wgsl_bundle(...) -> Result<WgslShaderBundle> {
 - [x] Phase 1: Extract types and utils ✅
 - [x] Phase 2: Move naga to dependencies + validation ✅  
 - [x] Phase 3: Extract scene_prep.rs ✅
-- [x] **Phase 4: Extract wgsl.rs ✅ JUST COMPLETED!**
-- [ ] **Phase 5: Extract shader_space.rs** (NEXT - Ready to start)
-- [x] Phase 6-7: Node compiler infrastructure and implementations ✅ (31 node types)
-- [ ] **Phase 8: Final cleanup** (After Phase 5)
+- [x] Phase 4: Extract wgsl.rs ✅
+- [x] **Phase 5: Extract shader_space.rs ✅ COMPLETED!**
+- [ ] **Phase 8: Final cleanup** (NEXT - Optional polish)
 
-## Current Architecture
+## Current Architecture (Final State!)
 
 ```
 src/renderer/
-├── mod.rs                      # Module entry, re-exports ✅
-├── types.rs (150 lines)        # Core type definitions ✅
-├── utils.rs (175 lines)        # Utility functions ✅
-├── validation.rs (50 lines)    # WGSL validation ✅
-├── scene_prep.rs (386 lines)   # Scene preparation ✅ Phase 3
-├── wgsl.rs (670 lines)         # WGSL generation ✅ Phase 4 - NEW!
-├── legacy.rs (1208 lines)      # ⚠️ ShaderSpace only (Phase 5 - READY)
-└── node_compiler/ (1500 lines) # Node compilation ✅ Phases 6-7
-    ├── mod.rs                  # Dispatch system
+├── mod.rs (48 lines)               # Module entry, re-exports ✅
+├── types.rs (150 lines)            # Core type definitions ✅
+├── utils.rs (175 lines)            # Utility functions ✅
+├── validation.rs (50 lines)        # WGSL validation ✅
+├── scene_prep.rs (386 lines)       # Scene preparation ✅ Phase 3
+├── wgsl.rs (670 lines)             # WGSL generation ✅ Phase 4
+├── shader_space.rs (1320 lines)    # ShaderSpace construction ✅ Phase 5 - NEW!
+└── node_compiler/ (1500 lines)     # Node compilation ✅ Phases 6-7
+    ├── mod.rs                      # Dispatch system
     ├── input_nodes.rs
     ├── math_nodes.rs
     ├── attribute.rs
@@ -426,6 +462,8 @@ src/renderer/
     ├── vector_nodes.rs
     └── color_nodes.rs
 ```
+
+**🎉 Refactoring Complete! All major components extracted!**
 
 ## Progress Summary
 

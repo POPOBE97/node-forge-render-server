@@ -1,3 +1,9 @@
+//! ShaderSpace construction module.
+//!
+//! This module contains logic for building ShaderSpace instances from DSL scenes,
+//! including texture creation, geometry buffers, uniform buffers, pipelines, and
+//! composite layer handling.
+
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -25,14 +31,20 @@ use crate::{
     schema,
     renderer::{
         node_compiler::compile_material_expr,
-        scene_prep::{PreparedScene, prepare_scene},
+        scene_prep::{PreparedScene, prepare_scene, composite_layers_in_draw_order},
         types::{ValueType, TypedExpr, MaterialCompileContext, Params, PassBindings, WgslShaderBundle},
         utils::to_vec4_color,
+        wgsl::{
+            array8_f32_wgsl,
+            build_all_pass_wgsl_bundles_from_scene,
+            build_fullscreen_textured_bundle,
+            build_pass_wgsl_bundle,
+            clamp_min_1,
+            gaussian_kernel_8,
+            gaussian_mip_level_and_sigma_p,
+        },
     },
 };
-
-// Scene preparation functions have been moved to scene_prep.rs module.
-// They are now imported above.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
@@ -51,16 +63,6 @@ struct PassTextureBinding {
 }
 
 
-// WGSL generation functions have been moved to wgsl.rs module.
-use super::wgsl::{
-    array8_f32_wgsl,
-    build_all_pass_wgsl_bundles_from_scene,
-    build_fullscreen_textured_bundle,
-    build_pass_wgsl_bundle,
-    clamp_min_1,
-    gaussian_kernel_8,
-    gaussian_mip_level_and_sigma_p,
-};
 
 fn as_bytes<T>(v: &T) -> &[u8] {
     unsafe { core::slice::from_raw_parts((v as *const T) as *const u8, core::mem::size_of::<T>()) }

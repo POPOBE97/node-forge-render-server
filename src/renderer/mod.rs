@@ -5,7 +5,9 @@
 //! - `utils`: Utility functions for formatting and data conversion
 //! - `node_compiler`: Node compilation infrastructure
 //! - `validation`: WGSL validation using naga
-//! - `legacy`: The original renderer.rs code (TEMPORARY - will be split into scene_prep, wgsl, shader_space)
+//! - `scene_prep`: Scene preparation and validation
+//! - `wgsl`: WGSL shader generation
+//! - `shader_space`: ShaderSpace construction
 //!
 //! The main entry points are:
 //! - `build_all_pass_wgsl_bundles_from_scene`: Generate WGSL for all passes
@@ -18,11 +20,7 @@ pub mod node_compiler;
 pub mod validation;
 pub mod scene_prep;
 pub mod wgsl;
-
-// TEMPORARY: The legacy module contains ShaderSpace construction code.
-// This will be extracted into shader_space.rs in Phase 5.
-// Once fully migrated, this module can be removed.
-mod legacy;
+pub mod shader_space;
 
 // Re-export key types and functions for backward compatibility
 pub use types::{Params, PassBindings, WgslShaderBundle};
@@ -30,10 +28,7 @@ pub use validation::{validate_wgsl, validate_wgsl_with_context};
 pub use node_compiler::compile_material_expr;
 pub use scene_prep::{PreparedScene, prepare_scene, auto_wrap_primitive_pass_inputs};
 pub use wgsl::{build_pass_wgsl_bundle, build_all_pass_wgsl_bundles_from_scene};
-
-// Re-export legacy functions that are still used externally
-// TEMPORARY: These re-exports allow existing code to continue working.
-pub use legacy::{
+pub use shader_space::{
     build_error_shader_space,
     build_shader_space_from_scene,
     update_pass_params,
