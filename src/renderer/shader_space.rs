@@ -6,7 +6,7 @@
 
 use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
@@ -25,23 +25,21 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{
         find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32,
-        Connection, Endpoint, Node, SceneDSL,
+        Node, SceneDSL,
     },
-    graph::{topo_sort, upstream_reachable},
-    schema,
     renderer::{
-        node_compiler::compile_material_expr,
-        scene_prep::{PreparedScene, prepare_scene, composite_layers_in_draw_order},
-        types::{ValueType, TypedExpr, MaterialCompileContext, Params, PassBindings, WgslShaderBundle},
-        utils::to_vec4_color,
+        scene_prep::prepare_scene,
+        types::{Params, PassBindings},
         wgsl::{
-            array8_f32_wgsl,
-            build_all_pass_wgsl_bundles_from_scene,
-            build_fullscreen_textured_bundle,
+            build_downsample_bundle,
+            build_horizontal_blur_bundle,
             build_pass_wgsl_bundle,
+            build_upsample_bilinear_bundle,
+            build_vertical_blur_bundle,
             clamp_min_1,
             gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p,
+            ERROR_SHADER_WGSL,
         },
     },
 };
@@ -168,6 +166,7 @@ fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 3]; 6] {
     ]
 }
 
+#[allow(dead_code)] // Used by tests
 fn composite_layers_in_draw_order(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -567,75 +566,7 @@ pub fn build_shader_space_from_scene(
                 let mut prev_tex: Option<ResourceName> = None;
                 for (step, tex, step_w, step_h, step_geo) in &step_textures {
                     let params_name: ResourceName = format!("params_{layer_id}__downsample_{step}").into();
-                    let bundle = {
-                        let body = match *step {
-                            1 => {
-                                r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let uv = dst_xy / src_resolution;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
-"#
-                                .to_string()
-                            }
-                            2 => {
-                                r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 2.0 - vec2f(0.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 2; y = y + 1) {
-    for (var x: i32 = 0; x < 2; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * 0.25;
-"#
-                                .to_string()
-                            }
-                            4 => {
-                                r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 4.0 - vec2f(1.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 4; y = y + 1) {
-    for (var x: i32 = 0; x < 4; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * (1.0 / 16.0);
-"#
-                                .to_string()
-                            }
-                            8 => {
-                                r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 8.0 - vec2f(3.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 8; y = y + 1) {
-    for (var x: i32 = 0; x < 8; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * (1.0 / 64.0);
-"#
-                                .to_string()
-                            }
-                            other => bail!("GuassianBlurPass: unsupported downsample factor {other}"),
-                        };
-                        build_fullscreen_textured_bundle(body)
-                    };
+                    let bundle = build_downsample_bundle(*step)?;
 
                     let params_val = Params {
                         target_size: [*step_w as f32, *step_h as f32],
@@ -679,27 +610,7 @@ return sum * (1.0 / 64.0);
 
                 // 2) Horizontal blur: ds_src_tex -> h_tex
                 let params_h: ResourceName = format!("params_{layer_id}__hblur_ds{downsample_factor}").into();
-                let bundle_h = {
-                    let kernel_wgsl = array8_f32_wgsl(kernel);
-                    let offset_wgsl = array8_f32_wgsl(offset);
-                    let body = format!(
-                        r#"
-let original = vec2f(textureDimensions(src_tex));
-let xy = vec2f(in.position.xy);
-let k = {kernel_wgsl};
-let o = {offset_wgsl};
-var color = vec4f(0.0);
-for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
-    let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
-    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
-}}
-return color;
-"#
-                    );
-                    build_fullscreen_textured_bundle(body)
-                };
+                let bundle_h = build_horizontal_blur_bundle(kernel, offset);
                 let params_h_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
@@ -727,27 +638,7 @@ return color;
 
                 // 3) Vertical blur: h_tex -> v_tex (still downsampled resolution)
                 let params_v: ResourceName = format!("params_{layer_id}__vblur_ds{downsample_factor}").into();
-                let bundle_v = {
-                    let kernel_wgsl = array8_f32_wgsl(kernel);
-                    let offset_wgsl = array8_f32_wgsl(offset);
-                    let body = format!(
-                        r#"
-let original = vec2f(textureDimensions(src_tex));
-let xy = vec2f(in.position.xy);
-let k = {kernel_wgsl};
-let o = {offset_wgsl};
-var color = vec4f(0.0);
-for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let uv_pos = (xy + vec2f(0.0, o[i])) / original;
-    let uv_neg = (xy - vec2f(0.0, o[i])) / original;
-    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
-}}
-return color;
-"#
-                    );
-                    build_fullscreen_textured_bundle(body)
-                };
+                let bundle_v = build_vertical_blur_bundle(kernel, offset);
                 let params_v_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
@@ -776,17 +667,7 @@ return color;
 
                 // 4) Upsample bilinear back to target: v_tex -> output target
                 let params_u: ResourceName = format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
-                let bundle_u = {
-                    let body = format!(
-                        r#"
-let dst_xy = vec2f(in.position.xy);
-let dst_resolution = params.target_size;
-let uv = dst_xy / dst_resolution;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
-"#
-                    );
-                    build_fullscreen_textured_bundle(body)
-                };
+                let bundle_u = build_upsample_bilinear_bundle();
                 let params_u_val = Params {
                     target_size: [tgt_w, tgt_h],
                     geo_size: [tgt_w, tgt_h],
@@ -1278,26 +1159,7 @@ pub fn build_error_shader_space(
 
     let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
         label: Some("node-forge-error-purple"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
-            r#"
-struct VSOut {
-    @builtin(position) position: vec4f,
-};
-
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
-    out.position = vec4f(position, 1.0);
-    return out;
-}
-
-@fragment
-fn fs_main(_in: VSOut) -> @location(0) vec4f {
-    // Purple error screen.
-    return vec4f(1.0, 0.0, 1.0, 1.0);
-}
-"#,
-        )),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(ERROR_SHADER_WGSL)),
     };
 
     let output_texture_for_pass = output_texture_name.clone();

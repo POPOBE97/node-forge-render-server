@@ -11,7 +11,7 @@ use super::super::types::{TypedExpr, ValueType, MaterialCompileContext};
 /// Computes the dot product of two vectors.
 pub fn compile_dot_product<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -51,7 +51,7 @@ where
 /// Computes the cross product of two vec3 vectors.
 pub fn compile_cross_product<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -91,7 +91,7 @@ where
 /// Normalizes a vector to unit length.
 pub fn compile_normalize<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,

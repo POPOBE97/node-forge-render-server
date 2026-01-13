@@ -11,7 +11,7 @@ use super::super::types::{TypedExpr, MaterialCompileContext};
 /// Computes the sine of the input value.
 pub fn compile_sin<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -40,7 +40,7 @@ where
 /// Computes the cosine of the input value.
 pub fn compile_cos<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,

@@ -1,10 +1,10 @@
 //! Compilers for math operation nodes (MathAdd, MathMultiply, MathClamp, MathPower).
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 
 use crate::dsl::{incoming_connection, Node, SceneDSL};
-use super::super::types::{TypedExpr, MaterialCompileContext, ValueType};
+use super::super::types::{TypedExpr, MaterialCompileContext};
 use super::super::utils::coerce_for_binary;
 
 /// Compile a MathAdd node to WGSL.
@@ -25,7 +25,7 @@ use super::super::utils::coerce_for_binary;
 /// ```
 pub fn compile_math_add<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -71,7 +71,7 @@ where
 /// ```
 pub fn compile_math_multiply<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -118,7 +118,7 @@ where
 /// ```
 pub fn compile_math_clamp<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -143,7 +143,7 @@ where
     let max = compile_fn(&max_conn.from.node_id, Some(&max_conn.from.port_id), ctx, cache)?;
 
     // All three values should have the same type (or be promoted)
-    let (x, min, ty) = coerce_for_binary(x, min)?;
+    let (x, min, _ty) = coerce_for_binary(x, min)?;
     let (min, max, ty) = coerce_for_binary(min, max)?;
     let (x, _, ty) = coerce_for_binary(x, TypedExpr::with_time("".to_string(), ty, false))?;
 
@@ -172,7 +172,7 @@ where
 /// ```
 pub fn compile_math_power<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -201,6 +201,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::super::types::ValueType;
+    use anyhow::bail;
     use crate::dsl::{Connection, Endpoint, Metadata, SceneDSL};
 
     fn create_test_scene_with_connections(

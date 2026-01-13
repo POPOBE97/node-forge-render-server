@@ -116,7 +116,7 @@ pub fn compile_vec4_color(
 /// Compile Add node (legacy MathAdd).
 pub fn compile_add<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -147,7 +147,7 @@ where
 /// Compile Mul or Multiply node (legacy MathMultiply).
 pub fn compile_mul<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -178,7 +178,7 @@ where
 /// Compile Mix node (legacy ColorMix or similar).
 pub fn compile_mix<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -225,7 +225,7 @@ where
 /// Compile Clamp node (legacy MathClamp).
 pub fn compile_clamp<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -262,7 +262,7 @@ where
 /// Compile Smoothstep node.
 pub fn compile_smoothstep<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,

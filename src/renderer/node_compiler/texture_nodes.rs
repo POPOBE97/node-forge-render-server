@@ -1,7 +1,7 @@
 //! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture).
 
 use std::collections::HashMap;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 
 use crate::dsl::{incoming_connection, Node, SceneDSL};
 use super::super::types::{TypedExpr, ValueType, MaterialCompileContext};
@@ -12,7 +12,7 @@ use super::super::types::{TypedExpr, ValueType, MaterialCompileContext};
 /// Automatically flips the V coordinate to match WebGPU's top-left origin.
 pub fn compile_image_texture<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,

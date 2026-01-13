@@ -5,14 +5,14 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::dsl::{incoming_connection, Node, SceneDSL};
 use super::super::types::{TypedExpr, ValueType, MaterialCompileContext};
-use super::super::utils::{coerce_for_binary, to_vec4_color};
+use super::super::utils::to_vec4_color;
 
 /// Compile a ColorMix node.
 /// 
 /// Mixes two colors based on a factor.
 pub fn compile_color_mix<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -64,7 +64,7 @@ where
 /// Maps a scalar value through a color gradient (simplified implementation).
 pub fn compile_color_ramp<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -100,7 +100,7 @@ where
 /// Adjusts the hue, saturation, and value of a color.
 pub fn compile_hsv_adjust<F>(
     scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
+    _nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,

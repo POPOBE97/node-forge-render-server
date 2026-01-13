@@ -409,18 +409,48 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 };
 
                 for step in &downsample_steps {
-                    let body = match *step {
-                        1 => {
-                            r#"
+                    let bundle = build_downsample_bundle(*step)?;
+                    out.push((
+                        format!("{layer_id}__downsample_{step}"),
+                        bundle,
+                    ));
+                }
+
+                out.push((
+                    format!("{layer_id}__hblur_ds{downsample_factor}"),
+                    build_horizontal_blur_bundle(kernel, offset),
+                ));
+                out.push((
+                    format!("{layer_id}__vblur_ds{downsample_factor}"),
+                    build_vertical_blur_bundle(kernel, offset),
+                ));
+                out.push((
+                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}"),
+                    build_upsample_bilinear_bundle(),
+                ));
+            }
+            other => bail!(
+                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+            ),
+        }
+    }
+    Ok(out)
+}
+
+/// Build a downsample shader bundle for the given factor (1, 2, 4, or 8).
+pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
+    let body = match factor {
+        1 => {
+            r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let uv = dst_xy / src_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 "#
-                            .to_string()
-                        }
-                        2 => {
-                            r#"
+            .to_string()
+        }
+        2 => {
+            r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 2.0 - vec2f(0.5);
@@ -435,10 +465,10 @@ for (var y: i32 = 0; y < 2; y = y + 1) {
 
 return sum * 0.25;
 "#
-                            .to_string()
-                        }
-                        4 => {
-                            r#"
+            .to_string()
+        }
+        4 => {
+            r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 4.0 - vec2f(1.5);
@@ -453,10 +483,10 @@ for (var y: i32 = 0; y < 4; y = y + 1) {
 
 return sum * (1.0 / 16.0);
 "#
-                            .to_string()
-                        }
-                        8 => {
-                            r#"
+            .to_string()
+        }
+        8 => {
+            r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 8.0 - vec2f(3.5);
@@ -471,24 +501,23 @@ for (var y: i32 = 0; y < 8; y = y + 1) {
 
 return sum * (1.0 / 64.0);
 "#
-                            .to_string()
-                        }
-                        other => {
-                            return Err(anyhow!(
-                                "GuassianBlurPass: unsupported downsample factor {other}"
-                            ));
-                        }
-                    };
-                    out.push((
-                        format!("{layer_id}__downsample_{step}"),
-                        build_fullscreen_textured_bundle(body),
-                    ));
-                }
-                let hblur_body = {
-                    let kernel_wgsl = array8_f32_wgsl(kernel);
-                    let offset_wgsl = array8_f32_wgsl(offset);
-                    format!(
-                        r#"
+            .to_string()
+        }
+        other => {
+            return Err(anyhow!(
+                "GuassianBlurPass: unsupported downsample factor {other}"
+            ));
+        }
+    };
+    Ok(build_fullscreen_textured_bundle(body))
+}
+
+/// Build a horizontal Gaussian blur shader bundle.
+pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
+    let kernel_wgsl = array8_f32_wgsl(kernel);
+    let offset_wgsl = array8_f32_wgsl(offset);
+    let body = format!(
+        r#"
 let original = vec2f(textureDimensions(src_tex));
 let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
@@ -502,14 +531,16 @@ for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
 }}
 return color;
 "#
-                    )
-                };
+    );
+    build_fullscreen_textured_bundle(body)
+}
 
-                let vblur_body = {
-                    let kernel_wgsl = array8_f32_wgsl(kernel);
-                    let offset_wgsl = array8_f32_wgsl(offset);
-                    format!(
-                        r#"
+/// Build a vertical Gaussian blur shader bundle.
+pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
+    let kernel_wgsl = array8_f32_wgsl(kernel);
+    let offset_wgsl = array8_f32_wgsl(offset);
+    let body = format!(
+        r#"
 let original = vec2f(textureDimensions(src_tex));
 let xy = vec2f(in.position.xy);
 let k = {kernel_wgsl};
@@ -523,38 +554,39 @@ for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
 }}
 return color;
 "#
-                    )
-                };
+    );
+    build_fullscreen_textured_bundle(body)
+}
 
-                let upsample_body = {
-                    format!(
-                        r#"
+/// Build a bilinear upsample shader bundle.
+pub fn build_upsample_bilinear_bundle() -> WgslShaderBundle {
+    let body = r#"
 let dst_xy = vec2f(in.position.xy);
 let dst_resolution = params.target_size;
 let uv = dst_xy / dst_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 "#
-                    )
-                };
-
-                out.push((
-                    format!("{layer_id}__hblur_ds{downsample_factor}"),
-                    build_fullscreen_textured_bundle(hblur_body),
-                ));
-                out.push((
-                    format!("{layer_id}__vblur_ds{downsample_factor}"),
-                    build_fullscreen_textured_bundle(vblur_body),
-                ));
-                out.push((
-                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}"),
-                    build_fullscreen_textured_bundle(upsample_body),
-                ));
-            }
-            other => bail!(
-                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
-            ),
-        }
-    }
-    Ok(out)
+    .to_string();
+    build_fullscreen_textured_bundle(body)
 }
+
+/// Build an error shader (purple screen) WGSL source.
+pub const ERROR_SHADER_WGSL: &str = r#"
+struct VSOut {
+    @builtin(position) position: vec4f,
+};
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VSOut {
+    var out: VSOut;
+    out.position = vec4f(position, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(_in: VSOut) -> @location(0) vec4f {
+    // Purple error screen.
+    return vec4f(1.0, 0.0, 1.0, 1.0);
+}
+"#;
 
