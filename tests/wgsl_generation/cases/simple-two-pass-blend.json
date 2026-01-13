@@ -50,7 +50,7 @@
         "name": "Render Pass",
         "blend_preset": "alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -116,7 +116,7 @@
         "name": "Render Pass",
         "blend_preset": "alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
