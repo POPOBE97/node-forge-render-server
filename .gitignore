@@ -15,13 +15,14 @@
 .idea/
 *.swp
 *.swo
+.claude/
 
 # Xcode
 **/xcuserdata/
 **/*.xcuserstate
 
 # Generated test outputs
-tests/cases/gaussian_blur/
+tests/**/out/
 
 # 3rd
 /3rd/
