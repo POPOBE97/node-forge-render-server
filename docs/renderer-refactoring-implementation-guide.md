@@ -1,8 +1,8 @@
 # Renderer Refactoring Implementation Guide
 
-## 🎉 Phase 3 Complete: Scene Preparation Extracted!
+## 🎉 Phase 4 Complete: WGSL Module Extracted!
 
-The renderer refactoring has completed Phase 3 of the migration plan! Scene preparation logic has been successfully extracted into a dedicated module.
+The renderer refactoring has completed Phase 4! WGSL shader generation logic has been successfully extracted into a dedicated module.
 
 ### ✅ Completed Phases
 
@@ -13,7 +13,7 @@ The renderer refactoring has completed Phase 3 of the migration plan! Scene prep
 - **Validation**: `validation.rs` integrates naga for WGSL validation
 - **Dependencies**: Moved `naga` from dev-dependencies to regular dependencies
 
-#### Phase 3: Scene Preparation (JUST COMPLETED)
+#### Phase 3: Scene Preparation (100% Complete)
 - ✅ **scene_prep.rs** (386 lines): Scene preparation and validation module
   - `PreparedScene` struct with validated, sorted scene data
   - `prepare_scene()` - Main scene preparation pipeline
@@ -21,12 +21,21 @@ The renderer refactoring has completed Phase 3 of the migration plan! Scene prep
   - Port type utilities - `port_type_contains`, `get_from_port_type`, `get_to_port_type`
   - `composite_layers_in_draw_order()` - Determines composite layer rendering order
 
+#### Phase 4: WGSL Generation (100% Complete - JUST COMPLETED!)
+- ✅ **wgsl.rs** (670 lines): WGSL shader generation module
+  - `build_pass_wgsl_bundle()` - Builds WGSL for a single render pass
+  - `build_all_pass_wgsl_bundles_from_scene()` - Builds WGSL for all passes
+  - `gaussian_mip_level_and_sigma_p()` - Gaussian blur mipmap calculation
+  - `gaussian_kernel_8()` - Gaussian blur kernel generation
+  - `build_fullscreen_textured_bundle()` - Fullscreen quad shader generation
+  - Helper functions: `fmt_f32()`, `array8_f32_wgsl()`, `clamp_min_1()`
+
 #### Phases 6-7: Node Compiler System (100% Complete)
 - ✅ 8 focused node compiler modules with 31 node types (62% coverage)
 - ✅ Main dispatch system in `node_compiler/mod.rs`
 - ✅ Caching mechanism for compiled expressions
 - ✅ Recursive compilation support
-- ✅ 15+ unit tests
+- ✅ 36+ unit tests passing
 - ✅ **input_nodes.rs**: ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input
 - ✅ **math_nodes.rs**: MathAdd, MathMultiply, MathClamp, MathPower
 - ✅ **attribute.rs**: Attribute node (reads vertex attributes like UV)
@@ -369,26 +378,12 @@ pub fn build_pass_wgsl_bundle(...) -> Result<WgslShaderBundle> {
 ## Migration Checklist
 
 - [x] Phase 1: Extract types and utils ✅
-- [x] Phase 2: Move naga to dependencies + validation ✅ 
-- [x] Phase 3: Extract scene_prep.rs ✅ COMPLETE
-- [ ] **Phase 4: Extract wgsl.rs** (READY TO START - Next Priority)
-  - [ ] Move WGSL bundle building functions (build_pass_wgsl_bundle, build_all_pass_wgsl_bundles_from_scene)
-  - [ ] Move Gaussian blur utilities (gaussian_mip_level_and_sigma_p, gaussian_kernel_8)
-  - [ ] Move helper functions (fmt_f32, array8_f32_wgsl, build_fullscreen_textured_bundle)
-  - [ ] Update legacy.rs imports
-  - Estimated: ~645 lines to extract (lines 53-697 in legacy.rs)
-- [ ] **Phase 5: Extract shader_space.rs** (After Phase 4)
-  - [ ] Move build_shader_space_from_scene
-  - [ ] Move blend state parsing (normalize_blend_token, parse_blend_operation, parse_blend_factor, etc.)
-  - [ ] Move composite handling
-  - [ ] Move build_error_shader_space
-  - Estimated: ~1000 lines to extract (lines 698-1849 in legacy.rs)
-- [x] Phase 6-7: Node compiler infrastructure and implementations ✅ COMPLETE (31 node types)
-- [ ] **Phase 8: Final cleanup** (After Phases 4-5)
-  - [ ] Remove legacy.rs module
-  - [ ] Clean up any remaining duplicates
-  - [ ] Fix remaining compiler warnings (~28 warnings)
-  - [ ] Update documentation with final architecture diagram
+- [x] Phase 2: Move naga to dependencies + validation ✅  
+- [x] Phase 3: Extract scene_prep.rs ✅
+- [x] **Phase 4: Extract wgsl.rs ✅ JUST COMPLETED!**
+- [ ] **Phase 5: Extract shader_space.rs** (NEXT - Ready to start)
+- [x] Phase 6-7: Node compiler infrastructure and implementations ✅ (31 node types)
+- [ ] **Phase 8: Final cleanup** (After Phase 5)
 
 ## Current Architecture
 
@@ -398,11 +393,10 @@ src/renderer/
 ├── types.rs (150 lines)        # Core type definitions ✅
 ├── utils.rs (175 lines)        # Utility functions ✅
 ├── validation.rs (50 lines)    # WGSL validation ✅
-├── scene_prep.rs (386 lines)   # Scene preparation ✅ COMPLETE!
-├── legacy.rs (1849 lines)      # ⚠️ WGSL + ShaderSpace (TO BE SPLIT)
-│   └── Lines 53-697: WGSL functions → wgsl.rs (Phase 4)
-│   └── Lines 698-1849: ShaderSpace → shader_space.rs (Phase 5)
-└── node_compiler/ (1500 lines) # Node compilation ✅ COMPLETE!
+├── scene_prep.rs (386 lines)   # Scene preparation ✅ Phase 3
+├── wgsl.rs (670 lines)         # WGSL generation ✅ Phase 4 - NEW!
+├── legacy.rs (1208 lines)      # ⚠️ ShaderSpace only (Phase 5 - READY)
+└── node_compiler/ (1500 lines) # Node compilation ✅ Phases 6-7
     ├── mod.rs                  # Dispatch system
     ├── input_nodes.rs
     ├── math_nodes.rs
@@ -416,22 +410,23 @@ src/renderer/
 
 ## Progress Summary
 
-### ✅ Completed (Phases 1-3, 6-7)
+### ✅ Completed (Phases 1-4, 6-7)
 - **Core Infrastructure**: types, utils, validation modules
 - **Scene Preparation**: Dedicated scene_prep.rs module  
+- **WGSL Generation**: Dedicated wgsl.rs module (NEW!)
 - **Node Compilers**: 31 node types across 8 modules
 - **Testing**: All 36 unit tests + 3 integration tests passing
-- **Code Organization**: From 2723-line monolith → 15 focused modules
+- **Code Organization**: From 2723-line monolith → 16 focused modules
 
-### 🚧 In Progress (Phase 4-5)
-- **Phase 4**: Extract WGSL generation (~645 lines) - READY TO START
-- **Phase 5**: Extract ShaderSpace construction (~1000 lines) - NEXT
+### 🚧 Remaining Work (Phase 5 + 8)
+- **Phase 5**: Extract ShaderSpace construction (~1208 lines) - READY TO START
+- **Phase 8**: Final cleanup, fix warnings, documentation
 
-### 📊 Estimated Completion
-- **Phase 4**: ~2-3 hours (WGSL extraction is straightforward)
-- **Phase 5**: ~3-4 hours (ShaderSpace has more complexity)
-- **Phase 8**: ~1 hour (cleanup and documentation)
-- **Total Remaining**: ~6-8 hours to complete full refactoring
+### 📊 Progress Metrics
+- **Original monolithic file**: 2723 lines
+- **After Phase 4**: Largest remaining file is 1208 lines (-56% from original)
+- **Extracted so far**: 1515 lines into focused modules
+- **Phases complete**: 5 out of 7 (71% of extraction phases)
 
 ## Code Reduction Achieved
 
