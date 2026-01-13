@@ -28,7 +28,7 @@ use crate::{
     },
     renderer::{
         node_compiler::geometry_nodes::rect2d_geometry_vertices,
-        scene_prep::prepare_scene,
+        scene_prep::{prepare_scene, composite_layers_in_draw_order},
         types::{Params, PassBindings},
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         wgsl::{
@@ -68,52 +68,6 @@ pub fn update_pass_params(
 ) -> ShaderSpaceResult<()> {
     shader_space.write_buffer(pass.params_buffer.as_str(), 0, as_bytes(params))?;
     Ok(())
-}
-
-#[allow(dead_code)] // Used by tests
-fn composite_layers_in_draw_order(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
-    output_node_id: &str,
-) -> Result<Vec<String>> {
-    let output_node = find_node(nodes_by_id, output_node_id)?;
-    if output_node.node_type != "Composite" {
-        bail!("output node must be Composite, got {}", output_node.node_type);
-    }
-
-    // 1) base pass is always the base layer.
-    let base_pass_id: String = incoming_connection(scene, output_node_id, "pass")
-        .map(|c| c.from.node_id.clone())
-        .ok_or_else(|| anyhow!("Composite.pass has no incoming connection"))?;
-
-    // 2) dynamic layers follow Composite.inputs array order (only dynamic_* ports).
-    // Note: the server does not infer ordering from port ids; it trusts the JSON ordering.
-    let mut ordered: Vec<String> = Vec::new();
-    ordered.push(base_pass_id);
-
-    for port in &output_node.inputs {
-        if !port.id.starts_with("dynamic_") {
-            continue;
-        }
-        if let Some(conn) = incoming_connection(scene, output_node_id, &port.id) {
-            let pass_id = conn.from.node_id.clone();
-            if !ordered.contains(&pass_id) {
-                ordered.push(pass_id);
-            }
-        }
-    }
-
-    for layer_id in &ordered {
-        let node = find_node(nodes_by_id, layer_id)?;
-        if node.node_type != "RenderPass" && node.node_type != "GuassianBlurPass" {
-            bail!(
-                "Composite inputs must come from RenderPass or GuassianBlurPass nodes, got {} for {layer_id}",
-                node.node_type
-            );
-        }
-    }
-
-    Ok(ordered)
 }
 
 #[derive(Clone)]

@@ -437,8 +437,36 @@ pub fn build_pass_wgsl_bundle(...) -> Result<WgslShaderBundle> {
 - [x] Phase 2: Move naga to dependencies + validation ✅  
 - [x] Phase 3: Extract scene_prep.rs ✅
 - [x] Phase 4: Extract wgsl.rs ✅
-- [x] **Phase 5: Extract shader_space.rs ✅ COMPLETED!**
-- [ ] **Phase 8: Final cleanup** (NEXT - Optional polish)
+- [x] **Phase 5: Extract shader_space.rs ✅**
+- [x] **Phase 8: Final cleanup ✅ COMPLETED!**
+
+## Phase 8 Cleanup Summary (COMPLETED!)
+
+### ✅ Completed Tasks
+
+1. **Removed duplicate code**
+   - Removed duplicate `composite_layers_in_draw_order()` function from shader_space.rs
+   - Now properly imports from scene_prep module
+   - Made scene_prep function public for reusability
+
+2. **Code quality improvements**
+   - All unused parameters already properly prefixed with `_`
+   - All imports are being used (verified)
+   - No dead code remaining
+
+3. **Module boundaries**
+   - Clean separation between scene_prep and shader_space
+   - Proper exports and imports throughout
+
+### Final State
+
+**All refactoring phases complete!** The codebase is now:
+- ✅ Fully modular with clear separation of concerns
+- ✅ No duplicate code
+- ✅ Clean module boundaries
+- ✅ All imports properly used
+- ✅ No unnecessary warnings
+- ✅ Well-documented
 
 ## Current Architecture (Final State!)
 

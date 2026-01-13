@@ -349,7 +349,7 @@ pub fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
 }
 
 /// Determine the draw order for composite layers.
-fn composite_layers_in_draw_order(
+pub fn composite_layers_in_draw_order(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     composite_node_id: &str,
