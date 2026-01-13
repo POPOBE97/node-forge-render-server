@@ -411,7 +411,11 @@ pub fn build_pass_wgsl_bundle(
             &mut cache,
         )?
     } else {
-        TypedExpr::new("params.color".to_string(), ValueType::Vec4)
+        // Premultiply params.color on the shader side to match premultiplied blending defaults.
+        TypedExpr::new(
+            "vec4f(params.color.rgb * params.color.a, params.color.a)".to_string(),
+            ValueType::Vec4,
+        )
     };
 
     let image_textures = material_ctx.image_textures.clone();

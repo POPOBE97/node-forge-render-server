@@ -106,6 +106,97 @@ Ensure the upstream pass is rendered earlier in Composite draw order."
     Ok(out)
 }
 
+fn deps_for_pass_node(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    pass_node_id: &str,
+) -> Result<Vec<String>> {
+    let Some(node) = nodes_by_id.get(pass_node_id) else {
+        bail!("missing node for pass id: {pass_node_id}");
+    };
+
+    match node.node_type.as_str() {
+        "RenderPass" => {
+            let bundle = build_pass_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
+            Ok(bundle.pass_textures)
+        }
+        "GuassianBlurPass" => {
+            let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
+            Ok(bundle.pass_textures)
+        }
+        other => bail!(
+            "expected a pass node id, got node type {other} for {pass_node_id}"
+        ),
+    }
+}
+
+fn visit_pass_node(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    pass_node_id: &str,
+    deps_cache: &mut HashMap<String, Vec<String>>,
+    visiting: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
+    out: &mut Vec<String>,
+) -> Result<()> {
+    if visited.contains(pass_node_id) {
+        return Ok(());
+    }
+    if !visiting.insert(pass_node_id.to_string()) {
+        bail!("cycle detected in pass dependencies at: {pass_node_id}");
+    }
+
+    let deps = if let Some(existing) = deps_cache.get(pass_node_id) {
+        existing.clone()
+    } else {
+        let deps = deps_for_pass_node(scene, nodes_by_id, pass_node_id)?;
+        deps_cache.insert(pass_node_id.to_string(), deps.clone());
+        deps
+    };
+
+    for dep in deps {
+        visit_pass_node(
+            scene,
+            nodes_by_id,
+            dep.as_str(),
+            deps_cache,
+            visiting,
+            visited,
+            out,
+        )?;
+    }
+
+    visiting.remove(pass_node_id);
+    visited.insert(pass_node_id.to_string());
+    out.push(pass_node_id.to_string());
+    Ok(())
+}
+
+fn compute_pass_render_order(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    roots_in_draw_order: &[String],
+) -> Result<Vec<String>> {
+    let mut deps_cache: HashMap<String, Vec<String>> = HashMap::new();
+    let mut visiting: HashSet<String> = HashSet::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+
+    for root in roots_in_draw_order {
+        visit_pass_node(
+            scene,
+            nodes_by_id,
+            root.as_str(),
+            &mut deps_cache,
+            &mut visiting,
+            &mut visited,
+            &mut out,
+        )?;
+    }
+
+    Ok(out)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
     NearestClamp,
@@ -198,7 +289,8 @@ fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
     Ok(match preset.as_str() {
         "alpha" => BlendState {
             color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::SrcAlpha,
+                // Premultiplied alpha: RGB is assumed multiplied by A.
+                src_factor: wgpu::BlendFactor::One,
                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 operation: wgpu::BlendOperation::Add,
             },
@@ -227,6 +319,17 @@ fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
 
 fn parse_render_pass_blend_state(params: &HashMap<String, serde_json::Value>) -> Result<BlendState> {
     // Start with preset if present; otherwise default to REPLACE.
+    // Note: RenderPass has scheme defaults for blendfunc/factors. If a user sets only
+    // `blend_preset=replace` (common intent: disable blending), those default factor keys will
+    // still exist in params after default-merging. We must treat replace/off/none/opaque as
+    // authoritative and ignore factor overrides.
+    if let Some(preset) = parse_str(params, "blend_preset") {
+        let preset_norm = normalize_blend_token(preset);
+        if matches!(preset_norm.as_str(), "opaque" | "none" | "off" | "replace") {
+            return Ok(BlendState::REPLACE);
+        }
+    }
+
     let mut state = if let Some(preset) = parse_str(params, "blend_preset") {
         default_blend_state_for_preset(preset)?
     } else {
@@ -253,6 +356,18 @@ fn parse_render_pass_blend_state(params: &HashMap<String, serde_json::Value>) ->
     }
 
     Ok(state)
+}
+
+fn premultiply_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
+    // Convert to premultiplied alpha in-place (RGBA8).
+    let mut rgba = image.as_ref().to_rgba8();
+    for p in rgba.pixels_mut() {
+        let a = p.0[3] as u16;
+        p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
+        p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
+        p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+    }
+    Arc::new(DynamicImage::ImageRgba8(rgba))
 }
 
 pub fn build_shader_space_from_scene(
@@ -339,7 +454,12 @@ pub fn build_shader_space_from_scene(
     let mut pass_output_registry = PassOutputRegistry::new();
     let format = parse_texture_format(&target_node.params)?;
 
-    for layer_id in composite_layers_in_order {
+    // Composite draw order only contains direct inputs. For chained passes, we must render
+    // upstream pass dependencies first so PassTexture can resolve them.
+    let pass_nodes_in_order =
+        compute_pass_render_order(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
+
+    for layer_id in &pass_nodes_in_order {
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
             "RenderPass" => {
@@ -350,7 +470,8 @@ pub fn build_shader_space_from_scene(
 
                 // If this pass is sampled downstream (PassTexture), render into a dedicated intermediate texture.
                 // This avoids aliasing the final output and gives PassTexture a stable source.
-                let pass_output_texture: ResourceName = if sampled_pass_ids.contains(layer_id) {
+                let is_sampled_output = sampled_pass_ids.contains(layer_id);
+                let pass_output_texture: ResourceName = if is_sampled_output {
                     let out_tex: ResourceName = format!("{layer_id}__out").into();
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
@@ -570,6 +691,34 @@ pub fn build_shader_space_from_scene(
                     target_texture_name.clone()
                 };
 
+                // When multiple layers render to the same Composite.target, we must blend the later
+                // layers over the earlier result (otherwise the later layer overwrites and it looks
+                // like only one draw contributed).
+                //
+                // - For sampled outputs (PassTexture), keep REPLACE for determinism.
+                // - For final output, default to alpha blending, but allow explicit overrides via
+                //   RenderPass-style blend params if present.
+                let blur_output_blend_state: BlendState = if output_tex == target_texture_name {
+                    let has_explicit_blend_params = [
+                        "blend_preset",
+                        "blendfunc",
+                        "src_factor",
+                        "dst_factor",
+                        "src_alpha_factor",
+                        "dst_alpha_factor",
+                    ]
+                    .into_iter()
+                    .any(|k| layer_node.params.contains_key(k));
+
+                    if has_explicit_blend_params {
+                        parse_render_pass_blend_state(&layer_node.params)?
+                    } else {
+                        default_blend_state_for_preset("alpha")?
+                    }
+                } else {
+                    BlendState::REPLACE
+                };
+
                 // Fullscreen geometry buffers for blur + upsample.
                 let geo_ds: ResourceName = format!("{layer_id}__geo_ds").into();
                 geometry_buffers
@@ -698,7 +847,7 @@ pub fn build_shader_space_from_scene(
                         image_node_id: None,
                     }],
                     sampler_kind: SamplerKind::LinearMirror,
-                    blend_state: BlendState::REPLACE,
+                    blend_state: blur_output_blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
 
@@ -849,12 +998,12 @@ pub fn build_shader_space_from_scene(
 
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => ensure_rgba8(Arc::new(img)),
+                    Ok(img) => premultiply_rgba8(ensure_rgba8(Arc::new(img))),
                     Err(_e) => placeholder_image(),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    ensure_rgba8(load_image_with_fallback(&rel_base, path))
+                    premultiply_rgba8(ensure_rgba8(load_image_with_fallback(&rel_base, path)))
                 }
             };
 
@@ -1013,7 +1162,7 @@ mod tests {
     fn render_pass_blend_state_from_explicit_params() {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blendfunc".to_string(), json!("add"));
-        params.insert("src_factor".to_string(), json!("src-alpha"));
+        params.insert("src_factor".to_string(), json!("one"));
         params.insert("dst_factor".to_string(), json!("one-minus-src-alpha"));
         params.insert("src_alpha_factor".to_string(), json!("one"));
         params.insert("dst_alpha_factor".to_string(), json!("one-minus-src-alpha"));
@@ -1021,7 +1170,7 @@ mod tests {
         let got = parse_render_pass_blend_state(&params).unwrap();
         let expected = BlendState {
             color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::SrcAlpha,
+                src_factor: wgpu::BlendFactor::One,
                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 operation: wgpu::BlendOperation::Add,
             },
@@ -1165,6 +1314,20 @@ mod tests {
         let got = composite_layers_in_draw_order(&scene, &nodes_by_id, "out").unwrap();
         // inputs array order: dynamic_1 then dynamic_0
         assert_eq!(got, vec!["p_img", "p1", "p0"]);
+    }
+
+    #[test]
+    fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let scene_path = manifest_dir.join("tests/pass-texture-alpha/pass-texture-alpha.json");
+        let scene = crate::dsl::load_scene_from_path(&scene_path).expect("load scene");
+        let prepared = prepare_scene(&scene).expect("prepare scene");
+
+        let sampled = sampled_pass_node_ids(&prepared.scene, &prepared.nodes_by_id);
+        assert!(
+            sampled.contains("pass_up"),
+            "expected sampled passes to include pass_up, got: {sampled:?}"
+        );
     }
 }
 

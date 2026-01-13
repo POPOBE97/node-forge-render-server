@@ -231,12 +231,107 @@ where
 
     let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
     let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
-    
-    // Pass textures typically don't need Y-flip since they're already in screen space.
-    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
+
+    // Match ImageTexture's UV convention: our synthesized UV has (0,0) at bottom-left,
+    // while WebGPU texture sampling uses (0,0) at top-left.
+    let flipped_uv = format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr);
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(sample_expr, ValueType::Vec4, uv_expr.uses_time)),
+        "alpha" => Ok(TypedExpr::with_time(
+            format!("({sample_expr}).w"),
+            ValueType::F32,
+            uv_expr.uses_time,
+        )),
         other => bail!("unsupported PassTexture output port: {other}"),
+    }
+}
+
+#[cfg(test)]
+mod pass_texture_tests {
+    use super::*;
+    use super::super::test_utils::{test_connection, test_scene};
+    use crate::dsl::Connection;
+
+    fn mock_compile_uv(
+        _node_id: &str,
+        _out_port: Option<&str>,
+        _ctx: &mut MaterialCompileContext,
+        _cache: &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr> {
+        Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2))
+    }
+
+    fn scene_with_pass_texture() -> (SceneDSL, HashMap<String, Node>, Node) {
+        let nodes = vec![
+            Node {
+                id: "up".to_string(),
+                node_type: "RenderPass".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+            },
+            Node {
+                id: "pt".to_string(),
+                node_type: "PassTexture".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+            },
+        ];
+
+        let connections: Vec<Connection> = vec![test_connection("up", "pass", "pt", "pass")];
+        let scene = test_scene(nodes.clone(), connections);
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let node = nodes_by_id.get("pt").unwrap().clone();
+        (scene, nodes_by_id, node)
+    }
+
+    #[test]
+    fn test_pass_texture_color_has_v_flip() {
+        let (scene, nodes_by_id, node) = scene_with_pass_texture();
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_pass_texture(
+            &scene,
+            &nodes_by_id,
+            &node,
+            Some("color"),
+            &mut ctx,
+            &mut cache,
+            mock_compile_uv,
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::Vec4);
+        assert!(result.expr.contains("textureSample"));
+        assert!(result.expr.contains("1.0 - (in.uv).y"));
+    }
+
+    #[test]
+    fn test_pass_texture_alpha_output() {
+        let (scene, nodes_by_id, node) = scene_with_pass_texture();
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_pass_texture(
+            &scene,
+            &nodes_by_id,
+            &node,
+            Some("alpha"),
+            &mut ctx,
+            &mut cache,
+            mock_compile_uv,
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::F32);
+        assert!(result.expr.contains(".w"));
     }
 }

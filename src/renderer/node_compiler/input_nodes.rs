@@ -65,8 +65,10 @@ fn parse_const_vec(node: &Node, keys: [&str; 4]) -> Option<[f32; 4]> {
 /// - Uses time: false
 pub fn compile_color_input(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
     let v = parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0]);
+    // Premultiplied alpha convention: store RGB already multiplied by A.
+    let a = v[3];
     Ok(TypedExpr::new(
-        format!("vec4f({}, {}, {}, {})", v[0], v[1], v[2], v[3]),
+        format!("vec4f({}, {}, {}, {})", v[0] * a, v[1] * a, v[2] * a, a),
         ValueType::Vec4,
     ))
 }
