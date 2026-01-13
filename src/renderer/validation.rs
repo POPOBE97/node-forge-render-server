@@ -94,7 +94,8 @@ fn fs_main() -> @location(0) vec4f {
         let source = r#"
 @fragment
 fn fs_main() -> @location(0) vec4f {
-    return 1.0; // Type mismatch: returning f32 instead of vec4f
+    let x: vec4f = 1.0; // Type mismatch: assigning f32 to vec4f
+    return x;
 }
 "#;
         assert!(validate_wgsl(source).is_err());

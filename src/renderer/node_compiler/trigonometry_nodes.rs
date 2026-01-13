@@ -145,7 +145,11 @@ mod tests {
 
     #[test]
     fn test_cos_compilation() {
-        let (scene, nodes_by_id) = make_test_scene();
+        let connections = vec![
+            test_connection("input1", "value", "cos1", "value"),
+        ];
+        let scene = test_scene(vec![], connections);
+        let nodes_by_id = HashMap::new();
         let node = Node {
             id: "cos1".to_string(),
             node_type: "Cos".to_string(),
@@ -173,7 +177,11 @@ mod tests {
 
     #[test]
     fn test_time_compilation() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("input", "value", "cos1", "value"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "time1".to_string(),

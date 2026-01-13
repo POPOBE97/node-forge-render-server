@@ -176,7 +176,13 @@ mod tests {
 
     #[test]
     fn test_color_mix() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("color1", "value", "mix1", "a"),
+            test_connection("color2", "value", "mix1", "b"),
+            test_connection("factor_node", "value", "mix1", "factor"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "mix1".to_string(),
@@ -187,7 +193,15 @@ mod tests {
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
 
-        // Use a stateless mock that always returns a color (simpler test)
+        // Mock that returns color for color nodes and f32 for factor node
+        let mock_fn = |node_id: &str, _out_port: Option<&str>, _ctx: &mut MaterialCompileContext, _cache: &mut HashMap<(String, String), TypedExpr>| -> Result<TypedExpr> {
+            if node_id == "factor_node" {
+                Ok(TypedExpr::new("0.5".to_string(), ValueType::F32))
+            } else {
+                Ok(TypedExpr::new("vec4f(1.0, 0.0, 0.0, 1.0)".to_string(), ValueType::Vec4))
+            }
+        };
+
         let result = compile_color_mix(
             &scene,
             &nodes_by_id,
@@ -195,7 +209,7 @@ mod tests {
             None,
             &mut ctx,
             &mut cache,
-            mock_color_compile_fn,
+            mock_fn,
         )
         .unwrap();
 
@@ -205,7 +219,11 @@ mod tests {
 
     #[test]
     fn test_color_ramp() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("factor_node", "value", "ramp1", "factor"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "ramp1".to_string(),
@@ -233,7 +251,11 @@ mod tests {
 
     #[test]
     fn test_hsv_adjust_no_change() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("color_in", "value", "hsv1", "color"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "hsv1".to_string(),

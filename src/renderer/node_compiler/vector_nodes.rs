@@ -241,7 +241,12 @@ mod tests {
 
     #[test]
     fn test_dot_product() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("vec1", "value", "dot1", "a"),
+            test_connection("vec2", "value", "dot1", "b"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "dot1".to_string(),
@@ -269,7 +274,12 @@ mod tests {
 
     #[test]
     fn test_cross_product() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("vec1", "value", "cross1", "a"),
+            test_connection("vec2", "value", "cross1", "b"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "cross1".to_string(),
@@ -297,7 +307,11 @@ mod tests {
 
     #[test]
     fn test_normalize() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("vec_in", "value", "norm1", "vector"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "norm1".to_string(),
@@ -325,7 +339,12 @@ mod tests {
 
     #[test]
     fn test_vector_math_add() {
-        let scene = test_scene(vec![], vec![]);
+        use super::super::test_utils::test_connection;
+        let connections = vec![
+            test_connection("vec1", "value", "vm1", "a"),
+            test_connection("vec2", "value", "vm1", "b"),
+        ];
+        let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
             id: "vm1".to_string(),
