@@ -17,11 +17,10 @@ pub mod utils;
 pub mod node_compiler;
 pub mod validation;
 pub mod scene_prep;
+pub mod wgsl;
 
-// TEMPORARY: The legacy module contains the original renderer.rs code.
-// This will be incrementally split into:
-// - wgsl.rs (WGSL shader bundle generation)
-// - shader_space.rs (ShaderSpace construction)
+// TEMPORARY: The legacy module contains ShaderSpace construction code.
+// This will be extracted into shader_space.rs in Phase 5.
 // Once fully migrated, this module can be removed.
 mod legacy;
 
@@ -30,14 +29,12 @@ pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};
 pub use node_compiler::compile_material_expr;
 pub use scene_prep::{PreparedScene, prepare_scene, auto_wrap_primitive_pass_inputs};
+pub use wgsl::{build_pass_wgsl_bundle, build_all_pass_wgsl_bundles_from_scene};
 
 // Re-export legacy functions that are still used externally
 // TEMPORARY: These re-exports allow existing code to continue working.
-// They will be replaced with proper modular implementations later.
 pub use legacy::{
-    build_all_pass_wgsl_bundles_from_scene,
     build_error_shader_space,
-    build_pass_wgsl_bundle,
     build_shader_space_from_scene,
     update_pass_params,
 };
