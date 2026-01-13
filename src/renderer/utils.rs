@@ -58,16 +58,19 @@ pub fn splat_f32(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
 /// Coerce two typed expressions for binary operations (promoting scalars to vectors as needed).
 pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, TypedExpr, ValueType)> {
     if a.ty == b.ty {
-        return Ok((a, b, a.ty));
+        let ty = a.ty;
+        return Ok((a, b, ty));
     }
     // Promote scalar to vector if needed.
     if a.ty == ValueType::F32 && b.ty != ValueType::F32 {
+        let target_ty = b.ty;
         let aa = splat_f32(&a, b.ty)?;
-        return Ok((aa, b.clone(), b.ty));
+        return Ok((aa, b, target_ty));
     }
     if b.ty == ValueType::F32 && a.ty != ValueType::F32 {
+        let target_ty = a.ty;
         let bb = splat_f32(&b, a.ty)?;
-        return Ok((a.clone(), bb, a.ty));
+        return Ok((a, bb, target_ty));
     }
     bail!("incompatible types for binary op: {:?} and {:?}", a.ty, b.ty);
 }
