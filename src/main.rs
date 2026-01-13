@@ -13,6 +13,8 @@ struct Cli {
     headless: bool,
     dsl_json: Option<PathBuf>,
     output_dir: Option<PathBuf>,
+    output: Option<PathBuf>,
+    render_to_file: bool,
 }
 
 fn parse_cli(args: &[String]) -> Result<Cli> {
@@ -38,14 +40,51 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.output_dir = Some(PathBuf::from(v));
                 i += 2;
             }
+            "--output" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --output"));
+                };
+                cli.output = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--render-to-file" => {
+                cli.render_to_file = true;
+                i += 1;
+            }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --outputdir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --render-to-file, --output <abs/path/to/output.png>, --outputdir <dir>)"
                 ));
             }
         }
     }
+
+    if cli.output.is_some() && cli.output_dir.is_some() {
+        return Err(anyhow!(
+            "cannot use --output together with --outputdir/--output-dir"
+        ));
+    }
+
     Ok(cli)
+}
+
+fn validate_absolute_output_path(path: &PathBuf) -> Result<()> {
+    if !path.is_absolute() {
+        return Err(anyhow!(
+            "--output must be an absolute path, got: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_parent_dir_exists(path: &PathBuf) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(anyhow!("output path has no parent directory: {}", path.display()));
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| anyhow!("failed to create output directory {}: {e}", parent.display()))?;
+    Ok(())
 }
 
 fn resolve_file_output_path_under(output_dir: &PathBuf, rt: &dsl::FileRenderTarget) -> PathBuf {
@@ -54,7 +93,12 @@ fn resolve_file_output_path_under(output_dir: &PathBuf, rt: &dsl::FileRenderTarg
     out
 }
 
-fn run_headless_json_render_once(dsl_json_path: &std::path::Path, output_dir: PathBuf) -> Result<()> {
+fn run_headless_json_render_once(
+    dsl_json_path: &std::path::Path,
+    output_dir: Option<PathBuf>,
+    output: Option<PathBuf>,
+    render_to_file: bool,
+) -> Result<()> {
     let text = std::fs::read_to_string(dsl_json_path)
         .map_err(|e| anyhow!("failed to read --dsl-json file {}: {e}", dsl_json_path.display()))?;
 
@@ -64,16 +108,36 @@ fn run_headless_json_render_once(dsl_json_path: &std::path::Path, output_dir: Pa
     dsl::normalize_scene_defaults(&mut scene)
         .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
 
-    let rt = dsl::file_render_target(&scene)?
-        .ok_or_else(|| anyhow!("--dsl-json headless render requires RenderTarget=File"))?;
-    let out_path = resolve_file_output_path_under(&output_dir, &rt);
+    let out_path = if render_to_file {
+        let out = output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
+        validate_absolute_output_path(&out)?;
+        out
+    } else {
+        let rt = dsl::file_render_target(&scene)?
+            .ok_or_else(|| anyhow!("--dsl-json headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+
+        if let Some(out) = output {
+            validate_absolute_output_path(&out)?;
+            out
+        } else {
+            let output_dir = output_dir.unwrap_or_else(|| {
+                dsl_json_path
+                    .parent()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| PathBuf::from("."))
+            });
+            resolve_file_output_path_under(&output_dir, &rt)
+        }
+    };
+
+    ensure_parent_dir_exists(&out_path)?;
 
     renderer::render_scene_to_png_headless(&scene, &out_path)?;
     println!("[headless] saved: {}", out_path.display());
     Ok(())
 }
 
-fn run_headless_ws_render_once(addr: &str) -> Result<()> {
+fn run_headless_ws_render_once(addr: &str, output: Option<PathBuf>, render_to_file: bool) -> Result<()> {
     use std::{thread, time::Duration};
 
     let (scene_tx, scene_rx) = crossbeam_channel::bounded::<ws::SceneUpdate>(1);
@@ -92,9 +156,25 @@ fn run_headless_ws_render_once(addr: &str) -> Result<()> {
 
     match update {
         ws::SceneUpdate::Parsed { scene, request_id } => {
-            let rt = dsl::file_render_target(&scene)?
-                .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File"))?;
-            let out_path = resolve_file_output_path(&rt);
+            let out_path = if render_to_file {
+                let out = output.clone().ok_or_else(|| {
+                    anyhow!("--render-to-file requires --output <absolute path>")
+                })?;
+                validate_absolute_output_path(&out)?;
+                out
+            } else {
+                let rt = dsl::file_render_target(&scene)?
+                    .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+
+                if let Some(out) = output.clone() {
+                    validate_absolute_output_path(&out)?;
+                    out
+                } else {
+                    resolve_file_output_path(&rt)
+                }
+            };
+
+            ensure_parent_dir_exists(&out_path)?;
 
             let result = renderer::render_scene_to_png_headless(&scene, &out_path);
             match result {
@@ -177,17 +257,16 @@ fn main() -> Result<()> {
     // Script-friendly mode: pass DSL JSON directly.
     if cli.headless {
         if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
-            let output_dir = cli.output_dir.unwrap_or_else(|| {
-                dsl_json_path
-                    .parent()
-                    .map(ToOwned::to_owned)
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            return run_headless_json_render_once(dsl_json_path, output_dir);
+            return run_headless_json_render_once(
+                dsl_json_path,
+                cli.output_dir,
+                cli.output,
+                cli.render_to_file,
+            );
         }
 
         // Editor-driven mode: wait for editor to connect over ws and send SceneDSL.
-        return run_headless_ws_render_once("127.0.0.1:8080");
+        return run_headless_ws_render_once("127.0.0.1:8080", cli.output, cli.render_to_file);
     }
 
     let scene = match dsl::load_scene_from_default_asset() {
@@ -307,5 +386,44 @@ mod tests {
         assert!(cli.headless);
         assert_eq!(cli.dsl_json.as_ref().unwrap(), &PathBuf::from("scene.json"));
         assert_eq!(cli.output_dir.as_ref().unwrap(), &PathBuf::from("out"));
+    }
+
+    #[test]
+    fn parse_cli_headless_json_output_override() {
+        let args = vec![
+            "--headless".to_string(),
+            "--dsl-json".to_string(),
+            "scene.json".to_string(),
+            "--output".to_string(),
+            "/tmp/out.png".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.headless);
+        assert_eq!(cli.dsl_json.as_ref().unwrap(), &PathBuf::from("scene.json"));
+        assert_eq!(cli.output.as_ref().unwrap(), &PathBuf::from("/tmp/out.png"));
+        assert!(cli.output_dir.is_none());
+    }
+
+    #[test]
+    fn parse_cli_rejects_output_and_outputdir_together() {
+        let args = vec![
+            "--headless".to_string(),
+            "--dsl-json".to_string(),
+            "scene.json".to_string(),
+            "--outputdir".to_string(),
+            "out".to_string(),
+            "--output".to_string(),
+            "/tmp/out.png".to_string(),
+        ];
+        let err = parse_cli(&args).unwrap_err().to_string();
+        assert!(err.contains("cannot use --output"));
+    }
+
+    #[test]
+    fn parse_cli_render_to_file_flag() {
+        let args = vec!["--headless".to_string(), "--render-to-file".to_string()];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.headless);
+        assert!(cli.render_to_file);
     }
 }
