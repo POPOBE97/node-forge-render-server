@@ -31,7 +31,7 @@ use rust_wgpu_fiber::{
 
 use crate::{
     dsl::{
-        find_node, incoming_connection, parse_f32, parse_str, parse_texture_format, parse_u32,
+        find_node, incoming_connection, parse_str, parse_texture_format,
         SceneDSL,
     },
     renderer::{
@@ -39,6 +39,7 @@ use crate::{
         scene_prep::prepare_scene,
         types::{Params, PassBindings, PassOutputRegistry, PassOutputSpec},
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
+        utils::{cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             build_blur_image_wgsl_bundle,
             build_downsample_bundle,
@@ -404,15 +405,17 @@ pub fn build_shader_space_from_scene(
 
         match node.node_type.as_str() {
             "Rect2DGeometry" => {
-                let geo_w = parse_f32(&node.params, "width").unwrap_or(100.0).max(1.0);
-                let geo_h = parse_f32(&node.params, "height").unwrap_or(geo_w).max(1.0);
+                let geo_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", 100)?;
+                let geo_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", geo_w_u)?;
+                let geo_w = geo_w_u as f32;
+                let geo_h = geo_h_u as f32;
                 let verts = rect2d_geometry_vertices(geo_w, geo_h);
                 let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
                 geometry_buffers.push((name, bytes));
             }
             "RenderTexture" => {
-                let w = parse_u32(&node.params, "width").unwrap_or(resolution[0]);
-                let h = parse_u32(&node.params, "height").unwrap_or(resolution[1]);
+                let w = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", resolution[0])?;
+                let h = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", resolution[1])?;
                 let format = parse_texture_format(&node.params)?;
                 textures.push(TextureDecl {
                     name,
@@ -439,12 +442,10 @@ pub fn build_shader_space_from_scene(
             target_node.node_type
         );
     }
-    let tgt_w = parse_f32(&target_node.params, "width")
-        .unwrap_or(resolution[0] as f32)
-        .max(1.0);
-    let tgt_h = parse_f32(&target_node.params, "height")
-        .unwrap_or(resolution[1] as f32)
-        .max(1.0);
+    let tgt_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, target_node, "width", resolution[0])?;
+    let tgt_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, target_node, "height", resolution[1])?;
+    let tgt_w = tgt_w_u as f32;
+    let tgt_h = tgt_h_u as f32;
     let target_texture_name = ids
         .get(&target_texture_id)
         .cloned()
@@ -502,10 +503,12 @@ pub fn build_shader_space_from_scene(
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
 
-                let geo_w = parse_f32(&geometry_node.params, "width").unwrap_or(100.0);
-                let geo_h = parse_f32(&geometry_node.params, "height").unwrap_or(geo_w);
-                let geo_x = parse_f32(&geometry_node.params, "x").unwrap_or(0.0);
-                let geo_y = parse_f32(&geometry_node.params, "y").unwrap_or(0.0);
+                let geo_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "width", 100)?;
+                let geo_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "height", geo_w_u)?;
+                let geo_w = geo_w_u as f32;
+                let geo_h = geo_h_u as f32;
+                let geo_x = cpu_num_f32(&prepared.scene, nodes_by_id, geometry_node, "x", 0.0)?;
+                let geo_y = cpu_num_f32(&prepared.scene, nodes_by_id, geometry_node, "y", 0.0)?;
 
                 let params_name: ResourceName = format!("params_{layer_id}").into();
                 let params = Params {
@@ -615,10 +618,10 @@ pub fn build_shader_space_from_scene(
                 composite_passes.push(format!("{layer_id}__src_pass").into());
 
                 // Resolution: use target resolution, but allow override via params.
-                let blur_w = parse_u32(&layer_node.params, "width").unwrap_or(src_resolution[0]);
-                let blur_h = parse_u32(&layer_node.params, "height").unwrap_or(src_resolution[1]);
+                let blur_w = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, layer_node, "width", src_resolution[0])?;
+                let blur_h = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, layer_node, "height", src_resolution[1])?;
 
-                let sigma = parse_f32(&layer_node.params, "radius").unwrap_or(0.0).max(0.0);
+                let sigma = cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));

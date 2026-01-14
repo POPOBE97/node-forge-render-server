@@ -6,6 +6,83 @@ use image::DynamicImage;
 
 use super::types::{TypedExpr, ValueType};
 
+use crate::dsl::{self, Node, SceneDSL};
+
+/// Resolve a numeric input used by the renderer on CPU.
+///
+/// Contract (important for future node additions):
+/// - Any time the renderer needs a number (size, radius, count, etc.) **on CPU**,
+///   it must go through these helpers so DSL `connections` can drive the value.
+/// - Resolution precedence: incoming connection -> inline param (`node.params[key]`).
+pub fn cpu_num_f64(
+    scene: &SceneDSL,
+    nodes_by_id: &std::collections::HashMap<String, Node>,
+    node: &Node,
+    key: &str,
+) -> Result<Option<f64>> {
+    if let Some(v) = dsl::resolve_input_f64(scene, nodes_by_id, &node.id, key)? {
+        return Ok(Some(v));
+    }
+
+    Ok(dsl::parse_f32(&node.params, key)
+        .map(|x| x as f64)
+        .or_else(|| dsl::parse_u32(&node.params, key).map(|x| x as f64)))
+}
+
+pub fn cpu_num_f32(
+    scene: &SceneDSL,
+    nodes_by_id: &std::collections::HashMap<String, Node>,
+    node: &Node,
+    key: &str,
+    default: f32,
+) -> Result<f32> {
+    Ok(cpu_num_f64(scene, nodes_by_id, node, key)?.unwrap_or(default as f64) as f32)
+}
+
+pub fn cpu_num_f32_min_0(
+    scene: &SceneDSL,
+    nodes_by_id: &std::collections::HashMap<String, Node>,
+    node: &Node,
+    key: &str,
+    default: f32,
+) -> Result<f32> {
+    Ok(cpu_num_f32(scene, nodes_by_id, node, key, default)?.max(0.0))
+}
+
+pub fn cpu_num_u32_floor(
+    scene: &SceneDSL,
+    nodes_by_id: &std::collections::HashMap<String, Node>,
+    node: &Node,
+    key: &str,
+    default: u32,
+) -> Result<u32> {
+    if let Some(v) = dsl::resolve_input_u32(scene, nodes_by_id, &node.id, key)? {
+        return Ok(v);
+    }
+
+    // Fallback to inline params (accept both integer and float literals).
+    if let Some(v) = dsl::parse_u32(&node.params, key) {
+        return Ok(v);
+    }
+    if let Some(v) = dsl::parse_f32(&node.params, key) {
+        if v.is_finite() {
+            return Ok(v.max(0.0).floor() as u32);
+        }
+    }
+
+    Ok(default)
+}
+
+pub fn cpu_num_u32_min_1(
+    scene: &SceneDSL,
+    nodes_by_id: &std::collections::HashMap<String, Node>,
+    node: &Node,
+    key: &str,
+    default: u32,
+) -> Result<u32> {
+    Ok(cpu_num_u32_floor(scene, nodes_by_id, node, key, default)?.max(1))
+}
+
 /// Format a float for WGSL, removing trailing zeros.
 pub fn fmt_f32(v: f32) -> String {
     if v.is_finite() {

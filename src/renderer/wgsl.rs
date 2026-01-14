@@ -10,12 +10,12 @@ use std::collections::HashMap;
 use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    dsl::{find_node, incoming_connection, parse_f32, Node, SceneDSL},
+    dsl::{find_node, incoming_connection, Node, SceneDSL},
     renderer::{
         node_compiler::compile_material_expr,
         scene_prep::prepare_scene,
         types::{ValueType, TypedExpr, MaterialCompileContext, WgslShaderBundle},
-        utils::to_vec4_color,
+        utils::{cpu_num_f32_min_0, to_vec4_color},
     },
 };
 
@@ -510,7 +510,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 // - downsample_* (one step, or 8 then 2 when factor=16)
                 // - hblur / vblur at downsampled resolution
                 // - upsample bilinear back to original target size
-                let sigma = parse_f32(&node.params, "radius").unwrap_or(0.0).max(0.0);
+                let sigma = cpu_num_f32_min_0(&prepared.scene, &prepared.nodes_by_id, node, "radius", 0.0)?;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));

@@ -12,10 +12,10 @@ use rust_wgpu_fiber::ResourceName;
 
 use crate::{
     dsl::{
-        find_node, incoming_connection, parse_f32, parse_u32,
-        Connection, Endpoint, Node, SceneDSL,
+        find_node, incoming_connection, Connection, Endpoint, Node, SceneDSL,
     },
     graph::{topo_sort, upstream_reachable},
+    renderer::utils::cpu_num_u32_min_1,
     schema,
 };
 
@@ -86,14 +86,12 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
             if let Some(conn) = incoming_connection(scene, composite_id, "target") {
                 if let Some(tgt_node) = nodes_by_id.get(&conn.from.node_id) {
                     if tgt_node.node_type == "RenderTexture" {
-                        let w = parse_f32(&tgt_node.params, "width")
-                            .or_else(|| parse_u32(&tgt_node.params, "width").map(|x| x as f32))
-                            .unwrap_or(1024.0)
-                            .max(1.0);
-                        let h = parse_f32(&tgt_node.params, "height")
-                            .or_else(|| parse_u32(&tgt_node.params, "height").map(|x| x as f32))
-                            .unwrap_or(1024.0)
-                            .max(1.0);
+                        let w = cpu_num_u32_min_1(scene, &nodes_by_id, tgt_node, "width", 1024)
+                            .ok()
+                            .unwrap_or(1024) as f32;
+                        let h = cpu_num_u32_min_1(scene, &nodes_by_id, tgt_node, "height", 1024)
+                            .ok()
+                            .unwrap_or(1024) as f32;
                         target_size = Some([w, h]);
                     }
                 }
@@ -101,20 +99,6 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
         }
     }
     let [tgt_w, tgt_h] = target_size.unwrap_or([1024.0, 1024.0]);
-
-    let primitive_candidates: [&str; 10] = [
-        "color",
-        "vector2",
-        "vector3",
-        "vector4",
-        "float",
-        "int",
-        "bool",
-        // Common aliases used by some editors/schemes.
-        "vec2",
-        "vec3",
-        "vec4",
-    ];
 
     #[derive(Clone)]
     struct WrapPlan {
@@ -145,7 +129,13 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
         if port_type_contains(&from_ty, "pass") {
             continue;
         }
-        if !port_type_contains_any_of(&from_ty, &primitive_candidates) {
+
+        // Only wrap if the pass input can accept this upstream type.
+        // (The graph still needs a synthesized RenderPass to become executable.)
+        // No legacy fallback: only wrap when the scheme's compatibility table allows it.
+        let should_wrap = schema::port_types_compatible(scheme, &from_ty, &to_ty);
+
+        if !should_wrap {
             continue;
         }
 
@@ -332,8 +322,8 @@ pub fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
         );
     }
 
-    let width = parse_u32(&output_texture_node.params, "width").unwrap_or(1024);
-    let height = parse_u32(&output_texture_node.params, "height").unwrap_or(1024);
+    let width = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "width", 1024)?;
+    let height = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "height", 1024)?;
     let resolution = [width, height];
 
     Ok(PreparedScene {
