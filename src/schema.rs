@@ -10,6 +10,7 @@ const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json"
 #[derive(Debug, Clone)]
 pub struct NodeScheme {
     pub nodes: HashMap<String, NodeTypeScheme>,
+    pub port_type_compatibility: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,6 +35,8 @@ struct GeneratedNodeScheme {
     #[serde(rename = "generatedAt")]
     #[allow(dead_code)]
     pub generated_at: Option<String>,
+    #[serde(rename = "portTypeCompatibility", default)]
+    pub port_type_compatibility: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub nodes: Vec<GeneratedNodeDef>,
 }
@@ -103,36 +106,95 @@ pub enum PortTypeSpec {
 }
 
 impl PortTypeSpec {
-    fn overlaps(&self, other: &PortTypeSpec) -> bool {
-        // DSL port type `any` is a wildcard: it can connect to anything.
-        // This is important for nodes like `Attribute` whose output type depends on params.
-        if self.contains_any() || other.contains_any() {
+    // Intentionally no helper methods here: all connectability is driven by
+    // the editor-exported `portTypeCompatibility` table.
+}
+
+fn normalize_port_type_name(t: &str) -> &str {
+    match t {
+        // Common aliases used by some editors/schemes.
+        "vec2" => "vector2",
+        "vec3" => "vector3",
+        // Historically some code used vector4/vec4; the current scheme uses `color`.
+        "vec4" | "vector4" => "color",
+        other => other,
+    }
+}
+
+fn port_types_compatible_via_table(
+    from: &PortTypeSpec,
+    to: &PortTypeSpec,
+    port_type_compatibility: &HashMap<String, Vec<String>>,
+) -> bool {
+    // No legacy fallback: generated schemes must provide a compatibility table.
+    if port_type_compatibility.is_empty() {
+        return false;
+    }
+
+    // Compatibility table is keyed by *destination/input* type.
+    // Example: "float": ["float", "int"] means a float input can accept int outputs.
+    fn atomic_compatible(
+        from_ty: &str,
+        to_ty: &str,
+        table: &HashMap<String, Vec<String>>,
+    ) -> bool {
+        let from_ty = normalize_port_type_name(from_ty);
+        let to_ty = normalize_port_type_name(to_ty);
+
+        // `any` is a wildcard on either side.
+        if from_ty == "any" || to_ty == "any" {
             return true;
         }
 
-        match (self, other) {
-            (PortTypeSpec::One(a), PortTypeSpec::One(b)) => a == b,
-            (PortTypeSpec::One(a), PortTypeSpec::Many(bs)) => bs.iter().any(|b| b == a),
-            (PortTypeSpec::Many(as_), PortTypeSpec::One(b)) => as_.iter().any(|a| a == b),
-            (PortTypeSpec::Many(as_), PortTypeSpec::Many(bs)) => {
-                as_.iter().any(|a| bs.iter().any(|b| b == a))
-            }
+        if from_ty == to_ty {
+            return true;
         }
+
+        table
+            .get(to_ty)
+            .is_some_and(|allowed| allowed.iter().any(|s| normalize_port_type_name(s) == from_ty))
     }
 
-    fn contains_any(&self) -> bool {
-        match self {
-            PortTypeSpec::One(s) => s == "any",
-            PortTypeSpec::Many(v) => v.iter().any(|s| s == "any"),
+    match (from, to) {
+        (PortTypeSpec::One(a), PortTypeSpec::One(b)) => {
+            atomic_compatible(a, b, port_type_compatibility)
         }
+        (PortTypeSpec::One(a), PortTypeSpec::Many(bs)) => bs
+            .iter()
+            .any(|b| atomic_compatible(a, b, port_type_compatibility)),
+        (PortTypeSpec::Many(as_), PortTypeSpec::One(b)) => as_
+            .iter()
+            .any(|a| atomic_compatible(a, b, port_type_compatibility)),
+        (PortTypeSpec::Many(as_), PortTypeSpec::Many(bs)) => as_.iter().any(|a| {
+            bs.iter()
+                .any(|b| atomic_compatible(a, b, port_type_compatibility))
+        }),
     }
+}
+
+/// Shared port type compatibility check used by both DSL validation and runtime helpers.
+///
+/// Semantics:
+/// - Compatibility is driven by the editor-exported `portTypeCompatibility` table,
+///   interpreted as **input type -> allowed output types**.
+/// - `any` is treated as a wildcard on either side.
+/// - There is intentionally no legacy fallback: if the table is missing/empty, we reject.
+pub(crate) fn port_types_compatible(
+    scheme: &NodeScheme,
+    from: &PortTypeSpec,
+    to: &PortTypeSpec,
+) -> bool {
+    port_types_compatible_via_table(from, to, &scheme.port_type_compatibility)
 }
 
 pub fn load_default_scheme() -> Result<NodeScheme> {
     let scheme: RawNodeScheme = serde_json::from_str(DEFAULT_NODE_SCHEME_JSON)
         .map_err(|e| anyhow!("failed to parse assets/node-scheme.json: {e}"))?;
     Ok(match scheme {
-        RawNodeScheme::Legacy(s) => NodeScheme { nodes: s.nodes },
+        RawNodeScheme::Legacy(s) => NodeScheme {
+            nodes: s.nodes,
+            port_type_compatibility: HashMap::new(),
+        },
         RawNodeScheme::Generated(s) => {
             let mut nodes: HashMap<String, NodeTypeScheme> = HashMap::new();
             for n in s.nodes {
@@ -157,7 +219,10 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
                     },
                 );
             }
-            NodeScheme { nodes }
+            NodeScheme {
+                nodes,
+                port_type_compatibility: s.port_type_compatibility,
+            }
         }
     })
 }
@@ -295,9 +360,9 @@ fn validate_connection(
         return;
     };
 
-    if !from_ty.overlaps(to_ty.as_ref())
-        && !implicit_port_coercion_allows(from_ty, to_ty.as_ref(), to_node, &c.to.port_id)
-    {
+    let compatible = port_types_compatible(scheme, from_ty, to_ty.as_ref());
+
+    if !compatible {
         errors.push(format!(
             "connection '{}' type mismatch: '{}.{}' ({}) -> '{}.{}' ({})",
             c.id,
@@ -308,66 +373,6 @@ fn validate_connection(
             c.to.port_id,
             port_type_spec_to_string(to_ty.as_ref())
         ));
-    }
-}
-
-fn implicit_port_coercion_allows(
-    from_ty: &PortTypeSpec,
-    to_ty: &PortTypeSpec,
-    to_node: &Node,
-    to_port_id: &str,
-) -> bool {
-    // RenderPass.material: the renderer can compile a material expression graph that starts
-    // from color/float/vector nodes directly, even if the scheme labels the input as `material`.
-    if to_node.node_type == "RenderPass"
-        && to_port_id == "material"
-        && port_type_spec_contains(to_ty, "material")
-    {
-        return port_type_spec_contains_any_of(
-            from_ty,
-            &[
-                "any",
-                "material",
-                "shader",
-                "color",
-                "float",
-                "int",
-                "bool",
-                "vector2",
-                "vector3",
-                "vector4",
-            ],
-        );
-    }
-
-    // Pass inputs can be driven directly by primitive shader values.
-    // The renderer can synthesize a default fullscreen RenderPass in this case.
-    if port_type_spec_contains(to_ty, "pass") {
-        return port_type_spec_contains_any_of(
-            from_ty,
-            &[
-                "color",
-                "vector2",
-                "vector3",
-                "vector4",
-                "float",
-                "int",
-                "bool",
-            ],
-        );
-    }
-
-    false
-}
-
-fn port_type_spec_contains_any_of(t: &PortTypeSpec, candidates: &[&str]) -> bool {
-    candidates.iter().any(|c| port_type_spec_contains(t, c))
-}
-
-fn port_type_spec_contains(t: &PortTypeSpec, candidate: &str) -> bool {
-    match t {
-        PortTypeSpec::One(s) => s == candidate,
-        PortTypeSpec::Many(v) => v.iter().any(|s| s == candidate),
     }
 }
 
