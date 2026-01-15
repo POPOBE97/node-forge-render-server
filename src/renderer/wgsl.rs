@@ -336,14 +336,7 @@ pub fn build_blur_image_wgsl_bundle(
     let image_textures = material_ctx.image_textures.clone();
 
     let out_color = to_vec4_color(fragment_expr);
-    
-    // Build fragment body with inline statements (from MathClosure nodes) before the return
-    let inline_stmts = if material_ctx.inline_stmts.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n    ", material_ctx.inline_stmts.join("\n"))
-    };
-    let fragment_body = format!("{inline_stmts}return {};", out_color.expr);
+    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
 
     let mut common = r#"
 struct Params {
@@ -440,14 +433,7 @@ pub fn build_pass_wgsl_bundle(
     let image_textures = material_ctx.image_textures.clone();
 
     let out_color = to_vec4_color(fragment_expr);
-    
-    // Build fragment body with inline statements (from MathClosure nodes) before the return
-    let inline_stmts = if material_ctx.inline_stmts.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n    ", material_ctx.inline_stmts.join("\n"))
-    };
-    let fragment_body = format!("{inline_stmts}return {};", out_color.expr);
+    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
 
     let mut common = r#"
 struct Params {

@@ -229,14 +229,28 @@ where
 		.collect::<Vec<_>>()
 		.join("\n");
 
-	// Build the inline block statement
-	let block = format!(
-		"    var {output_var}: {};\n    {{\n{}\n        var output: {};\n{}\n        {output_var} = output;\n    }}",
-		ret_ty.wgsl(),
-		param_bindings.join("\n"),
-		ret_ty.wgsl(),
-		indented_source,
-	);
+	// Build the inline block statement with `{ }` for scope isolation.
+	// Structure:
+	//     var mc_xxx_out: <type>;
+	//     {
+	//         let param1 = expr1;
+	//         let param2 = expr2;
+	//         var output: <type>;
+	//         <snippet code>
+	//         mc_xxx_out = output;
+	//     }
+	let ret_type = ret_ty.wgsl();
+	let params = param_bindings.join("\n");
+	let mut block = String::new();
+	block.push_str(&format!("    var {output_var}: {ret_type};\n"));
+	block.push_str("    {\n");
+	block.push_str(&params);
+	block.push('\n');
+	block.push_str(&format!("        var output: {ret_type};\n"));
+	block.push_str(&indented_source);
+	block.push('\n');
+	block.push_str(&format!("        {output_var} = output;\n"));
+	block.push_str("    }");
 
 	ctx.inline_stmts.push(block);
 

@@ -195,6 +195,17 @@ impl MaterialCompileContext {
     pub fn pass_sampler_var_name(pass_node_id: &str) -> String {
         format!("pass_samp_{}", pass_node_id.replace('-', "_"))
     }
+
+    /// Build the fragment body with inline statements prepended to the return expression.
+    ///
+    /// Inline statements (from MathClosure nodes) are emitted before the final return.
+    pub fn build_fragment_body(&self, return_expr: &str) -> String {
+        if self.inline_stmts.is_empty() {
+            format!("return {};", return_expr)
+        } else {
+            format!("{}\n    return {};", self.inline_stmts.join("\n"), return_expr)
+        }
+    }
 }
 
 /// Uniform parameters passed to each render pass.
