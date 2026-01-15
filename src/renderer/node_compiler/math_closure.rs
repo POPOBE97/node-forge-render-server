@@ -123,8 +123,37 @@ fn glslish_to_wgsl(source: &str) -> String {
 }
 
 fn port_id_to_param_name(port: &NodePort) -> String {
-	// Prefer stable port.id; it is what connections refer to.
-	sanitize_wgsl_ident(&port.id)
+	// DSL ports often use a generated `id` (e.g. dynamic_...) while the user-provided
+	// snippet references the human variable name (port.name / variableName).
+	// Prefer the name when available so identifiers resolve inside the WGSL helper.
+	if let Some(name) = port.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+		sanitize_wgsl_ident(name)
+	} else {
+		sanitize_wgsl_ident(&port.id)
+	}
+}
+
+fn promote_type_from_source_swizzles(source: &str, param_name: &str, ty: ValueType) -> ValueType {
+	// Some DSL exports mark ports as `float` but the snippet uses swizzles like `x/y`.
+	// WGSL forbids swizzles on scalars, so we conservatively promote the parameter type.
+	if ty != ValueType::F32 {
+		return ty;
+	}
+
+	let has_x = source.contains(&format!("{param_name}.x"));
+	let has_y = source.contains(&format!("{param_name}.y"));
+	let has_z = source.contains(&format!("{param_name}.z"));
+	let has_w = source.contains(&format!("{param_name}.w"));
+
+	if has_w {
+		ValueType::Vec4
+	} else if has_z {
+		ValueType::Vec3
+	} else if has_x || has_y {
+		ValueType::Vec2
+	} else {
+		ValueType::F32
+	}
 }
 
 /// Compile a MathClosure node by emitting a helper function and returning a call expression.
@@ -160,7 +189,11 @@ where
 
 	for port in &node.inputs {
 		let param_name = port_id_to_param_name(port);
-		let expected_ty = map_port_type(port.port_type.as_deref())?;
+		let expected_ty = promote_type_from_source_swizzles(
+			source,
+			&param_name,
+			map_port_type(port.port_type.as_deref())?,
+		);
 
 		let arg_expr = if let Some(conn) = incoming_connection(scene, &node.id, &port.id) {
 			let compiled =

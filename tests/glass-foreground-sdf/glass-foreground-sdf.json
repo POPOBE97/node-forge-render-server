@@ -1,0 +1,1299 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-01-15T18:39:27.996Z",
+    "modified": "2026-01-15T18:39:27.996Z"
+  },
+  "nodes": [
+    {
+      "id": "screen_1",
+      "type": "Screen",
+      "position": {
+        "x": 1420,
+        "y": 780
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 392,
+        "height": 871
+      }
+    },
+    {
+      "id": "composite_1",
+      "type": "Composite",
+      "position": {
+        "x": 1220,
+        "y": 780
+      },
+      "width": 160,
+      "label": "Composite Output",
+      "params": {
+        "alpha": 1
+      }
+    },
+    {
+      "id": "render_texture_1",
+      "type": "RenderTexture",
+      "position": {
+        "x": 1220,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "foreground_pass",
+      "type": "RenderPass",
+      "position": {
+        "x": 920,
+        "y": 640
+      },
+      "width": 266,
+      "label": "foregroundPass",
+      "params": {
+        "name": "foregroundPass",
+        "blend_preset": "custom",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "rect_geometry",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 740,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Glass Rect",
+      "params": {
+        "width": 200,
+        "height": 200,
+        "x": 0,
+        "y": 0,
+        "radius": 20,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "uniform_uColor",
+      "type": "ColorInput",
+      "position": {
+        "x": 540,
+        "y": 640
+      },
+      "width": 160,
+      "label": "uColor",
+      "params": {
+        "value": [
+          1,
+          0.9,
+          0.7,
+          0.279
+        ]
+      }
+    },
+    {
+      "id": "uniform_uStrength",
+      "type": "FloatInput",
+      "position": {
+        "x": 320,
+        "y": 1020
+      },
+      "width": 160,
+      "label": "uStrength",
+      "params": {
+        "value": 1
+      }
+    },
+    {
+      "id": "uniform_uSrc1",
+      "type": "Vector2Input",
+      "position": {
+        "x": -80,
+        "y": 640
+      },
+      "width": 160,
+      "label": "uSrc1",
+      "params": {
+        "x": 2,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "uniform_uSrc2",
+      "type": "Vector2Input",
+      "position": {
+        "x": -80,
+        "y": 940
+      },
+      "width": 160,
+      "label": "uSrc2",
+      "params": {
+        "x": 1.5,
+        "y": 0.3
+      }
+    },
+    {
+      "id": "uniform_uRing1",
+      "type": "Vector3Input",
+      "position": {
+        "x": -80,
+        "y": 1240
+      },
+      "width": 160,
+      "label": "uRing1",
+      "params": {
+        "x": 0.8,
+        "y": 5,
+        "z": 0.4
+      }
+    },
+    {
+      "id": "uniform_uRing2",
+      "type": "Vector3Input",
+      "position": {
+        "x": -80,
+        "y": 1540
+      },
+      "width": 160,
+      "label": "uRing2",
+      "params": {
+        "x": 0.6,
+        "y": 7.1899999999999995,
+        "z": 0.3
+      }
+    },
+    {
+      "id": "math_src1Light",
+      "type": "MathClosure",
+      "position": {
+        "x": 120,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Src1 Light",
+      "params": {
+        "source": "// Gaussian-like light falloff from SDF\n// sdf: vec2(sdf, normFactor)\n// uSrc1[0]: falloff factor, uSrc1[1]: intensity\nfloat nf = max(size, 0.00001);\nfloat lit = 1.0 + sdf / nf;\nlit = exp(-lit * lit * uSrc1.x);\noutput = lit * uSrc1.y;"
+      },
+      "inputs": [
+        {
+          "id": "uSrc1",
+          "name": "uSrc1",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1768497579934_2",
+          "name": "sdf",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768502071191_3",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "normFactor",
+          "label": "normFactor",
+          "variableName": "normFactor",
+          "type": "any"
+        },
+        {
+          "portId": "uSrc1",
+          "label": "uSrc1",
+          "variableName": "uSrc1",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "uniform_uSrc1",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1768497579934_2",
+          "label": "sdf",
+          "variableName": "sdf",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1768502071191_3",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_11",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math_src2Light",
+      "type": "MathClosure",
+      "position": {
+        "x": 120,
+        "y": 940
+      },
+      "width": 160,
+      "label": "Src2 Light",
+      "params": {
+        "source": "// Cubic falloff light\n// sdf: vec2(sdf, normFactor)\n// uSrc2[0]: falloff factor, uSrc2[1]: intensity\nfloat nf = max(size, 0.00001);\nfloat lit = 1.0 + sdf / nf;\nlit = 1.0 - max(pow(1.0 - lit * uSrc2.x, 3.0), 0.0);\noutput = lit * uSrc2.y;"
+      },
+      "inputs": [
+        {
+          "id": "uSrc2",
+          "name": "uSrc2",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1768497601590_2",
+          "name": "sdf",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768502053445_3",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "normFactor",
+          "label": "normFactor",
+          "variableName": "normFactor",
+          "type": "any"
+        },
+        {
+          "portId": "uSrc2",
+          "label": "uSrc2",
+          "variableName": "uSrc2",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "uniform_uSrc2",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1768497601590_2",
+          "label": "sdf",
+          "variableName": "sdf",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1768502053445_3",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_11",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math_ring1Light",
+      "type": "MathClosure",
+      "position": {
+        "x": 120,
+        "y": 1240
+      },
+      "width": 160,
+      "label": "Ring1 Light",
+      "params": {
+        "source": "// Ring light effect\n// sdf: vec2(sdf, normFactor)\n// uRing1[0]: ring position, uRing1[1]: ring width, uRing1[2]: intensity\nfloat nf = max(size, 0.00001);\nfloat lit = 1.0 + sdf / nf;\nlit = 1.0 - smoothstep(0.0, 1.0, abs((lit - uRing1.x) * uRing1.y));\noutput = lit * uRing1.z;"
+      },
+      "inputs": [
+        {
+          "id": "uRing1",
+          "name": "uRing1",
+          "type": "vector3"
+        },
+        {
+          "id": "dynamic_1768497611426_2",
+          "name": "sdf",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768502115882_3",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "normFactor",
+          "label": "normFactor",
+          "variableName": "normFactor",
+          "type": "any"
+        },
+        {
+          "portId": "uRing1",
+          "label": "uRing1",
+          "variableName": "uRing1",
+          "type": "vector3",
+          "sourceBinding": {
+            "nodeId": "uniform_uRing1",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1768497611426_2",
+          "label": "sdf",
+          "variableName": "sdf",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1768502115882_3",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_11",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math_ring2Light",
+      "type": "MathClosure",
+      "position": {
+        "x": 120,
+        "y": 1540
+      },
+      "width": 160,
+      "label": "Ring2 Light",
+      "params": {
+        "source": "// Ring light effect 2\n// sdf: vec2(sdf, normFactor)\n// uRing2[0]: ring position, uRing2[1]: ring width, uRing2[2]: intensity\nfloat nf = max(size, 0.00001);\nfloat lit = 1.0 + sdf / nf;\nlit = 1.0 - smoothstep(0.0, 1.0, abs((lit - uRing2.x) * uRing2.y));\noutput = lit * uRing2.z;"
+      },
+      "inputs": [
+        {
+          "id": "uRing2",
+          "name": "uRing2",
+          "type": "vector3"
+        },
+        {
+          "id": "dynamic_1768497616941_2",
+          "name": "sdf",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768502120809_3",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "normFactor",
+          "label": "normFactor",
+          "variableName": "normFactor",
+          "type": "any"
+        },
+        {
+          "portId": "uRing2",
+          "label": "uRing2",
+          "variableName": "uRing2",
+          "type": "vector3",
+          "sourceBinding": {
+            "nodeId": "uniform_uRing2",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1768497616941_2",
+          "label": "sdf",
+          "variableName": "sdf",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1768502120809_3",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_11",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math_combineLights",
+      "type": "MathClosure",
+      "position": {
+        "x": 320,
+        "y": 800
+      },
+      "width": 160,
+      "label": "Combine Lights",
+      "params": {
+        "source": "// Sum all light contributions\noutput = src1Light + src2Light + ring1Light + ring2Light;"
+      },
+      "inputs": [
+        {
+          "id": "src1Light",
+          "name": "src1Light",
+          "type": "float"
+        },
+        {
+          "id": "src2Light",
+          "name": "src2Light",
+          "type": "float"
+        },
+        {
+          "id": "ring1Light",
+          "name": "ring1Light",
+          "type": "float"
+        },
+        {
+          "id": "ring2Light",
+          "name": "ring2Light",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "src1Light",
+          "label": "src1Light",
+          "variableName": "src1Light",
+          "type": "float"
+        },
+        {
+          "portId": "src2Light",
+          "label": "src2Light",
+          "variableName": "src2Light",
+          "type": "float"
+        },
+        {
+          "portId": "ring1Light",
+          "label": "ring1Light",
+          "variableName": "ring1Light",
+          "type": "float"
+        },
+        {
+          "portId": "ring2Light",
+          "label": "ring2Light",
+          "variableName": "ring2Light",
+          "type": "float"
+        }
+      ]
+    },
+    {
+      "id": "math_artisticMapping",
+      "type": "MathClosure",
+      "position": {
+        "x": 540,
+        "y": 800
+      },
+      "width": 160,
+      "label": "Artistic Mapping",
+      "params": {
+        "source": "// Artistic alpha mapping with squared falloff and edge limit\n// sdf: vec2(sdf, normFactor)\nfloat finalAlpha = combinedLight * combinedLight;\nfinalAlpha = clamp(finalAlpha, 0.0, 1.0);\n\n// Edge limit based on SDF\nfloat nf = max(size, 0.00001);\nfloat limit = 1.0 + sdf / nf;\nfinalAlpha *= max(1.0 - pow(limit, 8.0), 0.0);\n\n// Apply strength\nfinalAlpha *= uStrength;\n\noutput = finalAlpha;"
+      },
+      "inputs": [
+        {
+          "id": "combinedLight",
+          "name": "combinedLight",
+          "type": "float"
+        },
+        {
+          "id": "uStrength",
+          "name": "uStrength",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768497568636_3",
+          "name": "sdf",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768502159821_4",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "combinedLight",
+          "label": "combinedLight",
+          "variableName": "combinedLight",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "math_combineLights",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "normFactor",
+          "label": "normFactor",
+          "variableName": "normFactor",
+          "type": "any"
+        },
+        {
+          "portId": "uStrength",
+          "label": "uStrength",
+          "variableName": "uStrength",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "uniform_uStrength",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_1768497568636_3",
+          "label": "sdf",
+          "variableName": "sdf",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1768502159821_4",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_9",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "math_finalColor",
+      "type": "MathClosure",
+      "position": {
+        "x": 740,
+        "y": 860
+      },
+      "width": 160,
+      "label": "Final Color",
+      "params": {
+        "source": "// Apply alpha to color (premultiplied alpha)\nvec4 finalColor = uColor;\nfinalColor *= finalAlpha;\noutput = finalColor;"
+      },
+      "inputs": [
+        {
+          "id": "uColor",
+          "name": "uColor",
+          "type": "color"
+        },
+        {
+          "id": "finalAlpha",
+          "name": "finalAlpha",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "uColor",
+          "label": "uColor",
+          "variableName": "uColor",
+          "type": "color"
+        },
+        {
+          "portId": "finalAlpha",
+          "label": "finalAlpha",
+          "variableName": "finalAlpha",
+          "type": "float"
+        }
+      ]
+    },
+    {
+      "id": "Sdf2D_4",
+      "type": "Sdf2D",
+      "position": {
+        "x": -480,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Circle SDF",
+      "params": {
+        "shape": "circle",
+        "radius": 100
+      }
+    },
+    {
+      "id": "Vector2Input_5",
+      "type": "Vector2Input",
+      "position": {
+        "x": -680,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "Sdf2D_6",
+      "type": "Sdf2D",
+      "position": {
+        "x": -480,
+        "y": 760
+      },
+      "width": 160,
+      "label": "Box SDF",
+      "params": {
+        "shape": "rectangle",
+        "radius": 100
+      }
+    },
+    {
+      "id": "MathClosure_8",
+      "type": "MathClosure",
+      "position": {
+        "x": -880,
+        "y": 860
+      },
+      "width": 160,
+      "label": "Box Radius",
+      "params": {
+        "source": "output = vec4(20.0);"
+      },
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ]
+    },
+    {
+      "id": "MathClosure_9",
+      "type": "MathClosure",
+      "position": {
+        "x": -280,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Morph SDF",
+      "params": {
+        "source": "output = mix(sdfCircle, sdfBox, t);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768497420613_1",
+          "name": "sdfCircle",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768497425869_2",
+          "name": "sdfBox",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1768497454174_3",
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768497420613_1",
+          "label": "sdfCircle",
+          "variableName": "sdfCircle",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "Sdf2D_4",
+            "outputPortId": "distance",
+            "outputLabel": "Distance"
+          }
+        },
+        {
+          "portId": "dynamic_1768497425869_2",
+          "label": "sdfBox",
+          "variableName": "sdfBox",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "Sdf2D_6",
+            "outputPortId": "distance",
+            "outputLabel": "Distance"
+          }
+        },
+        {
+          "portId": "dynamic_1768497454174_3",
+          "label": "t",
+          "variableName": "t",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_10",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_10",
+      "type": "FloatInput",
+      "position": {
+        "x": -480,
+        "y": 540
+      },
+      "width": 160,
+      "label": "uShapeMorph",
+      "params": {
+        "value": 1
+      }
+    },
+    {
+      "id": "FloatInput_11",
+      "type": "FloatInput",
+      "position": {
+        "x": -880,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Size",
+      "params": {
+        "value": 100
+      }
+    },
+    {
+      "id": "MathClosure_13",
+      "type": "MathClosure",
+      "position": {
+        "x": -880,
+        "y": 720
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = vec2(size * 2.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768502007803_1",
+          "name": "size",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768502007803_1",
+          "label": "size",
+          "variableName": "size",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_11",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_1",
+      "from": {
+        "nodeId": "foreground_pass",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "composite_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "composite_1",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "screen_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "render_texture_1",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "composite_1",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_13",
+      "from": {
+        "nodeId": "uniform_uSrc1",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "math_src1Light",
+        "portId": "uSrc1"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "uniform_uSrc2",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "math_src2Light",
+        "portId": "uSrc2"
+      }
+    },
+    {
+      "id": "edge_15",
+      "from": {
+        "nodeId": "uniform_uRing1",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "math_ring1Light",
+        "portId": "uRing1"
+      }
+    },
+    {
+      "id": "edge_16",
+      "from": {
+        "nodeId": "uniform_uRing2",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "math_ring2Light",
+        "portId": "uRing2"
+      }
+    },
+    {
+      "id": "edge_17",
+      "from": {
+        "nodeId": "math_src1Light",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_combineLights",
+        "portId": "src1Light"
+      }
+    },
+    {
+      "id": "edge_18",
+      "from": {
+        "nodeId": "math_src2Light",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_combineLights",
+        "portId": "src2Light"
+      }
+    },
+    {
+      "id": "edge_19",
+      "from": {
+        "nodeId": "math_ring1Light",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_combineLights",
+        "portId": "ring1Light"
+      }
+    },
+    {
+      "id": "edge_20",
+      "from": {
+        "nodeId": "math_ring2Light",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_combineLights",
+        "portId": "ring2Light"
+      }
+    },
+    {
+      "id": "edge_21",
+      "from": {
+        "nodeId": "math_combineLights",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_artisticMapping",
+        "portId": "combinedLight"
+      }
+    },
+    {
+      "id": "edge_22",
+      "from": {
+        "nodeId": "uniform_uStrength",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_artisticMapping",
+        "portId": "uStrength"
+      }
+    },
+    {
+      "id": "edge_23",
+      "from": {
+        "nodeId": "math_artisticMapping",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_finalColor",
+        "portId": "finalAlpha"
+      }
+    },
+    {
+      "id": "edge_24",
+      "from": {
+        "nodeId": "uniform_uColor",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "math_finalColor",
+        "portId": "uColor"
+      }
+    },
+    {
+      "id": "edge_38",
+      "from": {
+        "nodeId": "rect_geometry",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "foreground_pass",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_42",
+      "from": {
+        "nodeId": "Vector2Input_5",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Sdf2D_4",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_44",
+      "from": {
+        "nodeId": "Vector2Input_5",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Sdf2D_6",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_46",
+      "from": {
+        "nodeId": "MathClosure_8",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Sdf2D_6",
+        "portId": "radius4"
+      }
+    },
+    {
+      "id": "edge_48",
+      "from": {
+        "nodeId": "Sdf2D_4",
+        "portId": "distance"
+      },
+      "to": {
+        "nodeId": "MathClosure_9",
+        "portId": "dynamic_1768497420613_1"
+      }
+    },
+    {
+      "id": "edge_49",
+      "from": {
+        "nodeId": "Sdf2D_6",
+        "portId": "distance"
+      },
+      "to": {
+        "nodeId": "MathClosure_9",
+        "portId": "dynamic_1768497425869_2"
+      }
+    },
+    {
+      "id": "edge_50",
+      "from": {
+        "nodeId": "FloatInput_10",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_9",
+        "portId": "dynamic_1768497454174_3"
+      }
+    },
+    {
+      "id": "edge_51",
+      "from": {
+        "nodeId": "MathClosure_9",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_artisticMapping",
+        "portId": "dynamic_1768497568636_3"
+      }
+    },
+    {
+      "id": "edge_53",
+      "from": {
+        "nodeId": "MathClosure_9",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_src1Light",
+        "portId": "dynamic_1768497579934_2"
+      }
+    },
+    {
+      "id": "edge_54",
+      "from": {
+        "nodeId": "MathClosure_9",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_src2Light",
+        "portId": "dynamic_1768497601590_2"
+      }
+    },
+    {
+      "id": "edge_55",
+      "from": {
+        "nodeId": "MathClosure_9",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_ring1Light",
+        "portId": "dynamic_1768497611426_2"
+      }
+    },
+    {
+      "id": "edge_56",
+      "from": {
+        "nodeId": "MathClosure_9",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "math_ring2Light",
+        "portId": "dynamic_1768497616941_2"
+      }
+    },
+    {
+      "id": "edge_59",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Sdf2D_4",
+        "portId": "radius"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_13",
+        "portId": "dynamic_1768502007803_1"
+      }
+    },
+    {
+      "id": "edge_61",
+      "from": {
+        "nodeId": "MathClosure_13",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Sdf2D_6",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_62",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_src2Light",
+        "portId": "dynamic_1768502053445_3"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_src1Light",
+        "portId": "dynamic_1768502071191_3"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_ring1Light",
+        "portId": "dynamic_1768502115882_3"
+      }
+    },
+    {
+      "id": "edge_65",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_ring2Light",
+        "portId": "dynamic_1768502120809_3"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "math_finalColor",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "foreground_pass",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_71",
+      "from": {
+        "nodeId": "FloatInput_11",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "math_artisticMapping",
+        "portId": "dynamic_1768502159821_4"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "composite_1"
+  }
+}

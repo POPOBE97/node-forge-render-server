@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-15T09:08:38.182Z",
+  "generatedAt": "2026-01-15T16:45:20.219Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -44,6 +44,7 @@
     "RenderPass",
     "RenderTexture",
     "Screen",
+    "Sdf2D",
     "ShaderMaterial",
     "TextureInput",
     "Vector2Input",
@@ -1418,6 +1419,50 @@
       ],
       "outputs": [],
       "defaultParams": {}
+    },
+    {
+      "type": "Sdf2D",
+      "label": "2D SDF",
+      "category": "Math",
+      "description": "2D signed distance field: circle / rectangle",
+      "inputs": [
+        {
+          "id": "position",
+          "name": "Position",
+          "type": "vector2"
+        },
+        {
+          "id": "radius",
+          "name": "Radius",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "size",
+          "name": "Size",
+          "type": "vector2"
+        },
+        {
+          "id": "radius4",
+          "name": "Radius",
+          "type": "vector4"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "distance",
+          "name": "Distance",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "shape": "circle"
+      }
     },
     {
       "type": "ShaderMaterial",

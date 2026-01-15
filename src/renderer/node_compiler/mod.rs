@@ -9,6 +9,7 @@ pub mod trigonometry_nodes;
 pub mod vector_nodes;
 pub mod color_nodes;
 pub mod geometry_nodes;
+pub mod sdf_nodes;
 
 use std::collections::HashMap;
 use anyhow::{bail, Result};
@@ -81,6 +82,9 @@ pub fn compile_material_expr(
         "ColorMix" => color_nodes::compile_color_mix(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "ColorRamp" => color_nodes::compile_color_ramp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "HSVAdjust" => color_nodes::compile_hsv_adjust(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+
+        // SDF nodes
+        "Sdf2D" => sdf_nodes::compile_sdf2d(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         
         // Unsupported node types
         other => bail!("unsupported material node type: {other}"),
