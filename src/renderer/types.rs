@@ -143,6 +143,13 @@ pub struct MaterialCompileContext {
     ///
     /// Keyed by a stable symbol name to avoid duplicate definitions.
     pub extra_wgsl_decls: BTreeMap<String, String>,
+
+    /// Inline WGSL statements emitted by node compilers for the function body.
+    ///
+    /// These statements are emitted in order before the final return expression.
+    /// Used for MathClosure nodes to generate inline `{ }` blocks that isolate
+    /// variable scope and avoid naming conflicts.
+    pub inline_stmts: Vec<String>,
 }
 
 impl MaterialCompileContext {
