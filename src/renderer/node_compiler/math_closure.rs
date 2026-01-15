@@ -240,15 +240,24 @@ where
 	//         mc_xxx_out = output;
 	//     }
 	let ret_type = ret_ty.wgsl();
-	let params = param_bindings.join("\n");
 	let mut block = String::new();
 	block.push_str(&format!("    var {output_var}: {ret_type};\n"));
 	block.push_str("    {\n");
-	block.push_str(&params);
-	block.push('\n');
+	
+	// Add parameter bindings (if any)
+	if !param_bindings.is_empty() {
+		block.push_str(&param_bindings.join("\n"));
+		block.push('\n');
+	}
+	
 	block.push_str(&format!("        var output: {ret_type};\n"));
-	block.push_str(&indented_source);
-	block.push('\n');
+	
+	// Add the snippet source code
+	if !indented_source.trim().is_empty() {
+		block.push_str(&indented_source);
+		block.push('\n');
+	}
+	
 	block.push_str(&format!("        {output_var} = output;\n"));
 	block.push_str("    }");
 
