@@ -2,6 +2,7 @@
 
 pub mod input_nodes;
 pub mod math_nodes;
+pub mod math_closure;
 pub mod attribute;
 pub mod texture_nodes;
 pub mod trigonometry_nodes;
@@ -59,6 +60,7 @@ pub fn compile_material_expr(
         "MathMultiply" => math_nodes::compile_math_multiply(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "MathClamp" => math_nodes::compile_math_clamp(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         "MathPower" => math_nodes::compile_math_power(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
+        "MathClosure" => math_closure::compile_math_closure(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,
         
         // Texture nodes
         "ImageTexture" => texture_nodes::compile_image_texture(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?,

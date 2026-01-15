@@ -281,6 +281,18 @@ impl MaterialCompileContext {
                 Self::pass_sampler_var_name(pass_node_id)
             ));
         }
+
+        // Extra helper declarations (functions, structs, consts) emitted by compilers.
+        if !self.extra_wgsl_decls.is_empty() {
+            out.push_str("\n// --- Extra WGSL declarations (generated) ---\n");
+            for (_name, decl) in self.extra_wgsl_decls.iter() {
+                out.push_str(decl);
+                if !decl.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push('\n');
+            }
+        }
         
         out
     }

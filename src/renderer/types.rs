@@ -1,6 +1,6 @@
 //! Core type definitions for the renderer module.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 
@@ -138,6 +138,11 @@ pub struct MaterialCompileContext {
     pub pass_textures: Vec<String>,
     /// Map from pass node ID to texture binding index.
     pub pass_index_by_node: HashMap<String, usize>,
+
+    /// Extra WGSL helper declarations emitted by node compilers (e.g. MathClosure).
+    ///
+    /// Keyed by a stable symbol name to avoid duplicate definitions.
+    pub extra_wgsl_decls: BTreeMap<String, String>,
 }
 
 impl MaterialCompileContext {

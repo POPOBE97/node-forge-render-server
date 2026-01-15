@@ -33,7 +33,8 @@ pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedEx
         .to_ascii_lowercase();
 
     match name.as_str() {
-        "uv" => Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2)),
+        // Common aliases from GLSL graphs (e.g. vUv)
+        "uv" | "vuv" | "v_uv" => Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2)),
         other => bail!("unsupported Attribute.name: {} (only 'uv' is currently supported)", other),
     }
 }

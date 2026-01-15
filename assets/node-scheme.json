@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-14T11:24:37.300Z",
+  "generatedAt": "2026-01-15T09:08:38.182Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -63,7 +63,8 @@
     "shader",
     "texture",
     "vector2",
-    "vector3"
+    "vector3",
+    "vector4"
   ],
   "gpuTextureFormats": [
     "r8unorm",
@@ -168,6 +169,7 @@
       "bool",
       "vector2",
       "vector3",
+      "vector4",
       "color",
       "texture",
       "renderTexture",
@@ -194,8 +196,13 @@
     "vector3": [
       "vector3"
     ],
-    "color": [
+    "vector4": [
+      "vector4",
       "color"
+    ],
+    "color": [
+      "color",
+      "vector4"
     ],
     "texture": [
       "texture"
@@ -216,6 +223,7 @@
       "bool",
       "vector2",
       "vector3",
+      "vector4",
       "color"
     ],
     "material": [
@@ -225,6 +233,7 @@
       "bool",
       "vector2",
       "vector3",
+      "vector4",
       "color"
     ]
   },
@@ -947,7 +956,7 @@
         {
           "id": "output",
           "name": "Output",
-          "type": "float"
+          "type": "any"
         }
       ],
       "defaultParams": {

@@ -132,6 +132,45 @@ pub fn splat_f32(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
     })
 }
 
+/// Coerce a typed expression to a target ValueType.
+///
+/// Supported conversions:
+/// - Scalar splat: f32 -> vec2/vec3/vec4
+/// - Vector narrowing via swizzle: vec4 -> vec3/vec2/f32, vec3 -> vec2/f32, vec2 -> f32
+/// - Vector widening with reasonable defaults: vec2 -> vec3/vec4, vec3 -> vec4
+pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
+    if x.ty == target {
+        return Ok(x);
+    }
+
+    // Scalar -> vector splat
+    if x.ty == ValueType::F32 {
+        return splat_f32(&x, target);
+    }
+
+    // Vector narrowing via swizzle
+    let wrap = |e: &str| format!("({e})");
+    let swizzle = |expr: &str, suffix: &str| format!("{}.{}", wrap(expr), suffix);
+
+    match (x.ty, target) {
+        (ValueType::Vec4, ValueType::Vec3) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xyz"), ValueType::Vec3, x.uses_time)),
+        (ValueType::Vec4, ValueType::Vec2) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xy"), ValueType::Vec2, x.uses_time)),
+        (ValueType::Vec4, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+
+        (ValueType::Vec3, ValueType::Vec2) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xy"), ValueType::Vec2, x.uses_time)),
+        (ValueType::Vec3, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+
+        (ValueType::Vec2, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+
+        // Vector widening with defaults
+        (ValueType::Vec2, ValueType::Vec3) => Ok(TypedExpr::with_time(format!("vec3f({}, 0.0)", x.expr), ValueType::Vec3, x.uses_time)),
+        (ValueType::Vec2, ValueType::Vec4) => Ok(TypedExpr::with_time(format!("vec4f({}, 0.0, 1.0)", x.expr), ValueType::Vec4, x.uses_time)),
+        (ValueType::Vec3, ValueType::Vec4) => Ok(TypedExpr::with_time(format!("vec4f({}, 1.0)", x.expr), ValueType::Vec4, x.uses_time)),
+
+        _ => bail!("unsupported type coercion: {:?} -> {:?}", x.ty, target),
+    }
+}
+
 /// Coerce two typed expressions for binary operations (promoting scalars to vectors as needed).
 pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, TypedExpr, ValueType)> {
     if a.ty == b.ty {

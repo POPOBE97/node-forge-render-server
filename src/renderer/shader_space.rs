@@ -314,6 +314,9 @@ fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
             },
         },
         "opaque" | "none" | "off" | "replace" => BlendState::REPLACE,
+        // "custom" means: start from a neutral blend state and let explicit
+        // blendfunc/src/dst overrides drive the final state.
+        "custom" => BlendState::REPLACE,
         other => bail!("unsupported blend_preset: {other}"),
     })
 }

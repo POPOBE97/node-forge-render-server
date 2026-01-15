@@ -115,8 +115,7 @@ fn normalize_port_type_name(t: &str) -> &str {
         // Common aliases used by some editors/schemes.
         "vec2" => "vector2",
         "vec3" => "vector3",
-        // Historically some code used vector4/vec4; the current scheme uses `color`.
-        "vec4" | "vector4" => "color",
+        "vec4" => "vector4",
         other => other,
     }
 }
@@ -318,6 +317,12 @@ fn validate_connection(
     scheme: &NodeScheme,
     errors: &mut Vec<String>,
 ) {
+    fn math_closure_input_port_type(node: &Node, port_id: &str) -> Option<PortTypeSpec> {
+        let p = node.inputs.iter().find(|p| p.id == port_id)?;
+        let ty = p.port_type.as_ref()?;
+        Some(PortTypeSpec::One(ty.clone()))
+    }
+
     let Some(from_node) = nodes_by_id.get(c.from.node_id.as_str()).copied() else {
         errors.push(format!("connection '{}' references missing from.nodeId '{}'", c.id, c.from.node_id));
         return;
@@ -335,7 +340,9 @@ fn validate_connection(
         return;
     };
 
-    let Some(from_ty) = from_scheme.outputs.get(&c.from.port_id) else {
+    let from_ty: Cow<'_, PortTypeSpec> = if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
+        Cow::Borrowed(t)
+    } else {
         errors.push(format!(
             "connection '{}' uses unknown from port '{}.{}' (type {})",
             c.id, c.from.node_id, c.from.port_id, from_node.node_type
@@ -352,6 +359,17 @@ fn validate_connection(
             Some(pass_ty) => Cow::Borrowed(pass_ty),
             None => Cow::Owned(PortTypeSpec::One("pass".to_string())),
         }
+    } else if to_node.node_type == "MathClosure" {
+        // MathClosure inputs are instance-defined (node.inputs in the DSL export).
+        if let Some(spec) = math_closure_input_port_type(to_node, &c.to.port_id) {
+            Cow::Owned(spec)
+        } else {
+            errors.push(format!(
+                "connection '{}' uses unknown to port '{}.{}' (type {})",
+                c.id, c.to.node_id, c.to.port_id, to_node.node_type
+            ));
+            return;
+        }
     } else {
         errors.push(format!(
             "connection '{}' uses unknown to port '{}.{}' (type {})",
@@ -360,7 +378,7 @@ fn validate_connection(
         return;
     };
 
-    let compatible = port_types_compatible(scheme, from_ty, to_ty.as_ref());
+    let compatible = port_types_compatible(scheme, from_ty.as_ref(), to_ty.as_ref());
 
     if !compatible {
         errors.push(format!(
@@ -368,7 +386,7 @@ fn validate_connection(
             c.id,
             c.from.node_id,
             c.from.port_id,
-            port_type_spec_to_string(from_ty),
+            port_type_spec_to_string(from_ty.as_ref()),
             c.to.node_id,
             c.to.port_id,
             port_type_spec_to_string(to_ty.as_ref())
