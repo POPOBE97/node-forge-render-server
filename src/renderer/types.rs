@@ -143,6 +143,13 @@ pub struct MaterialCompileContext {
     ///
     /// Keyed by a stable symbol name to avoid duplicate definitions.
     pub extra_wgsl_decls: BTreeMap<String, String>,
+
+    /// Inline WGSL statements emitted by node compilers for the function body.
+    ///
+    /// These statements are emitted in order before the final return expression.
+    /// Used for MathClosure nodes to generate inline `{ }` blocks that isolate
+    /// variable scope and avoid naming conflicts.
+    pub inline_stmts: Vec<String>,
 }
 
 impl MaterialCompileContext {
@@ -187,6 +194,17 @@ impl MaterialCompileContext {
     /// Generate the WGSL variable name for a pass sampler binding.
     pub fn pass_sampler_var_name(pass_node_id: &str) -> String {
         format!("pass_samp_{}", pass_node_id.replace('-', "_"))
+    }
+
+    /// Build the fragment body with inline statements prepended to the return expression.
+    ///
+    /// Inline statements (from MathClosure nodes) are emitted before the final return.
+    pub fn build_fragment_body(&self, return_expr: &str) -> String {
+        if self.inline_stmts.is_empty() {
+            format!("return {};", return_expr)
+        } else {
+            format!("{}\n    return {};", self.inline_stmts.join("\n"), return_expr)
+        }
     }
 }
 

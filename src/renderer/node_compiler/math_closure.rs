@@ -1,7 +1,8 @@
 //! Compiler for MathClosure node (user-provided math code snippets).
 //!
 //! The DSL MathClosure nodes carry a small GLSL-like snippet in `params.source`.
-//! We compile each closure into a dedicated WGSL helper function and return a call expression.
+//! We compile each closure into an inline `{ }` block to isolate context and avoid
+//! naming conflicts, rather than generating separate helper functions.
 
 use std::collections::HashMap;
 
@@ -156,7 +157,11 @@ fn promote_type_from_source_swizzles(source: &str, param_name: &str, ty: ValueTy
 	}
 }
 
-/// Compile a MathClosure node by emitting a helper function and returning a call expression.
+/// Compile a MathClosure node by emitting an inline `{ }` block and returning a variable reference.
+///
+/// Instead of generating a separate helper function, this emits the snippet code inline
+/// within a `{ }` block to isolate the local variable scope and avoid naming conflicts.
+/// This produces clearer generated code for small math snippets.
 pub fn compile_math_closure<F>(
 	scene: &SceneDSL,
 	_nodes_by_id: &HashMap<String, Node>,
@@ -181,10 +186,10 @@ where
 		.ok_or_else(|| anyhow!("MathClosure missing params.source (node={})", node.id))?;
 
 	let ret_ty = infer_output_type_from_source(source);
+	let output_var = format!("mc_{}_out", sanitize_wgsl_ident(&node.id));
 
 	// Compile inputs in declared order.
-	let mut arg_exprs: Vec<TypedExpr> = Vec::new();
-	let mut arg_sigs: Vec<String> = Vec::new();
+	let mut param_bindings: Vec<String> = Vec::new();
 	let mut uses_time = false;
 
 	for port in &node.inputs {
@@ -205,27 +210,61 @@ where
 		};
 
 		uses_time |= arg_expr.uses_time;
-		arg_exprs.push(arg_expr);
-		arg_sigs.push(format!("{param_name}: {}", expected_ty.wgsl()));
+		// Bind the input expression to a local variable inside the block
+		param_bindings.push(format!("        let {param_name} = {};", arg_expr.expr));
 	}
 
-	let fn_name = format!("math_closure_{}", sanitize_wgsl_ident(&node.id));
+	let converted = glslish_to_wgsl(source);
 
-	// Emit helper function once.
-	if !ctx.extra_wgsl_decls.contains_key(&fn_name) {
-		let converted = glslish_to_wgsl(source);
-		let body = format!(
-			"fn {fn_name}({}) -> {} {{\n    var output: {};\n{converted}\n    return output;\n}}\n",
-			arg_sigs.join(", "),
-			ret_ty.wgsl(),
-			ret_ty.wgsl(),
-		);
-		ctx.extra_wgsl_decls.insert(fn_name.clone(), body);
+	// Indent the converted source for proper formatting inside the block
+	let indented_source: String = converted
+		.lines()
+		.map(|line| {
+			if line.trim().is_empty() {
+				String::new()
+			} else {
+				format!("        {line}")
+			}
+		})
+		.collect::<Vec<_>>()
+		.join("\n");
+
+	// Build the inline block statement with `{ }` for scope isolation.
+	// Structure:
+	//     var mc_xxx_out: <type>;
+	//     {
+	//         let param1 = expr1;
+	//         let param2 = expr2;
+	//         var output: <type>;
+	//         <snippet code>
+	//         mc_xxx_out = output;
+	//     }
+	let ret_type = ret_ty.wgsl();
+	let mut block = String::new();
+	block.push_str(&format!("    var {output_var}: {ret_type};\n"));
+	block.push_str("    {\n");
+	
+	// Add parameter bindings (if any)
+	if !param_bindings.is_empty() {
+		block.push_str(&param_bindings.join("\n"));
+		block.push('\n');
 	}
+	
+	block.push_str(&format!("        var output: {ret_type};\n"));
+	
+	// Add the snippet source code
+	if !indented_source.trim().is_empty() {
+		block.push_str(&indented_source);
+		block.push('\n');
+	}
+	
+	block.push_str(&format!("        {output_var} = output;\n"));
+	block.push_str("    }");
 
-	let call_args: Vec<String> = arg_exprs.into_iter().map(|x| x.expr).collect();
+	ctx.inline_stmts.push(block);
+
 	Ok(TypedExpr::with_time(
-		format!("{fn_name}({})", call_args.join(", ")),
+		output_var,
 		ret_ty,
 		uses_time,
 	))

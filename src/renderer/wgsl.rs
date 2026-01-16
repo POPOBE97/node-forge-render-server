@@ -336,7 +336,7 @@ pub fn build_blur_image_wgsl_bundle(
     let image_textures = material_ctx.image_textures.clone();
 
     let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = format!("return {};", out_color.expr);
+    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
 
     let mut common = r#"
 struct Params {
@@ -433,7 +433,7 @@ pub fn build_pass_wgsl_bundle(
     let image_textures = material_ctx.image_textures.clone();
 
     let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = format!("return {};", out_color.expr);
+    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
 
     let mut common = r#"
 struct Params {
