@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValueType {
     F32,
+    I32,
+    Bool,
     Vec2,
     Vec3,
     Vec4,
@@ -92,9 +94,22 @@ impl ValueType {
     pub fn wgsl(self) -> &'static str {
         match self {
             ValueType::F32 => "f32",
+            ValueType::I32 => "i32",
+            ValueType::Bool => "bool",
             ValueType::Vec2 => "vec2f",
             ValueType::Vec3 => "vec3f",
             ValueType::Vec4 => "vec4f",
+        }
+    }
+
+    pub fn glsl(self) -> &'static str {
+        match self {
+            ValueType::F32 => "float",
+            ValueType::I32 => "int",
+            ValueType::Bool => "bool",
+            ValueType::Vec2 => "vec2",
+            ValueType::Vec3 => "vec3",
+            ValueType::Vec4 => "vec4",
         }
     }
 }

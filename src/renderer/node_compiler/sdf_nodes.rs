@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::renderer::utils::coerce_to_type;
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
     v.as_f64()
@@ -68,10 +69,9 @@ where
 {
     if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
         let v = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
-        if v.ty != ValueType::F32 {
-            bail!("{}.{} must be f32, got {:?}", node.id, port_id, v.ty);
-        }
-        return Ok(v);
+        let from_ty = v.ty;
+        return coerce_to_type(v, ValueType::F32)
+            .map_err(|_| anyhow!("{}.{} must be f32, got {:?}", node.id, port_id, from_ty));
     }
 
     if let Some(v) = node.params.get(port_id).and_then(parse_json_number_f32) {
@@ -109,10 +109,9 @@ where
 {
     if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
         let v = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
-        if v.ty != ValueType::Vec2 {
-            bail!("{}.{} must be vec2, got {:?}", node.id, port_id, v.ty);
-        }
-        return Ok(v);
+        let from_ty = v.ty;
+        return coerce_to_type(v, ValueType::Vec2)
+            .map_err(|_| anyhow!("{}.{} must be vec2, got {:?}", node.id, port_id, from_ty));
     }
 
     if let Some([x, y]) = parse_vec2_param(node, port_id) {
@@ -145,10 +144,9 @@ where
 {
     if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
         let v = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
-        if v.ty != ValueType::Vec2 {
-            bail!("{}.{} must be vec2, got {:?}", node.id, port_id, v.ty);
-        }
-        return Ok(v);
+        let from_ty = v.ty;
+        return coerce_to_type(v, ValueType::Vec2)
+            .map_err(|_| anyhow!("{}.{} must be vec2, got {:?}", node.id, port_id, from_ty));
     }
 
     if let Some([x, y]) = parse_vec2_param(node, port_id) {
@@ -176,10 +174,9 @@ where
 {
     if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
         let v = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
-        if v.ty != ValueType::Vec4 {
-            bail!("{}.{} must be vec4, got {:?}", node.id, port_id, v.ty);
-        }
-        return Ok(v);
+        let from_ty = v.ty;
+        return coerce_to_type(v, ValueType::Vec4)
+            .map_err(|_| anyhow!("{}.{} must be vec4, got {:?}", node.id, port_id, from_ty));
     }
 
     if let Some([x, y, z, w]) = parse_vec4_param(node, port_id) {

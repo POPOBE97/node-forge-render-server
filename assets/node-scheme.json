@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-16T07:22:33.688Z",
+  "generatedAt": "2026-01-16T13:26:48.981Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -19,6 +19,9 @@
     "EmissionShader",
     "File",
     "FloatInput",
+    "FragCoord",
+    "GeoFragcoord",
+    "GeoSize",
     "GeometryFromFile",
     "GeometryPrimitive",
     "GradientTexture",
@@ -27,6 +30,7 @@
     "ImageTexture",
     "InstancedGeometry",
     "IntInput",
+    "Luminance",
     "MaterialFromShader",
     "MaterialOutput",
     "MathAdd",
@@ -182,28 +186,52 @@
     ],
     "float": [
       "float",
-      "int"
+      "int",
+      "bool"
     ],
     "int": [
       "int",
-      "float"
+      "float",
+      "bool"
     ],
     "bool": [
       "bool"
     ],
     "vector2": [
-      "vector2"
-    ],
-    "vector3": [
-      "vector3"
-    ],
-    "vector4": [
+      "vector2",
+      "float",
+      "int",
+      "bool",
+      "vector3",
       "vector4",
       "color"
     ],
+    "vector3": [
+      "vector3",
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector4",
+      "color"
+    ],
+    "vector4": [
+      "vector4",
+      "color",
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector3"
+    ],
     "color": [
       "color",
-      "vector4"
+      "vector4",
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector3"
     ],
     "texture": [
       "texture"
@@ -610,6 +638,36 @@
       }
     },
     {
+      "type": "FragCoord",
+      "label": "FragCoord",
+      "category": "Input",
+      "description": "Fragment coordinates in pixels (x,y)",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "xy",
+          "name": "XY",
+          "type": "vector2"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "GeoFragcoord",
+      "label": "Geo Fragcoord",
+      "category": "Input",
+      "description": "Geometry fragment coordinate (x,y)",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "xy",
+          "name": "XY",
+          "type": "vector2"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
       "type": "GeometryFromFile",
       "label": "Geometry From File",
       "category": "Geometry",
@@ -642,6 +700,21 @@
       "defaultParams": {
         "primitive": "cube"
       }
+    },
+    {
+      "type": "GeoSize",
+      "label": "Geo Size",
+      "category": "Input",
+      "description": "Geometry size (width,height) in pixels",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "xy",
+          "name": "XY",
+          "type": "vector2"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "GradientTexture",
@@ -838,6 +911,33 @@
       "defaultParams": {
         "value": 0
       }
+    },
+    {
+      "type": "Luminance",
+      "label": "Luminance",
+      "category": "Color",
+      "description": "Compute relative luminance (0..1) from a color",
+      "inputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "MaterialFromShader",

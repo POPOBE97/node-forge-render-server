@@ -12,9 +12,29 @@ use tungstenite::{Error as WsError, Message, accept};
 
 use crate::{
     dsl,
-    dsl::SceneDSL,
+    dsl::{Connection, Metadata, Node, SceneDSL},
     protocol::{ErrorPayload, WSMessage, now_millis},
 };
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct SceneResyncRequestPayload {
+    reason: String,
+}
+
+fn send_scene_resync_request(ws: &mut tungstenite::WebSocket<std::net::TcpStream>, reason: &str) {
+    let req = WSMessage {
+        msg_type: "scene_resync_request".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(SceneResyncRequestPayload {
+            reason: reason.to_string(),
+        }),
+    };
+
+    if let Ok(text) = serde_json::to_string(&req) {
+        let _ = ws.send(Message::Text(text));
+    }
+}
 
 fn spawn_server_ping_loop(hub: WsHub) {
     thread::spawn(move || {
@@ -47,6 +67,132 @@ pub enum SceneUpdate {
     },
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SceneDelta {
+    pub version: String,
+    pub nodes: SceneDeltaNodes,
+    pub connections: SceneDeltaConnections,
+    #[serde(default)]
+    pub outputs: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SceneDeltaNodes {
+    pub added: Vec<Node>,
+    pub updated: Vec<Node>,
+    pub removed: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SceneDeltaConnections {
+    pub added: Vec<Connection>,
+    pub updated: Vec<Connection>,
+    pub removed: Vec<String>,
+}
+
+pub type SceneOutputs = std::collections::HashMap<String, String>;
+
+pub type SceneCacheNodesById = std::collections::HashMap<String, Node>;
+pub type SceneCacheConnectionsById = std::collections::HashMap<String, Connection>;
+
+#[derive(Debug, Clone)]
+pub struct SceneCache {
+    pub version: String,
+    pub metadata: Metadata,
+    pub nodes_by_id: SceneCacheNodesById,
+    pub connections_by_id: SceneCacheConnectionsById,
+    pub outputs: SceneOutputs,
+}
+
+impl SceneCache {
+    pub fn from_scene_update(scene: &SceneDSL) -> Self {
+        let mut cache = Self {
+            version: scene.version.clone(),
+            metadata: scene.metadata.clone(),
+            nodes_by_id: std::collections::HashMap::new(),
+            connections_by_id: std::collections::HashMap::new(),
+            outputs: scene.outputs.clone().unwrap_or_default(),
+        };
+        apply_scene_update(&mut cache, scene);
+        cache
+    }
+}
+
+pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
+    cache.version = scene.version.clone();
+    cache.metadata = scene.metadata.clone();
+
+    cache.nodes_by_id.clear();
+    for node in &scene.nodes {
+        cache.nodes_by_id.insert(node.id.clone(), node.clone());
+    }
+
+    cache.connections_by_id.clear();
+    for conn in &scene.connections {
+        cache
+            .connections_by_id
+            .insert(conn.id.clone(), conn.clone());
+    }
+
+    cache.outputs = scene.outputs.clone().unwrap_or_default();
+}
+
+pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
+    for connection_id in &delta.connections.removed {
+        cache.connections_by_id.remove(connection_id);
+    }
+
+    for node_id in &delta.nodes.removed {
+        cache.nodes_by_id.remove(node_id);
+    }
+
+    for node in &delta.nodes.added {
+        cache.nodes_by_id.insert(node.id.clone(), node.clone());
+    }
+    for node in &delta.nodes.updated {
+        cache.nodes_by_id.insert(node.id.clone(), node.clone());
+    }
+
+    for conn in &delta.connections.added {
+        cache
+            .connections_by_id
+            .insert(conn.id.clone(), conn.clone());
+    }
+    for conn in &delta.connections.updated {
+        cache
+            .connections_by_id
+            .insert(conn.id.clone(), conn.clone());
+    }
+
+    if let Some(outputs) = delta.outputs.as_ref() {
+        cache.outputs = outputs.clone();
+    }
+}
+
+pub fn prune_invalid_connections(cache: &mut SceneCache) {
+    cache.connections_by_id.retain(|_, conn| {
+        cache.nodes_by_id.contains_key(&conn.from.node_id)
+            && cache.nodes_by_id.contains_key(&conn.to.node_id)
+    });
+}
+
+pub fn has_dangling_connection_references(cache: &SceneCache) -> bool {
+    cache.connections_by_id.values().any(|conn| {
+        !cache.nodes_by_id.contains_key(&conn.from.node_id)
+            || !cache.nodes_by_id.contains_key(&conn.to.node_id)
+    })
+}
+
+pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
+    SceneDSL {
+        version: cache.version.clone(),
+        metadata: cache.metadata.clone(),
+        nodes: cache.nodes_by_id.values().cloned().collect(),
+        connections: cache.connections_by_id.values().cloned().collect(),
+        outputs: Some(cache.outputs.clone()),
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct WsHub {
     clients: Arc<Mutex<Vec<Sender<String>>>>,
@@ -74,6 +220,7 @@ pub fn spawn_ws_server(
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
 ) -> Result<thread::JoinHandle<()>> {
+    let scene_cache = Arc::new(Mutex::new(None::<SceneCache>));
     let addr_str = addr.to_string();
     let server =
         TcpListener::bind(addr).with_context(|| format!("failed to bind ws server at {addr}"))?;
@@ -83,10 +230,34 @@ pub fn spawn_ws_server(
     spawn_server_ping_loop(hub.clone());
 
     Ok(thread::spawn(move || {
-        if let Err(e) = run_ws_server(server, &addr_str, scene_tx, scene_drop_rx, hub, last_good) {
-            eprintln!("[ws] server failed: {e:?}");
+        if let Err(e) = run_ws_server(
+            server,
+            &addr_str,
+            scene_tx,
+            scene_drop_rx,
+            hub.clone(),
+            last_good,
+            scene_cache,
+        ) {
+            report_internal_error(&hub, None, "WS_SERVER_FAILED", &format!("{e:#}"));
         }
     }))
+}
+
+fn report_internal_error(hub: &WsHub, request_id: Option<String>, code: &str, message: &str) {
+    let err = WSMessage {
+        msg_type: "error".to_string(),
+        timestamp: now_millis(),
+        request_id,
+        payload: Some(ErrorPayload {
+            code: code.to_string(),
+            message: message.to_string(),
+        }),
+    };
+
+    if let Ok(text) = serde_json::to_string(&err) {
+        hub.broadcast(text);
+    }
 }
 
 fn run_ws_server(
@@ -96,14 +267,26 @@ fn run_ws_server(
     scene_drop_rx: Receiver<SceneUpdate>,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
+    scene_cache: Arc<Mutex<Option<SceneCache>>>,
 ) -> Result<()> {
-    eprintln!("[ws] listening on ws://{addr}");
+    // Treat server lifecycle logs as editor-facing diagnostics.
+    let startup = WSMessage::<Value> {
+        msg_type: "debug".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(serde_json::json!({
+            "message": format!("[ws] listening on ws://{addr}"),
+        })),
+    };
+    if let Ok(text) = serde_json::to_string(&startup) {
+        hub.broadcast(text);
+    }
 
     for stream in server.incoming() {
         let stream = match stream {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[ws] accept tcp failed: {e}");
+                report_internal_error(&hub, None, "WS_ACCEPT_FAILED", &format!("{e:#}"));
                 continue;
             }
         };
@@ -112,10 +295,18 @@ fn run_ws_server(
         let scene_drop_rx = scene_drop_rx.clone();
         let hub = hub.clone();
         let last_good = last_good.clone();
+        let scene_cache = scene_cache.clone();
 
         thread::spawn(move || {
-            if let Err(e) = handle_client(stream, scene_tx, scene_drop_rx, hub, last_good) {
-                eprintln!("[ws] client ended: {e:?}");
+            if let Err(e) = handle_client(
+                stream,
+                scene_tx,
+                scene_drop_rx,
+                hub.clone(),
+                last_good,
+                scene_cache,
+            ) {
+                report_internal_error(&hub, None, "WS_CLIENT_ENDED", &format!("{e:#}"));
             }
         });
     }
@@ -129,6 +320,7 @@ fn handle_client(
     scene_drop_rx: Receiver<SceneUpdate>,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
+    scene_cache: Arc<Mutex<Option<SceneCache>>>,
 ) -> Result<()> {
     // Handshake is easier with a blocking socket, switch to non-blocking afterwards.
     let mut ws = accept(stream).context("websocket handshake failed")?;
@@ -148,10 +340,20 @@ fn handle_client(
         // 2) read inbound
         match ws.read() {
             Ok(Message::Text(text)) => {
-                if let Err(e) =
-                    handle_text_message(&mut ws, &text, &scene_tx, &scene_drop_rx, &last_good)
-                {
-                    eprintln!("[ws] handle message error: {e:?}");
+                if let Err(e) = handle_text_message(
+                    &mut ws,
+                    &text,
+                    &scene_tx,
+                    &scene_drop_rx,
+                    &last_good,
+                    &scene_cache,
+                ) {
+                    report_internal_error(
+                        &hub,
+                        None,
+                        "WS_HANDLE_MESSAGE_FAILED",
+                        &format!("{e:#}"),
+                    );
                 }
             }
             Ok(Message::Binary(_)) => {
@@ -182,6 +384,7 @@ fn handle_text_message(
     scene_tx: &Sender<SceneUpdate>,
     scene_drop_rx: &Receiver<SceneUpdate>,
     last_good: &Arc<Mutex<Option<SceneDSL>>>,
+    scene_cache: &Arc<Mutex<Option<SceneCache>>>,
 ) -> Result<()> {
     let msg: WSMessage<Value> = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -248,6 +451,11 @@ fn handle_text_message(
                 }
             };
 
+            // A full scene_update is authoritative; clear incremental caches.
+            if let Ok(mut guard) = scene_cache.lock() {
+                *guard = None;
+            }
+
             let mut scene: SceneDSL = match serde_json::from_value(payload) {
                 Ok(s) => s,
                 Err(e) => {
@@ -280,6 +488,14 @@ fn handle_text_message(
                 return Ok(());
             }
 
+            if let Ok(mut guard) = scene_cache.lock() {
+                let mut cache = guard
+                    .take()
+                    .unwrap_or_else(|| SceneCache::from_scene_update(&scene));
+                apply_scene_update(&mut cache, &scene);
+                *guard = Some(cache);
+            }
+
             // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
             send_scene_update(
                 scene_tx,
@@ -289,6 +505,93 @@ fn handle_text_message(
                     request_id: msg.request_id,
                 },
             );
+        }
+        "scene_delta" => {
+            let payload = match msg.payload {
+                Some(p) => p,
+                None => {
+                    let message = "missing payload".to_string();
+                    send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                    return Ok(());
+                }
+            };
+
+            let delta: SceneDelta = match serde_json::from_value(payload) {
+                Ok(d) => d,
+                Err(e) => {
+                    let message = format!("invalid SceneDelta: {e}");
+                    send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                    send_scene_resync_request(ws, "delta_schema_validation_failed");
+                    return Ok(());
+                }
+            };
+
+            let mut scene: Option<SceneDSL> = None;
+            if let Ok(mut guard) = scene_cache.lock() {
+                let Some(mut cache) = guard.take() else {
+                    send_error(
+                        ws,
+                        msg.request_id.clone(),
+                        "RESYNC_REQUIRED",
+                        "received scene_delta before scene_update",
+                    );
+                    send_scene_resync_request(ws, "missing_baseline_scene_update");
+                    *guard = None;
+                    return Ok(());
+                };
+
+                if delta.version != cache.version {
+                    send_error(
+                        ws,
+                        msg.request_id.clone(),
+                        "RESYNC_REQUIRED",
+                        "scene_delta version mismatch; request full scene_update",
+                    );
+                    send_scene_resync_request(ws, "delta_version_mismatch");
+                    *guard = Some(cache);
+                    return Ok(());
+                }
+
+                apply_scene_delta(&mut cache, &delta);
+
+                // Detect dangling references before pruning (signals a cache mismatch).
+                if has_dangling_connection_references(&cache) {
+                    send_error(
+                        ws,
+                        msg.request_id.clone(),
+                        "RESYNC_REQUIRED",
+                        "dangling references detected; request full scene_update",
+                    );
+                    send_scene_resync_request(ws, "dangling_references_detected");
+                    *guard = None;
+                    return Ok(());
+                }
+
+                prune_invalid_connections(&mut cache);
+
+                let mut materialized = materialize_scene_dsl(&cache);
+                if let Err(e) = dsl::normalize_scene_defaults(&mut materialized) {
+                    let message = format!("failed to apply default params: {e:#}");
+                    send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
+                    send_scene_resync_request(ws, "delta_apply_failed");
+                    *guard = None;
+                    return Ok(());
+                }
+
+                scene = Some(materialized);
+                *guard = Some(cache);
+            }
+
+            if let Some(scene) = scene {
+                send_scene_update(
+                    scene_tx,
+                    scene_drop_rx,
+                    SceneUpdate::Parsed {
+                        scene,
+                        request_id: msg.request_id,
+                    },
+                );
+            }
         }
         other => {
             send_error(
@@ -329,8 +632,19 @@ fn send_scene_update(
     scene_drop_rx: &Receiver<SceneUpdate>,
     update: SceneUpdate,
 ) {
+    // Debounce policy: keep the latest *scene* update.
+    // But never drop ParseError updates, otherwise we can mask the reason we
+    // requested a resync and make debugging much harder.
     if scene_tx.try_send(update.clone()).is_err() {
-        while scene_drop_rx.try_recv().is_ok() {}
-        let _ = scene_tx.try_send(update);
+        match update {
+            SceneUpdate::Parsed { .. } => {
+                while scene_drop_rx.try_recv().is_ok() {}
+                let _ = scene_tx.try_send(update);
+            }
+            SceneUpdate::ParseError { .. } => {
+                // Channel is full; keep the existing message rather than
+                // replacing it. A future update will replace it naturally.
+            }
+        }
     }
 }

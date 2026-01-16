@@ -52,6 +52,9 @@ pub fn compile_material_expr(
         "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port)?,
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port)?,
+        "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
+        "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
+        "GeoSize" => input_nodes::compile_geo_size(node, out_port)?,
 
         // Attribute node
         "Attribute" => attribute::compile_attribute(node, out_port)?,

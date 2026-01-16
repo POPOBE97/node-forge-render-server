@@ -1,6 +1,6 @@
 //! Compilers for input nodes (ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput).
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde_json::Value;
 
 use super::super::types::{TypedExpr, ValueType};
@@ -131,6 +131,123 @@ pub fn compile_vector3_input(node: &Node, _out_port: Option<&str>) -> Result<Typ
         format!("vec3f({}, {}, {})", v[0], v[1], v[2]),
         ValueType::Vec3,
     ))
+}
+
+/// Compile a FragCoord node to WGSL.
+///
+/// FragCoord provides the fragment's pixel-space coordinate.
+///
+/// # GLSL
+/// `gl_FragCoord.xy`
+///
+/// # WGSL (this renderer)
+/// Our fragment entry uses `VSOut` with `@builtin(position) position: vec4f`.
+/// The vertex shader writes clip-space into that builtin, and the GPU provides the
+/// corresponding fragment position in render-target pixel space to the fragment shader.
+/// So `in.position.xy` is the equivalent of `gl_FragCoord.xy`.
+///
+/// # Output
+/// - Port `xy`: Type vec2f
+/// - Uses time: false
+pub fn compile_frag_coord(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("xy");
+    match port {
+        "xy" => Ok(TypedExpr::new(
+            "in.position.xy".to_string(),
+            ValueType::Vec2,
+        )),
+        other => bail!("FragCoord: unsupported output port '{other}'"),
+    }
+}
+
+/// Compile a GeoFragcoord node to WGSL.
+///
+/// GeoFragcoord provides the fragment coordinate in the *current geometry's local pixel space*.
+/// This matches the editor contract: `xy = in.uv * geometry_size`.
+///
+/// In our renderer, per-pass `params.geo_size` is the geometry size in pixels.
+/// Vertex shader emits `in.uv` in [0,1] over the geometry.
+///
+/// # Output
+/// - Port `xy`: Type vec2f
+/// - Uses time: false
+pub fn compile_geo_fragcoord(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("xy");
+    match port {
+        "xy" => Ok(TypedExpr::new(
+            "(in.uv * params.geo_size)".to_string(),
+            ValueType::Vec2,
+        )),
+        other => bail!("GeoFragcoord: unsupported output port '{other}'"),
+    }
+}
+
+/// Compile a GeoSize node to WGSL.
+///
+/// GeoSize provides the current geometry's bounding size in pixels.
+///
+/// In this renderer, it's passed per-pass via the uniform buffer as `params.geo_size`.
+///
+/// # Output
+/// - Port `xy`: Type vec2f
+/// - Uses time: false
+pub fn compile_geo_size(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("xy");
+    match port {
+        "xy" => Ok(TypedExpr::new(
+            "params.geo_size".to_string(),
+            ValueType::Vec2,
+        )),
+        other => bail!("GeoSize: unsupported output port '{other}'"),
+    }
+}
+
+#[cfg(test)]
+mod fragcoord_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_fragcoord_xy() {
+        let node = Node {
+            id: "fc".to_string(),
+            node_type: "FragCoord".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+        };
+        let expr = compile_frag_coord(&node, Some("xy")).unwrap();
+        assert_eq!(expr.ty, ValueType::Vec2);
+        assert_eq!(expr.expr, "in.position.xy");
+        assert!(!expr.uses_time);
+    }
+
+    #[test]
+    fn test_geo_fragcoord_xy() {
+        let node = Node {
+            id: "gfc".to_string(),
+            node_type: "GeoFragcoord".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+        };
+        let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
+        assert_eq!(expr.ty, ValueType::Vec2);
+        assert_eq!(expr.expr, "(in.uv * params.geo_size)");
+        assert!(!expr.uses_time);
+    }
+
+    #[test]
+    fn test_geo_size_xy() {
+        let node = Node {
+            id: "gs".to_string(),
+            node_type: "GeoSize".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+        };
+        let expr = compile_geo_size(&node, Some("xy")).unwrap();
+        assert_eq!(expr.ty, ValueType::Vec2);
+        assert_eq!(expr.expr, "params.geo_size");
+        assert!(!expr.uses_time);
+    }
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
+use node_forge_render_server::renderer::validation;
 use node_forge_render_server::{dsl, renderer};
 
 fn case_dir(case_name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join(case_name)
-    .join("cases")
+        .join("cases")
 }
 
 fn list_json_cases(dir: &std::path::Path, update_goldens: bool) -> Vec<PathBuf> {
@@ -35,12 +36,10 @@ fn list_json_cases(dir: &std::path::Path, update_goldens: bool) -> Vec<PathBuf> 
                         .any(|e| {
                             let p = e.path();
                             p.is_file()
-                                && p.file_name()
-                                    .and_then(|s| s.to_str())
-                                    .is_some_and(|name| {
-                                        name.starts_with(&format!("{stem}."))
-                                            && name.ends_with(".module.wgsl")
-                                    })
+                                && p.file_name().and_then(|s| s.to_str()).is_some_and(|name| {
+                                    name.starts_with(&format!("{stem}."))
+                                        && name.ends_with(".module.wgsl")
+                                })
                         });
                     if has_any_module_golden {
                         cases.push(path);
@@ -104,9 +103,9 @@ fn dsl_json_compiles_to_valid_wgsl_modules() {
                 bundle.compute.is_none() || !bundle.compute.as_ref().unwrap().trim().is_empty(),
                 "case {case_name}, pass {pass_id}: compute WGSL should not be empty when present"
             );
-                let expected_vertex_path = dir.join(format!("{case_name}.{pass_id}.vertex.wgsl"));
-                let expected_fragment_path = dir.join(format!("{case_name}.{pass_id}.fragment.wgsl"));
-                let expected_module_path = dir.join(format!("{case_name}.{pass_id}.module.wgsl"));
+            let expected_vertex_path = dir.join(format!("{case_name}.{pass_id}.vertex.wgsl"));
+            let expected_fragment_path = dir.join(format!("{case_name}.{pass_id}.fragment.wgsl"));
+            let expected_module_path = dir.join(format!("{case_name}.{pass_id}.module.wgsl"));
 
             if update_goldens {
                 std::fs::write(&expected_vertex_path, &bundle.vertex)
@@ -137,13 +136,37 @@ fn dsl_json_compiles_to_valid_wgsl_modules() {
                 );
             }
 
-            // Validate WGSL syntax without requiring a GPU.
-            naga::front::wgsl::parse_str(&bundle.module).unwrap_or_else(|e| {
+            // Validate both the generated WGSL and the golden WGSL.
+            // Rationale: goldens are committed artifacts and can become invalid if edited
+            // manually or produced by a buggy generator during an UPDATE_GOLDENS run.
+            validation::validate_wgsl_with_context(
+                &bundle.module,
+                &format!("case {case_name}, pass {pass_id} (generated)")
+            )
+            .unwrap_or_else(|e| {
                 panic!(
-                    "case {case_name}, pass {pass_id}: WGSL parse failed: {e:?}\nWGSL:\n{}",
+                    "case {case_name}, pass {pass_id}: GENERATED WGSL validation failed:\n{e:#}\nWGSL:\n{}",
                     bundle.module
                 )
             });
+
+            let expected_module_path = dir.join(format!("{case_name}.{pass_id}.module.wgsl"));
+            if let Ok(golden_module) = std::fs::read_to_string(&expected_module_path) {
+                if let Err(e) = validation::validate_wgsl_with_context(
+                    &golden_module,
+                    &format!("case {case_name}, pass {pass_id} (golden)"),
+                ) {
+                    eprintln!(
+                        "WARNING: case {case_name}, pass {pass_id}: GOLDEN module is invalid WGSL.\nPATH: {}\nERROR:\n{e:#}",
+                        expected_module_path.display()
+                    );
+                    if !update_goldens {
+                        panic!(
+                            "case {case_name}, pass {pass_id}: GOLDEN WGSL is invalid; regenerate with UPDATE_GOLDENS=1"
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -195,7 +218,10 @@ fn primitive_values_can_drive_pass_inputs_via_auto_fullscreen_pass() {
             dsl::Node {
                 id: "c".to_string(),
                 node_type: "ColorInput".to_string(),
-                params: HashMap::from([("value".to_string(), serde_json::json!([0.2, 0.3, 0.4, 1.0]))]),
+                params: HashMap::from([(
+                    "value".to_string(),
+                    serde_json::json!([0.2, 0.3, 0.4, 1.0]),
+                )]),
                 inputs: Vec::new(),
             },
             dsl::Node {
@@ -250,14 +276,22 @@ fn primitive_values_can_drive_pass_inputs_via_auto_fullscreen_pass() {
                 },
             },
         ],
-        outputs: Some(HashMap::from([("composite".to_string(), "out".to_string())])),
+        outputs: Some(HashMap::from([(
+            "composite".to_string(),
+            "out".to_string(),
+        )])),
     };
 
     let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
         .expect("expected primitive->pass scene to compile via auto fullscreen pass");
-    assert!(!passes.is_empty(), "expected at least one RenderPass bundle");
     assert!(
-        passes.iter().any(|(id, _)| id.starts_with("__auto_fullscreen_pass__")),
+        !passes.is_empty(),
+        "expected at least one RenderPass bundle"
+    );
+    assert!(
+        passes
+            .iter()
+            .any(|(id, _)| id.starts_with("__auto_fullscreen_pass__")),
         "expected at least one synthesized fullscreen pass id"
     );
 }

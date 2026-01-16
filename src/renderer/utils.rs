@@ -115,82 +115,124 @@ pub fn sanitize_wgsl_ident(s: &str) -> String {
     out
 }
 
-/// Splat an f32 expression to a target vector type.
-pub fn splat_f32(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
-    if x.ty != ValueType::F32 {
-        bail!("expected f32 for splat, got {:?}", x.ty);
+/// Convert a scalar expression into an f32 expression.
+pub(crate) fn coerce_scalar_to_f32(x: &TypedExpr) -> Option<TypedExpr> {
+    match x.ty {
+        ValueType::F32 => Some(x.clone()),
+        ValueType::I32 => Some(TypedExpr::with_time(
+            format!("f32({})", x.expr),
+            ValueType::F32,
+            x.uses_time,
+        )),
+        ValueType::Bool => Some(TypedExpr::with_time(
+            format!("select(0.0, 1.0, {})", x.expr),
+            ValueType::F32,
+            x.uses_time,
+        )),
+        _ => None,
     }
+}
+
+/// Convert a scalar expression into an i32 expression.
+pub(crate) fn coerce_scalar_to_i32(x: &TypedExpr) -> Option<TypedExpr> {
+    match x.ty {
+        ValueType::I32 => Some(x.clone()),
+        ValueType::F32 => Some(TypedExpr::with_time(
+            format!("i32({})", x.expr),
+            ValueType::I32,
+            x.uses_time,
+        )),
+        ValueType::Bool => Some(TypedExpr::with_time(
+            format!("select(0, 1, {})", x.expr),
+            ValueType::I32,
+            x.uses_time,
+        )),
+        _ => None,
+    }
+}
+
+/// Splat a scalar expression to a target vector type.
+pub(crate) fn splat_scalar(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
+    let xf = coerce_scalar_to_f32(x)
+        .ok_or_else(|| anyhow!("expected scalar for splat, got {:?}", x.ty))?;
+
     Ok(match target {
-        ValueType::F32 => x.clone(),
         ValueType::Vec2 => {
-            TypedExpr::with_time(format!("vec2f({})", x.expr), ValueType::Vec2, x.uses_time)
+            TypedExpr::with_time(format!("vec2f({})", xf.expr), ValueType::Vec2, xf.uses_time)
         }
         ValueType::Vec3 => {
-            TypedExpr::with_time(format!("vec3f({})", x.expr), ValueType::Vec3, x.uses_time)
+            TypedExpr::with_time(format!("vec3f({})", xf.expr), ValueType::Vec3, xf.uses_time)
         }
-        ValueType::Vec4 => TypedExpr::with_time(
-            format!("vec4f({}, {}, {}, 1.0)", x.expr, x.expr, x.expr),
-            ValueType::Vec4,
-            x.uses_time,
-        ),
+        ValueType::Vec4 => {
+            TypedExpr::with_time(format!("vec4f({})", xf.expr), ValueType::Vec4, xf.uses_time)
+        }
+        other => bail!("unsupported scalar splat target: {:?}", other),
     })
 }
 
 /// Coerce a typed expression to a target ValueType.
 ///
-/// Supported conversions:
-/// - Scalar splat: f32 -> vec2/vec3/vec4
-/// - Vector narrowing via swizzle: vec4 -> vec3/vec2/f32, vec3 -> vec2/f32, vec2 -> f32
-/// - Vector widening with reasonable defaults: vec2 -> vec3/vec4, vec3 -> vec4
+/// Supported implicit conversions (editor contract):
+/// - Scalar numeric: f32 <-> i32, bool -> f32/i32
+/// - Scalar -> vector splat: f32|i32|bool -> vec2/vec3/vec4
+/// - Vector dimension changes:
+///   - vec2 -> vec3: vec3(vec2, 0.0)
+///   - vec2 -> vec4: vec4(vec2, 0.0, 0.0)
+///   - vec3 -> vec4: vec4(vec3, 0.0)
+///   - vec4 -> vec3: vec3(vec4.xyz)
+///   - vec4 -> vec2: vec2(vec4.xy)
+///   - vec3 -> vec2: vec2(vec3.xy)
 pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
     if x.ty == target {
         return Ok(x);
     }
 
-    // Scalar -> vector splat
-    if x.ty == ValueType::F32 {
-        return splat_f32(&x, target);
+    // Scalar -> scalar numeric
+    match target {
+        ValueType::F32 => {
+            if let Some(v) = coerce_scalar_to_f32(&x) {
+                return Ok(v);
+            }
+        }
+        ValueType::I32 => {
+            if let Some(v) = coerce_scalar_to_i32(&x) {
+                return Ok(v);
+            }
+        }
+        ValueType::Bool => {
+            // No implicit numeric->bool in the contract.
+        }
+        _ => {}
     }
 
-    // Vector narrowing via swizzle
+    // Scalar -> vector splat
+    if matches!(target, ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4) {
+        if matches!(x.ty, ValueType::F32 | ValueType::I32 | ValueType::Bool) {
+            return splat_scalar(&x, target);
+        }
+    }
+
+    // Vector dimension conversions
     let wrap = |e: &str| format!("({e})");
     let swizzle = |expr: &str, suffix: &str| format!("{}.{}", wrap(expr), suffix);
 
     match (x.ty, target) {
         (ValueType::Vec4, ValueType::Vec3) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "xyz"),
+            format!("vec3f({})", swizzle(&x.expr, "xyz")),
             ValueType::Vec3,
             x.uses_time,
         )),
         (ValueType::Vec4, ValueType::Vec2) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "xy"),
+            format!("vec2f({})", swizzle(&x.expr, "xy")),
             ValueType::Vec2,
             x.uses_time,
         )),
-        (ValueType::Vec4, ValueType::F32) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "x"),
-            ValueType::F32,
-            x.uses_time,
-        )),
-
         (ValueType::Vec3, ValueType::Vec2) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "xy"),
+            format!("vec2f({})", swizzle(&x.expr, "xy")),
             ValueType::Vec2,
             x.uses_time,
         )),
-        (ValueType::Vec3, ValueType::F32) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "x"),
-            ValueType::F32,
-            x.uses_time,
-        )),
 
-        (ValueType::Vec2, ValueType::F32) => Ok(TypedExpr::with_time(
-            swizzle(&x.expr, "x"),
-            ValueType::F32,
-            x.uses_time,
-        )),
-
-        // Vector widening with defaults
         (ValueType::Vec2, ValueType::Vec3) => Ok(TypedExpr::with_time(
             format!("vec3f({}, 0.0)", x.expr),
             ValueType::Vec3,
@@ -202,7 +244,7 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
             x.uses_time,
         )),
         (ValueType::Vec3, ValueType::Vec4) => Ok(TypedExpr::with_time(
-            format!("vec4f({}, 1.0)", x.expr),
+            format!("vec4f({}, 0.0)", x.expr),
             ValueType::Vec4,
             x.uses_time,
         )),
@@ -211,23 +253,40 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
     }
 }
 
-/// Coerce two typed expressions for binary operations (promoting scalars to vectors as needed).
+/// Coerce two typed expressions for binary operations.
+///
+/// Rules:
+/// - If types match, keep.
+/// - If either side is a vector, splat the other scalar side.
+/// - If both are scalars, coerce to a common numeric type (prefer f32).
 pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, TypedExpr, ValueType)> {
     if a.ty == b.ty {
         let ty = a.ty;
         return Ok((a, b, ty));
     }
-    // Promote scalar to vector if needed.
-    if a.ty == ValueType::F32 && b.ty != ValueType::F32 {
-        let target_ty = b.ty;
-        let aa = splat_f32(&a, b.ty)?;
-        return Ok((aa, b, target_ty));
-    }
-    if b.ty == ValueType::F32 && a.ty != ValueType::F32 {
+
+    let is_vector = |t: ValueType| matches!(t, ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4);
+    let is_scalar = |t: ValueType| matches!(t, ValueType::F32 | ValueType::I32 | ValueType::Bool);
+
+    // Vector/scalar: splat scalar to vector.
+    if is_vector(a.ty) && is_scalar(b.ty) {
         let target_ty = a.ty;
-        let bb = splat_f32(&b, a.ty)?;
+        let bb = splat_scalar(&b, target_ty)?;
         return Ok((a, bb, target_ty));
     }
+    if is_vector(b.ty) && is_scalar(a.ty) {
+        let target_ty = b.ty;
+        let aa = splat_scalar(&a, target_ty)?;
+        return Ok((aa, b, target_ty));
+    }
+
+    // Scalar/scalar: prefer f32.
+    if is_scalar(a.ty) && is_scalar(b.ty) {
+        let aa = coerce_to_type(a, ValueType::F32)?;
+        let bb = coerce_to_type(b, ValueType::F32)?;
+        return Ok((aa, bb, ValueType::F32));
+    }
+
     bail!(
         "incompatible types for binary op: {:?} and {:?}",
         a.ty,
@@ -237,23 +296,12 @@ pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, Typed
 
 /// Convert a typed expression to vec4 color format.
 pub fn to_vec4_color(x: TypedExpr) -> TypedExpr {
+    // Color is treated as vec4f, but participates in scalar/vector coercions.
+    // This helper is used at final material output plumbing.
     match x.ty {
-        ValueType::F32 => TypedExpr::with_time(
-            format!("vec4f({}, {}, {}, 1.0)", x.expr, x.expr, x.expr),
-            ValueType::Vec4,
-            x.uses_time,
-        ),
-        ValueType::Vec2 => TypedExpr::with_time(
-            format!("vec4f({}, 0.0, 1.0)", x.expr),
-            ValueType::Vec4,
-            x.uses_time,
-        ),
-        ValueType::Vec3 => TypedExpr::with_time(
-            format!("vec4f({}, 1.0)", x.expr),
-            ValueType::Vec4,
-            x.uses_time,
-        ),
         ValueType::Vec4 => x,
+        _ => coerce_to_type(x, ValueType::Vec4)
+            .unwrap_or_else(|_| TypedExpr::new("vec4f(0.0, 0.0, 0.0, 1.0)", ValueType::Vec4)),
     }
 }
 
@@ -266,6 +314,57 @@ pub fn as_bytes<T>(v: &T) -> &[u8] {
 pub fn as_bytes_slice<T>(v: &[T]) -> &[u8] {
     unsafe {
         core::slice::from_raw_parts(v.as_ptr() as *const u8, core::mem::size_of::<T>() * v.len())
+    }
+}
+
+#[cfg(test)]
+mod type_coercion_tests {
+    use super::*;
+
+    #[test]
+    fn bool_to_numeric_scalar() {
+        let t = TypedExpr::new("true", ValueType::Bool);
+        let f = TypedExpr::new("false", ValueType::Bool);
+
+        let tf = coerce_to_type(t.clone(), ValueType::F32).unwrap();
+        assert_eq!(tf.ty, ValueType::F32);
+        assert!(tf.expr.contains("select(0.0, 1.0"));
+
+        let ti = coerce_to_type(t, ValueType::I32).unwrap();
+        assert_eq!(ti.ty, ValueType::I32);
+        assert!(ti.expr.contains("select(0, 1"));
+
+        let fi = coerce_to_type(f, ValueType::I32).unwrap();
+        assert_eq!(fi.ty, ValueType::I32);
+    }
+
+    #[test]
+    fn scalar_to_vector_splat() {
+        let x = TypedExpr::new("1", ValueType::I32);
+        let v2 = coerce_to_type(x.clone(), ValueType::Vec2).unwrap();
+        assert_eq!(v2.ty, ValueType::Vec2);
+        assert!(v2.expr.starts_with("vec2f("));
+
+        let v4 = coerce_to_type(x, ValueType::Vec4).unwrap();
+        assert_eq!(v4.ty, ValueType::Vec4);
+        assert!(v4.expr.starts_with("vec4f("));
+    }
+
+    #[test]
+    fn vector_dimension_changes_match_contract() {
+        let v2 = TypedExpr::new("v2", ValueType::Vec2);
+        let v3 = coerce_to_type(v2.clone(), ValueType::Vec3).unwrap();
+        assert_eq!(v3.expr, "vec3f(v2, 0.0)");
+
+        let v4 = coerce_to_type(v2, ValueType::Vec4).unwrap();
+        assert_eq!(v4.expr, "vec4f(v2, 0.0, 1.0)");
+
+        let v4in = TypedExpr::new("v4", ValueType::Vec4);
+        let down2 = coerce_to_type(v4in.clone(), ValueType::Vec2).unwrap();
+        assert_eq!(down2.expr, "vec2f((v4).xy)");
+
+        let down3 = coerce_to_type(v4in, ValueType::Vec3).unwrap();
+        assert_eq!(down3.expr, "vec3f((v4).xyz)");
     }
 }
 

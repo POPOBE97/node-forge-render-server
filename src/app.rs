@@ -52,12 +52,17 @@ impl eframe::App for App {
                         }
                     }
 
-                    match renderer::build_shader_space_from_scene(
-                        &scene,
-                        Arc::new(render_state.device.clone()),
-                        Arc::new(render_state.queue.clone()),
-                    ) {
-                        Ok((shader_space, resolution, output_texture_name, passes)) => {
+                    let build_result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            renderer::build_shader_space_from_scene(
+                                &scene,
+                                Arc::new(render_state.device.clone()),
+                                Arc::new(render_state.queue.clone()),
+                            )
+                        }));
+
+                    match build_result {
+                        Ok(Ok((shader_space, resolution, output_texture_name, passes))) => {
                             self.shader_space = shader_space;
                             self.resolution = resolution;
                             self.output_texture_name = output_texture_name;
@@ -68,14 +73,57 @@ impl eframe::App for App {
                                 *g = Some(scene);
                             }
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
+                            let message = format!("{e:#}");
+                            eprintln!("[error-plane] scene build failed: {message}");
+
                             let msg = protocol::WSMessage {
                                 msg_type: "error".to_string(),
                                 timestamp: protocol::now_millis(),
                                 request_id,
                                 payload: Some(protocol::ErrorPayload {
                                     code: "VALIDATION_ERROR".to_string(),
-                                    message: format!("{e:#}"),
+                                    message,
+                                }),
+                            };
+                            if let Ok(text) = serde_json::to_string(&msg) {
+                                self.ws_hub.broadcast(text);
+                            }
+
+                            if let Ok((shader_space, resolution, output_texture_name, passes)) =
+                                renderer::build_error_shader_space(
+                                    Arc::new(render_state.device.clone()),
+                                    Arc::new(render_state.queue.clone()),
+                                    self.resolution,
+                                )
+                            {
+                                self.shader_space = shader_space;
+                                self.resolution = resolution;
+                                self.output_texture_name = output_texture_name;
+                                self.passes = passes;
+                                self.color_attachment = None;
+                            }
+                        }
+                        Err(panic_payload) => {
+                            let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                                (*s).to_string()
+                            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                                s.clone()
+                            } else {
+                                "(non-string panic payload)".to_string()
+                            };
+
+                            let message =
+                                format!("scene build panicked; showing error plane: {panic_msg}");
+                            eprintln!("{message}");
+
+                            let msg = protocol::WSMessage {
+                                msg_type: "error".to_string(),
+                                timestamp: protocol::now_millis(),
+                                request_id,
+                                payload: Some(protocol::ErrorPayload {
+                                    code: "PANIC".to_string(),
+                                    message,
                                 }),
                             };
                             if let Ok(text) = serde_json::to_string(&msg) {
@@ -98,7 +146,25 @@ impl eframe::App for App {
                         }
                     }
                 }
-                ws::SceneUpdate::ParseError { .. } => {
+                ws::SceneUpdate::ParseError {
+                    message,
+                    request_id,
+                } => {
+                    eprintln!("[error-plane] scene parse error: {message}");
+
+                    let msg = protocol::WSMessage {
+                        msg_type: "error".to_string(),
+                        timestamp: protocol::now_millis(),
+                        request_id,
+                        payload: Some(protocol::ErrorPayload {
+                            code: "PARSE_ERROR".to_string(),
+                            message,
+                        }),
+                    };
+                    if let Ok(text) = serde_json::to_string(&msg) {
+                        self.ws_hub.broadcast(text);
+                    }
+
                     if let Ok((shader_space, resolution, output_texture_name, passes)) =
                         renderer::build_error_shader_space(
                             Arc::new(render_state.device.clone()),

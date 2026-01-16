@@ -14,6 +14,7 @@
 //! - `build_shader_space_from_scene`: Build a complete ShaderSpace from a scene
 //! - `build_error_shader_space`: Build an error visualization ShaderSpace
 
+pub mod glsl_snippet;
 pub mod node_compiler;
 pub mod scene_prep;
 pub mod shader_space;
