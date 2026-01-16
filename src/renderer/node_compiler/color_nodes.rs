@@ -1,4 +1,4 @@
-//! Compilers for color manipulation nodes (ColorMix, ColorRamp, HSVAdjust).
+//! Compilers for color manipulation nodes (ColorMix, ColorRamp, HSVAdjust, Luminance).
 
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
@@ -6,6 +6,47 @@ use std::collections::HashMap;
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::to_vec4_color;
 use crate::dsl::{Node, SceneDSL, incoming_connection};
+
+pub fn compile_luminance<F>(
+    scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    _out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let color_conn = incoming_connection(scene, &node.id, "color")
+        .or_else(|| incoming_connection(scene, &node.id, "input"))
+        .ok_or_else(|| anyhow!("Luminance missing input color"))?;
+
+    let color = compile_fn(
+        &color_conn.from.node_id,
+        Some(&color_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
+
+    let color_vec4 = to_vec4_color(color);
+    let luma_expr = format!(
+        "clamp(dot(({}).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0)",
+        color_vec4.expr
+    );
+
+    Ok(TypedExpr::with_time(
+        luma_expr,
+        ValueType::F32,
+        color_vec4.uses_time,
+    ))
+}
 
 /// Compile a ColorMix node.
 ///
@@ -205,6 +246,38 @@ mod tests {
         _cache: &mut HashMap<(String, String), TypedExpr>,
     ) -> Result<TypedExpr> {
         Ok(TypedExpr::new("0.5".to_string(), ValueType::F32))
+    }
+
+    #[test]
+    fn test_compile_luminance() {
+        use super::super::test_utils::test_connection;
+        let connections = vec![test_connection("color", "value", "lum1", "color")];
+        let scene = test_scene(vec![], connections);
+        let nodes_by_id = HashMap::new();
+        let node = Node {
+            id: "lum1".to_string(),
+            node_type: "Luminance".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+        };
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_luminance(
+            &scene,
+            &nodes_by_id,
+            &node,
+            None,
+            &mut ctx,
+            &mut cache,
+            mock_color_compile_fn,
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::F32);
+        assert!(result.expr.contains("dot("));
+        assert!(result.expr.contains("0.2126"));
+        assert!(result.expr.contains("clamp("));
     }
 
     #[test]

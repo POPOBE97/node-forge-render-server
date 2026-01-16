@@ -210,6 +210,15 @@ pub fn compile_material_expr(
             cache,
             compile_fn,
         )?,
+        "Luminance" => color_nodes::compile_luminance(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
 
         // SDF nodes
         "Sdf2D" => {
