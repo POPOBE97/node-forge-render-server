@@ -6,14 +6,12 @@
 //! - Scene validation and topological sorting
 //! - Composite layer ordering
 
-use std::collections::HashMap;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::ResourceName;
+use std::collections::HashMap;
 
 use crate::{
-    dsl::{
-        find_node, incoming_connection, Connection, Endpoint, Node, SceneDSL,
-    },
+    dsl::{Connection, Endpoint, Node, SceneDSL, find_node, incoming_connection},
     graph::{topo_sort, upstream_reachable},
     renderer::utils::cpu_num_u32_min_1,
     schema,
@@ -346,10 +344,7 @@ pub fn composite_layers_in_draw_order(
 ) -> Result<Vec<String>> {
     let composite_node = find_node(nodes_by_id, composite_node_id)?;
     if composite_node.node_type != "Composite" {
-        bail!(
-            "expected Composite node, got {}",
-            composite_node.node_type
-        );
+        bail!("expected Composite node, got {}", composite_node.node_type);
     }
 
     let mut layers: Vec<String> = Vec::new();

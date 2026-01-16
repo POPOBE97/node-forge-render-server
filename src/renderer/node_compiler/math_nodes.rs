@@ -3,9 +3,9 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-use crate::dsl::{incoming_connection, Node, SceneDSL};
-use super::super::types::{TypedExpr, MaterialCompileContext};
+use super::super::types::{MaterialCompileContext, TypedExpr};
 use super::super::utils::coerce_for_binary;
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile a MathAdd node to WGSL.
 ///
@@ -33,7 +33,12 @@ pub fn compile_math_add<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let a_conn = incoming_connection(scene, &node.id, "a")
         .or_else(|| incoming_connection(scene, &node.id, "x"))
@@ -79,7 +84,12 @@ pub fn compile_math_multiply<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let a_conn = incoming_connection(scene, &node.id, "a")
         .or_else(|| incoming_connection(scene, &node.id, "x"))
@@ -126,7 +136,12 @@ pub fn compile_math_clamp<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let x_conn = incoming_connection(scene, &node.id, "value")
         .or_else(|| incoming_connection(scene, &node.id, "x"))
@@ -139,8 +154,18 @@ where
         .ok_or_else(|| anyhow::anyhow!("MathClamp missing input max"))?;
 
     let x = compile_fn(&x_conn.from.node_id, Some(&x_conn.from.port_id), ctx, cache)?;
-    let min = compile_fn(&min_conn.from.node_id, Some(&min_conn.from.port_id), ctx, cache)?;
-    let max = compile_fn(&max_conn.from.node_id, Some(&max_conn.from.port_id), ctx, cache)?;
+    let min = compile_fn(
+        &min_conn.from.node_id,
+        Some(&min_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
+    let max = compile_fn(
+        &max_conn.from.node_id,
+        Some(&max_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
 
     // All three values should have the same type (or be promoted)
     let (x, min, _ty) = coerce_for_binary(x, min)?;
@@ -180,15 +205,30 @@ pub fn compile_math_power<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let base_conn = incoming_connection(scene, &node.id, "base")
         .ok_or_else(|| anyhow::anyhow!("MathPower missing input base"))?;
     let exp_conn = incoming_connection(scene, &node.id, "exponent")
         .ok_or_else(|| anyhow::anyhow!("MathPower missing input exponent"))?;
 
-    let base = compile_fn(&base_conn.from.node_id, Some(&base_conn.from.port_id), ctx, cache)?;
-    let exp = compile_fn(&exp_conn.from.node_id, Some(&exp_conn.from.port_id), ctx, cache)?;
+    let base = compile_fn(
+        &base_conn.from.node_id,
+        Some(&base_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
+    let exp = compile_fn(
+        &exp_conn.from.node_id,
+        Some(&exp_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
 
     let (base, exp, ty) = coerce_for_binary(base, exp)?;
     Ok(TypedExpr::with_time(
@@ -200,10 +240,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::types::ValueType;
-    use anyhow::bail;
+    use super::*;
     use crate::dsl::{Connection, Endpoint, Metadata, SceneDSL};
+    use anyhow::bail;
 
     fn create_test_scene_with_connections(
         nodes: Vec<Node>,
@@ -290,10 +330,8 @@ mod tests {
         ];
 
         let scene = create_test_scene_with_connections(nodes.clone(), connections);
-        let nodes_by_id: HashMap<String, Node> = nodes
-            .into_iter()
-            .map(|n| (n.id.clone(), n))
-            .collect();
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let add_node = nodes_by_id.get("add").unwrap();
         let mut ctx = MaterialCompileContext::default();
@@ -363,10 +401,8 @@ mod tests {
         ];
 
         let scene = create_test_scene_with_connections(nodes.clone(), connections);
-        let nodes_by_id: HashMap<String, Node> = nodes
-            .into_iter()
-            .map(|n| (n.id.clone(), n))
-            .collect();
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let mul_node = nodes_by_id.get("mul").unwrap();
         let mut ctx = MaterialCompileContext::default();

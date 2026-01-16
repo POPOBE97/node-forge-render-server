@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 
-use crate::dsl::{incoming_connection, Node, SceneDSL};
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
     v.as_f64()
@@ -34,7 +34,9 @@ fn parse_vec4_param(node: &Node, key: &str) -> Option<[f32; 4]> {
     let v = node.params.get(key)?;
     if let Some(arr) = v.as_array() {
         let get = |i: usize, default: f32| -> f32 {
-            arr.get(i).and_then(parse_json_number_f32).unwrap_or(default)
+            arr.get(i)
+                .and_then(parse_json_number_f32)
+                .unwrap_or(default)
         };
         return Some([get(0, 0.0), get(1, 0.0), get(2, 0.0), get(3, 0.0)]);
     }
@@ -82,7 +84,11 @@ where
         return Ok(TypedExpr::new("0.5", ValueType::F32));
     }
 
-    Err(anyhow!("missing input '{}.{}' (no connection and no param)", node.id, port_id))
+    Err(anyhow!(
+        "missing input '{}.{}' (no connection and no param)",
+        node.id,
+        port_id
+    ))
 }
 
 fn resolve_input_expr_vec2<F>(
@@ -113,7 +119,11 @@ where
         return Ok(TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2));
     }
 
-    Err(anyhow!("missing input '{}.{}' (no connection and no param)", node.id, port_id))
+    Err(anyhow!(
+        "missing input '{}.{}' (no connection and no param)",
+        node.id,
+        port_id
+    ))
 }
 
 fn resolve_input_expr_vec2_or_default<F>(
@@ -179,7 +189,11 @@ where
         ));
     }
 
-    Err(anyhow!("missing input '{}.{}' (no connection and no param)", node.id, port_id))
+    Err(anyhow!(
+        "missing input '{}.{}' (no connection and no param)",
+        node.id,
+        port_id
+    ))
 }
 
 pub fn compile_sdf2d<F>(
@@ -209,7 +223,6 @@ where
         .get("shape")
         .and_then(|v| v.as_str())
         .unwrap_or("circle");
-
 
     // Evaluate SDF at the *current fragment* local position in pixels.
     // Our vertex shader emits in.uv in [0,1] over the geometry, with (0.5,0.5) at the local origin.
@@ -253,8 +266,10 @@ where
             );
             let rad4 = resolve_input_expr_vec4(scene, node, "radius4", ctx, cache, &compile_fn)?;
 
-            ctx.extra_wgsl_decls.entry("sdf2d_round_rect".to_string()).or_insert_with(|| {
-                r#"fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
+            ctx.extra_wgsl_decls
+                .entry("sdf2d_round_rect".to_string())
+                .or_insert_with(|| {
+                    r#"fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
     var r: f32 = rad4.x;
     if (p.x > 0.0 && p.y > 0.0) {
         r = rad4.y;
@@ -270,8 +285,8 @@ where
     return outside + inside - r;
 }
 "#
-                .to_string()
-            });
+                    .to_string()
+                });
 
             Ok(TypedExpr::with_time(
                 format!("sdf2d_round_rect({}, {}, {})", p.expr, b.expr, rad4.expr),
@@ -341,7 +356,10 @@ mod tests {
                 ("shape".to_string(), serde_json::json!("rectangle")),
                 ("position".to_string(), serde_json::json!([1.0, 2.0])),
                 ("size".to_string(), serde_json::json!([10.0, 20.0])),
-                ("radius4".to_string(), serde_json::json!([1.0, 2.0, 3.0, 4.0])),
+                (
+                    "radius4".to_string(),
+                    serde_json::json!([1.0, 2.0, 3.0, 4.0]),
+                ),
             ]),
             inputs: vec![],
         };

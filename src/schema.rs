@@ -1,9 +1,9 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde::Deserialize;
 
-use crate::dsl::{parse_f32, parse_u32, parse_texture_format, Connection, Node, SceneDSL};
+use crate::dsl::{Connection, Node, SceneDSL, parse_f32, parse_texture_format, parse_u32};
 
 const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json");
 
@@ -132,11 +132,7 @@ fn port_types_compatible_via_table(
 
     // Compatibility table is keyed by *destination/input* type.
     // Example: "float": ["float", "int"] means a float input can accept int outputs.
-    fn atomic_compatible(
-        from_ty: &str,
-        to_ty: &str,
-        table: &HashMap<String, Vec<String>>,
-    ) -> bool {
+    fn atomic_compatible(from_ty: &str, to_ty: &str, table: &HashMap<String, Vec<String>>) -> bool {
         let from_ty = normalize_port_type_name(from_ty);
         let to_ty = normalize_port_type_name(to_ty);
 
@@ -149,9 +145,11 @@ fn port_types_compatible_via_table(
             return true;
         }
 
-        table
-            .get(to_ty)
-            .is_some_and(|allowed| allowed.iter().any(|s| normalize_port_type_name(s) == from_ty))
+        table.get(to_ty).is_some_and(|allowed| {
+            allowed
+                .iter()
+                .any(|s| normalize_port_type_name(s) == from_ty)
+        })
     }
 
     match (from, to) {
@@ -197,16 +195,10 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
         RawNodeScheme::Generated(s) => {
             let mut nodes: HashMap<String, NodeTypeScheme> = HashMap::new();
             for n in s.nodes {
-                let inputs: HashMap<String, PortTypeSpec> = n
-                    .inputs
-                    .into_iter()
-                    .map(|p| (p.id, p.port_type))
-                    .collect();
-                let outputs: HashMap<String, PortTypeSpec> = n
-                    .outputs
-                    .into_iter()
-                    .map(|p| (p.id, p.port_type))
-                    .collect();
+                let inputs: HashMap<String, PortTypeSpec> =
+                    n.inputs.into_iter().map(|p| (p.id, p.port_type)).collect();
+                let outputs: HashMap<String, PortTypeSpec> =
+                    n.outputs.into_iter().map(|p| (p.id, p.port_type)).collect();
                 nodes.insert(
                     n.node_type,
                     NodeTypeScheme {
@@ -241,7 +233,10 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
 
     for n in &scene.nodes {
         let Some(node_scheme) = scheme.nodes.get(&n.node_type) else {
-            errors.push(format!("unknown node type '{}' at node '{}'", n.node_type, n.id));
+            errors.push(format!(
+                "unknown node type '{}' at node '{}'",
+                n.node_type, n.id
+            ));
             continue;
         };
 
@@ -276,7 +271,11 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
     if errors.is_empty() {
         Ok(())
     } else {
-        bail!("scene failed scheme validation ({} error(s)):\n- {}", errors.len(), errors.join("\n- "))
+        bail!(
+            "scene failed scheme validation ({} error(s)):\n- {}",
+            errors.len(),
+            errors.join("\n- ")
+        )
     }
 }
 
@@ -303,10 +302,7 @@ fn validate_param_value(
     } else {
         Err(format!(
             "invalid param type for '{}.{}': expected {:?}, got {}",
-            node.id,
-            key,
-            ty,
-            value
+            node.id, key, ty, value
         ))
     }
 }
@@ -324,11 +320,17 @@ fn validate_connection(
     }
 
     let Some(from_node) = nodes_by_id.get(c.from.node_id.as_str()).copied() else {
-        errors.push(format!("connection '{}' references missing from.nodeId '{}'", c.id, c.from.node_id));
+        errors.push(format!(
+            "connection '{}' references missing from.nodeId '{}'",
+            c.id, c.from.node_id
+        ));
         return;
     };
     let Some(to_node) = nodes_by_id.get(c.to.node_id.as_str()).copied() else {
-        errors.push(format!("connection '{}' references missing to.nodeId '{}'", c.id, c.to.node_id));
+        errors.push(format!(
+            "connection '{}' references missing to.nodeId '{}'",
+            c.id, c.to.node_id
+        ));
         return;
     };
 

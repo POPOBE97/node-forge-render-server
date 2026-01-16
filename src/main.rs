@@ -4,9 +4,9 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{anyhow, Result};
-use rust_wgpu_fiber::eframe::{self, egui};
+use anyhow::{Result, anyhow};
 use node_forge_render_server::{app, dsl, renderer, ws};
+use rust_wgpu_fiber::eframe::{self, egui};
 
 #[derive(Debug, Default, Clone)]
 struct Cli {
@@ -80,10 +80,17 @@ fn validate_absolute_output_path(path: &PathBuf) -> Result<()> {
 
 fn ensure_parent_dir_exists(path: &PathBuf) -> Result<()> {
     let Some(parent) = path.parent() else {
-        return Err(anyhow!("output path has no parent directory: {}", path.display()));
+        return Err(anyhow!(
+            "output path has no parent directory: {}",
+            path.display()
+        ));
     };
-    std::fs::create_dir_all(parent)
-        .map_err(|e| anyhow!("failed to create output directory {}: {e}", parent.display()))?;
+    std::fs::create_dir_all(parent).map_err(|e| {
+        anyhow!(
+            "failed to create output directory {}: {e}",
+            parent.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -99,8 +106,12 @@ fn run_headless_json_render_once(
     output: Option<PathBuf>,
     render_to_file: bool,
 ) -> Result<()> {
-    let text = std::fs::read_to_string(dsl_json_path)
-        .map_err(|e| anyhow!("failed to read --dsl-json file {}: {e}", dsl_json_path.display()))?;
+    let text = std::fs::read_to_string(dsl_json_path).map_err(|e| {
+        anyhow!(
+            "failed to read --dsl-json file {}: {e}",
+            dsl_json_path.display()
+        )
+    })?;
 
     let mut scene: dsl::SceneDSL = serde_json::from_str(&text)
         .map_err(|e| anyhow!("invalid SceneDSL json in {}: {e}", dsl_json_path.display()))?;
@@ -109,7 +120,8 @@ fn run_headless_json_render_once(
         .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
 
     let out_path = if render_to_file {
-        let out = output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
+        let out =
+            output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
         validate_absolute_output_path(&out)?;
         out
     } else {
@@ -137,7 +149,11 @@ fn run_headless_json_render_once(
     Ok(())
 }
 
-fn run_headless_ws_render_once(addr: &str, output: Option<PathBuf>, render_to_file: bool) -> Result<()> {
+fn run_headless_ws_render_once(
+    addr: &str,
+    output: Option<PathBuf>,
+    render_to_file: bool,
+) -> Result<()> {
     use std::{thread, time::Duration};
 
     let (scene_tx, scene_rx) = crossbeam_channel::bounded::<ws::SceneUpdate>(1);
@@ -157,9 +173,9 @@ fn run_headless_ws_render_once(addr: &str, output: Option<PathBuf>, render_to_fi
     match update {
         ws::SceneUpdate::Parsed { scene, request_id } => {
             let out_path = if render_to_file {
-                let out = output.clone().ok_or_else(|| {
-                    anyhow!("--render-to-file requires --output <absolute path>")
-                })?;
+                let out = output
+                    .clone()
+                    .ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
                 validate_absolute_output_path(&out)?;
                 out
             } else {
@@ -214,7 +230,10 @@ fn run_headless_ws_render_once(addr: &str, output: Option<PathBuf>, render_to_fi
             thread::sleep(Duration::from_millis(150));
             Ok(())
         }
-        ws::SceneUpdate::ParseError { message, request_id } => {
+        ws::SceneUpdate::ParseError {
+            message,
+            request_id,
+        } => {
             let msg = node_forge_render_server::protocol::WSMessage {
                 msg_type: "error".to_string(),
                 timestamp: node_forge_render_server::protocol::now_millis(),
@@ -240,11 +259,7 @@ fn resolve_file_output_path(rt: &dsl::FileRenderTarget) -> std::path::PathBuf {
         base
     } else {
         let pb = std::path::PathBuf::from(dir);
-        if pb.is_absolute() {
-            pb
-        } else {
-            base.join(pb)
-        }
+        if pb.is_absolute() { pb } else { base.join(pb) }
     };
     path.push(&rt.file_name);
     path
@@ -272,7 +287,9 @@ fn main() -> Result<()> {
     let scene = match dsl::load_scene_from_default_asset() {
         Ok(s) => Some(s),
         Err(e) => {
-            eprintln!("[startup] failed to load/parse default scene; showing purple error screen: {e:#}");
+            eprintln!(
+                "[startup] failed to load/parse default scene; showing purple error screen: {e:#}"
+            );
             None
         }
     };
@@ -308,11 +325,17 @@ fn main() -> Result<()> {
                         Arc::new(render_state.device.clone()),
                         Arc::new(render_state.queue.clone()),
                     ) {
-                        Ok((shader_space, resolution, output_texture_name, passes)) => {
-                            (shader_space, resolution, output_texture_name, passes, Some(scene))
-                        }
+                        Ok((shader_space, resolution, output_texture_name, passes)) => (
+                            shader_space,
+                            resolution,
+                            output_texture_name,
+                            passes,
+                            Some(scene),
+                        ),
                         Err(e) => {
-                            eprintln!("[startup] scene build failed; showing purple error screen: {e:#}");
+                            eprintln!(
+                                "[startup] scene build failed; showing purple error screen: {e:#}"
+                            );
                             let (shader_space, resolution, output_texture_name, passes) =
                                 renderer::build_error_shader_space(
                                     Arc::new(render_state.device.clone()),

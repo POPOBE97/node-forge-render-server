@@ -1,13 +1,13 @@
 //! Compilers for trigonometry nodes (Sin, Cos) and Time node.
 
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
-use anyhow::{anyhow, Result};
 
-use crate::dsl::{incoming_connection, Node, SceneDSL};
-use super::super::types::{TypedExpr, MaterialCompileContext};
+use super::super::types::{MaterialCompileContext, TypedExpr};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile a Sin node.
-/// 
+///
 /// Computes the sine of the input value.
 pub fn compile_sin<F>(
     scene: &SceneDSL,
@@ -19,15 +19,20 @@ pub fn compile_sin<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let input = incoming_connection(scene, &node.id, "x")
         .or_else(|| incoming_connection(scene, &node.id, "value"))
         .or_else(|| incoming_connection(scene, &node.id, "in"))
         .ok_or_else(|| anyhow!("Sin missing input"))?;
-    
+
     let x = compile_fn(&input.from.node_id, Some(&input.from.port_id), ctx, cache)?;
-    
+
     Ok(TypedExpr::with_time(
         format!("sin({})", x.expr),
         x.ty,
@@ -36,7 +41,7 @@ where
 }
 
 /// Compile a Cos node.
-/// 
+///
 /// Computes the cosine of the input value.
 pub fn compile_cos<F>(
     scene: &SceneDSL,
@@ -48,15 +53,20 @@ pub fn compile_cos<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     let input = incoming_connection(scene, &node.id, "x")
         .or_else(|| incoming_connection(scene, &node.id, "value"))
         .or_else(|| incoming_connection(scene, &node.id, "in"))
         .ok_or_else(|| anyhow!("Cos missing input"))?;
-    
+
     let x = compile_fn(&input.from.node_id, Some(&input.from.port_id), ctx, cache)?;
-    
+
     Ok(TypedExpr::with_time(
         format!("cos({})", x.expr),
         x.ty,
@@ -65,7 +75,7 @@ where
 }
 
 /// Compile a Time node.
-/// 
+///
 /// Returns the current time value from the uniform parameters.
 pub fn compile_time(
     _scene: &SceneDSL,
@@ -75,14 +85,18 @@ pub fn compile_time(
     _ctx: &mut MaterialCompileContext,
     _cache: &mut HashMap<(String, String), TypedExpr>,
 ) -> Result<TypedExpr> {
-    Ok(TypedExpr::with_time("params.time".to_string(), super::super::types::ValueType::F32, true))
+    Ok(TypedExpr::with_time(
+        "params.time".to_string(),
+        super::super::types::ValueType::F32,
+        true,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::types::ValueType;
-    use super::super::test_utils::{test_scene, test_connection};
+    use super::super::test_utils::{test_connection, test_scene};
+    use super::*;
 
     fn make_test_scene() -> (SceneDSL, HashMap<String, Node>) {
         let scene = test_scene(
@@ -145,9 +159,7 @@ mod tests {
 
     #[test]
     fn test_cos_compilation() {
-        let connections = vec![
-            test_connection("input1", "value", "cos1", "value"),
-        ];
+        let connections = vec![test_connection("input1", "value", "cos1", "value")];
         let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {
@@ -178,9 +190,7 @@ mod tests {
     #[test]
     fn test_time_compilation() {
         use super::super::test_utils::test_connection;
-        let connections = vec![
-            test_connection("input", "value", "cos1", "value"),
-        ];
+        let connections = vec![test_connection("input", "value", "cos1", "value")];
         let scene = test_scene(vec![], connections);
         let nodes_by_id = HashMap::new();
         let node = Node {

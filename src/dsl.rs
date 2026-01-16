@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use serde::{Deserialize, Serialize};
 
@@ -166,7 +166,10 @@ pub fn file_render_target(scene: &SceneDSL) -> Result<Option<FileRenderTarget>> 
         return Ok(None);
     }
     if render_targets.len() != 1 {
-        bail!("expected exactly 1 RenderTarget node, got {}", render_targets.len());
+        bail!(
+            "expected exactly 1 RenderTarget node, got {}",
+            render_targets.len()
+        );
     }
 
     let rt = render_targets[0];
@@ -253,12 +256,28 @@ pub fn screen_resolution(scene: &SceneDSL) -> Option<[u32; 2]> {
         .ok()
         .flatten()
         .or_else(|| parse_u32(&screen.params, "width"))
-        .or_else(|| parse_f32(&screen.params, "width").and_then(|v| if v.is_finite() { Some(v.max(0.0).floor() as u32) } else { None }))?;
+        .or_else(|| {
+            parse_f32(&screen.params, "width").and_then(|v| {
+                if v.is_finite() {
+                    Some(v.max(0.0).floor() as u32)
+                } else {
+                    None
+                }
+            })
+        })?;
     let h = resolve_input_u32(scene, &nodes_by_id, &screen.id, "height")
         .ok()
         .flatten()
         .or_else(|| parse_u32(&screen.params, "height"))
-        .or_else(|| parse_f32(&screen.params, "height").and_then(|v| if v.is_finite() { Some(v.max(0.0).floor() as u32) } else { None }))?;
+        .or_else(|| {
+            parse_f32(&screen.params, "height").and_then(|v| {
+                if v.is_finite() {
+                    Some(v.max(0.0).floor() as u32)
+                } else {
+                    None
+                }
+            })
+        })?;
     if w == 0 || h == 0 {
         return None;
     }
@@ -302,7 +321,14 @@ pub fn resolve_input_f64(
 ) -> Result<Option<f64>> {
     let mut cache: HashMap<(String, String), f64> = HashMap::new();
     let mut visiting: HashSet<(String, String)> = HashSet::new();
-    resolve_input_f64_inner(scene, nodes_by_id, node_id, port_id, &mut cache, &mut visiting)
+    resolve_input_f64_inner(
+        scene,
+        nodes_by_id,
+        node_id,
+        port_id,
+        &mut cache,
+        &mut visiting,
+    )
 }
 
 pub fn resolve_input_f32(
@@ -332,8 +358,7 @@ pub fn resolve_input_i64(
     node_id: &str,
     port_id: &str,
 ) -> Result<Option<i64>> {
-    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?
-        .and_then(f64_to_i64_floor))
+    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?.and_then(f64_to_i64_floor))
 }
 
 pub fn resolve_input_u32(
@@ -342,8 +367,7 @@ pub fn resolve_input_u32(
     node_id: &str,
     port_id: &str,
 ) -> Result<Option<u32>> {
-    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?
-        .and_then(f64_to_u32_floor))
+    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?.and_then(f64_to_u32_floor))
 }
 
 fn resolve_input_f64_inner(
@@ -383,7 +407,11 @@ fn resolve_output_f64_inner(
         return Ok(*v);
     }
     if visiting.contains(&key) {
-        bail!("cycle detected while resolving scalar value at {}.{}", node_id, out_port);
+        bail!(
+            "cycle detected while resolving scalar value at {}.{}",
+            node_id,
+            out_port
+        );
     }
     visiting.insert(key.clone());
 
@@ -439,10 +467,12 @@ fn resolve_output_f64_inner(
             if out_port != "result" {
                 bail!("unsupported MathPower output port: {out_port}");
             }
-            let base = resolve_input_f64_inner(scene, nodes_by_id, node_id, "base", cache, visiting)?
-                .unwrap_or(2.0);
-            let exp = resolve_input_f64_inner(scene, nodes_by_id, node_id, "exponent", cache, visiting)?
-                .unwrap_or(2.0);
+            let base =
+                resolve_input_f64_inner(scene, nodes_by_id, node_id, "base", cache, visiting)?
+                    .unwrap_or(2.0);
+            let exp =
+                resolve_input_f64_inner(scene, nodes_by_id, node_id, "exponent", cache, visiting)?
+                    .unwrap_or(2.0);
             base.powf(exp)
         }
         "MathClosure" => {
@@ -453,8 +483,14 @@ This node contains user-provided source code; render-time evaluation must be san
         }
         // For scalar parameter resolution, allow a fallback where the output port is stored in params.
         // (Useful for very simple constant nodes or hand-written DSL.)
-        _ => parse_f64(&node.params, out_port)
-            .ok_or_else(|| anyhow!("unsupported scalar node/output: {}.{} ({})", node_id, out_port, node.node_type))?,
+        _ => parse_f64(&node.params, out_port).ok_or_else(|| {
+            anyhow!(
+                "unsupported scalar node/output: {}.{} ({})",
+                node_id,
+                out_port,
+                node.node_type
+            )
+        })?,
     };
 
     visiting.remove(&key);

@@ -1,13 +1,13 @@
 //! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture).
 
+use anyhow::{Result, bail};
 use std::collections::HashMap;
-use anyhow::{bail, Result};
 
-use crate::dsl::{incoming_connection, Node, SceneDSL};
-use super::super::types::{TypedExpr, ValueType, MaterialCompileContext};
+use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile an ImageTexture node.
-/// 
+///
 /// Samples a texture at a given UV coordinate and returns the color or alpha channel.
 /// Automatically flips the V coordinate to match WebGPU's top-left origin.
 pub fn compile_image_texture<F>(
@@ -20,7 +20,12 @@ pub fn compile_image_texture<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     // WGSL is emitted to actually sample a bound texture. The runtime will bind the
     // texture + sampler; for headless tests we only need valid WGSL.
@@ -32,14 +37,14 @@ where
     } else {
         TypedExpr::new("in.uv".to_string(), ValueType::Vec2)
     };
-    
+
     if uv_expr.ty != ValueType::Vec2 {
         bail!("ImageTexture.uv must be vector2, got {:?}", uv_expr.ty);
     }
 
     let tex_var = MaterialCompileContext::tex_var_name(&node.id);
     let samp_var = MaterialCompileContext::sampler_var_name(&node.id);
-    
+
     // WebGPU texture coordinates have (0,0) at the *top-left* of the image.
     // Our synthesized UV (from clip-space position) maps y=-1(bottom)->0 and y=+1(top)->1,
     // so we flip the y axis at sampling time.
@@ -47,7 +52,11 @@ where
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
 
     match out_port.unwrap_or("color") {
-        "color" => Ok(TypedExpr::with_time(sample_expr, ValueType::Vec4, uv_expr.uses_time)),
+        "color" => Ok(TypedExpr::with_time(
+            sample_expr,
+            ValueType::Vec4,
+            uv_expr.uses_time,
+        )),
         "alpha" => Ok(TypedExpr::with_time(
             format!("({sample_expr}).w"),
             ValueType::F32,
@@ -59,8 +68,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_utils::test_scene;
+    use super::*;
 
     fn mock_compile_fn(
         _node_id: &str,
@@ -187,7 +196,7 @@ mod tests {
 }
 
 /// Compile a PassTexture node.
-/// 
+///
 /// Samples the output texture of an upstream pass node for use in material expressions.
 /// This enables chain composition where one pass can sample another pass's output.
 pub fn compile_pass_texture<F>(
@@ -200,19 +209,31 @@ pub fn compile_pass_texture<F>(
     compile_fn: F,
 ) -> Result<TypedExpr>
 where
-    F: Fn(&str, Option<&str>, &mut MaterialCompileContext, &mut HashMap<(String, String), TypedExpr>) -> Result<TypedExpr>,
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
 {
     // Find the upstream pass node connected to the "pass" input.
     let pass_conn = incoming_connection(scene, &node.id, "pass")
         .ok_or_else(|| anyhow::anyhow!("PassTexture.pass input is not connected"))?;
-    
+
     let upstream_node_id = &pass_conn.from.node_id;
-    let upstream_node = nodes_by_id.get(upstream_node_id)
-        .ok_or_else(|| anyhow::anyhow!("PassTexture upstream node not found: {}", upstream_node_id))?;
-    
+    let upstream_node = nodes_by_id.get(upstream_node_id).ok_or_else(|| {
+        anyhow::anyhow!("PassTexture upstream node not found: {}", upstream_node_id)
+    })?;
+
     // Validate that upstream is a pass-producing node.
-    if !matches!(upstream_node.node_type.as_str(), "RenderPass" | "GuassianBlurPass") {
-        bail!("PassTexture.pass must be connected to a pass node, got {}", upstream_node.node_type);
+    if !matches!(
+        upstream_node.node_type.as_str(),
+        "RenderPass" | "GuassianBlurPass"
+    ) {
+        bail!(
+            "PassTexture.pass must be connected to a pass node, got {}",
+            upstream_node.node_type
+        );
     }
 
     // Register this pass texture for binding.
@@ -224,7 +245,7 @@ where
     } else {
         TypedExpr::new("in.uv".to_string(), ValueType::Vec2)
     };
-    
+
     if uv_expr.ty != ValueType::Vec2 {
         bail!("PassTexture.uv must be vector2, got {:?}", uv_expr.ty);
     }
@@ -238,7 +259,11 @@ where
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
 
     match out_port.unwrap_or("color") {
-        "color" => Ok(TypedExpr::with_time(sample_expr, ValueType::Vec4, uv_expr.uses_time)),
+        "color" => Ok(TypedExpr::with_time(
+            sample_expr,
+            ValueType::Vec4,
+            uv_expr.uses_time,
+        )),
         "alpha" => Ok(TypedExpr::with_time(
             format!("({sample_expr}).w"),
             ValueType::F32,
@@ -250,8 +275,8 @@ where
 
 #[cfg(test)]
 mod pass_texture_tests {
-    use super::*;
     use super::super::test_utils::{test_connection, test_scene};
+    use super::*;
     use crate::dsl::Connection;
 
     fn mock_compile_uv(

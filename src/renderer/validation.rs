@@ -1,6 +1,6 @@
 //! WGSL validation using the naga library.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 /// Validate WGSL source code using naga's parser.
 ///
@@ -45,21 +45,21 @@ pub fn validate_wgsl_with_context(source: &str, context: &str) -> Result<naga::M
 /// A formatted string with error details and source context
 fn format_naga_error(source: &str, error: &naga::front::wgsl::ParseError) -> String {
     let mut output = String::new();
-    
+
     // Add main error message
     output.push_str(&format!("  {}\n", error));
-    
+
     // Try to add source context if we can extract location info
     // Note: naga's error structure may vary by version
     output.push_str("\nGenerated WGSL:\n");
     output.push_str("---\n");
-    
+
     // Add line numbers to source for easier debugging
     for (line_num, line) in source.lines().enumerate() {
         output.push_str(&format!("{:4} | {}\n", line_num + 1, line));
     }
     output.push_str("---\n");
-    
+
     output
 }
 

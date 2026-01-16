@@ -1,8 +1,8 @@
 //! Core type definitions for the renderer module.
 
-use std::collections::{BTreeMap, HashMap};
 use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
+use std::collections::{BTreeMap, HashMap};
 
 /// WGSL value type for shader expressions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum ValueType {
 }
 
 /// Output specification for any pass node that produces a texture.
-/// 
+///
 /// This trait enables chain composition - any node that outputs a texture
 /// can be used as input to another pass node, allowing chains like:
 /// `RenderPass -> GuassianBlurPass -> GuassianBlurPass -> ...`
@@ -72,7 +72,7 @@ impl PassOutputRegistry {
     pub fn get_resolution(&self, node_id: &str) -> Option<[u32; 2]> {
         self.outputs.get(node_id).map(|s| s.resolution)
     }
-    
+
     /// Resolve the effective resolution for a pass input.
     /// If explicit_resolution is Some, use it. Otherwise inherit from upstream.
     pub fn resolve_resolution(
@@ -172,7 +172,8 @@ impl MaterialCompileContext {
         }
         let idx = self.pass_textures.len();
         self.pass_textures.push(pass_node_id.to_string());
-        self.pass_index_by_node.insert(pass_node_id.to_string(), idx);
+        self.pass_index_by_node
+            .insert(pass_node_id.to_string(), idx);
         idx
     }
 
@@ -203,7 +204,11 @@ impl MaterialCompileContext {
         if self.inline_stmts.is_empty() {
             format!("return {};", return_expr)
         } else {
-            format!("{}\n    return {};", self.inline_stmts.join("\n"), return_expr)
+            format!(
+                "{}\n    return {};",
+                self.inline_stmts.join("\n"),
+                return_expr
+            )
         }
     }
 }
