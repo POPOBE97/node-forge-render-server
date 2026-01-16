@@ -1,7 +1,7 @@
 //! Utility functions for the renderer module.
 
-use anyhow::{anyhow, bail, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use image::DynamicImage;
 
 use super::types::{TypedExpr, ValueType};
@@ -122,8 +122,12 @@ pub fn splat_f32(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
     }
     Ok(match target {
         ValueType::F32 => x.clone(),
-        ValueType::Vec2 => TypedExpr::with_time(format!("vec2f({})", x.expr), ValueType::Vec2, x.uses_time),
-        ValueType::Vec3 => TypedExpr::with_time(format!("vec3f({})", x.expr), ValueType::Vec3, x.uses_time),
+        ValueType::Vec2 => {
+            TypedExpr::with_time(format!("vec2f({})", x.expr), ValueType::Vec2, x.uses_time)
+        }
+        ValueType::Vec3 => {
+            TypedExpr::with_time(format!("vec3f({})", x.expr), ValueType::Vec3, x.uses_time)
+        }
         ValueType::Vec4 => TypedExpr::with_time(
             format!("vec4f({}, {}, {}, 1.0)", x.expr, x.expr, x.expr),
             ValueType::Vec4,
@@ -153,19 +157,55 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
     let swizzle = |expr: &str, suffix: &str| format!("{}.{}", wrap(expr), suffix);
 
     match (x.ty, target) {
-        (ValueType::Vec4, ValueType::Vec3) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xyz"), ValueType::Vec3, x.uses_time)),
-        (ValueType::Vec4, ValueType::Vec2) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xy"), ValueType::Vec2, x.uses_time)),
-        (ValueType::Vec4, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+        (ValueType::Vec4, ValueType::Vec3) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "xyz"),
+            ValueType::Vec3,
+            x.uses_time,
+        )),
+        (ValueType::Vec4, ValueType::Vec2) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "xy"),
+            ValueType::Vec2,
+            x.uses_time,
+        )),
+        (ValueType::Vec4, ValueType::F32) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "x"),
+            ValueType::F32,
+            x.uses_time,
+        )),
 
-        (ValueType::Vec3, ValueType::Vec2) => Ok(TypedExpr::with_time(swizzle(&x.expr, "xy"), ValueType::Vec2, x.uses_time)),
-        (ValueType::Vec3, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+        (ValueType::Vec3, ValueType::Vec2) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "xy"),
+            ValueType::Vec2,
+            x.uses_time,
+        )),
+        (ValueType::Vec3, ValueType::F32) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "x"),
+            ValueType::F32,
+            x.uses_time,
+        )),
 
-        (ValueType::Vec2, ValueType::F32) => Ok(TypedExpr::with_time(swizzle(&x.expr, "x"), ValueType::F32, x.uses_time)),
+        (ValueType::Vec2, ValueType::F32) => Ok(TypedExpr::with_time(
+            swizzle(&x.expr, "x"),
+            ValueType::F32,
+            x.uses_time,
+        )),
 
         // Vector widening with defaults
-        (ValueType::Vec2, ValueType::Vec3) => Ok(TypedExpr::with_time(format!("vec3f({}, 0.0)", x.expr), ValueType::Vec3, x.uses_time)),
-        (ValueType::Vec2, ValueType::Vec4) => Ok(TypedExpr::with_time(format!("vec4f({}, 0.0, 1.0)", x.expr), ValueType::Vec4, x.uses_time)),
-        (ValueType::Vec3, ValueType::Vec4) => Ok(TypedExpr::with_time(format!("vec4f({}, 1.0)", x.expr), ValueType::Vec4, x.uses_time)),
+        (ValueType::Vec2, ValueType::Vec3) => Ok(TypedExpr::with_time(
+            format!("vec3f({}, 0.0)", x.expr),
+            ValueType::Vec3,
+            x.uses_time,
+        )),
+        (ValueType::Vec2, ValueType::Vec4) => Ok(TypedExpr::with_time(
+            format!("vec4f({}, 0.0, 1.0)", x.expr),
+            ValueType::Vec4,
+            x.uses_time,
+        )),
+        (ValueType::Vec3, ValueType::Vec4) => Ok(TypedExpr::with_time(
+            format!("vec4f({}, 1.0)", x.expr),
+            ValueType::Vec4,
+            x.uses_time,
+        )),
 
         _ => bail!("unsupported type coercion: {:?} -> {:?}", x.ty, target),
     }
@@ -188,7 +228,11 @@ pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, Typed
         let bb = splat_f32(&b, a.ty)?;
         return Ok((a, bb, target_ty));
     }
-    bail!("incompatible types for binary op: {:?} and {:?}", a.ty, b.ty);
+    bail!(
+        "incompatible types for binary op: {:?} and {:?}",
+        a.ty,
+        b.ty
+    );
 }
 
 /// Convert a typed expression to vec4 color format.
@@ -246,8 +290,12 @@ fn percent_decode_to_bytes(s: &str) -> Result<Vec<u8>> {
                         _ => None,
                     }
                 };
-                let Some(hi) = hex(hi) else { bail!("invalid percent-encoding"); };
-                let Some(lo) = hex(lo) else { bail!("invalid percent-encoding"); };
+                let Some(hi) = hex(hi) else {
+                    bail!("invalid percent-encoding");
+                };
+                let Some(lo) = hex(lo) else {
+                    bail!("invalid percent-encoding");
+                };
                 out.push((hi << 4) | lo);
                 i += 3;
             }

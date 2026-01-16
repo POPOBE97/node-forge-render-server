@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::dsl::SceneDSL;
 
@@ -13,7 +13,9 @@ pub fn topo_sort(scene: &SceneDSL) -> Result<Vec<String>> {
 
     let mut outgoing: HashMap<&str, Vec<&str>> = HashMap::new();
     for c in &scene.connections {
-        if !indeg.contains_key(c.from.node_id.as_str()) || !indeg.contains_key(c.to.node_id.as_str()) {
+        if !indeg.contains_key(c.from.node_id.as_str())
+            || !indeg.contains_key(c.to.node_id.as_str())
+        {
             bail!(
                 "connection references missing node: {} -> {}",
                 c.from.node_id,

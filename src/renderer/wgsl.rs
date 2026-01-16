@@ -7,14 +7,14 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{find_node, incoming_connection, Node, SceneDSL},
+    dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         node_compiler::compile_material_expr,
         scene_prep::prepare_scene,
-        types::{ValueType, TypedExpr, MaterialCompileContext, WgslShaderBundle},
+        types::{MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
         utils::{cpu_num_f32_min_0, to_vec4_color},
     },
 };
@@ -85,50 +85,55 @@ pub(crate) fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
         )
     };
 
-    let (weight2, offset2) = if narrow_band < 11 || ((gaussian_kernel[8] + gaussian_kernel[9]) < 0.002) {
-        (0.0, 0.0)
-    } else {
-        (
-            gaussian_kernel[8] + gaussian_kernel[9],
-            gaussian_kernel[8] / (gaussian_kernel[8] + gaussian_kernel[9]) + 4.0,
-        )
-    };
+    let (weight2, offset2) =
+        if narrow_band < 11 || ((gaussian_kernel[8] + gaussian_kernel[9]) < 0.002) {
+            (0.0, 0.0)
+        } else {
+            (
+                gaussian_kernel[8] + gaussian_kernel[9],
+                gaussian_kernel[8] / (gaussian_kernel[8] + gaussian_kernel[9]) + 4.0,
+            )
+        };
 
-    let (weight3, offset3) = if narrow_band < 15 || ((gaussian_kernel[6] + gaussian_kernel[7]) < 0.002) {
-        (0.0, 0.0)
-    } else {
-        (
-            gaussian_kernel[6] + gaussian_kernel[7],
-            gaussian_kernel[6] / (gaussian_kernel[6] + gaussian_kernel[7]) + 6.0,
-        )
-    };
+    let (weight3, offset3) =
+        if narrow_band < 15 || ((gaussian_kernel[6] + gaussian_kernel[7]) < 0.002) {
+            (0.0, 0.0)
+        } else {
+            (
+                gaussian_kernel[6] + gaussian_kernel[7],
+                gaussian_kernel[6] / (gaussian_kernel[6] + gaussian_kernel[7]) + 6.0,
+            )
+        };
 
-    let (weight4, offset4) = if narrow_band < 19 || ((gaussian_kernel[4] + gaussian_kernel[5]) < 0.002) {
-        (0.0, 0.0)
-    } else {
-        (
-            gaussian_kernel[4] + gaussian_kernel[5],
-            gaussian_kernel[4] / (gaussian_kernel[4] + gaussian_kernel[5]) + 8.0,
-        )
-    };
+    let (weight4, offset4) =
+        if narrow_band < 19 || ((gaussian_kernel[4] + gaussian_kernel[5]) < 0.002) {
+            (0.0, 0.0)
+        } else {
+            (
+                gaussian_kernel[4] + gaussian_kernel[5],
+                gaussian_kernel[4] / (gaussian_kernel[4] + gaussian_kernel[5]) + 8.0,
+            )
+        };
 
-    let (weight5, offset5) = if narrow_band < 23 || ((gaussian_kernel[2] + gaussian_kernel[3]) < 0.002) {
-        (0.0, 0.0)
-    } else {
-        (
-            gaussian_kernel[2] + gaussian_kernel[3],
-            gaussian_kernel[2] / (gaussian_kernel[2] + gaussian_kernel[3]) + 10.0,
-        )
-    };
+    let (weight5, offset5) =
+        if narrow_band < 23 || ((gaussian_kernel[2] + gaussian_kernel[3]) < 0.002) {
+            (0.0, 0.0)
+        } else {
+            (
+                gaussian_kernel[2] + gaussian_kernel[3],
+                gaussian_kernel[2] / (gaussian_kernel[2] + gaussian_kernel[3]) + 10.0,
+            )
+        };
 
-    let (weight6, offset6) = if narrow_band < 27 || ((gaussian_kernel[0] + gaussian_kernel[1]) < 0.002) {
-        (0.0, 0.0)
-    } else {
-        (
-            gaussian_kernel[0] + gaussian_kernel[1],
-            gaussian_kernel[0] / (gaussian_kernel[0] + gaussian_kernel[1]) + 12.0,
-        )
-    };
+    let (weight6, offset6) =
+        if narrow_band < 27 || ((gaussian_kernel[0] + gaussian_kernel[1]) < 0.002) {
+            (0.0, 0.0)
+        } else {
+            (
+                gaussian_kernel[0] + gaussian_kernel[1],
+                gaussian_kernel[0] / (gaussian_kernel[0] + gaussian_kernel[1]) + 12.0,
+            )
+        };
 
     let weight0 = 0.5 - (weight1 + weight2 + weight3 + weight4 + weight5 + weight6);
 
@@ -252,7 +257,7 @@ impl MaterialCompileContext {
     // Extension method for generating WGSL binding declarations
     fn wgsl_decls(&self) -> String {
         let mut out = String::new();
-        
+
         // Image texture bindings
         for (i, node_id) in self.image_textures.iter().enumerate() {
             let tex_binding = (i as u32) * 2;
@@ -266,7 +271,7 @@ impl MaterialCompileContext {
                 Self::sampler_var_name(node_id)
             ));
         }
-        
+
         // Pass texture bindings (offset by image texture count)
         let pass_binding_offset = (self.image_textures.len() as u32) * 2;
         for (i, pass_node_id) in self.pass_textures.iter().enumerate() {
@@ -293,7 +298,7 @@ impl MaterialCompileContext {
                 out.push('\n');
             }
         }
-        
+
         out
     }
 }
@@ -305,7 +310,7 @@ impl MaterialCompileContext {
 // The old monolithic implementation (356 lines) has been replaced with focused modules:
 // - input_nodes.rs, math_nodes.rs, attribute.rs, texture_nodes.rs, trigonometry_nodes.rs
 // - legacy_nodes.rs, vector_nodes.rs, color_nodes.rs
-// 
+//
 // Use: renderer::node_compiler::compile_material_expr instead.
 
 /// Build a WGSL shader bundle for the `image` input of a GuassianBlurPass.
@@ -316,22 +321,23 @@ pub fn build_blur_image_wgsl_bundle(
     blur_pass_id: &str,
 ) -> Result<WgslShaderBundle> {
     let mut material_ctx = MaterialCompileContext::default();
-    
+
     // Get the color expression from the `image` input.
-    let fragment_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, blur_pass_id, "image") {
-        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-        compile_material_expr(
-            scene,
-            nodes_by_id,
-            &conn.from.node_id,
-            Some(&conn.from.port_id),
-            &mut material_ctx,
-            &mut cache,
-        )?
-    } else {
-        // No image input - return transparent.
-        TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)".to_string(), ValueType::Vec4)
-    };
+    let fragment_expr: TypedExpr =
+        if let Some(conn) = incoming_connection(scene, blur_pass_id, "image") {
+            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+            compile_material_expr(
+                scene,
+                nodes_by_id,
+                &conn.from.node_id,
+                Some(&conn.from.port_id),
+                &mut material_ctx,
+                &mut cache,
+            )?
+        } else {
+            // No image input - return transparent.
+            TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)".to_string(), ValueType::Vec4)
+        };
 
     let image_textures = material_ctx.image_textures.clone();
 
@@ -412,23 +418,24 @@ pub fn build_pass_wgsl_bundle(
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
     let mut material_ctx = MaterialCompileContext::default();
-    let fragment_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, pass_id, "material") {
-        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-        compile_material_expr(
-            scene,
-            nodes_by_id,
-            &conn.from.node_id,
-            Some(&conn.from.port_id),
-            &mut material_ctx,
-            &mut cache,
-        )?
-    } else {
-        // Premultiply params.color on the shader side to match premultiplied blending defaults.
-        TypedExpr::new(
-            "vec4f(params.color.rgb * params.color.a, params.color.a)".to_string(),
-            ValueType::Vec4,
-        )
-    };
+    let fragment_expr: TypedExpr =
+        if let Some(conn) = incoming_connection(scene, pass_id, "material") {
+            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+            compile_material_expr(
+                scene,
+                nodes_by_id,
+                &conn.from.node_id,
+                Some(&conn.from.port_id),
+                &mut material_ctx,
+                &mut cache,
+            )?
+        } else {
+            // Premultiply params.color on the shader side to match premultiplied blending defaults.
+            TypedExpr::new(
+                "vec4f(params.color.rgb * params.color.a, params.color.a)".to_string(),
+                ValueType::Vec4,
+            )
+        };
 
     let image_textures = material_ctx.image_textures.clone();
 
@@ -522,7 +529,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 // - downsample_* (one step, or 8 then 2 when factor=16)
                 // - hblur / vblur at downsampled resolution
                 // - upsample bilinear back to original target size
-                let sigma = cpu_num_f32_min_0(&prepared.scene, &prepared.nodes_by_id, node, "radius", 0.0)?;
+                let sigma =
+                    cpu_num_f32_min_0(&prepared.scene, &prepared.nodes_by_id, node, "radius", 0.0)?;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
@@ -535,10 +543,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
                 for step in &downsample_steps {
                     let bundle = build_downsample_bundle(*step)?;
-                    out.push((
-                        format!("{layer_id}__downsample_{step}"),
-                        bundle,
-                    ));
+                    out.push((format!("{layer_id}__downsample_{step}"), bundle));
                 }
 
                 out.push((
@@ -565,17 +570,14 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 /// Build a downsample shader bundle for the given factor (1, 2, 4, or 8).
 pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
     let body = match factor {
-        1 => {
-            r#"
+        1 => r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let uv = dst_xy / src_resolution;
 return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 "#
-            .to_string()
-        }
-        2 => {
-            r#"
+        .to_string(),
+        2 => r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 2.0 - vec2f(0.5);
@@ -590,10 +592,8 @@ for (var y: i32 = 0; y < 2; y = y + 1) {
 
 return sum * 0.25;
 "#
-            .to_string()
-        }
-        4 => {
-            r#"
+        .to_string(),
+        4 => r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 4.0 - vec2f(1.5);
@@ -608,10 +608,8 @@ for (var y: i32 = 0; y < 4; y = y + 1) {
 
 return sum * (1.0 / 16.0);
 "#
-            .to_string()
-        }
-        8 => {
-            r#"
+        .to_string(),
+        8 => r#"
 let src_resolution = vec2f(textureDimensions(src_tex));
 let dst_xy = vec2f(in.position.xy);
 let base = dst_xy * 8.0 - vec2f(3.5);
@@ -626,8 +624,7 @@ for (var y: i32 = 0; y < 8; y = y + 1) {
 
 return sum * (1.0 / 64.0);
 "#
-            .to_string()
-        }
+        .to_string(),
         other => {
             return Err(anyhow!(
                 "GuassianBlurPass: unsupported downsample factor {other}"
@@ -714,4 +711,3 @@ fn fs_main(_in: VSOut) -> @location(0) vec4f {
     return vec4f(1.0, 0.0, 1.0, 1.0);
 }
 "#;
-

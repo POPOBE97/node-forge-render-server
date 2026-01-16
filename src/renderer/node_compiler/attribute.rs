@@ -1,9 +1,9 @@
 //! Compiler for Attribute node (reads vertex attributes).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
-use crate::dsl::Node;
 use super::super::types::{TypedExpr, ValueType};
+use crate::dsl::Node;
 
 /// Compile an Attribute node to WGSL.
 ///
@@ -35,7 +35,10 @@ pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedEx
     match name.as_str() {
         // Common aliases from GLSL graphs (e.g. vUv)
         "uv" | "vuv" | "v_uv" => Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2)),
-        other => bail!("unsupported Attribute.name: {} (only 'uv' is currently supported)", other),
+        other => bail!(
+            "unsupported Attribute.name: {} (only 'uv' is currently supported)",
+            other
+        ),
     }
 }
 
@@ -49,12 +52,10 @@ mod tests {
         let node = Node {
             id: "attr1".to_string(),
             node_type: "Attribute".to_string(),
-            params: HashMap::from([
-                ("name".to_string(), serde_json::json!("uv"))
-            ]),
+            params: HashMap::from([("name".to_string(), serde_json::json!("uv"))]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
         assert_eq!(result.expr, "in.uv");
@@ -70,7 +71,7 @@ mod tests {
             params: HashMap::new(),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
         assert_eq!(result.expr, "in.uv");
@@ -81,12 +82,10 @@ mod tests {
         let node = Node {
             id: "attr1".to_string(),
             node_type: "Attribute".to_string(),
-            params: HashMap::from([
-                ("name".to_string(), serde_json::json!("UV"))
-            ]),
+            params: HashMap::from([("name".to_string(), serde_json::json!("UV"))]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
         assert_eq!(result.expr, "in.uv");
@@ -97,12 +96,10 @@ mod tests {
         let node = Node {
             id: "attr1".to_string(),
             node_type: "Attribute".to_string(),
-            params: HashMap::from([
-                ("name".to_string(), serde_json::json!("position"))
-            ]),
+            params: HashMap::from([("name".to_string(), serde_json::json!("position"))]),
             inputs: Vec::new(),
         };
-        
+
         assert!(compile_attribute(&node, None).is_err());
     }
 }

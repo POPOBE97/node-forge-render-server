@@ -8,28 +8,30 @@ use std::{
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::Value;
-use tungstenite::{accept, Error as WsError, Message};
+use tungstenite::{Error as WsError, Message, accept};
 
 use crate::{
     dsl,
     dsl::SceneDSL,
-    protocol::{now_millis, ErrorPayload, WSMessage},
+    protocol::{ErrorPayload, WSMessage, now_millis},
 };
 
 fn spawn_server_ping_loop(hub: WsHub) {
-    thread::spawn(move || loop {
-        let ping = WSMessage::<Value> {
-            msg_type: "ping".to_string(),
-            timestamp: now_millis(),
-            request_id: None,
-            payload: None,
-        };
+    thread::spawn(move || {
+        loop {
+            let ping = WSMessage::<Value> {
+                msg_type: "ping".to_string(),
+                timestamp: now_millis(),
+                request_id: None,
+                payload: None,
+            };
 
-        if let Ok(text) = serde_json::to_string(&ping) {
-            hub.broadcast(text);
+            if let Ok(text) = serde_json::to_string(&ping) {
+                hub.broadcast(text);
+            }
+
+            thread::sleep(Duration::from_millis(200));
         }
-
-        thread::sleep(Duration::from_millis(200));
     });
 }
 
@@ -73,8 +75,8 @@ pub fn spawn_ws_server(
     last_good: Arc<Mutex<Option<SceneDSL>>>,
 ) -> Result<thread::JoinHandle<()>> {
     let addr_str = addr.to_string();
-    let server = TcpListener::bind(addr)
-        .with_context(|| format!("failed to bind ws server at {addr}"))?;
+    let server =
+        TcpListener::bind(addr).with_context(|| format!("failed to bind ws server at {addr}"))?;
 
     // Editor-side heartbeat: server periodically emits {type:"ping"}.
     // (Client may reply with {type:"pong"}, which we accept as a no-op.)
@@ -146,13 +148,9 @@ fn handle_client(
         // 2) read inbound
         match ws.read() {
             Ok(Message::Text(text)) => {
-                if let Err(e) = handle_text_message(
-                    &mut ws,
-                    &text,
-                    &scene_tx,
-                    &scene_drop_rx,
-                    &last_good,
-                ) {
+                if let Err(e) =
+                    handle_text_message(&mut ws, &text, &scene_tx, &scene_drop_rx, &last_good)
+                {
                     eprintln!("[ws] handle message error: {e:?}");
                 }
             }
@@ -293,7 +291,12 @@ fn handle_text_message(
             );
         }
         other => {
-            send_error(ws, msg.request_id, "PARSE_ERROR", &format!("unknown message type: {other}"));
+            send_error(
+                ws,
+                msg.request_id,
+                "PARSE_ERROR",
+                &format!("unknown message type: {other}"),
+            );
         }
     }
 
@@ -321,7 +324,11 @@ fn send_error(
     }
 }
 
-fn send_scene_update(scene_tx: &Sender<SceneUpdate>, scene_drop_rx: &Receiver<SceneUpdate>, update: SceneUpdate) {
+fn send_scene_update(
+    scene_tx: &Sender<SceneUpdate>,
+    scene_drop_rx: &Receiver<SceneUpdate>,
+    update: SceneUpdate,
+) {
     if scene_tx.try_send(update.clone()).is_err() {
         while scene_drop_rx.try_recv().is_ok() {}
         let _ = scene_tx.try_send(update);

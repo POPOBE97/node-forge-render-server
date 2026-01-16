@@ -5,13 +5,13 @@ use std::{
 
 use crossbeam_channel::Receiver;
 use rust_wgpu_fiber::{
+    ResourceName,
     eframe::{
         self,
-        egui::{self, pos2, Color32, Rect, TextureId},
+        egui::{self, Color32, Rect, TextureId, pos2},
         wgpu,
     },
     shader_space::ShaderSpace,
-    ResourceName,
 };
 
 use crate::{protocol, renderer, ws};
@@ -149,7 +149,7 @@ impl eframe::App for App {
                     self.color_attachment.unwrap(),
                     Rect::from_min_max(
                         pos2(0.0, 0.0),
-                        pos2(avail_rect.width() as f32, avail_rect.height()as f32),
+                        pos2(avail_rect.width() as f32, avail_rect.height() as f32),
                     ),
                     Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
                     Color32::WHITE,

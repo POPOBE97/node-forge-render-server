@@ -3,8 +3,8 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::dsl::Node;
 use super::super::types::{TypedExpr, ValueType};
+use crate::dsl::Node;
 
 /// Parse a JSON value as an f32.
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
@@ -85,7 +85,13 @@ pub fn compile_color_input(node: &Node, _out_port: Option<&str>) -> Result<Typed
 /// - Uses time: false
 pub fn compile_float_or_int_input(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
     let v = parse_const_f32(node).unwrap_or(0.0);
-    Ok(TypedExpr::new(format!("{v}"), ValueType::F32))
+    // Ensure WGSL treats this as an abstract-float / f32 literal.
+    // `1` is inferred as i32 in WGSL when used in `let` bindings.
+    if v.fract() == 0.0 {
+        Ok(TypedExpr::new(format!("{v:.1}"), ValueType::F32))
+    } else {
+        Ok(TypedExpr::new(format!("{v}"), ValueType::F32))
+    }
 }
 
 /// Compile a Vector2Input node to WGSL.
@@ -140,7 +146,7 @@ mod tests {
             params: HashMap::new(),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_color_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec4);
         assert_eq!(result.expr, "vec4f(1, 0, 1, 1)");
@@ -152,12 +158,10 @@ mod tests {
         let node = Node {
             id: "color1".to_string(),
             node_type: "ColorInput".to_string(),
-            params: HashMap::from([
-                ("value".to_string(), serde_json::json!([0.5, 0.3, 0.8, 1.0]))
-            ]),
+            params: HashMap::from([("value".to_string(), serde_json::json!([0.5, 0.3, 0.8, 1.0]))]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_color_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("0.5"));
@@ -169,12 +173,10 @@ mod tests {
         let node = Node {
             id: "float1".to_string(),
             node_type: "FloatInput".to_string(),
-            params: HashMap::from([
-                ("value".to_string(), serde_json::json!(3.14))
-            ]),
+            params: HashMap::from([("value".to_string(), serde_json::json!(3.14))]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_float_or_int_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::F32);
         assert_eq!(result.expr, "3.14");
@@ -191,7 +193,7 @@ mod tests {
             ]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_vector2_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
         assert_eq!(result.expr, "vec2f(1, 2)");
@@ -209,7 +211,7 @@ mod tests {
             ]),
             inputs: Vec::new(),
         };
-        
+
         let result = compile_vector3_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec3);
         assert_eq!(result.expr, "vec3f(1, 2, 3)");

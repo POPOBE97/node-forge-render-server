@@ -5,35 +5,34 @@
 //! composite layer handling.
 //!
 //! ## Chain Pass Support
-//! 
+//!
 //! This module supports chaining pass nodes together (e.g., GuassianBlurPass -> GuassianBlurPass).
 //! Each pass that outputs to `pass` type gets an intermediate texture allocated automatically.
 //! Resolution inheritance: downstream passes inherit upstream resolution by default, but can override.
 
-use std::{borrow::Cow, collections::{HashMap, HashSet}, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
+    HeadlessRenderer, HeadlessRendererConfig, ResourceName,
     eframe::wgpu::{
-        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
+        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
     },
-    HeadlessRenderer,
-    HeadlessRendererConfig,
     pool::{
-        buffer_pool::BufferSpec,
-        sampler_pool::SamplerSpec,
+        buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
-    ResourceName,
 };
 
 use crate::{
-    dsl::{
-        find_node, incoming_connection, parse_str, parse_texture_format,
-        SceneDSL,
-    },
+    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
         node_compiler::geometry_nodes::rect2d_geometry_vertices,
         scene_prep::prepare_scene,
@@ -41,16 +40,10 @@ use crate::{
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            build_blur_image_wgsl_bundle,
-            build_downsample_bundle,
-            build_horizontal_blur_bundle,
-            build_pass_wgsl_bundle,
-            build_upsample_bilinear_bundle,
-            build_vertical_blur_bundle,
-            clamp_min_1,
-            gaussian_kernel_8,
+            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle, build_downsample_bundle,
+            build_horizontal_blur_bundle, build_pass_wgsl_bundle, build_upsample_bilinear_bundle,
+            build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p,
-            ERROR_SHADER_WGSL,
         },
     },
 };
@@ -73,7 +66,10 @@ pub fn render_scene_to_png_headless(
     Ok(())
 }
 
-fn sampled_pass_node_ids(scene: &SceneDSL, nodes_by_id: &HashMap<String, crate::dsl::Node>) -> HashSet<String> {
+fn sampled_pass_node_ids(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+) -> HashSet<String> {
     // Any pass connected into PassTexture.pass is considered "sampled" and must have a resolvable output texture.
     let mut out: HashSet<String> = HashSet::new();
     for n in nodes_by_id.values() {
@@ -125,9 +121,7 @@ fn deps_for_pass_node(
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
             Ok(bundle.pass_textures)
         }
-        other => bail!(
-            "expected a pass node id, got node type {other} for {pass_node_id}"
-        ),
+        other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
 }
 
@@ -321,7 +315,9 @@ fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
     })
 }
 
-fn parse_render_pass_blend_state(params: &HashMap<String, serde_json::Value>) -> Result<BlendState> {
+fn parse_render_pass_blend_state(
+    params: &HashMap<String, serde_json::Value>,
+) -> Result<BlendState> {
     // Start with preset if present; otherwise default to REPLACE.
     // Note: RenderPass has scheme defaults for blendfunc/factors. If a user sets only
     // `blend_preset=replace` (common intent: disable blending), those default factor keys will
@@ -409,7 +405,8 @@ pub fn build_shader_space_from_scene(
         match node.node_type.as_str() {
             "Rect2DGeometry" => {
                 let geo_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", 100)?;
-                let geo_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", geo_w_u)?;
+                let geo_h_u =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", geo_w_u)?;
                 let geo_w = geo_w_u as f32;
                 let geo_h = geo_h_u as f32;
                 let verts = rect2d_geometry_vertices(geo_w, geo_h);
@@ -417,8 +414,10 @@ pub fn build_shader_space_from_scene(
                 geometry_buffers.push((name, bytes));
             }
             "RenderTexture" => {
-                let w = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", resolution[0])?;
-                let h = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", resolution[1])?;
+                let w =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", resolution[0])?;
+                let h =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", resolution[1])?;
                 let format = parse_texture_format(&node.params)?;
                 textures.push(TextureDecl {
                     name,
@@ -445,8 +444,20 @@ pub fn build_shader_space_from_scene(
             target_node.node_type
         );
     }
-    let tgt_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, target_node, "width", resolution[0])?;
-    let tgt_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, target_node, "height", resolution[1])?;
+    let tgt_w_u = cpu_num_u32_min_1(
+        &prepared.scene,
+        nodes_by_id,
+        target_node,
+        "width",
+        resolution[0],
+    )?;
+    let tgt_h_u = cpu_num_u32_min_1(
+        &prepared.scene,
+        nodes_by_id,
+        target_node,
+        "height",
+        resolution[1],
+    )?;
     let tgt_w = tgt_w_u as f32;
     let tgt_h = tgt_h_u as f32;
     let target_texture_name = ids
@@ -506,8 +517,15 @@ pub fn build_shader_space_from_scene(
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
 
-                let geo_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "width", 100)?;
-                let geo_h_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "height", geo_w_u)?;
+                let geo_w_u =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "width", 100)?;
+                let geo_h_u = cpu_num_u32_min_1(
+                    &prepared.scene,
+                    nodes_by_id,
+                    geometry_node,
+                    "height",
+                    geo_w_u,
+                )?;
                 let geo_w = geo_w_u as f32;
                 let geo_h = geo_h_u as f32;
                 let geo_x = cpu_num_f32(&prepared.scene, nodes_by_id, geometry_node, "x", 0.0)?;
@@ -529,10 +547,12 @@ pub fn build_shader_space_from_scene(
                 let mut texture_bindings: Vec<PassTextureBinding> = bundle
                     .image_textures
                     .iter()
-                    .filter_map(|id| ids.get(id).cloned().map(|tex| PassTextureBinding {
-                        texture: tex,
-                        image_node_id: Some(id.clone()),
-                    }))
+                    .filter_map(|id| {
+                        ids.get(id).cloned().map(|tex| PassTextureBinding {
+                            texture: tex,
+                            image_node_id: Some(id.clone()),
+                        })
+                    })
                     .collect();
 
                 texture_bindings.extend(resolve_pass_texture_bindings(
@@ -566,7 +586,7 @@ pub fn build_shader_space_from_scene(
                 // GuassianBlurPass takes its source from `image` input (color type).
                 // This can be from PassTexture (sampling another pass), ImageTexture, or any color expression.
                 // We first render the image expression to an intermediate texture, then apply the blur chain.
-                
+
                 // Create source texture for the image input.
                 let src_tex: ResourceName = format!("{layer_id}__src").into();
                 let src_resolution = [tgt_w as u32, tgt_h as u32];
@@ -591,14 +611,17 @@ pub fn build_shader_space_from_scene(
                 };
 
                 // Build WGSL for the image input expression (similar to RenderPass material).
-                let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                let src_bundle =
+                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
                 let mut src_texture_bindings: Vec<PassTextureBinding> = src_bundle
                     .image_textures
                     .iter()
-                    .filter_map(|id| ids.get(id).cloned().map(|tex| PassTextureBinding {
-                        texture: tex,
-                        image_node_id: Some(id.clone()),
-                    }))
+                    .filter_map(|id| {
+                        ids.get(id).cloned().map(|tex| PassTextureBinding {
+                            texture: tex,
+                            image_node_id: Some(id.clone()),
+                        })
+                    })
                     .collect();
 
                 src_texture_bindings.extend(resolve_pass_texture_bindings(
@@ -621,10 +644,23 @@ pub fn build_shader_space_from_scene(
                 composite_passes.push(format!("{layer_id}__src_pass").into());
 
                 // Resolution: use target resolution, but allow override via params.
-                let blur_w = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, layer_node, "width", src_resolution[0])?;
-                let blur_h = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, layer_node, "height", src_resolution[1])?;
+                let blur_w = cpu_num_u32_min_1(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    "width",
+                    src_resolution[0],
+                )?;
+                let blur_h = cpu_num_u32_min_1(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    "height",
+                    src_resolution[1],
+                )?;
 
-                let sigma = cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
+                let sigma =
+                    cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
@@ -637,7 +673,8 @@ pub fn build_shader_space_from_scene(
 
                 // Allocate textures (and matching fullscreen geometry) for each downsample step.
                 // Use blur_w/blur_h as the base resolution (inherited from upstream or overridden).
-                let mut step_textures: Vec<(u32, ResourceName, u32, u32, ResourceName)> = Vec::new();
+                let mut step_textures: Vec<(u32, ResourceName, u32, u32, ResourceName)> =
+                    Vec::new();
                 let mut cur_w: u32 = blur_w;
                 let mut cur_h: u32 = blur_h;
                 for step in &downsample_steps {
@@ -727,15 +764,21 @@ pub fn build_shader_space_from_scene(
 
                 // Fullscreen geometry buffers for blur + upsample.
                 let geo_ds: ResourceName = format!("{layer_id}__geo_ds").into();
-                geometry_buffers
-                    .push((geo_ds.clone(), make_fullscreen_geometry(ds_w as f32, ds_h as f32)));
+                geometry_buffers.push((
+                    geo_ds.clone(),
+                    make_fullscreen_geometry(ds_w as f32, ds_h as f32),
+                ));
                 let geo_out: ResourceName = format!("{layer_id}__geo_out").into();
-                geometry_buffers.push((geo_out.clone(), make_fullscreen_geometry(blur_w as f32, blur_h as f32)));
+                geometry_buffers.push((
+                    geo_out.clone(),
+                    make_fullscreen_geometry(blur_w as f32, blur_h as f32),
+                ));
 
                 // Downsample chain
                 let mut prev_tex: Option<ResourceName> = None;
                 for (step, tex, step_w, step_h, step_geo) in &step_textures {
-                    let params_name: ResourceName = format!("params_{layer_id}__downsample_{step}").into();
+                    let params_name: ResourceName =
+                        format!("params_{layer_id}__downsample_{step}").into();
                     let bundle = build_downsample_bundle(*step)?;
 
                     let params_val = Params {
@@ -771,10 +814,12 @@ pub fn build_shader_space_from_scene(
                     prev_tex = Some(tex.clone());
                 }
 
-                let ds_src_tex: ResourceName = prev_tex.ok_or_else(|| anyhow!("GuassianBlurPass: missing downsample output"))?;
+                let ds_src_tex: ResourceName = prev_tex
+                    .ok_or_else(|| anyhow!("GuassianBlurPass: missing downsample output"))?;
 
                 // 2) Horizontal blur: ds_src_tex -> h_tex
-                let params_h: ResourceName = format!("params_{layer_id}__hblur_ds{downsample_factor}").into();
+                let params_h: ResourceName =
+                    format!("params_{layer_id}__hblur_ds{downsample_factor}").into();
                 let bundle_h = build_horizontal_blur_bundle(kernel, offset);
                 let params_h_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
@@ -802,7 +847,8 @@ pub fn build_shader_space_from_scene(
                 composite_passes.push(format!("{layer_id}__hblur_ds{downsample_factor}").into());
 
                 // 3) Vertical blur: h_tex -> v_tex (still downsampled resolution)
-                let params_v: ResourceName = format!("params_{layer_id}__vblur_ds{downsample_factor}").into();
+                let params_v: ResourceName =
+                    format!("params_{layer_id}__vblur_ds{downsample_factor}").into();
                 let bundle_v = build_vertical_blur_bundle(kernel, offset);
                 let params_v_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
@@ -831,7 +877,8 @@ pub fn build_shader_space_from_scene(
                 composite_passes.push(format!("{layer_id}__vblur_ds{downsample_factor}").into());
 
                 // 4) Upsample bilinear back to output: v_tex -> output_tex
-                let params_u: ResourceName = format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
+                let params_u: ResourceName =
+                    format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
                 let bundle_u = build_upsample_bilinear_bundle();
                 let params_u_val = Params {
                     target_size: [blur_w as f32, blur_h as f32],
@@ -857,9 +904,8 @@ pub fn build_shader_space_from_scene(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
 
-                composite_passes.push(
-                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
-                );
+                composite_passes
+                    .push(format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into());
 
                 // Register this GuassianBlurPass output for potential downstream chaining.
                 pass_output_registry.register(PassOutputSpec {
@@ -878,7 +924,7 @@ pub fn build_shader_space_from_scene(
                     "Composite layer must be a pass node (RenderPass/GuassianBlurPass), got {other} for {layer_id}. \
                      To enable chain support for new pass types, update is_pass_node() and add handling here."
                 )
-            },
+            }
         }
     }
 
@@ -957,7 +1003,11 @@ pub fn build_shader_space_from_scene(
             if pb.is_absolute() {
                 vec![pb]
             } else {
-                vec![pb.clone(), rel_base.join(&pb), rel_base.join("assets").join(&pb)]
+                vec![
+                    pb.clone(),
+                    rel_base.join(&pb),
+                    rel_base.join("assets").join(&pb),
+                ]
             }
         };
 
@@ -991,7 +1041,10 @@ pub fn build_shader_space_from_scene(
             }
             let node = find_node(&nodes_by_id, node_id)?;
             if node.node_type != "ImageTexture" {
-                bail!("expected ImageTexture node for {node_id}, got {}", node.node_type);
+                bail!(
+                    "expected ImageTexture node for {node_id}, got {}",
+                    node.node_type
+                );
             }
 
             // Prefer inlined data URL (data:image/...;base64,...) if present.
@@ -1032,42 +1085,44 @@ pub fn build_shader_space_from_scene(
     let nearest_sampler: ResourceName = "sampler_nearest".into();
     let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
-    shader_space.declare_samplers(vec![SamplerSpec {
-        name: nearest_sampler.clone(),
-        desc: wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
+    shader_space.declare_samplers(vec![
+        SamplerSpec {
+            name: nearest_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                ..Default::default()
+            },
         },
-    },
-    SamplerSpec {
-        name: nearest_mirror_sampler.clone(),
-        desc: wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            address_mode_u: wgpu::AddressMode::MirrorRepeat,
-            address_mode_v: wgpu::AddressMode::MirrorRepeat,
-            address_mode_w: wgpu::AddressMode::MirrorRepeat,
-            ..Default::default()
+        SamplerSpec {
+            name: nearest_mirror_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::MirrorRepeat,
+                address_mode_v: wgpu::AddressMode::MirrorRepeat,
+                address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                ..Default::default()
+            },
         },
-    },
-    SamplerSpec {
-        name: linear_mirror_sampler.clone(),
-        desc: wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            address_mode_u: wgpu::AddressMode::MirrorRepeat,
-            address_mode_v: wgpu::AddressMode::MirrorRepeat,
-            address_mode_w: wgpu::AddressMode::MirrorRepeat,
-            ..Default::default()
+        SamplerSpec {
+            name: linear_mirror_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::MirrorRepeat,
+                address_mode_v: wgpu::AddressMode::MirrorRepeat,
+                address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                ..Default::default()
+            },
         },
-    }]);
+    ]);
 
     for spec in &render_pass_specs {
         let geometry_buffer = spec.geometry_buffer.clone();
@@ -1077,7 +1132,11 @@ pub fn build_shader_space_from_scene(
         let blend_state = spec.blend_state;
         let color_load_op = spec.color_load_op;
 
-        let texture_names: Vec<ResourceName> = spec.texture_bindings.iter().map(|b| b.texture.clone()).collect();
+        let texture_names: Vec<ResourceName> = spec
+            .texture_bindings
+            .iter()
+            .map(|b| b.texture.clone())
+            .collect();
         let sampler_name = match spec.sampler_kind {
             SamplerKind::NearestClamp => nearest_sampler.clone(),
             SamplerKind::NearestMirror => nearest_mirror_sampler.clone(),
@@ -1097,15 +1156,19 @@ pub fn build_shader_space_from_scene(
                     geometry_buffer,
                     wgpu::VertexStepMode::Vertex,
                     vertex_attr_array![0 => Float32x3].to_vec(),
-                )
-                ;
+                );
 
             for (i, tex_name) in texture_names.iter().enumerate() {
                 let tex_binding = (i as u32) * 2;
                 let samp_binding = tex_binding + 1;
                 b = b
                     .bind_texture(1, tex_binding, tex_name.clone(), ShaderStages::FRAGMENT)
-                    .bind_sampler(1, samp_binding, sampler_name.clone(), ShaderStages::FRAGMENT);
+                    .bind_sampler(
+                        1,
+                        samp_binding,
+                        sampler_name.clone(),
+                        ShaderStages::FRAGMENT,
+                    );
             }
 
             b.bind_color_attachment(target_texture)
@@ -1207,9 +1270,9 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
+        use base64::{Engine as _, engine::general_purpose};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
-        use base64::{engine::general_purpose, Engine as _};
 
         // Build a valid 1x1 PNG in memory, then wrap it as a data URL.
         let src = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0]));
@@ -1307,7 +1370,10 @@ mod tests {
                     },
                 },
             ],
-            outputs: Some(HashMap::from([(String::from("composite"), String::from("out"))])),
+            outputs: Some(HashMap::from([(
+                String::from("composite"),
+                String::from("out"),
+            )])),
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -1368,7 +1434,9 @@ pub fn build_error_shader_space(
         name: output_texture_name.clone(),
         resolution,
         format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+        usage: TextureUsages::RENDER_ATTACHMENT
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::COPY_SRC,
     }]);
 
     let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
