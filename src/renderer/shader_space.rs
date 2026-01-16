@@ -1391,7 +1391,7 @@ mod tests {
     #[test]
     fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let scene_path = manifest_dir.join("tests/pass-texture-alpha/pass-texture-alpha.json");
+        let scene_path = manifest_dir.join("tests/cases/pass-texture-alpha/scene.json");
         let scene = crate::dsl::load_scene_from_path(&scene_path).expect("load scene");
         let prepared = prepare_scene(&scene).expect("prepare scene");
 
