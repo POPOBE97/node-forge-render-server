@@ -14,6 +14,8 @@ var<uniform> params: Params;
 struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
 };
 
 // --- Extra WGSL declarations (generated) ---
@@ -317,8 +319,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_9_out: f32;
     {
-        let sdfCircle = (length((((in.uv - vec2f(0.5, 0.5)) * params.geo_size) - vec2f(0, 0))) - 100.0);
-        let sdfBox = sdf2d_round_rect((((in.uv - vec2f(0.5, 0.5)) * params.geo_size) - vec2f(0, 0)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
+        let sdfCircle = (length(((in.uv * params.geo_size) - vec2f(0, 0))) - 100.0);
+        let sdfBox = sdf2d_round_rect(((in.uv * params.geo_size) - vec2f(0, 0)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
         let t = 1.0;
         var output: f32;
         output = mc_MathClosure_9_(in.uv, sdfCircle, sdfBox, t);

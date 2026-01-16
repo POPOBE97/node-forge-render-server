@@ -222,11 +222,8 @@ where
         .unwrap_or("circle");
 
     // Evaluate SDF at the *current fragment* local position in pixels.
-    // Our vertex shader emits in.uv in [0,1] over the geometry, with (0.5,0.5) at the local origin.
-    let frag_local_px = TypedExpr::new(
-        "((in.uv - vec2f(0.5, 0.5)) * params.geo_size)".to_string(),
-        ValueType::Vec2,
-    );
+    // Use GeoFragcoord convention: origin at bottom-left of the geometry.
+    let frag_local_px = TypedExpr::new("(in.uv * params.geo_size)".to_string(), ValueType::Vec2);
 
     // `position` is interpreted as the SDF shape center (in the same local pixel space).
     // If not provided, default to centered at origin.
@@ -319,6 +316,7 @@ mod tests {
                 ("radius".to_string(), serde_json::json!(2.0)),
             ]),
             inputs: vec![],
+            outputs: Vec::new(),
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -359,6 +357,7 @@ mod tests {
                 ),
             ]),
             inputs: vec![],
+            outputs: Vec::new(),
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);

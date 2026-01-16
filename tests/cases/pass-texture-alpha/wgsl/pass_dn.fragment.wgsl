@@ -14,6 +14,8 @@ var<uniform> params: Params;
 struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
 };
 @group(1) @binding(0)
 var pass_tex_pass_up: texture_2d<f32>;

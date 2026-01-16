@@ -303,6 +303,7 @@ mod tests {
             node_type: "DotProduct".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -336,6 +337,7 @@ mod tests {
             node_type: "CrossProduct".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -366,6 +368,7 @@ mod tests {
             node_type: "Normalize".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -399,6 +402,7 @@ mod tests {
             node_type: "VectorMath".to_string(),
             params: HashMap::from([("operation".to_string(), serde_json::json!("add"))]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

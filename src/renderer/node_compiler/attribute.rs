@@ -54,6 +54,7 @@ mod tests {
             node_type: "Attribute".to_string(),
             params: HashMap::from([("name".to_string(), serde_json::json!("uv"))]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -70,6 +71,7 @@ mod tests {
             node_type: "Attribute".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -84,6 +86,7 @@ mod tests {
             node_type: "Attribute".to_string(),
             params: HashMap::from([("name".to_string(), serde_json::json!("UV"))]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -98,6 +101,7 @@ mod tests {
             node_type: "Attribute".to_string(),
             params: HashMap::from([("name".to_string(), serde_json::json!("position"))]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         assert!(compile_attribute(&node, None).is_err());

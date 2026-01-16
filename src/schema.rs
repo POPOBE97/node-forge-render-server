@@ -319,6 +319,12 @@ fn validate_connection(
         Some(PortTypeSpec::One(ty.clone()))
     }
 
+    fn math_multiply_output_port_type(node: &Node, port_id: &str) -> Option<PortTypeSpec> {
+        let p = node.outputs.iter().find(|p| p.id == port_id)?;
+        let ty = p.port_type.as_ref()?;
+        Some(PortTypeSpec::One(ty.clone()))
+    }
+
     let Some(from_node) = nodes_by_id.get(c.from.node_id.as_str()).copied() else {
         errors.push(format!(
             "connection '{}' references missing from.nodeId '{}'",
@@ -342,7 +348,22 @@ fn validate_connection(
         return;
     };
 
-    let from_ty: Cow<'_, PortTypeSpec> = if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
+    let from_ty: Cow<'_, PortTypeSpec> = if from_node.node_type == "MathMultiply" {
+        // MathMultiply output is instance-defined: editor now exports inferred output type in
+        // node.outputs[0].type (at least for the `result` port).
+        // If missing, fall back to scheme (usually `any`).
+        if let Some(spec) = math_multiply_output_port_type(from_node, &c.from.port_id) {
+            Cow::Owned(spec)
+        } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
+            Cow::Borrowed(t)
+        } else {
+            errors.push(format!(
+                "connection '{}' uses unknown from port '{}.{}' (type {})",
+                c.id, c.from.node_id, c.from.port_id, from_node.node_type
+            ));
+            return;
+        }
+    } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
         Cow::Borrowed(t)
     } else {
         errors.push(format!(
@@ -371,6 +392,18 @@ fn validate_connection(
                 c.id, c.to.node_id, c.to.port_id, to_node.node_type
             ));
             return;
+        }
+    } else if to_node.node_type == "MathMultiply" {
+        // MathMultiply inputs are instance-defined (node.inputs in the DSL export).
+        // If the node didn't include `inputs`, accept any incoming connections.
+        if let Some(p) = to_node.inputs.iter().find(|p| p.id == c.to.port_id) {
+            if let Some(ty) = p.port_type.as_ref() {
+                Cow::Owned(PortTypeSpec::One(ty.clone()))
+            } else {
+                Cow::Owned(PortTypeSpec::One("any".to_string()))
+            }
+        } else {
+            Cow::Owned(PortTypeSpec::One("any".to_string()))
         }
     } else {
         errors.push(format!(

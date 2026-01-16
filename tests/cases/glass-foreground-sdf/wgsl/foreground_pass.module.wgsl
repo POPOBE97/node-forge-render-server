@@ -14,6 +14,8 @@ var<uniform> params: Params;
 struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
 };
 
 // --- Extra WGSL declarations (generated) ---
@@ -307,13 +309,17 @@ fn vs_main(@location(0) position: vec3f) -> VSOut {
     // Local UV in [0,1] based on geometry size.
     out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
 
-    // Geometry vertices are in local pixel units centered at (0,0). Apply center translation in pixels.
-    let p = position.xy + params.center;
+    // Geometry vertices are in local pixel units centered at (0,0).
+    // Convert to target pixel coordinates with bottom-left origin.
+    let p_px = params.center + position.xy + (params.target_size * 0.5);
 
-    // Convert pixels to clip space (assumes target_size is in pixels and (0,0) is the target center).
-    let half = params.target_size * 0.5;
-    let ndc = vec2f(p.x / half.x, p.y / half.y);
+    // Convert pixels to clip space assuming bottom-left origin.
+    // (0,0) => (-1,-1), (target_size) => (1,1)
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
     out.position = vec4f(ndc, position.z, 1.0);
+
+    // Pixel-centered like GLSL gl_FragCoord.xy.
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
     return out;
 }
 
@@ -334,8 +340,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_9_out: f32;
     {
-        let sdfCircle = (length((((in.uv - vec2f(0.5, 0.5)) * params.geo_size) - vec2f(0, 0))) - 100.0);
-        let sdfBox = sdf2d_round_rect((((in.uv - vec2f(0.5, 0.5)) * params.geo_size) - vec2f(0, 0)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
+        let sdfCircle = (length(((in.uv * params.geo_size) - vec2f(0, 0))) - 100.0);
+        let sdfBox = sdf2d_round_rect(((in.uv * params.geo_size) - vec2f(0, 0)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
         let t = 1.0;
         var output: f32;
         output = mc_MathClosure_9_(in.uv, sdfCircle, sdfBox, t);

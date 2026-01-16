@@ -153,7 +153,7 @@ pub fn compile_frag_coord(_node: &Node, out_port: Option<&str>) -> Result<TypedE
     let port = out_port.unwrap_or("xy");
     match port {
         "xy" => Ok(TypedExpr::new(
-            "in.position.xy".to_string(),
+            "in.frag_coord_gl".to_string(),
             ValueType::Vec2,
         )),
         other => bail!("FragCoord: unsupported output port '{other}'"),
@@ -214,10 +214,11 @@ mod fragcoord_tests {
             node_type: "FragCoord".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let expr = compile_frag_coord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
-        assert_eq!(expr.expr, "in.position.xy");
+        assert_eq!(expr.expr, "in.frag_coord_gl");
         assert!(!expr.uses_time);
     }
 
@@ -228,6 +229,7 @@ mod fragcoord_tests {
             node_type: "GeoFragcoord".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -242,6 +244,7 @@ mod fragcoord_tests {
             node_type: "GeoSize".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let expr = compile_geo_size(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -262,6 +265,7 @@ mod tests {
             node_type: "ColorInput".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_color_input(&node, None).unwrap();
@@ -277,6 +281,7 @@ mod tests {
             node_type: "ColorInput".to_string(),
             params: HashMap::from([("value".to_string(), serde_json::json!([0.5, 0.3, 0.8, 1.0]))]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_color_input(&node, None).unwrap();
@@ -290,13 +295,17 @@ mod tests {
         let node = Node {
             id: "float1".to_string(),
             node_type: "FloatInput".to_string(),
-            params: HashMap::from([("value".to_string(), serde_json::json!(3.14))]),
+            params: HashMap::from([(
+                "value".to_string(),
+                serde_json::json!(core::f32::consts::PI),
+            )]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_float_or_int_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::F32);
-        assert_eq!(result.expr, "3.14");
+        assert_eq!(result.expr, core::f32::consts::PI.to_string());
     }
 
     #[test]
@@ -309,6 +318,7 @@ mod tests {
                 ("y".to_string(), serde_json::json!(2.0)),
             ]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_vector2_input(&node, None).unwrap();
@@ -327,6 +337,7 @@ mod tests {
                 ("z".to_string(), serde_json::json!(3.0)),
             ]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
 
         let result = compile_vector3_input(&node, None).unwrap();

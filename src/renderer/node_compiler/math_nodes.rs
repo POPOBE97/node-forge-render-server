@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-use super::super::types::{MaterialCompileContext, TypedExpr};
+use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::coerce_for_binary;
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 
@@ -60,20 +60,10 @@ where
 
 /// Compile a MathMultiply node to WGSL.
 ///
-/// MathMultiply nodes multiply two values together.
+/// MathMultiply nodes multiply N values together.
 ///
-/// # Inputs
-/// - `a` or `x`: First operand
-/// - `b` or `y`: Second operand
-///
-/// # Output
-/// - Type: Matches input types (with scalar-to-vector promotion)
-/// - Uses time: true if any input uses time
-///
-/// # Example
-/// ```wgsl
-/// (a * b)
-/// ```
+/// The editor exports dynamic input ports in `node.inputs` (e.g. `dynamic_<ts>_<index>`).
+/// The render server should not assume fixed ports like `a`/`b`.
 pub fn compile_math_multiply<F>(
     scene: &SceneDSL,
     _nodes_by_id: &HashMap<String, Node>,
@@ -91,22 +81,42 @@ where
         &mut HashMap<(String, String), TypedExpr>,
     ) -> Result<TypedExpr>,
 {
-    let a_conn = incoming_connection(scene, &node.id, "a")
-        .or_else(|| incoming_connection(scene, &node.id, "x"))
-        .ok_or_else(|| anyhow::anyhow!("MathMultiply missing input a"))?;
-    let b_conn = incoming_connection(scene, &node.id, "b")
-        .or_else(|| incoming_connection(scene, &node.id, "y"))
-        .ok_or_else(|| anyhow::anyhow!("MathMultiply missing input b"))?;
+    let input_ports: Vec<&str> = if node.inputs.is_empty() {
+        vec!["a", "b"]
+    } else {
+        node.inputs.iter().map(|p| p.id.as_str()).collect()
+    };
 
-    let a = compile_fn(&a_conn.from.node_id, Some(&a_conn.from.port_id), ctx, cache)?;
-    let b = compile_fn(&b_conn.from.node_id, Some(&b_conn.from.port_id), ctx, cache)?;
+    // Resolve all connected inputs and fold them with `*`.
+    let mut resolved: Vec<TypedExpr> = Vec::new();
+    for port_id in input_ports {
+        if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
+            let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+            resolved.push(expr);
+        }
+    }
 
-    let (aa, bb, ty) = coerce_for_binary(a, b)?;
-    Ok(TypedExpr::with_time(
-        format!("({} * {})", aa.expr, bb.expr),
-        ty,
-        aa.uses_time || bb.uses_time,
-    ))
+    // The editor allows creating the node before connecting inputs; treat <2 inputs as unknown.
+    if resolved.len() < 2 {
+        // Not enough information to infer a type.
+        // Emit a dummy expression; downstream compilers should treat this as unknown.
+        return Ok(TypedExpr::new("0.0", ValueType::F32));
+    }
+
+    let mut it = resolved.into_iter();
+    let first = it.next().expect("len >= 2");
+
+    let mut acc_expr = first;
+    for next in it {
+        let (a, b, ty) = coerce_for_binary(acc_expr, next)?;
+        acc_expr = TypedExpr::with_time(
+            format!("({} * {})", a.expr, b.expr),
+            ty,
+            a.uses_time || b.uses_time,
+        );
+    }
+
+    Ok(acc_expr)
 }
 
 /// Compile a MathClamp node to WGSL.
@@ -289,18 +299,21 @@ mod tests {
                 node_type: "MathAdd".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
             Node {
                 id: "a".to_string(),
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
             Node {
                 id: "b".to_string(),
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
         ];
 
@@ -360,18 +373,21 @@ mod tests {
                 node_type: "MathMultiply".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
             Node {
                 id: "a".to_string(),
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
             Node {
                 id: "b".to_string(),
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                outputs: Vec::new(),
             },
         ];
 

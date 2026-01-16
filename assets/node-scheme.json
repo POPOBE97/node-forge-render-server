@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-16T13:26:48.981Z",
+  "generatedAt": "2026-01-16T18:52:01.281Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1068,26 +1068,13 @@
       "type": "MathMultiply",
       "label": "Multiply",
       "category": "Math",
-      "description": "Multiply two values",
-      "inputs": [
-        {
-          "id": "a",
-          "name": "A",
-          "type": "float",
-          "default": 1
-        },
-        {
-          "id": "b",
-          "name": "B",
-          "type": "float",
-          "default": 1
-        }
-      ],
+      "description": "Multiply values (dynamic inputs); output type inferred from inputs",
+      "inputs": [],
       "outputs": [
         {
           "id": "result",
           "name": "Result",
-          "type": "float"
+          "type": "any"
         }
       ],
       "defaultParams": {}

@@ -160,12 +160,14 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
             node_type: "Rect2DGeometry".to_string(),
             params: geo_params,
             inputs: Vec::new(),
+            outputs: Vec::new(),
         });
         scene.nodes.push(Node {
             id: p.pass_id.clone(),
             node_type: "RenderPass".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         });
 
         new_connections.push(Connection {

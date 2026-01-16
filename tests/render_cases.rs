@@ -339,6 +339,15 @@ fn case_glass_foreground_sdf() {
 }
 
 #[test]
+fn case_glass() {
+    run_case(&Case {
+        name: "glass",
+        scene_json: "glass/glass.json",
+        baseline_png: None,
+    });
+}
+
+#[test]
 fn case_pass_texture_alpha() {
     run_case(&Case {
         name: "pass-texture-alpha",

@@ -9,7 +9,10 @@ use crate::dsl::{Node, SceneDSL, incoming_connection};
 /// Compile an ImageTexture node.
 ///
 /// Samples a texture at a given UV coordinate and returns the color or alpha channel.
-/// Automatically flips the V coordinate to match WebGPU's top-left origin.
+///
+/// Note: This renderer uses a GL-like coordinate system (origin bottom-left). We *do not* flip
+/// UVs in WGSL for ImageTexture. If an image source is top-left origin, it must be flipped on
+/// upload (CPU-side) so that UV space remains consistent across the graph.
 pub fn compile_image_texture<F>(
     scene: &SceneDSL,
     _nodes_by_id: &HashMap<String, Node>,
@@ -45,11 +48,8 @@ where
     let tex_var = MaterialCompileContext::tex_var_name(&node.id);
     let samp_var = MaterialCompileContext::sampler_var_name(&node.id);
 
-    // WebGPU texture coordinates have (0,0) at the *top-left* of the image.
-    // Our synthesized UV (from clip-space position) maps y=-1(bottom)->0 and y=+1(top)->1,
-    // so we flip the y axis at sampling time.
-    let flipped_uv = format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr);
-    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
+    // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, ({}))", uv_expr.expr);
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
@@ -89,6 +89,7 @@ mod tests {
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
+                outputs: Vec::new(),
             }],
             Vec::new(),
         );
@@ -117,7 +118,7 @@ mod tests {
         assert!(result.expr.contains("textureSample"));
         assert!(result.expr.contains("img_tex_img1"));
         assert!(result.expr.contains("img_samp_img1"));
-        assert!(result.expr.contains("1.0 - (in.uv).y")); // V-flip
+        assert!(!result.expr.contains("1.0 - (in.uv).y"));
         assert!(!result.uses_time);
     }
 
@@ -129,6 +130,7 @@ mod tests {
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
+                outputs: Vec::new(),
             }],
             Vec::new(),
         );
@@ -166,6 +168,7 @@ mod tests {
                 node_type: "ImageTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
+                outputs: Vec::new(),
             }],
             Vec::new(),
         );
@@ -253,8 +256,11 @@ where
     let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
     let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
 
-    // Match ImageTexture's UV convention: our synthesized UV has (0,0) at bottom-left,
-    // while WebGPU texture sampling uses (0,0) at top-left.
+    // NOTE: PassTexture is the one intentional exception where we do a fragment-space Y flip.
+    // This keeps existing baseline PNGs stable while we migrate the whole graph to a GL-like
+    // coordinate system and move image flipping out of WGSL.
+    //
+    // WGSL texture sampling uses (0,0) at top-left; our renderer's UV convention is bottom-left.
     let flipped_uv = format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr);
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
 
@@ -295,12 +301,14 @@ mod pass_texture_tests {
                 node_type: "RenderPass".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
+                outputs: Vec::new(),
             },
             Node {
                 id: "pt".to_string(),
                 node_type: "PassTexture".to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
+                outputs: Vec::new(),
             },
         ];
 

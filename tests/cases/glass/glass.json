@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-16T13:31:22.024Z",
-    "modified": "2026-01-16T13:31:22.024Z"
+    "created": "2026-01-16T19:18:56.500Z",
+    "modified": "2026-01-16T19:18:56.500Z"
   },
   "nodes": [
     {
@@ -188,7 +188,7 @@
         "x": -200,
         "y": 1180
       },
-      "width": 200,
+      "width": 180,
       "label": "uDirectionalLightDir",
       "params": {
         "x": 0.5,
@@ -203,7 +203,7 @@
         "x": -200,
         "y": 1300
       },
-      "width": 220,
+      "width": 180,
       "label": "uDirectionalLightIntensity",
       "params": {
         "value": 1
@@ -236,139 +236,11 @@
       }
     },
     {
-      "id": "math_centerPx",
-      "type": "MathClosure",
-      "position": {
-        "x": -180,
-        "y": 40
-      },
-      "width": 160,
-      "label": "Center Pixel",
-      "params": {
-        "source": "// Calculate center position in pixels\nvec2 centerPx = uGeoPxSize.xy * 0.5;\ncenterPx.y = uGeoPxSize.y - centerPx.y;\noutput = centerPx;"
-      },
-      "inputs": [
-        {
-          "id": "dynamic_1768567999179_1",
-          "name": "uGeoPxSize",
-          "type": "vector2"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "vector2"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1768567999179_1",
-          "label": "uGeoPxSize",
-          "variableName": "uGeoPxSize",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoSize_4",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        }
-      ]
-    },
-    {
-      "id": "math_boxSdf",
-      "type": "MathClosure",
-      "position": {
-        "x": 320,
-        "y": 40
-      },
-      "width": 160,
-      "label": "Box SDF",
-      "params": {
-        "source": "// Rounded box SDF\n// box(p, b, r) = min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r\nvec2 p = uvPx - centerPx;\nvec2 b = geoSizePx * 0.5;\n\nvec2 d = abs(p) - b + r;\nfloat sdf = min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;\n\noutput = sdf;"
-      },
-      "inputs": [
-        {
-          "id": "uvPx",
-          "name": "uvPx",
-          "type": "vector2"
-        },
-        {
-          "id": "centerPx",
-          "name": "centerPx",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1768567771218_3",
-          "name": "geoSizePx",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1768567802729_4",
-          "name": "r",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "float"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "uvPx",
-          "label": "uvPx",
-          "variableName": "uvPx",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoFragcoord_3",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "centerPx",
-          "label": "centerPx",
-          "variableName": "centerPx",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "math_centerPx",
-            "outputPortId": "output",
-            "outputLabel": "Output"
-          }
-        },
-        {
-          "portId": "dynamic_1768567771218_3",
-          "label": "geoSizePx",
-          "variableName": "geoSizePx",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoSize_4",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "dynamic_1768567802729_4",
-          "label": "r",
-          "variableName": "r",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_7",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        }
-      ]
-    },
-    {
       "id": "math_shapeSdf",
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 160
+        "y": 40
       },
       "width": 220,
       "label": "Shape SDF with Edge",
@@ -555,9 +427,9 @@
           "variableName": "centerPx",
           "type": "vector2",
           "sourceBinding": {
-            "nodeId": "math_centerPx",
-            "outputPortId": "output",
-            "outputLabel": "Output"
+            "nodeId": "MathMultiply_11",
+            "outputPortId": "result",
+            "outputLabel": "Result"
           }
         },
         {
@@ -600,7 +472,7 @@
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 1460
+        "y": 1760
       },
       "width": 220,
       "label": "Calculate Lighting",
@@ -672,7 +544,7 @@
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 1320
+        "y": 1280
       },
       "width": 220,
       "label": "Refraction Effect",
@@ -776,7 +648,7 @@
       "type": "MathClosure",
       "position": {
         "x": 820,
-        "y": 400
+        "y": 480
       },
       "width": 240,
       "label": "Final Glass Color",
@@ -927,8 +799,8 @@
       "id": "Luminance_2",
       "type": "Luminance",
       "position": {
-        "x": 380,
-        "y": 500
+        "x": 80,
+        "y": 460
       },
       "width": 160,
       "label": "Luminance",
@@ -950,7 +822,7 @@
       "type": "GeoSize",
       "position": {
         "x": -180,
-        "y": -20
+        "y": 40
       },
       "width": 160,
       "label": "Geo Size",
@@ -961,7 +833,7 @@
       "type": "FloatInput",
       "position": {
         "x": -180,
-        "y": -100
+        "y": 180
       },
       "width": 160,
       "label": "radius",
@@ -973,14 +845,81 @@
       "id": "Sdf2D_10",
       "type": "Sdf2D",
       "position": {
-        "x": 320,
-        "y": -100
+        "x": 180,
+        "y": 40
       },
       "width": 160,
       "label": "2D SDF",
       "params": {
         "shape": "rectangle",
         "radius": 0.5
+      }
+    },
+    {
+      "id": "MathMultiply_11",
+      "type": "MathMultiply",
+      "position": {
+        "x": 0,
+        "y": 40
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "GeoSize_4",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_13",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_13",
+      "type": "FloatInput",
+      "position": {
+        "x": -180,
+        "y": 100
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 0.5
       }
     }
   ],
@@ -1041,17 +980,6 @@
       }
     },
     {
-      "id": "edge_13",
-      "from": {
-        "nodeId": "math_centerPx",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "math_boxSdf",
-        "portId": "centerPx"
-      }
-    },
-    {
       "id": "edge_16",
       "from": {
         "nodeId": "uniform_uShapeEdgePx",
@@ -1093,17 +1021,6 @@
       "to": {
         "nodeId": "math_normalizedSdf",
         "portId": "uShapeEdgePx"
-      }
-    },
-    {
-      "id": "edge_21",
-      "from": {
-        "nodeId": "math_centerPx",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "math_calculateNormal",
-        "portId": "centerPx"
       }
     },
     {
@@ -1305,17 +1222,6 @@
       }
     },
     {
-      "id": "edge_50",
-      "from": {
-        "nodeId": "GeoFragcoord_3",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "math_boxSdf",
-        "portId": "uvPx"
-      }
-    },
-    {
       "id": "edge_51",
       "from": {
         "nodeId": "GeoFragcoord_3",
@@ -1324,39 +1230,6 @@
       "to": {
         "nodeId": "math_calculateNormal",
         "portId": "uvPx"
-      }
-    },
-    {
-      "id": "edge_52",
-      "from": {
-        "nodeId": "GeoSize_4",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "math_boxSdf",
-        "portId": "dynamic_1768567771218_3"
-      }
-    },
-    {
-      "id": "edge_55",
-      "from": {
-        "nodeId": "FloatInput_7",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "math_boxSdf",
-        "portId": "dynamic_1768567802729_4"
-      }
-    },
-    {
-      "id": "edge_56",
-      "from": {
-        "nodeId": "GeoSize_4",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "math_centerPx",
-        "portId": "dynamic_1768567999179_1"
       }
     },
     {
@@ -1404,17 +1277,6 @@
       }
     },
     {
-      "id": "edge_61",
-      "from": {
-        "nodeId": "math_centerPx",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Sdf2D_10",
-        "portId": "position"
-      }
-    },
-    {
       "id": "edge_63",
       "from": {
         "nodeId": "Sdf2D_10",
@@ -1423,6 +1285,50 @@
       "to": {
         "nodeId": "math_shapeSdf",
         "portId": "baseSdf"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "GeoSize_4",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathMultiply_11",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_67",
+      "from": {
+        "nodeId": "MathMultiply_11",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "Sdf2D_10",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_68",
+      "from": {
+        "nodeId": "MathMultiply_11",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "math_calculateNormal",
+        "portId": "centerPx"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "FloatInput_13",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_11",
+        "portId": "dynamic_fixed_2"
       }
     }
   ],

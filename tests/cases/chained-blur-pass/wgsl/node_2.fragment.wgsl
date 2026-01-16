@@ -14,6 +14,8 @@ var<uniform> params: Params;
 struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
 };
 
 @fragment

@@ -161,6 +161,7 @@ let node = Node {
         ("value".to_string(), json!([1.0, 0.0, 0.0, 1.0]))
     ]),
     inputs: Vec::new(),
+    outputs: Vec::new(),
 };
 
 // Compile to WGSL

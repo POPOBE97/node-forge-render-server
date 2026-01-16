@@ -370,6 +370,14 @@ fn premultiply_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
     Arc::new(DynamicImage::ImageRgba8(rgba))
 }
 
+fn flip_image_y_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
+    // The renderer's UV convention is bottom-left origin (GL-like).
+    // Most image sources are top-left origin, so we flip pixels once on upload.
+    let mut rgba = image.as_ref().to_rgba8();
+    image::imageops::flip_vertical_in_place(&mut rgba);
+    Arc::new(DynamicImage::ImageRgba8(rgba))
+}
+
 pub fn build_shader_space_from_scene(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
@@ -1057,12 +1065,14 @@ pub fn build_shader_space_from_scene(
 
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => premultiply_rgba8(ensure_rgba8(Arc::new(img))),
+                    Ok(img) => premultiply_rgba8(flip_image_y_rgba8(ensure_rgba8(Arc::new(img)))),
                     Err(_e) => placeholder_image(),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    premultiply_rgba8(ensure_rgba8(load_image_with_fallback(&rel_base, path)))
+                    premultiply_rgba8(flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(
+                        &rel_base, path,
+                    ))))
                 }
             };
 
@@ -1315,24 +1325,28 @@ mod tests {
                             port_type: Some("color".to_string()),
                         },
                     ],
+                    outputs: Vec::new(),
                 },
                 crate::dsl::Node {
                     id: "p_img".to_string(),
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    outputs: Vec::new(),
                 },
                 crate::dsl::Node {
                     id: "p0".to_string(),
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    outputs: Vec::new(),
                 },
                 crate::dsl::Node {
                     id: "p1".to_string(),
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    outputs: Vec::new(),
                 },
             ],
             connections: vec![

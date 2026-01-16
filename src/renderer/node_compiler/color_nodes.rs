@@ -259,6 +259,7 @@ mod tests {
             node_type: "Luminance".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -295,6 +296,7 @@ mod tests {
             node_type: "ColorMix".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -341,6 +343,7 @@ mod tests {
             node_type: "ColorRamp".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -375,6 +378,7 @@ mod tests {
                 ("value".to_string(), serde_json::json!(1.0)),
             ]),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

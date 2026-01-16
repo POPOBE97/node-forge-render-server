@@ -72,10 +72,11 @@ pub struct Node {
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
 
-    // Optional editor metadata used for ordering / UI; we only consume `inputs` ordering
-    // for Composite draw order.
+    // Optional editor metadata used for ordering / UI.
     #[serde(default)]
     pub inputs: Vec<NodePort>,
+    #[serde(default)]
+    pub outputs: Vec<NodePort>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -433,23 +434,39 @@ fn resolve_output_f64_inner(
             if out_port != "result" {
                 bail!("unsupported MathMultiply output port: {out_port}");
             }
-            // Prefer connected inputs (connections win), otherwise fallback to inline params.
-            // The editor may also use x/y aliases in some graphs.
-            let a = resolve_input_f64_inner(scene, nodes_by_id, node_id, "a", cache, visiting)?
-                .or_else(|| {
-                    resolve_input_f64_inner(scene, nodes_by_id, node_id, "x", cache, visiting)
-                        .ok()
-                        .flatten()
-                })
-                .unwrap_or(0.0);
-            let b = resolve_input_f64_inner(scene, nodes_by_id, node_id, "b", cache, visiting)?
-                .or_else(|| {
-                    resolve_input_f64_inner(scene, nodes_by_id, node_id, "y", cache, visiting)
-                        .ok()
-                        .flatten()
-                })
-                .unwrap_or(0.0);
-            a * b
+
+            // Multiply all connected inputs (dynamic ports are stored in `node.inputs`).
+            // For scalar evaluation we only support numeric inputs; missing/unknown inputs resolve
+            // to 0.0, matching the existing behavior for unconnected math nodes.
+            let mut input_port_ids: Vec<&str> = Vec::new();
+            if !node.inputs.is_empty() {
+                input_port_ids.extend(node.inputs.iter().map(|p| p.id.as_str()));
+            } else {
+                // Back-compat: older graphs used fixed a/b (and sometimes x/y aliases).
+                input_port_ids.extend(["a", "b"]);
+            }
+
+            let mut values: Vec<f64> = Vec::new();
+            for port_id in input_port_ids {
+                if let Some(conn) = incoming_connection(scene, node_id, port_id) {
+                    let v = resolve_output_f64_inner(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        cache,
+                        visiting,
+                    )?;
+                    values.push(v);
+                }
+            }
+
+            if values.len() < 2 {
+                // keep behavior consistent with shader path: unknown output when not enough inputs
+                0.0
+            } else {
+                values.into_iter().fold(1.0, |acc, v| acc * v)
+            }
         }
         "MathClamp" => {
             if out_port != "result" {

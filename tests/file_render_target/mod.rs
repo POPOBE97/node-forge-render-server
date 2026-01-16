@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use node_forge_render_server::dsl::{file_render_target, normalize_scene_defaults, Metadata, Node, SceneDSL};
+use node_forge_render_server::dsl::{
+    Metadata, Node, SceneDSL, file_render_target, normalize_scene_defaults,
+};
 
 #[test]
 fn file_render_target_applies_scheme_defaults() {
@@ -16,6 +18,7 @@ fn file_render_target_applies_scheme_defaults() {
             node_type: "File".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            outputs: Vec::new(),
         }],
         connections: Vec::new(),
         outputs: None,
@@ -23,7 +26,9 @@ fn file_render_target_applies_scheme_defaults() {
 
     normalize_scene_defaults(&mut scene).unwrap();
 
-    let rt = file_render_target(&scene).unwrap().expect("expected File render target");
+    let rt = file_render_target(&scene)
+        .unwrap()
+        .expect("expected File render target");
     assert_eq!(rt.directory, "");
     assert_eq!(rt.file_name, "output.png");
 }
