@@ -28,6 +28,25 @@ pub enum BakedValue {
     Vec4([f32; 4]),
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct BakedDataParseMeta {
+    pub outputs_per_instance: u32,
+    pub slot_by_output: HashMap<(String, String, String), u32>,
+    pub pass_id: String,
+}
+
+impl BakedDataParseMeta {
+    pub fn slot_for(&self, pass_id: &str, node_id: &str, port_id: &str) -> Option<u32> {
+        self.slot_by_output
+            .get(&(
+                pass_id.to_string(),
+                node_id.to_string(),
+                port_id.to_string(),
+            ))
+            .copied()
+    }
+}
+
 /// Output specification for any pass node that produces a texture.
 ///
 /// This trait enables chain composition - any node that outputs a texture
@@ -161,6 +180,7 @@ impl TypedExpr {
 #[derive(Default)]
 pub struct MaterialCompileContext {
     pub baked_data_parse: Option<Arc<HashMap<(String, String, String), Vec<BakedValue>>>>,
+    pub baked_data_parse_meta: Option<Arc<BakedDataParseMeta>>,
 
     /// Set when the compiled shader needs `@builtin(instance_index)` in the vertex stage.
     ///

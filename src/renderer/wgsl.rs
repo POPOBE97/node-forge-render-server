@@ -217,11 +217,12 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
-    // Only emitted when a material uses the Index node.
     @location(2) instance_index: u32,
 };
 
+
 @group(1) @binding(0)
+
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
@@ -229,10 +230,7 @@ var src_samp: sampler;
     .to_string();
 
     if !uses_instance_index {
-        common = common.replace(
-            "    // Only emitted when a material uses the Index node.\n    @location(2) instance_index: u32,\n",
-            "",
-        );
+        common = common.replace("    @location(2) instance_index: u32,\n", "");
     }
 
     let vertex_entry = if uses_instance_index {
@@ -392,6 +390,7 @@ pub fn build_blur_image_wgsl_bundle(
 ) -> Result<WgslShaderBundle> {
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse: None,
+        baked_data_parse_meta: None,
         ..Default::default()
     };
 
@@ -514,6 +513,7 @@ pub fn build_pass_wgsl_bundle(
             >,
         >,
     >,
+    baked_data_parse_meta: Option<std::sync::Arc<crate::renderer::types::BakedDataParseMeta>>,
     pass_id: &str,
     is_instanced: bool,
     vertex_translate_expr: Option<String>,
@@ -525,6 +525,7 @@ pub fn build_pass_wgsl_bundle(
     // Otherwise, fallback to constant color.
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse,
+        baked_data_parse_meta,
         ..Default::default()
     };
     let fragment_expr: TypedExpr =
@@ -580,6 +581,19 @@ struct VSOut {
 "#
     .to_string();
 
+    if vertex_uses_instance_index || material_ctx.uses_instance_index {
+        common = common.replace(
+            "    @location(1) frag_coord_gl: vec2f,\n};\n",
+            "    @location(1) frag_coord_gl: vec2f,\n    @location(2) instance_index: u32,\n};\n",
+        );
+    }
+
+    if material_ctx.baked_data_parse_meta.is_some() {
+        common.push_str(
+            "\n@group(0) @binding(1)\nvar<storage, read> baked_data_parse: array<vec4f>;\n",
+        );
+    }
+
     common.push_str(&material_ctx.wgsl_decls());
     common.push_str(&vertex_wgsl_decls);
 
@@ -598,7 +612,7 @@ struct VSOut {
         vertex_args.push_str("     @location(5) i3: vec4f,\n");
     }
 
-    if vertex_uses_instance_index {
+    if vertex_uses_instance_index || material_ctx.uses_instance_index {
         vertex_args.push_str("     @builtin(instance_index) instance_index: u32,\n");
     }
 
@@ -614,9 +628,8 @@ struct VSOut {
         vertex_entry.push_str("\n");
     }
 
-    // Ensure `@builtin(instance_index)` is actually referenced when present.
-    if vertex_uses_instance_index {
-        vertex_entry.push_str(" let _unused_instance_index = instance_index;\n\n");
+    if vertex_uses_instance_index || material_ctx.uses_instance_index {
+        vertex_entry.push_str(" out.instance_index = instance_index;\n\n");
     }
 
     vertex_entry.push_str(" let _unused_geo_size = params.geo_size;\n");
@@ -721,15 +734,16 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     _geo_y,
                     instance_count,
                     _base_m,
-                    translate_expr,
-                    vertex_inline_stmts,
-                    vertex_wgsl_decls,
-                    vertex_uses_instance_index,
+                    _translate_expr,
+                    _vertex_inline_stmts,
+                    _vertex_wgsl_decls,
+                    _vertex_uses_instance_index,
                 ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    None,
                 )?;
 
                 let is_instanced = instance_count > 1;
@@ -746,10 +760,56 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     instance_count,
                 )?);
 
+                let meta = {
+                    let mut slot_by_output: std::collections::HashMap<
+                        (String, String, String),
+                        u32,
+                    > = std::collections::HashMap::new();
+                    let mut keys: Vec<(String, String, String)> = baked_data_parse
+                        .keys()
+                        .filter(|(pass_id, _, _)| pass_id == &layer_id)
+                        .cloned()
+                        .collect();
+                    keys.sort();
+                    for (i, k) in keys.iter().enumerate() {
+                        slot_by_output.insert(k.clone(), i as u32);
+                    }
+                    std::sync::Arc::new(crate::renderer::types::BakedDataParseMeta {
+                        pass_id: layer_id.clone(),
+                        outputs_per_instance: keys.len() as u32,
+                        slot_by_output,
+                    })
+                };
+
+                let (
+                    _geometry_buffer_2,
+                    _geo_w_2,
+                    _geo_h_2,
+                    _geo_x_2,
+                    _geo_y_2,
+                    _instance_count_2,
+                    _base_m_2,
+                    translate_expr,
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &render_geo_node_id,
+                    Some(&MaterialCompileContext {
+                        baked_data_parse: Some(std::sync::Arc::new(baked_data_parse.clone())),
+                        baked_data_parse_meta: Some(meta.clone()),
+                        ..Default::default()
+                    }),
+                )?;
+
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
                     nodes_by_id,
                     Some(std::sync::Arc::new(baked_data_parse.clone())),
+                    Some(meta),
                     &layer_id,
                     is_instanced,
                     translate_expr.map(|e| e.expr),

@@ -35,11 +35,11 @@ use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
         node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
-        scene_prep::prepare_scene,
+        scene_prep::{bake_data_parse_nodes, prepare_scene},
         types::ValueType,
         types::{
-            MaterialCompileContext, Params, PassBindings, PassOutputRegistry, PassOutputSpec,
-            TypedExpr,
+            BakedDataParseMeta, BakedValue, MaterialCompileContext, Params, PassBindings,
+            PassOutputRegistry, PassOutputSpec, TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
@@ -133,6 +133,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     ids: &HashMap<String, ResourceName>,
     geometry_node_id: &str,
+    material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(
     ResourceName,
     f32,
@@ -199,7 +200,13 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
-            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+            ) = resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                &upstream_geo_id,
+                material_ctx,
+            )?;
 
             let count_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "count", 1)?;
             Ok((
@@ -235,7 +242,13 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
-            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+            ) = resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                &upstream_geo_id,
+                material_ctx,
+            )?;
 
             // Find InstancedGeometryStart by matching zoneId.
             let zone_id = geometry_node
@@ -295,7 +308,13 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 mut vtx_inline_stmts,
                 mut vtx_wgsl_decls,
                 mut uses_instance_index,
-            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+            ) = resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                &upstream_geo_id,
+                material_ctx,
+            )?;
 
             // Scale affects geo_size for correct UV + GeoFragcoord mapping.
             // We only support inline scale params here (object {x,y,z}); connected scale inputs are GPU-side.
@@ -327,8 +346,14 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 match src_node.node_type.as_str() {
                     // Allow any node that the vertex compiler supports (MathClosure, Index, math nodes, inputs).
                     _ => {
-                        let mut vtx_ctx = MaterialCompileContext::default();
+                        let mut vtx_ctx = MaterialCompileContext {
+                            baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
+                            baked_data_parse_meta: material_ctx
+                                .and_then(|c| c.baked_data_parse_meta.clone()),
+                            ..Default::default()
+                        };
                         let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+
                         let expr = compile_vertex_expr(
                             scene,
                             nodes_by_id,
@@ -451,6 +476,7 @@ fn deps_for_pass_node(
             let bundle = build_pass_wgsl_bundle(
                 scene,
                 nodes_by_id,
+                None,
                 None,
                 pass_node_id,
                 false,
@@ -575,6 +601,7 @@ struct RenderPassSpec {
     instance_buffer: Option<ResourceName>,
     target_texture: ResourceName,
     params_buffer: ResourceName,
+    baked_data_parse_buffer: Option<ResourceName>,
     params: Params,
     shader_wgsl: String,
     texture_bindings: Vec<PassTextureBinding>,
@@ -741,6 +768,9 @@ pub fn build_shader_space_from_scene(
     let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
     let mut textures: Vec<TextureDecl> = Vec::new();
     let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
+    let mut baked_data_parse_meta_by_pass: HashMap<String, Arc<BakedDataParseMeta>> =
+        HashMap::new();
+    let mut baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
     // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
@@ -875,6 +905,104 @@ pub fn build_shader_space_from_scene(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    None,
+                )?;
+
+                let mut baked = prepared.baked_data_parse.clone();
+                baked.extend(bake_data_parse_nodes(
+                    nodes_by_id,
+                    layer_id,
+                    instance_count,
+                )?);
+
+                let mut slot_by_output: HashMap<(String, String, String), u32> = HashMap::new();
+                let mut keys: Vec<(String, String, String)> = baked
+                    .keys()
+                    .filter(|(pass_id, _, _)| pass_id == layer_id)
+                    .cloned()
+                    .collect();
+                keys.sort();
+
+                for (i, k) in keys.iter().enumerate() {
+                    slot_by_output.insert(k.clone(), i as u32);
+                }
+
+                let meta = Arc::new(BakedDataParseMeta {
+                    pass_id: layer_id.clone(),
+                    outputs_per_instance: keys.len() as u32,
+                    slot_by_output,
+                });
+
+                let mut packed: Vec<f32> = Vec::new();
+                let instances = instance_count.min(1024) as usize;
+                packed.resize(instances * meta.outputs_per_instance as usize * 4, 0.0);
+
+                for (slot, (pass_id, node_id, port_id)) in keys.iter().enumerate() {
+                    let vs = baked
+                        .get(&(pass_id.clone(), node_id.clone(), port_id.clone()))
+                        .cloned()
+                        .unwrap_or_default();
+                    for i in 0..instances {
+                        let v = vs.get(i).cloned().unwrap_or(BakedValue::F32(0.0));
+                        let base = (i * meta.outputs_per_instance as usize + slot) * 4;
+                        match v {
+                            BakedValue::F32(x) => {
+                                packed[base] = x;
+                            }
+                            BakedValue::I32(x) => {
+                                packed[base] = x as f32;
+                            }
+                            BakedValue::U32(x) => {
+                                packed[base] = x as f32;
+                            }
+                            BakedValue::Bool(x) => {
+                                packed[base] = if x { 1.0 } else { 0.0 };
+                            }
+                            BakedValue::Vec2([x, y]) => {
+                                packed[base] = x;
+                                packed[base + 1] = y;
+                            }
+                            BakedValue::Vec3([x, y, z]) => {
+                                packed[base] = x;
+                                packed[base + 1] = y;
+                                packed[base + 2] = z;
+                            }
+                            BakedValue::Vec4([x, y, z, w]) => {
+                                packed[base] = x;
+                                packed[base + 1] = y;
+                                packed[base + 2] = z;
+                                packed[base + 3] = w;
+                            }
+                        }
+                    }
+                }
+
+                let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&packed).to_vec());
+                baked_data_parse_meta_by_pass.insert(layer_id.clone(), meta);
+                baked_data_parse_bytes_by_pass.insert(layer_id.clone(), bytes.clone());
+
+                let (
+                    _geometry_buffer_2,
+                    _geo_w_2,
+                    _geo_h_2,
+                    _geo_x_2,
+                    _geo_y_2,
+                    _instance_count_2,
+                    _base_m_2,
+                    _translate_expr,
+                    _vertex_inline_stmts,
+                    _vertex_wgsl_decls,
+                    _vertex_uses_instance_index,
+                ) = resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &render_geo_node_id,
+                    Some(&MaterialCompileContext {
+                        baked_data_parse: Some(std::sync::Arc::new(baked.clone())),
+                        baked_data_parse_meta: baked_data_parse_meta_by_pass.get(layer_id).cloned(),
+                        ..Default::default()
+                    }),
                 )?;
 
                 let params_name: ResourceName = format!("params_{layer_id}").into();
@@ -894,7 +1022,8 @@ pub fn build_shader_space_from_scene(
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
                     nodes_by_id,
-                    Some(std::sync::Arc::new(prepared.baked_data_parse.clone())),
+                    Some(std::sync::Arc::new(baked)),
+                    baked_data_parse_meta_by_pass.get(layer_id).cloned(),
                     layer_id,
                     is_instanced,
                     translate_expr.map(|e| e.expr),
@@ -938,12 +1067,19 @@ pub fn build_shader_space_from_scene(
                     None
                 };
 
+                let baked_data_parse_buffer: Option<ResourceName> = if keys.is_empty() {
+                    None
+                } else {
+                    Some(format!("{layer_id}__baked_data_parse").into())
+                };
+
                 render_pass_specs.push(RenderPassSpec {
                     name: pass_name.clone(),
                     geometry_buffer,
                     instance_buffer,
                     target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
+                    baked_data_parse_buffer,
                     params,
                     shader_wgsl,
                     texture_bindings,
@@ -1016,6 +1152,7 @@ pub fn build_shader_space_from_scene(
                     instance_buffer: None,
                     target_texture: src_tex.clone(),
                     params_buffer: params_src.clone(),
+                    baked_data_parse_buffer: None,
                     params: params_src_val,
                     shader_wgsl: src_bundle.module,
                     texture_bindings: src_texture_bindings,
@@ -1185,6 +1322,9 @@ pub fn build_shader_space_from_scene(
                         instance_buffer: None,
                         target_texture: tex.clone(),
                         params_buffer: params_name,
+                        baked_data_parse_buffer: Some(
+                            format!("{layer_id}__baked_data_parse").into(),
+                        ),
                         params: params_val,
                         shader_wgsl: bundle.module,
                         texture_bindings: vec![PassTextureBinding {
@@ -1222,6 +1362,7 @@ pub fn build_shader_space_from_scene(
                     instance_buffer: None,
                     target_texture: h_tex.clone(),
                     params_buffer: params_h.clone(),
+                    baked_data_parse_buffer: None,
                     params: params_h_val,
                     shader_wgsl: bundle_h.module,
                     texture_bindings: vec![PassTextureBinding {
@@ -1254,6 +1395,7 @@ pub fn build_shader_space_from_scene(
                     instance_buffer: None,
                     target_texture: v_tex.clone(),
                     params_buffer: params_v.clone(),
+                    baked_data_parse_buffer: None,
                     params: params_v_val,
                     shader_wgsl: bundle_v.module,
                     texture_bindings: vec![PassTextureBinding {
@@ -1287,6 +1429,7 @@ pub fn build_shader_space_from_scene(
                     instance_buffer: None,
                     target_texture: output_tex.clone(),
                     params_buffer: params_u.clone(),
+                    baked_data_parse_buffer: None,
                     params: params_u_val,
                     shader_wgsl: bundle_u.module,
                     texture_bindings: vec![PassTextureBinding {
@@ -1371,6 +1514,25 @@ pub fn build_shader_space_from_scene(
             name: pass.params_buffer.clone(),
             size: core::mem::size_of::<Params>(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+    }
+
+    for spec in &render_pass_specs {
+        let Some(name) = spec.baked_data_parse_buffer.clone() else {
+            continue;
+        };
+        let pass_id = name
+            .as_str()
+            .trim_end_matches("__baked_data_parse")
+            .to_string();
+        let contents = baked_data_parse_bytes_by_pass
+            .get(&pass_id)
+            .cloned()
+            .unwrap_or_else(|| Arc::from(vec![0u8; 16]));
+        buffer_specs.push(BufferSpec::Init {
+            name,
+            contents,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
     }
 
@@ -1557,15 +1719,29 @@ pub fn build_shader_space_from_scene(
         };
         let _ = std::fs::write(&debug_dump_path, &shader_wgsl);
         shader_space.render_pass(spec.name.clone(), move |builder| {
-            let mut b = builder
-                .shader(shader_desc)
-                .bind_uniform_buffer(0, 0, params_buffer, ShaderStages::VERTEX_FRAGMENT)
-                .bind_attribute_buffer(
+            let mut b = builder.shader(shader_desc).bind_uniform_buffer(
+                0,
+                0,
+                params_buffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            );
+
+            if let Some(baked_data_parse_buffer) = spec.baked_data_parse_buffer.clone() {
+                b = b.bind_storage_buffer(
                     0,
-                    geometry_buffer,
-                    wgpu::VertexStepMode::Vertex,
-                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
+                    1,
+                    baked_data_parse_buffer.as_str(),
+                    ShaderStages::VERTEX_FRAGMENT,
+                    true,
                 );
+            }
+
+            b = b.bind_attribute_buffer(
+                0,
+                geometry_buffer,
+                wgpu::VertexStepMode::Vertex,
+                vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
+            );
 
             if let Some(instance_buffer) = spec.instance_buffer.clone() {
                 b = b.bind_attribute_buffer(

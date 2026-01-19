@@ -283,6 +283,7 @@ fn compile_expr(
             ctx,
             cache,
             compile_fn,
+            stage,
         )?,
 
         // Unsupported node types
