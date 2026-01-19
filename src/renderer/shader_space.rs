@@ -1119,7 +1119,8 @@ pub fn build_shader_space_from_scene(
                 let params_src_val = Params {
                     target_size: [tgt_w, tgt_h],
                     geo_size: [tgt_w, tgt_h],
-                    center: [0.0, 0.0],
+                    // Bottom-left origin: center the geometry so it covers [0,0] to [w,h].
+                    center: [tgt_w * 0.5, tgt_h * 0.5],
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
                     time: 0.0,
@@ -1303,8 +1304,7 @@ pub fn build_shader_space_from_scene(
                     let params_val = Params {
                         target_size: [*step_w as f32, *step_h as f32],
                         geo_size: [*step_w as f32, *step_h as f32],
-                        center: [0.0, 0.0],
-
+                        center: [*step_w as f32 * 0.5, *step_h as f32 * 0.5],
                         geo_translate: [0.0, 0.0],
                         geo_scale: [1.0, 1.0],
                         time: 0.0,
@@ -1350,7 +1350,7 @@ pub fn build_shader_space_from_scene(
                 let params_h_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
-                    center: [0.0, 0.0],
+                    center: [ds_w as f32 * 0.5, ds_h as f32 * 0.5],
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
                     time: 0.0,
@@ -1384,7 +1384,7 @@ pub fn build_shader_space_from_scene(
                 let params_v_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
-                    center: [0.0, 0.0],
+                    center: [ds_w as f32 * 0.5, ds_h as f32 * 0.5],
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
                     time: 0.0,
@@ -1418,7 +1418,7 @@ pub fn build_shader_space_from_scene(
                 let params_u_val = Params {
                     target_size: [blur_w as f32, blur_h as f32],
                     geo_size: [blur_w as f32, blur_h as f32],
-                    center: [0.0, 0.0],
+                    center: [blur_w as f32 * 0.5, blur_h as f32 * 0.5],
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
                     time: 0.0,
