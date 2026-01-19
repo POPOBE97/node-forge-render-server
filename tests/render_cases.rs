@@ -404,6 +404,15 @@ fn case_instanced_geometry() {
 }
 
 #[test]
+fn case_instanced_geometry_vector_math() {
+    run_case(&Case {
+        name: "instanced-geometry-vector-math",
+        scene_json: "instanced-geometry-vector-math/scene.json",
+        baseline_png: None,
+    });
+}
+
+#[test]
 fn case_simple_guassian_blur() {
     run_case(&Case {
         name: "simple-guassian-blur",

@@ -1,0 +1,334 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-01-19T07:19:41.438Z",
+    "modified": "2026-01-19T07:19:41.438Z"
+  },
+  "nodes": [
+    {
+      "id": "InstancedGeometryStart_1",
+      "type": "InstancedGeometryStart",
+      "position": {
+        "x": -220,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Instanced Geometry (Start)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402",
+        "count": 2
+      }
+    },
+    {
+      "id": "InstancedGeometryEnd_2",
+      "type": "InstancedGeometryEnd",
+      "position": {
+        "x": 160,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Instanced Geometry (End)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_3",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -420,
+        "y": -440
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 100,
+        "height": 100,
+        "x": 0,
+        "y": 0,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": 360,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Composite_7",
+      "type": "Composite",
+      "position": {
+        "x": 540,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "alpha": 1
+      }
+    },
+    {
+      "id": "RenderTexture_8",
+      "type": "RenderTexture",
+      "position": {
+        "x": 360,
+        "y": -320
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "Screen_9",
+      "type": "Screen",
+      "position": {
+        "x": 720,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 392,
+        "height": 871
+      }
+    },
+    {
+      "id": "TransformGeometry_11",
+      "type": "TransformGeometry",
+      "position": {
+        "x": -20,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Transform Geometry",
+      "params": {
+        "mode": "Components",
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "Index_14",
+      "type": "Index",
+      "position": {
+        "x": -420,
+        "y": -100
+      },
+      "width": 160,
+      "label": "Index",
+      "params": {}
+    },
+    {
+      "id": "MathMultiply_15",
+      "type": "MathMultiply",
+      "position": {
+        "x": -220,
+        "y": -220
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "vector3"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "int"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "vector3",
+          "sourceBinding": {
+            "nodeId": "Vector3Input_17",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "int",
+          "sourceBinding": {
+            "nodeId": "Index_14",
+            "outputPortId": "index",
+            "outputLabel": "Index"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Vector3Input_17",
+      "type": "Vector3Input",
+      "position": {
+        "x": -420,
+        "y": -220
+      },
+      "width": 160,
+      "label": "Vector3 Input",
+      "params": {
+        "x": 0,
+        "y": 200,
+        "z": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "base"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "RenderTexture_8",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_9",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_7",
+      "from": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "TransformGeometry_11",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "TransformGeometry_11",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_13",
+      "from": {
+        "nodeId": "Index_14",
+        "portId": "index"
+      },
+      "to": {
+        "nodeId": "MathMultiply_15",
+        "portId": "dynamic_fixed_2"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "Vector3Input_17",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathMultiply_15",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_16",
+      "from": {
+        "nodeId": "MathMultiply_15",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "TransformGeometry_11",
+        "portId": "translate"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_7"
+  }
+}
