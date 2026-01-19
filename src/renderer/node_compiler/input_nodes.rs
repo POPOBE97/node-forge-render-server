@@ -3,7 +3,7 @@
 use anyhow::{Result, bail};
 use serde_json::Value;
 
-use super::super::types::{TypedExpr, ValueType};
+use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::Node;
 
 /// Parse a JSON value as an f32.
@@ -199,6 +199,34 @@ pub fn compile_geo_size(_node: &Node, out_port: Option<&str>) -> Result<TypedExp
             ValueType::Vec2,
         )),
         other => bail!("GeoSize: unsupported output port '{other}'"),
+    }
+}
+
+/// Compile an Index node to WGSL.
+///
+/// For instanced geometry, this exposes the per-instance index.
+///
+/// This must come from the vertex shader builtin `@builtin(instance_index)`.
+///
+/// Today we only need the index in the vertex shader, but we keep the plumbing flexible
+/// so it can be forwarded to fragment later if needed.
+///
+/// # Output
+/// - Port `index`: Type i32
+pub fn compile_index(
+    _node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("index");
+    match port {
+        "index" => {
+            ctx.uses_instance_index = true;
+            // WGSL builtin `instance_index` is `u32`. Keep it as `u32` so MathClosure argument
+            // types line up when a closure declares `int index`.
+            Ok(TypedExpr::new("instance_index", ValueType::U32))
+        }
+        other => bail!("Index: unsupported output port '{other}'"),
     }
 }
 

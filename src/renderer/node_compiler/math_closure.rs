@@ -34,6 +34,7 @@ fn default_value_for(ty: ValueType) -> TypedExpr {
     match ty {
         ValueType::F32 => TypedExpr::new("0.0", ValueType::F32),
         ValueType::I32 => TypedExpr::new("0", ValueType::I32),
+        ValueType::U32 => TypedExpr::new("0u", ValueType::U32),
         ValueType::Bool => TypedExpr::new("false", ValueType::Bool),
         ValueType::Vec2 => TypedExpr::new("vec2f(0.0, 0.0)", ValueType::Vec2),
         ValueType::Vec3 => TypedExpr::new("vec3f(0.0, 0.0, 0.0)", ValueType::Vec3),
@@ -152,6 +153,7 @@ pub fn compile_math_closure<F>(
     ctx: &mut MaterialCompileContext,
     cache: &mut HashMap<(String, String), TypedExpr>,
     compile_fn: F,
+    stage: GlslShaderStage,
 ) -> Result<TypedExpr>
 where
     F: Fn(
@@ -205,7 +207,12 @@ where
         .replace("vUV", "uv");
 
     let mut glsl_params: Vec<String> = vec!["vec2 uv".to_string()];
-    let mut wgsl_args: Vec<String> = vec!["in.uv".to_string()];
+    // We accept `uv` as the first argument for both fragment and vertex stages.
+    // Fragment uses `in.uv`; vertex uses local variable `uv`.
+    let mut wgsl_args: Vec<String> = vec![match stage {
+        GlslShaderStage::Vertex => "uv".to_string(),
+        _ => "in.uv".to_string(),
+    }];
 
     for port in &node.inputs {
         let param_name = port_id_to_param_name(port);
@@ -230,6 +237,8 @@ where
                 let name = parts.next().unwrap_or("arg");
                 let ty = match ty {
                     "float" => ValueType::F32,
+                    "int" => ValueType::I32,
+                    "uint" => ValueType::U32,
                     "vec2" => ValueType::Vec2,
                     "vec3" => ValueType::Vec3,
                     "vec4" => ValueType::Vec4,
@@ -243,7 +252,7 @@ where
             })
             .collect(),
         body: source.clone(),
-        stage: GlslShaderStage::Fragment,
+        stage,
     })
     .map_err(|e| anyhow!("MathClosure GLSL->WGSL failed (node={}): {e:#}", node.id))?;
 

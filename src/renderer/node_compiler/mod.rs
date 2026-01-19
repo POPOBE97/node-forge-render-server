@@ -17,10 +17,7 @@ use std::collections::HashMap;
 use super::types::{MaterialCompileContext, TypedExpr};
 use crate::dsl::{Node, SceneDSL, find_node};
 
-/// Main dispatch function for compiling material expressions.
-///
-/// This is the modular replacement for the monolithic `compile_material_expr` function.
-/// It dispatches to specific node compiler modules based on node type.
+/// Main dispatch function for compiling material expressions (fragment stage).
 pub fn compile_material_expr(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -29,23 +26,70 @@ pub fn compile_material_expr(
     ctx: &mut MaterialCompileContext,
     cache: &mut HashMap<(String, String), TypedExpr>,
 ) -> Result<TypedExpr> {
+    compile_expr(
+        scene,
+        nodes_by_id,
+        node_id,
+        out_port,
+        ctx,
+        cache,
+        crate::renderer::validation::GlslShaderStage::Fragment,
+    )
+}
+
+/// Compile an expression intended for the vertex stage.
+pub fn compile_vertex_expr(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+) -> Result<TypedExpr> {
+    compile_expr(
+        scene,
+        nodes_by_id,
+        node_id,
+        out_port,
+        ctx,
+        cache,
+        crate::renderer::validation::GlslShaderStage::Vertex,
+    )
+}
+
+/// Stage-aware node compiler.
+fn compile_expr(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    stage: crate::renderer::validation::GlslShaderStage,
+) -> Result<TypedExpr> {
     // Check cache first
-    let key = (node_id.to_string(), out_port.unwrap_or("value").to_string());
+    let stage_tag = match stage {
+        crate::renderer::validation::GlslShaderStage::Vertex => "vs",
+        crate::renderer::validation::GlslShaderStage::Fragment => "fs",
+        crate::renderer::validation::GlslShaderStage::Compute => "cs",
+    };
+    let key = (
+        node_id.to_string(),
+        format!("{stage_tag}:{}", out_port.unwrap_or("value")),
+    );
     if let Some(v) = cache.get(&key) {
         return Ok(v.clone());
     }
 
     let node = find_node(nodes_by_id, node_id)?;
 
-    // Create a recursive compile function for child nodes to use
     let compile_fn = |id: &str,
                       port: Option<&str>,
                       ctx: &mut MaterialCompileContext,
                       cache: &mut HashMap<(String, String), TypedExpr>| {
-        compile_material_expr(scene, nodes_by_id, id, port, ctx, cache)
+        compile_expr(scene, nodes_by_id, id, port, ctx, cache, stage)
     };
 
-    // Dispatch to specific node compiler based on node type
     let result = match node.node_type.as_str() {
         // Input nodes
         "ColorInput" => input_nodes::compile_color_input(node, out_port)?,
@@ -55,6 +99,7 @@ pub fn compile_material_expr(
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
         "GeoSize" => input_nodes::compile_geo_size(node, out_port)?,
+        "Index" => input_nodes::compile_index(node, out_port, ctx)?,
 
         // Attribute node
         "Attribute" => attribute::compile_attribute(node, out_port)?,
@@ -104,6 +149,7 @@ pub fn compile_material_expr(
             ctx,
             cache,
             compile_fn,
+            stage,
         )?,
 
         // Texture nodes
