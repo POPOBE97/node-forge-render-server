@@ -381,6 +381,15 @@ pub(crate) fn bake_data_parse_nodes(
             user_src = user_src.replace(" as vec2", "");
             user_src = user_src.replace(" as vec3", "");
             user_src = user_src.replace(" as vec4", "");
+            user_src = user_src.replace(" as int", "");
+            user_src = user_src.replace(" as i32", "");
+            user_src = user_src.replace(" as uint", "");
+            user_src = user_src.replace(" as u32", "");
+            user_src = user_src.replace(" as float", "");
+            user_src = user_src.replace(" as f32", "");
+            user_src = user_src.replace(" as number", "");
+            user_src = user_src.replace(" as bool", "");
+            user_src = user_src.replace(" as boolean", "");
 
             let script_body = format!("{bindings_src}\n{user_src}\n");
             let script = format!("(function() {{\n{}\n}})()", script_body);

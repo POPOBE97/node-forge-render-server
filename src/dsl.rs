@@ -398,6 +398,102 @@ pub fn resolve_input_u32(
     Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?.and_then(f64_to_u32_floor))
 }
 
+fn strip_data_parse_type_assertions(src: &str) -> String {
+    src.replace(" as vec2", "")
+        .replace(" as vec3", "")
+        .replace(" as vec4", "")
+        .replace(" as int", "")
+        .replace(" as i32", "")
+        .replace(" as uint", "")
+        .replace(" as u32", "")
+        .replace(" as float", "")
+        .replace(" as f32", "")
+        .replace(" as number", "")
+        .replace(" as bool", "")
+        .replace(" as boolean", "")
+}
+
+fn eval_data_parse_scalar(
+    _scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    out_port: &str,
+) -> Result<f64> {
+    let src = node
+        .params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if src.trim().is_empty() {
+        return Ok(0.0);
+    }
+
+    let mut bindings_src = String::new();
+    for b in &node.input_bindings {
+        let val = match b
+            .source_binding
+            .as_ref()
+            .map(|sb| sb.output_port_id.as_str())
+        {
+            Some("data") => {
+                let data_node_id = b
+                    .source_binding
+                    .as_ref()
+                    .map(|sb| sb.node_id.as_str())
+                    .unwrap_or("");
+                let data_node = find_node(nodes_by_id, data_node_id)?;
+                let text = data_node
+                    .params
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if text.trim().is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::from_str(text)?
+                }
+            }
+            Some("index") => serde_json::json!(0u32),
+            _ => serde_json::Value::Null,
+        };
+
+        let json = serde_json::to_string(&val)?;
+        bindings_src.push_str(&format!("const {} = {};\n", b.variable_name, json));
+    }
+
+    if !node
+        .input_bindings
+        .iter()
+        .any(|b| b.variable_name == "index")
+    {
+        bindings_src.push_str("const index = 0;\n");
+    }
+
+    let user_src = strip_data_parse_type_assertions(src);
+
+    let script_body = format!("{bindings_src}\n{user_src}\n");
+    let script = format!("(function() {{\n{}\n}})()", script_body);
+
+    let mut rt = crate::ts_runtime::TsRuntime::new();
+    let out: serde_json::Value = rt
+        .eval_script(&script)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    let out_obj = out.as_object();
+
+    let out_value = node
+        .outputs
+        .iter()
+        .find(|p| p.id == out_port)
+        .and_then(|p| p.name.as_deref())
+        .and_then(|name| out_obj.and_then(|o| o.get(name)))
+        .or_else(|| out_obj.and_then(|o| o.get(out_port)))
+        .unwrap_or(&serde_json::Value::Null);
+
+    Ok(out_value.as_f64().unwrap_or(0.0))
+}
+
 fn resolve_input_f64_inner(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -525,6 +621,7 @@ fn resolve_output_f64_inner(
 This node contains user-provided source code; render-time evaluation must be sandboxed and is not implemented."
             )
         }
+        "DataParse" => eval_data_parse_scalar(scene, nodes_by_id, node, out_port).unwrap_or(0.0),
         // For scalar parameter resolution, allow a fallback where the output port is stored in params.
         // (Useful for very simple constant nodes or hand-written DSL.)
         _ => parse_f64(&node.params, out_port).ok_or_else(|| {
