@@ -53,7 +53,7 @@ var<storage, read> baked_data_parse: array<vec4f>;
  let inst_m = mat4x4f(i0, i1, i2, i3);
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
- let delta_t = vec3f(baked_data_parse[(instance_index) * 1u + 0u].xy, 0.0);
+ let delta_t = vec3f(baked_data_parse[(instance_index) * 2u + 0u].xy, 0.0);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
