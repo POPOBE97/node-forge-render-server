@@ -25,6 +25,9 @@ struct VSOut {
     @location(1) frag_coord_gl: vec2f,
 };
 
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+
 // --- Extra WGSL declarations (generated) ---
 fn mc_math_calculateLighting(uv: vec2<f32>, normal: vec3<f32>, uDirectionalLightDir: vec3<f32>, uDirectionalLightIntensity: f32) -> f32 {
     var uv_1: vec2<f32>;
