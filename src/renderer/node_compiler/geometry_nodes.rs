@@ -3,7 +3,9 @@
 //! This module handles geometry-related nodes like Rect2DGeometry,
 //! providing vertex data generation for GPU buffers.
 
-/// Generate vertex positions for a 2D rectangle geometry.
+/// Generate interleaved vertices for a 2D rectangle geometry.
+///
+/// Each vertex is `[x, y, z, u, v]` where `u,v` are in [0,1].
 ///
 /// Creates 6 vertices (2 triangles) for a rectangle centered at origin.
 /// The vertices are in counter-clockwise order for front-facing triangles.
@@ -13,19 +15,21 @@
 /// * `height` - Height of the rectangle (clamped to minimum 1.0)
 ///
 /// # Returns
-/// Array of 6 vertex positions as [x, y, z] coordinates.
-pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 3]; 6] {
+/// Array of 6 vertices as `[x, y, z, u, v]`.
+pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
     let w = width.max(1.0);
     let h = height.max(1.0);
     let hw = w * 0.5;
     let hh = h * 0.5;
     [
-        [-hw, -hh, 0.0],
-        [hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, -hh, 0.0],
-        [hw, hh, 0.0],
-        [-hw, hh, 0.0],
+        // Triangle 1: bottom-left, bottom-right, top-right
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, -hh, 0.0, 1.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        // Triangle 2: bottom-left, top-right, top-left
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        [-hw, hh, 0.0, 0.0, 1.0],
     ]
 }
 
@@ -45,14 +49,14 @@ mod tests {
         let hh = 25.0;
 
         // First triangle: bottom-left, bottom-right, top-right
-        assert_eq!(verts[0], [-hw, -hh, 0.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
 
         // Second triangle: bottom-left, top-right, top-left
-        assert_eq!(verts[3], [-hw, -hh, 0.0]);
-        assert_eq!(verts[4], [hw, hh, 0.0]);
-        assert_eq!(verts[5], [-hw, hh, 0.0]);
+        assert_eq!(verts[3], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[4], [hw, hh, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[5], [-hw, hh, 0.0, 0.0, 1.0]);
     }
 
     #[test]
@@ -64,8 +68,8 @@ mod tests {
         let hw = 0.5;
         let hh = 0.5;
 
-        assert_eq!(verts[0], [-hw, -hh, 0.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
     }
 
     #[test]
@@ -76,7 +80,7 @@ mod tests {
         let hh = 100.0;
 
         // All corners should be equidistant from center
-        assert_eq!(verts[0], [-hw, -hh, 0.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
     }
 }
