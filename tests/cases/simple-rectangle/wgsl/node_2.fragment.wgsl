@@ -25,6 +25,9 @@ struct VSOut {
     @location(1) frag_coord_gl: vec2f,
 };
 
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     return vec4f(in.uv, 0.0, 1.0);

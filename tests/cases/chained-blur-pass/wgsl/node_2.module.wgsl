@@ -25,6 +25,9 @@ struct VSOut {
     @location(1) frag_coord_gl: vec2f,
 };
 
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+
  @vertex
  fn vs_main(
      @location(0) position: vec3f,

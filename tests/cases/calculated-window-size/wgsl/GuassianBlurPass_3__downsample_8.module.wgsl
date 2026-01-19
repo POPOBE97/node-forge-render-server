@@ -26,7 +26,9 @@ struct VSOut {
     @location(1) frag_coord_gl: vec2f,
 };
 
+
 @group(1) @binding(0)
+
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;

@@ -23,7 +23,11 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
+    @location(2) instance_index: u32,
 };
+
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
 
  @vertex
  fn vs_main(
@@ -37,7 +41,7 @@ struct VSOut {
  ) -> VSOut {
  var out: VSOut;
 
- let _unused_instance_index = instance_index;
+ out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
