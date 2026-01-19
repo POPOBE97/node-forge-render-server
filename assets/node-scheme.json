@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-16T18:52:01.281Z",
+  "generatedAt": "2026-01-17T17:16:35.232Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -28,7 +28,9 @@
     "GuassianBlurPass",
     "HSVAdjust",
     "ImageTexture",
-    "InstancedGeometry",
+    "Index",
+    "InstancedGeometryEnd",
+    "InstancedGeometryStart",
     "IntInput",
     "Luminance",
     "MaterialFromShader",
@@ -51,6 +53,7 @@
     "Sdf2D",
     "ShaderMaterial",
     "TextureInput",
+    "TransformGeometry",
     "Vector2Input",
     "Vector3Input",
     "VectorMath"
@@ -867,10 +870,46 @@
       }
     },
     {
-      "type": "InstancedGeometry",
-      "label": "Instanced Geometry",
+      "type": "Index",
+      "label": "Index",
+      "category": "Input",
+      "description": "Instance index (0 outside zones)",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "index",
+          "name": "Index",
+          "type": "int"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "InstancedGeometryEnd",
+      "label": "Instanced Geometry (End)",
       "category": "Geometry",
-      "description": "Wrap a base geometry as instanced geometry (still outputs geometry)",
+      "description": "End an instanced-geometry zone (finalize and output geometry)",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "InstancedGeometryStart",
+      "label": "Instanced Geometry (Start)",
+      "category": "Geometry",
+      "description": "Start an instanced-geometry zone (outputs an instanced geometry handle)",
       "inputs": [
         {
           "id": "base",
@@ -891,9 +930,7 @@
           "type": "geometry"
         }
       ],
-      "defaultParams": {
-        "mode": "count"
-      }
+      "defaultParams": {}
     },
     {
       "type": "IntInput",
@@ -1590,6 +1627,64 @@
       ],
       "defaultParams": {
         "path": ""
+      }
+    },
+    {
+      "type": "TransformGeometry",
+      "label": "Transform Geometry",
+      "category": "Geometry",
+      "description": "Transform geometry using either a 4x4 matrix or component controls",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        },
+        {
+          "id": "matrix",
+          "name": "Matrix (mat4)",
+          "type": "any"
+        },
+        {
+          "id": "translate",
+          "name": "Translate",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "rotate",
+          "name": "Rotate (deg)",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "scale",
+          "name": "Scale",
+          "type": "vector3",
+          "default": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "mode": "Components"
       }
     },
     {
