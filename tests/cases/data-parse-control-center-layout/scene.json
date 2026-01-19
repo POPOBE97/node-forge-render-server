@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-19T12:32:05.328Z",
-    "modified": "2026-01-19T12:32:05.328Z"
+    "created": "2026-01-19T15:54:37.159Z",
+    "modified": "2026-01-19T15:54:37.159Z"
   },
   "nodes": [
     {
@@ -17,7 +17,7 @@
       "label": "Instanced Geometry (Start)",
       "params": {
         "zoneId": "zone_1768669132574_76402",
-        "count": 100
+        "count": 18
       }
     },
     {
