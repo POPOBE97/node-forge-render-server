@@ -325,6 +325,12 @@ fn validate_connection(
         Some(PortTypeSpec::One(ty.clone()))
     }
 
+    fn dynamic_port_type(list: &[crate::dsl::NodePort], port_id: &str) -> Option<PortTypeSpec> {
+        let p = list.iter().find(|p| p.id == port_id)?;
+        let ty = p.port_type.as_ref()?;
+        Some(PortTypeSpec::One(ty.clone()))
+    }
+
     let Some(from_node) = nodes_by_id.get(c.from.node_id.as_str()).copied() else {
         errors.push(format!(
             "connection '{}' references missing from.nodeId '{}'",
@@ -356,6 +362,16 @@ fn validate_connection(
             Cow::Owned(spec)
         } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
             Cow::Borrowed(t)
+        } else {
+            errors.push(format!(
+                "connection '{}' uses unknown from port '{}.{}' (type {})",
+                c.id, c.from.node_id, c.from.port_id, from_node.node_type
+            ));
+            return;
+        }
+    } else if from_node.node_type == "DataParse" {
+        if let Some(spec) = dynamic_port_type(&from_node.outputs, &c.from.port_id) {
+            Cow::Owned(spec)
         } else {
             errors.push(format!(
                 "connection '{}' uses unknown from port '{}.{}' (type {})",
@@ -402,6 +418,12 @@ fn validate_connection(
             } else {
                 Cow::Owned(PortTypeSpec::One("any".to_string()))
             }
+        } else {
+            Cow::Owned(PortTypeSpec::One("any".to_string()))
+        }
+    } else if to_node.node_type == "DataParse" {
+        if let Some(spec) = dynamic_port_type(&to_node.inputs, &c.to.port_id) {
+            Cow::Owned(spec)
         } else {
             Cow::Owned(PortTypeSpec::One("any".to_string()))
         }

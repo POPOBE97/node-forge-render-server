@@ -456,3 +456,12 @@ fn case_untitled() {
         baseline_png: None,
     });
 }
+
+#[test]
+fn case_data_parse_control_center_layout() {
+    run_case(&Case {
+        name: "data-parse-control-center-layout",
+        scene_json: "data-parse-control-center-layout/scene.json",
+        baseline_png: None,
+    });
+}

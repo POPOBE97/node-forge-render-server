@@ -36,12 +36,13 @@ use crate::{
     renderer::{
         node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
         scene_prep::prepare_scene,
+        types::ValueType,
         types::{
             MaterialCompileContext, Params, PassBindings, PassOutputRegistry, PassOutputSpec,
             TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
-        utils::{cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
+        utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle, build_downsample_bundle,
             build_horizontal_blur_bundle, build_pass_wgsl_bundle, build_upsample_bilinear_bundle,
@@ -336,6 +337,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                             &mut vtx_ctx,
                             &mut cache,
                         )?;
+                        let expr = coerce_to_type(expr, ValueType::Vec3)?;
                         // Ensure any needed inline statements (e.g. MathClosure output var) are
                         // emitted in the vertex shader by forcing the expression through the
                         // compiler's inline statement machinery.
@@ -1735,6 +1737,7 @@ mod tests {
                             port_type: Some("color".to_string()),
                         },
                     ],
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
                 crate::dsl::Node {
@@ -1742,6 +1745,7 @@ mod tests {
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
                 crate::dsl::Node {
@@ -1749,6 +1753,7 @@ mod tests {
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
                 crate::dsl::Node {
@@ -1756,6 +1761,7 @@ mod tests {
                     node_type: "RenderPass".to_string(),
                     params: HashMap::new(),
                     inputs: vec![],
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
             ],

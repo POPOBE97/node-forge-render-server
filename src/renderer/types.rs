@@ -16,6 +16,17 @@ pub enum ValueType {
     Vec4,
 }
 
+#[derive(Clone, Debug)]
+pub enum BakedValue {
+    F32(f32),
+    I32(i32),
+    U32(u32),
+    Bool(bool),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+}
+
 /// Output specification for any pass node that produces a texture.
 ///
 /// This trait enables chain composition - any node that outputs a texture

@@ -2,6 +2,7 @@
 
 pub mod attribute;
 pub mod color_nodes;
+pub mod data_parse;
 pub mod geometry_nodes;
 pub mod input_nodes;
 pub mod math_closure;
@@ -273,6 +274,16 @@ fn compile_expr(
         "Sdf2D" => {
             sdf_nodes::compile_sdf2d(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?
         }
+
+        "DataParse" => data_parse::compile_data_parse(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
 
         // Unsupported node types
         other => bail!("unsupported material node type: {other}"),

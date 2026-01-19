@@ -18,6 +18,7 @@ fn file_render_target_applies_scheme_defaults() {
             node_type: "File".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         }],
         connections: Vec::new(),

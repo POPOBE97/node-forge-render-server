@@ -14,6 +14,7 @@ fn node(id: &str) -> Node {
         node_type: "Test".to_string(),
         params: HashMap::new(),
         inputs: vec![],
+        input_bindings: Vec::new(),
         outputs: Vec::new(),
     }
 }

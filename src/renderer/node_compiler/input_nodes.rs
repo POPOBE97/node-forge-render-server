@@ -242,6 +242,7 @@ mod fragcoord_tests {
             node_type: "FragCoord".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
         let expr = compile_frag_coord(&node, Some("xy")).unwrap();
@@ -257,6 +258,7 @@ mod fragcoord_tests {
             node_type: "GeoFragcoord".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
@@ -272,6 +274,7 @@ mod fragcoord_tests {
             node_type: "GeoSize".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
         let expr = compile_geo_size(&node, Some("xy")).unwrap();
@@ -293,6 +296,7 @@ mod tests {
             node_type: "ColorInput".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 
@@ -309,6 +313,7 @@ mod tests {
             node_type: "ColorInput".to_string(),
             params: HashMap::from([("value".to_string(), serde_json::json!([0.5, 0.3, 0.8, 1.0]))]),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 
@@ -328,6 +333,7 @@ mod tests {
                 serde_json::json!(core::f32::consts::PI),
             )]),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 
@@ -339,13 +345,15 @@ mod tests {
     #[test]
     fn test_vector2_input() {
         let node = Node {
-            id: "vec2_1".to_string(),
-            node_type: "Vector2Input".to_string(),
+            id: "vec3_1".to_string(),
+            node_type: "Vector3Input".to_string(),
             params: HashMap::from([
                 ("x".to_string(), serde_json::json!(1.0)),
                 ("y".to_string(), serde_json::json!(2.0)),
+                ("z".to_string(), serde_json::json!(3.0)),
             ]),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 
@@ -365,6 +373,7 @@ mod tests {
                 ("z".to_string(), serde_json::json!(3.0)),
             ]),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-17T17:16:35.232Z",
+  "generatedAt": "2026-01-19T12:30:31.893Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -15,6 +15,7 @@
     "ComputePass",
     "CrossProduct",
     "DataNode",
+    "DataParse",
     "DotProduct",
     "EmissionShader",
     "File",
@@ -544,6 +545,17 @@
         "text": "",
         "syntax": "plain",
         "fileName": ""
+      }
+    },
+    {
+      "type": "DataParse",
+      "label": "Data Parse",
+      "category": "Input",
+      "description": "Parse input data using TypeScript snippet; outputs are dynamically generated from return type",
+      "inputs": [],
+      "outputs": [],
+      "defaultParams": {
+        "source": "// Write TypeScript to parse inputs and return typed outputs\n// Available inputs: input1, input2, ... (connected inputs)\n// Return an object with typed values:\n// return { myFloat: 0.5, myColor: [1, 0, 0, 1] };\n\nreturn {};\n"
       }
     },
     {

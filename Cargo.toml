@@ -15,4 +15,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # Used for WGSL validation at runtime and in tests
 naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }
 
+deno_core = { version = "0.380.0", features = ["include_icu_data"] }
+
 [dev-dependencies]

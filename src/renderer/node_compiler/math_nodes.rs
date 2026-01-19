@@ -299,6 +299,7 @@ mod tests {
                 node_type: "MathAdd".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
             Node {
@@ -306,6 +307,7 @@ mod tests {
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
             Node {
@@ -313,6 +315,7 @@ mod tests {
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
         ];
@@ -373,6 +376,7 @@ mod tests {
                 node_type: "MathMultiply".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
             Node {
@@ -380,6 +384,7 @@ mod tests {
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
             Node {
@@ -387,6 +392,7 @@ mod tests {
                 node_type: "FloatInput".to_string(),
                 params: HashMap::new(),
                 inputs: vec![],
+                input_bindings: Vec::new(),
                 outputs: Vec::new(),
             },
         ];

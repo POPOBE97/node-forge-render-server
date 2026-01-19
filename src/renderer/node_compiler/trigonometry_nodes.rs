@@ -106,6 +106,7 @@ mod tests {
                     node_type: "Sin".to_string(),
                     params: HashMap::new(),
                     inputs: Vec::new(),
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
                 Node {
@@ -113,6 +114,7 @@ mod tests {
                     node_type: "FloatInput".to_string(),
                     params: HashMap::from([("value".to_string(), serde_json::json!(0.5))]),
                     inputs: Vec::new(),
+                    input_bindings: Vec::new(),
                     outputs: Vec::new(),
                 },
             ],
@@ -169,6 +171,7 @@ mod tests {
             node_type: "Cos".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();
@@ -201,6 +204,7 @@ mod tests {
             node_type: "Time".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
         let mut ctx = MaterialCompileContext::default();

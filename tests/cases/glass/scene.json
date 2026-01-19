@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-16T19:10:34.500Z",
-    "modified": "2026-01-16T19:10:34.500Z"
+    "created": "2026-01-16T19:18:46.316Z",
+    "modified": "2026-01-16T19:18:46.316Z"
   },
   "nodes": [
     {
@@ -240,7 +240,7 @@
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 160
+        "y": 40
       },
       "width": 220,
       "label": "Shape SDF with Edge",
@@ -472,7 +472,7 @@
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 1460
+        "y": 1760
       },
       "width": 220,
       "label": "Calculate Lighting",
@@ -544,7 +544,7 @@
       "type": "MathClosure",
       "position": {
         "x": 560,
-        "y": 1320
+        "y": 1280
       },
       "width": 220,
       "label": "Refraction Effect",
@@ -648,7 +648,7 @@
       "type": "MathClosure",
       "position": {
         "x": 820,
-        "y": 400
+        "y": 480
       },
       "width": 240,
       "label": "Final Glass Color",
@@ -1299,17 +1299,6 @@
       }
     },
     {
-      "id": "edge_66",
-      "from": {
-        "nodeId": "FloatInput_13",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathMultiply_11",
-        "portId": "dynamic_fixed_2"
-      }
-    },
-    {
       "id": "edge_67",
       "from": {
         "nodeId": "MathMultiply_11",
@@ -1329,6 +1318,17 @@
       "to": {
         "nodeId": "math_calculateNormal",
         "portId": "centerPx"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "FloatInput_13",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_11",
+        "portId": "dynamic_fixed_2"
       }
     }
   ],

@@ -316,6 +316,7 @@ mod tests {
                 ("radius".to_string(), serde_json::json!(2.0)),
             ]),
             inputs: vec![],
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 
@@ -357,6 +358,7 @@ mod tests {
                 ),
             ]),
             inputs: vec![],
+            input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
 

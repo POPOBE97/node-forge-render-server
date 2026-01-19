@@ -169,7 +169,16 @@ where
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("MathClosure missing params.source (node={})", node.id))?;
 
-    let ret_ty = infer_output_type_from_source(source);
+    // Prefer the declared output port type (from the scene schema).
+    // The old inference-from-source heuristic breaks for cases like:
+    //   output = gap * vec3(x, y, 0.0);
+    // where no `vecN(...)` constructor is present in the assignment.
+    let ret_ty = node
+        .outputs
+        .first()
+        .and_then(|p| p.port_type.as_deref())
+        .and_then(|t| map_port_type(Some(t)).ok())
+        .unwrap_or_else(|| infer_output_type_from_source(source));
     let output_var = format!("mc_{}_out", sanitize_wgsl_ident(&node.id));
 
     // Compile inputs in declared order.

@@ -77,6 +77,33 @@ pub struct Node {
     pub inputs: Vec<NodePort>,
     #[serde(default)]
     pub outputs: Vec<NodePort>,
+
+    #[serde(default, rename = "inputBindings")]
+    pub input_bindings: Vec<InputBinding>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct InputBinding {
+    #[serde(rename = "portId")]
+    pub port_id: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(rename = "variableName")]
+    pub variable_name: String,
+    #[serde(rename = "type", default)]
+    pub binding_type: Option<String>,
+    #[serde(rename = "sourceBinding")]
+    pub source_binding: Option<SourceBinding>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SourceBinding {
+    #[serde(rename = "nodeId")]
+    pub node_id: String,
+    #[serde(rename = "outputPortId")]
+    pub output_port_id: String,
+    #[serde(default, rename = "outputLabel")]
+    pub output_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -5,5 +5,6 @@ pub mod protocol;
 pub mod renderer;
 pub mod schema;
 pub mod stream;
+pub mod ts_runtime;
 pub mod vm;
 pub mod ws;

@@ -901,22 +901,19 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 
 /// Build an error shader (purple screen) WGSL source.
 pub const ERROR_SHADER_WGSL: &str = r#"
- struct VSOut {
-      @builtin(position) position: vec4f,
-      @location(0) uv: vec2f,
-      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-      @location(1) frag_coord_gl: vec2f,
-  };
- 
- @vertex
- fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
-     var out: VSOut;
-     out.position = vec4f(position, 1.0);
-     return out;
- }
+struct VSOut {
+    @builtin(position) position: vec4f,
+};
+
+@vertex
+fn vs_main(@location(0) position: vec3f) -> VSOut {
+    var out: VSOut;
+    out.position = vec4f(position, 1.0);
+    return out;
+}
 
 @fragment
-fn fs_main(_in: VSOut) -> @location(0) vec4f {
+fn fs_main() -> @location(0) vec4f {
     // Purple error screen.
     return vec4f(1.0, 0.0, 1.0, 1.0);
 }
