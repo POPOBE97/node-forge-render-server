@@ -154,6 +154,14 @@ pub(crate) fn coerce_scalar_to_i32(x: &TypedExpr) -> Option<TypedExpr> {
 /// Splat a scalar expression to a target vector type.
 pub(crate) fn splat_scalar(x: &TypedExpr, target: ValueType) -> Result<TypedExpr> {
     let xf = coerce_scalar_to_f32(x)
+        .or_else(|| match x.ty {
+            ValueType::U32 => Some(TypedExpr::with_time(
+                format!("f32({})", x.expr),
+                ValueType::F32,
+                x.uses_time,
+            )),
+            _ => None,
+        })
         .ok_or_else(|| anyhow!("expected scalar for splat, got {:?}", x.ty))?;
 
     Ok(match target {
