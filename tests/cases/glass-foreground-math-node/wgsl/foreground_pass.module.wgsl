@@ -3,8 +3,12 @@ struct Params {
     target_size: vec2f,
     geo_size: vec2f,
     center: vec2f,
+
+    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
+
+    // 16-byte aligned.
     color: vec4f,
 };
 
@@ -437,27 +441,27 @@ fn mc_math_uvToPixel(uv: vec2<f32>, vUv: vec2<f32>, uGeoPxSize: vec3<f32>) -> ve
 }
 
 
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
+ @vertex
+ fn vs_main(@location(0) position: vec3f) -> VSOut {
+ var out: VSOut;
 
-    // Local UV in [0,1] based on geometry size.
-    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+ // Local UV in [0,1] based on geometry size.
+ out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
 
-    // Geometry vertices are in local pixel units centered at (0,0).
-    // Convert to target pixel coordinates with bottom-left origin.
-    let p_px = params.center + position.xy + (params.target_size * 0.5);
+ // Geometry vertices are in local pixel units centered at (0,0).
+ // Convert to target pixel coordinates with bottom-left origin.
+ let p_px = params.center + position.xy + (params.target_size * 0.5);
 
-    // Convert pixels to clip space assuming bottom-left origin.
-    // (0,0) => (-1,-1), (target_size) => (1,1)
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+ // Convert pixels to clip space assuming bottom-left origin.
+ // (0,0) => (-1,-1), (target_size) => (1,1)
+ let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+ out.position = vec4f(ndc, position.z, 1.0);
 
-    // Pixel-centered like GLSL gl_FragCoord.xy.
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-    return out;
-}
-
+ // Pixel-centered like GLSL gl_FragCoord.xy.
+ out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+ return out;
+ }
+ 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_math_uvToPixel_out: vec4f;
@@ -572,7 +576,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_math_finalColor_out: vec4f;
     {
-        let uColor = vec4f(1, 0.9, 0.7, 1);
+        let uColor = vec4f(0.279, 0.2511, 0.19530001, 0.279);
         let finalAlpha = mc_math_artisticMapping_out;
         var output: vec4f;
         output = mc_math_finalColor(in.uv, uColor, finalAlpha);

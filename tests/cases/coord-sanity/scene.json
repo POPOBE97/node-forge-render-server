@@ -96,18 +96,18 @@
     }
   ],
   "connections": [
-    { "from": { "nodeId": "screen_1", "portId": "screen" }, "to": { "nodeId": "composite_1", "portId": "screen" } },
-    { "from": { "nodeId": "render_texture_1", "portId": "renderTexture" }, "to": { "nodeId": "composite_1", "portId": "renderTexture" } },
-    { "from": { "nodeId": "pass_1", "portId": "output" }, "to": { "nodeId": "composite_1", "portId": "output" } },
+    { "id": "edge_1", "from": { "nodeId": "screen_1", "portId": "screen" }, "to": { "nodeId": "composite_1", "portId": "screen" } },
+    { "id": "edge_2", "from": { "nodeId": "render_texture_1", "portId": "renderTexture" }, "to": { "nodeId": "composite_1", "portId": "renderTexture" } },
+    { "id": "edge_3", "from": { "nodeId": "pass_1", "portId": "pass" }, "to": { "nodeId": "composite_1", "portId": "pass" } },
 
-    { "from": { "nodeId": "geo_1", "portId": "geometry" }, "to": { "nodeId": "pass_1", "portId": "geometry" } },
-    { "from": { "nodeId": "material_1", "portId": "material" }, "to": { "nodeId": "pass_1", "portId": "material" } },
+    { "id": "edge_4", "from": { "nodeId": "geo_1", "portId": "geometry" }, "to": { "nodeId": "pass_1", "portId": "geometry" } },
+    { "id": "edge_5", "from": { "nodeId": "material_1", "portId": "material" }, "to": { "nodeId": "pass_1", "portId": "material" } },
 
-    { "from": { "nodeId": "fragcoord_1", "portId": "xy" }, "to": { "nodeId": "div_1", "portId": "a" } },
-    { "from": { "nodeId": "geo_size_1", "portId": "xy" }, "to": { "nodeId": "div_1", "portId": "b" } },
+    { "id": "edge_6", "from": { "nodeId": "fragcoord_1", "portId": "xy" }, "to": { "nodeId": "div_1", "portId": "a" } },
+    { "id": "edge_7", "from": { "nodeId": "geo_size_1", "portId": "xy" }, "to": { "nodeId": "div_1", "portId": "b" } },
 
-    { "from": { "nodeId": "div_1", "portId": "out" }, "to": { "nodeId": "vec2_to_vec3_1", "portId": "xy" } },
-    { "from": { "nodeId": "vec2_to_vec3_1", "portId": "xyz" }, "to": { "nodeId": "vec3_to_color_1", "portId": "rgb" } },
-    { "from": { "nodeId": "vec3_to_color_1", "portId": "color" }, "to": { "nodeId": "material_1", "portId": "color" } }
+    { "id": "edge_8", "from": { "nodeId": "div_1", "portId": "out" }, "to": { "nodeId": "vec2_to_vec3_1", "portId": "xy" } },
+    { "id": "edge_9", "from": { "nodeId": "vec2_to_vec3_1", "portId": "xyz" }, "to": { "nodeId": "vec3_to_color_1", "portId": "rgb" } },
+    { "id": "edge_10", "from": { "nodeId": "vec3_to_color_1", "portId": "color" }, "to": { "nodeId": "material_1", "portId": "color" } }
   ]
 }

@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-14T11:10:59.644Z",
-    "modified": "2026-01-14T11:10:59.644Z"
+    "created": "2026-01-14T12:06:39.422Z",
+    "modified": "2026-01-14T12:06:39.422Z"
   },
   "nodes": [
     {
@@ -83,7 +83,7 @@
       },
       "label": "Int Input",
       "params": {
-        "value": 399
+        "value": 392
       }
     },
     {

@@ -3,8 +3,12 @@ struct Params {
     target_size: vec2f,
     geo_size: vec2f,
     center: vec2f,
+
+    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
+
+    // 16-byte aligned.
     color: vec4f,
 };
 
@@ -551,7 +555,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_math_finalColor_out: vec4f;
     {
-        let uColor = vec4f(1, 0.9, 0.7, 1);
+        let uColor = vec4f(0.279, 0.2511, 0.19530001, 0.279);
         let finalAlpha = mc_math_artisticMapping_out;
         var output: vec4f;
         output = mc_math_finalColor(in.uv, uColor, finalAlpha);

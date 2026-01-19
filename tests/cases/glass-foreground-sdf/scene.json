@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-15T18:39:27.996Z",
-    "modified": "2026-01-15T18:39:27.996Z"
+    "created": "2026-01-15T18:37:01.557Z",
+    "modified": "2026-01-15T18:37:01.557Z"
   },
   "nodes": [
     {
@@ -740,7 +740,7 @@
       "id": "MathClosure_8",
       "type": "MathClosure",
       "position": {
-        "x": -880,
+        "x": -1000,
         "y": 860
       },
       "width": 160,
@@ -845,7 +845,7 @@
       "id": "FloatInput_11",
       "type": "FloatInput",
       "position": {
-        "x": -880,
+        "x": -1000,
         "y": 640
       },
       "width": 160,
@@ -858,10 +858,10 @@
       "id": "MathClosure_13",
       "type": "MathClosure",
       "position": {
-        "x": -880,
+        "x": -1000,
         "y": 720
       },
-      "width": 160,
+      "width": 167,
       "label": "Math Closure",
       "params": {
         "source": "output = vec2(size * 2.0);"
