@@ -699,6 +699,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
     let nodes_by_id = &prepared.nodes_by_id;
     let ids = &prepared.ids;
 
+    let mut baked_data_parse = prepared.baked_data_parse.clone();
+
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
     for layer_id in prepared.composite_layers_in_draw_order {
         let node = find_node(nodes_by_id, &layer_id)?;
@@ -732,10 +734,22 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
                 let is_instanced = instance_count > 1;
 
+                baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    nodes_by_id,
+                    &layer_id,
+                    instance_count,
+                )?);
+
+                baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    nodes_by_id,
+                    "__global",
+                    instance_count,
+                )?);
+
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
                     nodes_by_id,
-                    Some(std::sync::Arc::new(prepared.baked_data_parse.clone())),
+                    Some(std::sync::Arc::new(baked_data_parse.clone())),
                     &layer_id,
                     is_instanced,
                     translate_expr.map(|e| e.expr),

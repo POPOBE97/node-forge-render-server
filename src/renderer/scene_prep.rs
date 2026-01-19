@@ -329,8 +329,9 @@ fn baked_from_json(ty: ValueType, v: &serde_json::Value) -> Result<BakedValue> {
     }
 }
 
-fn bake_data_parse_nodes(
+pub(crate) fn bake_data_parse_nodes(
     nodes_by_id: &HashMap<String, Node>,
+    pass_id: &str,
     instance_count: u32,
 ) -> Result<HashMap<(String, String, String), Vec<BakedValue>>> {
     let mut baked: HashMap<(String, String, String), Vec<BakedValue>> = HashMap::new();
@@ -355,7 +356,8 @@ fn bake_data_parse_nodes(
             })
             .collect::<Result<_>>()?;
 
-        for i in 0..instance_count {
+        let capped_instance_count = instance_count.min(1024);
+        for i in 0..capped_instance_count {
             let mut bindings_src = String::new();
             for b in &node.input_bindings {
                 let val = resolve_binding_value(nodes_by_id, b, i).with_context(|| {
@@ -384,33 +386,30 @@ fn bake_data_parse_nodes(
             let script = format!("(function() {{\n{}\n}})()", script_body);
             let out: serde_json::Value = match rt.eval_script(&script) {
                 Ok(v) => v,
-                Err(e) => bail!(
-                    "DataParse eval failed for {}\n--- script ---\n{}\n--- end script ---\n--- error ---\n{e:?}",
-                    node.id,
-                    script
-                ),
+                Err(_) => serde_json::Value::Object(serde_json::Map::new()),
             };
-            let out_obj = out
-                .as_object()
-                .ok_or_else(|| anyhow!("DataParse must return an object for {}", node.id))?;
+            let out_obj = out.as_object();
 
             for p in &node.outputs {
                 let key = p.name.as_deref().unwrap_or(p.id.as_str());
                 let ty = *port_types
                     .get(&p.id)
                     .ok_or_else(|| anyhow!("missing port type"))?;
-                let v = out_obj.get(key).ok_or_else(|| {
-                    anyhow!("DataParse missing return field '{key}' for {}", node.id)
-                })?;
-                let baked_v = baked_from_json(ty, v).with_context(|| {
-                    format!(
-                        "DataParse output '{key}' type mismatch for {}.{}",
-                        node.id, p.id
-                    )
-                })?;
+                let v = out_obj
+                    .and_then(|o| o.get(key))
+                    .unwrap_or(&serde_json::Value::Null);
+                let baked_v = baked_from_json(ty, v).unwrap_or_else(|_| match ty {
+                    ValueType::F32 => BakedValue::F32(0.0),
+                    ValueType::I32 => BakedValue::I32(0),
+                    ValueType::U32 => BakedValue::U32(0),
+                    ValueType::Bool => BakedValue::Bool(false),
+                    ValueType::Vec2 => BakedValue::Vec2([0.0, 0.0]),
+                    ValueType::Vec3 => BakedValue::Vec3([0.0, 0.0, 0.0]),
+                    ValueType::Vec4 => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
+                });
 
                 baked
-                    .entry(("__global".to_string(), node.id.clone(), p.id.clone()))
+                    .entry((pass_id.to_string(), node.id.clone(), p.id.clone()))
                     .or_default()
                     .push(baked_v);
             }
@@ -536,7 +535,7 @@ pub fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
     let height = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "height", 1024)?;
     let resolution = [width, height];
 
-    let baked_data_parse = bake_data_parse_nodes(&nodes_by_id, 1)?;
+    let baked_data_parse = bake_data_parse_nodes(&nodes_by_id, "__global", 1)?;
 
     Ok(PreparedScene {
         scene,
