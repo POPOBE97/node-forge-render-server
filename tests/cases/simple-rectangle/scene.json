@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-12T15:52:50.949Z",
-    "modified": "2026-01-12T15:52:50.949Z"
+    "created": "2026-01-19T18:25:19.997Z",
+    "modified": "2026-01-19T18:25:19.997Z"
   },
   "nodes": [
     {
@@ -13,6 +13,7 @@
         "x": 460,
         "y": 380
       },
+      "width": 160,
       "label": "Composite Output",
       "params": {
         "alpha": 1
@@ -25,6 +26,7 @@
         "x": 280,
         "y": 380
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -43,12 +45,13 @@
         "x": -80,
         "y": 380
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 100,
         "height": 100,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -60,11 +63,19 @@
         "x": 100,
         "y": 380
       },
+      "width": 160,
       "label": "Attribute",
       "params": {
         "name": "uv",
         "glslType": "vec2"
-      }
+      },
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "vector2"
+        }
+      ]
     },
     {
       "id": "node_5",
@@ -73,6 +84,7 @@
         "x": 100,
         "y": 520
       },
+      "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
@@ -87,6 +99,7 @@
         "x": 660,
         "y": 380
       },
+      "width": 160,
       "label": "Screen",
       "params": {
         "width": 392,

@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-13T13:24:15.498Z",
-    "modified": "2026-01-13T13:24:15.498Z"
+    "created": "2026-01-19T18:35:30.413Z",
+    "modified": "2026-01-19T18:35:30.413Z"
   },
   "nodes": [
     {
@@ -13,6 +13,7 @@
         "x": 560,
         "y": 340
       },
+      "width": 160,
       "label": "Composite Output",
       "params": {
         "alpha": 1
@@ -45,6 +46,7 @@
         "x": -80,
         "y": 520
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -63,12 +65,13 @@
         "x": -480,
         "y": 420
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 200,
         "height": 200,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -80,6 +83,7 @@
         "x": 380,
         "y": 520
       },
+      "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
@@ -94,12 +98,13 @@
         "x": -480,
         "y": 160
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 1080,
         "height": 2400,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -111,6 +116,7 @@
         "x": -80,
         "y": 260
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -129,6 +135,7 @@
         "x": 760,
         "y": 340
       },
+      "width": 160,
       "label": "Screen",
       "params": {
         "width": 392,
@@ -142,11 +149,19 @@
         "x": -280,
         "y": 420
       },
+      "width": 160,
       "label": "Attribute",
       "params": {
         "name": "uv",
         "glslType": "vec2"
-      }
+      },
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "vector2"
+        }
+      ]
     },
     {
       "id": "node_15",
@@ -155,6 +170,7 @@
         "x": -300,
         "y": 160
       },
+      "width": 192,
       "label": "Image Texture",
       "params": {
         "path": "baseline-test.png",
@@ -170,6 +186,7 @@
         "x": -80,
         "y": 160
       },
+      "width": 160,
       "label": "Pass Texture",
       "params": {}
     },
@@ -180,6 +197,7 @@
         "x": 120,
         "y": 160
       },
+      "width": 160,
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",
@@ -194,6 +212,7 @@
         "x": 120,
         "y": 420
       },
+      "width": 160,
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",
@@ -208,6 +227,7 @@
         "x": -80,
         "y": 420
       },
+      "width": 160,
       "label": "Pass Texture",
       "params": {}
     }
