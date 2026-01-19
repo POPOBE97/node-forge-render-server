@@ -183,16 +183,31 @@ pub(crate) fn array8_f32_wgsl(values: [f32; 8]) -> String {
 }
 
 pub(crate) fn build_fullscreen_textured_bundle(fragment_body: String) -> WgslShaderBundle {
+    build_fullscreen_textured_bundle_with_instance_index(fragment_body, false)
+}
+
+pub(crate) fn build_fullscreen_textured_bundle_with_instance_index(
+    fragment_body: String,
+    uses_instance_index: bool,
+) -> WgslShaderBundle {
     // Shared Params struct to match the runtime uniform.
-    let common = r#"
+    let mut common = r#"
 struct Params {
     target_size: vec2f,
     geo_size: vec2f,
     center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
+
+    // 16-byte aligned.
     color: vec4f,
 };
+
 
 @group(0) @binding(0)
 var<uniform> params: Params;
@@ -202,6 +217,8 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
+    // Only emitted when a material uses the Index node.
+    @location(2) instance_index: u32,
 };
 
 @group(1) @binding(0)
@@ -211,28 +228,75 @@ var src_samp: sampler;
 "#
     .to_string();
 
-    let vertex_entry = r#"
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
+    if !uses_instance_index {
+        common = common.replace(
+            "    // Only emitted when a material uses the Index node.\n    @location(2) instance_index: u32,\n",
+            "",
+        );
+    }
 
-    // Local UV in [0,1] based on geometry size.
-    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+    let vertex_entry = if uses_instance_index {
+        r#"
+ @vertex
+ fn vs_main(
+     @location(0) position: vec3f,
+     @location(1) uv: vec2f,
+     @builtin(instance_index) instance_index: u32,
+ ) -> VSOut {
+     var out: VSOut;
+     out.instance_index = instance_index;
+ 
+     let _unused_geo_size = params.geo_size;
+     let _unused_geo_translate = params.geo_translate;
+     let _unused_geo_scale = params.geo_scale;
+ 
+      // UV passed as vertex attribute.
+      out.uv = uv;
+ 
+      // Geometry vertices are in local pixel units centered at (0,0).
+      // Convert to target pixel coordinates with bottom-left origin.
+      let p_px = params.center + position.xy + (params.target_size * 0.5);
 
-    // Geometry vertices are in local pixel units centered at (0,0).
-    // Convert to target pixel coordinates with bottom-left origin.
-    let p_px = params.center + position.xy + (params.target_size * 0.5);
 
-    // Convert pixels to clip space assuming bottom-left origin.
-    // (0,0) => (-1,-1), (target_size) => (1,1)
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+     // Convert pixels to clip space assuming bottom-left origin.
+     // (0,0) => (-1,-1), (target_size) => (1,1)
+     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+     out.position = vec4f(ndc, position.z, 1.0);
 
-    // Pixel-centered like GLSL gl_FragCoord.xy.
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-    return out;
-}
-"#
+     // Pixel-centered like GLSL gl_FragCoord.xy.
+     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+     return out;
+ }
+ "#
+    } else {
+        r#"
+ @vertex
+  fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+      var out: VSOut;
+ 
+      let _unused_geo_size = params.geo_size;
+      let _unused_geo_translate = params.geo_translate;
+     let _unused_geo_scale = params.geo_scale;
+ 
+      // UV passed as vertex attribute.
+      out.uv = uv;
+ 
+      // Geometry vertices are in local pixel units centered at (0,0).
+      // Convert to target pixel coordinates with bottom-left origin.
+      let p_px = params.center + position.xy + (params.target_size * 0.5);
+
+
+     // Convert pixels to clip space assuming bottom-left origin.
+     // (0,0) => (-1,-1), (target_size) => (1,1)
+     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+     out.position = vec4f(ndc, position.z, 1.0);
+
+     // Pixel-centered like GLSL gl_FragCoord.xy.
+     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+     return out;
+ }
+ "#
+    }
     .to_string();
 
     let fragment_entry = format!(
@@ -261,7 +325,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
 
 impl MaterialCompileContext {
     // Extension method for generating WGSL binding declarations
-    fn wgsl_decls(&self) -> String {
+    pub(crate) fn wgsl_decls(&self) -> String {
         let mut out = String::new();
 
         // Image texture bindings
@@ -355,8 +419,15 @@ struct Params {
     target_size: vec2f,
     geo_size: vec2f,
     center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
+
+    // 16-byte aligned.
     color: vec4f,
 };
 
@@ -376,26 +447,30 @@ struct VSOut {
 
     // Fullscreen quad vertex shader - directly maps to screen space.
     let vertex_entry = r#"
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
+ @vertex
+ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+     var out: VSOut;
+ 
+     // Local UV in [0,1] based on geometry size.
+let local_pos = position.xy * params.geo_scale + params.geo_translate;
 
-    // Fullscreen UV: position is already in screen space, convert to [0,1] UV.
-    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+     // Local UV in [0,1] based on geometry size.
+     out.uv = (local_pos / params.geo_size) + vec2f(0.5, 0.5);
 
-    // Position is in local pixel space centered at (0,0).
-    // Convert to target pixel coordinates with bottom-left origin.
-    let p_px = position.xy + (params.target_size * 0.5);
+     // Position is in local pixel space centered at (0,0).
+     // Convert to target pixel coordinates with bottom-left origin.
+     let p_px = local_pos + (params.target_size * 0.5);
 
-    // Convert pixels to clip space assuming bottom-left origin.
-    // (0,0) => (-1,-1), (target_size) => (1,1)
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
-
-    // Pixel-centered like GLSL gl_FragCoord.xy.
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-    return out;
-}
+ 
+     // Convert pixels to clip space assuming bottom-left origin.
+     // (0,0) => (-1,-1), (target_size) => (1,1)
+     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+     out.position = vec4f(ndc, position.z, 1.0);
+ 
+     // Pixel-centered like GLSL gl_FragCoord.xy.
+     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+     return out;
+ }
 "#
     .to_string();
 
@@ -429,6 +504,11 @@ pub fn build_pass_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     pass_id: &str,
+    is_instanced: bool,
+    vertex_translate_expr: Option<String>,
+    vertex_inline_stmts: Vec<String>,
+    vertex_wgsl_decls: String,
+    vertex_uses_instance_index: bool,
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
@@ -462,8 +542,15 @@ struct Params {
     target_size: vec2f,
     geo_size: vec2f,
     center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
+
+    // 16-byte aligned.
     color: vec4f,
 };
 
@@ -480,30 +567,88 @@ struct VSOut {
     .to_string();
 
     common.push_str(&material_ctx.wgsl_decls());
+    common.push_str(&vertex_wgsl_decls);
 
-    let vertex_entry = r#"
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
+    // If we inject a vertex expression (TransformGeometry driven by a node graph), we must
+    // include any inline statements (e.g. MathClosure local bindings) in the vertex entry.
+    let vertex_inline_stmts = vertex_inline_stmts.join("\n");
 
-    // Local UV in [0,1] based on geometry size.
-    out.uv = (position.xy / params.geo_size) + vec2f(0.5, 0.5);
+    let mut vertex_args = String::new();
+    vertex_args.push_str("     @location(0) position: vec3f,\n");
+    vertex_args.push_str("     @location(1) uv: vec2f,\n");
 
-    // Geometry vertices are in local pixel units centered at (0,0).
-    // Convert to target pixel coordinates with bottom-left origin.
-    let p_px = params.center + position.xy + (params.target_size * 0.5);
+    if is_instanced {
+        vertex_args.push_str("     @location(2) i0: vec4f,\n");
+        vertex_args.push_str("     @location(3) i1: vec4f,\n");
+        vertex_args.push_str("     @location(4) i2: vec4f,\n");
+        vertex_args.push_str("     @location(5) i3: vec4f,\n");
+    }
 
-    // Convert pixels to clip space assuming bottom-left origin.
-    // (0,0) => (-1,-1), (target_size) => (1,1)
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+    if vertex_uses_instance_index {
+        vertex_args.push_str("     @builtin(instance_index) instance_index: u32,\n");
+    }
 
-    // Pixel-centered like GLSL gl_FragCoord.xy.
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-    return out;
-}
-"#
-    .to_string();
+    let mut vertex_entry = String::new();
+    vertex_entry.push_str("\n @vertex\n fn vs_main(\n");
+    vertex_entry.push_str(&vertex_args);
+    vertex_entry.push_str(" ) -> VSOut {\n");
+    vertex_entry.push_str(" var out: VSOut;\n\n");
+
+    // Keep any MathClosure-generated locals declared before other code.
+    if !vertex_inline_stmts.trim().is_empty() {
+        vertex_entry.push_str(&vertex_inline_stmts);
+        vertex_entry.push_str("\n");
+    }
+
+    // Ensure `@builtin(instance_index)` is actually referenced when present.
+    if vertex_uses_instance_index {
+        vertex_entry.push_str(" let _unused_instance_index = instance_index;\n\n");
+    }
+
+    vertex_entry.push_str(" let _unused_geo_size = params.geo_size;\n");
+    vertex_entry.push_str(" let _unused_geo_translate = params.geo_translate;\n");
+    vertex_entry.push_str(" let _unused_geo_scale = params.geo_scale;\n\n");
+
+    vertex_entry.push_str(" // UV passed as vertex attribute.\n");
+    vertex_entry.push_str(" out.uv = uv;\n\n");
+
+    if is_instanced {
+        vertex_entry.push_str(" let inst_m = mat4x4f(i0, i1, i2, i3);\n");
+        vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
+
+        if let Some(expr) = vertex_translate_expr.as_deref() {
+            vertex_entry.push_str(" let delta_t = ");
+            vertex_entry.push_str(expr);
+            vertex_entry.push_str(";\n");
+            vertex_entry.push_str(" p_local = p_local + delta_t;\n\n");
+        }
+    } else {
+        if let Some(expr) = vertex_translate_expr.as_deref() {
+            vertex_entry.push_str(" let delta_t = ");
+            vertex_entry.push_str(expr);
+            vertex_entry.push_str(";\n");
+            vertex_entry.push_str(" let p_local = position + delta_t;\n\n");
+        } else {
+            // Keep vertex output identical for non-instanced passes.
+            vertex_entry.push_str(" let p_local = position;\n\n");
+        }
+    }
+
+    vertex_entry.push_str(" // Geometry vertices are in local pixel units centered at (0,0).\n");
+    vertex_entry.push_str(" // Convert to target pixel coordinates with bottom-left origin.\n");
+    vertex_entry
+        .push_str(" let p_px = params.center + p_local.xy + (params.target_size * 0.5);\n\n");
+
+    vertex_entry.push_str(" // Convert pixels to clip space assuming bottom-left origin.\n");
+    vertex_entry.push_str(" // (0,0) => (-1,-1), (target_size) => (1,1)\n");
+    vertex_entry.push_str(" let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n");
+    vertex_entry.push_str(" out.position = vec4f(ndc, position.z, 1.0);\n\n");
+
+    vertex_entry.push_str(" // Pixel-centered like GLSL gl_FragCoord.xy.\n");
+    vertex_entry.push_str(" out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n");
+    vertex_entry.push_str(" return out;\n }");
+
+    let vertex_entry = vertex_entry;
 
     let fragment_entry = format!(
         r#"
@@ -534,15 +679,56 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
 pub fn build_all_pass_wgsl_bundles_from_scene(
     scene: &SceneDSL,
 ) -> Result<Vec<(String, WgslShaderBundle)>> {
+    // IMPORTANT: This function powers the WGSL golden tests.
+    // It must match the exact WGSL module string passed to wgpu at runtime.
     let prepared = prepare_scene(scene)?;
+    let nodes_by_id = &prepared.nodes_by_id;
+    let ids = &prepared.ids;
 
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
     for layer_id in prepared.composite_layers_in_draw_order {
-        let node = find_node(&prepared.nodes_by_id, &layer_id)?;
+        let node = find_node(nodes_by_id, &layer_id)?;
         match node.node_type.as_str() {
             "RenderPass" => {
-                let bundle =
-                    build_pass_wgsl_bundle(&prepared.scene, &prepared.nodes_by_id, &layer_id)?;
+                // Mirror `build_shader_space_from_scene` geometry resolution so vertex-stage
+                // graph compilation (TransformGeometry / Index / MathClosure) is reflected.
+                let render_geo_node_id =
+                    incoming_connection(&prepared.scene, &layer_id, "geometry")
+                        .map(|c| c.from.node_id.clone())
+                        .ok_or_else(|| anyhow!("RenderPass.geometry missing for {layer_id}"))?;
+
+                let (
+                    _geometry_buffer,
+                    _geo_w,
+                    _geo_h,
+                    _geo_x,
+                    _geo_y,
+                    instance_count,
+                    _base_m,
+                    translate_expr,
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &render_geo_node_id,
+                )?;
+
+                let is_instanced = instance_count > 1;
+
+                let bundle = build_pass_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    &layer_id,
+                    is_instanced,
+                    translate_expr.map(|e| e.expr),
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                )?;
+
                 out.push((layer_id, bundle));
             }
             "GuassianBlurPass" => {
@@ -715,16 +901,19 @@ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
 
 /// Build an error shader (purple screen) WGSL source.
 pub const ERROR_SHADER_WGSL: &str = r#"
-struct VSOut {
-    @builtin(position) position: vec4f,
-};
-
-@vertex
-fn vs_main(@location(0) position: vec3f) -> VSOut {
-    var out: VSOut;
-    out.position = vec4f(position, 1.0);
-    return out;
-}
+ struct VSOut {
+      @builtin(position) position: vec4f,
+      @location(0) uv: vec2f,
+      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+      @location(1) frag_coord_gl: vec2f,
+  };
+ 
+ @vertex
+ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+     var out: VSOut;
+     out.position = vec4f(position, 1.0);
+     return out;
+ }
 
 @fragment
 fn fs_main(_in: VSOut) -> @location(0) vec4f {

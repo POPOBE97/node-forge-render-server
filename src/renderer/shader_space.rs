@@ -34,9 +34,12 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
-        node_compiler::geometry_nodes::rect2d_geometry_vertices,
+        node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
         scene_prep::prepare_scene,
-        types::{Params, PassBindings, PassOutputRegistry, PassOutputSpec},
+        types::{
+            MaterialCompileContext, Params, PassBindings, PassOutputRegistry, PassOutputSpec,
+            TypedExpr,
+        },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
@@ -47,6 +50,335 @@ use crate::{
         },
     },
 };
+
+fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
+    let mut out = [0.0f32; 16];
+    for r in 0..4 {
+        for c in 0..4 {
+            out[r * 4 + c] = a[r * 4 + 0] * b[0 * 4 + c]
+                + a[r * 4 + 1] * b[1 * 4 + c]
+                + a[r * 4 + 2] * b[2 * 4 + c]
+                + a[r * 4 + 3] * b[3 * 4 + c];
+        }
+    }
+    out
+}
+
+fn mat4_translate(tx: f32, ty: f32, tz: f32) -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, tx, ty, tz, 1.0,
+    ]
+}
+
+fn mat4_scale(sx: f32, sy: f32, sz: f32) -> [f32; 16] {
+    [
+        sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
+fn mat4_rotate_z(rad: f32) -> [f32; 16] {
+    let c = rad.cos();
+    let s = rad.sin();
+    [
+        c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
+fn compute_transform_geometry_matrix(
+    _scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node: &crate::dsl::Node,
+) -> Result<[f32; 16]> {
+    // T * Rz * S for now.
+    let mut tx = 0.0f32;
+    let mut ty = 0.0f32;
+    let mut tz = 0.0f32;
+
+    // Inline params (Components mode)
+    if let Some(t) = node.params.get("translate") {
+        if let Some(obj) = t.as_object() {
+            tx = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            ty = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            tz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        }
+    }
+
+    let mut sx = 1.0f32;
+    let mut sy = 1.0f32;
+    let mut sz = 1.0f32;
+    if let Some(s) = node.params.get("scale") {
+        if let Some(obj) = s.as_object() {
+            sx = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+            sy = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+            sz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+        }
+    }
+
+    let mut rz = 0.0f32;
+    if let Some(r) = node.params.get("rotate") {
+        if let Some(obj) = r.as_object() {
+            rz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        }
+    }
+
+    Ok(mat4_mul(
+        mat4_translate(tx, ty, tz),
+        mat4_mul(mat4_rotate_z(rz), mat4_scale(sx, sy, sz)),
+    ))
+}
+
+pub(crate) fn resolve_geometry_for_render_pass(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    ids: &HashMap<String, ResourceName>,
+    geometry_node_id: &str,
+) -> Result<(
+    ResourceName,
+    f32,
+    f32,
+    f32,
+    f32,
+    u32,
+    [f32; 16],
+    Option<TypedExpr>,
+    Vec<String>,
+    String,
+    bool,
+)> {
+    let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
+
+    match geometry_node.node_type.as_str() {
+        "Rect2DGeometry" => {
+            let geometry_buffer = ids
+                .get(geometry_node_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
+
+            let geo_w_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "width", 100)?;
+            let geo_h_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "height", geo_w_u)?;
+            let geo_w = geo_w_u as f32;
+            let geo_h = geo_h_u as f32;
+            let geo_x = cpu_num_f32(scene, nodes_by_id, geometry_node, "x", 0.0)?;
+            let geo_y = cpu_num_f32(scene, nodes_by_id, geometry_node, "y", 0.0)?;
+            Ok((
+                geometry_buffer,
+                geo_w,
+                geo_h,
+                geo_x,
+                geo_y,
+                1,
+                [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                None,
+                Vec::new(),
+                String::new(),
+                false,
+            ))
+        }
+        "InstancedGeometryStart" => {
+            // Treat start as a passthrough wrapper for geometry resolution.
+            // The instancing count is finalized at InstancedGeometryEnd.
+            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "base")
+                .or_else(|| incoming_connection(scene, geometry_node_id, "geometry"))
+                .map(|c| c.from.node_id.clone())
+                .ok_or_else(|| {
+                    anyhow!("InstancedGeometryStart.base missing for {geometry_node_id}")
+                })?;
+
+            let (
+                buf,
+                w,
+                h,
+                x,
+                y,
+                _instances,
+                base_m,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+
+            let count_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "count", 1)?;
+            Ok((
+                buf,
+                w,
+                h,
+                x,
+                y,
+                count_u,
+                base_m,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+            ))
+        }
+        "InstancedGeometryEnd" => {
+            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
+                .map(|c| c.from.node_id.clone())
+                .ok_or_else(|| {
+                    anyhow!("InstancedGeometryEnd.geometry missing for {geometry_node_id}")
+                })?;
+
+            let (
+                buf,
+                w,
+                h,
+                x,
+                y,
+                _instances,
+                base_m,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+
+            // Find InstancedGeometryStart by matching zoneId.
+            let zone_id = geometry_node
+                .params
+                .get("zoneId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if zone_id.trim().is_empty() {
+                bail!("InstancedGeometryEnd.zoneId missing for {geometry_node_id}");
+            }
+
+            let start = nodes_by_id
+                .values()
+                .find(|n| {
+                    n.node_type == "InstancedGeometryStart"
+                        && n.params.get("zoneId").and_then(|v| v.as_str()) == Some(zone_id)
+                })
+                .ok_or_else(|| {
+                    anyhow!("InstancedGeometryStart with zoneId '{zone_id}' not found")
+                })?;
+
+            let count_u = cpu_num_u32_min_1(scene, nodes_by_id, start, "count", 1)?;
+
+            Ok((
+                buf,
+                w,
+                h,
+                x,
+                y,
+                count_u,
+                base_m,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+            ))
+        }
+        "TransformGeometry" => {
+            // Geometry chain: TransformGeometry.geometry -> base geometry buffer.
+            // NOTE: GPU-side transforms are applied in the vertex shader (Params.geo_translate / Params.geo_scale).
+            // Here we only adjust the *logical* geo_size for UV/GeoFragCoord correctness (per user request).
+            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
+                .map(|c| c.from.node_id.clone())
+                .ok_or_else(|| {
+                    anyhow!("TransformGeometry.geometry missing for {geometry_node_id}")
+                })?;
+
+            let (
+                buf,
+                mut w,
+                mut h,
+                x,
+                y,
+                instances,
+                base_m,
+                upstream_translate_expr,
+                mut vtx_inline_stmts,
+                mut vtx_wgsl_decls,
+                mut uses_instance_index,
+            ) = resolve_geometry_for_render_pass(scene, nodes_by_id, ids, &upstream_geo_id)?;
+
+            // Scale affects geo_size for correct UV + GeoFragcoord mapping.
+            // We only support inline scale params here (object {x,y,z}); connected scale inputs are GPU-side.
+            if let Some(s) = geometry_node.params.get("scale") {
+                if let Some(obj) = s.as_object() {
+                    if let Some(vx) = obj.get("x").and_then(|v| v.as_f64()) {
+                        w *= vx as f32;
+                    }
+                    if let Some(vy) = obj.get("y").and_then(|v| v.as_f64()) {
+                        h *= vy as f32;
+                    }
+                }
+            }
+
+            // For now, CPU-side matrix composition only supports the inline params.
+            // Connected inputs (e.g. MathClosure driven by Index) are compiled in the vertex stage.
+            let delta_m = compute_transform_geometry_matrix(scene, nodes_by_id, geometry_node)?;
+
+            // Vertex-stage translate overrides upstream translate (for now).
+            // Later we can support composition by emitting `upstream + local`.
+            let mut translate_expr = upstream_translate_expr;
+            let mut local_inline_stmts: Vec<String> = Vec::new();
+            let mut local_wgsl_decls = String::new();
+            let mut local_uses_instance_index = false;
+
+            if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
+                // Compile upstream expression; it must evaluate to vec3.
+                let src_node = find_node(nodes_by_id, &conn.from.node_id)?;
+                match src_node.node_type.as_str() {
+                    // Allow any node that the vertex compiler supports (MathClosure, Index, math nodes, inputs).
+                    _ => {
+                        let mut vtx_ctx = MaterialCompileContext::default();
+                        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                        let expr = compile_vertex_expr(
+                            scene,
+                            nodes_by_id,
+                            &conn.from.node_id,
+                            Some(&conn.from.port_id),
+                            &mut vtx_ctx,
+                            &mut cache,
+                        )?;
+                        // Ensure any needed inline statements (e.g. MathClosure output var) are
+                        // emitted in the vertex shader by forcing the expression through the
+                        // compiler's inline statement machinery.
+                        // NOTE: `expr.expr` may reference compiler-emitted locals (e.g. MathClosure
+                        // output var). We must also propagate the corresponding inline statements
+                        // into the render pass shader generation.
+                        local_inline_stmts = vtx_ctx.inline_stmts.clone();
+                        local_wgsl_decls = vtx_ctx.wgsl_decls();
+                        local_uses_instance_index = vtx_ctx.uses_instance_index;
+                        translate_expr = Some(expr.clone());
+                    }
+                }
+            }
+
+            if !local_inline_stmts.is_empty() {
+                vtx_inline_stmts = local_inline_stmts;
+                vtx_wgsl_decls = local_wgsl_decls;
+            }
+            if local_uses_instance_index {
+                uses_instance_index = true;
+            }
+
+            Ok((
+                buf,
+                w,
+                h,
+                x,
+                y,
+                instances,
+                mat4_mul(base_m, delta_m),
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+            ))
+        }
+        other => {
+            bail!(
+                "RenderPass.geometry must resolve to Rect2DGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
+            )
+        }
+    }
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn render_scene_to_png_headless(
@@ -114,7 +446,16 @@ fn deps_for_pass_node(
 
     match node.node_type.as_str() {
         "RenderPass" => {
-            let bundle = build_pass_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
+            let bundle = build_pass_wgsl_bundle(
+                scene,
+                nodes_by_id,
+                pass_node_id,
+                false,
+                None,
+                Vec::new(),
+                String::new(),
+                false,
+            )?;
             Ok(bundle.pass_textures)
         }
         "GuassianBlurPass" => {
@@ -228,6 +569,7 @@ struct TextureDecl {
 struct RenderPassSpec {
     name: ResourceName,
     geometry_buffer: ResourceName,
+    instance_buffer: Option<ResourceName>,
     target_texture: ResourceName,
     params_buffer: ResourceName,
     params: Params,
@@ -393,6 +735,7 @@ pub fn build_shader_space_from_scene(
     let order = &prepared.topo_order;
 
     let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
+    let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
     let mut textures: Vec<TextureDecl> = Vec::new();
     let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
@@ -508,48 +851,53 @@ pub fn build_shader_space_from_scene(
 
                 let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
 
-                let geometry_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
+                let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
                     .map(|c| c.from.node_id.clone())
                     .ok_or_else(|| anyhow!("RenderPass.geometry missing for {layer_id}"))?;
 
-                let geometry_node = find_node(&nodes_by_id, &geometry_node_id)?;
-                if geometry_node.node_type != "Rect2DGeometry" {
-                    bail!(
-                        "RenderPass.geometry must come from Rect2DGeometry, got {}",
-                        geometry_node.node_type
-                    );
-                }
-
-                let geometry_buffer = ids
-                    .get(&geometry_node_id)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
-
-                let geo_w_u =
-                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, geometry_node, "width", 100)?;
-                let geo_h_u = cpu_num_u32_min_1(
+                let (
+                    geometry_buffer,
+                    geo_w,
+                    geo_h,
+                    geo_x,
+                    geo_y,
+                    instance_count,
+                    base_m,
+                    translate_expr,
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
-                    geometry_node,
-                    "height",
-                    geo_w_u,
+                    ids,
+                    &render_geo_node_id,
                 )?;
-                let geo_w = geo_w_u as f32;
-                let geo_h = geo_h_u as f32;
-                let geo_x = cpu_num_f32(&prepared.scene, nodes_by_id, geometry_node, "x", 0.0)?;
-                let geo_y = cpu_num_f32(&prepared.scene, nodes_by_id, geometry_node, "y", 0.0)?;
 
                 let params_name: ResourceName = format!("params_{layer_id}").into();
                 let params = Params {
                     target_size: [tgt_w, tgt_h],
                     geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
                     center: [geo_x, geo_y],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
                     time: 0.0,
                     _pad0: 0.0,
                     color: [0.9, 0.2, 0.2, 1.0],
                 };
 
-                let bundle = build_pass_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                let is_instanced = instance_count > 1;
+
+                let bundle = build_pass_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_id,
+                    is_instanced,
+                    translate_expr.map(|e| e.expr),
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                )?;
                 let shader_wgsl = bundle.module;
 
                 let mut texture_bindings: Vec<PassTextureBinding> = bundle
@@ -568,9 +916,28 @@ pub fn build_shader_space_from_scene(
                     &bundle.pass_textures,
                 )?);
 
+                let instance_buffer = if is_instanced {
+                    let b: ResourceName = format!("{layer_id}__instances").into();
+
+                    // Per-instance mat4 (column-major) as 4 vec4<f32> (16 floats).
+                    // This is the accumulated base transform through the geometry chain.
+                    // Any per-instance variation is computed in the vertex shader.
+                    let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instance_count as usize);
+                    for _ in 0..instance_count {
+                        mats.push(base_m);
+                    }
+                    let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&mats).to_vec());
+                    instance_buffers.push((b.clone(), bytes));
+
+                    Some(b)
+                } else {
+                    None
+                };
+
                 render_pass_specs.push(RenderPassSpec {
                     name: pass_name.clone(),
                     geometry_buffer,
+                    instance_buffer,
                     target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
                     params,
@@ -613,9 +980,11 @@ pub fn build_shader_space_from_scene(
                     target_size: [tgt_w, tgt_h],
                     geo_size: [tgt_w, tgt_h],
                     center: [0.0, 0.0],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
                     time: 0.0,
                     _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 1.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
                 };
 
                 // Build WGSL for the image input expression (similar to RenderPass material).
@@ -640,6 +1009,7 @@ pub fn build_shader_space_from_scene(
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__src_pass").into(),
                     geometry_buffer: geo_src,
+                    instance_buffer: None,
                     target_texture: src_tex.clone(),
                     params_buffer: params_src.clone(),
                     params: params_src_val,
@@ -793,9 +1163,11 @@ pub fn build_shader_space_from_scene(
                         target_size: [*step_w as f32, *step_h as f32],
                         geo_size: [*step_w as f32, *step_h as f32],
                         center: [0.0, 0.0],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
                         time: 0.0,
                         _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 1.0],
+                        color: [0.0, 0.0, 0.0, 0.0],
                     };
 
                     let src_tex = match &prev_tex {
@@ -806,6 +1178,7 @@ pub fn build_shader_space_from_scene(
                     render_pass_specs.push(RenderPassSpec {
                         name: format!("{layer_id}__downsample_{step}").into(),
                         geometry_buffer: step_geo.clone(),
+                        instance_buffer: None,
                         target_texture: tex.clone(),
                         params_buffer: params_name,
                         params: params_val,
@@ -833,13 +1206,16 @@ pub fn build_shader_space_from_scene(
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
                     center: [0.0, 0.0],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
                     time: 0.0,
                     _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 1.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
                 };
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__hblur_ds{downsample_factor}").into(),
                     geometry_buffer: geo_ds.clone(),
+                    instance_buffer: None,
                     target_texture: h_tex.clone(),
                     params_buffer: params_h.clone(),
                     params: params_h_val,
@@ -862,13 +1238,16 @@ pub fn build_shader_space_from_scene(
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
                     center: [0.0, 0.0],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
                     time: 0.0,
                     _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 1.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
                 };
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__vblur_ds{downsample_factor}").into(),
                     geometry_buffer: geo_ds.clone(),
+                    instance_buffer: None,
                     target_texture: v_tex.clone(),
                     params_buffer: params_v.clone(),
                     params: params_v_val,
@@ -892,13 +1271,16 @@ pub fn build_shader_space_from_scene(
                     target_size: [blur_w as f32, blur_h as f32],
                     geo_size: [blur_w as f32, blur_h as f32],
                     center: [0.0, 0.0],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
                     time: 0.0,
                     _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 1.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
                 };
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
                     geometry_buffer: geo_out.clone(),
+                    instance_buffer: None,
                     target_texture: output_tex.clone(),
                     params_buffer: params_u.clone(),
                     params: params_u_val,
@@ -965,6 +1347,14 @@ pub fn build_shader_space_from_scene(
     let mut buffer_specs: Vec<BufferSpec> = Vec::new();
 
     for (name, bytes) in &geometry_buffers {
+        buffer_specs.push(BufferSpec::Init {
+            name: name.clone(),
+            contents: bytes.clone(),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+    }
+
+    for (name, bytes) in &instance_buffers {
         buffer_specs.push(BufferSpec::Init {
             name: name.clone(),
             contents: bytes.clone(),
@@ -1153,10 +1543,15 @@ pub fn build_shader_space_from_scene(
             SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
         };
 
+        // When shader compilation fails (wgpu create_shader_module), the error message can be
+        // hard to correlate back to the generated WGSL. Dump it to a predictable temp location
+        // so tests can inspect the exact module wgpu validated.
+        let debug_dump_path = format!("/tmp/node-forge-pass__{}.wgsl", spec.name.as_str());
         let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
             label: Some("node-forge-pass"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl)),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl.clone())),
         };
+        let _ = std::fs::write(&debug_dump_path, &shader_wgsl);
         shader_space.render_pass(spec.name.clone(), move |builder| {
             let mut b = builder
                 .shader(shader_desc)
@@ -1165,8 +1560,23 @@ pub fn build_shader_space_from_scene(
                     0,
                     geometry_buffer,
                     wgpu::VertexStepMode::Vertex,
-                    vertex_attr_array![0 => Float32x3].to_vec(),
+                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
                 );
+
+            if let Some(instance_buffer) = spec.instance_buffer.clone() {
+                b = b.bind_attribute_buffer(
+                    1,
+                    instance_buffer,
+                    wgpu::VertexStepMode::Instance,
+                    vertex_attr_array![
+                        2 => Float32x4,
+                        3 => Float32x4,
+                        4 => Float32x4,
+                        5 => Float32x4
+                    ]
+                    .to_vec(),
+                );
+            }
 
             for (i, tex_name) in texture_names.iter().enumerate() {
                 let tex_binding = (i as u32) * 2;
