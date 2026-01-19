@@ -390,7 +390,10 @@ pub fn build_blur_image_wgsl_bundle(
     nodes_by_id: &HashMap<String, Node>,
     blur_pass_id: &str,
 ) -> Result<WgslShaderBundle> {
-    let mut material_ctx = MaterialCompileContext::default();
+    let mut material_ctx = MaterialCompileContext {
+        baked_data_parse: None,
+        ..Default::default()
+    };
 
     // Get the color expression from the `image` input.
     let fragment_expr: TypedExpr =
@@ -503,6 +506,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
 pub fn build_pass_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
+    baked_data_parse: Option<
+        std::sync::Arc<
+            std::collections::HashMap<
+                (String, String, String),
+                Vec<crate::renderer::types::BakedValue>,
+            >,
+        >,
+    >,
     pass_id: &str,
     is_instanced: bool,
     vertex_translate_expr: Option<String>,
@@ -512,7 +523,10 @@ pub fn build_pass_wgsl_bundle(
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
-    let mut material_ctx = MaterialCompileContext::default();
+    let mut material_ctx = MaterialCompileContext {
+        baked_data_parse,
+        ..Default::default()
+    };
     let fragment_expr: TypedExpr =
         if let Some(conn) = incoming_connection(scene, pass_id, "material") {
             let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
@@ -721,6 +735,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
                     nodes_by_id,
+                    Some(std::sync::Arc::new(prepared.baked_data_parse.clone())),
                     &layer_id,
                     is_instanced,
                     translate_expr.map(|e| e.expr),

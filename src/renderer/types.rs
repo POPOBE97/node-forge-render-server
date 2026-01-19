@@ -3,6 +3,7 @@
 use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// WGSL value type for shader expressions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,6 +160,8 @@ impl TypedExpr {
 /// Context for compiling material expressions, tracking referenced resources.
 #[derive(Default)]
 pub struct MaterialCompileContext {
+    pub baked_data_parse: Option<Arc<HashMap<(String, String, String), Vec<BakedValue>>>>,
+
     /// Set when the compiled shader needs `@builtin(instance_index)` in the vertex stage.
     ///
     /// Today we only use this for vertex-stage logic, but we keep the name generic because

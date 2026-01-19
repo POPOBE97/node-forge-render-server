@@ -33,11 +33,8 @@ struct VSOut {
      @location(3) i1: vec4f,
      @location(4) i2: vec4f,
      @location(5) i3: vec4f,
-     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
-
- let _unused_instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -49,7 +46,7 @@ struct VSOut {
  let inst_m = mat4x4f(i0, i1, i2, i3);
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
- let delta_t = vec3f((vec2f(85, 376) + vec2f(f32(instance_index % 2u) * 474, f32(instance_index / 2u) * 239)), 0.0);
+ let delta_t = vec3f(vec2f(0.0, 0.0), 0.0);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).

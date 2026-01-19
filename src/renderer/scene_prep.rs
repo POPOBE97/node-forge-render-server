@@ -223,7 +223,8 @@ pub struct PreparedScene {
     pub output_texture_name: ResourceName,
     pub resolution: [u32; 2],
 
-    pub baked_data_parse: HashMap<(String, String), crate::renderer::types::BakedValue>,
+    pub baked_data_parse:
+        HashMap<(String, String, String), Vec<crate::renderer::types::BakedValue>>,
 }
 
 fn map_baked_type(s: Option<&str>) -> Result<ValueType> {
@@ -260,6 +261,7 @@ fn data_node_json(nodes_by_id: &HashMap<String, Node>, id: &str) -> Result<serde
 fn resolve_binding_value(
     nodes_by_id: &HashMap<String, Node>,
     binding: &InputBinding,
+    index_value: u32,
 ) -> Result<serde_json::Value> {
     let Some(SourceBinding {
         node_id,
@@ -272,7 +274,7 @@ fn resolve_binding_value(
 
     match output_port_id.as_str() {
         "data" => data_node_json(nodes_by_id, node_id),
-        "index" => Ok(serde_json::json!(0)),
+        "index" => Ok(serde_json::json!(index_value)),
         _ => Ok(serde_json::Value::Null),
     }
 }
@@ -329,8 +331,9 @@ fn baked_from_json(ty: ValueType, v: &serde_json::Value) -> Result<BakedValue> {
 
 fn bake_data_parse_nodes(
     nodes_by_id: &HashMap<String, Node>,
-) -> Result<HashMap<(String, String), BakedValue>> {
-    let mut baked: HashMap<(String, String), BakedValue> = HashMap::new();
+    instance_count: u32,
+) -> Result<HashMap<(String, String, String), Vec<BakedValue>>> {
+    let mut baked: HashMap<(String, String, String), Vec<BakedValue>> = HashMap::new();
     let mut rt = TsRuntime::new();
 
     for node in nodes_by_id.values() {
@@ -341,58 +344,76 @@ fn bake_data_parse_nodes(
         let src = string_param(node, "source")
             .ok_or_else(|| anyhow!("DataParse missing params.source for {}", node.id))?;
 
-        let mut bindings_src = String::new();
-        for b in &node.input_bindings {
-            let val = resolve_binding_value(nodes_by_id, b).with_context(|| {
-                format!(
-                    "failed to resolve input binding {} for {}",
-                    b.variable_name, node.id
-                )
-            })?;
-            let json = serde_json::to_string(&val)?;
-            bindings_src.push_str(&format!("const {} = {};\n", b.variable_name, json));
-        }
-        if !node
-            .input_bindings
+        let port_types: HashMap<String, ValueType> = node
+            .outputs
             .iter()
-            .any(|b| b.variable_name == "index")
-        {
-            bindings_src.push_str("const index = 0;\n");
-        }
-        let mut user_src = src.to_string();
-        user_src = user_src.replace(" as vec2", "");
-        user_src = user_src.replace(" as vec3", "");
-        user_src = user_src.replace(" as vec4", "");
+            .map(|p| {
+                let ty = map_baked_type(p.port_type.as_deref()).with_context(|| {
+                    format!("invalid output port type for {}.{}", node.id, p.id)
+                })?;
+                Ok((p.id.clone(), ty))
+            })
+            .collect::<Result<_>>()?;
 
-        let script_body = format!("{bindings_src}\n{user_src}\n");
-        let script = format!("(function() {{\n{}\n}})()", script_body);
-        let out: serde_json::Value = match rt.eval_script(&script) {
-            Ok(v) => v,
-            Err(e) => bail!(
-                "DataParse eval failed for {}\n--- script ---\n{}\n--- end script ---\n--- error ---\n{e:?}",
-                node.id,
-                script
-            ),
-        };
-        let out_obj = out
-            .as_object()
-            .ok_or_else(|| anyhow!("DataParse must return an object for {}", node.id))?;
+        for i in 0..instance_count {
+            let mut bindings_src = String::new();
+            for b in &node.input_bindings {
+                let val = resolve_binding_value(nodes_by_id, b, i).with_context(|| {
+                    format!(
+                        "failed to resolve input binding {} for {}",
+                        b.variable_name, node.id
+                    )
+                })?;
+                let json = serde_json::to_string(&val)?;
+                bindings_src.push_str(&format!("const {} = {};\n", b.variable_name, json));
+            }
+            if !node
+                .input_bindings
+                .iter()
+                .any(|b| b.variable_name == "index")
+            {
+                bindings_src.push_str(&format!("const index = {};\n", i));
+            }
 
-        for p in &node.outputs {
-            let key = p.name.as_deref().unwrap_or(p.id.as_str());
-            let declared_ty = p.port_type.as_deref();
-            let ty = map_baked_type(declared_ty)
-                .with_context(|| format!("invalid output port type for {}.{}", node.id, p.id))?;
-            let v = out_obj
-                .get(key)
-                .ok_or_else(|| anyhow!("DataParse missing return field '{key}' for {}", node.id))?;
-            let baked_v = baked_from_json(ty, v).with_context(|| {
-                format!(
-                    "DataParse output '{key}' type mismatch for {}.{}",
-                    node.id, p.id
-                )
-            })?;
-            baked.insert((node.id.clone(), p.id.clone()), baked_v);
+            let mut user_src = src.to_string();
+            user_src = user_src.replace(" as vec2", "");
+            user_src = user_src.replace(" as vec3", "");
+            user_src = user_src.replace(" as vec4", "");
+
+            let script_body = format!("{bindings_src}\n{user_src}\n");
+            let script = format!("(function() {{\n{}\n}})()", script_body);
+            let out: serde_json::Value = match rt.eval_script(&script) {
+                Ok(v) => v,
+                Err(e) => bail!(
+                    "DataParse eval failed for {}\n--- script ---\n{}\n--- end script ---\n--- error ---\n{e:?}",
+                    node.id,
+                    script
+                ),
+            };
+            let out_obj = out
+                .as_object()
+                .ok_or_else(|| anyhow!("DataParse must return an object for {}", node.id))?;
+
+            for p in &node.outputs {
+                let key = p.name.as_deref().unwrap_or(p.id.as_str());
+                let ty = *port_types
+                    .get(&p.id)
+                    .ok_or_else(|| anyhow!("missing port type"))?;
+                let v = out_obj.get(key).ok_or_else(|| {
+                    anyhow!("DataParse missing return field '{key}' for {}", node.id)
+                })?;
+                let baked_v = baked_from_json(ty, v).with_context(|| {
+                    format!(
+                        "DataParse output '{key}' type mismatch for {}.{}",
+                        node.id, p.id
+                    )
+                })?;
+
+                baked
+                    .entry(("__global".to_string(), node.id.clone(), p.id.clone()))
+                    .or_default()
+                    .push(baked_v);
+            }
         }
     }
 
@@ -515,7 +536,7 @@ pub fn prepare_scene(input: &SceneDSL) -> Result<PreparedScene> {
     let height = cpu_num_u32_min_1(&scene, &nodes_by_id, output_texture_node, "height", 1024)?;
     let resolution = [width, height];
 
-    let baked_data_parse = bake_data_parse_nodes(&nodes_by_id)?;
+    let baked_data_parse = bake_data_parse_nodes(&nodes_by_id, 1)?;
 
     Ok(PreparedScene {
         scene,

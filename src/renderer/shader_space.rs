@@ -451,6 +451,7 @@ fn deps_for_pass_node(
             let bundle = build_pass_wgsl_bundle(
                 scene,
                 nodes_by_id,
+                None,
                 pass_node_id,
                 false,
                 None,
@@ -893,6 +894,7 @@ pub fn build_shader_space_from_scene(
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
                     nodes_by_id,
+                    Some(std::sync::Arc::new(prepared.baked_data_parse.clone())),
                     layer_id,
                     is_instanced,
                     translate_expr.map(|e| e.expr),
