@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 pub enum ValueType {
     F32,
     I32,
+    U32,
     Bool,
     Vec2,
     Vec3,
@@ -95,6 +96,7 @@ impl ValueType {
         match self {
             ValueType::F32 => "f32",
             ValueType::I32 => "i32",
+            ValueType::U32 => "u32",
             ValueType::Bool => "bool",
             ValueType::Vec2 => "vec2f",
             ValueType::Vec3 => "vec3f",
@@ -106,6 +108,7 @@ impl ValueType {
         match self {
             ValueType::F32 => "float",
             ValueType::I32 => "int",
+            ValueType::U32 => "uint",
             ValueType::Bool => "bool",
             ValueType::Vec2 => "vec2",
             ValueType::Vec3 => "vec3",
@@ -145,6 +148,12 @@ impl TypedExpr {
 /// Context for compiling material expressions, tracking referenced resources.
 #[derive(Default)]
 pub struct MaterialCompileContext {
+    /// Set when the compiled shader needs `@builtin(instance_index)` in the vertex stage.
+    ///
+    /// Today we only use this for vertex-stage logic, but we keep the name generic because
+    /// in the future we may also forward it into the fragment stage.
+    pub uses_instance_index: bool,
+
     /// List of ImageTexture node IDs referenced in order.
     pub image_textures: Vec<String>,
     /// Map from node ID to texture binding index.
@@ -235,8 +244,16 @@ pub struct Params {
     pub target_size: [f32; 2],
     pub geo_size: [f32; 2],
     pub center: [f32; 2],
+
+    // TransformGeometry (applied in vertex shader)
+    pub geo_translate: [f32; 2],
+    pub geo_scale: [f32; 2],
+
+    // Pack to 16-byte boundary.
     pub time: f32,
     pub _pad0: f32,
+
+    // 16-byte aligned.
     pub color: [f32; 4],
 }
 

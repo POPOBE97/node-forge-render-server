@@ -49,6 +49,7 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
     let entry_ret = match spec.return_type {
         ValueType::F32 => "float",
         ValueType::I32 => "int",
+        ValueType::U32 => "uint",
         ValueType::Bool => "bool",
         ValueType::Vec2 => "vec2",
         ValueType::Vec3 => "vec3",

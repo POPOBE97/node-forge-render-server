@@ -249,6 +249,17 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
             x.uses_time,
         )),
 
+        (ValueType::U32, ValueType::I32) => Ok(TypedExpr::with_time(
+            format!("i32({})", x.expr),
+            ValueType::I32,
+            x.uses_time,
+        )),
+        (ValueType::I32, ValueType::U32) => Ok(TypedExpr::with_time(
+            format!("u32({})", x.expr),
+            ValueType::U32,
+            x.uses_time,
+        )),
+
         _ => bail!("unsupported type coercion: {:?} -> {:?}", x.ty, target),
     }
 }
@@ -266,7 +277,12 @@ pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, Typed
     }
 
     let is_vector = |t: ValueType| matches!(t, ValueType::Vec2 | ValueType::Vec3 | ValueType::Vec4);
-    let is_scalar = |t: ValueType| matches!(t, ValueType::F32 | ValueType::I32 | ValueType::Bool);
+    let is_scalar = |t: ValueType| {
+        matches!(
+            t,
+            ValueType::F32 | ValueType::I32 | ValueType::U32 | ValueType::Bool
+        )
+    };
 
     // Vector/scalar: splat scalar to vector.
     if is_vector(a.ty) && is_scalar(b.ty) {
