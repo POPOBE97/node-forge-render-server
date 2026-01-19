@@ -236,24 +236,25 @@ var src_samp: sampler;
     let vertex_entry = if uses_instance_index {
         r#"
  @vertex
- fn vs_main(
-     @location(0) position: vec3f,
-     @location(1) uv: vec2f,
-     @builtin(instance_index) instance_index: u32,
- ) -> VSOut {
-     var out: VSOut;
-     out.instance_index = instance_index;
- 
-     let _unused_geo_size = params.geo_size;
-     let _unused_geo_translate = params.geo_translate;
-     let _unused_geo_scale = params.geo_scale;
- 
-      // UV passed as vertex attribute.
-      out.uv = uv;
- 
-      // Geometry vertices are in local pixel units centered at (0,0).
-      // Convert to target pixel coordinates with bottom-left origin.
-      let p_px = params.center + position.xy + (params.target_size * 0.5);
+  fn vs_main(
+      @location(0) position: vec3f,
+      @location(1) uv: vec2f,
+      @builtin(instance_index) instance_index: u32,
+  ) -> VSOut {
+      var out: VSOut;
+      out.instance_index = instance_index;
+  
+      let _unused_geo_size = params.geo_size;
+      let _unused_geo_translate = params.geo_translate;
+      let _unused_geo_scale = params.geo_scale;
+  
+       // UV passed as vertex attribute.
+       out.uv = uv;
+  
+       // Geometry vertices are in local pixel units centered at (0,0).
+       // Convert to target pixel coordinates with bottom-left origin.
+       let p_px = params.center + position.xy;
+
 
 
      // Convert pixels to clip space assuming bottom-left origin.
@@ -279,9 +280,10 @@ var src_samp: sampler;
       // UV passed as vertex attribute.
       out.uv = uv;
  
-      // Geometry vertices are in local pixel units centered at (0,0).
-      // Convert to target pixel coordinates with bottom-left origin.
-      let p_px = params.center + position.xy + (params.target_size * 0.5);
+       // Geometry vertices are in local pixel units centered at (0,0).
+       // Convert to target pixel coordinates with bottom-left origin.
+       let p_px = params.center + position.xy;
+
 
 
      // Convert pixels to clip space assuming bottom-left origin.
@@ -447,33 +449,30 @@ struct VSOut {
 
     common.push_str(&material_ctx.wgsl_decls());
 
-    // Fullscreen quad vertex shader - directly maps to screen space.
     let vertex_entry = r#"
- @vertex
- fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
-     var out: VSOut;
- 
-     // Local UV in [0,1] based on geometry size.
-let local_pos = position.xy * params.geo_scale + params.geo_translate;
+  @vertex
+  fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+      var out: VSOut;
+  
+      let _unused_geo_translate = params.geo_translate;
+      let _unused_geo_scale = params.geo_scale;
 
-     // Local UV in [0,1] based on geometry size.
-     out.uv = (local_pos / params.geo_size) + vec2f(0.5, 0.5);
+      // UV passed as vertex attribute.
+      out.uv = uv;
 
-     // Position is in local pixel space centered at (0,0).
-     // Convert to target pixel coordinates with bottom-left origin.
-     let p_px = local_pos + (params.target_size * 0.5);
-
- 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z, 1.0);
- 
-     // Pixel-centered like GLSL gl_FragCoord.xy.
-     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-     return out;
- }
-"#
+      // Convert local pixels to target pixel coordinates with bottom-left origin.
+      let p_px = params.center + position.xy;
+  
+      // Convert pixels to clip space assuming bottom-left origin.
+      // (0,0) => (-1,-1), (target_size) => (1,1)
+      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+      out.position = vec4f(ndc, position.z, 1.0);
+  
+      // Pixel-centered like GLSL gl_FragCoord.xy.
+      out.frag_coord_gl = p_px;// + vec2f(0.5, 0.5);
+      return out;
+  }
+ "#
     .to_string();
 
     let fragment_entry = format!(
@@ -663,8 +662,7 @@ struct VSOut {
 
     vertex_entry.push_str(" // Geometry vertices are in local pixel units centered at (0,0).\n");
     vertex_entry.push_str(" // Convert to target pixel coordinates with bottom-left origin.\n");
-    vertex_entry
-        .push_str(" let p_px = params.center + p_local.xy + (params.target_size * 0.5);\n\n");
+    vertex_entry.push_str(" let p_px = params.center + p_local.xy;\n\n");
 
     vertex_entry.push_str(" // Convert pixels to clip space assuming bottom-left origin.\n");
     vertex_entry.push_str(" // (0,0) => (-1,-1), (target_size) => (1,1)\n");
