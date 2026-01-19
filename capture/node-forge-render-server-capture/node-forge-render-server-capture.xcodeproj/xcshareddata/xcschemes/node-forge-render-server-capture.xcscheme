@@ -42,7 +42,7 @@
       allowLocationSimulation = "YES">
       <PathRunnable
          runnableDebuggingMode = "0"
-         FilePath = "/Users/ruiyao/Desktop/Projects/2026/node-forge-render-server/target/debug/node-forge-render-server">
+         FilePath = "/Users/ruiyao/Desktop/Projects/node-forge-render-server/target/debug/node-forge-render-server">
       </PathRunnable>
    </LaunchAction>
    <ProfileAction
