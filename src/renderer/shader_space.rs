@@ -1304,6 +1304,7 @@ pub fn build_shader_space_from_scene(
                         target_size: [*step_w as f32, *step_h as f32],
                         geo_size: [*step_w as f32, *step_h as f32],
                         center: [0.0, 0.0],
+
                         geo_translate: [0.0, 0.0],
                         geo_scale: [1.0, 1.0],
                         time: 0.0,
@@ -1356,6 +1357,7 @@ pub fn build_shader_space_from_scene(
                     _pad0: 0.0,
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
+
                 render_pass_specs.push(RenderPassSpec {
                     name: format!("{layer_id}__hblur_ds{downsample_factor}").into(),
                     geometry_buffer: geo_ds.clone(),
