@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-19T15:54:37.159Z",
-    "modified": "2026-01-19T15:54:37.159Z"
+    "created": "2026-01-19T17:54:10.950Z",
+    "modified": "2026-01-19T17:54:10.950Z"
   },
   "nodes": [
     {
@@ -139,8 +139,8 @@
       "id": "Index_14",
       "type": "Index",
       "position": {
-        "x": -420,
-        "y": -220
+        "x": -680,
+        "y": -240
       },
       "width": 160,
       "label": "Index",
@@ -150,8 +150,8 @@
       "id": "DataNode_20",
       "type": "DataNode",
       "position": {
-        "x": -480,
-        "y": -160
+        "x": -940,
+        "y": -440
       },
       "width": 219,
       "label": "Data",
@@ -165,8 +165,8 @@
       "id": "DataParse_21",
       "type": "DataParse",
       "position": {
-        "x": -220,
-        "y": -160
+        "x": -680,
+        "y": -180
       },
       "width": 217,
       "label": "Data Parse",
@@ -213,6 +213,46 @@
             "nodeId": "Index_14",
             "outputPortId": "index",
             "outputLabel": "Index"
+          }
+        }
+      ]
+    },
+    {
+      "id": "DataParse_22",
+      "type": "DataParse",
+      "position": {
+        "x": -680,
+        "y": -440
+      },
+      "width": 217,
+      "label": "Data Parse",
+      "params": {
+        "source": "let count = data[\"rects\"].length as int\n\nreturn { count }"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768809771808_1",
+          "name": "data",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_count",
+          "name": "count",
+          "type": "int"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768809771808_1",
+          "label": "data",
+          "variableName": "data",
+          "type": "any",
+          "sourceBinding": {
+            "nodeId": "DataNode_20",
+            "outputPortId": "data",
+            "outputLabel": "Data"
           }
         }
       ]
@@ -327,6 +367,28 @@
       "to": {
         "nodeId": "TransformGeometry_11",
         "portId": "translate"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "DataParse_22",
+        "portId": "out_count"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "count"
+      }
+    },
+    {
+      "id": "edge_27",
+      "from": {
+        "nodeId": "DataNode_20",
+        "portId": "data"
+      },
+      "to": {
+        "nodeId": "DataParse_22",
+        "portId": "dynamic_1768809771808_1"
       }
     }
   ],
