@@ -7,15 +7,15 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{Node, SceneDSL, incoming_connection},
+    dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         node_compiler::compile_material_expr,
         scene_prep::prepare_scene,
         types::{MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
-        utils::to_vec4_color,
+        utils::{cpu_num_f32_min_0, to_vec4_color},
     },
 };
 
@@ -707,31 +707,150 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
     scene: &SceneDSL,
 ) -> Result<Vec<(String, WgslShaderBundle)>> {
     let prepared = prepare_scene(scene)?;
+    let nodes_by_id = &prepared.nodes_by_id;
+    let ids = &prepared.ids;
+
+    let mut baked_data_parse = prepared.baked_data_parse.clone();
 
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
-    for pass_id in &prepared.composite_layers_in_draw_order {
-        let node = match prepared.nodes_by_id.get(pass_id) {
-            Some(n) => n,
-            None => continue,
-        };
+    for layer_id in prepared.composite_layers_in_draw_order {
+        let node = find_node(nodes_by_id, &layer_id)?;
+        match node.node_type.as_str() {
+            "RenderPass" => {
+                let render_geo_node_id =
+                    incoming_connection(&prepared.scene, &layer_id, "geometry")
+                        .map(|c| c.from.node_id.clone())
+                        .ok_or_else(|| anyhow!("RenderPass.geometry missing for {layer_id}"))?;
 
-        if node.node_type != "RenderPass" {
-            continue;
+                let (
+                    _geometry_buffer,
+                    _geo_w,
+                    _geo_h,
+                    _geo_x,
+                    _geo_y,
+                    instance_count,
+                    _base_m,
+                    _translate_expr,
+                    _vertex_inline_stmts,
+                    _vertex_wgsl_decls,
+                    _vertex_uses_instance_index,
+                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &render_geo_node_id,
+                    None,
+                )?;
+
+                let is_instanced = instance_count > 1;
+
+                baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    nodes_by_id,
+                    &layer_id,
+                    instance_count,
+                )?);
+
+                baked_data_parse.extend(crate::renderer::scene_prep::bake_data_parse_nodes(
+                    nodes_by_id,
+                    "__global",
+                    instance_count,
+                )?);
+
+                let meta = {
+                    let mut slot_by_output: std::collections::HashMap<
+                        (String, String, String),
+                        u32,
+                    > = std::collections::HashMap::new();
+                    let mut keys: Vec<(String, String, String)> = baked_data_parse
+                        .keys()
+                        .filter(|(pass_id, _, _)| pass_id == &layer_id)
+                        .cloned()
+                        .collect();
+                    keys.sort();
+                    for (i, k) in keys.iter().enumerate() {
+                        slot_by_output.insert(k.clone(), i as u32);
+                    }
+                    std::sync::Arc::new(crate::renderer::types::BakedDataParseMeta {
+                        pass_id: layer_id.clone(),
+                        outputs_per_instance: keys.len() as u32,
+                        slot_by_output,
+                    })
+                };
+
+                let (
+                    _geometry_buffer_2,
+                    _geo_w_2,
+                    _geo_h_2,
+                    _geo_x_2,
+                    _geo_y_2,
+                    _instance_count_2,
+                    _base_m_2,
+                    translate_expr,
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &render_geo_node_id,
+                    Some(&MaterialCompileContext {
+                        baked_data_parse: Some(std::sync::Arc::new(baked_data_parse.clone())),
+                        baked_data_parse_meta: Some(meta.clone()),
+                        ..Default::default()
+                    }),
+                )?;
+
+                let bundle = build_pass_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    Some(std::sync::Arc::new(baked_data_parse.clone())),
+                    Some(meta),
+                    &layer_id,
+                    is_instanced,
+                    translate_expr.map(|e| e.expr),
+                    vertex_inline_stmts,
+                    vertex_wgsl_decls,
+                    vertex_uses_instance_index,
+                )?;
+
+                out.push((layer_id, bundle));
+            }
+            "GuassianBlurPass" => {
+                let sigma =
+                    cpu_num_f32_min_0(&prepared.scene, &prepared.nodes_by_id, node, "radius", 0.0)?;
+                let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+                let downsample_factor: u32 = 1 << mip_level;
+                let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
+
+                let downsample_steps: Vec<u32> = if downsample_factor == 16 {
+                    vec![8, 2]
+                } else {
+                    vec![downsample_factor]
+                };
+
+                for step in &downsample_steps {
+                    let bundle = build_downsample_bundle(*step)?;
+                    out.push((format!("{layer_id}__downsample_{step}"), bundle));
+                }
+
+                out.push((
+                    format!("{layer_id}__hblur_ds{downsample_factor}"),
+                    build_horizontal_blur_bundle(kernel, offset),
+                ));
+                out.push((
+                    format!("{layer_id}__vblur_ds{downsample_factor}"),
+                    build_vertical_blur_bundle(kernel, offset),
+                ));
+                out.push((
+                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}"),
+                    build_upsample_bilinear_bundle(),
+                ));
+            }
+            other => bail!(
+                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+            ),
         }
-
-        let bundle = build_pass_wgsl_bundle(
-            scene,
-            &prepared.nodes_by_id,
-            None,
-            None,
-            pass_id,
-            false,
-            None,
-            Vec::new(),
-            String::new(),
-            false,
-        )?;
-        out.push((pass_id.to_string(), bundle));
     }
 
     Ok(out)

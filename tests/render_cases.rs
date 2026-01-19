@@ -70,16 +70,13 @@ fn run_case(case: &Case) {
     let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
         .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
 
+    assert!(
+        !passes.is_empty(),
+        "case {}: expected at least one RenderPass",
+        case.name
+    );
+
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
-    let has_baseline_png = case.baseline_png.is_some();
-    if passes.is_empty() {
-        if update_goldens {
-            return;
-        }
-        if !has_baseline_png {
-            return;
-        }
-    }
     let wgsl_dir = case_dir.join("wgsl");
     std::fs::create_dir_all(&wgsl_dir).unwrap_or_else(|e| {
         panic!(
