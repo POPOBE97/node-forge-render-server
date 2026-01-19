@@ -44,9 +44,10 @@ var src_samp: sampler;
       // UV passed as vertex attribute.
       out.uv = uv;
  
-      // Geometry vertices are in local pixel units centered at (0,0).
-      // Convert to target pixel coordinates with bottom-left origin.
-      let p_px = params.center + position.xy + (params.target_size * 0.5);
+       // Geometry vertices are in local pixel units centered at (0,0).
+       // Convert to target pixel coordinates with bottom-left origin.
+       let p_px = params.center + position.xy;
+
 
 
      // Convert pixels to clip space assuming bottom-left origin.

@@ -52,7 +52,7 @@ var img_samp_node_7: sampler;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
- let p_px = params.center + p_local.xy + (params.target_size * 0.5);
+ let p_px = params.center + p_local.xy;
 
  // Convert pixels to clip space assuming bottom-left origin.
  // (0,0) => (-1,-1), (target_size) => (1,1)
