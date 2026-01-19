@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-19T07:43:39.852Z",
-    "modified": "2026-01-19T07:43:39.852Z"
+    "created": "2026-01-19T19:22:47.902Z",
+    "modified": "2026-01-19T19:22:47.902Z"
   },
   "nodes": [
     {
@@ -156,7 +156,7 @@
       "width": 160,
       "label": "Vector3 Input",
       "params": {
-        "x": 200.78,
+        "x": 200,
         "y": 200,
         "z": 0
       }
@@ -171,7 +171,7 @@
       "width": 213,
       "label": "Math Closure",
       "params": {
-        "source": "int row = 5;\nint col = 10;\nint x = index % row - row/2;\nint y = index / col - col/2;\n\noutput = gap * vec3(x, y, 0.0);"
+        "source": "int row = 5;\nint col = 10;\nint x = index % row - row/2;\nint y = index / col - col/2;\n\nvec3 base = vec3(540.0, 1200.0, 0.0);\n\noutput = gap * vec3(x, y, 0.0) + base;"
       },
       "inputs": [
         {

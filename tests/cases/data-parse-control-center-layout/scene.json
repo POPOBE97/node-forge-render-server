@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-19T17:54:10.950Z",
-    "modified": "2026-01-19T17:54:10.950Z"
+    "created": "2026-01-19T19:19:19.544Z",
+    "modified": "2026-01-19T19:19:19.544Z"
   },
   "nodes": [
     {
@@ -171,7 +171,7 @@
       "width": 217,
       "label": "Data Parse",
       "params": {
-        "source": "let position = [\n  data[\"rects\"][index].x,\n  data[\"rects\"][index].y\n] as vec2\n\nreturn { position }"
+        "source": "let position = [\n  data[\"rects\"][index].x,\n  2400 - data[\"rects\"][index].y\n] as vec2\n\nreturn { position }"
       },
       "inputs": [
         {

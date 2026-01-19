@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-12T02:31:12.166Z",
-    "modified": "2026-01-12T02:31:12.166Z"
+    "created": "2026-01-19T19:23:26.568Z",
+    "modified": "2026-01-19T19:23:26.568Z"
   },
   "nodes": [
     {
@@ -13,6 +13,7 @@
         "x": 240,
         "y": 60
       },
+      "width": 160,
       "label": "Screen",
       "params": {
         "width": 392,
@@ -26,6 +27,7 @@
         "x": 60,
         "y": 60
       },
+      "width": 160,
       "label": "Composite",
       "params": {
         "alpha": 1
@@ -38,6 +40,7 @@
         "x": -200,
         "y": 80
       },
+      "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
@@ -52,6 +55,7 @@
         "x": -560,
         "y": 160
       },
+      "width": 192,
       "label": "Image Texture",
       "params": {
         "path": "baseline-test.png",
@@ -67,6 +71,7 @@
         "x": -200,
         "y": -40
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -85,12 +90,13 @@
         "x": -520,
         "y": -40
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 1080,
         "height": 2400,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -102,6 +108,7 @@
         "x": -200,
         "y": -180
       },
+      "width": 160,
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",

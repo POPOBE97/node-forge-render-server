@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-12T15:53:08.297Z",
-    "modified": "2026-01-12T15:53:08.297Z"
+    "created": "2026-01-19T19:23:13.409Z",
+    "modified": "2026-01-19T19:23:13.409Z"
   },
   "nodes": [
     {
@@ -13,6 +13,7 @@
         "x": 560,
         "y": 340
       },
+      "width": 160,
       "label": "Composite Output",
       "params": {
         "alpha": 1
@@ -45,6 +46,7 @@
         "x": 320,
         "y": 420
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -63,12 +65,13 @@
         "x": -100,
         "y": 420
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 200,
         "height": 200,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -80,6 +83,7 @@
         "x": 320,
         "y": 540
       },
+      "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
@@ -94,12 +98,13 @@
         "x": -100,
         "y": 140
       },
+      "width": 160,
       "label": "2D Rect",
       "params": {
         "width": 1080,
         "height": 2400,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 0,
         "smooth": 1
       }
@@ -111,6 +116,7 @@
         "x": 320,
         "y": 140
       },
+      "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
@@ -129,6 +135,7 @@
         "x": 760,
         "y": 340
       },
+      "width": 160,
       "label": "Screen",
       "params": {
         "width": 392,
@@ -142,11 +149,19 @@
         "x": 100,
         "y": 500
       },
+      "width": 160,
       "label": "Attribute",
       "params": {
         "name": "uv",
         "glslType": "vec2"
-      }
+      },
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "vector2"
+        }
+      ]
     },
     {
       "id": "node_15",
@@ -155,6 +170,7 @@
         "x": 80,
         "y": 140
       },
+      "width": 192,
       "label": "Image Texture",
       "params": {
         "path": "image 18.png",

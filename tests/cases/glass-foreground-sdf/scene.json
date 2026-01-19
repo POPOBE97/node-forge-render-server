@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-15T18:37:01.557Z",
-    "modified": "2026-01-15T18:37:01.557Z"
+    "created": "2026-01-19T19:20:32.854Z",
+    "modified": "2026-01-19T19:20:32.854Z"
   },
   "nodes": [
     {
@@ -79,8 +79,8 @@
       "params": {
         "width": 200,
         "height": 200,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 20,
         "smooth": 1
       }
@@ -126,7 +126,7 @@
       "width": 160,
       "label": "uSrc1",
       "params": {
-        "x": 2,
+        "x": 2.33,
         "y": 0.5
       }
     },
@@ -712,14 +712,14 @@
       "id": "Vector2Input_5",
       "type": "Vector2Input",
       "position": {
-        "x": -680,
+        "x": -700,
         "y": 640
       },
       "width": 160,
       "label": "Vector2 Input",
       "params": {
-        "x": 0,
-        "y": 0
+        "x": 100,
+        "y": 100
       }
     },
     {

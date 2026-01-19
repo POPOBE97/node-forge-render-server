@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-15T16:31:59.050Z",
-    "modified": "2026-01-15T16:31:59.050Z"
+    "created": "2026-01-19T19:19:43.291Z",
+    "modified": "2026-01-19T19:19:43.291Z"
   },
   "nodes": [
     {
@@ -79,8 +79,8 @@
       "params": {
         "width": 200,
         "height": 200,
-        "x": 0,
-        "y": 0,
+        "x": 540,
+        "y": 1200,
         "radius": 20,
         "smooth": 1
       }
