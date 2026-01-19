@@ -24,6 +24,9 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
 };
+
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
 var img_tex_node_7: texture_2d<f32>;
 
