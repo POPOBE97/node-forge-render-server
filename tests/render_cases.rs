@@ -189,7 +189,21 @@ fn run_case(case: &Case) {
         )
     });
 
-    let out_png = out_dir.join("headless-out.png");
+    // NOTE: Keep the baseline image immutable.
+    // We always write headless render output to a separate file so developers can
+    // manually inspect/copy it over the baseline if they choose.
+    let out_png = out_dir.join("test-render-result.png");
+
+    if let Some(baseline_rel) = case.baseline_png {
+        let baseline_png = cases_root.join(baseline_rel);
+        assert_ne!(
+            baseline_png,
+            out_png,
+            "case {}: refusing to write render output over baseline image: {}",
+            case.name,
+            baseline_png.display()
+        );
+    }
     if out_png.exists() {
         std::fs::remove_file(&out_png).unwrap_or_else(|e| {
             panic!(
@@ -299,7 +313,7 @@ fn case_blur_blend_blur() {
     run_case(&Case {
         name: "blur-blend-blur",
         scene_json: "blur-blend-blur/scene.json",
-        baseline_png: None,
+        baseline_png: Some("blur-blend-blur/baseline.png"),
     });
 }
 
@@ -308,7 +322,7 @@ fn case_calculated_window_size() {
     run_case(&Case {
         name: "calculated-window-size",
         scene_json: "calculated-window-size/scene.json",
-        baseline_png: None,
+        baseline_png: Some("calculated-window-size/baseline.png"),
     });
 }
 
@@ -317,7 +331,7 @@ fn case_chained_blur_pass() {
     run_case(&Case {
         name: "chained-blur-pass",
         scene_json: "chained-blur-pass/scene.json",
-        baseline_png: None,
+        baseline_png: Some("chained-blur-pass/baseline.png"),
     });
 }
 
@@ -339,7 +353,7 @@ fn case_glass_foreground_sdf() {
     run_case(&Case {
         name: "glass-foreground-sdf",
         scene_json: "glass-foreground-sdf/scene.json",
-        baseline_png: None,
+        baseline_png: Some("glass-foreground-sdf/baseline.png"),
     });
 }
 
@@ -348,7 +362,7 @@ fn case_glass() {
     run_case(&Case {
         name: "glass",
         scene_json: "glass/scene.json",
-        baseline_png: None,
+        baseline_png: Some("glass/baseline.png"),
     });
 }
 
@@ -357,7 +371,7 @@ fn case_pass_texture_alpha() {
     run_case(&Case {
         name: "pass-texture-alpha",
         scene_json: "pass-texture-alpha/scene.json",
-        baseline_png: None,
+        baseline_png: Some("pass-texture-alpha/baseline.png"),
     });
 }
 
@@ -400,7 +414,7 @@ fn case_instanced_geometry() {
     run_case(&Case {
         name: "instanced-geometry",
         scene_json: "instanced-geometry/scene.json",
-        baseline_png: None,
+        baseline_png: Some("instanced-geometry/baseline.png"),
     });
 }
 
@@ -409,7 +423,7 @@ fn case_instanced_geometry_vector_math() {
     run_case(&Case {
         name: "instanced-geometry-vector-math",
         scene_json: "instanced-geometry-vector-math/scene.json",
-        baseline_png: None,
+        baseline_png: Some("instanced-geometry-vector-math/baseline.png"),
     });
 }
 
@@ -418,7 +432,7 @@ fn case_simple_guassian_blur() {
     run_case(&Case {
         name: "simple-guassian-blur",
         scene_json: "simple-guassian-blur/scene.json",
-        baseline_png: None,
+        baseline_png: Some("simple-guassian-blur/baseline.png"),
     });
 }
 
@@ -427,7 +441,7 @@ fn case_simple_rectangle() {
     run_case(&Case {
         name: "simple-rectangle",
         scene_json: "simple-rectangle/scene.json",
-        baseline_png: None,
+        baseline_png: Some("simple-rectangle/baseline.png"),
     });
 }
 
@@ -436,7 +450,7 @@ fn case_simple_two_pass_blend() {
     run_case(&Case {
         name: "simple-two-pass-blend",
         scene_json: "simple-two-pass-blend/scene.json",
-        baseline_png: None,
+        baseline_png: Some("simple-two-pass-blend/baseline.png"),
     });
 }
 
@@ -445,7 +459,7 @@ fn case_unlinked_node() {
     run_case(&Case {
         name: "unlinked-node",
         scene_json: "unlinked-node/scene.json",
-        baseline_png: None,
+        baseline_png: Some("unlinked-node/baseline.png"),
     });
 }
 
@@ -454,7 +468,7 @@ fn case_untitled() {
     run_case(&Case {
         name: "Untitled",
         scene_json: "Untitled/scene.json",
-        baseline_png: None,
+        baseline_png: Some("Untitled/baseline.png"),
     });
 }
 
@@ -463,6 +477,6 @@ fn case_data_parse_control_center_layout() {
     run_case(&Case {
         name: "data-parse-control-center-layout",
         scene_json: "data-parse-control-center-layout/scene.json",
-        baseline_png: None,
+        baseline_png: Some("data-parse-control-center-layout/baseline.png"),
     });
 }

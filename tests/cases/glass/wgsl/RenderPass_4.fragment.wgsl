@@ -37,18 +37,6 @@ var pass_tex_GuassianBlurPass_42: texture_2d<f32>;
 @group(1) @binding(1)
 var pass_samp_GuassianBlurPass_42: sampler;
 
-@group(1) @binding(2)
-var pass_tex___auto_fullscreen_pass__edge_71: texture_2d<f32>;
-
-@group(1) @binding(3)
-var pass_samp___auto_fullscreen_pass__edge_71: sampler;
-
-@group(1) @binding(4)
-var pass_tex___auto_fullscreen_pass__edge_73: texture_2d<f32>;
-
-@group(1) @binding(5)
-var pass_samp___auto_fullscreen_pass__edge_73: sampler;
-
 
 // --- Extra WGSL declarations (generated) ---
 
@@ -229,10 +217,30 @@ fn glass_texture_map(
     return col;
 }
 
+fn mc_MathClosure_45_(uv: vec2<f32>, input1_: vec2<f32>) -> vec3<f32> {
+    var uv_1: vec2<f32>;
+    var input1_1: vec2<f32>;
+    var output: vec3<f32> = vec3(0f);
+
+    uv_1 = uv;
+    input1_1 = input1_;
+    let _e7: vec2<f32> = input1_1;
+    output = vec3<f32>(_e7.x, _e7.y, 40f);
+    let _e12: vec3<f32> = output;
+    return _e12;
+}
+
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+        var mc_MathClosure_45_out: vec3f;
+    {
+        let input1 = in.geo_size_px;
+        var output: vec3f;
+        output = mc_MathClosure_45_(in.uv, input1);
+        mc_MathClosure_45_out = output;
+    }
+
  // GlassMaterial(GlassMaterial_40)
  var glass_out_GlassMaterial_40: vec4f;
  {
@@ -261,7 +269,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let edge_pow = f32(2);
     // `uGeoPxSize.z` is the author-controlled corner radius in pixels.
     // For v1 we still use runtime geometry size (`in.geo_size_px`) for width/height.
-    let radius_px = (vec3f(0, 0, 20)).z;
+    let radius_px = (mc_MathClosure_45_out).z;
 
     let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
     let normalized_sdf = (-box_sdf / max(edge, 1e-6));
@@ -297,12 +305,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let refract_thickness = mix((f32(50) - edge) * 2.0, f32(50) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
     let refract_px = display_px + refr_dir.xy * refract_thickness;
     let refract_uv = refract_px / params.target_size;
-    let refraction = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_71, pass_samp___auto_fullscreen_pass__edge_71, refract_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
+    let refraction = glass_texture_map(pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42, refract_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
 
     let refl_dir = reflect(incident, normal);
     let reflect_px = display_px + refl_dir.xy * mix(0.0, f32(0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
     let reflect_uv = reflect_px / params.target_size;
-    let reflection = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_71, pass_samp___auto_fullscreen_pass__edge_71, reflect_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
+    let reflection = glass_texture_map(pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42, reflect_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
 
     // Mix refraction/reflection.
     var glass_mat = mix(refraction, reflection, (1.0 - clamp(edge_norm, 0.0, 1.0)) * 0.5);
@@ -312,7 +320,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     glass_mat = glass_process_color(glass_mat, vec4f(0, 0, 0, 0), 0, 1.399999976, 0);
 
     // Inner glass tint from blurred background color.
-    var tint = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_73, pass_samp___auto_fullscreen_pass__edge_73, uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
+    var tint = vec4f(0.0);
     tint = glass_adjust_color(tint, 1, 0);
     tint = vec4f(mix(tint.rgb, vec3f(1.0), 0), tint.a);
 

@@ -37,18 +37,6 @@ var pass_tex_GuassianBlurPass_42: texture_2d<f32>;
 @group(1) @binding(1)
 var pass_samp_GuassianBlurPass_42: sampler;
 
-@group(1) @binding(2)
-var pass_tex___auto_fullscreen_pass__edge_71: texture_2d<f32>;
-
-@group(1) @binding(3)
-var pass_samp___auto_fullscreen_pass__edge_71: sampler;
-
-@group(1) @binding(4)
-var pass_tex___auto_fullscreen_pass__edge_73: texture_2d<f32>;
-
-@group(1) @binding(5)
-var pass_samp___auto_fullscreen_pass__edge_73: sampler;
-
 
 // --- Extra WGSL declarations (generated) ---
 
@@ -227,6 +215,19 @@ fn glass_texture_map(
     let lighten = fg_col.r;
     col = vec4f(glass_hsvv(col.rgb, lighten), col.a);
     return col;
+}
+
+fn mc_MathClosure_45_(uv: vec2<f32>, input1_: vec2<f32>) -> vec3<f32> {
+    var uv_1: vec2<f32>;
+    var input1_1: vec2<f32>;
+    var output: vec3<f32> = vec3(0f);
+
+    uv_1 = uv;
+    input1_1 = input1_;
+    let _e7: vec2<f32> = input1_1;
+    output = vec3<f32>(_e7.x, _e7.y, 40f);
+    let _e12: vec3<f32> = output;
+    return _e12;
 }
 
 
