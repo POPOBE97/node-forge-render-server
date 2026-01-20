@@ -18,12 +18,16 @@ struct Params {
 @group(0) @binding(0)
 var<uniform> params: Params;
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-    @location(1) frag_coord_gl: vec2f,
-};
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+  };
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
@@ -476,10 +480,10 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_math_calculateNormal_out: vec3f;
     {
-        let uvPx = (in.uv * params.geo_size);
-        let centerPx = (params.geo_size * vec2f(0.5));
+        let uvPx = in.local_px;
+        let centerPx = (in.geo_size_px * vec2f(0.5));
         let uShapeEdgePx = 30.0;
-        let uGeoPxSize = params.geo_size;
+        let uGeoPxSize = in.geo_size_px;
         let r = 20.0;
         var output: vec3f;
         output = mc_math_calculateNormal(in.uv, uvPx, centerPx, uShapeEdgePx, uGeoPxSize, r);
@@ -496,7 +500,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_math_shapeSdf_out: f32;
     {
-        let baseSdf = sdf2d_round_rect(((in.uv * params.geo_size) - (params.geo_size * vec2f(0.5))), (params.geo_size * 0.5), vec4f(20.0));
+        let baseSdf = sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(20.0));
         let uShapeEdgePx = 30.0;
         let uShapeEdgePow = 2.0;
         var output: f32;

@@ -347,7 +347,7 @@ fn case_glass_foreground_sdf() {
 fn case_glass() {
     run_case(&Case {
         name: "glass",
-        scene_json: "glass/glass.json",
+        scene_json: "glass/scene.json",
         baseline_png: None,
     });
 }

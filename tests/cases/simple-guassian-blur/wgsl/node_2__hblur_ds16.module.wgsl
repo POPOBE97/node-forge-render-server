@@ -24,6 +24,10 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
+    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+    @location(2) local_px: vec2f,
+    // Geometry size in pixels after applying geometry/instance transforms.
+    @location(3) geo_size_px: vec2f,
 };
 
 
@@ -41,8 +45,13 @@ var src_samp: sampler;
       let _unused_geo_translate = params.geo_translate;
      let _unused_geo_scale = params.geo_scale;
  
-      // UV passed as vertex attribute.
-      out.uv = uv;
+        // UV passed as vertex attribute.
+        out.uv = uv;
+
+        out.geo_size_px = params.geo_size;
+
+         // Geometry-local pixel coordinate (GeoFragcoord).
+         out.local_px = uv * out.geo_size_px;
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -55,11 +64,11 @@ var src_samp: sampler;
      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
      out.position = vec4f(ndc, position.z, 1.0);
 
-     // Pixel-centered like GLSL gl_FragCoord.xy.
-     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-     return out;
- }
- 
+      // Pixel-centered like GLSL gl_FragCoord.xy.
+      out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+      return out;
+  }
+  
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     

@@ -18,12 +18,16 @@ struct Params {
 @group(0) @binding(0)
 var<uniform> params: Params;
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-    @location(1) frag_coord_gl: vec2f,
-};
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+  };
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;

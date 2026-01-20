@@ -18,13 +18,17 @@ struct Params {
 @group(0) @binding(0)
 var<uniform> params: Params;
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-    @location(1) frag_coord_gl: vec2f,
-    @location(2) instance_index: u32,
-};
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+     @location(4) instance_index: u32,
+ };
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
@@ -51,6 +55,12 @@ var<storage, read> baked_data_parse: array<vec4f>;
  out.uv = uv;
 
  let inst_m = mat4x4f(i0, i1, i2, i3);
+ let geo_sx = length(inst_m[0].xy);
+ let geo_sy = length(inst_m[1].xy);
+ let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
+ out.geo_size_px = geo_size_px;
+ out.local_px = uv * geo_size_px;
+
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
  let delta_t = (vec3f(0, 200, 0) * vec3f(f32(instance_index)));

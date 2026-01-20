@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-20T07:03:36.712Z",
-    "modified": "2026-01-20T07:03:36.712Z"
+    "created": "2026-01-20T09:56:13.688Z",
+    "modified": "2026-01-20T09:56:13.688Z"
   },
   "nodes": [
     {
@@ -24,7 +24,7 @@
       "id": "InstancedGeometryEnd_2",
       "type": "InstancedGeometryEnd",
       "position": {
-        "x": 260,
+        "x": 140,
         "y": -440
       },
       "width": 160,
@@ -55,7 +55,7 @@
       "id": "RenderPass_4",
       "type": "RenderPass",
       "position": {
-        "x": 460,
+        "x": 340,
         "y": -440
       },
       "width": 160,
@@ -74,7 +74,7 @@
       "id": "Composite_7",
       "type": "Composite",
       "position": {
-        "x": 640,
+        "x": 520,
         "y": -440
       },
       "width": 160,
@@ -87,14 +87,14 @@
       "id": "RenderTexture_8",
       "type": "RenderTexture",
       "position": {
-        "x": 460,
+        "x": 340,
         "y": -320
       },
       "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
-        "height": 2400,
+        "height": 2410,
         "format": "rgba8unorm"
       }
     },
@@ -102,7 +102,7 @@
       "id": "Screen_9",
       "type": "Screen",
       "position": {
-        "x": 820,
+        "x": 700,
         "y": -440
       },
       "width": 160,
@@ -148,7 +148,7 @@
       "width": 217,
       "label": "Data Parse",
       "params": {
-        "source": "let position = [\n  data[\"rects\"][index].x,\n  2400 - data[\"rects\"][index].y\n] as vec2\n\nreturn { position }"
+        "source": "let size = [\n  data[\"rects\"][index].width,\n  data[\"rects\"][index].height\n] as vec2\n\nlet position = [\n  data[\"rects\"][index].x - size[0] / 2 + size[0],\n  2400 - (data[\"rects\"][index].y - size[1] / 2 + size[1])\n] as vec2\n\nconst scale = [\n  size[0] / 100.0,\n  size[1] / 100.0,\n] as vec2\n\nreturn { position, scale, size }"
       },
       "inputs": [
         {
@@ -166,6 +166,16 @@
         {
           "id": "out_position",
           "name": "position",
+          "type": "vector2"
+        },
+        {
+          "id": "out_scale",
+          "name": "scale",
+          "type": "vector2"
+        },
+        {
+          "id": "out_size",
+          "name": "size",
           "type": "vector2"
         }
       ],
@@ -255,6 +265,189 @@
           "y": 1,
           "z": 1
         }
+      }
+    },
+    {
+      "id": "Sdf2D_26",
+      "type": "Sdf2D",
+      "position": {
+        "x": -40,
+        "y": -60
+      },
+      "width": 160,
+      "label": "2D SDF",
+      "params": {
+        "shape": "rectangle",
+        "radius": 0.5
+      }
+    },
+    {
+      "id": "GeoSize_31",
+      "type": "GeoSize",
+      "position": {
+        "x": -240,
+        "y": 0
+      },
+      "width": 160,
+      "label": "Geo Size",
+      "params": {}
+    },
+    {
+      "id": "GeoSize_32",
+      "type": "GeoSize",
+      "position": {
+        "x": -420,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Geo Size",
+      "params": {}
+    },
+    {
+      "id": "MathMultiply_33",
+      "type": "MathMultiply",
+      "position": {
+        "x": -240,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "GeoSize_32",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_35",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_35",
+      "type": "FloatInput",
+      "position": {
+        "x": -420,
+        "y": -80
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 0.5
+      }
+    },
+    {
+      "id": "FloatInput_36",
+      "type": "FloatInput",
+      "position": {
+        "x": -240,
+        "y": 60
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 20
+      }
+    },
+    {
+      "id": "MathMultiply_38",
+      "type": "MathMultiply",
+      "position": {
+        "x": 160,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_39",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "Sdf2D_26",
+            "outputPortId": "distance",
+            "outputLabel": "Distance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_39",
+      "type": "FloatInput",
+      "position": {
+        "x": -40,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": -0.2
       }
     }
   ],
@@ -389,6 +582,105 @@
       "to": {
         "nodeId": "SetTransform_24",
         "portId": "translate"
+      }
+    },
+    {
+      "id": "edge_32",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_scale"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "scale"
+      }
+    },
+    {
+      "id": "edge_42",
+      "from": {
+        "nodeId": "GeoSize_32",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathMultiply_33",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "FloatInput_35",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_33",
+        "portId": "dynamic_fixed_2"
+      }
+    },
+    {
+      "id": "edge_44",
+      "from": {
+        "nodeId": "MathMultiply_33",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_45",
+      "from": {
+        "nodeId": "FloatInput_36",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "radius4"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "GeoSize_31",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_62",
+      "from": {
+        "nodeId": "Sdf2D_26",
+        "portId": "distance"
+      },
+      "to": {
+        "nodeId": "MathMultiply_38",
+        "portId": "dynamic_fixed_2"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "FloatInput_39",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_38",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "MathMultiply_38",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
       }
     }
   ],
