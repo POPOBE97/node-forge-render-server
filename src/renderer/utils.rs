@@ -195,6 +195,11 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
         return Ok(x);
     }
 
+    // Textures are opaque resources, not value expressions.
+    if x.ty == ValueType::Texture2D || target == ValueType::Texture2D {
+        bail!("cannot coerce between {:?} and {:?}", x.ty, target);
+    }
+
     // Scalar -> scalar numeric
     match target {
         ValueType::F32 => {

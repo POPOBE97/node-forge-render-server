@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-20T06:45:25.175Z",
+  "generatedAt": "2026-01-20T15:30:49.080Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -25,6 +25,7 @@
     "GeoSize",
     "GeometryFromFile",
     "GeometryPrimitive",
+    "GlassMaterial",
     "GradientTexture",
     "GuassianBlurPass",
     "HSVAdjust",
@@ -731,6 +732,379 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "GlassMaterial",
+      "label": "Glass Material",
+      "category": "Material",
+      "description": "Multi-pass sampled glass material (outputs material)",
+      "inputs": [
+        {
+          "id": "uBgTex",
+          "name": "Background Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uRefractTex",
+          "name": "Refraction Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uReflectTex",
+          "name": "Reflection Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uReflectForegroundBlurTex",
+          "name": "Foreground Blur Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uBgColorTex",
+          "name": "Background Color Pass",
+          "type": "pass"
+        },
+        {
+          "id": "uBrightness",
+          "name": "Brightness",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uLuminanceAmount",
+          "name": "Luminance Amount",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uLuminanceValues",
+          "name": "Luminance Values",
+          "type": "vector4",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "uSaturation",
+          "name": "Saturation",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uDarker",
+          "name": "Darker",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uDarkerRange",
+          "name": "Darker Range",
+          "type": "vector2",
+          "default": {
+            "x": 0,
+            "y": 1
+          }
+        },
+        {
+          "id": "uShapeEdgePx",
+          "name": "Edge (px)",
+          "type": "float",
+          "default": 30
+        },
+        {
+          "id": "uShapeEdgePow",
+          "name": "Edge Pow",
+          "type": "float",
+          "default": 2
+        },
+        {
+          "id": "uShapeThicknessPx",
+          "name": "Thickness (px)",
+          "type": "float",
+          "default": 50
+        },
+        {
+          "id": "uShapeReflectOffsetPx",
+          "name": "Reflect Offset (px)",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uRefractBlurScale",
+          "name": "Refract Blur Scale",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uRefractIOR",
+          "name": "Refract IOR",
+          "type": "float",
+          "default": 1.5
+        },
+        {
+          "id": "uReflectionStrength",
+          "name": "Reflection Strength",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "uReflectionLighten",
+          "name": "Reflection Lighten",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "uInnerBottom",
+          "name": "Inner Bottom",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uInnerColorWhite",
+          "name": "Inner Color White",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uInnerColorMix",
+          "name": "Inner Color Mix",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uColorPow",
+          "name": "Color Pow",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uGlassColor",
+          "name": "Glass Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            0
+          ]
+        },
+        {
+          "id": "uDirectionalLightDirection",
+          "name": "Directional Light Direction",
+          "type": "vector3",
+          "default": {
+            "x": 0.5,
+            "y": -0.7,
+            "z": 0.5
+          }
+        },
+        {
+          "id": "uDirectionalLightIntensity",
+          "name": "Directional Light Intensity",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uDirectionalLightOppositeIntensity",
+          "name": "Directional Light Opposite Intensity",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uDirectionalLightAngleRange",
+          "name": "Directional Light Angle Range",
+          "type": "float",
+          "default": 0.5
+        },
+        {
+          "id": "uDirectionalLightLightWidth",
+          "name": "Directional Light Width",
+          "type": "float",
+          "default": 30
+        },
+        {
+          "id": "uDirectionalLightEdgePow",
+          "name": "Directional Light Edge Pow",
+          "type": "float",
+          "default": 2
+        },
+        {
+          "id": "uBgColorBrightness",
+          "name": "BG Color Brightness",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uBgColorSaturation",
+          "name": "BG Color Saturation",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uStrength",
+          "name": "Strength",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uHighlightStrength",
+          "name": "Highlight Strength",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uAlpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uGeoPxPos",
+          "name": "Geo Pixel Position",
+          "type": "vector2",
+          "default": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "uGeoPxSize",
+          "name": "Geo Pixel Size",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 20
+          }
+        },
+        {
+          "id": "uNoiseScale",
+          "name": "Noise Scale",
+          "type": "float",
+          "default": 1
+        },
+        {
+          "id": "uNoiseStrength",
+          "name": "Noise Strength",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uNoiseStrengthSmall",
+          "name": "Noise Strength Small",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uNoiseStrengthBig",
+          "name": "Noise Strength Big",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uNoiseStrengthMix",
+          "name": "Noise Strength Mix",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uUseSdfTex",
+          "name": "Use SDF Texture",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "uSdfTex",
+          "name": "SDF Texture (Sampled Color)",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "defaultParams": {
+        "uBrightness": 0,
+        "uLuminanceAmount": 0,
+        "uLuminanceValues": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "uSaturation": 1,
+        "uDarker": 0,
+        "uDarkerRange": {
+          "x": 0,
+          "y": 1
+        },
+        "uShapeEdgePx": 30,
+        "uShapeEdgePow": 2,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uRefractBlurScale": 1,
+        "uRefractIOR": 1.5,
+        "uReflectionStrength": 0.5,
+        "uReflectionLighten": 0.5,
+        "uInnerBottom": 0,
+        "uInnerColorWhite": 0,
+        "uInnerColorMix": 0,
+        "uColorPow": 1,
+        "uGlassColor": [
+          1,
+          1,
+          1,
+          0
+        ],
+        "uDirectionalLightDirection": {
+          "x": 0.5,
+          "y": -0.7,
+          "z": 0.5
+        },
+        "uDirectionalLightIntensity": 1,
+        "uDirectionalLightOppositeIntensity": 0,
+        "uDirectionalLightAngleRange": 0.5,
+        "uDirectionalLightLightWidth": 30,
+        "uDirectionalLightEdgePow": 2,
+        "uBgColorBrightness": 0,
+        "uBgColorSaturation": 1,
+        "uStrength": 1,
+        "uHighlightStrength": 0,
+        "uAlpha": 1,
+        "uGeoPxPos": {
+          "x": 0,
+          "y": 0
+        },
+        "uGeoPxSize": {
+          "x": 0,
+          "y": 0,
+          "z": 20
+        },
+        "uNoiseScale": 1,
+        "uNoiseStrength": 0,
+        "uNoiseStrengthSmall": 0,
+        "uNoiseStrengthBig": 0,
+        "uNoiseStrengthMix": 0,
+        "uUseSdfTex": 0,
+        "uSdfTex": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
     },
     {
       "type": "GradientTexture",

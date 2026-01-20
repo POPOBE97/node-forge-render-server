@@ -223,7 +223,11 @@ where
 
     // Evaluate SDF at the *current fragment* local position in pixels.
     // Use GeoFragcoord convention: origin at bottom-left of the geometry.
-    let frag_local_px = TypedExpr::new("(in.uv * params.geo_size)".to_string(), ValueType::Vec2);
+    //
+    // Note: `gl_FragCoord` (render-target space) cannot be made instance/geometry-local
+    // without knowing the per-geometry (or per-instance) inverse transform. So Sdf2D uses
+    // the geometry-local contract instead.
+    let frag_local_px = TypedExpr::new("in.local_px".to_string(), ValueType::Vec2);
 
     // `position` is interpreted as the SDF shape center (in the same local pixel space).
     // If not provided, default to centered at origin.
@@ -337,8 +341,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::F32);
-        assert!(expr.expr.contains("in.uv"));
-        assert!(expr.expr.contains("params.geo_size"));
+        assert!(expr.expr.contains("in.local_px"));
         assert!(expr.expr.contains("length"));
         assert!(expr.expr.contains("-"));
     }
@@ -378,8 +381,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::F32);
-        assert!(expr.expr.contains("in.uv"));
-        assert!(expr.expr.contains("params.geo_size"));
+        assert!(expr.expr.contains("in.local_px"));
         assert!(expr.expr.contains("sdf2d_round_rect"));
         assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_round_rect"));
     }

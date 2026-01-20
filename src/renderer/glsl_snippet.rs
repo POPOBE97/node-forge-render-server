@@ -51,6 +51,7 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
         ValueType::I32 => "int",
         ValueType::U32 => "uint",
         ValueType::Bool => "bool",
+        ValueType::Texture2D => "sampler2D",
         ValueType::Vec2 => "vec2",
         ValueType::Vec3 => "vec3",
         ValueType::Vec4 => "vec4",

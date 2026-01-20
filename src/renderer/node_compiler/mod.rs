@@ -4,6 +4,7 @@ pub mod attribute;
 pub mod color_nodes;
 pub mod data_parse;
 pub mod geometry_nodes;
+pub mod glass_material;
 pub mod input_nodes;
 pub mod math_closure;
 pub mod math_nodes;
@@ -99,7 +100,7 @@ fn compile_expr(
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
-        "GeoSize" => input_nodes::compile_geo_size(node, out_port)?,
+        "GeoSize" => input_nodes::compile_geo_size_for_stage(node, out_port, stage)?,
         "Index" => input_nodes::compile_index(node, out_port, ctx)?,
 
         // Attribute node
@@ -164,6 +165,17 @@ fn compile_expr(
             compile_fn,
         )?,
         "PassTexture" => texture_nodes::compile_pass_texture(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+
+        // Material nodes
+        "GlassMaterial" => glass_material::compile_glass_material(
             scene,
             nodes_by_id,
             node,

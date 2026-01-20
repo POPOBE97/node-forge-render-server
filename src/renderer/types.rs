@@ -12,6 +12,11 @@ pub enum ValueType {
     I32,
     U32,
     Bool,
+    /// Opaque texture handle (a paired texture_2d + sampler binding).
+    ///
+    /// This is not a "storable" value in WGSL and must only be used by nodes that explicitly
+    /// know how to sample it (e.g. GlassMaterial).
+    Texture2D,
     Vec2,
     Vec3,
     Vec4,
@@ -129,6 +134,7 @@ impl ValueType {
             ValueType::I32 => "i32",
             ValueType::U32 => "u32",
             ValueType::Bool => "bool",
+            ValueType::Texture2D => "texture_2d<f32>",
             ValueType::Vec2 => "vec2f",
             ValueType::Vec3 => "vec3f",
             ValueType::Vec4 => "vec4f",
@@ -141,6 +147,7 @@ impl ValueType {
             ValueType::I32 => "int",
             ValueType::U32 => "uint",
             ValueType::Bool => "bool",
+            ValueType::Texture2D => "sampler2D",
             ValueType::Vec2 => "vec2",
             ValueType::Vec3 => "vec3",
             ValueType::Vec4 => "vec4",

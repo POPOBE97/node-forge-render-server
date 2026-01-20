@@ -28,6 +28,7 @@ fn default_value_for(ty: ValueType) -> TypedExpr {
         ValueType::I32 => TypedExpr::new("0", ValueType::I32),
         ValueType::U32 => TypedExpr::new("0u", ValueType::U32),
         ValueType::Bool => TypedExpr::new("false", ValueType::Bool),
+        ValueType::Texture2D => unreachable!("DataParse cannot produce Texture2D values"),
         ValueType::Vec2 => TypedExpr::new("vec2f(0.0, 0.0)", ValueType::Vec2),
         ValueType::Vec3 => TypedExpr::new("vec3f(0.0, 0.0, 0.0)", ValueType::Vec3),
         ValueType::Vec4 => TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)", ValueType::Vec4),
@@ -73,7 +74,7 @@ where
 
     let ix = match stage {
         crate::renderer::validation::GlslShaderStage::Vertex => "instance_index",
-        crate::renderer::validation::GlslShaderStage::Fragment => "in.instance_index",
+        crate::renderer::validation::GlslShaderStage::Fragment => "instance_index",
         crate::renderer::validation::GlslShaderStage::Compute => "0u",
     };
 
@@ -127,6 +128,7 @@ where
             ),
             ValueType::Vec4,
         ),
+        ValueType::Texture2D => unreachable!("DataParse cannot produce Texture2D values"),
     };
 
     Ok(out)

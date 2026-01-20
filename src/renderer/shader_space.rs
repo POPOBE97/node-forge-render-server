@@ -53,13 +53,19 @@ use crate::{
 };
 
 fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
+    // Column-major mat4 multiply to match WGSL `mat4x4f` (constructed from 4 column vectors)
+    // and the `inst_m * vec4f(position, 1.0)` convention in the vertex shader.
+    //
+    // out = a * b
+    // out[r,c] = sum_k a[r,k] * b[k,c]
+    // idx(r,c) = c*4 + r
     let mut out = [0.0f32; 16];
-    for r in 0..4 {
-        for c in 0..4 {
-            out[r * 4 + c] = a[r * 4 + 0] * b[0 * 4 + c]
-                + a[r * 4 + 1] * b[1 * 4 + c]
-                + a[r * 4 + 2] * b[2 * 4 + c]
-                + a[r * 4 + 3] * b[3 * 4 + c];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[c * 4 + r] = a[0 * 4 + r] * b[c * 4 + 0]
+                + a[1 * 4 + r] * b[c * 4 + 1]
+                + a[2 * 4 + r] * b[c * 4 + 2]
+                + a[3 * 4 + r] * b[c * 4 + 3];
         }
     }
     out
@@ -163,6 +169,67 @@ fn compute_set_transform_matrix(
             }
         }
         _ => Ok(compute_trs_matrix(node)),
+    }
+}
+
+fn baked_to_vec3_translate(v: BakedValue) -> [f32; 3] {
+    match v {
+        BakedValue::Vec3(v) => v,
+        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
+        BakedValue::Vec2([x, y]) => [x, y, 0.0],
+        BakedValue::F32(x) => [x, 0.0, 0.0],
+        BakedValue::I32(x) => [x as f32, 0.0, 0.0],
+        BakedValue::U32(x) => [x as f32, 0.0, 0.0],
+        BakedValue::Bool(x) => {
+            if x {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 0.0, 0.0]
+            }
+        }
+    }
+}
+
+fn baked_to_vec3_scale(v: BakedValue) -> [f32; 3] {
+    match v {
+        BakedValue::Vec3(v) => v,
+        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
+        BakedValue::Vec2([x, y]) => [x, y, 1.0],
+        BakedValue::F32(x) => [x, x, 1.0],
+        BakedValue::I32(x) => {
+            let x = x as f32;
+            [x, x, 1.0]
+        }
+        BakedValue::U32(x) => {
+            let x = x as f32;
+            [x, x, 1.0]
+        }
+        BakedValue::Bool(x) => {
+            if x {
+                [1.0, 1.0, 1.0]
+            } else {
+                [0.0, 0.0, 1.0]
+            }
+        }
+    }
+}
+
+fn baked_to_vec3_rotate_deg(v: BakedValue) -> [f32; 3] {
+    match v {
+        BakedValue::Vec3(v) => v,
+        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
+        BakedValue::Vec2([x, y]) => [x, y, 0.0],
+        // Common authoring pattern: scalar rotation means Z rotation.
+        BakedValue::F32(z) => [0.0, 0.0, z],
+        BakedValue::I32(z) => [0.0, 0.0, z as f32],
+        BakedValue::U32(z) => [0.0, 0.0, z as f32],
+        BakedValue::Bool(x) => {
+            if x {
+                [0.0, 0.0, 1.0]
+            } else {
+                [0.0, 0.0, 0.0]
+            }
+        }
     }
 }
 
@@ -362,38 +429,109 @@ pub(crate) fn resolve_geometry_for_render_pass(
             // SetTransform overrides the accumulated base matrix.
             let m = compute_set_transform_matrix(scene, nodes_by_id, geometry_node)?;
 
-            // Bake per-instance base matrices if translate is connected and baked values are available.
+            // Bake per-instance base matrices if any of translate/scale/rotate are connected and
+            // baked values are available.
+            //
             // Semantics A: SetTransform result replaces upstream base matrix.
-            // For now, we only bake translate (Vec3/Vec4) from baked data parse (rotate/scale remain inline-only CPU params).
+            // Connected components behave like "deltas" on top of inline params:
+            // - translate: additive
+            // - rotate: additive degrees (Z only currently)
+            // - scale: multiplicative
             let mut instance_mats: Option<Vec<[f32; 16]>> = None;
             if let Some(material_ctx) = material_ctx {
-                if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
-                    if let (Some(baked), Some(meta)) = (
-                        material_ctx.baked_data_parse.as_ref(),
-                        material_ctx.baked_data_parse_meta.as_ref(),
-                    ) {
-                        let expect_key = (
+                if let (Some(baked), Some(meta)) = (
+                    material_ctx.baked_data_parse.as_ref(),
+                    material_ctx.baked_data_parse_meta.as_ref(),
+                ) {
+                    let translate_key = incoming_connection(scene, &geometry_node.id, "translate")
+                        .map(|conn| {
+                            (
+                                meta.pass_id.clone(),
+                                conn.from.node_id.clone(),
+                                conn.from.port_id.clone(),
+                            )
+                        });
+
+                    let scale_key = incoming_connection(scene, &geometry_node.id, "scale").map(|conn| {
+                        (
                             meta.pass_id.clone(),
                             conn.from.node_id.clone(),
                             conn.from.port_id.clone(),
-                        );
+                        )
+                    });
 
-                        if baked.contains_key(&expect_key) {
-                            let instances = instances;
-                            let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instances as usize);
-                            for i in 0..instances as usize {
-                                let v = baked.get(&expect_key).and_then(|vs| vs.get(i)).cloned();
+                    let rotate_key = incoming_connection(scene, &geometry_node.id, "rotate")
+                        .map(|conn| {
+                            (
+                                meta.pass_id.clone(),
+                                conn.from.node_id.clone(),
+                                conn.from.port_id.clone(),
+                            )
+                        });
 
-                                let t = match v.unwrap_or(BakedValue::Vec3([0.0, 0.0, 0.0])) {
-                                    BakedValue::Vec3(v) => v,
-                                    BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
-                                    BakedValue::Vec2([x, y]) => [x, y, 0.0],
-                                    _ => [0.0, 0.0, 0.0],
-                                };
-                                mats.push(mat4_mul(mat4_translate(t[0], t[1], t[2]), m));
-                            }
-                            instance_mats = Some(mats);
+                    let has_any = translate_key
+                        .as_ref()
+                        .is_some_and(|k| baked.contains_key(k))
+                        || scale_key.as_ref().is_some_and(|k| baked.contains_key(k))
+                        || rotate_key.as_ref().is_some_and(|k| baked.contains_key(k));
+
+                    if has_any {
+                        let t_inline = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
+                        let s_inline = parse_inline_vec3(geometry_node, "scale", [1.0, 1.0, 1.0]);
+                        let r_inline = parse_inline_vec3(geometry_node, "rotate", [0.0, 0.0, 0.0]);
+
+                        let instances = instances;
+                        let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instances as usize);
+                        for i in 0..instances as usize {
+                            let t_conn = translate_key
+                                .as_ref()
+                                .and_then(|k| baked.get(k))
+                                .and_then(|vs| vs.get(i))
+                                .cloned()
+                                .map(baked_to_vec3_translate)
+                                .unwrap_or([0.0, 0.0, 0.0]);
+
+                            let s_conn = scale_key
+                                .as_ref()
+                                .and_then(|k| baked.get(k))
+                                .and_then(|vs| vs.get(i))
+                                .cloned()
+                                .map(baked_to_vec3_scale)
+                                .unwrap_or([1.0, 1.0, 1.0]);
+
+                            let r_conn = rotate_key
+                                .as_ref()
+                                .and_then(|k| baked.get(k))
+                                .and_then(|vs| vs.get(i))
+                                .cloned()
+                                .map(baked_to_vec3_rotate_deg)
+                                .unwrap_or([0.0, 0.0, 0.0]);
+
+                            // Combine inline + connected components.
+                            let t = [
+                                t_inline[0] + t_conn[0],
+                                t_inline[1] + t_conn[1],
+                                t_inline[2] + t_conn[2],
+                            ];
+                            let s = [
+                                s_inline[0] * s_conn[0],
+                                s_inline[1] * s_conn[1],
+                                s_inline[2] * s_conn[2],
+                            ];
+                            let r = [
+                                r_inline[0] + r_conn[0],
+                                r_inline[1] + r_conn[1],
+                                r_inline[2] + r_conn[2],
+                            ];
+
+                            let rz = r[2].to_radians();
+                            let m_i = mat4_mul(
+                                mat4_translate(t[0], t[1], t[2]),
+                                mat4_mul(mat4_rotate_z(rz), mat4_scale(s[0], s[1], s[2])),
+                            );
+                            mats.push(m_i);
                         }
+                        instance_mats = Some(mats);
                     }
                 }
             }
@@ -541,18 +679,25 @@ pub fn render_scene_to_png_headless(
 fn sampled_pass_node_ids(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
-) -> HashSet<String> {
-    // Any pass connected into PassTexture.pass is considered "sampled" and must have a resolvable output texture.
+) -> Result<HashSet<String>> {
+    // A pass must render into a dedicated intermediate texture if it will be sampled later.
+    //
+    // Originally we only treated passes referenced by explicit PassTexture nodes as "sampled".
+    // But some material nodes (e.g. GlassMaterial) can directly depend on upstream pass textures
+    // without a PassTexture node in the graph. Those dependencies show up in WGSL bundle
+    // `pass_textures`, so we detect sampling by scanning all pass nodes and collecting their
+    // referenced pass textures.
     let mut out: HashSet<String> = HashSet::new();
-    for n in nodes_by_id.values() {
-        if n.node_type != "PassTexture" {
+
+    for (node_id, node) in nodes_by_id {
+        if !matches!(node.node_type.as_str(), "RenderPass" | "GuassianBlurPass") {
             continue;
         }
-        if let Some(conn) = incoming_connection(scene, &n.id, "pass") {
-            out.insert(conn.from.node_id.clone());
-        }
+        let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
+        out.extend(deps);
     }
-    out
+
+    Ok(out)
 }
 
 fn resolve_pass_texture_bindings(
@@ -887,7 +1032,7 @@ pub fn build_shader_space_from_scene(
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
     // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
-    let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id);
+    let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
 
     for id in order {
         let node = match nodes_by_id.get(id) {
@@ -2128,17 +2273,19 @@ mod tests {
     }
 
     #[test]
-    fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() {
+    fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() -> Result<()> {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let scene_path = manifest_dir.join("tests/cases/pass-texture-alpha/scene.json");
-        let scene = crate::dsl::load_scene_from_path(&scene_path).expect("load scene");
-        let prepared = prepare_scene(&scene).expect("prepare scene");
+        let scene = crate::dsl::load_scene_from_path(&scene_path)?;
+        let prepared = prepare_scene(&scene)?;
 
-        let sampled = sampled_pass_node_ids(&prepared.scene, &prepared.nodes_by_id);
+        let sampled = sampled_pass_node_ids(&prepared.scene, &prepared.nodes_by_id)?;
         assert!(
             sampled.contains("pass_up"),
             "expected sampled passes to include pass_up, got: {sampled:?}"
         );
+
+        Ok(())
     }
 }
 

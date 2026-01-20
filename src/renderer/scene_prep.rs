@@ -240,6 +240,7 @@ fn map_baked_type(s: Option<&str>) -> Result<ValueType> {
         "vector2" | "vec2" => Ok(ValueType::Vec2),
         "vector3" | "vec3" => Ok(ValueType::Vec3),
         "vector4" | "vec4" | "color" => Ok(ValueType::Vec4),
+        "texture" => Ok(ValueType::Texture2D),
         other => bail!("unsupported DataParse port type: {other}"),
     }
 }
@@ -326,6 +327,9 @@ fn baked_from_json(ty: ValueType, v: &serde_json::Value) -> Result<BakedValue> {
                 arr[3].as_f64().ok_or_else(|| anyhow!("expected number"))? as f32,
             ]))
         }
+
+        // DataParse outputs are baked CPU-side; GPU resources are not supported here.
+        ValueType::Texture2D => bail!("cannot bake DataParse output type 'texture'"),
     }
 }
 
@@ -415,6 +419,7 @@ pub(crate) fn bake_data_parse_nodes(
                     ValueType::Vec2 => BakedValue::Vec2([0.0, 0.0]),
                     ValueType::Vec3 => BakedValue::Vec3([0.0, 0.0, 0.0]),
                     ValueType::Vec4 => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
+                    ValueType::Texture2D => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
                 });
 
                 baked

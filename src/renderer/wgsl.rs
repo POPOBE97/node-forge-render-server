@@ -217,7 +217,11 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
-    @location(2) instance_index: u32,
+    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+    @location(2) local_px: vec2f,
+    // Geometry size in pixels after applying geometry/instance transforms.
+    @location(3) geo_size_px: vec2f,
+    @location(4) instance_index: u32,
 };
 
 
@@ -230,26 +234,31 @@ var src_samp: sampler;
     .to_string();
 
     if !uses_instance_index {
-        common = common.replace("    @location(2) instance_index: u32,\n", "");
+        common = common.replace("    @location(4) instance_index: u32,\n", "");
     }
 
     let vertex_entry = if uses_instance_index {
         r#"
  @vertex
-  fn vs_main(
-      @location(0) position: vec3f,
-      @location(1) uv: vec2f,
-      @builtin(instance_index) instance_index: u32,
-  ) -> VSOut {
-      var out: VSOut;
-      out.instance_index = instance_index;
+   fn vs_main(
+       @location(0) position: vec3f,
+       @location(1) uv: vec2f,
+       @builtin(instance_index) instance_index: u32,
+   ) -> VSOut {
+       var out: VSOut;
+       out.instance_index = instance_index;
   
       let _unused_geo_size = params.geo_size;
       let _unused_geo_translate = params.geo_translate;
       let _unused_geo_scale = params.geo_scale;
   
-       // UV passed as vertex attribute.
-       out.uv = uv;
+         // UV passed as vertex attribute.
+         out.uv = uv;
+
+         out.geo_size_px = params.geo_size;
+
+         // Geometry-local pixel coordinate (GeoFragcoord).
+         out.local_px = uv * out.geo_size_px;
   
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -263,11 +272,11 @@ var src_samp: sampler;
      out.position = vec4f(ndc, position.z, 1.0);
 
      // Pixel-centered like GLSL gl_FragCoord.xy.
-     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-     return out;
- }
- "#
-    } else {
+      out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+      return out;
+  }
+  "#
+     } else {
         r#"
  @vertex
   fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
@@ -277,8 +286,13 @@ var src_samp: sampler;
       let _unused_geo_translate = params.geo_translate;
      let _unused_geo_scale = params.geo_scale;
  
-      // UV passed as vertex attribute.
-      out.uv = uv;
+        // UV passed as vertex attribute.
+        out.uv = uv;
+
+        out.geo_size_px = params.geo_size;
+
+         // Geometry-local pixel coordinate (GeoFragcoord).
+         out.local_px = uv * out.geo_size_px;
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -291,12 +305,12 @@ var src_samp: sampler;
      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
      out.position = vec4f(ndc, position.z, 1.0);
 
-     // Pixel-centered like GLSL gl_FragCoord.xy.
-     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-     return out;
- }
- "#
-    }
+      // Pixel-centered like GLSL gl_FragCoord.xy.
+      out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+      return out;
+  }
+  "#
+     }
     .to_string();
 
     let fragment_entry = format!(
@@ -438,12 +452,16 @@ struct Params {
 @group(0) @binding(0)
 var<uniform> params: Params;
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-    @location(1) frag_coord_gl: vec2f,
-};
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+ };
 "#
     .to_string();
 
@@ -457,8 +475,13 @@ struct VSOut {
       let _unused_geo_translate = params.geo_translate;
       let _unused_geo_scale = params.geo_scale;
 
-      // UV passed as vertex attribute.
-      out.uv = uv;
+        // UV passed as vertex attribute.
+        out.uv = uv;
+
+        out.geo_size_px = params.geo_size;
+
+        // Geometry-local pixel coordinate (GeoFragcoord).
+        out.local_px = uv * out.geo_size_px;
 
       // Convert local pixels to target pixel coordinates with bottom-left origin.
       let p_px = params.center + position.xy;
@@ -571,20 +594,22 @@ struct Params {
 @group(0) @binding(0)
 var<uniform> params: Params;
 
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-    @location(1) frag_coord_gl: vec2f,
-};
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+     @location(4) instance_index: u32,
+ };
 "#
     .to_string();
 
-    if vertex_uses_instance_index || material_ctx.uses_instance_index {
-        common = common.replace(
-            "    @location(1) frag_coord_gl: vec2f,\n};\n",
-            "    @location(1) frag_coord_gl: vec2f,\n    @location(2) instance_index: u32,\n};\n",
-        );
+    if !(vertex_uses_instance_index || material_ctx.uses_instance_index) {
+        common = common.replace("    @location(4) instance_index: u32,\n", "");
     }
 
     if material_ctx.baked_data_parse_meta.is_some() {
@@ -640,6 +665,17 @@ struct VSOut {
 
     if is_instanced {
         vertex_entry.push_str(" let inst_m = mat4x4f(i0, i1, i2, i3);\n");
+
+        // Geometry-local pixel coordinate (GeoFragcoord).
+        // `params.geo_size` is the logical pre-transform size. If the instance matrix scales the
+        // geometry, reflect that so SDFs and other pixel-space evaluations scale with the geometry.
+        vertex_entry.push_str(" let geo_sx = length(inst_m[0].xy);\n");
+        vertex_entry.push_str(" let geo_sy = length(inst_m[1].xy);\n");
+        vertex_entry
+            .push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
+        vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
+        vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
+
         vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
 
         if let Some(expr) = vertex_translate_expr.as_deref() {
@@ -649,6 +685,10 @@ struct VSOut {
             vertex_entry.push_str(" p_local = p_local + delta_t;\n\n");
         }
     } else {
+        vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
+        vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
+        vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
+
         if let Some(expr) = vertex_translate_expr.as_deref() {
             vertex_entry.push_str(" let delta_t = ");
             vertex_entry.push_str(expr);

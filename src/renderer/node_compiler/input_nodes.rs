@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::Node;
+use crate::renderer::validation::GlslShaderStage;
 
 /// Parse a JSON value as an f32.
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
@@ -174,10 +175,7 @@ pub fn compile_frag_coord(_node: &Node, out_port: Option<&str>) -> Result<TypedE
 pub fn compile_geo_fragcoord(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
     let port = out_port.unwrap_or("xy");
     match port {
-        "xy" => Ok(TypedExpr::new(
-            "(in.uv * params.geo_size)".to_string(),
-            ValueType::Vec2,
-        )),
+        "xy" => Ok(TypedExpr::new("in.local_px".to_string(), ValueType::Vec2)),
         other => bail!("GeoFragcoord: unsupported output port '{other}'"),
     }
 }
@@ -192,12 +190,23 @@ pub fn compile_geo_fragcoord(_node: &Node, out_port: Option<&str>) -> Result<Typ
 /// - Port `xy`: Type vec2f
 /// - Uses time: false
 pub fn compile_geo_size(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
+    compile_geo_size_for_stage(_node, out_port, GlslShaderStage::Vertex)
+}
+
+pub fn compile_geo_size_for_stage(
+    _node: &Node,
+    out_port: Option<&str>,
+    stage: GlslShaderStage,
+) -> Result<TypedExpr> {
     let port = out_port.unwrap_or("xy");
     match port {
-        "xy" => Ok(TypedExpr::new(
-            "params.geo_size".to_string(),
-            ValueType::Vec2,
-        )),
+        "xy" => {
+            let expr = match stage {
+                GlslShaderStage::Fragment => "in.geo_size_px",
+                _ => "params.geo_size",
+            };
+            Ok(TypedExpr::new(expr.to_string(), ValueType::Vec2))
+        }
         other => bail!("GeoSize: unsupported output port '{other}'"),
     }
 }
@@ -263,7 +272,7 @@ mod fragcoord_tests {
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
-        assert_eq!(expr.expr, "(in.uv * params.geo_size)");
+        assert_eq!(expr.expr, "in.local_px");
         assert!(!expr.uses_time);
     }
 
@@ -277,9 +286,26 @@ mod fragcoord_tests {
             input_bindings: Vec::new(),
             outputs: Vec::new(),
         };
-        let expr = compile_geo_size(&node, Some("xy")).unwrap();
+        let expr = compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Vertex).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
         assert_eq!(expr.expr, "params.geo_size");
+        assert!(!expr.uses_time);
+    }
+
+    #[test]
+    fn test_geo_size_xy_fragment() {
+        let node = Node {
+            id: "gs".to_string(),
+            node_type: "GeoSize".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+        let expr =
+            compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Fragment).unwrap();
+        assert_eq!(expr.ty, ValueType::Vec2);
+        assert_eq!(expr.expr, "in.geo_size_px");
         assert!(!expr.uses_time);
     }
 }

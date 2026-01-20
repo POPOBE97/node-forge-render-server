@@ -62,6 +62,7 @@ where
             ValueType::F32,
             uv_expr.uses_time,
         )),
+        "texture" => Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D)),
         other => bail!("unsupported ImageTexture output port: {other}"),
     }
 }
