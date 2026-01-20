@@ -329,8 +329,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_9_out: f32;
     {
-        let sdfCircle = (length(((in.uv * params.geo_size) - vec2f(0, 0))) - 100.0);
-        let sdfBox = sdf2d_round_rect(((in.uv * params.geo_size) - vec2f(0, 0)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
+        let sdfCircle = (length(((in.uv * params.geo_size) - vec2f(100, 100))) - 100.0);
+        let sdfBox = sdf2d_round_rect(((in.uv * params.geo_size) - vec2f(100, 100)), (mc_MathClosure_13_out * 0.5), mc_MathClosure_8_out);
         let t = 1.0;
         var output: f32;
         output = mc_MathClosure_9_(in.uv, sdfCircle, sdfBox, t);
@@ -338,7 +338,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_math_src1Light_out: f32;
     {
-        let uSrc1 = vec2f(2, 0.5);
+        let uSrc1 = vec2f(2.33, 0.5);
         let sdf = mc_MathClosure_9_out;
         let size = 100.0;
         var output: f32;
