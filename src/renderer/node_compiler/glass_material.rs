@@ -673,28 +673,34 @@ where
     let reflect_t = reflect_tex.clone().map(|x| x.0).unwrap_or(refract_t.clone());
     let reflect_s = reflect_tex.clone().map(|x| x.1).unwrap_or(refract_s.clone());
 
-    // Inline block: compute glass shading in screen-space pixels.
+    // Inline block: compute glass shading in pixel space.
     // The renderer's coordinate system:
     // - `in.frag_coord_gl` is bottom-left origin, pixel-centered.
-    // - `params.center` is geometry center in pixel units (bottom-left origin).
+    // - `in.local_px` is geometry-local pixel coordinate (origin at geometry bottom-left).
+    //
+    // NOTE: For instanced geometry, `params.center` is per-pass (not per-instance), so we must
+    // derive the geometry center from `in.local_px` to keep SDFs stable per instance.
     let stmt = format!(
         r#"
-// GlassMaterial({node_id})
-var {out_var}: vec4f;
-{{
-    let screen_px = in.frag_coord_gl;
-    let center_px = params.center + vec2f(0.5, 0.5);
-    let size_px = in.geo_size_px;
-    let half_size_px = size_px * 0.5;
-    let pos_from_center = screen_px - center_px;
+ // GlassMaterial({node_id})
+ var {out_var}: vec4f;
+ {{
+     let screen_px = in.frag_coord_gl;
+     let local_px = in.local_px;
+     let size_px = in.geo_size_px;
+     let half_size_px = size_px * 0.5;
+
+     // Geometry center in screen pixels (works for instanced geometry too).
+     let center_px = screen_px - local_px + half_size_px;
+
+     // SDF evaluation uses geometry-local pixels (not screen pixels).
+     let pos_from_center = local_px - half_size_px;
 
     // Use bottom-left UV for sampling pass textures.
     let uv = screen_px / params.target_size;
 
     // Base background color.
     var color = {bg_sample};
-
-    return color;
 
     // --- Shape / SDF ---
     // NOTE: many scene exports encode scalar params as integers (e.g. `30`).
@@ -723,8 +729,8 @@ var {out_var}: vec4f;
     let light_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
     let light_norm = (-light_sdf / max(light_width, 1e-6));
 
-    let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
-    let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
+     let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
+     let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
 
     var final_alpha = smoothstep(0.0, 10.0, -edge_sdf);
 
