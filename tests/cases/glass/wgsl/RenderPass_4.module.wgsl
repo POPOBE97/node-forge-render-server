@@ -32,28 +32,22 @@ var<uniform> params: Params;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex___auto_fullscreen_pass__edge_65: texture_2d<f32>;
+var pass_tex_GuassianBlurPass_42: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp___auto_fullscreen_pass__edge_65: sampler;
+var pass_samp_GuassianBlurPass_42: sampler;
 
 @group(1) @binding(2)
-var pass_tex___auto_fullscreen_pass__edge_66: texture_2d<f32>;
+var pass_tex___auto_fullscreen_pass__edge_71: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp___auto_fullscreen_pass__edge_66: sampler;
+var pass_samp___auto_fullscreen_pass__edge_71: sampler;
 
 @group(1) @binding(4)
-var pass_tex___auto_fullscreen_pass__edge_67: texture_2d<f32>;
+var pass_tex___auto_fullscreen_pass__edge_73: texture_2d<f32>;
 
 @group(1) @binding(5)
-var pass_samp___auto_fullscreen_pass__edge_67: sampler;
-
-@group(1) @binding(6)
-var pass_tex___auto_fullscreen_pass__edge_68: texture_2d<f32>;
-
-@group(1) @binding(7)
-var pass_samp___auto_fullscreen_pass__edge_68: sampler;
+var pass_samp___auto_fullscreen_pass__edge_73: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -279,20 +273,25 @@ fn glass_texture_map(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
-// GlassMaterial(GlassMaterial_40)
-var glass_out_GlassMaterial_40: vec4f;
-{
-    let screen_px = in.frag_coord_gl;
-    let center_px = params.center + vec2f(0.5, 0.5);
-    let size_px = in.geo_size_px;
-    let half_size_px = size_px * 0.5;
-    let pos_from_center = screen_px - center_px;
+ // GlassMaterial(GlassMaterial_40)
+ var glass_out_GlassMaterial_40: vec4f;
+ {
+     let screen_px = in.frag_coord_gl;
+     let local_px = in.local_px;
+     let size_px = in.geo_size_px;
+     let half_size_px = size_px * 0.5;
+
+     // Geometry center in screen pixels (works for instanced geometry too).
+     let center_px = screen_px - local_px + half_size_px;
+
+     // SDF evaluation uses geometry-local pixels (not screen pixels).
+     let pos_from_center = local_px - half_size_px;
 
     // Use bottom-left UV for sampling pass textures.
     let uv = screen_px / params.target_size;
 
     // Base background color.
-    var color = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_65, pass_samp___auto_fullscreen_pass__edge_65, uv, false, 0, vec2f(0, 1), pass_tex___auto_fullscreen_pass__edge_65, pass_samp___auto_fullscreen_pass__edge_65);
+    var color = glass_texture_map(pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42, uv, false, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
 
     // --- Shape / SDF ---
     // NOTE: many scene exports encode scalar params as integers (e.g. `30`).
@@ -321,8 +320,8 @@ var glass_out_GlassMaterial_40: vec4f;
     let light_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
     let light_norm = (-light_sdf / max(light_width, 1e-6));
 
-    let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
-    let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
+     let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
+     let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
 
     var final_alpha = smoothstep(0.0, 10.0, -edge_sdf);
 
@@ -338,22 +337,22 @@ var glass_out_GlassMaterial_40: vec4f;
     let refract_thickness = mix((f32(50) - edge) * 2.0, f32(50) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
     let refract_px = display_px + refr_dir.xy * refract_thickness;
     let refract_uv = refract_px / params.target_size;
-    let refraction = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_66, pass_samp___auto_fullscreen_pass__edge_66, refract_uv, true, 0, vec2f(0, 1), pass_tex___auto_fullscreen_pass__edge_65, pass_samp___auto_fullscreen_pass__edge_65);
+    let refraction = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_71, pass_samp___auto_fullscreen_pass__edge_71, refract_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
 
     let refl_dir = reflect(incident, normal);
     let reflect_px = display_px + refl_dir.xy * mix(0.0, f32(0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
     let reflect_uv = reflect_px / params.target_size;
-    let reflection = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_67, pass_samp___auto_fullscreen_pass__edge_67, reflect_uv, true, 0, vec2f(0, 1), pass_tex___auto_fullscreen_pass__edge_65, pass_samp___auto_fullscreen_pass__edge_65);
+    let reflection = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_71, pass_samp___auto_fullscreen_pass__edge_71, reflect_uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
 
     // Mix refraction/reflection.
     var glass_mat = mix(refraction, reflection, (1.0 - clamp(edge_norm, 0.0, 1.0)) * 0.5);
     glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - clamp(light_norm, 0.0, 1.0)) * 0.5), glass_mat.a);
 
     // Color grading.
-    glass_mat = glass_process_color(glass_mat, vec4f(0, 0, 0, 0), 0, 1, 0);
+    glass_mat = glass_process_color(glass_mat, vec4f(0, 0, 0, 0), 0, 1.399999976, 0);
 
     // Inner glass tint from blurred background color.
-    var tint = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_68, pass_samp___auto_fullscreen_pass__edge_68, uv, true, 0, vec2f(0, 1), pass_tex___auto_fullscreen_pass__edge_65, pass_samp___auto_fullscreen_pass__edge_65);
+    var tint = glass_texture_map(pass_tex___auto_fullscreen_pass__edge_73, pass_samp___auto_fullscreen_pass__edge_73, uv, true, 0, vec2f(0, 1), pass_tex_GuassianBlurPass_42, pass_samp_GuassianBlurPass_42);
     tint = glass_adjust_color(tint, 1, 0);
     tint = vec4f(mix(tint.rgb, vec3f(1.0), 0), tint.a);
 

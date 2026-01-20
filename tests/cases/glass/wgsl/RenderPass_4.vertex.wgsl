@@ -32,28 +32,22 @@ var<uniform> params: Params;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex___auto_fullscreen_pass__edge_65: texture_2d<f32>;
+var pass_tex_GuassianBlurPass_42: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp___auto_fullscreen_pass__edge_65: sampler;
+var pass_samp_GuassianBlurPass_42: sampler;
 
 @group(1) @binding(2)
-var pass_tex___auto_fullscreen_pass__edge_66: texture_2d<f32>;
+var pass_tex___auto_fullscreen_pass__edge_71: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp___auto_fullscreen_pass__edge_66: sampler;
+var pass_samp___auto_fullscreen_pass__edge_71: sampler;
 
 @group(1) @binding(4)
-var pass_tex___auto_fullscreen_pass__edge_67: texture_2d<f32>;
+var pass_tex___auto_fullscreen_pass__edge_73: texture_2d<f32>;
 
 @group(1) @binding(5)
-var pass_samp___auto_fullscreen_pass__edge_67: sampler;
-
-@group(1) @binding(6)
-var pass_tex___auto_fullscreen_pass__edge_68: texture_2d<f32>;
-
-@group(1) @binding(7)
-var pass_samp___auto_fullscreen_pass__edge_68: sampler;
+var pass_samp___auto_fullscreen_pass__edge_73: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
