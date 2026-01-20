@@ -39,6 +39,7 @@ fn mc_MathClosure_18_(uv: vec2<f32>, index: i32, gap: vec3<f32>) -> vec3<f32> {
     var col: i32 = 10i;
     var x: i32;
     var y: i32;
+    var base: vec3<f32> = vec3<f32>(540f, 1200f, 0f);
 
     uv_1 = uv;
     index_1 = index;
@@ -51,12 +52,13 @@ fn mc_MathClosure_18_(uv: vec2<f32>, index: i32, gap: vec3<f32>) -> vec3<f32> {
     let _e22: i32 = col;
     let _e24: i32 = col;
     y = ((_e21 / _e22) - (_e24 / 2i));
-    let _e29: vec3<f32> = gap_1;
-    let _e30: i32 = x;
-    let _e31: i32 = y;
-    output = (_e29 * vec3<f32>(f32(_e30), f32(_e31), 0f));
-    let _e37: vec3<f32> = output;
-    return _e37;
+    let _e34: vec3<f32> = gap_1;
+    let _e35: i32 = x;
+    let _e36: i32 = y;
+    let _e42: vec3<f32> = base;
+    output = ((_e34 * vec3<f32>(f32(_e35), f32(_e36), 0f)) + _e42);
+    let _e44: vec3<f32> = output;
+    return _e44;
 }
 
 
@@ -75,7 +77,7 @@ fn mc_MathClosure_18_(uv: vec2<f32>, index: i32, gap: vec3<f32>) -> vec3<f32> {
     var mc_MathClosure_18_out: vec3f;
     {
         let index = i32(instance_index);
-        let gap = vec3f(200.78, 200, 0);
+        let gap = vec3f(200, 200, 0);
         var output: vec3f;
         output = mc_MathClosure_18_(uv, index, gap);
         mc_MathClosure_18_out = output;

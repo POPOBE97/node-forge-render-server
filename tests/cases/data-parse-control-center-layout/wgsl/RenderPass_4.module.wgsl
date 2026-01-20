@@ -23,7 +23,6 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
-    @location(2) instance_index: u32,
 };
 
 @group(0) @binding(1)
@@ -37,11 +36,8 @@ var<storage, read> baked_data_parse: array<vec4f>;
      @location(3) i1: vec4f,
      @location(4) i2: vec4f,
      @location(5) i3: vec4f,
-     @builtin(instance_index) instance_index: u32,
  ) -> VSOut {
  var out: VSOut;
-
- out.instance_index = instance_index;
 
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
@@ -52,9 +48,6 @@ var<storage, read> baked_data_parse: array<vec4f>;
 
  let inst_m = mat4x4f(i0, i1, i2, i3);
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
-
- let delta_t = vec3f(baked_data_parse[(instance_index) * 2u + 0u].xy, 0.0);
- p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

@@ -85,47 +85,85 @@ fn mat4_rotate_z(rad: f32) -> [f32; 16] {
     ]
 }
 
-fn compute_transform_geometry_matrix(
+fn parse_inline_vec3(node: &crate::dsl::Node, key: &str, default: [f32; 3]) -> [f32; 3] {
+    let mut out = default;
+    if let Some(v) = node.params.get(key) {
+        if let Some(obj) = v.as_object() {
+            out[0] = obj
+                .get("x")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(out[0] as f64) as f32;
+            out[1] = obj
+                .get("y")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(out[1] as f64) as f32;
+            out[2] = obj
+                .get("z")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(out[2] as f64) as f32;
+        }
+    }
+    out
+}
+
+fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {
+    let Some(v) = node.params.get(key) else {
+        return None;
+    };
+
+    if let Some(arr) = v.as_array() {
+        if arr.len() == 16 {
+            let mut m = [0.0f32; 16];
+            for (i, x) in arr.iter().enumerate() {
+                m[i] = x.as_f64().unwrap_or(0.0) as f32;
+            }
+            return Some(m);
+        }
+    }
+
+    // Allow object form: { m00:..., m01:..., ... } is not supported (yet).
+    None
+}
+
+fn compute_trs_matrix(node: &crate::dsl::Node) -> [f32; 16] {
+    // T * Rz * S for now.
+    // Note: rotate is authored in degrees.
+    let t = parse_inline_vec3(node, "translate", [0.0, 0.0, 0.0]);
+    let s = parse_inline_vec3(node, "scale", [1.0, 1.0, 1.0]);
+    let r = parse_inline_vec3(node, "rotate", [0.0, 0.0, 0.0]);
+    let rz = r[2].to_radians();
+
+    mat4_mul(
+        mat4_translate(t[0], t[1], t[2]),
+        mat4_mul(mat4_rotate_z(rz), mat4_scale(s[0], s[1], s[2])),
+    )
+}
+
+fn compute_set_transform_matrix(
     _scene: &SceneDSL,
     _nodes_by_id: &HashMap<String, crate::dsl::Node>,
     node: &crate::dsl::Node,
 ) -> Result<[f32; 16]> {
-    // T * Rz * S for now.
-    let mut tx = 0.0f32;
-    let mut ty = 0.0f32;
-    let mut tz = 0.0f32;
+    let mode = node
+        .params
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Components");
 
-    // Inline params (Components mode)
-    if let Some(t) = node.params.get("translate") {
-        if let Some(obj) = t.as_object() {
-            tx = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            ty = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            tz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+    match mode {
+        "Matrix" => {
+            if let Some(m) = parse_inline_mat4(node, "matrix") {
+                Ok(m)
+            } else {
+                // The scheme says matrix:any (usually connected). For now we only accept inline arrays.
+                // If users want dynamic matrices, they'll need a dedicated CPU-side feature.
+                Ok([
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ])
+            }
         }
+        _ => Ok(compute_trs_matrix(node)),
     }
-
-    let mut sx = 1.0f32;
-    let mut sy = 1.0f32;
-    let mut sz = 1.0f32;
-    if let Some(s) = node.params.get("scale") {
-        if let Some(obj) = s.as_object() {
-            sx = obj.get("x").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-            sy = obj.get("y").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-            sz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-        }
-    }
-
-    let mut rz = 0.0f32;
-    if let Some(r) = node.params.get("rotate") {
-        if let Some(obj) = r.as_object() {
-            rz = obj.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        }
-    }
-
-    Ok(mat4_mul(
-        mat4_translate(tx, ty, tz),
-        mat4_mul(mat4_rotate_z(rz), mat4_scale(sx, sy, sz)),
-    ))
 }
 
 pub(crate) fn resolve_geometry_for_render_pass(
@@ -142,6 +180,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     f32,
     u32,
     [f32; 16],
+    Option<Vec<[f32; 16]>>,
     Option<TypedExpr>,
     Vec<String>,
     String,
@@ -173,6 +212,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                 ],
                 None,
+                None,
                 Vec::new(),
                 String::new(),
                 false,
@@ -196,6 +236,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 y,
                 _instances,
                 base_m,
+                instance_mats,
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
@@ -217,6 +258,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 y,
                 count_u,
                 base_m,
+                instance_mats,
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
@@ -238,6 +280,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 y,
                 _instances,
                 base_m,
+                instance_mats,
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
@@ -280,16 +323,102 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 y,
                 count_u,
                 base_m,
+                instance_mats,
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
             ))
         }
+        "SetTransform" => {
+            // Geometry chain: SetTransform.geometry -> base geometry buffer.
+            // Unlike TransformGeometry, this sets the base transform directly at CPU instance-buffer initialization.
+
+            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
+                .map(|c| c.from.node_id.clone())
+                .ok_or_else(|| anyhow!("SetTransform.geometry missing for {geometry_node_id}"))?;
+
+            let (
+                buf,
+                w,
+                h,
+                x,
+                y,
+                instances,
+                _base_m,
+                _upstream_instance_mats,
+                _translate_expr,
+                _vtx_inline_stmts,
+                _vtx_wgsl_decls,
+                uses_instance_index,
+            ) = resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                &upstream_geo_id,
+                material_ctx,
+            )?;
+
+            // SetTransform overrides the accumulated base matrix.
+            let m = compute_set_transform_matrix(scene, nodes_by_id, geometry_node)?;
+
+            // Bake per-instance base matrices if translate is connected and baked values are available.
+            // Semantics A: SetTransform result replaces upstream base matrix.
+            // For now, we only bake translate (Vec3/Vec4) from baked data parse (rotate/scale remain inline-only CPU params).
+            let mut instance_mats: Option<Vec<[f32; 16]>> = None;
+            if let Some(material_ctx) = material_ctx {
+                if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
+                    if let (Some(baked), Some(meta)) = (
+                        material_ctx.baked_data_parse.as_ref(),
+                        material_ctx.baked_data_parse_meta.as_ref(),
+                    ) {
+                        let expect_key = (
+                            meta.pass_id.clone(),
+                            conn.from.node_id.clone(),
+                            conn.from.port_id.clone(),
+                        );
+
+                        if baked.contains_key(&expect_key) {
+                            let instances = instances;
+                            let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instances as usize);
+                            for i in 0..instances as usize {
+                                let v = baked.get(&expect_key).and_then(|vs| vs.get(i)).cloned();
+
+                                let t = match v.unwrap_or(BakedValue::Vec3([0.0, 0.0, 0.0])) {
+                                    BakedValue::Vec3(v) => v,
+                                    BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
+                                    BakedValue::Vec2([x, y]) => [x, y, 0.0],
+                                    _ => [0.0, 0.0, 0.0],
+                                };
+                                mats.push(mat4_mul(mat4_translate(t[0], t[1], t[2]), m));
+                            }
+                            instance_mats = Some(mats);
+                        }
+                    }
+                }
+            }
+
+            // Important: SetTransform should NOT forward its translate input into the vertex shader;
+            // it applies it into the base matrix here (CPU-side).
+            // Also: any TransformGeometry nodes *before* SetTransform are skipped, meaning we
+            // discard upstream vertex-side translate expressions and inline statements.
+            Ok((
+                buf,
+                w,
+                h,
+                x,
+                y,
+                instances,
+                // Replace upstream base matrix (per user semantics A).
+                m,
+                instance_mats,
+                None,
+                Vec::new(),
+                String::new(),
+                uses_instance_index,
+            ))
+        }
         "TransformGeometry" => {
-            // Geometry chain: TransformGeometry.geometry -> base geometry buffer.
-            // NOTE: GPU-side transforms are applied in the vertex shader (Params.geo_translate / Params.geo_scale).
-            // Here we only adjust the *logical* geo_size for UV/GeoFragCoord correctness (per user request).
             let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
                 .map(|c| c.from.node_id.clone())
                 .ok_or_else(|| {
@@ -304,6 +433,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 y,
                 instances,
                 base_m,
+                instance_mats,
                 upstream_translate_expr,
                 mut vtx_inline_stmts,
                 mut vtx_wgsl_decls,
@@ -316,8 +446,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 material_ctx,
             )?;
 
-            // Scale affects geo_size for correct UV + GeoFragcoord mapping.
-            // We only support inline scale params here (object {x,y,z}); connected scale inputs are GPU-side.
+            // Adjust logical size by inline scale, so UV/GeoFragCoord stay correct.
             if let Some(s) = geometry_node.params.get("scale") {
                 if let Some(obj) = s.as_object() {
                     if let Some(vx) = obj.get("x").and_then(|v| v.as_f64()) {
@@ -329,52 +458,35 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 }
             }
 
-            // For now, CPU-side matrix composition only supports the inline params.
-            // Connected inputs (e.g. MathClosure driven by Index) are compiled in the vertex stage.
-            let delta_m = compute_transform_geometry_matrix(scene, nodes_by_id, geometry_node)?;
-
-            // Vertex-stage translate overrides upstream translate (for now).
-            // Later we can support composition by emitting `upstream + local`.
+            // Vertex-stage translate overrides upstream translate.
             let mut translate_expr = upstream_translate_expr;
             let mut local_inline_stmts: Vec<String> = Vec::new();
             let mut local_wgsl_decls = String::new();
             let mut local_uses_instance_index = false;
 
             if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
-                // Compile upstream expression; it must evaluate to vec3.
-                let src_node = find_node(nodes_by_id, &conn.from.node_id)?;
-                match src_node.node_type.as_str() {
-                    // Allow any node that the vertex compiler supports (MathClosure, Index, math nodes, inputs).
-                    _ => {
-                        let mut vtx_ctx = MaterialCompileContext {
-                            baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
-                            baked_data_parse_meta: material_ctx
-                                .and_then(|c| c.baked_data_parse_meta.clone()),
-                            ..Default::default()
-                        };
-                        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                let mut vtx_ctx = MaterialCompileContext {
+                    baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
+                    baked_data_parse_meta: material_ctx
+                        .and_then(|c| c.baked_data_parse_meta.clone()),
+                    ..Default::default()
+                };
+                let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
 
-                        let expr = compile_vertex_expr(
-                            scene,
-                            nodes_by_id,
-                            &conn.from.node_id,
-                            Some(&conn.from.port_id),
-                            &mut vtx_ctx,
-                            &mut cache,
-                        )?;
-                        let expr = coerce_to_type(expr, ValueType::Vec3)?;
-                        // Ensure any needed inline statements (e.g. MathClosure output var) are
-                        // emitted in the vertex shader by forcing the expression through the
-                        // compiler's inline statement machinery.
-                        // NOTE: `expr.expr` may reference compiler-emitted locals (e.g. MathClosure
-                        // output var). We must also propagate the corresponding inline statements
-                        // into the render pass shader generation.
-                        local_inline_stmts = vtx_ctx.inline_stmts.clone();
-                        local_wgsl_decls = vtx_ctx.wgsl_decls();
-                        local_uses_instance_index = vtx_ctx.uses_instance_index;
-                        translate_expr = Some(expr.clone());
-                    }
-                }
+                let expr = compile_vertex_expr(
+                    scene,
+                    nodes_by_id,
+                    &conn.from.node_id,
+                    Some(&conn.from.port_id),
+                    &mut vtx_ctx,
+                    &mut cache,
+                )?;
+                let expr = coerce_to_type(expr, ValueType::Vec3)?;
+
+                local_inline_stmts = vtx_ctx.inline_stmts.clone();
+                local_wgsl_decls = vtx_ctx.wgsl_decls();
+                local_uses_instance_index = vtx_ctx.uses_instance_index;
+                translate_expr = Some(expr);
             }
 
             if !local_inline_stmts.is_empty() {
@@ -392,7 +504,8 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 x,
                 y,
                 instances,
-                mat4_mul(base_m, delta_m),
+                base_m,
+                instance_mats,
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
@@ -896,6 +1009,7 @@ pub fn build_shader_space_from_scene(
                     geo_y,
                     instance_count,
                     base_m,
+                    _instance_mats,
                     _translate_expr,
                     _vertex_inline_stmts,
                     _vertex_wgsl_decls,
@@ -905,7 +1019,13 @@ pub fn build_shader_space_from_scene(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
-                    None,
+                    Some(&MaterialCompileContext {
+                        baked_data_parse: Some(std::sync::Arc::new(
+                            prepared.baked_data_parse.clone(),
+                        )),
+                        baked_data_parse_meta: None,
+                        ..Default::default()
+                    }),
                 )?;
 
                 let mut baked = prepared.baked_data_parse.clone();
@@ -989,6 +1109,7 @@ pub fn build_shader_space_from_scene(
                     _geo_y_2,
                     _instance_count_2,
                     _base_m_2,
+                    instance_mats_2,
                     translate_expr,
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
@@ -1053,13 +1174,21 @@ pub fn build_shader_space_from_scene(
                     let b: ResourceName = format!("{layer_id}__instances").into();
 
                     // Per-instance mat4 (column-major) as 4 vec4<f32> (16 floats).
-                    // This is the accumulated base transform through the geometry chain.
-                    // Any per-instance variation is computed in the vertex shader.
-                    let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instance_count as usize);
-                    for _ in 0..instance_count {
-                        mats.push(base_m);
-                    }
+                    // If SetTransform provides per-instance CPU-baked matrices, prefer them.
+                    let mats: Vec<[f32; 16]> = if let Some(mats) = instance_mats_2 {
+                        mats
+                    } else {
+                        let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instance_count as usize);
+                        for _ in 0..instance_count {
+                            mats.push(base_m);
+                        }
+                        mats
+                    };
+
                     let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&mats).to_vec());
+
+                    debug_assert_eq!(bytes.len(), (instance_count as usize) * 16 * 4);
+
                     instance_buffers.push((b.clone(), bytes));
 
                     Some(b)

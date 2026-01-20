@@ -23,7 +23,6 @@ struct VSOut {
     @location(0) uv: vec2f,
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
-    @location(2) instance_index: u32,
 };
 
 @group(0) @binding(1)

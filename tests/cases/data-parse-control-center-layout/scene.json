@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-19T19:19:19.544Z",
-    "modified": "2026-01-19T19:19:19.544Z"
+    "created": "2026-01-20T07:03:36.712Z",
+    "modified": "2026-01-20T07:03:36.712Z"
   },
   "nodes": [
     {
@@ -24,7 +24,7 @@
       "id": "InstancedGeometryEnd_2",
       "type": "InstancedGeometryEnd",
       "position": {
-        "x": 160,
+        "x": 260,
         "y": -440
       },
       "width": 160,
@@ -55,7 +55,7 @@
       "id": "RenderPass_4",
       "type": "RenderPass",
       "position": {
-        "x": 360,
+        "x": 460,
         "y": -440
       },
       "width": 160,
@@ -74,7 +74,7 @@
       "id": "Composite_7",
       "type": "Composite",
       "position": {
-        "x": 540,
+        "x": 640,
         "y": -440
       },
       "width": 160,
@@ -87,7 +87,7 @@
       "id": "RenderTexture_8",
       "type": "RenderTexture",
       "position": {
-        "x": 360,
+        "x": 460,
         "y": -320
       },
       "width": 160,
@@ -102,7 +102,7 @@
       "id": "Screen_9",
       "type": "Screen",
       "position": {
-        "x": 720,
+        "x": 820,
         "y": -440
       },
       "width": 160,
@@ -110,29 +110,6 @@
       "params": {
         "width": 392,
         "height": 871
-      }
-    },
-    {
-      "id": "TransformGeometry_11",
-      "type": "TransformGeometry",
-      "position": {
-        "x": -20,
-        "y": -440
-      },
-      "width": 160,
-      "label": "Transform Geometry",
-      "params": {
-        "mode": "Components",
-        "rotate": {
-          "x": 0,
-          "y": 0,
-          "z": 0
-        },
-        "scale": {
-          "x": 1,
-          "y": 1,
-          "z": 1
-        }
       }
     },
     {
@@ -256,6 +233,29 @@
           }
         }
       ]
+    },
+    {
+      "id": "SetTransform_24",
+      "type": "SetTransform",
+      "position": {
+        "x": -40,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
     }
   ],
   "connections": [
@@ -304,28 +304,6 @@
       }
     },
     {
-      "id": "edge_7",
-      "from": {
-        "nodeId": "InstancedGeometryStart_1",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "TransformGeometry_11",
-        "portId": "geometry"
-      }
-    },
-    {
-      "id": "edge_11",
-      "from": {
-        "nodeId": "TransformGeometry_11",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "InstancedGeometryEnd_2",
-        "portId": "geometry"
-      }
-    },
-    {
       "id": "edge_12",
       "from": {
         "nodeId": "InstancedGeometryEnd_2",
@@ -359,17 +337,6 @@
       }
     },
     {
-      "id": "edge_25",
-      "from": {
-        "nodeId": "DataParse_21",
-        "portId": "out_position"
-      },
-      "to": {
-        "nodeId": "TransformGeometry_11",
-        "portId": "translate"
-      }
-    },
-    {
       "id": "edge_26",
       "from": {
         "nodeId": "DataParse_22",
@@ -389,6 +356,39 @@
       "to": {
         "nodeId": "DataParse_22",
         "portId": "dynamic_1768809771808_1"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_30",
+      "from": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_31",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_position"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "translate"
       }
     }
   ],

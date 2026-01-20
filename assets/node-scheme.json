@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-19T12:30:31.893Z",
+  "generatedAt": "2026-01-20T06:45:25.175Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -52,6 +52,7 @@
     "RenderTexture",
     "Screen",
     "Sdf2D",
+    "SetTransform",
     "ShaderMaterial",
     "TextureInput",
     "TransformGeometry",
@@ -762,7 +763,7 @@
     {
       "type": "GuassianBlurPass",
       "label": "Gaussian Blur Pass",
-      "category": "Filter",
+      "category": "PipelineControl",
       "description": "Apply a Gaussian blur to an image",
       "inputs": [
         {
@@ -1598,6 +1599,64 @@
       ],
       "defaultParams": {
         "shape": "circle"
+      }
+    },
+    {
+      "type": "SetTransform",
+      "label": "Set Transform",
+      "category": "Geometry",
+      "description": "Set geometry transform using either a 4x4 matrix or component controls",
+      "inputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        },
+        {
+          "id": "matrix",
+          "name": "Matrix (mat4)",
+          "type": "any"
+        },
+        {
+          "id": "translate",
+          "name": "Translate",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "rotate",
+          "name": "Rotate (deg)",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "scale",
+          "name": "Scale",
+          "type": "vector3",
+          "default": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "mode": "Components"
       }
     },
     {
