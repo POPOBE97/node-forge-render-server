@@ -1,0 +1,168 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-01-20T18:41:47.340Z",
+    "modified": "2026-01-20T18:41:47.340Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "position": {
+        "x": 140,
+        "y": 80
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 392,
+        "height": 871
+      }
+    },
+    {
+      "id": "Composite_2",
+      "type": "Composite",
+      "position": {
+        "x": -60,
+        "y": 80
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {}
+    },
+    {
+      "id": "Attribute_3",
+      "type": "Attribute",
+      "position": {
+        "x": -460,
+        "y": 160
+      },
+      "width": 160,
+      "label": "Attribute",
+      "params": {
+        "name": "uv",
+        "glslType": "vec2"
+      },
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "vector2"
+        }
+      ]
+    },
+    {
+      "id": "RenderPass_5",
+      "type": "RenderPass",
+      "position": {
+        "x": -260,
+        "y": 80
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "RenderTexture_7",
+      "type": "RenderTexture",
+      "position": {
+        "x": -260,
+        "y": 200
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_8",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -460,
+        "y": -40
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "x": 540,
+        "y": 1200,
+        "radius": 0,
+        "smooth": 1
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_1",
+      "from": {
+        "nodeId": "Composite_2",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "RenderPass_5",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "Attribute_3",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "RenderPass_5",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "RenderTexture_7",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "Rect2DGeometry_8",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_5",
+        "portId": "geometry"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_2"
+  }
+}
