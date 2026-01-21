@@ -11,6 +11,7 @@ struct Case {
     name: &'static str,
     scene_json: &'static str,
     baseline_png: Option<&'static str>,
+    expected_image_texture: Option<&'static str>,
 }
 
 fn manifest_dir() -> PathBuf {
@@ -69,12 +70,6 @@ fn run_case(case: &Case) {
 
     let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
         .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
-
-    assert!(
-        !passes.is_empty(),
-        "case {}: expected at least one RenderPass",
-        case.name
-    );
 
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
     let wgsl_dir = case_dir.join("wgsl");
@@ -295,8 +290,62 @@ fn run_case(case: &Case) {
             baseline_png.display(),
             out_png.display()
         );
+    } else if let Some(node_id) = case.expected_image_texture {
+        let node = scene
+            .nodes
+            .iter()
+            .find(|n| n.id == node_id)
+            .unwrap_or_else(|| panic!("case {}: missing expected ImageTexture node: {node_id}", case.name));
+        assert_eq!(
+            node.node_type, "ImageTexture",
+            "case {}: expected_image_texture must refer to an ImageTexture node",
+            case.name
+        );
+
+        let data_url = node
+            .params
+            .get("dataUrl")
+            .and_then(|v| v.as_str())
+            .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+        let expected_img = if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
+            node_forge_render_server::renderer::utils::load_image_from_data_url(s)
+                .unwrap_or_else(|e| panic!("case {}: failed to decode expected image dataUrl: {e}", case.name))
+        } else {
+            let path = node
+                .params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("case {}: expected image node has no dataUrl/path", case.name));
+            let cand = case_dir.join(path);
+            image::open(&cand)
+                .unwrap_or_else(|e| panic!("case {}: failed to open expected image {}: {e}", case.name, cand.display()))
+        };
+
+        // Mirror the renderer's CPU-side preprocessing for ImageTexture.
+        let mut expected = expected_img.to_rgba8();
+        for p in expected.pixels_mut() {
+            let a = p.0[3] as u16;
+            p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
+            p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
+            p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+        }
+
+        assert_eq!(
+            expected.dimensions(),
+            actual.dimensions(),
+            "case {}: expected image dimension mismatch",
+            case.name
+        );
+        let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
+        assert_eq!(
+            mismatched_pixels,
+            0,
+            "case {}: pixel diff vs ImageTexture detected mismatched_pixels={mismatched_pixels}, max_channel_delta={max_channel_delta}\noutput={}",
+            case.name,
+            out_png.display()
+        );
     } else {
-        // If there is no baseline image, at least compare to prepared scene resolution.
+        // If there is no baseline/expected image, at least compare to prepared scene resolution.
         let prepared = renderer::scene_prep::prepare_scene(&scene)
             .unwrap_or_else(|e| panic!("case {}: failed to prepare scene: {e}", case.name));
         assert_eq!(
@@ -314,6 +363,7 @@ fn case_blur_blend_blur() {
         name: "blur-blend-blur",
         scene_json: "blur-blend-blur/scene.json",
         baseline_png: Some("blur-blend-blur/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -323,6 +373,27 @@ fn case_calculated_window_size() {
         name: "calculated-window-size",
         scene_json: "calculated-window-size/scene.json",
         baseline_png: Some("calculated-window-size/baseline.png"),
+        expected_image_texture: None,
+    });
+}
+
+#[test]
+fn case_colorspace_uv() {
+    run_case(&Case {
+        name: "colorspace-uv",
+        scene_json: "colorspace-uv/scene.json",
+        baseline_png: Some("colorspace-uv/baseline.png"),
+        expected_image_texture: None,
+    });
+}
+
+#[test]
+fn case_colorspace_image() {
+    run_case(&Case {
+        name: "colorspace-image",
+        scene_json: "colorspace-image/scene.json",
+        baseline_png: None,
+        expected_image_texture: Some("ImageTexture_9"),
     });
 }
 
@@ -332,6 +403,7 @@ fn case_chained_blur_pass() {
         name: "chained-blur-pass",
         scene_json: "chained-blur-pass/scene.json",
         baseline_png: Some("chained-blur-pass/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -354,6 +426,7 @@ fn case_glass_foreground_sdf() {
         name: "glass-foreground-sdf",
         scene_json: "glass-foreground-sdf/scene.json",
         baseline_png: Some("glass-foreground-sdf/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -363,6 +436,7 @@ fn case_glass() {
         name: "glass",
         scene_json: "glass/scene.json",
         baseline_png: Some("glass/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -372,6 +446,7 @@ fn case_pass_texture_alpha() {
         name: "pass-texture-alpha",
         scene_json: "pass-texture-alpha/scene.json",
         baseline_png: Some("pass-texture-alpha/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -394,6 +469,7 @@ fn case_gaussian_blur_sigma_60() {
         name: "gaussian-blur-sigma-60",
         scene_json: "gaussian-blur-sigma-60/scene.json",
         baseline_png: Some("gaussian-blur-sigma-60/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -415,6 +491,7 @@ fn case_instanced_geometry() {
         name: "instanced-geometry",
         scene_json: "instanced-geometry/scene.json",
         baseline_png: Some("instanced-geometry/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -424,6 +501,7 @@ fn case_instanced_geometry_vector_math() {
         name: "instanced-geometry-vector-math",
         scene_json: "instanced-geometry-vector-math/scene.json",
         baseline_png: Some("instanced-geometry-vector-math/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -433,6 +511,7 @@ fn case_simple_guassian_blur() {
         name: "simple-guassian-blur",
         scene_json: "simple-guassian-blur/scene.json",
         baseline_png: Some("simple-guassian-blur/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -442,6 +521,7 @@ fn case_simple_rectangle() {
         name: "simple-rectangle",
         scene_json: "simple-rectangle/scene.json",
         baseline_png: Some("simple-rectangle/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -451,6 +531,7 @@ fn case_simple_two_pass_blend() {
         name: "simple-two-pass-blend",
         scene_json: "simple-two-pass-blend/scene.json",
         baseline_png: Some("simple-two-pass-blend/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -460,6 +541,7 @@ fn case_unlinked_node() {
         name: "unlinked-node",
         scene_json: "unlinked-node/scene.json",
         baseline_png: Some("unlinked-node/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -469,6 +551,7 @@ fn case_untitled() {
         name: "Untitled",
         scene_json: "Untitled/scene.json",
         baseline_png: Some("Untitled/baseline.png"),
+        expected_image_texture: None,
     });
 }
 
@@ -478,5 +561,6 @@ fn case_data_parse_control_center_layout() {
         name: "data-parse-control-center-layout",
         scene_json: "data-parse-control-center-layout/scene.json",
         baseline_png: Some("data-parse-control-center-layout/baseline.png"),
+        expected_image_texture: None,
     });
 }

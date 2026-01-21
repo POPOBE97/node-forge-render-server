@@ -1109,7 +1109,11 @@ pub fn build_shader_space_from_scene(
 
     // Track pass outputs for chain resolution.
     let mut pass_output_registry = PassOutputRegistry::new();
-    let format = parse_texture_format(&target_node.params)?;
+    let target_format = parse_texture_format(&target_node.params)?;
+    let sampled_pass_format = match target_format {
+        TextureFormat::Rgba8UnormSrgb => TextureFormat::Rgba8Unorm,
+        other => other,
+    };
 
     // Composite draw order only contains direct inputs. For chained passes, we must render
     // upstream pass dependencies first so PassTexture can resolve them.
@@ -1133,7 +1137,7 @@ pub fn build_shader_space_from_scene(
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [tgt_w as u32, tgt_h as u32],
-                        format,
+                        format: sampled_pass_format,
                     });
                     out_tex
                 } else {
@@ -1368,7 +1372,11 @@ pub fn build_shader_space_from_scene(
                     node_id: layer_id.clone(),
                     texture_name: pass_output_texture,
                     resolution: [tgt_w as u32, tgt_h as u32],
-                    format,
+                    format: if is_sampled_output {
+                        sampled_pass_format
+                    } else {
+                        target_format
+                    },
                 });
             }
             "GuassianBlurPass" => {
@@ -1382,7 +1390,7 @@ pub fn build_shader_space_from_scene(
                 textures.push(TextureDecl {
                     name: src_tex.clone(),
                     size: src_resolution,
-                    format,
+                    format: sampled_pass_format,
                 });
 
                 // Build a fullscreen pass to render the `image` input expression.
@@ -1485,7 +1493,7 @@ pub fn build_shader_space_from_scene(
                     textures.push(TextureDecl {
                         name: tex.clone(),
                         size: [next_w, next_h],
-                        format,
+                        format: sampled_pass_format,
                     });
                     let geo: ResourceName = format!("{layer_id}__geo_ds_{step}").into();
                     geometry_buffers.push((
@@ -1506,12 +1514,12 @@ pub fn build_shader_space_from_scene(
                 textures.push(TextureDecl {
                     name: h_tex.clone(),
                     size: [ds_w, ds_h],
-                    format,
+                    format: sampled_pass_format,
                 });
                 textures.push(TextureDecl {
                     name: v_tex.clone(),
                     size: [ds_w, ds_h],
-                    format,
+                    format: sampled_pass_format,
                 });
 
                 // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
@@ -1521,7 +1529,7 @@ pub fn build_shader_space_from_scene(
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [blur_w, blur_h],
-                        format,
+                        format: sampled_pass_format,
                     });
                     out_tex
                 } else {
@@ -1725,7 +1733,11 @@ pub fn build_shader_space_from_scene(
                     node_id: layer_id.clone(),
                     texture_name: output_tex,
                     resolution: [blur_w, blur_h],
-                    format,
+                    format: if sampled_pass_ids.contains(layer_id) {
+                        sampled_pass_format
+                    } else {
+                        target_format
+                    },
                 });
             }
             other => {
@@ -1895,16 +1907,30 @@ pub fn build_shader_space_from_scene(
                 .and_then(|v| v.as_str())
                 .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
 
+            let color_space = node
+                .params
+                .get("colorSpace")
+                .and_then(|v| v.as_str())
+                .or_else(|| node.params.get("colorspace").and_then(|v| v.as_str()))
+                .unwrap_or("srgb")
+                .trim()
+                .to_ascii_lowercase();
+            let is_srgb = matches!(color_space.as_str(), "srgb" | "srgba");
+
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => premultiply_rgba8(flip_image_y_rgba8(ensure_rgba8(Arc::new(img)))),
+                    Ok(img) => {
+                        let img = flip_image_y_rgba8(ensure_rgba8(Arc::new(img)));
+                        premultiply_rgba8(img)
+                    }
                     Err(_e) => placeholder_image(),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    premultiply_rgba8(flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(
+                    let img = flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(
                         &rel_base, path,
-                    ))))
+                    )));
+                    premultiply_rgba8(img)
                 }
             };
 
@@ -1917,6 +1943,7 @@ pub fn build_shader_space_from_scene(
                 name,
                 image,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                srgb: is_srgb,
             });
         }
     }
