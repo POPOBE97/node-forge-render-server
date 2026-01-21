@@ -51,6 +51,7 @@ where
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, ({}))", uv_expr.expr);
 
+
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
             sample_expr,

@@ -869,21 +869,27 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vec![downsample_factor]
                 };
 
+                // 0) Source image expression pass (renders `image` input to an intermediate texture).
+                let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, &layer_id)?;
+                out.push((format!("sys.blur.{layer_id}.src.pass"), src_bundle));
+
                 for step in &downsample_steps {
                     let bundle = build_downsample_bundle(*step)?;
-                    out.push((format!("{layer_id}__downsample_{step}"), bundle));
+                    out.push((format!("sys.blur.{layer_id}.ds.{step}.pass"), bundle));
                 }
 
                 out.push((
-                    format!("{layer_id}__hblur_ds{downsample_factor}"),
+                    format!("sys.blur.{layer_id}.h.ds{downsample_factor}.pass"),
                     build_horizontal_blur_bundle(kernel, offset),
                 ));
                 out.push((
-                    format!("{layer_id}__vblur_ds{downsample_factor}"),
+                    format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass"),
                     build_vertical_blur_bundle(kernel, offset),
                 ));
                 out.push((
-                    format!("{layer_id}__upsample_bilinear_ds{downsample_factor}"),
+                    format!(
+                        "sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"
+                    ),
                     build_upsample_bilinear_bundle(),
                 ));
             }
