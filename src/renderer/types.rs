@@ -244,22 +244,28 @@ impl MaterialCompileContext {
 
     /// Generate the WGSL variable name for a texture binding.
     pub fn tex_var_name(node_id: &str) -> String {
-        format!("img_tex_{}", node_id.replace('-', "_"))
+        format!("img_tex_{}", crate::renderer::utils::sanitize_wgsl_ident(node_id))
     }
 
     /// Generate the WGSL variable name for a sampler binding.
     pub fn sampler_var_name(node_id: &str) -> String {
-        format!("img_samp_{}", node_id.replace('-', "_"))
+        format!("img_samp_{}", crate::renderer::utils::sanitize_wgsl_ident(node_id))
     }
 
     /// Generate the WGSL variable name for a pass texture binding.
     pub fn pass_tex_var_name(pass_node_id: &str) -> String {
-        format!("pass_tex_{}", pass_node_id.replace('-', "_"))
+        format!(
+            "pass_tex_{}",
+            crate::renderer::utils::sanitize_wgsl_ident(pass_node_id)
+        )
     }
 
     /// Generate the WGSL variable name for a pass sampler binding.
     pub fn pass_sampler_var_name(pass_node_id: &str) -> String {
-        format!("pass_samp_{}", pass_node_id.replace('-', "_"))
+        format!(
+            "pass_samp_{}",
+            crate::renderer::utils::sanitize_wgsl_ident(pass_node_id)
+        )
     }
 
     /// Build the fragment body with inline statements prepended to the return expression.

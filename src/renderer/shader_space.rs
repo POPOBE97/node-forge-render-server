@@ -868,6 +868,169 @@ struct RenderPassSpec {
     color_load_op: wgpu::LoadOp<Color>,
 }
 
+fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
+    // Convert straight-alpha source -> premultiplied-alpha output.
+    // If the source texture is sRGB, textureSample returns linear floats.
+    format!(
+        "\
+struct Params {{\n\
+    target_size: vec2f,\n\
+    geo_size: vec2f,\n\
+    center: vec2f,\n\
+\n\
+    geo_translate: vec2f,\n\
+    geo_scale: vec2f,\n\
+\n\
+    time: f32,\n\
+    _pad0: f32,\n\
+\n\
+    color: vec4f,\n\
+}};\n\
+\n\
+@group(0) @binding(0)\n\
+var<uniform> params: Params;\n\
+\n\
+struct VSOut {{\n\
+    @builtin(position) position: vec4f,\n\
+    @location(0) uv: vec2f,\n\
+    @location(1) frag_coord_gl: vec2f,\n\
+    @location(2) local_px: vec2f,\n\
+    @location(3) geo_size_px: vec2f,\n\
+}};\n\
+\n\
+@group(1) @binding(0)\n\
+var {tex_var}: texture_2d<f32>;\n\
+\n\
+@group(1) @binding(1)\n\
+var {samp_var}: sampler;\n\
+\n\
+@vertex\n\
+fn vs_main(\n\
+    @location(0) position: vec3f,\n\
+    @location(1) uv: vec2f,\n\
+) -> VSOut {{\n\
+    var out: VSOut;\n\
+    let _unused_geo_size = params.geo_size;\n\
+    let _unused_geo_translate = params.geo_translate;\n\
+    let _unused_geo_scale = params.geo_scale;\n\
+\n\
+    out.uv = uv;\n\
+    out.geo_size_px = params.geo_size;\n\
+    out.local_px = uv * out.geo_size_px;\n\
+\n\
+    let p_local = position;\n\
+    let p_px = params.center + p_local.xy;\n\
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
+    out.position = vec4f(ndc, position.z, 1.0);\n\
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
+    return out;\n\
+}}\n\
+\n\
+@fragment\n\
+fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
+    // Rendering into an offscreen texture produces a Y-flipped image when later\n\
+    // sampled as an ImageTexture (ImageTexture sampling does not flip UVs).\n\
+    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n\
+    let c = textureSample({tex_var}, {samp_var}, uv);\n\
+    return vec4(c.xyz * c.w, c.w);\n\
+}}\n"
+    )
+}
+
+fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
+    // Convert linear scene output -> sRGB-encoded bytes for display paths that treat the
+    // framebuffer as linear (common in UI renderers). The source texture is assumed to be an
+    // sRGB texture; sampling returns linear floats.
+    //
+    // Keep alpha linear (do NOT gamma-correct alpha).
+    //
+    // Also apply the same offscreen-texture Y flip used by PassTexture/premultiply paths so our
+    // bottom-left UV convention continues to render upright.
+    format!(
+        "\
+struct Params {{\n\
+    target_size: vec2f,\n\
+    geo_size: vec2f,\n\
+    center: vec2f,\n\
+\n\
+    geo_translate: vec2f,\n\
+    geo_scale: vec2f,\n\
+\n\
+    time: f32,\n\
+    _pad0: f32,\n\
+\n\
+    color: vec4f,\n\
+}};\n\
+\n\
+@group(0) @binding(0)\n\
+var<uniform> params: Params;\n\
+\n\
+struct VSOut {{\n\
+    @builtin(position) position: vec4f,\n\
+    @location(0) uv: vec2f,\n\
+    @location(1) frag_coord_gl: vec2f,\n\
+    @location(2) local_px: vec2f,\n\
+    @location(3) geo_size_px: vec2f,\n\
+}};\n\
+\n\
+@group(1) @binding(0)\n\
+var {tex_var}: texture_2d<f32>;\n\
+\n\
+@group(1) @binding(1)\n\
+var {samp_var}: sampler;\n\
+\n\
+fn linear_to_srgb_channel(x_in: f32) -> f32 {{\n\
+    let x = clamp(x_in, 0.0, 1.0);\n\
+    if (x <= 0.0031308) {{\n\
+        return x * 12.92;\n\
+    }}\n\
+    return 1.055 * pow(x, 1.0 / 2.4) - 0.055;\n\
+}}\n\
+\n\
+fn linear_to_srgb(rgb: vec3f) -> vec3f {{\n\
+    return vec3f(\n\
+        linear_to_srgb_channel(rgb.x),\n\
+        linear_to_srgb_channel(rgb.y),\n\
+        linear_to_srgb_channel(rgb.z),\n\
+    );\n\
+}}\n\
+\n\
+@vertex\n\
+fn vs_main(\n\
+    @location(0) position: vec3f,\n\
+    @location(1) uv: vec2f,\n\
+) -> VSOut {{\n\
+    var out: VSOut;\n\
+    let _unused_geo_size = params.geo_size;\n\
+    let _unused_geo_translate = params.geo_translate;\n\
+    let _unused_geo_scale = params.geo_scale;\n\
+\n\
+    out.uv = uv;\n\
+    out.geo_size_px = params.geo_size;\n\
+    out.local_px = uv * out.geo_size_px;\n\
+\n\
+    let p_local = position;\n\
+    let p_px = params.center + p_local.xy;\n\
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
+    out.position = vec4f(ndc, position.z, 1.0);\n\
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
+    return out;\n\
+}}\n\
+\n\
+@fragment\n\
+fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
+    // Sampling a render-target texture with our bottom-left UV convention requires a Y flip.
+    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n\
+    let c = textureSample({tex_var}, {samp_var}, uv);\n\
+    return vec4f(linear_to_srgb(c.xyz), c.w);\n\
+}}\n"
+    )
+}
+
+// UI presentation helper: encode linear output to SDR sRGB for egui-wgpu.
+// We use dot-separated segments (no `__`) so the names read well and extend naturally to HDR.
+const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
+
 fn normalize_blend_token(s: &str) -> String {
     s.trim().to_ascii_lowercase().replace('_', "-")
 }
@@ -988,18 +1151,6 @@ fn parse_render_pass_blend_state(
     Ok(state)
 }
 
-fn premultiply_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
-    // Convert to premultiplied alpha in-place (RGBA8).
-    let mut rgba = image.as_ref().to_rgba8();
-    for p in rgba.pixels_mut() {
-        let a = p.0[3] as u16;
-        p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
-        p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
-        p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
-    }
-    Arc::new(DynamicImage::ImageRgba8(rgba))
-}
-
 fn flip_image_y_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
     // The renderer's UV convention is bottom-left origin (GL-like).
     // Most image sources are top-left origin, so we flip pixels once on upload.
@@ -1012,6 +1163,23 @@ pub fn build_shader_space_from_scene(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
+) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
+    build_shader_space_from_scene_internal(scene, device, queue, false)
+}
+
+pub fn build_shader_space_from_scene_for_ui(
+    scene: &SceneDSL,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
+    build_shader_space_from_scene_internal(scene, device, queue, true)
+}
+
+fn build_shader_space_from_scene_internal(
+    scene: &SceneDSL,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    enable_display_encode: bool,
 ) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
     let prepared = prepare_scene(scene)?;
     let resolution = prepared.resolution;
@@ -1029,7 +1197,10 @@ pub fn build_shader_space_from_scene(
     let mut baked_data_parse_meta_by_pass: HashMap<String, Arc<BakedDataParseMeta>> =
         HashMap::new();
     let mut baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>> = HashMap::new();
+    let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
+
+
 
     // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
     let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
@@ -1115,6 +1286,28 @@ pub fn build_shader_space_from_scene(
         other => other,
     };
 
+    // If the output target is sRGB, create an extra linear UNORM texture that contains
+    // *sRGB-encoded bytes* for UI presentation (egui/eframe commonly presents into a linear
+    // swapchain format).
+    let display_texture_name: Option<ResourceName> = if enable_display_encode {
+        match target_format {
+            TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb => {
+                let name: ResourceName =
+                    format!("{}{}", target_texture_name.as_str(), UI_PRESENT_SDR_SRGB_SUFFIX)
+                        .into();
+                textures.push(TextureDecl {
+                    name: name.clone(),
+                    size: [tgt_w_u, tgt_h_u],
+                    format: TextureFormat::Rgba8Unorm,
+                });
+                Some(name)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
     // Composite draw order only contains direct inputs. For chained passes, we must render
     // upstream pass dependencies first so PassTexture can resolve them.
     let pass_nodes_in_order =
@@ -1133,7 +1326,7 @@ pub fn build_shader_space_from_scene(
                 // This avoids aliasing the final output and gives PassTexture a stable source.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
                 let pass_output_texture: ResourceName = if is_sampled_output {
-                    let out_tex: ResourceName = format!("{layer_id}__out").into();
+                    let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [tgt_w as u32, tgt_h as u32],
@@ -1275,7 +1468,7 @@ pub fn build_shader_space_from_scene(
                     }),
                 )?;
 
-                let params_name: ResourceName = format!("params_{layer_id}").into();
+                let params_name: ResourceName = format!("params.{layer_id}").into();
                 let params = Params {
                     target_size: [tgt_w, tgt_h],
                     geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
@@ -1288,6 +1481,10 @@ pub fn build_shader_space_from_scene(
                 };
 
                 let is_instanced = instance_count > 1;
+
+                // Internal resource naming helpers for this pass node.
+                let baked_buf_name: ResourceName =
+                    format!("sys.pass.{layer_id}.baked_data_parse").into();
 
                 let bundle = build_pass_wgsl_bundle(
                     &prepared.scene,
@@ -1320,7 +1517,7 @@ pub fn build_shader_space_from_scene(
                 )?);
 
                 let instance_buffer = if is_instanced {
-                    let b: ResourceName = format!("{layer_id}__instances").into();
+                    let b: ResourceName = format!("sys.pass.{layer_id}.instances").into();
 
                     // Per-instance mat4 (column-major) as 4 vec4<f32> (16 floats).
                     // If SetTransform provides per-instance CPU-baked matrices, prefer them.
@@ -1348,7 +1545,9 @@ pub fn build_shader_space_from_scene(
                 let baked_data_parse_buffer: Option<ResourceName> = if keys.is_empty() {
                     None
                 } else {
-                    Some(format!("{layer_id}__baked_data_parse").into())
+                    baked_data_parse_buffer_to_pass_id
+                        .insert(baked_buf_name.clone(), layer_id.clone());
+                    Some(baked_buf_name.clone())
                 };
 
                 render_pass_specs.push(RenderPassSpec {
@@ -1385,7 +1584,7 @@ pub fn build_shader_space_from_scene(
                 // We first render the image expression to an intermediate texture, then apply the blur chain.
 
                 // Create source texture for the image input.
-                let src_tex: ResourceName = format!("{layer_id}__src").into();
+                let src_tex: ResourceName = format!("sys.blur.{layer_id}.src").into();
                 let src_resolution = [tgt_w as u32, tgt_h as u32];
                 textures.push(TextureDecl {
                     name: src_tex.clone(),
@@ -1394,10 +1593,10 @@ pub fn build_shader_space_from_scene(
                 });
 
                 // Build a fullscreen pass to render the `image` input expression.
-                let geo_src: ResourceName = format!("{layer_id}__geo_src").into();
+                let geo_src: ResourceName = format!("sys.blur.{layer_id}.src.geo").into();
                 geometry_buffers.push((geo_src.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
 
-                let params_src: ResourceName = format!("params_{layer_id}__src").into();
+                let params_src: ResourceName = format!("params.sys.blur.{layer_id}.src").into();
                 let params_src_val = Params {
                     target_size: [tgt_w, tgt_h],
                     geo_size: [tgt_w, tgt_h],
@@ -1429,8 +1628,9 @@ pub fn build_shader_space_from_scene(
                     &src_bundle.pass_textures,
                 )?);
 
+                let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
                 render_pass_specs.push(RenderPassSpec {
-                    name: format!("{layer_id}__src_pass").into(),
+                    name: src_pass_name.clone(),
                     geometry_buffer: geo_src,
                     instance_buffer: None,
                     target_texture: src_tex.clone(),
@@ -1443,7 +1643,7 @@ pub fn build_shader_space_from_scene(
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
-                composite_passes.push(format!("{layer_id}__src_pass").into());
+                composite_passes.push(src_pass_name);
 
                 // Resolution: use target resolution, but allow override via params.
                 let blur_w = cpu_num_u32_min_1(
@@ -1489,13 +1689,13 @@ pub fn build_shader_space_from_scene(
                     };
                     let next_w = clamp_min_1(cur_w >> shift);
                     let next_h = clamp_min_1(cur_h >> shift);
-                    let tex: ResourceName = format!("{layer_id}__ds_{step}").into();
+                    let tex: ResourceName = format!("sys.blur.{layer_id}.ds.{step}").into();
                     textures.push(TextureDecl {
                         name: tex.clone(),
                         size: [next_w, next_h],
                         format: sampled_pass_format,
                     });
-                    let geo: ResourceName = format!("{layer_id}__geo_ds_{step}").into();
+                    let geo: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.geo").into();
                     geometry_buffers.push((
                         geo.clone(),
                         make_fullscreen_geometry(next_w as f32, next_h as f32),
@@ -1508,8 +1708,8 @@ pub fn build_shader_space_from_scene(
                 let ds_w = cur_w;
                 let ds_h = cur_h;
 
-                let h_tex: ResourceName = format!("{layer_id}__h_tex").into();
-                let v_tex: ResourceName = format!("{layer_id}__v_tex").into();
+                let h_tex: ResourceName = format!("sys.blur.{layer_id}.h").into();
+                let v_tex: ResourceName = format!("sys.blur.{layer_id}.v").into();
 
                 textures.push(TextureDecl {
                     name: h_tex.clone(),
@@ -1525,7 +1725,7 @@ pub fn build_shader_space_from_scene(
                 // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
                 // Otherwise, render to the final Composite.target texture.
                 let output_tex: ResourceName = if sampled_pass_ids.contains(layer_id) {
-                    let out_tex: ResourceName = format!("{layer_id}__out").into();
+                    let out_tex: ResourceName = format!("sys.blur.{layer_id}.out").into();
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [blur_w, blur_h],
@@ -1565,12 +1765,12 @@ pub fn build_shader_space_from_scene(
                 };
 
                 // Fullscreen geometry buffers for blur + upsample.
-                let geo_ds: ResourceName = format!("{layer_id}__geo_ds").into();
+                let geo_ds: ResourceName = format!("sys.blur.{layer_id}.ds.geo").into();
                 geometry_buffers.push((
                     geo_ds.clone(),
                     make_fullscreen_geometry(ds_w as f32, ds_h as f32),
                 ));
-                let geo_out: ResourceName = format!("{layer_id}__geo_out").into();
+                let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
                 geometry_buffers.push((
                     geo_out.clone(),
                     make_fullscreen_geometry(blur_w as f32, blur_h as f32),
@@ -1580,7 +1780,7 @@ pub fn build_shader_space_from_scene(
                 let mut prev_tex: Option<ResourceName> = None;
                 for (step, tex, step_w, step_h, step_geo) in &step_textures {
                     let params_name: ResourceName =
-                        format!("params_{layer_id}__downsample_{step}").into();
+                        format!("params.sys.blur.{layer_id}.ds.{step}").into();
                     let bundle = build_downsample_bundle(*step)?;
 
                     let params_val = Params {
@@ -1599,15 +1799,20 @@ pub fn build_shader_space_from_scene(
                         Some(t) => t.clone(),
                     };
 
+                    let baked_buf: ResourceName =
+                        format!("sys.pass.{layer_id}.baked_data_parse").into();
+                    baked_data_parse_buffer_to_pass_id
+                        .entry(baked_buf.clone())
+                        .or_insert_with(|| layer_id.clone());
+
+                    let pass_name: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.pass").into();
                     render_pass_specs.push(RenderPassSpec {
-                        name: format!("{layer_id}__downsample_{step}").into(),
+                        name: pass_name.clone(),
                         geometry_buffer: step_geo.clone(),
                         instance_buffer: None,
                         target_texture: tex.clone(),
                         params_buffer: params_name,
-                        baked_data_parse_buffer: Some(
-                            format!("{layer_id}__baked_data_parse").into(),
-                        ),
+                        baked_data_parse_buffer: Some(baked_buf),
                         params: params_val,
                         shader_wgsl: bundle.module,
                         texture_bindings: vec![PassTextureBinding {
@@ -1618,7 +1823,7 @@ pub fn build_shader_space_from_scene(
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
-                    composite_passes.push(format!("{layer_id}__downsample_{step}").into());
+                    composite_passes.push(pass_name);
                     prev_tex = Some(tex.clone());
                 }
 
@@ -1627,7 +1832,7 @@ pub fn build_shader_space_from_scene(
 
                 // 2) Horizontal blur: ds_src_tex -> h_tex
                 let params_h: ResourceName =
-                    format!("params_{layer_id}__hblur_ds{downsample_factor}").into();
+                    format!("params.sys.blur.{layer_id}.h.ds{downsample_factor}").into();
                 let bundle_h = build_horizontal_blur_bundle(kernel, offset);
                 let params_h_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
@@ -1640,8 +1845,10 @@ pub fn build_shader_space_from_scene(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
 
+                let pass_name_h: ResourceName =
+                    format!("sys.blur.{layer_id}.h.ds{downsample_factor}.pass").into();
                 render_pass_specs.push(RenderPassSpec {
-                    name: format!("{layer_id}__hblur_ds{downsample_factor}").into(),
+                    name: pass_name_h.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
                     target_texture: h_tex.clone(),
@@ -1657,12 +1864,14 @@ pub fn build_shader_space_from_scene(
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
-                composite_passes.push(format!("{layer_id}__hblur_ds{downsample_factor}").into());
+                composite_passes.push(pass_name_h);
 
                 // 3) Vertical blur: h_tex -> v_tex (still downsampled resolution)
                 let params_v: ResourceName =
-                    format!("params_{layer_id}__vblur_ds{downsample_factor}").into();
+                    format!("params.sys.blur.{layer_id}.v.ds{downsample_factor}").into();
                 let bundle_v = build_vertical_blur_bundle(kernel, offset);
+                let pass_name_v: ResourceName =
+                    format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass").into();
                 let params_v_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
@@ -1674,7 +1883,7 @@ pub fn build_shader_space_from_scene(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
                 render_pass_specs.push(RenderPassSpec {
-                    name: format!("{layer_id}__vblur_ds{downsample_factor}").into(),
+                    name: pass_name_v.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
                     target_texture: v_tex.clone(),
@@ -1691,11 +1900,13 @@ pub fn build_shader_space_from_scene(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
 
-                composite_passes.push(format!("{layer_id}__vblur_ds{downsample_factor}").into());
+                composite_passes.push(pass_name_v);
 
                 // 4) Upsample bilinear back to output: v_tex -> output_tex
-                let params_u: ResourceName =
-                    format!("params_{layer_id}__upsample_bilinear_ds{downsample_factor}").into();
+                let params_u: ResourceName = format!(
+                    "params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}"
+                )
+                .into();
                 let bundle_u = build_upsample_bilinear_bundle();
                 let params_u_val = Params {
                     target_size: [blur_w as f32, blur_h as f32],
@@ -1707,8 +1918,12 @@ pub fn build_shader_space_from_scene(
                     _pad0: 0.0,
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
+                let pass_name_u: ResourceName = format!(
+                    "sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"
+                )
+                .into();
                 render_pass_specs.push(RenderPassSpec {
-                    name: format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into(),
+                    name: pass_name_u.clone(),
                     geometry_buffer: geo_out.clone(),
                     instance_buffer: None,
                     target_texture: output_tex.clone(),
@@ -1725,8 +1940,7 @@ pub fn build_shader_space_from_scene(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
 
-                composite_passes
-                    .push(format!("{layer_id}__upsample_bilinear_ds{downsample_factor}").into());
+                composite_passes.push(pass_name_u);
 
                 // Register this GuassianBlurPass output for potential downstream chaining.
                 pass_output_registry.register(PassOutputSpec {
@@ -1750,6 +1964,64 @@ pub fn build_shader_space_from_scene(
                      To enable chain support for new pass types, update is_pass_node() and add handling here."
                 )
             }
+        }
+    }
+
+    // Final display encode pass (sRGB output -> linear texture with sRGB bytes).
+    if enable_display_encode {
+        if let Some(display_tex) = display_texture_name.clone() {
+        let pass_name: ResourceName = format!(
+            "{}{}.pass",
+            target_texture_name.as_str(),
+            UI_PRESENT_SDR_SRGB_SUFFIX
+        )
+        .into();
+        let geo: ResourceName = format!(
+            "{}{}.geo",
+            target_texture_name.as_str(),
+            UI_PRESENT_SDR_SRGB_SUFFIX
+        )
+        .into();
+        geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+
+        let params_name: ResourceName = format!(
+            "params.{}{}",
+            target_texture_name.as_str(),
+            UI_PRESENT_SDR_SRGB_SUFFIX
+        )
+        .into();
+        let params = Params {
+            target_size: [tgt_w, tgt_h],
+            geo_size: [tgt_w, tgt_h],
+            center: [tgt_w * 0.5, tgt_h * 0.5],
+            geo_translate: [0.0, 0.0],
+            geo_scale: [1.0, 1.0],
+            time: 0.0,
+            _pad0: 0.0,
+            color: [0.0, 0.0, 0.0, 0.0],
+        };
+
+        let shader_wgsl = build_srgb_display_encode_wgsl("src_tex", "src_samp");
+        render_pass_specs.push(RenderPassSpec {
+            name: pass_name.clone(),
+            geometry_buffer: geo,
+            instance_buffer: None,
+            target_texture: display_tex.clone(),
+            params_buffer: params_name,
+            baked_data_parse_buffer: None,
+            params,
+            shader_wgsl,
+            texture_bindings: vec![PassTextureBinding {
+                texture: target_texture_name.clone(),
+                image_node_id: None,
+            }],
+            sampler_kind: SamplerKind::NearestClamp,
+            blend_state: BlendState::REPLACE,
+            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+        });
+
+        // Make sure it runs last.
+        composite_passes.push(pass_name);
         }
     }
 
@@ -1809,14 +2081,15 @@ pub fn build_shader_space_from_scene(
         let Some(name) = spec.baked_data_parse_buffer.clone() else {
             continue;
         };
-        let pass_id = name
-            .as_str()
-            .trim_end_matches("__baked_data_parse")
-            .to_string();
-        let contents = baked_data_parse_bytes_by_pass
-            .get(&pass_id)
+
+        // BakedDataParse buffers are owned by a logical pass id (the DSL pass node id).
+        // Keep the mapping explicit so renaming the buffer doesn't require parsing strings.
+        let pass_id: Option<&String> = baked_data_parse_buffer_to_pass_id.get(&name);
+        let contents = pass_id
+            .and_then(|id| baked_data_parse_bytes_by_pass.get(id))
             .cloned()
             .unwrap_or_else(|| Arc::from(vec![0u8; 16]));
+
         buffer_specs.push(BufferSpec::Init {
             name,
             contents,
@@ -1838,6 +2111,21 @@ pub fn build_shader_space_from_scene(
                 | TextureUsages::COPY_SRC,
         })
         .collect();
+
+    #[derive(Clone)]
+    struct ImagePrepass {
+        pass_name: ResourceName,
+        geometry_buffer: ResourceName,
+        params_buffer: ResourceName,
+        params: Params,
+        src_texture: ResourceName,
+        dst_texture: ResourceName,
+        shader_wgsl: String,
+    }
+
+    let mut image_prepasses: Vec<ImagePrepass> = Vec::new();
+    let mut prepass_buffer_specs: Vec<BufferSpec> = Vec::new();
+    let mut prepass_names: Vec<ResourceName> = Vec::new();
 
     // ImageTexture resources (sampled textures) referenced by any reachable RenderPass.
     fn placeholder_image() -> Arc<DynamicImage> {
@@ -1907,45 +2195,132 @@ pub fn build_shader_space_from_scene(
                 .and_then(|v| v.as_str())
                 .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
 
-            let color_space = node
+            let encoder_space = node
                 .params
-                .get("colorSpace")
+                .get("encoderSpace")
                 .and_then(|v| v.as_str())
-                .or_else(|| node.params.get("colorspace").and_then(|v| v.as_str()))
                 .unwrap_or("srgb")
                 .trim()
                 .to_ascii_lowercase();
-            let is_srgb = matches!(color_space.as_str(), "srgb" | "srgba");
+            let is_srgb = match encoder_space.as_str() {
+                "srgb" => true,
+                "linear" => false,
+                other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
+            };
+
+            let alpha_mode = node
+                .params
+                .get("alphaMode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("straight")
+                .trim()
+                .to_ascii_lowercase();
+            let needs_premultiply = match alpha_mode.as_str() {
+                "straight" => true,
+                "premultiplied" => false,
+                other => bail!("unsupported ImageTexture.alphaMode: {other}"),
+            };
 
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => {
-                        let img = flip_image_y_rgba8(ensure_rgba8(Arc::new(img)));
-                        premultiply_rgba8(img)
-                    }
+                    Ok(img) => flip_image_y_rgba8(ensure_rgba8(Arc::new(img))),
                     Err(_e) => placeholder_image(),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    let img = flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(
-                        &rel_base, path,
-                    )));
-                    premultiply_rgba8(img)
+                    flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(&rel_base, path)))
                 }
             };
+
+            let img_w = image.width();
+            let img_h = image.height();
 
             let name = ids
                 .get(node_id)
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
 
-            texture_specs.push(FiberTextureSpec::Image {
-                name,
-                image,
-                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                srgb: is_srgb,
-            });
+            if needs_premultiply {
+                let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
+
+                // Upload source as straight-alpha.
+                texture_specs.push(FiberTextureSpec::Image {
+                    name: src_name.clone(),
+                    image,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    srgb: is_srgb,
+                });
+
+                // Allocate destination texture (ALWAYS linear). This avoids an early
+                // linear->sRGB encode at the premultiply stage which would later be
+                // decoded again on sampling and can cause darkening.
+                let dst_format = TextureFormat::Rgba8Unorm;
+                texture_specs.push(FiberTextureSpec::Texture {
+                    name: name.clone(),
+                    resolution: [img_w, img_h],
+                    format: dst_format,
+                    usage: TextureUsages::RENDER_ATTACHMENT
+                        | TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::COPY_SRC,
+                });
+
+                let w = img_w as f32;
+                let h = img_h as f32;
+
+                let geo: ResourceName = format!("sys.image.{node_id}.premultiply.geo").into();
+                prepass_buffer_specs.push(BufferSpec::Init {
+                    name: geo.clone(),
+                    contents: make_fullscreen_geometry(w, h),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                });
+
+                let params_name: ResourceName =
+                    format!("params.sys.image.{node_id}.premultiply").into();
+                prepass_buffer_specs.push(BufferSpec::Sized {
+                    name: params_name.clone(),
+                    size: core::mem::size_of::<Params>(),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+                let params = Params {
+                    target_size: [w, h],
+                    geo_size: [w, h],
+                    center: [w * 0.5, h * 0.5],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 0.0],
+                };
+
+                let pass_name: ResourceName = format!("sys.image.{node_id}.premultiply.pass").into();
+                let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
+                let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
+                let shader_wgsl = build_image_premultiply_wgsl(&tex_var, &samp_var);
+
+                prepass_names.push(pass_name.clone());
+                image_prepasses.push(ImagePrepass {
+                    pass_name,
+                    geometry_buffer: geo,
+                    params_buffer: params_name,
+                    params,
+                    src_texture: src_name,
+                    dst_texture: name,
+                    shader_wgsl,
+                });
+            } else {
+                texture_specs.push(FiberTextureSpec::Image {
+                    name,
+                    image,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    srgb: is_srgb,
+                });
+            }
         }
+    }
+
+    if !prepass_buffer_specs.is_empty() {
+        shader_space.declare_buffers(prepass_buffer_specs);
     }
 
     shader_space.declare_textures(texture_specs);
@@ -1993,6 +2368,46 @@ pub fn build_shader_space_from_scene(
         },
     ]);
 
+    // Register image premultiply prepasses.
+    for spec in &image_prepasses {
+        let pass_name = spec.pass_name.clone();
+        let geometry_buffer = spec.geometry_buffer.clone();
+        let params_buffer = spec.params_buffer.clone();
+        let src_texture = spec.src_texture.clone();
+        let dst_texture = spec.dst_texture.clone();
+        let shader_wgsl = spec.shader_wgsl.clone();
+        let nearest_sampler_for_pass = nearest_sampler.clone();
+
+        let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
+            label: Some("node-forge-imgpm"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl.clone())),
+        };
+
+        shader_space.render_pass(pass_name, move |builder| {
+            builder
+                .shader(shader_desc)
+                .bind_uniform_buffer(0, 0, params_buffer, ShaderStages::VERTEX_FRAGMENT)
+                .bind_attribute_buffer(
+                    0,
+                    geometry_buffer,
+                    wgpu::VertexStepMode::Vertex,
+                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
+                )
+                .bind_texture(1, 0, src_texture, ShaderStages::FRAGMENT)
+                .bind_sampler(1, 1, nearest_sampler_for_pass, ShaderStages::FRAGMENT)
+                .bind_color_attachment(dst_texture)
+                .blending(BlendState::REPLACE)
+                .load_op(wgpu::LoadOp::Clear(Color::TRANSPARENT))
+        });
+    }
+
+    if !prepass_names.is_empty() {
+        let mut ordered: Vec<ResourceName> = Vec::with_capacity(prepass_names.len() + composite_passes.len());
+        ordered.extend(prepass_names);
+        ordered.extend(composite_passes);
+        composite_passes = ordered;
+    }
+
     for spec in &render_pass_specs {
         let geometry_buffer = spec.geometry_buffer.clone();
         let target_texture = spec.target_texture.clone();
@@ -2015,7 +2430,7 @@ pub fn build_shader_space_from_scene(
         // When shader compilation fails (wgpu create_shader_module), the error message can be
         // hard to correlate back to the generated WGSL. Dump it to a predictable temp location
         // so tests can inspect the exact module wgpu validated.
-        let debug_dump_path = format!("/tmp/node-forge-pass__{}.wgsl", spec.name.as_str());
+        let debug_dump_path = format!("/tmp/node-forge-pass.{}.wgsl", spec.name.as_str());
         let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
             label: Some("node-forge-pass"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl.clone())),
@@ -2100,6 +2515,10 @@ pub fn build_shader_space_from_scene(
     shader_space.prepare();
 
     for spec in &render_pass_specs {
+        shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
+    }
+
+    for spec in &image_prepasses {
         shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
     }
 

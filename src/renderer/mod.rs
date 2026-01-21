@@ -27,8 +27,8 @@ pub mod wgsl;
 pub use node_compiler::compile_material_expr;
 pub use scene_prep::{PreparedScene, auto_wrap_primitive_pass_inputs, prepare_scene};
 pub use shader_space::{
-    build_error_shader_space, build_shader_space_from_scene, render_scene_to_png_headless,
-    update_pass_params,
+    build_error_shader_space, build_shader_space_from_scene, build_shader_space_from_scene_for_ui,
+    render_scene_to_png_headless, update_pass_params,
 };
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};

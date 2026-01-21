@@ -257,15 +257,23 @@ pub fn parse_str<'a>(params: &'a HashMap<String, serde_json::Value>, key: &str) 
 }
 
 pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Result<TextureFormat> {
-    let fmt = params
+    let fmt_raw = params
         .get("format")
         .and_then(|v| v.as_str())
         .unwrap_or("rgba8unorm")
         .to_ascii_lowercase();
+
+    // Scene JSON uses kebab-case (e.g. `rgba8unorm-srgb`) while some older DSL examples
+    // used snake-case (`rgba8unorm_srgb`) or a collapsed token (`rgba8unormsrgb`).
+    // Normalize those variants into a single key.
+    let fmt = fmt_raw.replace(['-', '_'], "");
+
     match fmt.as_str() {
         "rgba8unorm" => Ok(TextureFormat::Rgba8Unorm),
-        "rgba8unormsrgb" | "rgba8unorm_srgb" => Ok(TextureFormat::Rgba8UnormSrgb),
-        other => bail!("unsupported RenderTexture.format: {other}"),
+        "rgba8unormsrgb" => Ok(TextureFormat::Rgba8UnormSrgb),
+        "bgra8unorm" => Ok(TextureFormat::Bgra8Unorm),
+        "bgra8unormsrgb" => Ok(TextureFormat::Bgra8UnormSrgb),
+        _ => bail!("unsupported RenderTexture.format: {}", fmt_raw),
     }
 }
 

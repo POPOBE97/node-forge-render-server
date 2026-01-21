@@ -52,20 +52,33 @@ impl eframe::App for App {
                         }
                     }
 
-                    let build_result =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            renderer::build_shader_space_from_scene(
-                                &scene,
-                                Arc::new(render_state.device.clone()),
-                                Arc::new(render_state.queue.clone()),
-                            )
-                        }));
+                    let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        renderer::build_shader_space_from_scene_for_ui(
+                            &scene,
+                            Arc::new(render_state.device.clone()),
+                            Arc::new(render_state.queue.clone()),
+                        )
+                    }));
 
                     match build_result {
                         Ok(Ok((shader_space, resolution, output_texture_name, passes))) => {
                             self.shader_space = shader_space;
                             self.resolution = resolution;
-                            self.output_texture_name = output_texture_name;
+                            // In UI mode, prefer the derived display texture when present.
+                            // It contains sRGB-encoded bytes in a linear UNORM texture so it looks
+                            // correct when presented via egui-wgpu's non-sRGB swapchain.
+                            let mut display_name = output_texture_name.clone();
+                            let maybe_display: ResourceName =
+                                format!("{}.present.sdr.srgb", output_texture_name.as_str()).into();
+                            if self
+                                .shader_space
+                                .textures
+                                .get(maybe_display.as_str())
+                                .is_some()
+                            {
+                                display_name = maybe_display;
+                            }
+                            self.output_texture_name = display_name;
                             self.passes = passes;
                             self.color_attachment = None;
 

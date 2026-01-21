@@ -112,6 +112,9 @@ pub fn sanitize_wgsl_ident(s: &str) -> String {
     if out.is_empty() {
         out.push('_');
     }
+    if matches!(out.chars().next(), Some('0'..='9')) {
+        out.insert(0, '_');
+    }
     out
 }
 

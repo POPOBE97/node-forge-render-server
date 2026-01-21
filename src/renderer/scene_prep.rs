@@ -153,8 +153,8 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
             conn_index: idx,
             conn_id: c.id.clone(),
             original_from: c.from.clone(),
-            pass_id: format!("__auto_fullscreen_pass__{}", c.id),
-            geo_id: format!("__auto_fullscreen_geo__{}", c.id),
+            pass_id: format!("sys.auto.fullscreen.pass.{}", c.id),
+            geo_id: format!("sys.auto.fullscreen.geo.{}", c.id),
         });
     }
 
@@ -187,7 +187,7 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
         });
 
         new_connections.push(Connection {
-            id: format!("__auto_edge_geo__{}", p.conn_id),
+            id: format!("sys.auto.edge.geo.{}", p.conn_id),
             from: Endpoint {
                 node_id: p.geo_id.clone(),
                 port_id: "geometry".to_string(),
@@ -198,7 +198,7 @@ pub fn auto_wrap_primitive_pass_inputs(scene: &mut SceneDSL, scheme: &schema::No
             },
         });
         new_connections.push(Connection {
-            id: format!("__auto_edge_mat__{}", p.conn_id),
+            id: format!("sys.auto.edge.material.{}", p.conn_id),
             from: p.original_from.clone(),
             to: Endpoint {
                 node_id: p.pass_id.clone(),

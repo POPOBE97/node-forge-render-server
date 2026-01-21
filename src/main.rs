@@ -320,7 +320,7 @@ fn main() -> Result<()> {
 
             let (shader_space, resolution, output_texture_name, passes, last_good_initial) =
                 if let Some(scene) = scene.clone() {
-                    match renderer::build_shader_space_from_scene(
+                    match renderer::build_shader_space_from_scene_for_ui(
                         &scene,
                         Arc::new(render_state.device.clone()),
                         Arc::new(render_state.queue.clone()),
