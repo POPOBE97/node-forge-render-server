@@ -61,9 +61,13 @@ fn main() {
     println!("cargo:rerun-if-env-changed=UPDATE_GOLDENS");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    // User-generated render cases live here.
+    // (Project-owned fixtures should not go here; they belong under tests/fixtures/render_cases/.)
     let cases_root = manifest_dir.join("tests").join("cases");
 
-    // Re-run build script if any case file changes.
+    // Re-run build script if the cases root changes, and also on per-case files.
+    // Note: directory watches can be flaky for add/remove on some setups, so we also
+    // register concrete file paths for the discovered cases.
     println!("cargo:rerun-if-changed={}", cases_root.display());
 
     let mut case_dirs: Vec<String> = Vec::new();
@@ -80,7 +84,17 @@ fn main() {
             if !scene.exists() {
                 continue;
             }
-            if path.join("SKIP_RENDER_CASE").exists() {
+
+            // Always track these inputs for rebuild correctness.
+            // Even if SKIP_RENDER_CASE is present (and we skip the case), changes to it
+            // should retrigger codegen.
+            println!("cargo:rerun-if-changed={}", scene.display());
+            let skip = path.join("SKIP_RENDER_CASE");
+            println!("cargo:rerun-if-changed={}", skip.display());
+            let baseline = path.join("baseline.png");
+            println!("cargo:rerun-if-changed={}", baseline.display());
+
+            if skip.exists() {
                 continue;
             }
             if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
