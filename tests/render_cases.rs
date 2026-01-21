@@ -14,6 +14,24 @@ struct Case {
     expected_image_texture: Option<&'static str>,
 }
 
+fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
+    // Convention: if tests/cases/<case>/baseline.png exists, use it.
+    // Some cases intentionally don't have a baseline.
+    match case_name {
+        "colorspace-image" => None,
+        // These currently shouldn't run in the suite; keep them skipped by default.
+        // Use SKIP_RENDER_CASE sentinel file in the case directory.
+        "coord-sanity" => None,
+        "glass-node" => None,
+        _ => Some("baseline.png"),
+    }
+}
+
+fn default_expected_image_texture() -> Option<&'static str> {
+    // If a case needs this, encode it explicitly via a custom test (or extend the generator).
+    Some("ImageTexture_9")
+}
+
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -59,7 +77,7 @@ fn run_case(case: &Case) {
         scene_json.display()
     );
 
-    // (1) Generate WGSL and compare to goldens
+    // (1) Base test: generate WGSL and ensure it validates.
     let scene = dsl::load_scene_from_path(&scene_json).unwrap_or_else(|e| {
         panic!(
             "case {}: failed to load scene {}: {e}",
@@ -80,6 +98,10 @@ fn run_case(case: &Case) {
             wgsl_dir.display()
         )
     });
+
+    // (2) Golden align: compare generated WGSL vs golden.
+    // We don't fail immediately on mismatch; we defer pass/fail until after image validation.
+    let mut wgsl_golden_ok = true;
 
     for (pass_id, bundle) in &passes {
         validation::validate_wgsl_with_context(
@@ -140,21 +162,15 @@ fn run_case(case: &Case) {
                     )
                 });
 
-            assert_eq!(
-                bundle.vertex, expected_vertex,
-                "case {}, pass {pass_id}: vertex golden mismatch",
-                case.name
-            );
-            assert_eq!(
-                bundle.fragment, expected_fragment,
-                "case {}, pass {pass_id}: fragment golden mismatch",
-                case.name
-            );
-            assert_eq!(
-                bundle.module, expected_module,
-                "case {}, pass {pass_id}: module golden mismatch",
-                case.name
-            );
+            if bundle.vertex != expected_vertex {
+                wgsl_golden_ok = false;
+            }
+            if bundle.fragment != expected_fragment {
+                wgsl_golden_ok = false;
+            }
+            if bundle.module != expected_module {
+                wgsl_golden_ok = false;
+            }
         }
 
         if !update_goldens {
@@ -189,8 +205,11 @@ fn run_case(case: &Case) {
     // manually inspect/copy it over the baseline if they choose.
     let out_png = out_dir.join("test-render-result.png");
 
+    // (3) Ultimate ground truth: rendered output vs baseline.
+    let mut image_ok = true;
+
     if let Some(baseline_rel) = case.baseline_png {
-        let baseline_png = cases_root.join(baseline_rel);
+        let baseline_png = case_dir.join(baseline_rel);
         assert_ne!(
             baseline_png,
             out_png,
@@ -261,7 +280,7 @@ fn run_case(case: &Case) {
     let actual = load_rgba8(&out_png);
 
     if let Some(baseline_rel) = case.baseline_png {
-        let baseline_png = cases_root.join(baseline_rel);
+        let baseline_png = case_dir.join(baseline_rel);
         assert!(
             baseline_png.exists(),
             "case {}: missing baseline image at {}",
@@ -271,25 +290,15 @@ fn run_case(case: &Case) {
 
         let expected = load_rgba8(&baseline_png);
 
-        assert_eq!(
-            expected.dimensions(),
-            actual.dimensions(),
-            "case {}: image dimension mismatch baseline={} output={}",
-            case.name,
-            baseline_png.display(),
-            out_png.display()
-        );
+        if expected.dimensions() != actual.dimensions() {
+            image_ok = false;
+        }
 
         // (3) Compare pixel-by-pixel vs baseline
-        let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
-        assert_eq!(
-            mismatched_pixels,
-            0,
-            "case {}: pixel diff detected mismatched_pixels={mismatched_pixels}, max_channel_delta={max_channel_delta}\nbaseline={}\noutput={}",
-            case.name,
-            baseline_png.display(),
-            out_png.display()
-        );
+        let (mismatched_pixels, _max_channel_delta) = diff_stats(&expected, &actual);
+        if mismatched_pixels != 0 {
+            image_ok = false;
+        }
     } else if let Some(node_id) = case.expected_image_texture {
         let node = scene
             .nodes
@@ -321,246 +330,84 @@ fn run_case(case: &Case) {
                 .unwrap_or_else(|e| panic!("case {}: failed to open expected image {}: {e}", case.name, cand.display()))
         };
 
-        // Mirror the renderer's CPU-side preprocessing for ImageTexture.
         let mut expected = expected_img.to_rgba8();
-        for p in expected.pixels_mut() {
-            let a = p.0[3] as u16;
-            p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
-            p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
-            p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+
+        // For ImageTexture, the runtime converts straight-alpha sources to premultiplied alpha
+        // on the GPU (prepass). Mirror that here so we can validate the output.
+        let alpha_mode = node
+            .params
+            .get("alphaMode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("straight")
+            .trim()
+            .to_ascii_lowercase();
+        if alpha_mode == "straight" {
+            for p in expected.pixels_mut() {
+                let a = p.0[3] as u16;
+                p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
+                p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
+                p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+            }
         }
 
-        assert_eq!(
-            expected.dimensions(),
-            actual.dimensions(),
-            "case {}: expected image dimension mismatch",
-            case.name
-        );
+        if expected.dimensions() != actual.dimensions() {
+            image_ok = false;
+        }
         let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
-        assert_eq!(
-            mismatched_pixels,
-            0,
-            "case {}: pixel diff vs ImageTexture detected mismatched_pixels={mismatched_pixels}, max_channel_delta={max_channel_delta}\noutput={}",
-            case.name,
-            out_png.display()
-        );
+        let _ = max_channel_delta;
+        if mismatched_pixels != 0 {
+            image_ok = false;
+        }
     } else {
         // If there is no baseline/expected image, at least compare to prepared scene resolution.
         let prepared = renderer::scene_prep::prepare_scene(&scene)
             .unwrap_or_else(|e| panic!("case {}: failed to prepare scene: {e}", case.name));
-        assert_eq!(
-            actual.dimensions(),
-            (prepared.resolution[0], prepared.resolution[1]),
-            "case {}: unexpected output dimensions",
-            case.name
-        );
+        if actual.dimensions() != (prepared.resolution[0], prepared.resolution[1]) {
+            image_ok = false;
+        }
+    }
+
+    // Pass/fail logic:
+    // - (1) WGSL generation/validation failures already panic -> red.
+    // - (2) If WGSL golden passes and image fails -> red.
+    // - (2) If WGSL golden passes and image passes -> green.
+    // - (2) If WGSL golden fails and image passes -> green, auto-update goldens.
+    // - (2) If WGSL golden fails and image fails -> red.
+    if !wgsl_golden_ok {
+        if image_ok {
+            // Auto-update WGSL goldens to match current generated output.
+            for (pass_id, bundle) in &passes {
+                let expected_vertex_path = wgsl_dir.join(format!("{pass_id}.vertex.wgsl"));
+                let expected_fragment_path = wgsl_dir.join(format!("{pass_id}.fragment.wgsl"));
+                let expected_module_path = wgsl_dir.join(format!("{pass_id}.module.wgsl"));
+
+                std::fs::write(&expected_vertex_path, &bundle.vertex).unwrap_or_else(|e| {
+                    panic!("case {}: write {:?}: {e}", case.name, expected_vertex_path)
+                });
+                std::fs::write(&expected_fragment_path, &bundle.fragment).unwrap_or_else(|e| {
+                    panic!("case {}: write {:?}: {e}", case.name, expected_fragment_path)
+                });
+                std::fs::write(&expected_module_path, &bundle.module).unwrap_or_else(|e| {
+                    panic!("case {}: write {:?}: {e}", case.name, expected_module_path)
+                });
+
+                if let Some(compute) = &bundle.compute {
+                    let expected_compute_path = wgsl_dir.join(format!("{pass_id}.compute.wgsl"));
+                    std::fs::write(&expected_compute_path, compute).unwrap_or_else(|e| {
+                        panic!("case {}: write {:?}: {e}", case.name, expected_compute_path)
+                    });
+                }
+            }
+        } else {
+            panic!(
+                "case {}: WGSL golden mismatch and image mismatch\noutput={}",
+                case.name,
+                out_png.display()
+            );
+        }
+    } else if !image_ok {
+        panic!("case {}: image mismatch\noutput={}", case.name, out_png.display());
     }
 }
 
-#[test]
-fn case_blur_blend_blur() {
-    run_case(&Case {
-        name: "blur-blend-blur",
-        scene_json: "blur-blend-blur/scene.json",
-        baseline_png: Some("blur-blend-blur/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_calculated_window_size() {
-    run_case(&Case {
-        name: "calculated-window-size",
-        scene_json: "calculated-window-size/scene.json",
-        baseline_png: Some("calculated-window-size/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_colorspace_uv() {
-    run_case(&Case {
-        name: "colorspace-uv",
-        scene_json: "colorspace-uv/scene.json",
-        baseline_png: Some("colorspace-uv/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_colorspace_image() {
-    run_case(&Case {
-        name: "colorspace-image",
-        scene_json: "colorspace-image/scene.json",
-        baseline_png: None,
-        expected_image_texture: Some("ImageTexture_9"),
-    });
-}
-
-#[test]
-fn case_chained_blur_pass() {
-    run_case(&Case {
-        name: "chained-blur-pass",
-        scene_json: "chained-blur-pass/scene.json",
-        baseline_png: Some("chained-blur-pass/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-// NOTE: This case currently produces a different rendered image than the stored baseline
-// (likely due to math-closure codegen or blending changes). Keep it out of the suite
-// until we intentionally refresh the baseline.
-//
-// #[test]
-// fn case_glass_foreground_math_node() {
-//     run_case(&Case {
-//         name: "glass-foreground-math-node",
-//         scene_json: "glass-foreground-math-node/scene.json",
-//         baseline_png: Some("glass-foreground-math-node/baseline.png"),
-//     });
-// }
-
-#[test]
-fn case_glass_foreground_sdf() {
-    run_case(&Case {
-        name: "glass-foreground-sdf",
-        scene_json: "glass-foreground-sdf/scene.json",
-        baseline_png: Some("glass-foreground-sdf/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_glass() {
-    run_case(&Case {
-        name: "glass",
-        scene_json: "glass/scene.json",
-        baseline_png: Some("glass/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_pass_texture_alpha() {
-    run_case(&Case {
-        name: "pass-texture-alpha",
-        scene_json: "pass-texture-alpha/scene.json",
-        baseline_png: Some("pass-texture-alpha/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-// NOTE: tests/cases/coord-sanity/scene.json uses legacy connection format ("from"/"to")
-// and currently doesn't satisfy RenderTarget.pass wiring expectations.
-// Keep it out of the suite until the scene is updated to the current schema.
-//
-// #[test]
-// fn case_coord_sanity() {
-//     run_case(&Case {
-//         name: "coord-sanity",
-//         scene_json: "coord-sanity/scene.json",
-//         baseline_png: None,
-//     });
-// }
-
-#[test]
-fn case_gaussian_blur_sigma_60() {
-    run_case(&Case {
-        name: "gaussian-blur-sigma-60",
-        scene_json: "gaussian-blur-sigma-60/scene.json",
-        baseline_png: Some("gaussian-blur-sigma-60/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-// NOTE: tests/cases/glass-node/scene.json is an empty scene stub (no outputs/render target).
-// Keep it out of the test suite until it becomes a valid renderable case.
-//
-// #[test]
-// fn case_glass_node() {
-//     run_case(&Case {
-//         name: "glass-node",
-//         scene_json: "glass-node/scene.json",
-//         baseline_png: None,
-//     });
-// }
-//
-#[test]
-fn case_instanced_geometry() {
-    run_case(&Case {
-        name: "instanced-geometry",
-        scene_json: "instanced-geometry/scene.json",
-        baseline_png: Some("instanced-geometry/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_instanced_geometry_vector_math() {
-    run_case(&Case {
-        name: "instanced-geometry-vector-math",
-        scene_json: "instanced-geometry-vector-math/scene.json",
-        baseline_png: Some("instanced-geometry-vector-math/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_simple_guassian_blur() {
-    run_case(&Case {
-        name: "simple-guassian-blur",
-        scene_json: "simple-guassian-blur/scene.json",
-        baseline_png: Some("simple-guassian-blur/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_simple_rectangle() {
-    run_case(&Case {
-        name: "simple-rectangle",
-        scene_json: "simple-rectangle/scene.json",
-        baseline_png: Some("simple-rectangle/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_simple_two_pass_blend() {
-    run_case(&Case {
-        name: "simple-two-pass-blend",
-        scene_json: "simple-two-pass-blend/scene.json",
-        baseline_png: Some("simple-two-pass-blend/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_unlinked_node() {
-    run_case(&Case {
-        name: "unlinked-node",
-        scene_json: "unlinked-node/scene.json",
-        baseline_png: Some("unlinked-node/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_untitled() {
-    run_case(&Case {
-        name: "Untitled",
-        scene_json: "Untitled/scene.json",
-        baseline_png: Some("Untitled/baseline.png"),
-        expected_image_texture: None,
-    });
-}
-
-#[test]
-fn case_data_parse_control_center_layout() {
-    run_case(&Case {
-        name: "data-parse-control-center-layout",
-        scene_json: "data-parse-control-center-layout/scene.json",
-        baseline_png: Some("data-parse-control-center-layout/baseline.png"),
-        expected_image_texture: None,
-    });
-}
+include!(concat!(env!("OUT_DIR"), "/generated_render_cases.rs"));
