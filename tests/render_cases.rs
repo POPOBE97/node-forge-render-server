@@ -5,6 +5,7 @@ use std::{
 
 use node_forge_render_server::renderer::validation;
 use node_forge_render_server::{dsl, renderer};
+use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
 #[derive(Clone, Debug)]
 struct Case {
@@ -18,7 +19,6 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
     // Convention: if tests/cases/<case>/baseline.png exists, use it.
     // Some cases intentionally don't have a baseline.
     match case_name {
-        "colorspace-image" => None,
         // These currently shouldn't run in the suite; keep them skipped by default.
         // Use SKIP_RENDER_CASE sentinel file in the case directory.
         "coord-sanity" => None,
@@ -63,6 +63,24 @@ fn diff_stats(expected: &image::RgbaImage, actual: &image::RgbaImage) -> (u64, u
         }
     }
     (mismatched_pixels, max_channel_delta)
+}
+
+fn first_pixel_mismatch(
+    expected: &image::RgbaImage,
+    actual: &image::RgbaImage,
+) -> Option<(u32, u32, image::Rgba<u8>, image::Rgba<u8>)> {
+    if expected.dimensions() != actual.dimensions() {
+        return None;
+    }
+    let w = expected.width() as usize;
+    for (i, (ep, ap)) in expected.pixels().zip(actual.pixels()).enumerate() {
+        if ep.0 != ap.0 {
+            let x = (i % w) as u32;
+            let y = (i / w) as u32;
+            return Some((x, y, *ep, *ap));
+        }
+    }
+    None
 }
 
 fn run_case(case: &Case) {
@@ -228,40 +246,254 @@ fn run_case(case: &Case) {
         });
     }
 
-    let exe = env!("CARGO_BIN_EXE_node-forge-render-server");
-    let output = Command::new(exe)
-        .current_dir(&case_dir)
-        .args([
-            "--headless",
-            "--render-to-file",
-            "--dsl-json",
-            scene_json
-                .to_str()
-                .expect("scene_json path must be valid UTF-8"),
-            "--output",
-            out_png.to_str().expect("out_png path must be valid UTF-8"),
-        ])
-        .output()
-        .expect("failed to run node-forge-render-server binary");
+    if case.name == "simple-guassian-blur"
+        || case.name == "blend-blurs-alpha"
+        || case.name == "blur-guassian-20"
+        || case.name == "blur-guassian-60"
+    {
+        // For these cases we render in-process so we can dump intermediate textures.
+        let headless = HeadlessRenderer::new(HeadlessRendererConfig::default())
+         .unwrap_or_else(|e| panic!("case {}: failed to create headless renderer: {e}", case.name));
 
-    if !output.status.success() {
-        panic!(
-            "case {}: headless render failed (status={:?})\nstdout:\n{}\nstderr:\n{}",
+        let (shader_space, _resolution, output_texture_name, _passes) =
+            renderer::build_shader_space_from_scene(
+                &scene,
+                headless.device.clone(),
+                headless.queue.clone(),
+            )
+            .unwrap_or_else(|e| panic!("case {}: failed to build shader space: {e:#}", case.name));
+
+        shader_space.render();
+
+        let save_and_load = |tex_name: &str, out_path: &Path| -> image::RgbaImage {
+            shader_space
+                .save_texture_png(tex_name, out_path)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "case {}: failed to save texture {tex_name} to {}: {e}",
+                        case.name,
+                        out_path.display()
+                    )
+                });
+            load_rgba8(out_path)
+        };
+
+        let compare_stage = |label: &str,
+                             tex_name: &str,
+                             expected_path: &Path,
+                             flip_y_actual: bool| {
+            let out_path = out_dir.join(format!("stage_{label}.png"));
+            let mut actual_img = save_and_load(tex_name, &out_path);
+            if flip_y_actual {
+                image::imageops::flip_vertical_in_place(&mut actual_img);
+            }
+
+            let expected_img = load_rgba8(expected_path);
+            if expected_img.dimensions() != actual_img.dimensions() {
+                panic!(
+                    "case {}: {label} dimension mismatch expected={}x{} actual={}x{}\nexpected={}\nactual={}",
+                    case.name,
+                    expected_img.width(),
+                    expected_img.height(),
+                    actual_img.width(),
+                    actual_img.height(),
+                    expected_path.display(),
+                    out_path.display(),
+                );
+            }
+
+            let (mismatched_pixels, max_channel_delta) = diff_stats(&expected_img, &actual_img);
+            if mismatched_pixels != 0 {
+                let mismatch_detail = first_pixel_mismatch(&expected_img, &actual_img)
+                    .map(|(x, y, ep, ap)| {
+                        format!(
+                            "first_mismatch=({x},{y}) expected_rgba={:?} actual_rgba={:?}",
+                            ep.0, ap.0
+                        )
+                    })
+                    .unwrap_or_else(|| "first_mismatch=(unknown)".to_string());
+                panic!(
+                    "case {}: {label} image mismatch mismatched_pixels={mismatched_pixels} max_channel_delta={max_channel_delta} {mismatch_detail}\nexpected={}\nactual={}",
+                    case.name,
+                    expected_path.display(),
+                    out_path.display(),
+                );
+            }
+        };
+
+        // (a-?) Optional intermediate stages.
+        // Always dump the final result, even if an intermediate stage fails.
+        let dump_final = || {
+            shader_space
+                .save_texture_png(output_texture_name.as_str(), &out_png)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "case {}: failed to save final texture {} to {}: {e}",
+                        case.name,
+                        output_texture_name.as_str(),
+                        out_png.display()
+                    )
+                });
+        };
+
+        let staged = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // If this case includes a known premultiply stage, dump it.
+            // Don't validate it against CPU expected unless the case provides a baseline.
+            if case.name == "simple-guassian-blur" {
+                // NOTE: flip actual in Y for visual consistency with other stage dumps.
+                let premultiply_out = out_dir.join("stage_premultiply.png");
+                let mut premultiplied_actual = save_and_load("node_7", &premultiply_out);
+                image::imageops::flip_vertical_in_place(&mut premultiplied_actual);
+ 
+                // Keep strict validation for this golden case.
+                let node = scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == "node_7")
+                    .unwrap_or_else(|| panic!("case {}: missing ImageTexture node node_7", case.name));
+                let data_url = node
+                    .params
+                    .get("dataUrl")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+                let expected_img = if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
+                    node_forge_render_server::renderer::utils::load_image_from_data_url(s)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "case {}: failed to decode expected image dataUrl for premultiply: {e}",
+                                case.name
+                            )
+                        })
+                } else {
+                    let path = node
+                        .params
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| {
+                            panic!("case {}: ImageTexture node_7 has no dataUrl/path", case.name)
+                        });
+                    let cand = case_dir.join(path);
+                    image::open(&cand).unwrap_or_else(|e| {
+                        panic!(
+                            "case {}: failed to open expected image {}: {e}",
+                            case.name,
+                            cand.display()
+                        )
+                    })
+                };
+                let mut premultiplied_expected = expected_img.to_rgba8();
+                for p in premultiplied_expected.pixels_mut() {
+                    let a = p.0[3] as u16;
+                    p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
+                    p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
+                    p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+                }
+                if premultiplied_expected.dimensions() != premultiplied_actual.dimensions() {
+                    panic!(
+                        "case {}: premultiply dimension mismatch expected={}x{} actual={}x{}\nactual={}",
+                        case.name,
+                        premultiplied_expected.width(),
+                        premultiplied_expected.height(),
+                        premultiplied_actual.width(),
+                        premultiplied_actual.height(),
+                        premultiply_out.display(),
+                    );
+                }
+                let (mismatched_pixels, max_channel_delta) =
+                    diff_stats(&premultiplied_expected, &premultiplied_actual);
+                if mismatched_pixels != 0 {
+                    panic!(
+                        "case {}: premultiply mismatch mismatched_pixels={mismatched_pixels} max_channel_delta={max_channel_delta}\nactual={}",
+                        case.name,
+                        premultiply_out.display(),
+                    );
+                }
+ 
+                compare_stage(
+                    "downsample_8",
+                    "sys.blur.node_2.ds.8",
+                    &case_dir.join("baseline_downsample_8.png"),
+                    false,
+                );
+                compare_stage(
+                    "downsample_2",
+                    "sys.blur.node_2.ds.2",
+                    &case_dir.join("baseline_downsample_2.png"),
+                    false,
+                );
+                compare_stage(
+                    "blur_h",
+                    "sys.blur.node_2.h",
+                    &case_dir.join("baseline_blur_h.png"),
+                    false,
+                );
+                compare_stage(
+                    "blur_v",
+                    "sys.blur.node_2.v",
+                    &case_dir.join("baseline_blur_v.png"),
+                    false,
+                );
+            } else {
+                // Dump all dumpable internal textures to stage_*.png.
+                // If a matching baseline exists (baseline_<name>.png), validate it pixel-perfect.
+                for tex_name in shader_space.list_debug_texture_names() {
+                    let safe = tex_name
+                        .replace('/', "_")
+                        .replace("\\", "_")
+                        .replace(':', "_")
+                        .replace(' ', "_");
+                    let expected_path = case_dir.join(format!("baseline_{safe}.png"));
+                    if expected_path.exists() {
+                        compare_stage(safe.as_str(), tex_name.as_str(), &expected_path, false);
+                    } else {
+                        let out_path = out_dir.join(format!("stage_{safe}.png"));
+                        let _ = save_and_load(tex_name.as_str(), &out_path);
+                    }
+                }
+            }
+        }));
+
+        dump_final();
+
+        if let Err(payload) = staged {
+            std::panic::resume_unwind(payload);
+        }
+    } else {
+        let exe = env!("CARGO_BIN_EXE_node-forge-render-server");
+        let output = Command::new(exe)
+            .current_dir(&case_dir)
+            .args([
+                "--headless",
+                "--render-to-file",
+                "--dsl-json",
+                scene_json
+                    .to_str()
+                    .expect("scene_json path must be valid UTF-8"),
+                "--output",
+                out_png.to_str().expect("out_png path must be valid UTF-8"),
+            ])
+            .output()
+            .expect("failed to run node-forge-render-server binary");
+
+        if !output.status.success() {
+            panic!(
+                "case {}: headless render failed (status={:?})\nstdout:\n{}\nstderr:\n{}",
+                case.name,
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        assert!(
+            out_png.exists(),
+            "case {}: expected output image at {}, but it does not exist\nstdout:\n{}\nstderr:\n{}",
             case.name,
-            output.status.code(),
+            out_png.display(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
     }
-
-    assert!(
-        out_png.exists(),
-        "case {}: expected output image at {}, but it does not exist\nstdout:\n{}\nstderr:\n{}",
-        case.name,
-        out_png.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 
     let meta = std::fs::metadata(&out_png).unwrap_or_else(|e| {
         panic!(
