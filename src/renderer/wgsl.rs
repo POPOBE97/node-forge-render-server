@@ -59,17 +59,17 @@ pub(crate) fn gaussian_kernel_8(sigma: f32) -> ([f32; 8], [f32; 8], u32) {
     let mut gaussian_kernel: [f64; 27] = [0.0; 27];
     let narrow_band: i32 = 27;
     let coefficient: f64 = 1.0 / f64::sqrt(sigma as f64 * std::f64::consts::PI * 2.0);
-    let mut weight_sum: f32 = 0.0;
+    let mut weight_sum: f64 = 0.0;
 
     for weight_index in 0..27 {
         let x = (weight_index as i32 - 13) as f64;
         let weight = f64::exp(-1.0 * x * x * 0.5 / sigma as f64) * coefficient;
         gaussian_kernel[weight_index] = weight;
-        weight_sum += weight as f32;
+        weight_sum += weight;
     }
 
     for i in 0..27 {
-        gaussian_kernel[i] /= weight_sum as f64;
+        gaussian_kernel[i] /= weight_sum;
     }
     gaussian_kernel[13] /= 2.0;
 
@@ -236,6 +236,8 @@ var src_samp: sampler;
     if !uses_instance_index {
         common = common.replace("    @location(4) instance_index: u32,\n", "");
     }
+
+    // NOTE: keep common minimal; sampling behavior is controlled via wgpu sampler.
 
     let vertex_entry = if uses_instance_index {
         r#"
@@ -857,8 +859,17 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 out.push((layer_id, bundle));
             }
             "GuassianBlurPass" => {
-                let sigma =
+                // SceneDSL `radius` is authored as an analytic 1D cutoff radius in full-res pixels,
+                // not as Gaussian sigma.
+                //
+                // We map radius -> sigma using the same cutoff epsilon (~0.002) that our packed
+                // 27-wide Gaussian kernel effectively uses when pruning tiny weights
+                // (see `gaussian_kernel_8`).
+                //
+                // k = sqrt(2*ln(1/eps)) with eps=0.002 -> k≈3.525494, so sigma = radius/k.
+                let radius_px =
                     cpu_num_f32_min_0(&prepared.scene, &prepared.nodes_by_id, node, "radius", 0.0)?;
+                let sigma = radius_px / 3.525_494;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
@@ -906,60 +917,60 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
     let body = match factor {
         1 => r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let uv = dst_xy / src_resolution;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
-"#
-        .to_string(),
+ let src_resolution = vec2f(textureDimensions(src_tex));
+ let dst_xy = vec2f(in.position.xy);
+ let uv = dst_xy / src_resolution;
+ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+ "#
+         .to_string(),
         2 => r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 2.0 - vec2f(0.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 2; y = y + 1) {
-    for (var x: i32 = 0; x < 2; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * 0.25;
-"#
-        .to_string(),
+ let src_resolution = params.target_size * 2.0;
+ let dst_xy = vec2f(in.position.xy);
+ let base = dst_xy * 2.0 - vec2f(0.5);
+ 
+ var sum = vec4f(0.0);
+ for (var y: i32 = 0; y < 2; y = y + 1) {
+     for (var x: i32 = 0; x < 2; x = x + 1) {
+         let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+     }
+ }
+ 
+ return sum * 0.25;
+ "#
+         .to_string(),
         4 => r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 4.0 - vec2f(1.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 4; y = y + 1) {
-    for (var x: i32 = 0; x < 4; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * (1.0 / 16.0);
-"#
-        .to_string(),
+ let src_resolution = params.target_size * 4.0;
+ let dst_xy = vec2f(in.position.xy);
+ let base = dst_xy * 4.0 - vec2f(1.5);
+ 
+ var sum = vec4f(0.0);
+ for (var y: i32 = 0; y < 4; y = y + 1) {
+     for (var x: i32 = 0; x < 4; x = x + 1) {
+         let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+     }
+ }
+ 
+ return sum * (1.0 / 16.0);
+ "#
+         .to_string(),
         8 => r#"
-let src_resolution = vec2f(textureDimensions(src_tex));
-let dst_xy = vec2f(in.position.xy);
-let base = dst_xy * 8.0 - vec2f(3.5);
-
-var sum = vec4f(0.0);
-for (var y: i32 = 0; y < 8; y = y + 1) {
-    for (var x: i32 = 0; x < 8; x = x + 1) {
-        let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
-    }
-}
-
-return sum * (1.0 / 64.0);
-"#
-        .to_string(),
+ let src_resolution = params.target_size * 8.0;
+ let dst_xy = vec2f(in.position.xy);
+ let base = dst_xy * 8.0 - vec2f(3.5);
+ 
+ var sum = vec4f(0.0);
+ for (var y: i32 = 0; y < 8; y = y + 1) {
+     for (var x: i32 = 0; x < 8; x = x + 1) {
+         let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+     }
+ }
+ 
+ return sum * (1.0 / 64.0);
+ "#
+         .to_string(),
         other => {
             return Err(anyhow!(
                 "GuassianBlurPass: unsupported downsample factor {other}"
@@ -975,18 +986,18 @@ pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslS
     let offset_wgsl = array8_f32_wgsl(offset);
     let body = format!(
         r#"
-let original = vec2f(textureDimensions(src_tex));
-let xy = vec2f(in.position.xy);
-let k = {kernel_wgsl};
-let o = {offset_wgsl};
-var color = vec4f(0.0);
-for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
-    let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
-    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
-}}
-return color;
+ let original = vec2f(textureDimensions(src_tex));
+ let xy = vec2f(in.position.xy);
+ let k = {kernel_wgsl};
+ let o = {offset_wgsl};
+ var color = vec4f(0.0);
+ for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+     let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
+     let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
+     color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+     color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
+ }}
+ return color;
 "#
     );
     build_fullscreen_textured_bundle(body)
@@ -998,18 +1009,18 @@ pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslSha
     let offset_wgsl = array8_f32_wgsl(offset);
     let body = format!(
         r#"
-let original = vec2f(textureDimensions(src_tex));
-let xy = vec2f(in.position.xy);
-let k = {kernel_wgsl};
-let o = {offset_wgsl};
-var color = vec4f(0.0);
-for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
-    let uv_pos = (xy + vec2f(0.0, o[i])) / original;
-    let uv_neg = (xy - vec2f(0.0, o[i])) / original;
-    color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
-    color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
-}}
-return color;
+ let original = vec2f(textureDimensions(src_tex));
+ let xy = vec2f(in.position.xy);
+ let k = {kernel_wgsl};
+ let o = {offset_wgsl};
+ var color = vec4f(0.0);
+ for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+     let uv_pos = (xy + vec2f(0.0, o[i])) / original;
+     let uv_neg = (xy - vec2f(0.0, o[i])) / original;
+     color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+     color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
+ }}
+ return color;
 "#
     );
     build_fullscreen_textured_bundle(body)
@@ -1018,11 +1029,11 @@ return color;
 /// Build a bilinear upsample shader bundle.
 pub fn build_upsample_bilinear_bundle() -> WgslShaderBundle {
     let body = r#"
-let dst_xy = vec2f(in.position.xy);
-let dst_resolution = params.target_size;
-let uv = dst_xy / dst_resolution;
-return textureSampleLevel(src_tex, src_samp, uv, 0.0);
-"#
+ let dst_xy = vec2f(in.position.xy);
+ let dst_resolution = params.target_size;
+ let uv = dst_xy / dst_resolution;
+ return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+ "#
     .to_string();
     build_fullscreen_textured_bundle(body)
 }

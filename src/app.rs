@@ -33,6 +33,8 @@ pub struct App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let render_state = frame.wgpu_render_state().unwrap();
+        let mut renderer_guard = frame.wgpu_render_state().unwrap().renderer.as_ref().write();
+        let mut did_rebuild_shader_space = false;
 
         // Apply latest scene update (non-blocking; drop older updates).
         let mut latest: Option<ws::SceneUpdate> = None;
@@ -80,7 +82,36 @@ impl eframe::App for App {
                             }
                             self.output_texture_name = display_name;
                             self.passes = passes;
-                            self.color_attachment = None;
+
+                            // Keep a stable egui TextureId across scene refreshes.
+                            // If the underlying wgpu TextureView changes (new ShaderSpace),
+                            // update the existing TextureId instead of allocating a new one.
+                            let texture = self
+                                .shader_space
+                                .textures
+                                .get(self.output_texture_name.as_str())
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "output texture not found: {}",
+                                        self.output_texture_name
+                                    )
+                                });
+                            if let Some(id) = self.color_attachment {
+                                renderer_guard.update_egui_texture_from_wgpu_texture(
+                                    &render_state.device,
+                                    texture.wgpu_texture_view.as_ref().unwrap(),
+                                    wgpu::FilterMode::Linear,
+                                    id,
+                                );
+                            } else {
+                                self.color_attachment = Some(renderer_guard.register_native_texture(
+                                    &render_state.device,
+                                    texture.wgpu_texture_view.as_ref().unwrap(),
+                                    wgpu::FilterMode::Linear,
+                                ));
+                            }
+
+                            did_rebuild_shader_space = true;
 
                             if let Ok(mut g) = self.last_good.lock() {
                                 *g = Some(scene);
@@ -114,7 +145,33 @@ impl eframe::App for App {
                                 self.resolution = resolution;
                                 self.output_texture_name = output_texture_name;
                                 self.passes = passes;
-                                self.color_attachment = None;
+
+                                let texture = self
+                                    .shader_space
+                                    .textures
+                                    .get(self.output_texture_name.as_str())
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "output texture not found: {}",
+                                            self.output_texture_name
+                                        )
+                                    });
+                                if let Some(id) = self.color_attachment {
+                                    renderer_guard.update_egui_texture_from_wgpu_texture(
+                                        &render_state.device,
+                                        texture.wgpu_texture_view.as_ref().unwrap(),
+                                        wgpu::FilterMode::Linear,
+                                        id,
+                                    );
+                                } else {
+                                    self.color_attachment = Some(renderer_guard.register_native_texture(
+                                        &render_state.device,
+                                        texture.wgpu_texture_view.as_ref().unwrap(),
+                                        wgpu::FilterMode::Linear,
+                                    ));
+                                }
+
+                                did_rebuild_shader_space = true;
                             }
                         }
                         Err(panic_payload) => {
@@ -154,7 +211,33 @@ impl eframe::App for App {
                                 self.resolution = resolution;
                                 self.output_texture_name = output_texture_name;
                                 self.passes = passes;
-                                self.color_attachment = None;
+
+                                let texture = self
+                                    .shader_space
+                                    .textures
+                                    .get(self.output_texture_name.as_str())
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "output texture not found: {}",
+                                            self.output_texture_name
+                                        )
+                                    });
+                                if let Some(id) = self.color_attachment {
+                                    renderer_guard.update_egui_texture_from_wgpu_texture(
+                                        &render_state.device,
+                                        texture.wgpu_texture_view.as_ref().unwrap(),
+                                        wgpu::FilterMode::Linear,
+                                        id,
+                                    );
+                                } else {
+                                    self.color_attachment = Some(renderer_guard.register_native_texture(
+                                        &render_state.device,
+                                        texture.wgpu_texture_view.as_ref().unwrap(),
+                                        wgpu::FilterMode::Linear,
+                                    ));
+                                }
+
+                                did_rebuild_shader_space = true;
                             }
                         }
                     }
@@ -189,7 +272,30 @@ impl eframe::App for App {
                         self.resolution = resolution;
                         self.output_texture_name = output_texture_name;
                         self.passes = passes;
-                        self.color_attachment = None;
+
+                        let texture = self
+                            .shader_space
+                            .textures
+                            .get(self.output_texture_name.as_str())
+                            .unwrap_or_else(|| {
+                                panic!("output texture not found: {}", self.output_texture_name)
+                            });
+                        if let Some(id) = self.color_attachment {
+                            renderer_guard.update_egui_texture_from_wgpu_texture(
+                                &render_state.device,
+                                texture.wgpu_texture_view.as_ref().unwrap(),
+                                wgpu::FilterMode::Linear,
+                                id,
+                            );
+                        } else {
+                            self.color_attachment = Some(renderer_guard.register_native_texture(
+                                &render_state.device,
+                                texture.wgpu_texture_view.as_ref().unwrap(),
+                                wgpu::FilterMode::Linear,
+                            ));
+                        }
+
+                        did_rebuild_shader_space = true;
                     }
                 }
             }
@@ -205,7 +311,6 @@ impl eframe::App for App {
         self.shader_space.render();
 
         if self.color_attachment.is_none() {
-            let mut renderer = render_state.renderer.as_ref().write();
             let texture = self
                 .shader_space
                 .textures
@@ -213,11 +318,18 @@ impl eframe::App for App {
                 .unwrap_or_else(|| {
                     panic!("output texture not found: {}", self.output_texture_name)
                 });
-            self.color_attachment = Some(renderer.register_native_texture(
+            self.color_attachment = Some(renderer_guard.register_native_texture(
                 &render_state.device,
                 texture.wgpu_texture_view.as_ref().unwrap(),
                 wgpu::FilterMode::Linear,
             ));
+        }
+
+        // wgpu resource destruction is deferred; after hot-rebuilding lots of GPU resources
+        // (pipelines/textures/bind groups), explicitly poll once to help the backend
+        // process deferred drops. This mitigates slow steady growth during repeated rebuilds.
+        if did_rebuild_shader_space {
+            let _ = render_state.device.poll(wgpu::PollType::Poll);
         }
 
         let f = egui::Frame::default().fill(egui::Color32::BLACK);

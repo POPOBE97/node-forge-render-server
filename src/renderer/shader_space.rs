@@ -823,7 +823,6 @@ fn compute_pass_render_order(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
     NearestClamp,
-    NearestMirror,
     LinearMirror,
 }
 
@@ -1661,8 +1660,17 @@ fn build_shader_space_from_scene_internal(
                     src_resolution[1],
                 )?;
 
-                let sigma =
+                // SceneDSL `radius` is authored as an analytic 1D cutoff radius in full-res pixels,
+                // not as Gaussian sigma.
+                //
+                // We map radius -> sigma using the same cutoff epsilon (~0.002) that our packed
+                // 27-wide Gaussian kernel effectively uses when pruning tiny weights
+                // (see `gaussian_kernel_8`).
+                //
+                // k = sqrt(2*ln(1/eps)) with eps=0.002 -> k≈3.525494, so sigma = radius/k.
+                let radius_px =
                     cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
+                let sigma = radius_px / 3.525_494;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
                 let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
@@ -1819,7 +1827,7 @@ fn build_shader_space_from_scene_internal(
                             texture: src_tex,
                             image_node_id: None,
                         }],
-                        sampler_kind: SamplerKind::NearestMirror,
+                        sampler_kind: SamplerKind::LinearMirror,
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
@@ -2327,9 +2335,9 @@ fn build_shader_space_from_scene_internal(
 
     // 3) Samplers
     let nearest_sampler: ResourceName = "sampler_nearest".into();
-    let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
+        let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
-    shader_space.declare_samplers(vec![
+        shader_space.declare_samplers(vec![
         SamplerSpec {
             name: nearest_sampler.clone(),
             desc: wgpu::SamplerDescriptor {
@@ -2342,18 +2350,18 @@ fn build_shader_space_from_scene_internal(
                 ..Default::default()
             },
         },
-        SamplerSpec {
-            name: nearest_mirror_sampler.clone(),
-            desc: wgpu::SamplerDescriptor {
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Nearest,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                address_mode_u: wgpu::AddressMode::MirrorRepeat,
-                address_mode_v: wgpu::AddressMode::MirrorRepeat,
-                address_mode_w: wgpu::AddressMode::MirrorRepeat,
-                ..Default::default()
+            SamplerSpec {
+                name: nearest_mirror_sampler.clone(),
+                desc: wgpu::SamplerDescriptor {
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    address_mode_u: wgpu::AddressMode::MirrorRepeat,
+                    address_mode_v: wgpu::AddressMode::MirrorRepeat,
+                    address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                    ..Default::default()
+                },
             },
-        },
         SamplerSpec {
             name: linear_mirror_sampler.clone(),
             desc: wgpu::SamplerDescriptor {
@@ -2423,7 +2431,6 @@ fn build_shader_space_from_scene_internal(
             .collect();
         let sampler_name = match spec.sampler_kind {
             SamplerKind::NearestClamp => nearest_sampler.clone(),
-            SamplerKind::NearestMirror => nearest_mirror_sampler.clone(),
             SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
         };
 
