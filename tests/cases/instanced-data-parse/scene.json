@@ -1,0 +1,690 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-01-22T10:59:36.173Z",
+    "modified": "2026-01-22T10:59:36.173Z"
+  },
+  "nodes": [
+    {
+      "id": "InstancedGeometryStart_1",
+      "type": "InstancedGeometryStart",
+      "position": {
+        "x": -220,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Instanced Geometry (Start)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402",
+        "count": 18
+      }
+    },
+    {
+      "id": "InstancedGeometryEnd_2",
+      "type": "InstancedGeometryEnd",
+      "position": {
+        "x": 140,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Instanced Geometry (End)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_3",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -420,
+        "y": -440
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 1,
+        "height": 1,
+        "x": 0,
+        "y": 0,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": 340,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Composite_7",
+      "type": "Composite",
+      "position": {
+        "x": 520,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "alpha": 1
+      }
+    },
+    {
+      "id": "RenderTexture_8",
+      "type": "RenderTexture",
+      "position": {
+        "x": 340,
+        "y": -320
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2410,
+        "format": "rgba8unorm-srgb"
+      }
+    },
+    {
+      "id": "Screen_9",
+      "type": "Screen",
+      "position": {
+        "x": 700,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 392,
+        "height": 871
+      }
+    },
+    {
+      "id": "Index_14",
+      "type": "Index",
+      "position": {
+        "x": -680,
+        "y": -240
+      },
+      "width": 160,
+      "label": "Index",
+      "params": {}
+    },
+    {
+      "id": "DataNode_20",
+      "type": "DataNode",
+      "position": {
+        "x": -940,
+        "y": -440
+      },
+      "width": 219,
+      "label": "Data",
+      "params": {
+        "text": "{\n    \"rects\": [\n        {\n            \"x\": 85,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 615,\n            \"width\": 435,\n            \"height\": 435,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 796,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1089,\n            \"width\": 909,\n            \"height\": 209,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1.0,\n                0.68,\n                0.09,\n                1\n            ]\n        },\n        {\n            \"x\": 85,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1,\n                1,\n                1,\n                1\n            ]\n        },\n        {\n            \"x\": 559,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 85,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 465,\n            \"y\": 2103,\n            \"width\": 149,\n            \"height\": 78,\n            \"radius\": 39\n        }\n    ]\n}\n",
+        "syntax": "json",
+        "fileName": ""
+      }
+    },
+    {
+      "id": "DataParse_21",
+      "type": "DataParse",
+      "position": {
+        "x": -680,
+        "y": -180
+      },
+      "width": 217,
+      "label": "Data Parse",
+      "params": {
+        "source": "let size = [\n  data[\"rects\"][index].width,\n  data[\"rects\"][index].height\n] as vec2\n\nlet position = [\n  data[\"rects\"][index].x - size[0] / 2 + size[0],\n  2400 - (data[\"rects\"][index].y - size[1] / 2 + size[1])\n] as vec2\n\nconst scale = [\n  size[0],\n  size[1],\n] as vec2\n\nreturn { position, scale, size }"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768809771808_1",
+          "name": "data",
+          "type": "any"
+        },
+        {
+          "id": "dynamic_1768809897509_2",
+          "name": "index",
+          "type": "int"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_position",
+          "name": "position",
+          "type": "vector2"
+        },
+        {
+          "id": "out_scale",
+          "name": "scale",
+          "type": "vector2"
+        },
+        {
+          "id": "out_size",
+          "name": "size",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768809771808_1",
+          "label": "data",
+          "variableName": "data",
+          "type": "any",
+          "sourceBinding": {
+            "nodeId": "DataNode_20",
+            "outputPortId": "data",
+            "outputLabel": "Data"
+          }
+        },
+        {
+          "portId": "dynamic_1768809897509_2",
+          "label": "index",
+          "variableName": "index",
+          "type": "int",
+          "sourceBinding": {
+            "nodeId": "Index_14",
+            "outputPortId": "index",
+            "outputLabel": "Index"
+          }
+        }
+      ]
+    },
+    {
+      "id": "DataParse_22",
+      "type": "DataParse",
+      "position": {
+        "x": -680,
+        "y": -440
+      },
+      "width": 217,
+      "label": "Data Parse",
+      "params": {
+        "source": "let count = data[\"rects\"].length as int\n\nreturn { count }"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768809771808_1",
+          "name": "data",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_count",
+          "name": "count",
+          "type": "int"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768809771808_1",
+          "label": "data",
+          "variableName": "data",
+          "type": "any",
+          "sourceBinding": {
+            "nodeId": "DataNode_20",
+            "outputPortId": "data",
+            "outputLabel": "Data"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SetTransform_24",
+      "type": "SetTransform",
+      "position": {
+        "x": -40,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "Sdf2D_26",
+      "type": "Sdf2D",
+      "position": {
+        "x": -40,
+        "y": -60
+      },
+      "width": 160,
+      "label": "2D SDF",
+      "params": {
+        "shape": "rectangle",
+        "radius": 0.5
+      }
+    },
+    {
+      "id": "GeoSize_31",
+      "type": "GeoSize",
+      "position": {
+        "x": -240,
+        "y": 0
+      },
+      "width": 160,
+      "label": "Geo Size",
+      "params": {}
+    },
+    {
+      "id": "GeoSize_32",
+      "type": "GeoSize",
+      "position": {
+        "x": -420,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Geo Size",
+      "params": {}
+    },
+    {
+      "id": "MathMultiply_33",
+      "type": "MathMultiply",
+      "position": {
+        "x": -240,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "GeoSize_32",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_35",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_35",
+      "type": "FloatInput",
+      "position": {
+        "x": -420,
+        "y": -80
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 0.5
+      }
+    },
+    {
+      "id": "FloatInput_36",
+      "type": "FloatInput",
+      "position": {
+        "x": -240,
+        "y": 60
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 20
+      }
+    },
+    {
+      "id": "MathMultiply_38",
+      "type": "MathMultiply",
+      "position": {
+        "x": 160,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Multiply",
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_fixed_1",
+          "name": "input1",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_fixed_2",
+          "name": "input2",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_fixed_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_39",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_fixed_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "Sdf2D_26",
+            "outputPortId": "distance",
+            "outputLabel": "Distance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_39",
+      "type": "FloatInput",
+      "position": {
+        "x": -40,
+        "y": -140
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": -0.2
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "base"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "RenderTexture_8",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_9",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_22",
+      "from": {
+        "nodeId": "DataNode_20",
+        "portId": "data"
+      },
+      "to": {
+        "nodeId": "DataParse_21",
+        "portId": "dynamic_1768809771808_1"
+      }
+    },
+    {
+      "id": "edge_24",
+      "from": {
+        "nodeId": "Index_14",
+        "portId": "index"
+      },
+      "to": {
+        "nodeId": "DataParse_21",
+        "portId": "dynamic_1768809897509_2"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "DataParse_22",
+        "portId": "out_count"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "count"
+      }
+    },
+    {
+      "id": "edge_27",
+      "from": {
+        "nodeId": "DataNode_20",
+        "portId": "data"
+      },
+      "to": {
+        "nodeId": "DataParse_22",
+        "portId": "dynamic_1768809771808_1"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_30",
+      "from": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_31",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_position"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "translate"
+      }
+    },
+    {
+      "id": "edge_32",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_scale"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "scale"
+      }
+    },
+    {
+      "id": "edge_42",
+      "from": {
+        "nodeId": "GeoSize_32",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathMultiply_33",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "FloatInput_35",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_33",
+        "portId": "dynamic_fixed_2"
+      }
+    },
+    {
+      "id": "edge_44",
+      "from": {
+        "nodeId": "MathMultiply_33",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_45",
+      "from": {
+        "nodeId": "FloatInput_36",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "radius4"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "GeoSize_31",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "Sdf2D_26",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_62",
+      "from": {
+        "nodeId": "Sdf2D_26",
+        "portId": "distance"
+      },
+      "to": {
+        "nodeId": "MathMultiply_38",
+        "portId": "dynamic_fixed_2"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "FloatInput_39",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathMultiply_38",
+        "portId": "dynamic_fixed_1"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "MathMultiply_38",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_7"
+  }
+}
