@@ -287,6 +287,16 @@ fn compile_expr(
             sdf_nodes::compile_sdf2d(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?
         }
 
+        "Sdf2DBevel" => sdf_nodes::compile_sdf2d_bevel(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+
         "DataParse" => data_parse::compile_data_parse(
             scene,
             nodes_by_id,

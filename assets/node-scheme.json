@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-21T07:08:58.618Z",
+  "generatedAt": "2026-01-23T09:22:48.681Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -49,10 +49,12 @@
     "PassTexture",
     "PrincipledBSDF",
     "Rect2DGeometry",
+    "Remap",
     "RenderPass",
     "RenderTexture",
     "Screen",
     "Sdf2D",
+    "Sdf2DBevel",
     "SetTransform",
     "ShaderMaterial",
     "TextureInput",
@@ -1164,7 +1166,7 @@
           "default": 5,
           "range": {
             "min": 0,
-            "max": 60,
+            "max": 1000,
             "step": 0.01
           }
         }
@@ -1841,6 +1843,195 @@
       "defaultParams": {}
     },
     {
+      "type": "Remap",
+      "label": "Remap",
+      "category": "Math",
+      "description": "Shape a scalar signal t using smoothstep, linear map, and IQ curve presets",
+      "inputs": [
+        {
+          "id": "mode",
+          "name": "Mode",
+          "type": "any",
+          "default": "smoothstep"
+        },
+        {
+          "id": "t",
+          "name": "T",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "k",
+          "name": "K",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "n",
+          "name": "N",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "m",
+          "name": "M",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "a",
+          "name": "A",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "c",
+          "name": "C",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "w",
+          "name": "W",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "f",
+          "name": "F",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "T",
+          "name": "T (period)",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "nn",
+          "name": "N (offset)",
+          "type": "float",
+          "default": 0.1,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "edge0",
+          "name": "Edge 0",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "edge1",
+          "name": "Edge 1",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "from",
+          "name": "From",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "to",
+          "name": "To",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {
+        "mode": "smoothstep"
+      }
+    },
+    {
       "type": "RenderPass",
       "label": "Render Pass",
       "category": "PipelineControl",
@@ -1936,7 +2127,7 @@
     {
       "type": "Sdf2D",
       "label": "2D SDF",
-      "category": "Math",
+      "category": "2D SDF",
       "description": "2D signed distance field: circle / rectangle",
       "inputs": [
         {
@@ -1975,6 +2166,68 @@
       ],
       "defaultParams": {
         "shape": "circle"
+      }
+    },
+    {
+      "type": "Sdf2DBevel",
+      "label": "2D SDF Bevel",
+      "category": "2D SDF",
+      "description": "Bevel a 2D SDF (returns depth + normal)",
+      "inputs": [
+        {
+          "id": "curve",
+          "name": "Curve",
+          "type": "any",
+          "default": "smooth7"
+        },
+        {
+          "id": "sdfDistance",
+          "name": "SDF Distance",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -100,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "width",
+          "name": "Width",
+          "type": "float",
+          "default": 0.1,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "cliff",
+          "name": "Cliff",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "depth",
+          "name": "Depth",
+          "type": "float"
+        },
+        {
+          "id": "normal",
+          "name": "Normal",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {
+        "curve": "smooth7"
       }
     },
     {

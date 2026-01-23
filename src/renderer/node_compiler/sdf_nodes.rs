@@ -91,6 +91,37 @@ where
     ))
 }
 
+fn resolve_input_expr_f32_or_default<F>(
+    scene: &SceneDSL,
+    node: &Node,
+    port_id: &str,
+    default_value: f32,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: &F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
+        let v = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+        let from_ty = v.ty;
+        return coerce_to_type(v, ValueType::F32)
+            .map_err(|_| anyhow!("{}.{} must be f32, got {:?}", node.id, port_id, from_ty));
+    }
+
+    if let Some(v) = node.params.get(port_id).and_then(parse_json_number_f32) {
+        return Ok(TypedExpr::new(format!("{v}"), ValueType::F32));
+    }
+
+    Ok(TypedExpr::new(format!("{default_value}"), ValueType::F32))
+}
+
 fn resolve_input_expr_vec2<F>(
     scene: &SceneDSL,
     node: &Node,
@@ -304,6 +335,209 @@ where
     }
 }
 
+fn wgsl_f32(x: f32) -> String {
+    if x.is_finite() {
+        // Ensure a decimal point so WGSL treats it as a float literal.
+        if x.fract() == 0.0 {
+            format!("{:.1}", x)
+        } else {
+            format!("{}", x)
+        }
+    } else {
+        "0.0".to_string()
+    }
+}
+
+fn offset_in_local_px(expr: &str, dx: f32, dy: f32) -> String {
+    let off = format!("(in.local_px + vec2f({}, {}))", wgsl_f32(dx), wgsl_f32(dy));
+    expr.replace("in.local_px", &off)
+}
+
+pub fn compile_sdf2d_bevel<F>(
+    scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let out = out_port.unwrap_or("depth");
+    if out != "depth" && out != "normal" {
+        bail!("Sdf2DBevel unsupported output port: {out}");
+    }
+
+    // `curve` is `any` in the scheme, so it is delivered as a string param.
+    // WGSL cannot branch on strings; treat it as a compile-time choice.
+    let curve = node
+        .params
+        .get("curve")
+        .and_then(|v| v.as_str())
+        .unwrap_or("smooth7");
+
+    if incoming_connection(scene, &node.id, "curve").is_some() {
+        bail!(
+            "{}.curve cannot be connected (string/any ports are not shader-expressible); set node.params.curve to 'smooth5' or 'smooth7'",
+            node.id
+        );
+    }
+
+    let bevel_fn = match curve {
+        "smooth5" => "sdf2d_bevel_smooth5",
+        // Treat unknown values as smooth7 for resilience.
+        _ => "sdf2d_bevel_smooth7",
+    };
+
+    // Inputs:
+    // - sdfDistance: upstream SDF distance at current fragment
+    // - width: bevel edge width in pixels
+    // - cliff: exponent shaping near the edge
+    let d0 = resolve_input_expr_f32_or_default(
+        scene,
+        node,
+        "sdfDistance",
+        0.0,
+        ctx,
+        cache,
+        &compile_fn,
+    )?;
+    let width = resolve_input_expr_f32_or_default(
+        scene,
+        node,
+        "width",
+        0.1,
+        ctx,
+        cache,
+        &compile_fn,
+    )?;
+    let cliff = resolve_input_expr_f32_or_default(
+        scene,
+        node,
+        "cliff",
+        0.5,
+        ctx,
+        cache,
+        &compile_fn,
+    )?;
+
+    ctx.extra_wgsl_decls
+        .entry("sdf2d_bevel_smooth5".to_string())
+        .or_insert_with(|| {
+            r#"fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
+    // Map t in [0, 1] into a symmetric [-1, 1] curve.
+    var t = 0.5 + t_in * 0.5;
+    t = clamp(t, 0.0, 1.0);
+    // 5th-degree smootherstep: t^3 * (t * (t * 6 - 15) + 10)
+    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    return (t - 0.5) * 2.0;
+}
+
+fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
+    var d = d_in;
+    if (d < -edge) {
+        d = -edge;
+    } else if (d < 0.0) {
+        var x = -d / edge;
+        if (x >= 0.85) {
+            x = 1.0;
+        } else {
+            x = clamp(x, 0.0, 1.0);
+            x = sdf2d_bevel_smooth5_map(x);
+            x = pow(x, cliff);
+        }
+        d = -x * edge;
+    }
+    return d;
+}
+"#
+            .to_string()
+        });
+
+    ctx.extra_wgsl_decls
+        .entry("sdf2d_bevel_smooth7".to_string())
+        .or_insert_with(|| {
+            r#"fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
+    // Map t in [0, 1] into a symmetric [-1, 1] curve.
+    var t = 0.5 + t_in * 0.5;
+    t = clamp(t, 0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let t4 = t3 * t;
+    let t5 = t4 * t;
+    let t6 = t5 * t;
+    let t7 = t6 * t;
+    // 7th-degree smooth polynomial
+    t = -20.0 * t7 + 70.0 * t6 - 84.0 * t5 + 35.0 * t4;
+    return (t - 0.5) * 2.0;
+}
+
+fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {
+    var d = d_in;
+    if (d < -edge) {
+        d = -edge;
+    } else if (d < 0.0) {
+        var x = -d / edge;
+        if (x >= 0.85) {
+            x = 1.0;
+        } else {
+            x = clamp(x, 0.0, 1.0);
+            x = sdf2d_bevel_smooth7_map(x);
+            x = pow(x, cliff);
+        }
+        d = -x * edge;
+    }
+    return d;
+}
+
+// Note: normal reconstruction below uses 4 extra evaluations (finite differences).
+// Potential optimization: use `dpdx`/`dpdy` in WGSL to estimate derivatives with fewer calls.
+"#
+            .to_string()
+        });
+
+    let depth0 = TypedExpr::with_time(
+        format!("{bevel_fn}({}, {}, {})", d0.expr, width.expr, cliff.expr),
+        ValueType::F32,
+        d0.uses_time || width.uses_time || cliff.uses_time,
+    );
+
+    if out == "depth" {
+        return Ok(depth0);
+    }
+
+    // Normal from depth finite differences in geometry-local pixel space.
+    // We approximate depth(x, y) in a small neighborhood by re-evaluating the upstream distance
+    // expression with `in.local_px` substituted by offset values.
+    let d_px = offset_in_local_px(&d0.expr, 1.0, 0.0);
+    let d_nx = offset_in_local_px(&d0.expr, -1.0, 0.0);
+    let d_py = offset_in_local_px(&d0.expr, 0.0, 1.0);
+    let d_ny = offset_in_local_px(&d0.expr, 0.0, -1.0);
+
+    let depth_px = format!("{bevel_fn}({d_px}, {}, {})", width.expr, cliff.expr);
+    let depth_nx = format!("{bevel_fn}({d_nx}, {}, {})", width.expr, cliff.expr);
+    let depth_py = format!("{bevel_fn}({d_py}, {}, {})", width.expr, cliff.expr);
+    let depth_ny = format!("{bevel_fn}({d_ny}, {}, {})", width.expr, cliff.expr);
+
+    // Central differences (spacing = 2px).
+    let dx = format!("(({depth_px}) - ({depth_nx})) * 0.5");
+    let dy = format!("(({depth_py}) - ({depth_ny})) * 0.5");
+    let n = format!("normalize(vec3f(-({dx}), -({dy}), 1.0))");
+
+    Ok(TypedExpr::with_time(
+        n,
+        ValueType::Vec3,
+        d0.uses_time || width.uses_time || cliff.uses_time,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +618,76 @@ mod tests {
         assert!(expr.expr.contains("in.local_px"));
         assert!(expr.expr.contains("sdf2d_round_rect"));
         assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_round_rect"));
+    }
+
+    #[test]
+    fn sdf2d_bevel_depth_emits_helper() {
+        let node = Node {
+            id: "bev".to_string(),
+            node_type: "Sdf2DBevel".to_string(),
+            params: HashMap::from([
+                ("curve".to_string(), serde_json::json!("smooth7")),
+                ("sdfDistance".to_string(), serde_json::json!(-0.25)),
+                ("width".to_string(), serde_json::json!(4.0)),
+                ("cliff".to_string(), serde_json::json!(0.8)),
+            ]),
+            inputs: vec![],
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let scene = test_scene(vec![node.clone()], vec![]);
+        let nodes_by_id = HashMap::from([(node.id.clone(), node)]);
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let expr = crate::renderer::node_compiler::compile_material_expr(
+            &scene,
+            &nodes_by_id,
+            "bev",
+            Some("depth"),
+            &mut ctx,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert_eq!(expr.ty, ValueType::F32);
+        assert!(expr.expr.contains("sdf2d_bevel_smooth7"));
+        assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_bevel_smooth7"));
+    }
+
+    #[test]
+    fn sdf2d_bevel_normal_is_vec3() {
+        let node = Node {
+            id: "bev".to_string(),
+            node_type: "Sdf2DBevel".to_string(),
+            params: HashMap::from([
+                ("curve".to_string(), serde_json::json!("smooth5")),
+                ("sdfDistance".to_string(), serde_json::json!(-0.25)),
+            ]),
+            inputs: vec![],
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let scene = test_scene(vec![node.clone()], vec![]);
+        let nodes_by_id = HashMap::from([(node.id.clone(), node)]);
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let expr = crate::renderer::node_compiler::compile_material_expr(
+            &scene,
+            &nodes_by_id,
+            "bev",
+            Some("normal"),
+            &mut ctx,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert_eq!(expr.ty, ValueType::Vec3);
+        assert!(expr.expr.contains("normalize(vec3f"));
+        assert!(expr.expr.contains("sdf2d_bevel_smooth5"));
+        assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_bevel_smooth5"));
     }
 }
