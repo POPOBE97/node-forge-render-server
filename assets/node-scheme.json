@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-23T09:22:48.681Z",
+  "generatedAt": "2026-01-24T08:31:55.232Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1869,155 +1869,85 @@
           "id": "k",
           "name": "K",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "n",
           "name": "N",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "m",
           "name": "M",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "a",
           "name": "A",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "b",
           "name": "B",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "c",
           "name": "C",
           "type": "float",
-          "default": 0,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 0
         },
         {
           "id": "w",
           "name": "W",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "f",
           "name": "F",
           "type": "float",
-          "default": 0.5,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 0.5
         },
         {
           "id": "T",
           "name": "T (period)",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "nn",
           "name": "N (offset)",
           "type": "float",
-          "default": 0.1,
-          "range": {
-            "min": 0,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 0.1
         },
         {
           "id": "edge0",
           "name": "Edge 0",
           "type": "float",
-          "default": 0,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 0
         },
         {
           "id": "edge1",
           "name": "Edge 1",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         },
         {
           "id": "from",
           "name": "From",
           "type": "float",
-          "default": 0,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 0
         },
         {
           "id": "to",
           "name": "To",
           "type": "float",
-          "default": 1,
-          "range": {
-            "min": -100,
-            "max": 100,
-            "step": 0.01
-          }
+          "default": 1
         }
       ],
       "outputs": [

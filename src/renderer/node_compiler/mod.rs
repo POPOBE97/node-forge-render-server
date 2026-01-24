@@ -8,16 +8,17 @@ pub mod glass_material;
 pub mod input_nodes;
 pub mod math_closure;
 pub mod math_nodes;
+pub mod remap_nodes;
 pub mod sdf_nodes;
 pub mod texture_nodes;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::types::{MaterialCompileContext, TypedExpr};
-use crate::dsl::{Node, SceneDSL, find_node};
+use crate::dsl::{find_node, Node, SceneDSL};
 
 /// Main dispatch function for compiling material expressions (fragment stage).
 pub fn compile_material_expr(
@@ -153,6 +154,10 @@ fn compile_expr(
             compile_fn,
             stage,
         )?,
+
+        "Remap" => {
+            remap_nodes::compile_remap(scene, nodes_by_id, node, out_port, ctx, cache, compile_fn)?
+        }
 
         // Texture nodes
         "ImageTexture" => texture_nodes::compile_image_texture(
