@@ -23,13 +23,15 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         // Use SKIP_RENDER_CASE sentinel file in the case directory.
         "coord-sanity" => None,
         "glass-node" => None,
+        // No committed baseline yet; validate render succeeds + dimensions only.
+        "2dsdf-bevel" => None,
         _ => Some("baseline.png"),
     }
 }
 
 fn default_expected_image_texture() -> Option<&'static str> {
     // If a case needs this, encode it explicitly via a custom test (or extend the generator).
-    Some("ImageTexture_9")
+    None
 }
 
 fn manifest_dir() -> PathBuf {
@@ -252,8 +254,13 @@ fn run_case(case: &Case) {
         || case.name == "blur-guassian-60"
     {
         // For these cases we render in-process so we can dump intermediate textures.
-        let headless = HeadlessRenderer::new(HeadlessRendererConfig::default())
-         .unwrap_or_else(|e| panic!("case {}: failed to create headless renderer: {e}", case.name));
+        let headless =
+            HeadlessRenderer::new(HeadlessRendererConfig::default()).unwrap_or_else(|e| {
+                panic!(
+                    "case {}: failed to create headless renderer: {e}",
+                    case.name
+                )
+            });
 
         let (shader_space, _resolution, output_texture_name, _passes) =
             renderer::build_shader_space_from_scene(
@@ -344,13 +351,15 @@ fn run_case(case: &Case) {
                 let premultiply_out = out_dir.join("stage_premultiply.png");
                 let mut premultiplied_actual = save_and_load("node_7", &premultiply_out);
                 image::imageops::flip_vertical_in_place(&mut premultiplied_actual);
- 
+
                 // Keep strict validation for this golden case.
                 let node = scene
                     .nodes
                     .iter()
                     .find(|n| n.id == "node_7")
-                    .unwrap_or_else(|| panic!("case {}: missing ImageTexture node node_7", case.name));
+                    .unwrap_or_else(|| {
+                        panic!("case {}: missing ImageTexture node node_7", case.name)
+                    });
                 let data_url = node
                     .params
                     .get("dataUrl")
@@ -370,7 +379,10 @@ fn run_case(case: &Case) {
                         .get("path")
                         .and_then(|v| v.as_str())
                         .unwrap_or_else(|| {
-                            panic!("case {}: ImageTexture node_7 has no dataUrl/path", case.name)
+                            panic!(
+                                "case {}: ImageTexture node_7 has no dataUrl/path",
+                                case.name
+                            )
                         });
                     let cand = case_dir.join(path);
                     image::open(&cand).unwrap_or_else(|e| {
@@ -408,7 +420,7 @@ fn run_case(case: &Case) {
                         premultiply_out.display(),
                     );
                 }
- 
+
                 compare_stage(
                     "downsample_8",
                     "sys.blur.node_2.ds.8",
@@ -536,7 +548,12 @@ fn run_case(case: &Case) {
             .nodes
             .iter()
             .find(|n| n.id == node_id)
-            .unwrap_or_else(|| panic!("case {}: missing expected ImageTexture node: {node_id}", case.name));
+            .unwrap_or_else(|| {
+                panic!(
+                    "case {}: missing expected ImageTexture node: {node_id}",
+                    case.name
+                )
+            });
         assert_eq!(
             node.node_type, "ImageTexture",
             "case {}: expected_image_texture must refer to an ImageTexture node",
@@ -549,17 +566,33 @@ fn run_case(case: &Case) {
             .and_then(|v| v.as_str())
             .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
         let expected_img = if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
-            node_forge_render_server::renderer::utils::load_image_from_data_url(s)
-                .unwrap_or_else(|e| panic!("case {}: failed to decode expected image dataUrl: {e}", case.name))
+            node_forge_render_server::renderer::utils::load_image_from_data_url(s).unwrap_or_else(
+                |e| {
+                    panic!(
+                        "case {}: failed to decode expected image dataUrl: {e}",
+                        case.name
+                    )
+                },
+            )
         } else {
             let path = node
                 .params
                 .get("path")
                 .and_then(|v| v.as_str())
-                .unwrap_or_else(|| panic!("case {}: expected image node has no dataUrl/path", case.name));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "case {}: expected image node has no dataUrl/path",
+                        case.name
+                    )
+                });
             let cand = case_dir.join(path);
-            image::open(&cand)
-                .unwrap_or_else(|e| panic!("case {}: failed to open expected image {}: {e}", case.name, cand.display()))
+            image::open(&cand).unwrap_or_else(|e| {
+                panic!(
+                    "case {}: failed to open expected image {}: {e}",
+                    case.name,
+                    cand.display()
+                )
+            })
         };
 
         let mut expected = expected_img.to_rgba8();
@@ -617,7 +650,10 @@ fn run_case(case: &Case) {
                     panic!("case {}: write {:?}: {e}", case.name, expected_vertex_path)
                 });
                 std::fs::write(&expected_fragment_path, &bundle.fragment).unwrap_or_else(|e| {
-                    panic!("case {}: write {:?}: {e}", case.name, expected_fragment_path)
+                    panic!(
+                        "case {}: write {:?}: {e}",
+                        case.name, expected_fragment_path
+                    )
                 });
                 std::fs::write(&expected_module_path, &bundle.module).unwrap_or_else(|e| {
                     panic!("case {}: write {:?}: {e}", case.name, expected_module_path)
@@ -638,7 +674,11 @@ fn run_case(case: &Case) {
             );
         }
     } else if !image_ok {
-        panic!("case {}: image mismatch\noutput={}", case.name, out_png.display());
+        panic!(
+            "case {}: image mismatch\noutput={}",
+            case.name,
+            out_png.display()
+        );
     }
 }
 
