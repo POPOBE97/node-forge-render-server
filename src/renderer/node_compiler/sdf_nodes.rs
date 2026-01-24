@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::dsl::{incoming_connection, Node, SceneDSL};
 use crate::renderer::utils::coerce_to_type;
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
@@ -409,24 +409,10 @@ where
         cache,
         &compile_fn,
     )?;
-    let width = resolve_input_expr_f32_or_default(
-        scene,
-        node,
-        "width",
-        0.1,
-        ctx,
-        cache,
-        &compile_fn,
-    )?;
-    let cliff = resolve_input_expr_f32_or_default(
-        scene,
-        node,
-        "cliff",
-        0.5,
-        ctx,
-        cache,
-        &compile_fn,
-    )?;
+    let width =
+        resolve_input_expr_f32_or_default(scene, node, "width", 0.1, ctx, cache, &compile_fn)?;
+    let cliff =
+        resolve_input_expr_f32_or_default(scene, node, "cliff", 0.5, ctx, cache, &compile_fn)?;
 
     ctx.extra_wgsl_decls
         .entry("sdf2d_bevel_smooth5".to_string())

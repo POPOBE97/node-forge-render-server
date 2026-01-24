@@ -1,10 +1,10 @@
 //! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture).
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::dsl::{incoming_connection, Node, SceneDSL};
 
 /// Compile an ImageTexture node.
 ///
@@ -50,7 +50,6 @@ where
 
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, ({}))", uv_expr.expr);
-
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(

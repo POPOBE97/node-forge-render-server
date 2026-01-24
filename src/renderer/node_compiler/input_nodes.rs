@@ -1,6 +1,6 @@
 //! Compilers for input nodes (ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput).
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};

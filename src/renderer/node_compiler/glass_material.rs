@@ -11,11 +11,11 @@
 //! - Pass textures are bound via `MaterialCompileContext::register_pass_texture()` and sampled
 //!   using the generated `pass_tex_*` / `pass_samp_*` vars.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
+use crate::dsl::{incoming_connection, parse_f32, Node, SceneDSL};
 use crate::renderer::utils::{fmt_f32, sanitize_wgsl_ident};
 
 fn wgsl_vec2_literal(v: [f32; 2]) -> String {
@@ -175,7 +175,10 @@ fn resolve_pass_binding(
     })?;
 
     // Only pass-producing nodes are valid.
-    if !matches!(upstream.node_type.as_str(), "RenderPass" | "GuassianBlurPass") {
+    if !matches!(
+        upstream.node_type.as_str(),
+        "RenderPass" | "GuassianBlurPass"
+    ) {
         bail!(
             "GlassMaterial.{port_id} must be connected to a pass node, got {}",
             upstream.node_type
@@ -403,15 +406,22 @@ where
     // For v1 we intentionally keep this permissive to make authoring easier.
     let mut input_expr = |port_id: &str, fallback: TypedExpr| -> Result<TypedExpr> {
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
-            Ok(compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?)
+            Ok(compile_fn(
+                &conn.from.node_id,
+                Some(&conn.from.port_id),
+                ctx,
+                cache,
+            )?)
         } else {
             Ok(fallback)
         }
     };
 
     let u_brightness = input_expr("uBrightness", input_f32_expr(node, "uBrightness", 0.0))?;
-    let u_lumin_amount =
-        input_expr("uLuminanceAmount", input_f32_expr(node, "uLuminanceAmount", 0.0))?;
+    let u_lumin_amount = input_expr(
+        "uLuminanceAmount",
+        input_f32_expr(node, "uLuminanceAmount", 0.0),
+    )?;
     let u_lumin_values = input_expr(
         "uLuminanceValues",
         input_vec4_expr(node, "uLuminanceValues", [0.0, 0.0, 0.0, 0.0]),
@@ -425,15 +435,19 @@ where
 
     let u_shape_edge_px = input_expr("uShapeEdgePx", input_f32_expr(node, "uShapeEdgePx", 30.0))?;
     let u_shape_edge_pow = input_expr("uShapeEdgePow", input_f32_expr(node, "uShapeEdgePow", 2.0))?;
-    let u_shape_thickness_px =
-        input_expr("uShapeThicknessPx", input_f32_expr(node, "uShapeThicknessPx", 50.0))?;
+    let u_shape_thickness_px = input_expr(
+        "uShapeThicknessPx",
+        input_f32_expr(node, "uShapeThicknessPx", 50.0),
+    )?;
     let u_shape_reflect_offset_px = input_expr(
         "uShapeReflectOffsetPx",
         input_f32_expr(node, "uShapeReflectOffsetPx", 0.0),
     )?;
 
-    let u_refract_blur_scale =
-        input_expr("uRefractBlurScale", input_f32_expr(node, "uRefractBlurScale", 1.0))?;
+    let u_refract_blur_scale = input_expr(
+        "uRefractBlurScale",
+        input_f32_expr(node, "uRefractBlurScale", 1.0),
+    )?;
     let u_refract_ior = input_expr("uRefractIOR", input_f32_expr(node, "uRefractIOR", 1.5))?;
 
     let u_reflection_strength = input_expr(
@@ -446,9 +460,14 @@ where
     )?;
 
     let u_inner_bottom = input_expr("uInnerBottom", input_f32_expr(node, "uInnerBottom", 0.0))?;
-    let u_inner_color_white =
-        input_expr("uInnerColorWhite", input_f32_expr(node, "uInnerColorWhite", 0.0))?;
-    let u_inner_color_mix = input_expr("uInnerColorMix", input_f32_expr(node, "uInnerColorMix", 0.0))?;
+    let u_inner_color_white = input_expr(
+        "uInnerColorWhite",
+        input_f32_expr(node, "uInnerColorWhite", 0.0),
+    )?;
+    let u_inner_color_mix = input_expr(
+        "uInnerColorMix",
+        input_f32_expr(node, "uInnerColorMix", 0.0),
+    )?;
 
     let u_color_pow = input_expr("uColorPow", input_f32_expr(node, "uColorPow", 1.0))?;
     let u_glass_color = input_expr(
@@ -568,7 +587,11 @@ where
     // Validate types we rely on. Keep this strict to avoid generating invalid WGSL.
     fn expect_ty(expr: &TypedExpr, expected: ValueType, name: &str) -> Result<()> {
         if expr.ty != expected {
-            bail!("GlassMaterial.{name} expected {:?}, got {:?}", expected, expr.ty);
+            bail!(
+                "GlassMaterial.{name} expected {:?}, got {:?}",
+                expected,
+                expr.ty
+            );
         }
         Ok(())
     }
@@ -582,10 +605,18 @@ where
     expect_ty(&u_shape_edge_px, ValueType::F32, "uShapeEdgePx")?;
     expect_ty(&u_shape_edge_pow, ValueType::F32, "uShapeEdgePow")?;
     expect_ty(&u_shape_thickness_px, ValueType::F32, "uShapeThicknessPx")?;
-    expect_ty(&u_shape_reflect_offset_px, ValueType::F32, "uShapeReflectOffsetPx")?;
+    expect_ty(
+        &u_shape_reflect_offset_px,
+        ValueType::F32,
+        "uShapeReflectOffsetPx",
+    )?;
     expect_ty(&u_refract_blur_scale, ValueType::F32, "uRefractBlurScale")?;
     expect_ty(&u_refract_ior, ValueType::F32, "uRefractIOR")?;
-    expect_ty(&u_reflection_strength, ValueType::F32, "uReflectionStrength")?;
+    expect_ty(
+        &u_reflection_strength,
+        ValueType::F32,
+        "uReflectionStrength",
+    )?;
     expect_ty(&u_reflection_lighten, ValueType::F32, "uReflectionLighten")?;
     expect_ty(&u_inner_bottom, ValueType::F32, "uInnerBottom")?;
     expect_ty(&u_inner_color_white, ValueType::F32, "uInnerColorWhite")?;
@@ -593,11 +624,31 @@ where
     expect_ty(&u_color_pow, ValueType::F32, "uColorPow")?;
     expect_ty(&u_glass_color, ValueType::Vec4, "uGlassColor")?;
     expect_ty(&u_light_dir, ValueType::Vec3, "uDirectionalLightDirection")?;
-    expect_ty(&u_light_intensity, ValueType::F32, "uDirectionalLightIntensity")?;
-    expect_ty(&u_light_opp_intensity, ValueType::F32, "uDirectionalLightOppositeIntensity")?;
-    expect_ty(&u_light_angle_range, ValueType::F32, "uDirectionalLightAngleRange")?;
-    expect_ty(&u_light_width, ValueType::F32, "uDirectionalLightLightWidth")?;
-    expect_ty(&u_light_edge_pow, ValueType::F32, "uDirectionalLightEdgePow")?;
+    expect_ty(
+        &u_light_intensity,
+        ValueType::F32,
+        "uDirectionalLightIntensity",
+    )?;
+    expect_ty(
+        &u_light_opp_intensity,
+        ValueType::F32,
+        "uDirectionalLightOppositeIntensity",
+    )?;
+    expect_ty(
+        &u_light_angle_range,
+        ValueType::F32,
+        "uDirectionalLightAngleRange",
+    )?;
+    expect_ty(
+        &u_light_width,
+        ValueType::F32,
+        "uDirectionalLightLightWidth",
+    )?;
+    expect_ty(
+        &u_light_edge_pow,
+        ValueType::F32,
+        "uDirectionalLightEdgePow",
+    )?;
     expect_ty(&u_bg_color_brightness, ValueType::F32, "uBgColorBrightness")?;
     expect_ty(&u_bg_color_saturation, ValueType::F32, "uBgColorSaturation")?;
     expect_ty(&u_strength, ValueType::F32, "uStrength")?;
@@ -642,7 +693,10 @@ where
         (t, s)
     } else {
         // This will produce a compile error if used; we guard by short-circuiting to transparent.
-        ("pass_tex__missing".to_string(), "pass_samp__missing".to_string())
+        (
+            "pass_tex__missing".to_string(),
+            "pass_samp__missing".to_string(),
+        )
     };
 
     // Construct sampling expressions.
@@ -668,10 +722,22 @@ where
     let refract_tex = refract.clone().map(|(_, t, s)| (t, s));
     let reflect_tex = reflect.clone().map(|(_, t, s)| (t, s));
 
-    let refract_t = refract_tex.clone().map(|x| x.0).unwrap_or("pass_tex__missing".to_string());
-    let refract_s = refract_tex.clone().map(|x| x.1).unwrap_or("pass_samp__missing".to_string());
-    let reflect_t = reflect_tex.clone().map(|x| x.0).unwrap_or(refract_t.clone());
-    let reflect_s = reflect_tex.clone().map(|x| x.1).unwrap_or(refract_s.clone());
+    let refract_t = refract_tex
+        .clone()
+        .map(|x| x.0)
+        .unwrap_or("pass_tex__missing".to_string());
+    let refract_s = refract_tex
+        .clone()
+        .map(|x| x.1)
+        .unwrap_or("pass_samp__missing".to_string());
+    let reflect_t = reflect_tex
+        .clone()
+        .map(|x| x.0)
+        .unwrap_or(refract_t.clone());
+    let reflect_s = reflect_tex
+        .clone()
+        .map(|x| x.1)
+        .unwrap_or(refract_s.clone());
 
     // Inline block: compute glass shading in pixel space.
     // The renderer's coordinate system:
