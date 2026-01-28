@@ -29,7 +29,9 @@
     "GradientTexture",
     "GuassianBlurPass",
     "HSVAdjust",
+    "ImageFile",
     "ImageTexture",
+    "GroupInstance",
     "Index",
     "InstancedGeometryEnd",
     "InstancedGeometryStart",
@@ -70,6 +72,7 @@
     "float",
     "geometry",
     "int",
+    "ImageFile",
     "material",
     "pass",
     "renderTexture",
@@ -272,6 +275,9 @@
       "vector3",
       "vector4",
       "color"
+    ],
+    "ImageFile": [
+      "ImageFile"
     ]
   },
   "nodes": [
@@ -1235,6 +1241,11 @@
       "description": "Load and sample an image texture",
       "inputs": [
         {
+          "id": "image",
+          "name": "Image",
+          "type": "ImageFile"
+        },
+        {
           "id": "uv",
           "name": "UV",
           "type": "vector2"
@@ -1254,10 +1265,54 @@
       ],
       "defaultParams": {
         "path": "",
+        "dataUrl": "",
         "interpolation": "linear",
         "extension": "repeat",
         "encoderSpace": "srgb",
         "alphaMode": "straight"
+      }
+    },
+
+    {
+      "type": "ImageFile",
+      "label": "Image File",
+      "category": "Texture",
+      "description": "Provide an image file/dataUrl for texture sampling",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "image",
+          "name": "Image",
+          "type": "ImageFile"
+        }
+      ],
+      "defaultParams": {
+        "path": "",
+        "dataUrl": ""
+      }
+    },
+
+    {
+      "type": "GroupInstance",
+      "label": "Group Instance",
+      "category": "Group",
+      "description": "Instantiate a reusable group subgraph",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "In 0",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Out 0",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {
+        "groupId": ""
       }
     },
     {
