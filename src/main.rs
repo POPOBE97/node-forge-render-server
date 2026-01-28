@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use node_forge_render_server::{app, dsl, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui};
 
@@ -259,7 +259,11 @@ fn resolve_file_output_path(rt: &dsl::FileRenderTarget) -> std::path::PathBuf {
         base
     } else {
         let pb = std::path::PathBuf::from(dir);
-        if pb.is_absolute() { pb } else { base.join(pb) }
+        if pb.is_absolute() {
+            pb
+        } else {
+            base.join(pb)
+        }
     };
     path.push(&rt.file_name);
     path
@@ -384,7 +388,13 @@ fn main() -> Result<()> {
                 scene_rx: app_scene_rx,
                 ws_hub: hub,
                 last_good,
+
+                zoom: 1.0,
                 zoom_initialized: false,
+                pan: egui::Vec2::ZERO,
+                pan_start: None,
+                last_sampled: None,
+                texture_filter: rust_wgpu_fiber::eframe::wgpu::FilterMode::Linear,
             }))
         }),
     )
