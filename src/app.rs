@@ -5,13 +5,13 @@ use std::{
 
 use crossbeam_channel::Receiver;
 use rust_wgpu_fiber::{
+    ResourceName,
     eframe::{
         self,
-        egui::{self, pos2, Color32, Rect, TextureId},
+        egui::{self, Color32, Rect, TextureId, pos2},
         wgpu,
     },
     shader_space::ShaderSpace,
-    ResourceName,
 };
 
 use crate::{protocol, renderer, ws};

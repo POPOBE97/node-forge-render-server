@@ -244,12 +244,18 @@ impl MaterialCompileContext {
 
     /// Generate the WGSL variable name for a texture binding.
     pub fn tex_var_name(node_id: &str) -> String {
-        format!("img_tex_{}", crate::renderer::utils::sanitize_wgsl_ident(node_id))
+        format!(
+            "img_tex_{}",
+            crate::renderer::utils::sanitize_wgsl_ident(node_id)
+        )
     }
 
     /// Generate the WGSL variable name for a sampler binding.
     pub fn sampler_var_name(node_id: &str) -> String {
-        format!("img_samp_{}", crate::renderer::utils::sanitize_wgsl_ident(node_id))
+        format!(
+            "img_samp_{}",
+            crate::renderer::utils::sanitize_wgsl_ident(node_id)
+        )
     }
 
     /// Generate the WGSL variable name for a pass texture binding.

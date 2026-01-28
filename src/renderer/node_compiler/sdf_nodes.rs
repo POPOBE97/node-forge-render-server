@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{incoming_connection, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::utils::coerce_to_type;
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {

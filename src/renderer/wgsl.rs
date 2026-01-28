@@ -278,7 +278,7 @@ var src_samp: sampler;
       return out;
   }
   "#
-     } else {
+    } else {
         r#"
  @vertex
   fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
@@ -312,7 +312,7 @@ var src_samp: sampler;
       return out;
   }
   "#
-     }
+    }
     .to_string();
 
     let fragment_entry = format!(
@@ -673,8 +673,7 @@ var<uniform> params: Params;
         // geometry, reflect that so SDFs and other pixel-space evaluations scale with the geometry.
         vertex_entry.push_str(" let geo_sx = length(inst_m[0].xy);\n");
         vertex_entry.push_str(" let geo_sy = length(inst_m[1].xy);\n");
-        vertex_entry
-            .push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
+        vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
         vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
         vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
 
@@ -881,7 +880,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 };
 
                 // 0) Source image expression pass (renders `image` input to an intermediate texture).
-                let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, &layer_id)?;
+                let src_bundle =
+                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, &layer_id)?;
                 out.push((format!("sys.blur.{layer_id}.src.pass"), src_bundle));
 
                 for step in &downsample_steps {
@@ -898,9 +898,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     build_vertical_blur_bundle(kernel, offset),
                 ));
                 out.push((
-                    format!(
-                        "sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"
-                    ),
+                    format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"),
                     build_upsample_bilinear_bundle(),
                 ));
             }
@@ -922,7 +920,7 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  let uv = dst_xy / src_resolution;
  return textureSampleLevel(src_tex, src_samp, uv, 0.0);
  "#
-         .to_string(),
+        .to_string(),
         2 => r#"
  let src_resolution = params.target_size * 2.0;
  let dst_xy = vec2f(in.position.xy);
@@ -938,7 +936,7 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  
  return sum * 0.25;
  "#
-         .to_string(),
+        .to_string(),
         4 => r#"
  let src_resolution = params.target_size * 4.0;
  let dst_xy = vec2f(in.position.xy);
@@ -954,7 +952,7 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  
  return sum * (1.0 / 16.0);
  "#
-         .to_string(),
+        .to_string(),
         8 => r#"
  let src_resolution = params.target_size * 8.0;
  let dst_xy = vec2f(in.position.xy);
@@ -970,7 +968,7 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  
  return sum * (1.0 / 64.0);
  "#
-         .to_string(),
+        .to_string(),
         other => {
             return Err(anyhow!(
                 "GuassianBlurPass: unsupported downsample factor {other}"
