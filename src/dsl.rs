@@ -19,6 +19,46 @@ pub struct SceneDSL {
     pub nodes: Vec<Node>,
     pub connections: Vec<Connection>,
     pub outputs: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub groups: Vec<GroupDSL>,
+}
+
+/// A reusable subgraph definition referenced by `GroupInstance` nodes.
+///
+/// This matches the editor-exported `groups` array in SceneDSL JSON.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GroupDSL {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub inputs: Vec<NodePort>,
+    #[serde(default)]
+    pub outputs: Vec<NodePort>,
+
+    #[serde(default)]
+    pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub connections: Vec<Connection>,
+
+    #[serde(default, rename = "inputBindings")]
+    pub input_bindings: Vec<GroupInputBinding>,
+    #[serde(default, rename = "outputBindings")]
+    pub output_bindings: Vec<GroupOutputBinding>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GroupInputBinding {
+    #[serde(rename = "groupPortId")]
+    pub group_port_id: String,
+    pub to: Endpoint,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GroupOutputBinding {
+    #[serde(rename = "groupPortId")]
+    pub group_port_id: String,
+    pub from: Endpoint,
 }
 
 /// Drops nodes that do not participate in any connection, to avoid later stages
@@ -54,6 +94,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
         nodes,
         connections: scene.connections.clone(),
         outputs: scene.outputs.clone(),
+        groups: scene.groups.clone(),
     }
 }
 
@@ -157,12 +198,12 @@ pub fn normalize_scene_defaults(scene: &mut SceneDSL) -> Result<()> {
 }
 
 fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
-    for node in &mut scene.nodes {
+    fn apply_one(node: &mut Node, scheme: &schema::NodeScheme) {
         let Some(node_scheme) = scheme.nodes.get(&node.node_type) else {
-            continue;
+            return;
         };
         if node_scheme.default_params.is_empty() {
-            continue;
+            return;
         }
 
         let mut merged = node_scheme.default_params.clone();
@@ -170,6 +211,15 @@ fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) 
             merged.insert(k, v);
         }
         node.params = merged;
+    }
+
+    for node in &mut scene.nodes {
+        apply_one(node, scheme);
+    }
+    for g in &mut scene.groups {
+        for node in &mut g.nodes {
+            apply_one(node, scheme);
+        }
     }
 }
 

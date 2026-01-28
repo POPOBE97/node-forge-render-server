@@ -44,6 +44,7 @@ fn base_scene() -> SceneDSL {
         nodes: vec![node("a"), node("b")],
         connections: vec![conn("c1", "a", "b")],
         outputs: Some(HashMap::from([(String::from("main"), String::from("b"))])),
+        groups: Vec::new(),
     }
 }
 
@@ -66,6 +67,7 @@ fn scene_update_replaces_cache() {
         nodes: vec![node("x")],
         connections: vec![],
         outputs: None,
+        groups: Vec::new(),
     };
 
     apply_scene_update(&mut cache, &scene2);
@@ -96,6 +98,7 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
             removed: vec!["c1".to_string()],
         },
         outputs: None,
+        groups: None,
     };
 
     apply_scene_delta(&mut cache, &delta);

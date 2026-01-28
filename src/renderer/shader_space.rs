@@ -452,16 +452,17 @@ pub(crate) fn resolve_geometry_for_render_pass(
                             )
                         });
 
-                    let scale_key = incoming_connection(scene, &geometry_node.id, "scale").map(|conn| {
-                        (
-                            meta.pass_id.clone(),
-                            conn.from.node_id.clone(),
-                            conn.from.port_id.clone(),
-                        )
-                    });
+                    let scale_key =
+                        incoming_connection(scene, &geometry_node.id, "scale").map(|conn| {
+                            (
+                                meta.pass_id.clone(),
+                                conn.from.node_id.clone(),
+                                conn.from.port_id.clone(),
+                            )
+                        });
 
-                    let rotate_key = incoming_connection(scene, &geometry_node.id, "rotate")
-                        .map(|conn| {
+                    let rotate_key =
+                        incoming_connection(scene, &geometry_node.id, "rotate").map(|conn| {
                             (
                                 meta.pass_id.clone(),
                                 conn.from.node_id.clone(),
@@ -476,7 +477,8 @@ pub(crate) fn resolve_geometry_for_render_pass(
                         || rotate_key.as_ref().is_some_and(|k| baked.contains_key(k));
 
                     if has_any {
-                        let t_inline = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
+                        let t_inline =
+                            parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
                         let s_inline = parse_inline_vec3(geometry_node, "scale", [1.0, 1.0, 1.0]);
                         let r_inline = parse_inline_vec3(geometry_node, "rotate", [0.0, 0.0, 0.0]);
 
@@ -1199,8 +1201,6 @@ fn build_shader_space_from_scene_internal(
     let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
-
-
     // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
     let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
 
@@ -1291,9 +1291,12 @@ fn build_shader_space_from_scene_internal(
     let display_texture_name: Option<ResourceName> = if enable_display_encode {
         match target_format {
             TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb => {
-                let name: ResourceName =
-                    format!("{}{}", target_texture_name.as_str(), UI_PRESENT_SDR_SRGB_SUFFIX)
-                        .into();
+                let name: ResourceName = format!(
+                    "{}{}",
+                    target_texture_name.as_str(),
+                    UI_PRESENT_SDR_SRGB_SUFFIX
+                )
+                .into();
                 textures.push(TextureDecl {
                     name: name.clone(),
                     size: [tgt_w_u, tgt_h_u],
@@ -1813,7 +1816,8 @@ fn build_shader_space_from_scene_internal(
                         .entry(baked_buf.clone())
                         .or_insert_with(|| layer_id.clone());
 
-                    let pass_name: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.pass").into();
+                    let pass_name: ResourceName =
+                        format!("sys.blur.{layer_id}.ds.{step}.pass").into();
                     render_pass_specs.push(RenderPassSpec {
                         name: pass_name.clone(),
                         geometry_buffer: step_geo.clone(),
@@ -1911,10 +1915,9 @@ fn build_shader_space_from_scene_internal(
                 composite_passes.push(pass_name_v);
 
                 // 4) Upsample bilinear back to output: v_tex -> output_tex
-                let params_u: ResourceName = format!(
-                    "params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}"
-                )
-                .into();
+                let params_u: ResourceName =
+                    format!("params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}")
+                        .into();
                 let bundle_u = build_upsample_bilinear_bundle();
                 let params_u_val = Params {
                     target_size: [blur_w as f32, blur_h as f32],
@@ -1926,10 +1929,9 @@ fn build_shader_space_from_scene_internal(
                     _pad0: 0.0,
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
-                let pass_name_u: ResourceName = format!(
-                    "sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"
-                )
-                .into();
+                let pass_name_u: ResourceName =
+                    format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
+                        .into();
                 render_pass_specs.push(RenderPassSpec {
                     name: pass_name_u.clone(),
                     geometry_buffer: geo_out.clone(),
@@ -1978,58 +1980,58 @@ fn build_shader_space_from_scene_internal(
     // Final display encode pass (sRGB output -> linear texture with sRGB bytes).
     if enable_display_encode {
         if let Some(display_tex) = display_texture_name.clone() {
-        let pass_name: ResourceName = format!(
-            "{}{}.pass",
-            target_texture_name.as_str(),
-            UI_PRESENT_SDR_SRGB_SUFFIX
-        )
-        .into();
-        let geo: ResourceName = format!(
-            "{}{}.geo",
-            target_texture_name.as_str(),
-            UI_PRESENT_SDR_SRGB_SUFFIX
-        )
-        .into();
-        geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+            let pass_name: ResourceName = format!(
+                "{}{}.pass",
+                target_texture_name.as_str(),
+                UI_PRESENT_SDR_SRGB_SUFFIX
+            )
+            .into();
+            let geo: ResourceName = format!(
+                "{}{}.geo",
+                target_texture_name.as_str(),
+                UI_PRESENT_SDR_SRGB_SUFFIX
+            )
+            .into();
+            geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
 
-        let params_name: ResourceName = format!(
-            "params.{}{}",
-            target_texture_name.as_str(),
-            UI_PRESENT_SDR_SRGB_SUFFIX
-        )
-        .into();
-        let params = Params {
-            target_size: [tgt_w, tgt_h],
-            geo_size: [tgt_w, tgt_h],
-            center: [tgt_w * 0.5, tgt_h * 0.5],
-            geo_translate: [0.0, 0.0],
-            geo_scale: [1.0, 1.0],
-            time: 0.0,
-            _pad0: 0.0,
-            color: [0.0, 0.0, 0.0, 0.0],
-        };
+            let params_name: ResourceName = format!(
+                "params.{}{}",
+                target_texture_name.as_str(),
+                UI_PRESENT_SDR_SRGB_SUFFIX
+            )
+            .into();
+            let params = Params {
+                target_size: [tgt_w, tgt_h],
+                geo_size: [tgt_w, tgt_h],
+                center: [tgt_w * 0.5, tgt_h * 0.5],
+                geo_translate: [0.0, 0.0],
+                geo_scale: [1.0, 1.0],
+                time: 0.0,
+                _pad0: 0.0,
+                color: [0.0, 0.0, 0.0, 0.0],
+            };
 
-        let shader_wgsl = build_srgb_display_encode_wgsl("src_tex", "src_samp");
-        render_pass_specs.push(RenderPassSpec {
-            name: pass_name.clone(),
-            geometry_buffer: geo,
-            instance_buffer: None,
-            target_texture: display_tex.clone(),
-            params_buffer: params_name,
-            baked_data_parse_buffer: None,
-            params,
-            shader_wgsl,
-            texture_bindings: vec![PassTextureBinding {
-                texture: target_texture_name.clone(),
-                image_node_id: None,
-            }],
-            sampler_kind: SamplerKind::NearestClamp,
-            blend_state: BlendState::REPLACE,
-            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-        });
+            let shader_wgsl = build_srgb_display_encode_wgsl("src_tex", "src_samp");
+            render_pass_specs.push(RenderPassSpec {
+                name: pass_name.clone(),
+                geometry_buffer: geo,
+                instance_buffer: None,
+                target_texture: display_tex.clone(),
+                params_buffer: params_name,
+                baked_data_parse_buffer: None,
+                params,
+                shader_wgsl,
+                texture_bindings: vec![PassTextureBinding {
+                    texture: target_texture_name.clone(),
+                    image_node_id: None,
+                }],
+                sampler_kind: SamplerKind::NearestClamp,
+                blend_state: BlendState::REPLACE,
+                color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+            });
 
-        // Make sure it runs last.
-        composite_passes.push(pass_name);
+            // Make sure it runs last.
+            composite_passes.push(pass_name);
         }
     }
 
@@ -2301,7 +2303,8 @@ fn build_shader_space_from_scene_internal(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
 
-                let pass_name: ResourceName = format!("sys.image.{node_id}.premultiply.pass").into();
+                let pass_name: ResourceName =
+                    format!("sys.image.{node_id}.premultiply.pass").into();
                 let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
                 let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
                 let shader_wgsl = build_image_premultiply_wgsl(&tex_var, &samp_var);
@@ -2335,9 +2338,9 @@ fn build_shader_space_from_scene_internal(
 
     // 3) Samplers
     let nearest_sampler: ResourceName = "sampler_nearest".into();
-        let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
+    let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
-        shader_space.declare_samplers(vec![
+    shader_space.declare_samplers(vec![
         SamplerSpec {
             name: nearest_sampler.clone(),
             desc: wgpu::SamplerDescriptor {
@@ -2350,18 +2353,18 @@ fn build_shader_space_from_scene_internal(
                 ..Default::default()
             },
         },
-            SamplerSpec {
-                name: nearest_mirror_sampler.clone(),
-                desc: wgpu::SamplerDescriptor {
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
-                    address_mode_u: wgpu::AddressMode::MirrorRepeat,
-                    address_mode_v: wgpu::AddressMode::MirrorRepeat,
-                    address_mode_w: wgpu::AddressMode::MirrorRepeat,
-                    ..Default::default()
-                },
+        SamplerSpec {
+            name: nearest_mirror_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::MirrorRepeat,
+                address_mode_v: wgpu::AddressMode::MirrorRepeat,
+                address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                ..Default::default()
             },
+        },
         SamplerSpec {
             name: linear_mirror_sampler.clone(),
             desc: wgpu::SamplerDescriptor {
@@ -2410,7 +2413,8 @@ fn build_shader_space_from_scene_internal(
     }
 
     if !prepass_names.is_empty() {
-        let mut ordered: Vec<ResourceName> = Vec::with_capacity(prepass_names.len() + composite_passes.len());
+        let mut ordered: Vec<ResourceName> =
+            Vec::with_capacity(prepass_names.len() + composite_passes.len());
         ordered.extend(prepass_names);
         ordered.extend(composite_passes);
         composite_passes = ordered;
@@ -2711,6 +2715,7 @@ mod tests {
                 String::from("composite"),
                 String::from("out"),
             )])),
+            groups: Vec::new(),
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -2728,7 +2733,8 @@ mod tests {
     #[test]
     fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() -> Result<()> {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let scene_path = manifest_dir.join("tests/fixtures/render_cases/pass-texture-alpha/scene.json");
+        let scene_path =
+            manifest_dir.join("tests/fixtures/render_cases/pass-texture-alpha/scene.json");
         if !scene_path.exists() {
             return Ok(());
         }

@@ -7,12 +7,12 @@
 //! - linearMap: clamp((t - from)/(to-from), 0..1)
 //! - iq_* variants from https://iquilezles.org/articles/functions/
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::coerce_to_type;
-use crate::dsl::{incoming_connection, parse_f32, parse_str, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32, parse_str};
 
 fn wgsl_f32_literal(v: f32) -> String {
     // Keep literals stable and unambiguous.
@@ -333,6 +333,7 @@ mod tests {
             nodes,
             connections,
             outputs: None,
+            groups: Vec::new(),
         }
     }
 

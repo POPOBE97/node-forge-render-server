@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use node_forge_render_server::dsl::{
-    Metadata, Node, SceneDSL, file_render_target, normalize_scene_defaults,
+    file_render_target, normalize_scene_defaults, Metadata, Node, SceneDSL,
 };
 
 #[test]
@@ -23,6 +23,7 @@ fn file_render_target_applies_scheme_defaults() {
         }],
         connections: Vec::new(),
         outputs: None,
+        groups: Vec::new(),
     };
 
     normalize_scene_defaults(&mut scene).unwrap();

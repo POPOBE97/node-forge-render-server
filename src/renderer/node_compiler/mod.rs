@@ -14,11 +14,11 @@ pub mod texture_nodes;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::types::{MaterialCompileContext, TypedExpr};
-use crate::dsl::{find_node, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, find_node};
 
 /// Main dispatch function for compiling material expressions (fragment stage).
 pub fn compile_material_expr(
@@ -344,6 +344,7 @@ pub mod test_utils {
             nodes,
             connections,
             outputs: None,
+            groups: Vec::new(),
         }
     }
 
@@ -363,6 +364,7 @@ pub mod test_utils {
             nodes,
             connections,
             outputs: Some(outputs),
+            groups: Vec::new(),
         }
     }
 

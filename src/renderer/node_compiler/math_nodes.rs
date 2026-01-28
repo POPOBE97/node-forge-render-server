@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::coerce_for_binary;
-use crate::dsl::{incoming_connection, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile a MathAdd node to WGSL.
 ///
@@ -269,6 +269,7 @@ mod tests {
             nodes,
             connections,
             outputs: None,
+            groups: Vec::new(),
         }
     }
 

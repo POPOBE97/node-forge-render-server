@@ -12,7 +12,7 @@ use tungstenite::{Error as WsError, Message, accept};
 
 use crate::{
     dsl,
-    dsl::{Connection, Metadata, Node, SceneDSL},
+    dsl::{Connection, GroupDSL, Metadata, Node, SceneDSL},
     protocol::{ErrorPayload, WSMessage, now_millis},
 };
 
@@ -74,6 +74,10 @@ pub struct SceneDelta {
     pub connections: SceneDeltaConnections,
     #[serde(default)]
     pub outputs: Option<std::collections::HashMap<String, String>>,
+    // Groups are currently only sent in full `scene_update` messages.
+    // Keep this optional for forward-compatibility if editors start sending deltas.
+    #[serde(default)]
+    pub groups: Option<Vec<GroupDSL>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -102,6 +106,7 @@ pub struct SceneCache {
     pub nodes_by_id: SceneCacheNodesById,
     pub connections_by_id: SceneCacheConnectionsById,
     pub outputs: SceneOutputs,
+    pub groups: Vec<GroupDSL>,
 }
 
 impl SceneCache {
@@ -112,6 +117,7 @@ impl SceneCache {
             nodes_by_id: std::collections::HashMap::new(),
             connections_by_id: std::collections::HashMap::new(),
             outputs: scene.outputs.clone().unwrap_or_default(),
+            groups: scene.groups.clone(),
         };
         apply_scene_update(&mut cache, scene);
         cache
@@ -121,6 +127,7 @@ impl SceneCache {
 pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
     cache.version = scene.version.clone();
     cache.metadata = scene.metadata.clone();
+    cache.groups = scene.groups.clone();
 
     cache.nodes_by_id.clear();
     for node in &scene.nodes {
@@ -167,6 +174,10 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
     if let Some(outputs) = delta.outputs.as_ref() {
         cache.outputs = outputs.clone();
     }
+
+    if let Some(groups) = delta.groups.as_ref() {
+        cache.groups = groups.clone();
+    }
 }
 
 pub fn prune_invalid_connections(cache: &mut SceneCache) {
@@ -190,6 +201,7 @@ pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
         nodes: cache.nodes_by_id.values().cloned().collect(),
         connections: cache.connections_by_id.values().cloned().collect(),
         outputs: Some(cache.outputs.clone()),
+        groups: cache.groups.clone(),
     }
 }
 
