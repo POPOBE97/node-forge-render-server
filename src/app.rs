@@ -28,6 +28,7 @@ pub struct App {
     pub scene_rx: Receiver<ws::SceneUpdate>,
     pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
+    pub zoom_initialized: bool,
 }
 
 impl eframe::App for App {

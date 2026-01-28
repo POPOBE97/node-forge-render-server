@@ -384,6 +384,7 @@ fn main() -> Result<()> {
                 scene_rx: app_scene_rx,
                 ws_hub: hub,
                 last_good,
+                zoom_initialized: false,
             }))
         }),
     )
