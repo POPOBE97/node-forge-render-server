@@ -8,12 +8,12 @@ use std::{
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::Value;
-use tungstenite::{Error as WsError, Message, accept};
+use tungstenite::{accept, Error as WsError, Message};
 
 use crate::{
     dsl,
     dsl::{Connection, GroupDSL, Metadata, Node, SceneDSL},
-    protocol::{ErrorPayload, WSMessage, now_millis},
+    protocol::{now_millis, ErrorPayload, WSMessage},
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -37,21 +37,19 @@ fn send_scene_resync_request(ws: &mut tungstenite::WebSocket<std::net::TcpStream
 }
 
 fn spawn_server_ping_loop(hub: WsHub) {
-    thread::spawn(move || {
-        loop {
-            let ping = WSMessage::<Value> {
-                msg_type: "ping".to_string(),
-                timestamp: now_millis(),
-                request_id: None,
-                payload: None,
-            };
+    thread::spawn(move || loop {
+        let ping = WSMessage::<Value> {
+            msg_type: "ping".to_string(),
+            timestamp: now_millis(),
+            request_id: None,
+            payload: None,
+        };
 
-            if let Ok(text) = serde_json::to_string(&ping) {
-                hub.broadcast(text);
-            }
-
-            thread::sleep(Duration::from_millis(200));
+        if let Ok(text) = serde_json::to_string(&ping) {
+            hub.broadcast(text);
         }
+
+        thread::sleep(Duration::from_millis(200));
     });
 }
 

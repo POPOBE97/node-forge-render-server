@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use deno_core::ascii_str;
 use deno_core::{JsRuntime, RuntimeOptions};
 

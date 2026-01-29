@@ -44,10 +44,8 @@ pub struct App {
 
 const CANVAS_RADIUS: f32 = 16.0;
 const OUTER_MARGIN: f32 = 4.0;
-const SIDEBAR_WIDTH: f32 = 340.0;
-const SIDEBAR_MIN_WIDTH: f32 = 260.0;
-const SIDEBAR_MAX_WIDTH: f32 = 460.0;
-const SIDEBAR_ANIM_SECS: f64 = 0.25;
+
+const SIDEBAR_ANIM_SECS: f64 = crate::ui::debug_sidebar::SIDEBAR_ANIM_SECS;
 
 #[derive(Clone, Copy, Debug)]
 struct UiAnim {
@@ -106,6 +104,14 @@ enum TailwindButtonVariant {
 }
 
 #[derive(Clone, Copy, Debug)]
+enum TailwindButtonGroupPosition {
+    Single,
+    First,
+    Middle,
+    Last,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct TailwindButtonVisuals {
     bg: Color32,
     hover_bg: Color32,
@@ -125,7 +131,7 @@ fn tailwind_button_visuals(variant: TailwindButtonVariant) -> TailwindButtonVisu
             text: Color32::from_rgb(0x63, 0xC7, 0x63),
         },
         TailwindButtonVariant::Idle => TailwindButtonVisuals {
-            bg: Color32::TRANSPARENT,
+            bg: Color32::from_rgb(48, 48, 48),
             hover_bg: Color32::from_rgb(0x40, 0x40, 0x40),
             text: Color32::from_rgb(0xE6, 0xE6, 0xE6),
         },
@@ -137,6 +143,7 @@ fn tailwind_button(
     label: &str,
     title: &str,
     variant: TailwindButtonVariant,
+    group_position: TailwindButtonGroupPosition,
     enabled: bool,
 ) -> egui::Response {
     let visuals = tailwind_button_visuals(variant);
@@ -156,27 +163,67 @@ fn tailwind_button(
         visuals.text.gamma_multiply(0.6)
     };
 
+    let stroke = egui::Stroke::new(1.0, Color32::from_white_alpha(26)).color;
+    let transparent = Color32::TRANSPARENT;
+
     let font_id = egui::FontId::proportional(12.0);
     let label = egui::RichText::new(label).font(font_id).color(text);
+    let corner_radius = match group_position {
+        TailwindButtonGroupPosition::Single => egui::CornerRadius::same(6),
+        TailwindButtonGroupPosition::First => egui::CornerRadius {
+            nw: 12,
+            ne: 0,
+            sw: 12,
+            se: 0,
+        },
+        TailwindButtonGroupPosition::Middle => egui::CornerRadius::same(0),
+        TailwindButtonGroupPosition::Last => egui::CornerRadius {
+            nw: 0,
+            ne: 12,
+            sw: 0,
+            se: 12,
+        },
+    };
+
     let button = egui::Button::new(label)
         .frame(true)
-        .corner_radius(egui::CornerRadius::same(0));
+        .corner_radius(corner_radius);
 
     ui.scope(|ui| {
         let mut style = ui.style().as_ref().clone();
-        style.spacing.button_padding = egui::vec2(10.0, 6.0);
+        style.spacing.button_padding = egui::vec2(8.0, 4.0);
         style.visuals.widgets.inactive.bg_fill = bg;
         style.visuals.widgets.inactive.weak_bg_fill = bg;
         style.visuals.widgets.hovered.bg_fill = hover_bg;
         style.visuals.widgets.active.bg_fill = hover_bg;
-        style.visuals.widgets.inactive.fg_stroke.color = text;
-        style.visuals.widgets.hovered.fg_stroke.color = text;
-        style.visuals.widgets.active.fg_stroke.color = text;
+
+        style.visuals.widgets.hovered.expansion = style.visuals.widgets.inactive.expansion;
+        style.visuals.widgets.active.expansion = style.visuals.widgets.inactive.expansion;
+
+        style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, stroke);
+        style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, stroke);
+        style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, stroke);
+        style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, stroke);
+
+        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        style.visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
+        style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
+
         style.visuals.widgets.noninteractive.bg_fill = bg;
-        style.visuals.widgets.noninteractive.fg_stroke.color = text;
         ui.set_style(style);
 
-        ui.add_enabled(enabled, button).on_hover_text(title)
+        let response = ui.add_enabled(enabled, button).on_hover_text(title);
+        if !response.hovered() {
+            let stroke = egui::Stroke::new(1.0, stroke);
+            ui.painter().rect_stroke(
+                response.rect,
+                corner_radius,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        response
     })
     .inner
 }
@@ -228,6 +275,11 @@ impl eframe::App for App {
         let canvas_center_prev_id = egui::Id::new("ui_canvas_center_prev");
         let startup_sidebar_sized_id = egui::Id::new("ui_startup_sidebar_sized");
         let min_zoom_id = egui::Id::new("ui_min_zoom");
+        let pan_zoom_anim_id = egui::Id::new("ui_pan_zoom_anim");
+        let pan_zoom_start_zoom_id = egui::Id::new("ui_pan_zoom_start_zoom");
+        let pan_zoom_start_pan_id = egui::Id::new("ui_pan_zoom_start_pan");
+        let pan_zoom_target_zoom_id = egui::Id::new("ui_pan_zoom_target_zoom");
+        let pan_zoom_target_pan_id = egui::Id::new("ui_pan_zoom_target_pan");
         let sidebar_factor_id = egui::Id::new("ui_sidebar_factor");
         let sidebar_anim_id = egui::Id::new("ui_sidebar_anim");
 
@@ -551,8 +603,6 @@ impl eframe::App for App {
             let _ = render_state.device.poll(wgpu::PollType::Poll);
         }
 
-        const CARD_RADIUS: f32 = 12.0;
-
         let now = ctx.input(|i| i.time);
 
         let toggle_canvas_only = || {
@@ -624,8 +674,9 @@ impl eframe::App for App {
             .memory(|mem| mem.data.get_temp::<bool>(startup_sidebar_sized_id))
             .unwrap_or(false);
         if window_mode == UiWindowMode::Sidebar && !did_startup_sidebar_size {
-            let target_width =
-                self.window_resolution[0] as f32 + SIDEBAR_WIDTH + 2.0 * OUTER_MARGIN;
+            let target_width = self.window_resolution[0] as f32
+                + crate::ui::debug_sidebar::SIDEBAR_WIDTH
+                + 2.0 * OUTER_MARGIN;
             let target_height = self.window_resolution[1] as f32;
             let mut target = egui::vec2(target_width, target_height);
 
@@ -635,7 +686,7 @@ impl eframe::App for App {
             }
 
             // Keep the sidebar usable while allowing some minimum render area.
-            let mut min_size = egui::vec2(SIDEBAR_WIDTH + 240.0, 240.0);
+            let mut min_size = egui::vec2(crate::ui::debug_sidebar::SIDEBAR_WIDTH + 240.0, 240.0);
             if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
                 min_size.x = min_size.x.min(monitor_size.x);
                 min_size.y = min_size.y.min(monitor_size.y);
@@ -655,69 +706,23 @@ impl eframe::App for App {
         // to allow the canvas to take the full window.
         let animation_just_finished_opening =
             was_animating_before_update && ui_sidebar_anim.is_none() && ui_sidebar_factor >= 1.0;
-        if ui_sidebar_factor > 0.0 {
-            let sidebar = if ui_sidebar_factor < 1.0 || animation_just_finished_opening {
-                egui::SidePanel::right("debug_sidebar")
-                    .exact_width(SIDEBAR_WIDTH * ui_sidebar_factor)
-                    .resizable(false)
-            } else {
-                egui::SidePanel::right("debug_sidebar")
-                    .default_width(SIDEBAR_WIDTH)
-                    .width_range(SIDEBAR_MIN_WIDTH..=SIDEBAR_MAX_WIDTH)
-                    .resizable(true)
-            };
-            sidebar.show(ctx, |ui| {
-                let content_rect = ui.available_rect_before_wrap();
-                ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
-                    ui.set_clip_rect(content_rect);
-                    if ui_sidebar_factor > 0.01 {
-                        ui.horizontal(|ui| {
-                            ui.heading("Debug");
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if tailwind_button(
-                                        ui,
-                                        "Canvas Only",
-                                        "Toggle canvas-only layout",
-                                        TailwindButtonVariant::Idle,
-                                        true,
-                                    )
-                                    .clicked()
-                                    {
-                                        toggle_canvas_only();
-                                    }
-                                },
-                            );
-                        });
-                        ui.separator();
-
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            for idx in 0..3 {
-                                let card_width = ui.available_size_before_wrap().x;
-                                egui::Frame::default()
-                                    .fill(egui::Color32::from_gray(24))
-                                    .inner_margin(egui::Margin::same(12))
-                                    .corner_radius(egui::CornerRadius::same(CARD_RADIUS as u8))
-                                    .show(ui, |ui| {
-                                        ui.set_max_width(card_width);
-                                        ui.label(egui::RichText::new(format!(
-                                            "Placeholder card {}",
-                                            idx + 1
-                                        )));
-                                        ui.add_space(6.0);
-                                        ui.label("TODO: debug content");
-                                    });
-
-                                if idx != 2 {
-                                    ui.add_space(10.0);
-                                }
-                            }
-                        });
-                    }
-                });
-            });
-        }
+        crate::ui::debug_sidebar::show(
+            ctx,
+            ui_sidebar_factor,
+            animation_just_finished_opening,
+            |ui| {
+                tailwind_button(
+                    ui,
+                    "Canvas Only",
+                    "Toggle canvas-only layout",
+                    TailwindButtonVariant::Idle,
+                    TailwindButtonGroupPosition::Single,
+                    true,
+                )
+                .clicked()
+            },
+            toggle_canvas_only,
+        );
 
         let f = egui::Frame::default()
             .fill(egui::Color32::BLACK)
@@ -785,7 +790,88 @@ impl eframe::App for App {
                     fit_zoom
                 });
 
-            let zoom = clamp_zoom(self.zoom, min_zoom);
+            if prev_mode != window_mode {
+                let (start_zoom, start_pan, target_zoom, target_pan) = match window_mode {
+                    UiWindowMode::Sidebar => (self.zoom, self.pan, fit_zoom, egui::Vec2::ZERO),
+                    UiWindowMode::CanvasOnly => (
+                        fit_zoom,
+                        egui::Vec2::ZERO,
+                        ctx.memory(|mem| mem.data.get_temp::<f32>(pan_zoom_target_zoom_id))
+                            .unwrap_or(self.zoom),
+                        ctx.memory(|mem| mem.data.get_temp::<egui::Vec2>(pan_zoom_target_pan_id))
+                            .unwrap_or(self.pan),
+                    ),
+                };
+                ctx.memory_mut(|mem| {
+                    mem.data.insert_temp(pan_zoom_start_zoom_id, start_zoom);
+                    mem.data.insert_temp(pan_zoom_start_pan_id, start_pan);
+                    mem.data.insert_temp(pan_zoom_target_zoom_id, target_zoom);
+                    mem.data.insert_temp(pan_zoom_target_pan_id, target_pan);
+                    mem.data.insert_temp::<Option<UiAnim>>(
+                        pan_zoom_anim_id,
+                        Some(UiAnim {
+                            start_time: now,
+                            from: 0.0,
+                            to: 1.0,
+                        }),
+                    );
+                });
+            }
+
+            let mut pan_zoom_anim = ctx
+                .memory(|mem| mem.data.get_temp::<Option<UiAnim>>(pan_zoom_anim_id))
+                .unwrap_or(None);
+            if let Some(anim) = pan_zoom_anim {
+                let start_zoom = ctx
+                    .memory(|mem| mem.data.get_temp::<f32>(pan_zoom_start_zoom_id))
+                    .unwrap_or(self.zoom);
+                let start_pan = ctx
+                    .memory(|mem| mem.data.get_temp::<egui::Vec2>(pan_zoom_start_pan_id))
+                    .unwrap_or(self.pan);
+                let target_zoom = ctx
+                    .memory(|mem| mem.data.get_temp::<f32>(pan_zoom_target_zoom_id))
+                    .unwrap_or(fit_zoom);
+                let target_pan = ctx
+                    .memory(|mem| mem.data.get_temp::<egui::Vec2>(pan_zoom_target_pan_id))
+                    .unwrap_or(egui::Vec2::ZERO);
+                let raw_t = ((now - anim.start_time) / SIDEBAR_ANIM_SECS).clamp(0.0, 1.0) as f32;
+                let eased = ease_out_cubic(raw_t);
+                let factor = clamp01(lerp(anim.from, anim.to, eased));
+                self.zoom = lerp(start_zoom, target_zoom, factor);
+                self.pan = start_pan + (target_pan - start_pan) * factor;
+                self.pan_start = None;
+                if raw_t >= 1.0 {
+                    pan_zoom_anim = None;
+                }
+                ctx.memory_mut(|mem| {
+                    mem.data
+                        .insert_temp::<Option<UiAnim>>(pan_zoom_anim_id, pan_zoom_anim);
+                });
+            } else if window_mode == UiWindowMode::Sidebar {
+                self.zoom = fit_zoom;
+                self.pan = egui::Vec2::ZERO;
+                self.pan_start = None;
+            }
+
+            let pan_zoom_animating = pan_zoom_anim.is_some();
+            let pan_zoom_enabled =
+                matches!(window_mode, UiWindowMode::CanvasOnly) && !pan_zoom_animating;
+            let effective_min_zoom = if pan_zoom_animating {
+                0.01
+            } else if window_mode == UiWindowMode::CanvasOnly {
+                min_zoom
+            } else {
+                fit_zoom
+            };
+
+            if pan_zoom_enabled {
+                ctx.memory_mut(|mem| {
+                    mem.data.insert_temp(pan_zoom_target_zoom_id, self.zoom);
+                    mem.data.insert_temp(pan_zoom_target_pan_id, self.pan);
+                });
+            }
+
+            let zoom = clamp_zoom(self.zoom, effective_min_zoom);
             self.zoom = zoom;
             let draw_size = image_size * zoom;
             let base_min = view_rect.center() - draw_size * 0.5;
@@ -793,7 +879,7 @@ impl eframe::App for App {
 
             let response = ui.allocate_rect(avail_rect, egui::Sense::click_and_drag());
 
-            if ctx.input(|i| i.key_pressed(egui::Key::R)) {
+            if pan_zoom_enabled && ctx.input(|i| i.key_pressed(egui::Key::R)) {
                 self.zoom = fit_zoom;
                 self.pan = egui::Vec2::ZERO;
                 self.pan_start = None;
@@ -830,21 +916,23 @@ impl eframe::App for App {
                 }
             }
 
-            if response.drag_started_by(egui::PointerButton::Middle) {
-                if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
-                    self.pan_start = Some(pointer_pos);
+            if pan_zoom_enabled {
+                if response.drag_started_by(egui::PointerButton::Middle) {
+                    if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                        self.pan_start = Some(pointer_pos);
+                    }
                 }
-            }
-            if response.dragged_by(egui::PointerButton::Middle) {
-                if let (Some(start), Some(pointer_pos)) =
-                    (self.pan_start, ctx.input(|i| i.pointer.hover_pos()))
-                {
-                    self.pan += pointer_pos - start;
-                    self.pan_start = Some(pointer_pos);
-                    image_rect = Rect::from_min_size(base_min + self.pan, draw_size);
+                if response.dragged_by(egui::PointerButton::Middle) {
+                    if let (Some(start), Some(pointer_pos)) =
+                        (self.pan_start, ctx.input(|i| i.pointer.hover_pos()))
+                    {
+                        self.pan += pointer_pos - start;
+                        self.pan_start = Some(pointer_pos);
+                        image_rect = Rect::from_min_size(base_min + self.pan, draw_size);
+                    }
+                } else if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Middle)) {
+                    self.pan_start = None;
                 }
-            } else if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Middle)) {
-                self.pan_start = None;
             }
 
             let zoom_delta = ctx.input(|i| i.zoom_delta());
@@ -856,10 +944,10 @@ impl eframe::App for App {
                 let exponent = scroll_delta.y.max(-1200.0).min(1200.0);
                 base.powf(exponent)
             };
-            if scroll_zoom != 1.0 {
+            if pan_zoom_enabled && scroll_zoom != 1.0 {
                 if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
                     let prev_zoom = self.zoom;
-                    let next_zoom = clamp_zoom(prev_zoom * scroll_zoom, min_zoom);
+                    let next_zoom = clamp_zoom(prev_zoom * scroll_zoom, effective_min_zoom);
                     if next_zoom != prev_zoom {
                         let prev_size = image_size * prev_zoom;
                         let prev_min = view_rect.center() - prev_size * 0.5 + self.pan;
