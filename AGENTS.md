@@ -38,6 +38,11 @@ Flags (see `src/main.rs`):
 cargo test
 ```
 
+### Run LSP diagnostics
+```bash
+cargo test
+```
+
 ### Run a single test binary
 ```bash
 cargo test --test render_cases
@@ -139,6 +144,8 @@ Legacy names:
 
 ## UI button styling helper (from AGENT.md)
 Use `tailwind_button(...)` in `src/app.rs` to match UI button styling.
+Pass a `TailwindButtonGroupPosition` to control rounded corners in button groups
+(use `Single` when it’s a standalone button).
 Avoid raw `ui.button(...)` for those controls unless you intend to diverge.
 
 ## Testing conventions (render cases)
