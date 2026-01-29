@@ -11,11 +11,11 @@
 //! - Pass textures are bound via `MaterialCompileContext::register_pass_texture()` and sampled
 //!   using the generated `pass_tex_*` / `pass_samp_*` vars.
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
+use crate::dsl::{incoming_connection, parse_f32, Node, SceneDSL};
 use crate::renderer::utils::{fmt_f32, sanitize_wgsl_ident};
 
 fn wgsl_vec2_literal(v: [f32; 2]) -> String {

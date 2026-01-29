@@ -1,10 +1,10 @@
 //! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture).
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::dsl::{incoming_connection, Node, SceneDSL};
 
 /// Compile an ImageTexture node.
 ///

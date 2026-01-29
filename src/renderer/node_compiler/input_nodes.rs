@@ -1,6 +1,6 @@
-//! Compilers for input nodes (ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput).
+//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput).
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde_json::Value;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
@@ -20,6 +20,11 @@ fn parse_const_f32(node: &Node) -> Option<f32> {
     parse_json_number_f32(node.params.get("value")?)
         .or_else(|| parse_json_number_f32(node.params.get("x")?))
         .or_else(|| parse_json_number_f32(node.params.get("v")?))
+}
+
+/// Parse a constant bool value from a node's params.
+fn parse_const_bool(node: &Node) -> Option<bool> {
+    node.params.get("value")?.as_bool()
 }
 
 /// Parse a vec4 array from a node's params.
@@ -93,6 +98,24 @@ pub fn compile_float_or_int_input(node: &Node, _out_port: Option<&str>) -> Resul
     } else {
         Ok(TypedExpr::new(format!("{v}"), ValueType::F32))
     }
+}
+
+/// Compile a BoolInput node to WGSL.
+///
+/// BoolInput nodes provide a constant boolean value.
+///
+/// # Parameters
+/// - `value`: Boolean value, defaults to false
+///
+/// # Output
+/// - Type: bool
+/// - Uses time: false
+pub fn compile_bool_input(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
+    let v = parse_const_bool(node).unwrap_or(false);
+    Ok(TypedExpr::new(
+        if v { "true" } else { "false" },
+        ValueType::Bool,
+    ))
 }
 
 /// Compile a Vector2Input node to WGSL.
@@ -406,5 +429,39 @@ mod tests {
         let result = compile_vector3_input(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec3);
         assert_eq!(result.expr, "vec3f(1, 2, 3)");
+    }
+
+    #[test]
+    fn test_bool_input_default() {
+        let node = Node {
+            id: "bool1".to_string(),
+            node_type: "BoolInput".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let result = compile_bool_input(&node, None).unwrap();
+        assert_eq!(result.ty, ValueType::Bool);
+        assert_eq!(result.expr, "false");
+        assert!(!result.uses_time);
+    }
+
+    #[test]
+    fn test_bool_input_true() {
+        let node = Node {
+            id: "bool1".to_string(),
+            node_type: "BoolInput".to_string(),
+            params: HashMap::from([("value".to_string(), serde_json::json!(true))]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let result = compile_bool_input(&node, None).unwrap();
+        assert_eq!(result.ty, ValueType::Bool);
+        assert_eq!(result.expr, "true");
+        assert!(!result.uses_time);
     }
 }

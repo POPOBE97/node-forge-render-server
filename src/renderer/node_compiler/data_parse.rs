@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use crate::dsl::{Node, SceneDSL};
 use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};

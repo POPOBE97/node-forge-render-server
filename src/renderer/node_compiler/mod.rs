@@ -14,11 +14,11 @@ pub mod texture_nodes;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use super::types::{MaterialCompileContext, TypedExpr};
-use crate::dsl::{Node, SceneDSL, find_node};
+use crate::dsl::{find_node, Node, SceneDSL};
 
 /// Main dispatch function for compiling material expressions (fragment stage).
 pub fn compile_material_expr(
@@ -95,6 +95,7 @@ fn compile_expr(
 
     let result = match node.node_type.as_str() {
         // Input nodes
+        "BoolInput" => input_nodes::compile_bool_input(node, out_port)?,
         "ColorInput" => input_nodes::compile_color_input(node, out_port)?,
         "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port)?,
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port)?,
