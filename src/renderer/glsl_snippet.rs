@@ -1,10 +1,10 @@
 //! Compile small user-authored GLSL snippets into WGSL helpers.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::renderer::{
     types::ValueType,
-    validation::{GlslShaderStage, glsl_to_wgsl},
+    validation::{glsl_to_wgsl, GlslShaderStage},
 };
 
 pub struct GlslParam {

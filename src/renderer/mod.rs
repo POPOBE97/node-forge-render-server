@@ -25,7 +25,7 @@ pub mod wgsl;
 
 // Re-export key types and functions for backward compatibility
 pub use node_compiler::compile_material_expr;
-pub use scene_prep::{PreparedScene, auto_wrap_primitive_pass_inputs, prepare_scene};
+pub use scene_prep::{auto_wrap_primitive_pass_inputs, prepare_scene, PreparedScene};
 pub use shader_space::{
     build_error_shader_space, build_shader_space_from_scene, build_shader_space_from_scene_for_ui,
     render_scene_to_png_headless, update_pass_params,

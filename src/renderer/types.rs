@@ -1,7 +1,7 @@
 //! Core type definitions for the renderer module.
 
-use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
+use rust_wgpu_fiber::ResourceName;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 

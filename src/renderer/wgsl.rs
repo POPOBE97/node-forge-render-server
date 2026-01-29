@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    dsl::{Node, SceneDSL, find_node, incoming_connection},
+    dsl::{find_node, incoming_connection, Node, SceneDSL},
     renderer::{
         node_compiler::compile_material_expr,
         scene_prep::prepare_scene,

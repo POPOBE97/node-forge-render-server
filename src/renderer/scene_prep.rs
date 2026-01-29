@@ -6,14 +6,14 @@
 //! - Scene validation and topological sorting
 //! - Composite layer ordering
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use rust_wgpu_fiber::ResourceName;
 use std::collections::HashMap;
 
 use crate::{
     dsl::{
-        Connection, Endpoint, GroupDSL, InputBinding, Node, SceneDSL, SourceBinding, find_node,
-        incoming_connection,
+        find_node, incoming_connection, Connection, Endpoint, GroupDSL, InputBinding, Node,
+        SceneDSL, SourceBinding,
     },
     graph::{topo_sort, upstream_reachable},
     renderer::types::{BakedValue, ValueType},

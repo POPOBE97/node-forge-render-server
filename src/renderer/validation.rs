@@ -1,6 +1,6 @@
 //! WGSL validation using the naga library.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 
 /// Validate WGSL source code using naga's parser.
 ///
