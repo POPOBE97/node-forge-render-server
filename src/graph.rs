@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 use crate::dsl::SceneDSL;
 

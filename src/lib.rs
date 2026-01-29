@@ -1,4 +1,5 @@
 pub mod app;
+pub mod color;
 pub mod dsl;
 pub mod graph;
 pub mod protocol;
@@ -6,5 +7,6 @@ pub mod renderer;
 pub mod schema;
 pub mod stream;
 pub mod ts_runtime;
+pub mod ui;
 pub mod vm;
 pub mod ws;

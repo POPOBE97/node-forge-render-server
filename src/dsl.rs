@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use serde::{Deserialize, Serialize};
 
@@ -423,8 +423,15 @@ pub fn resolve_input_f32(
     node_id: &str,
     port_id: &str,
 ) -> Result<Option<f32>> {
-    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?
-        .and_then(|v| if v.is_finite() { Some(v as f32) } else { None }))
+    Ok(
+        resolve_input_f64(scene, nodes_by_id, node_id, port_id)?.and_then(|v| {
+            if v.is_finite() {
+                Some(v as f32)
+            } else {
+                None
+            }
+        }),
+    )
 }
 
 fn f64_to_i64_floor(v: f64) -> Option<i64> {
@@ -600,6 +607,18 @@ fn resolve_output_f64_inner(
     let node = find_node(nodes_by_id, node_id)?;
 
     let computed = match node.node_type.as_str() {
+        "BoolInput" => {
+            if node
+                .params
+                .get("value")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                1.0
+            } else {
+                0.0
+            }
+        }
         "FloatInput" | "IntInput" => parse_f64(&node.params, "value").unwrap_or(0.0),
         "MathAdd" => {
             if out_port != "result" {
