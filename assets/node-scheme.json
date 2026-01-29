@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-01-25T11:51:48.939Z",
+  "generatedAt": "2026-01-29T17:49:22.916Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
   },
   "nodeTypes": [
     "Attribute",
+    "BoolInput",
     "CheckerTexture",
     "ColorInput",
     "ColorMix",
@@ -27,11 +28,11 @@
     "GeometryPrimitive",
     "GlassMaterial",
     "GradientTexture",
+    "GroupInstance",
     "GuassianBlurPass",
     "HSVAdjust",
     "ImageFile",
     "ImageTexture",
-    "GroupInstance",
     "Index",
     "InstancedGeometryEnd",
     "InstancedGeometryStart",
@@ -66,13 +67,13 @@
     "VectorMath"
   ],
   "portTypes": [
+    "ImageFile",
     "any",
     "bool",
     "color",
     "float",
     "geometry",
     "int",
-    "ImageFile",
     "material",
     "pass",
     "renderTexture",
@@ -188,6 +189,7 @@
       "vector4",
       "color",
       "texture",
+      "ImageFile",
       "renderTexture",
       "material",
       "shader",
@@ -247,6 +249,9 @@
     "texture": [
       "texture"
     ],
+    "ImageFile": [
+      "ImageFile"
+    ],
     "renderTexture": [
       "renderTexture"
     ],
@@ -275,9 +280,6 @@
       "vector3",
       "vector4",
       "color"
-    ],
-    "ImageFile": [
-      "ImageFile"
     ]
   },
   "nodes": [
@@ -303,6 +305,23 @@
       "defaultParams": {
         "name": "attribute",
         "glslType": "float"
+      }
+    },
+    {
+      "type": "BoolInput",
+      "label": "Bool Input",
+      "category": "Input",
+      "description": "Define a constant boolean value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "bool"
+        }
+      ],
+      "defaultParams": {
+        "value": false
       }
     },
     {
@@ -1143,6 +1162,17 @@
       }
     },
     {
+      "type": "GroupInstance",
+      "label": "Group",
+      "category": "Graph",
+      "description": "Reusable node group instance (subgraph)",
+      "inputs": [],
+      "outputs": [],
+      "defaultParams": {
+        "groupId": ""
+      }
+    },
+    {
       "type": "GuassianBlurPass",
       "label": "Gaussian Blur Pass",
       "category": "PipelineControl",
@@ -1235,6 +1265,24 @@
       "defaultParams": {}
     },
     {
+      "type": "ImageFile",
+      "label": "Image File",
+      "category": "Input",
+      "description": "Embed a single image file (base64 data URL) into the scene",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "image",
+          "name": "Image",
+          "type": "ImageFile"
+        }
+      ],
+      "defaultParams": {
+        "dataUrl": "",
+        "path": ""
+      }
+    },
+    {
       "type": "ImageTexture",
       "label": "Image Texture",
       "category": "Texture",
@@ -1265,54 +1313,10 @@
       ],
       "defaultParams": {
         "path": "",
-        "dataUrl": "",
         "interpolation": "linear",
         "extension": "repeat",
         "encoderSpace": "srgb",
         "alphaMode": "straight"
-      }
-    },
-
-    {
-      "type": "ImageFile",
-      "label": "Image File",
-      "category": "Texture",
-      "description": "Provide an image file/dataUrl for texture sampling",
-      "inputs": [],
-      "outputs": [
-        {
-          "id": "image",
-          "name": "Image",
-          "type": "ImageFile"
-        }
-      ],
-      "defaultParams": {
-        "path": "",
-        "dataUrl": ""
-      }
-    },
-
-    {
-      "type": "GroupInstance",
-      "label": "Group Instance",
-      "category": "Group",
-      "description": "Instantiate a reusable group subgraph",
-      "inputs": [
-        {
-          "id": "in_0",
-          "name": "In 0",
-          "type": "any"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "out_0",
-          "name": "Out 0",
-          "type": "any"
-        }
-      ],
-      "defaultParams": {
-        "groupId": ""
       }
     },
     {
@@ -2377,7 +2381,20 @@
       "label": "Vector2 Input",
       "category": "Input",
       "description": "Define a 2D vector value",
-      "inputs": [],
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "type": "float",
+          "default": 0
+        }
+      ],
       "outputs": [
         {
           "id": "vector",
@@ -2395,7 +2412,26 @@
       "label": "Vector3 Input",
       "category": "Input",
       "description": "Define a 3D vector value",
-      "inputs": [],
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "z",
+          "name": "Z",
+          "type": "float",
+          "default": 0
+        }
+      ],
       "outputs": [
         {
           "id": "vector",
