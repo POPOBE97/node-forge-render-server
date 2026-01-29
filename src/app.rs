@@ -674,9 +674,8 @@ impl eframe::App for App {
             .memory(|mem| mem.data.get_temp::<bool>(startup_sidebar_sized_id))
             .unwrap_or(false);
         if window_mode == UiWindowMode::Sidebar && !did_startup_sidebar_size {
-            let target_width = self.window_resolution[0] as f32
-                + crate::ui::debug_sidebar::SIDEBAR_WIDTH
-                + 2.0 * OUTER_MARGIN;
+            let sidebar_w = crate::ui::debug_sidebar::sidebar_width(ctx);
+            let target_width = self.window_resolution[0] as f32 + sidebar_w + 2.0 * OUTER_MARGIN;
             let target_height = self.window_resolution[1] as f32;
             let mut target = egui::vec2(target_width, target_height);
 
@@ -686,7 +685,7 @@ impl eframe::App for App {
             }
 
             // Keep the sidebar usable while allowing some minimum render area.
-            let mut min_size = egui::vec2(crate::ui::debug_sidebar::SIDEBAR_WIDTH + 240.0, 240.0);
+            let mut min_size = egui::vec2(sidebar_w + 240.0, 240.0);
             if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
                 min_size.x = min_size.x.min(monitor_size.x);
                 min_size.y = min_size.y.min(monitor_size.y);
@@ -706,23 +705,47 @@ impl eframe::App for App {
         // to allow the canvas to take the full window.
         let animation_just_finished_opening =
             was_animating_before_update && ui_sidebar_anim.is_none() && ui_sidebar_factor >= 1.0;
-        crate::ui::debug_sidebar::show(
-            ctx,
-            ui_sidebar_factor,
-            animation_just_finished_opening,
-            |ui| {
-                tailwind_button(
-                    ui,
-                    "Canvas Only",
-                    "Toggle canvas-only layout",
-                    TailwindButtonVariant::Idle,
-                    TailwindButtonGroupPosition::Single,
-                    true,
-                )
-                .clicked()
-            },
-            toggle_canvas_only,
-        );
+
+        // Push-drawer (left): reserve space on the left and slide the sidebar content in.
+        let sidebar_full_w = crate::ui::debug_sidebar::sidebar_width(ctx);
+        let sidebar_w = sidebar_full_w * ui_sidebar_factor;
+        if sidebar_w > 0.0 {
+            egui::SidePanel::left("debug_sidebar")
+                .exact_width(sidebar_w)
+                .resizable(false)
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    let clip_rect = ui.available_rect_before_wrap();
+
+                    // Slide the *content* from off-screen left into the reserved panel.
+                    let x_offset = -sidebar_full_w * (1.0 - ui_sidebar_factor);
+                    let sidebar_rect = egui::Rect::from_min_size(
+                        clip_rect.min + egui::vec2(x_offset, 0.0),
+                        egui::vec2(sidebar_full_w, clip_rect.height()),
+                    );
+
+                    crate::ui::debug_sidebar::show_in_rect(
+                        ctx,
+                        ui,
+                        ui_sidebar_factor,
+                        animation_just_finished_opening,
+                        clip_rect,
+                        sidebar_rect,
+                        |ui| {
+                            tailwind_button(
+                                ui,
+                                "Canvas Only",
+                                "Toggle canvas-only layout",
+                                TailwindButtonVariant::Idle,
+                                TailwindButtonGroupPosition::Single,
+                                true,
+                            )
+                            .clicked()
+                        },
+                        toggle_canvas_only,
+                    );
+                });
+        }
 
         let f = egui::Frame::default()
             .fill(egui::Color32::BLACK)
