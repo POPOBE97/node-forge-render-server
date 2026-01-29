@@ -232,7 +232,16 @@ where
             map_port_type(port.port_type.as_deref())?,
         );
         glsl_params.push(format!("{} {}", expected_ty.glsl(), param_name));
-        wgsl_args.push(param_name);
+        // NOTE: naga's GLSL frontend can lower boolean function parameters to integer types
+        // in the generated WGSL, which then makes a direct `bool` argument invalid at call-site.
+        // Pass booleans as 0/1 integers to keep the generated call valid.
+        if expected_ty == ValueType::Bool {
+            // The GLSL->WGSL path can lower `bool` params to numeric types in WGSL.
+            // Pass a numeric 0/1 in the *float* domain to match the generated signature.
+            wgsl_args.push(format!("select(0.0, 1.0, {param_name})"));
+        } else {
+            wgsl_args.push(param_name);
+        }
     }
 
     let compiled = compile_glsl_snippet(GlslSnippetSpec {

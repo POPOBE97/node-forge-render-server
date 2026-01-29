@@ -38,12 +38,25 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
 
     for (i, p) in spec.params.iter().enumerate() {
         glsl_params.push(format!("{} {}", p.ty.glsl(), p.name));
+
+        // NOTE: The synthetic entrypoint exists purely to satisfy naga's GLSL frontend.
+        // Some GLSL stage IO types have extra restrictions (e.g. bool varyings, integer
+        // varyings in fragment stage requiring `flat`). Keep the entry IO valid, while
+        // preserving the *function* signature types.
+        let (entry_in_ty, forward_expr) = match p.ty {
+            // GLSL does not allow boolean stage inputs/outputs in the general case.
+            // Represent as int in the entrypoint, then convert to bool when calling.
+            ValueType::Bool => ("int", format!("({}_in != 0)", p.name)),
+            _ => (p.ty.glsl(), format!("{}_in", p.name)),
+        };
+        let needs_flat = matches!(spec.stage, GlslShaderStage::Fragment)
+            && matches!(entry_in_ty, "int" | "uint");
+        let flat = if needs_flat { "flat " } else { "" };
         entry_inputs.push(format!(
-            "layout(location={i}) in {} {}_in;",
-            p.ty.glsl(),
+            "layout(location={i}) {flat}in {entry_in_ty} {}_in;",
             p.name
         ));
-        arg_forward.push(format!("{}_in", p.name));
+        arg_forward.push(forward_expr);
     }
 
     let entry_ret = match spec.return_type {
