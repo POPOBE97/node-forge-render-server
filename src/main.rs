@@ -4,9 +4,9 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use node_forge_render_server::{app, dsl, renderer, ws};
-use rust_wgpu_fiber::eframe::{self, egui};
+use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
 #[derive(Debug, Default, Clone)]
 struct Cli {
@@ -259,7 +259,11 @@ fn resolve_file_output_path(rt: &dsl::FileRenderTarget) -> std::path::PathBuf {
         base
     } else {
         let pb = std::path::PathBuf::from(dir);
-        if pb.is_absolute() { pb } else { base.join(pb) }
+        if pb.is_absolute() {
+            pb
+        } else {
+            base.join(pb)
+        }
     };
     path.push(&rt.file_name);
     path
@@ -301,11 +305,25 @@ fn main() -> Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_resizable(false)
+            .with_resizable(true)
             .with_transparent(true)
             .with_inner_size(resolution_hint.map(|x| x as f32))
-            .with_min_inner_size(resolution_hint.map(|x| x as f32)),
+            // Keep the OS window non-resizable, but don't tie the minimum size to the scene
+            // resolution; UI mode (sidebar/canvas toggle + one-shot startup sizing) is the source
+            // of truth and may need to grow/shrink the viewport independently.
+            .with_min_inner_size(egui::vec2(240.0, 240.0)),
         renderer: eframe::Renderer::Wgpu,
+        wgpu_options: egui_wgpu::WgpuConfiguration {
+            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
+                device_descriptor: std::sync::Arc::new(|_adapter| wgpu::DeviceDescriptor {
+                    label: Some("eframe wgpu device"),
+                    required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -376,6 +394,7 @@ fn main() -> Result<()> {
                 shader_space,
                 resolution,
                 window_resolution: resolution_hint,
+                follow_scene_resolution_for_window: false,
                 output_texture_name,
                 color_attachment: None,
                 start: Instant::now(),
