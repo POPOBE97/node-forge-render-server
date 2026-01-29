@@ -304,12 +304,7 @@
       "params": {
         "uBrightness": 0,
         "uLuminanceAmount": 0,
-        "uLuminanceValues": [
-          0,
-          0,
-          0,
-          0
-        ],
+        "uLuminanceValues": [0, 0, 0, 0],
         "uSaturation": 1.4,
         "uDarker": 0,
         "uDarkerRange": {
@@ -328,12 +323,7 @@
         "uInnerColorWhite": 0,
         "uInnerColorMix": 0,
         "uColorPow": 1,
-        "uGlassColor": [
-          1,
-          1,
-          1,
-          0
-        ],
+        "uGlassColor": [1, 1, 1, 0],
         "uDirectionalLightDirection": {
           "x": 0.5,
           "y": -0.7,
@@ -364,12 +354,7 @@
         "uNoiseStrengthBig": 0,
         "uNoiseStrengthMix": 0,
         "uUseSdfTex": 0,
-        "uSdfTex": [
-          0,
-          0,
-          0,
-          0
-        ]
+        "uSdfTex": [0, 0, 0, 0]
       }
     },
     {
