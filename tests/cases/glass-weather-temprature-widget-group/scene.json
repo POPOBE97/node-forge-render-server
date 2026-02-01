@@ -2033,7 +2033,7 @@
             {
               "id": "dynamic_1769717559148_2",
               "name": "show_thumb",
-              "type": "any"
+              "type": "bool"
             }
           ],
           "outputs": [
@@ -2812,6 +2812,13 @@
                 "outputLabel": "Output"
               }
             }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "float"
+            }
           ]
         }
       ],
@@ -2857,12 +2864,12 @@
             {
               "id": "dynamic_1769716941783_1",
               "name": "src",
-              "type": "any"
+              "type": "color"
             },
             {
               "id": "dynamic_1769716946664_2",
               "name": "dst",
-              "type": "any"
+              "type": "color"
             }
           ],
           "outputs": [

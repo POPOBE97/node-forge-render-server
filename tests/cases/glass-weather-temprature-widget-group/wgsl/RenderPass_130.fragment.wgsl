@@ -75,6 +75,22 @@ fn mc_GroupInstance_135_GroupInstance_124_MathClosure_102_(uv: vec2<f32>, c: vec
     return _e19;
 }
 
+fn mc_GroupInstance_135_GroupInstance_125_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+    var uv_1: vec2<f32>;
+    var xy_1: vec2<f32>;
+    var size_1: vec2<f32>;
+    var output: vec2<f32> = vec2(0f);
+
+    uv_1 = uv;
+    xy_1 = xy;
+    size_1 = size;
+    let _e9: vec2<f32> = xy_1;
+    let _e10: vec2<f32> = size_1;
+    output = (_e9 / _e10);
+    let _e12: vec2<f32> = output;
+    return _e12;
+}
+
 fn mc_GroupInstance_135_MathClosure_104_(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var n_1: vec3<f32>;
@@ -150,40 +166,44 @@ fn mc_GroupInstance_135_MathClosure_111_(uv: vec2<f32>, t: f32, c: vec4<f32>, th
     thumb_1 = thumb;
     show_thumb_1 = show_thumb;
     let _e13: vec4<f32> = c_1;
-    let _e14: f32 = t_1;
-    r = (_e13 * _e14);
-    let _e20: f32 = thumb_1;
-    let _e21: f32 = show_thumb_1;
-    let _e24: vec4<f32> = r;
-    let _e27: f32 = thumb_1;
-    let _e28: f32 = show_thumb_1;
-    r = mix(_e24, vec4(1f), vec4((_e27 * f32(_e28))));
-    let _e33: vec4<f32> = r;
-    output = _e33;
-    let _e34: vec4<f32> = output;
-    return _e34;
+    let _e18: f32 = t_1;
+    let _e19: f32 = show_thumb_1;
+    r = (_e13 * mix(1f, _e18, _e19));
+    let _e26: f32 = thumb_1;
+    let _e27: f32 = show_thumb_1;
+    let _e29: vec4<f32> = r;
+    let _e32: f32 = thumb_1;
+    let _e33: f32 = show_thumb_1;
+    r = mix(_e29, vec4(1f), vec4((_e32 * _e33)));
+    let _e37: vec4<f32> = r;
+    output = _e37;
+    let _e38: vec4<f32> = output;
+    return _e38;
 }
 
-fn mc_GroupInstance_135_MathClosure_115_(uv: vec2<f32>, sdf: f32) -> f32 {
+fn mc_GroupInstance_135_MathClosure_115_(uv: vec2<f32>, sdf: f32, show_thumb: f32) -> f32 {
     var uv_1: vec2<f32>;
     var sdf_1: f32;
+    var show_thumb_1: f32;
     var output: f32 = 0f;
     var r: f32;
 
     uv_1 = uv;
     sdf_1 = sdf;
-    let _e7: f32 = sdf_1;
-    let _e11: f32 = sdf_1;
-    r = max((_e11 + 22f), 0f);
-    let _e17: f32 = r;
-    r = (_e17 / 42f);
-    let _e20: f32 = r;
+    show_thumb_1 = show_thumb;
+    let _e9: f32 = sdf_1;
+    let _e13: f32 = sdf_1;
+    r = max((_e13 + 22f), 0f);
+    let _e19: f32 = r;
+    r = (_e19 / 42f);
     let _e22: f32 = r;
     let _e24: f32 = r;
     let _e26: f32 = r;
-    output = f32(exp((-(_e24) * _e26)));
-    let _e30: f32 = output;
-    return _e30;
+    let _e28: f32 = r;
+    let _e32: f32 = show_thumb_1;
+    output = (f32(exp((-(_e26) * _e28))) * _e32);
+    let _e34: f32 = output;
+    return _e34;
 }
 
 fn mc_GroupInstance_135_MathClosure_63_(uv: vec2<f32>, n: vec3<f32>) -> f32 {
@@ -245,9 +265,9 @@ fn mc_GroupInstance_135_MathClosure_87_(uv: vec2<f32>, c: vec4<f32>, f: f32) -> 
     let _e9: vec4<f32> = c_1;
     let _e10: vec3<f32> = _e9.xyz;
     let _e11: vec4<f32> = c_1;
-    output = vec4<f32>(_e10.x, _e10.y, _e10.z, _e11.w);
-    let _e17: vec4<f32> = output;
-    return _e17;
+    output = vec4<f32>(_e10.x, _e10.y, _e10.z, (_e11.w * 0.05f));
+    let _e19: vec4<f32> = output;
+    return _e19;
 }
 
 fn mc_GroupInstance_135_MathClosure_88_(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<f32> {
@@ -277,21 +297,6 @@ fn mc_GroupInstance_135_MathClosure_91_(uv: vec2<f32>, x: f32) -> f32 {
     output = (1f - _e8);
     let _e10: f32 = output;
     return _e10;
-}
-
-fn mc_GroupInstance_135_MathClosure_94_(uv: vec2<f32>, c_edge: vec4<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var c_edge_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
-
-    uv_1 = uv;
-    c_edge_1 = c_edge;
-    let _e8: vec4<f32> = c_edge_1;
-    c_edge_1.w = (_e8.w * 0.05f);
-    let _e12: vec4<f32> = c_edge_1;
-    output = _e12;
-    let _e13: vec4<f32> = output;
-    return _e13;
 }
 
 fn mc_GroupInstance_135_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4<f32>, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
@@ -371,22 +376,6 @@ fn mc_GroupInstance_135_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32
     output = _e146;
     let _e147: vec4<f32> = output;
     return _e147;
-}
-
-fn mc_GroupInstance_135_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var xy_1: vec2<f32>;
-    var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_1 = uv;
-    xy_1 = xy;
-    size_1 = size;
-    let _e9: vec2<f32> = xy_1;
-    let _e10: vec2<f32> = size_1;
-    output = (_e9 / _e10);
-    let _e12: vec2<f32> = output;
-    return _e12;
 }
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
@@ -513,13 +502,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_135_MathClosure_87_(in.uv, c, f);
         mc_GroupInstance_135_MathClosure_87_out = output;
     }
-    var mc_GroupInstance_135_MathClosure_94_out: vec4f;
-    {
-        let c_edge = mc_GroupInstance_135_MathClosure_87_out;
-        var output: vec4f;
-        output = mc_GroupInstance_135_MathClosure_94_(in.uv, c_edge);
-        mc_GroupInstance_135_MathClosure_94_out = output;
-    }
     var mc_GroupInstance_135_MathClosure_108_out: vec2f;
     {
         let t = 0.5;
@@ -528,18 +510,18 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_135_MathClosure_108_(in.uv, t, size);
         mc_GroupInstance_135_MathClosure_108_out = output;
     }
-    var mc_GroupInstance_135_MathClosure_99_out: vec2f;
+    var mc_GroupInstance_135_GroupInstance_125_MathClosure_99_out: vec2f;
     {
         let xy = in.local_px;
         let size = in.geo_size_px;
         var output: vec2f;
-        output = mc_GroupInstance_135_MathClosure_99_(in.uv, xy, size);
-        mc_GroupInstance_135_MathClosure_99_out = output;
+        output = mc_GroupInstance_135_GroupInstance_125_MathClosure_99_(in.uv, xy, size);
+        mc_GroupInstance_135_GroupInstance_125_MathClosure_99_out = output;
     }
     var mc_GroupInstance_135_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_GroupInstance_135_MathClosure_108_out)) - 16.5));
-        let c = textureSample(img_tex_GroupInstance_135_ImageTexture_76, img_samp_GroupInstance_135_ImageTexture_76, (mc_GroupInstance_135_MathClosure_99_out));
+        let c = textureSample(img_tex_GroupInstance_135_ImageTexture_76, img_samp_GroupInstance_135_ImageTexture_76, (mc_GroupInstance_135_GroupInstance_125_MathClosure_99_out));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_GroupInstance_135_MathClosure_108_out)) - 16.5));
         let show_thumb = false;
         var output: vec4f;
@@ -564,20 +546,21 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_GroupInstance_135_MathClosure_115_out: f32;
     {
         let sdf = (length((in.local_px - mc_GroupInstance_135_MathClosure_108_out)) - 16.5);
+        let show_thumb = false;
         var output: f32;
-        output = mc_GroupInstance_135_MathClosure_115_(in.uv, sdf);
+        output = mc_GroupInstance_135_MathClosure_115_(in.uv, sdf, select(0.0, 1.0, show_thumb));
         mc_GroupInstance_135_MathClosure_115_out = output;
     }
     var mc_GroupInstance_135_GroupInstance_123_MathClosure_122_out: f32;
     {
-        let color = mc_GroupInstance_135_MathClosure_94_out;
+        let color = mc_GroupInstance_135_MathClosure_87_out;
         var output: f32;
         output = mc_GroupInstance_135_GroupInstance_123_MathClosure_122_(in.uv, color);
         mc_GroupInstance_135_GroupInstance_123_MathClosure_122_out = output;
     }
     var mc_GroupInstance_135_MathClosure_96_out: vec4f;
     {
-        let c_edge = mc_GroupInstance_135_MathClosure_94_out;
+        let c_edge = mc_GroupInstance_135_MathClosure_87_out;
         let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)));
         let c_ui = mc_GroupInstance_135_GroupInstance_124_MathClosure_102_out;
         let f = smoothstep(0.0, 0.015, mc_GroupInstance_135_MathClosure_91_out);
