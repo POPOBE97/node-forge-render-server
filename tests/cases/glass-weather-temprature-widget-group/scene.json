@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-29T20:16:16.284Z",
-    "modified": "2026-01-29T20:16:16.284Z"
+    "created": "2026-02-01T21:16:31.410Z",
+    "modified": "2026-02-01T21:16:31.410Z"
   },
   "nodes": [
     {
@@ -2022,7 +2022,7 @@
           "width": 261,
           "label": "Math Closure",
           "params": {
-            "source": "float r = max(sdf+22.0, 0.0);\nr /= 42.0;\noutput = float(exp(-r*r)) * show_thumb;"
+            "source": "float r = max(sdf+22.0, 0.0);\nr /= 42.0;\noutput = float(exp(-r*r)) * (1.0-show_thumb);"
           },
           "inputs": [
             {
@@ -2654,6 +2654,13 @@
       ],
       "inputBindings": [
         {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "MathClosure_115",
+            "portId": "dynamic_1769717559148_2"
+          }
+        },
+        {
           "groupPortId": "in_0",
           "to": {
             "nodeId": "ImageTexture_76",
@@ -2665,13 +2672,6 @@
           "to": {
             "nodeId": "MathClosure_108",
             "portId": "dynamic_1769588965657_1"
-          }
-        },
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_111",
-            "portId": "dynamic_1769716330120_4"
           }
         }
       ],
