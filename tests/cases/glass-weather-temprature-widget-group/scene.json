@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-01T21:16:31.410Z",
-    "modified": "2026-02-01T21:16:31.410Z"
+    "created": "2026-02-02T17:10:01.269Z",
+    "modified": "2026-02-02T17:10:01.269Z"
   },
   "nodes": [
     {
@@ -129,9 +129,9 @@
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -462,9 +462,9 @@
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -481,9 +481,9 @@
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -1163,8 +1163,8 @@
           "id": "Remap_64",
           "type": "Remap",
           "position": {
-            "x": 560,
-            "y": 1320
+            "x": 540,
+            "y": 1300
           },
           "width": 160,
           "label": "Remap",
@@ -1215,19 +1215,9 @@
           "width": 243,
           "label": "Math Closure",
           "params": {
-            "source": "vec3 o = refract(i, n, ior);\nvec2 offset = xy + o.xy * depth;\noutput = offset.xy / size;"
+            "source": "vec2 offset = xy + refract_offset.xy * depth;\noutput = offset.xy / size;"
           },
           "inputs": [
-            {
-              "id": "dynamic_1769531533299_1",
-              "name": "n",
-              "type": "vector3"
-            },
-            {
-              "id": "dynamic_1769531554550_2",
-              "name": "i",
-              "type": "vector3"
-            },
             {
               "id": "dynamic_1769531607951_3",
               "name": "xy",
@@ -1239,14 +1229,14 @@
               "type": "vector2"
             },
             {
-              "id": "dynamic_1769531817445_6",
-              "name": "ior",
-              "type": "float"
-            },
-            {
               "id": "dynamic_1769580490915_7",
               "name": "depth",
               "type": "float"
+            },
+            {
+              "id": "dynamic_1770038048242_7",
+              "name": "refract_offset",
+              "type": "vector3"
             }
           ],
           "outputs": [
@@ -1257,28 +1247,6 @@
             }
           ],
           "inputBindings": [
-            {
-              "portId": "dynamic_1769531533299_1",
-              "label": "n",
-              "variableName": "n",
-              "type": "vector3",
-              "sourceBinding": {
-                "nodeId": "Sdf2DBevel_61",
-                "outputPortId": "normal",
-                "outputLabel": "Normal"
-              }
-            },
-            {
-              "portId": "dynamic_1769531554550_2",
-              "label": "i",
-              "variableName": "i",
-              "type": "vector3",
-              "sourceBinding": {
-                "nodeId": "Vector3Input_80",
-                "outputPortId": "vector",
-                "outputLabel": "Vector"
-              }
-            },
             {
               "portId": "dynamic_1769531607951_3",
               "label": "xy",
@@ -1302,17 +1270,6 @@
               }
             },
             {
-              "portId": "dynamic_1769531817445_6",
-              "label": "ior",
-              "variableName": "ior",
-              "type": "float",
-              "sourceBinding": {
-                "nodeId": "FloatInput_84",
-                "outputPortId": "value",
-                "outputLabel": "Value"
-              }
-            },
-            {
               "portId": "dynamic_1769580490915_7",
               "label": "depth",
               "variableName": "depth",
@@ -1321,6 +1278,17 @@
                 "nodeId": "Sdf2DBevel_61",
                 "outputPortId": "depth",
                 "outputLabel": "Depth"
+              }
+            },
+            {
+              "portId": "dynamic_1770038048242_7",
+              "label": "refract_offset",
+              "variableName": "refract_offset",
+              "type": "vector3",
+              "sourceBinding": {
+                "nodeId": "Refract_142",
+                "outputPortId": "offset",
+                "outputLabel": "Offset"
               }
             }
           ]
@@ -1394,7 +1362,7 @@
           "id": "PassTexture_86",
           "type": "PassTexture",
           "position": {
-            "x": 1520,
+            "x": 1500,
             "y": 400
           },
           "width": 160,
@@ -1405,7 +1373,7 @@
           "id": "MathClosure_87",
           "type": "MathClosure",
           "position": {
-            "x": 1740,
+            "x": 1680,
             "y": 400
           },
           "width": 160,
@@ -1462,7 +1430,7 @@
           "type": "MathClosure",
           "position": {
             "x": 1320,
-            "y": 560
+            "y": 620
           },
           "width": 160,
           "label": "Math Closure",
@@ -1597,13 +1565,13 @@
           "id": "MathClosure_96",
           "type": "MathClosure",
           "position": {
-            "x": 2340,
-            "y": 60
+            "x": 2220,
+            "y": 160
           },
           "width": 300,
-          "label": "Math Closure",
+          "label": "Edge Color",
           "params": {
-            "source": "c_edge = vec4(c_edge.rgb, c_edge.a * e * f);\n\nc_edge.rgb = mix(vec3(1.0), c_edge.rgb, lumin_edge);\n\nc_edge.a += (mix(0.08, 0.22, lumin_edge) + l * f * 0.6 + selection * f * 0.2) * e;\n\nc_edge.rgb = mix(c_edge.rgb, vec3(1.0), l * f + selection * f);\n\n\nfloat alpha_r = c_edge.a + c_ui.a * (1.0 - c_edge.a);\n\nvec3 color_r = (c_edge.rgb * c_edge.a + c_ui.rgb * c_ui.a * (1.0 - c_edge.a)) / alpha_r;\n\nvec4 r = vec4(color_r, alpha_r);\n\noutput = r;"
+            "source": "c_edge.rgb = mix(vec3(1.0), c_edge.rgb, lumin_edge);\n\nc_edge.a *= e * f;\n\nc_edge.a += (mix(0.08, 0.22, lumin_edge) + l * f * 0.6 + selection * f * 0.2) * e;\n\nc_edge.rgb = mix(c_edge.rgb, vec3(1.0), l * f + selection * f);\n\nc_edge.rgb *= c_edge.a;\n\noutput = c_edge; "
           },
           "inputs": [
             {
@@ -1615,11 +1583,6 @@
               "id": "dynamic_1769532264736_2",
               "name": "e",
               "type": "float"
-            },
-            {
-              "id": "dynamic_1769582884669_3",
-              "name": "c_ui",
-              "type": "vector4"
             },
             {
               "id": "dynamic_1769582939686_4",
@@ -1656,7 +1619,7 @@
               "variableName": "c_edge",
               "type": "vector4",
               "sourceBinding": {
-                "nodeId": "MathClosure_94",
+                "nodeId": "MathClosure_87",
                 "outputPortId": "output",
                 "outputLabel": "Output"
               }
@@ -1670,17 +1633,6 @@
                 "nodeId": "Remap_64",
                 "outputPortId": "result",
                 "outputLabel": "Result"
-              }
-            },
-            {
-              "portId": "dynamic_1769582884669_3",
-              "label": "c_ui",
-              "variableName": "c_ui",
-              "type": "vector4",
-              "sourceBinding": {
-                "nodeId": "GroupInstance_124",
-                "outputPortId": "out_0",
-                "outputLabel": "out_0"
               }
             },
             {
@@ -1819,7 +1771,7 @@
           "type": "MathClosure",
           "position": {
             "x": 460,
-            "y": -180
+            "y": -200
           },
           "width": 255,
           "label": "Math Closure",
@@ -1874,7 +1826,7 @@
           "id": "MathClosure_111",
           "type": "MathClosure",
           "position": {
-            "x": 1300,
+            "x": 1280,
             "y": 0
           },
           "width": 201,
@@ -2020,9 +1972,9 @@
             "y": -220
           },
           "width": 261,
-          "label": "Math Closure",
+          "label": "Edge Highlight",
           "params": {
-            "source": "float r = max(sdf+22.0, 0.0);\nr /= 42.0;\noutput = float(exp(-r*r)) * (1.0-show_thumb);"
+            "source": "float r = max(sdf+22.0, 0.0);\nr /= 42.0;\noutput = float(exp(-r*r)) * show_thumb;"
           },
           "inputs": [
             {
@@ -2080,81 +2032,6 @@
           "params": {}
         },
         {
-          "id": "GroupInstance_123",
-          "type": "GroupInstance",
-          "position": {
-            "x": 1940,
-            "y": 400
-          },
-          "width": 160,
-          "label": "Group 4",
-          "params": {
-            "groupId": "Lumin"
-          },
-          "inputs": [
-            {
-              "id": "in_0",
-              "name": "color",
-              "type": "vector4"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "out_0",
-              "name": "Output",
-              "type": "float"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "in_0",
-              "label": "color",
-              "variableName": "color",
-              "type": "vector4",
-              "sourceBinding": {
-                "nodeId": "MathClosure_87",
-                "outputPortId": "output",
-                "outputLabel": "Output"
-              }
-            }
-          ]
-        },
-        {
-          "id": "GroupInstance_124",
-          "type": "GroupInstance",
-          "position": {
-            "x": 1520,
-            "y": 0
-          },
-          "width": 160,
-          "label": "Group",
-          "params": {
-            "groupId": "Un Premultiply"
-          },
-          "inputs": [
-            {
-              "id": "in_0",
-              "name": "c",
-              "type": "color"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "out_0",
-              "name": "Output",
-              "type": "vector4"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "in_0",
-              "label": "c",
-              "variableName": "c",
-              "type": "color"
-            }
-          ]
-        },
-        {
           "id": "GroupInstance_125",
           "type": "GroupInstance",
           "position": {
@@ -2175,6 +2052,56 @@
             }
           ],
           "inputBindings": []
+        },
+        {
+          "id": "Luminance_142",
+          "type": "Luminance",
+          "position": {
+            "x": 1940,
+            "y": 480
+          },
+          "width": 160,
+          "label": "Luminance",
+          "params": {
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "Refract_142",
+          "type": "Refract",
+          "position": {
+            "x": 840,
+            "y": 620
+          },
+          "width": 160,
+          "label": "Refract",
+          "params": {
+            "ior": 1.45
+          }
+        },
+        {
+          "id": "ColorMix_142",
+          "type": "ColorMix",
+          "position": {
+            "x": 2560,
+            "y": 160
+          },
+          "width": 160,
+          "label": "Blend Color",
+          "params": {
+            "mode": "normal",
+            "color0": [
+              1,
+              0,
+              0,
+              1
+            ]
+          }
         }
       ],
       "connections": [
@@ -2267,28 +2194,6 @@
           }
         },
         {
-          "id": "edge_167",
-          "from": {
-            "nodeId": "Sdf2DBevel_61",
-            "portId": "normal"
-          },
-          "to": {
-            "nodeId": "MathClosure_79",
-            "portId": "dynamic_1769531533299_1"
-          }
-        },
-        {
-          "id": "edge_168",
-          "from": {
-            "nodeId": "Vector3Input_80",
-            "portId": "vector"
-          },
-          "to": {
-            "nodeId": "MathClosure_79",
-            "portId": "dynamic_1769531554550_2"
-          }
-        },
-        {
           "id": "edge_169",
           "from": {
             "nodeId": "GeoFragcoord_81",
@@ -2308,17 +2213,6 @@
           "to": {
             "nodeId": "MathClosure_79",
             "portId": "dynamic_1769531665544_5"
-          }
-        },
-        {
-          "id": "edge_174",
-          "from": {
-            "nodeId": "FloatInput_84",
-            "portId": "value"
-          },
-          "to": {
-            "nodeId": "MathClosure_79",
-            "portId": "dynamic_1769531817445_6"
           }
         },
         {
@@ -2575,17 +2469,6 @@
           }
         },
         {
-          "id": "edge_310",
-          "from": {
-            "nodeId": "GroupInstance_123",
-            "portId": "out_0"
-          },
-          "to": {
-            "nodeId": "MathClosure_96",
-            "portId": "dynamic_1769715255019_7"
-          }
-        },
-        {
           "id": "edge_311",
           "from": {
             "nodeId": "PassTexture_86",
@@ -2594,28 +2477,6 @@
           "to": {
             "nodeId": "MathClosure_87",
             "portId": "dynamic_1769531971718_1"
-          }
-        },
-        {
-          "id": "edge_312",
-          "from": {
-            "nodeId": "MathClosure_111",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "GroupInstance_124",
-            "portId": "in_0"
-          }
-        },
-        {
-          "id": "edge_313",
-          "from": {
-            "nodeId": "GroupInstance_124",
-            "portId": "out_0"
-          },
-          "to": {
-            "nodeId": "MathClosure_96",
-            "portId": "dynamic_1769582884669_3"
           }
         },
         {
@@ -2630,17 +2491,6 @@
           }
         },
         {
-          "id": "edge_315",
-          "from": {
-            "nodeId": "MathClosure_87",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "GroupInstance_123",
-            "portId": "in_0"
-          }
-        },
-        {
           "id": "edge_318",
           "from": {
             "nodeId": "GroupInstance_125",
@@ -2650,16 +2500,86 @@
             "nodeId": "ImageTexture_76",
             "portId": "uv"
           }
+        },
+        {
+          "id": "edge_321",
+          "from": {
+            "nodeId": "Luminance_142",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "MathClosure_96",
+            "portId": "dynamic_1769715255019_7"
+          }
+        },
+        {
+          "id": "edge_323",
+          "from": {
+            "nodeId": "Sdf2DBevel_61",
+            "portId": "normal"
+          },
+          "to": {
+            "nodeId": "Refract_142",
+            "portId": "normal"
+          }
+        },
+        {
+          "id": "edge_324",
+          "from": {
+            "nodeId": "Vector3Input_80",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "Refract_142",
+            "portId": "incident"
+          }
+        },
+        {
+          "id": "edge_325",
+          "from": {
+            "nodeId": "Refract_142",
+            "portId": "offset"
+          },
+          "to": {
+            "nodeId": "MathClosure_79",
+            "portId": "dynamic_1770038048242_7"
+          }
+        },
+        {
+          "id": "edge_328",
+          "from": {
+            "nodeId": "MathClosure_96",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ColorMix_142",
+            "portId": "color0"
+          }
+        },
+        {
+          "id": "edge_329",
+          "from": {
+            "nodeId": "MathClosure_111",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ColorMix_142",
+            "portId": "color1"
+          }
+        },
+        {
+          "id": "edge_330",
+          "from": {
+            "nodeId": "MathClosure_87",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "Luminance_142",
+            "portId": "color"
+          }
         }
       ],
       "inputBindings": [
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_115",
-            "portId": "dynamic_1769717559148_2"
-          }
-        },
         {
           "groupPortId": "in_0",
           "to": {
@@ -2673,14 +2593,28 @@
             "nodeId": "MathClosure_108",
             "portId": "dynamic_1769588965657_1"
           }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "MathClosure_111",
+            "portId": "dynamic_1769716330120_4"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "MathClosure_115",
+            "portId": "dynamic_1769717559148_2"
+          }
         }
       ],
       "outputBindings": [
         {
           "groupPortId": "out_0",
           "from": {
-            "nodeId": "MathClosure_96",
-            "portId": "output"
+            "nodeId": "ColorMix_142",
+            "portId": "color"
           }
         }
       ]
@@ -2759,84 +2693,6 @@
           "groupPortId": "out_0",
           "from": {
             "nodeId": "MathClosure_102",
-            "portId": "output"
-          }
-        }
-      ]
-    },
-    {
-      "id": "Lumin",
-      "name": "Group 4",
-      "inputs": [
-        {
-          "id": "in_0",
-          "name": "color",
-          "type": "vector4"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "out_0",
-          "name": "Output",
-          "type": "float"
-        }
-      ],
-      "nodes": [
-        {
-          "id": "MathClosure_122",
-          "type": "MathClosure",
-          "position": {
-            "x": 0,
-            "y": 0
-          },
-          "label": "Math Closure",
-          "params": {
-            "source": "output = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));"
-          },
-          "inputs": [
-            {
-              "id": "dynamic_1769715238798_1",
-              "name": "color",
-              "type": "vector4"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1769715238798_1",
-              "label": "color",
-              "variableName": "color",
-              "type": "vector4",
-              "sourceBinding": {
-                "nodeId": "MathClosure_94",
-                "outputPortId": "output",
-                "outputLabel": "Output"
-              }
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "float"
-            }
-          ]
-        }
-      ],
-      "connections": [],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "MathClosure_122",
-            "portId": "dynamic_1769715238798_1"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_122",
             "portId": "output"
           }
         }

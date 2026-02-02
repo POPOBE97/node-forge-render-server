@@ -26,7 +26,6 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         // No committed baseline yet; validate render succeeds + dimensions only.
         "2dsdf-bevel" => None,
         "glass-weather-temprature-widget" => None,
-        "glass-weather-temprature-widget-group" => None,
         _ => Some("baseline.png"),
     }
 }

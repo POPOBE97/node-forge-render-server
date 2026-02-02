@@ -45,34 +45,213 @@ var pass_samp_GroupInstance_135_GuassianBlurPass_85: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_GroupInstance_135_GroupInstance_123_MathClosure_122_(uv: vec2<f32>, color: vec4<f32>) -> f32 {
-    var uv_1: vec2<f32>;
-    var color_1: vec4<f32>;
-    var output: f32 = 0f;
 
-    uv_1 = uv;
-    color_1 = color;
-    let _e7: vec4<f32> = color_1;
-    let _e13: vec4<f32> = color_1;
-    output = dot(_e13.xyz, vec3<f32>(0.2126f, 0.7152f, 0.0722f));
-    let _e20: f32 = output;
-    return _e20;
+// ---- ColorMix (Blend Color) helpers (generated) ----
+
+fn blendColorBurnComponent(src: vec2f, dst: vec2f) -> f32 {
+    let t = select(0.0, dst.y, dst.y == dst.x);
+    let d = select(
+        t,
+        dst.y - min(dst.y, (dst.y - dst.x) * src.y / (src.x + 0.001)),
+        abs(src.x) > 0.0,
+    );
+    return (d * src.y + src.x * (1.0 - dst.y)) + dst.x * (1.0 - src.y);
 }
 
-fn mc_GroupInstance_135_GroupInstance_124_MathClosure_102_(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var c_1: vec4<f32>;
-    var output: vec4<f32> = vec4(0f);
+fn blendColorDodgeComponent(src: vec2f, dst: vec2f) -> f32 {
+    let dxScale = select(1.0, 0.0, dst.x == 0.0);
+    let delta = dxScale * min(
+        dst.y,
+        select(dst.y, (dst.x * src.y) / ((src.y - src.x) + 0.001), abs(src.y - src.x) > 0.0),
+    );
+    return (delta * src.y + src.x * (1.0 - dst.y)) + dst.x * (1.0 - src.y);
+}
 
-    uv_1 = uv;
-    c_1 = c;
-    let _e7: vec4<f32> = c_1;
-    let _e9: vec4<f32> = c_1;
-    let _e12: vec3<f32> = (_e7.xyz / vec3(_e9.w));
-    let _e13: vec4<f32> = c_1;
-    output = vec4<f32>(_e12.x, _e12.y, _e12.z, _e13.w);
-    let _e19: vec4<f32> = output;
-    return _e19;
+fn blendOverlayComponent(src: vec2f, dst: vec2f) -> f32 {
+    return select(
+        src.y * dst.y - (2.0 * (dst.y - dst.x)) * (src.y - src.x),
+        (2.0 * src.x) * dst.x,
+        2.0 * dst.x <= dst.y,
+    );
+}
+
+fn blendSoftLightComponent(src: vec2f, dst: vec2f) -> f32 {
+    let EPSILON = 0.0;
+
+    if (2.0 * src.x <= src.y) {
+        return (((dst.x * dst.x) * (src.y - 2.0 * src.x)) / (dst.y + EPSILON) +
+            (1.0 - dst.y) * src.x) +
+            dst.x * ((-src.y + 2.0 * src.x) + 1.0);
+    } else if (4.0 * dst.x <= dst.y) {
+        let dSqd = dst.x * dst.x;
+        let dCub = dSqd * dst.x;
+        let daSqd = dst.y * dst.y;
+        let daCub = daSqd * dst.y;
+
+        return (((daSqd * (src.x - dst.x * ((3.0 * src.y - 6.0 * src.x) - 1.0)) +
+            ((12.0 * dst.y) * dSqd) * (src.y - 2.0 * src.x)) -
+            (16.0 * dCub) * (src.y - 2.0 * src.x)) -
+            daCub * src.x) / (daSqd + EPSILON);
+    } else {
+        return ((dst.x * ((src.y - 2.0 * src.x) + 1.0) + src.x) -
+            sqrt(dst.y * dst.x) * (src.y - 2.0 * src.x)) -
+            dst.y * src.x;
+    }
+}
+
+fn blendColorSaturation(color: vec3f) -> f32 {
+    return max(max(color.x, color.y), color.z) - min(min(color.x, color.y), color.z);
+}
+
+fn blendHSLColor(flipSat: vec2f, src: vec4f, dst: vec4f) -> vec4f {
+    let EPSILON = 0.0;
+    let MIN_NORMAL_HALF = 6.10351562e-05;
+
+    let alpha = dst.a * src.a;
+    let sda = src.rgb * dst.a;
+    let dsa = dst.rgb * src.a;
+
+    let flip_x = flipSat.x != 0.0;
+    let flip_y = flipSat.y != 0.0;
+
+    var l = select(sda, dsa, flip_x);
+    var r = select(dsa, sda, flip_x);
+
+    if (flip_y) {
+        let mn = min(min(l.x, l.y), l.z);
+        let mx = max(max(l.x, l.y), l.z);
+        l = select(vec3f(0.0), ((l - mn) * blendColorSaturation(r)) / (mx - mn), mx > mn);
+        r = dsa;
+    }
+
+    let lum = dot(vec3f(0.3, 0.59, 0.11), r);
+    var result = (lum - dot(vec3f(0.3, 0.59, 0.11), l)) + l;
+
+    let minComp = min(min(result.x, result.y), result.z);
+    let maxComp = max(max(result.x, result.y), result.z);
+
+    if (minComp < 0.0 && lum != minComp) {
+        result = lum + (result - lum) * (lum / ((lum - minComp + MIN_NORMAL_HALF) + EPSILON));
+    }
+    if (maxComp > alpha && maxComp != lum) {
+        result = lum + ((result - lum) * (alpha - lum)) / ((maxComp - lum + MIN_NORMAL_HALF) + EPSILON);
+    }
+
+    return vec4f(
+        ((result + dst.rgb) - dsa + src.rgb) - sda,
+        src.a + dst.a - alpha,
+    );
+}
+
+fn blendNormal(src: vec4f, dst: vec4f) -> vec4f {
+    let c = src.rgb + dst.rgb * (1.0 - src.a);
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendDarken(src: vec4f, dst: vec4f) -> vec4f {
+    let c = src.rgb + dst.rgb - max(src.rgb * dst.a, dst.rgb * src.a);
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendMultiply(src: vec4f, dst: vec4f) -> vec4f {
+    return src * (1.0 - dst.a) + dst * (1.0 - src.a) + src * dst;
+}
+
+fn blendPlusDarker(src: vec4f, dst: vec4f) -> vec4f {
+    let a = src.a + (1.0 - src.a) * dst.a;
+    let color = max(vec3f(0.0), a - (dst.a - dst.rgb) - (src.a - src.rgb));
+    return vec4f(color, a);
+}
+
+fn blendColorBurn(src: vec4f, dst: vec4f) -> vec4f {
+    let c = vec3f(
+        blendColorBurnComponent(src.ra, dst.ra),
+        blendColorBurnComponent(src.ga, dst.ga),
+        blendColorBurnComponent(src.ba, dst.ba),
+    );
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendLighten(src: vec4f, dst: vec4f) -> vec4f {
+    let c = src.rgb + dst.rgb - min(src.rgb * dst.a, dst.rgb * src.a);
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendScreen(src: vec4f, dst: vec4f) -> vec4f {
+    return vec4f(1.0 - (1.0 - src.rgb) * (1.0 - dst.rgb), src.a + dst.a * (1.0 - src.a));
+}
+
+fn blendPlusLighter(src: vec4f, dst: vec4f) -> vec4f {
+    let color = min(src.rgb + dst.rgb, vec3f(1.0));
+    let alpha = src.a + (1.0 - src.a) * dst.a;
+    return vec4f(color, alpha);
+}
+
+fn blendColorDodge(src: vec4f, dst: vec4f) -> vec4f {
+    let c = vec3f(
+        blendColorDodgeComponent(src.ra, dst.ra),
+        blendColorDodgeComponent(src.ga, dst.ga),
+        blendColorDodgeComponent(src.ba, dst.ba),
+    );
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendOverlay(src: vec4f, dst: vec4f) -> vec4f {
+    var c = vec3f(
+        blendOverlayComponent(src.ra, dst.ra),
+        blendOverlayComponent(src.ga, dst.ga),
+        blendOverlayComponent(src.ba, dst.ba),
+    );
+    let a = src.a + dst.a * (1.0 - src.a);
+    c += dst.rgb * (1.0 - src.a) + src.rgb * (1.0 - dst.a);
+    return vec4f(c, a);
+}
+
+fn blendSoftLight(src: vec4f, dst: vec4f) -> vec4f {
+    let c = vec3f(
+        blendSoftLightComponent(src.ra, dst.ra),
+        blendSoftLightComponent(src.ga, dst.ga),
+        blendSoftLightComponent(src.ba, dst.ba),
+    );
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendHardLight(src: vec4f, dst: vec4f) -> vec4f {
+    return blendOverlay(dst, src);
+}
+
+fn blendDifference(src: vec4f, dst: vec4f) -> vec4f {
+    let c = src.rgb + dst.rgb - 2.0 * min(src.rgb * dst.a, dst.rgb * src.a);
+    let a = src.a + dst.a * (1.0 - src.a);
+    return vec4f(c, a);
+}
+
+fn blendExclusion(src: vec4f, dst: vec4f) -> vec4f {
+    let c = (dst.rgb + src.rgb) - (2.0 * dst.rgb * src.rgb);
+    let a = src.a + (1.0 - src.a) * dst.a;
+    return vec4f(c, a);
+}
+
+fn blendHue(src: vec4f, dst: vec4f) -> vec4f {
+    return blendHSLColor(vec2f(0.0, 1.0), src, dst);
+}
+
+fn blendSaturation(src: vec4f, dst: vec4f) -> vec4f {
+    return blendHSLColor(vec2f(1.0), src, dst);
+}
+
+fn blendColor(src: vec4f, dst: vec4f) -> vec4f {
+    return blendHSLColor(vec2f(0.0), src, dst);
+}
+
+fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
+    return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
 fn mc_GroupInstance_135_GroupInstance_125_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
@@ -219,38 +398,29 @@ fn mc_GroupInstance_135_MathClosure_63_(uv: vec2<f32>, n: vec3<f32>) -> f32 {
     return _e18;
 }
 
-fn mc_GroupInstance_135_MathClosure_79_(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>, xy: vec2<f32>, size: vec2<f32>, ior: f32, depth: f32) -> vec2<f32> {
+fn mc_GroupInstance_135_MathClosure_79_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, refract_offset: vec3<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
-    var n_1: vec3<f32>;
-    var i_1: vec3<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
-    var ior_1: f32;
     var depth_1: f32;
+    var refract_offset_1: vec3<f32>;
     var output: vec2<f32> = vec2(0f);
-    var o: vec3<f32>;
     var offset: vec2<f32>;
 
     uv_1 = uv;
-    n_1 = n;
-    i_1 = i;
     xy_1 = xy;
     size_1 = size;
-    ior_1 = ior;
     depth_1 = depth;
-    let _e20: vec3<f32> = i_1;
-    let _e21: vec3<f32> = n_1;
-    let _e22: f32 = ior_1;
-    o = refract(_e20, _e21, _e22);
-    let _e25: vec2<f32> = xy_1;
-    let _e26: vec3<f32> = o;
-    let _e28: f32 = depth_1;
-    offset = (_e25 + (_e26.xy * _e28));
-    let _e32: vec2<f32> = offset;
-    let _e34: vec2<f32> = size_1;
-    output = (_e32.xy / _e34);
-    let _e36: vec2<f32> = output;
-    return _e36;
+    refract_offset_1 = refract_offset;
+    let _e13: vec2<f32> = xy_1;
+    let _e14: vec3<f32> = refract_offset_1;
+    let _e16: f32 = depth_1;
+    offset = (_e13 + (_e14.xy * _e16));
+    let _e20: vec2<f32> = offset;
+    let _e22: vec2<f32> = size_1;
+    output = (_e20.xy / _e22);
+    let _e24: vec2<f32> = output;
+    return _e24;
 }
 
 fn mc_GroupInstance_135_MathClosure_87_(uv: vec2<f32>, c: vec4<f32>, f: f32) -> vec4<f32> {
@@ -299,83 +469,69 @@ fn mc_GroupInstance_135_MathClosure_91_(uv: vec2<f32>, x: f32) -> f32 {
     return _e10;
 }
 
-fn mc_GroupInstance_135_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, c_ui: vec4<f32>, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
+fn mc_GroupInstance_135_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_edge_1: vec4<f32>;
     var e_1: f32;
-    var c_ui_1: vec4<f32>;
     var f_1: f32;
     var l_1: f32;
     var selection_1: f32;
     var lumin_edge_1: f32;
     var output: vec4<f32> = vec4(0f);
-    var alpha_r: f32;
-    var color_r: vec3<f32>;
-    var r: vec4<f32>;
 
     uv_1 = uv;
     c_edge_1 = c_edge;
     e_1 = e;
-    c_ui_1 = c_ui;
     f_1 = f;
     l_1 = l;
     selection_1 = selection;
     lumin_edge_1 = lumin_edge;
-    let _e19: vec4<f32> = c_edge_1;
-    let _e20: vec3<f32> = _e19.xyz;
+    let _e17: vec4<f32> = c_edge_1;
     let _e21: vec4<f32> = c_edge_1;
-    let _e23: f32 = e_1;
-    let _e25: f32 = f_1;
-    c_edge_1 = vec4<f32>(_e20.x, _e20.y, _e20.z, ((_e21.w * _e23) * _e25));
-    let _e31: vec4<f32> = c_edge_1;
-    let _e35: vec4<f32> = c_edge_1;
-    let _e40: vec4<f32> = c_edge_1;
-    let _e42: f32 = lumin_edge_1;
-    let _e44: vec3<f32> = mix(vec3(1f), _e40.xyz, vec3(_e42));
-    c_edge_1.x = _e44.x;
-    c_edge_1.y = _e44.y;
-    c_edge_1.z = _e44.z;
-    let _e52: vec4<f32> = c_edge_1;
-    let _e59: f32 = lumin_edge_1;
-    let _e61: f32 = l_1;
-    let _e62: f32 = f_1;
-    let _e67: f32 = selection_1;
-    let _e68: f32 = f_1;
-    let _e73: f32 = e_1;
-    c_edge_1.w = (_e52.w + (((mix(0.08f, 0.22f, _e59) + ((_e61 * _e62) * 0.6f)) + ((_e67 * _e68) * 0.2f)) * _e73));
-    let _e76: vec4<f32> = c_edge_1;
-    let _e78: vec4<f32> = c_edge_1;
-    let _e82: f32 = l_1;
-    let _e83: f32 = f_1;
-    let _e85: f32 = selection_1;
-    let _e86: f32 = f_1;
-    let _e89: vec4<f32> = c_edge_1;
-    let _e93: f32 = l_1;
-    let _e94: f32 = f_1;
-    let _e96: f32 = selection_1;
-    let _e97: f32 = f_1;
-    let _e101: vec3<f32> = mix(_e89.xyz, vec3(1f), vec3(((_e93 * _e94) + (_e96 * _e97))));
-    c_edge_1.x = _e101.x;
-    c_edge_1.y = _e101.y;
-    c_edge_1.z = _e101.z;
-    let _e108: vec4<f32> = c_edge_1;
-    let _e110: vec4<f32> = c_ui_1;
-    let _e113: vec4<f32> = c_edge_1;
-    alpha_r = (_e108.w + (_e110.w * (1f - _e113.w)));
-    let _e119: vec4<f32> = c_edge_1;
-    let _e121: vec4<f32> = c_edge_1;
-    let _e124: vec4<f32> = c_ui_1;
-    let _e126: vec4<f32> = c_ui_1;
-    let _e130: vec4<f32> = c_edge_1;
-    let _e135: f32 = alpha_r;
-    color_r = (((_e119.xyz * _e121.w) + ((_e124.xyz * _e126.w) * (1f - _e130.w))) / vec3(_e135));
-    let _e139: vec3<f32> = color_r;
-    let _e140: f32 = alpha_r;
-    r = vec4<f32>(_e139.x, _e139.y, _e139.z, _e140);
-    let _e146: vec4<f32> = r;
-    output = _e146;
-    let _e147: vec4<f32> = output;
-    return _e147;
+    let _e26: vec4<f32> = c_edge_1;
+    let _e28: f32 = lumin_edge_1;
+    let _e30: vec3<f32> = mix(vec3(1f), _e26.xyz, vec3(_e28));
+    c_edge_1.x = _e30.x;
+    c_edge_1.y = _e30.y;
+    c_edge_1.z = _e30.z;
+    let _e38: vec4<f32> = c_edge_1;
+    let _e40: f32 = e_1;
+    let _e41: f32 = f_1;
+    c_edge_1.w = (_e38.w * (_e40 * _e41));
+    let _e45: vec4<f32> = c_edge_1;
+    let _e52: f32 = lumin_edge_1;
+    let _e54: f32 = l_1;
+    let _e55: f32 = f_1;
+    let _e60: f32 = selection_1;
+    let _e61: f32 = f_1;
+    let _e66: f32 = e_1;
+    c_edge_1.w = (_e45.w + (((mix(0.08f, 0.22f, _e52) + ((_e54 * _e55) * 0.6f)) + ((_e60 * _e61) * 0.2f)) * _e66));
+    let _e69: vec4<f32> = c_edge_1;
+    let _e71: vec4<f32> = c_edge_1;
+    let _e75: f32 = l_1;
+    let _e76: f32 = f_1;
+    let _e78: f32 = selection_1;
+    let _e79: f32 = f_1;
+    let _e82: vec4<f32> = c_edge_1;
+    let _e86: f32 = l_1;
+    let _e87: f32 = f_1;
+    let _e89: f32 = selection_1;
+    let _e90: f32 = f_1;
+    let _e94: vec3<f32> = mix(_e82.xyz, vec3(1f), vec3(((_e86 * _e87) + (_e89 * _e90))));
+    c_edge_1.x = _e94.x;
+    c_edge_1.y = _e94.y;
+    c_edge_1.z = _e94.z;
+    let _e101: vec4<f32> = c_edge_1;
+    let _e103: vec4<f32> = c_edge_1;
+    let _e105: vec4<f32> = c_edge_1;
+    let _e107: vec3<f32> = (_e103.xyz * _e105.w);
+    c_edge_1.x = _e107.x;
+    c_edge_1.y = _e107.y;
+    c_edge_1.z = _e107.z;
+    let _e114: vec4<f32> = c_edge_1;
+    output = _e114;
+    let _e115: vec4<f32> = output;
+    return _e115;
 }
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
