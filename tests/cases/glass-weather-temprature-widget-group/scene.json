@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-02T17:18:26.116Z",
-    "modified": "2026-02-02T17:18:26.116Z"
+    "created": "2026-02-02T19:17:00.031Z",
+    "modified": "2026-02-02T19:17:00.031Z"
   },
   "nodes": [
     {
@@ -1475,7 +1475,7 @@
           "type": "Sdf2D",
           "position": {
             "x": 740,
-            "y": -180
+            "y": -200
           },
           "width": 160,
           "label": "2D SDF",

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-02T15:55:24.848Z",
+  "generatedAt": "2026-02-02T19:23:21.688Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -37,6 +37,7 @@
     "InstancedGeometryEnd",
     "InstancedGeometryStart",
     "IntInput",
+    "Lerp",
     "Luminance",
     "MaterialFromShader",
     "MaterialOutput",
@@ -1393,6 +1394,43 @@
       "defaultParams": {
         "value": 0
       }
+    },
+    {
+      "type": "Lerp",
+      "label": "Lerp",
+      "category": "Math",
+      "description": "Linearly interpolate between A and B by T",
+      "inputs": [
+        {
+          "id": "t",
+          "name": "T",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "a",
+          "name": "A",
+          "type": "any"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "Luminance",
