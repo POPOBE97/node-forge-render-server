@@ -168,6 +168,10 @@ node tools/ws-send-scene.js assets/node-forge-example.1.json ws://127.0.0.1:8080
 - Keep resource names stable to avoid breaking baselines/goldens.
 - When editing render tests, read `docs/testing-wgsl-generation.md`.
 
+## Project skills
+- `implement-new-node`: SOP for adapting a newly-added editor node end-to-end.
+  - See: `skills/implement-new-node.md`
+
 ## Known config files
 - No `.cursorrules`, `.cursor/rules/`, or `.github/copilot-instructions.md` found.
 - AGENT.md exists; this file consolidates and expands those rules.
