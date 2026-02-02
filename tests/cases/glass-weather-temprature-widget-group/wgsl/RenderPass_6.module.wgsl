@@ -423,23 +423,6 @@ fn mc_GroupInstance_128_MathClosure_79_(uv: vec2<f32>, xy: vec2<f32>, size: vec2
     return _e24;
 }
 
-fn mc_GroupInstance_128_MathClosure_87_(uv: vec2<f32>, c: vec4<f32>, f: f32) -> vec4<f32> {
-    var uv_1: vec2<f32>;
-    var c_1: vec4<f32>;
-    var f_1: f32;
-    var output: vec4<f32> = vec4(0f);
-
-    uv_1 = uv;
-    c_1 = c;
-    f_1 = f;
-    let _e9: vec4<f32> = c_1;
-    let _e10: vec3<f32> = _e9.xyz;
-    let _e11: vec4<f32> = c_1;
-    output = vec4<f32>(_e10.x, _e10.y, _e10.z, (_e11.w * 0.05f));
-    let _e19: vec4<f32> = output;
-    return _e19;
-}
-
 fn mc_GroupInstance_128_MathClosure_88_(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<f32> {
     var uv_2: vec2<f32>;
     var uv_3: vec2<f32>;
@@ -497,41 +480,41 @@ fn mc_GroupInstance_128_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32
     let _e38: vec4<f32> = c_edge_1;
     let _e40: f32 = e_1;
     let _e41: f32 = f_1;
-    c_edge_1.w = (_e38.w * (_e40 * _e41));
-    let _e45: vec4<f32> = c_edge_1;
-    let _e52: f32 = lumin_edge_1;
-    let _e54: f32 = l_1;
-    let _e55: f32 = f_1;
-    let _e60: f32 = selection_1;
-    let _e61: f32 = f_1;
-    let _e66: f32 = e_1;
-    c_edge_1.w = (_e45.w + (((mix(0.08f, 0.22f, _e52) + ((_e54 * _e55) * 0.6f)) + ((_e60 * _e61) * 0.2f)) * _e66));
-    let _e69: vec4<f32> = c_edge_1;
+    c_edge_1.w = (_e38.w * ((_e40 * _e41) * 0.05f));
+    let _e47: vec4<f32> = c_edge_1;
+    let _e54: f32 = lumin_edge_1;
+    let _e56: f32 = l_1;
+    let _e57: f32 = f_1;
+    let _e62: f32 = selection_1;
+    let _e63: f32 = f_1;
+    let _e68: f32 = e_1;
+    c_edge_1.w = (_e47.w + (((mix(0.08f, 0.22f, _e54) + ((_e56 * _e57) * 0.6f)) + ((_e62 * _e63) * 0.2f)) * _e68));
     let _e71: vec4<f32> = c_edge_1;
-    let _e75: f32 = l_1;
-    let _e76: f32 = f_1;
-    let _e78: f32 = selection_1;
-    let _e79: f32 = f_1;
-    let _e82: vec4<f32> = c_edge_1;
-    let _e86: f32 = l_1;
-    let _e87: f32 = f_1;
-    let _e89: f32 = selection_1;
-    let _e90: f32 = f_1;
-    let _e94: vec3<f32> = mix(_e82.xyz, vec3(1f), vec3(((_e86 * _e87) + (_e89 * _e90))));
-    c_edge_1.x = _e94.x;
-    c_edge_1.y = _e94.y;
-    c_edge_1.z = _e94.z;
-    let _e101: vec4<f32> = c_edge_1;
+    let _e73: vec4<f32> = c_edge_1;
+    let _e77: f32 = l_1;
+    let _e78: f32 = f_1;
+    let _e80: f32 = selection_1;
+    let _e81: f32 = f_1;
+    let _e84: vec4<f32> = c_edge_1;
+    let _e88: f32 = l_1;
+    let _e89: f32 = f_1;
+    let _e91: f32 = selection_1;
+    let _e92: f32 = f_1;
+    let _e96: vec3<f32> = mix(_e84.xyz, vec3(1f), vec3(((_e88 * _e89) + (_e91 * _e92))));
+    c_edge_1.x = _e96.x;
+    c_edge_1.y = _e96.y;
+    c_edge_1.z = _e96.z;
     let _e103: vec4<f32> = c_edge_1;
     let _e105: vec4<f32> = c_edge_1;
-    let _e107: vec3<f32> = (_e103.xyz * _e105.w);
-    c_edge_1.x = _e107.x;
-    c_edge_1.y = _e107.y;
-    c_edge_1.z = _e107.z;
-    let _e114: vec4<f32> = c_edge_1;
-    output = _e114;
-    let _e115: vec4<f32> = output;
-    return _e115;
+    let _e107: vec4<f32> = c_edge_1;
+    let _e109: vec3<f32> = (_e105.xyz * _e107.w);
+    c_edge_1.x = _e109.x;
+    c_edge_1.y = _e109.y;
+    c_edge_1.z = _e109.z;
+    let _e116: vec4<f32> = c_edge_1;
+    output = _e116;
+    let _e117: vec4<f32> = output;
+    return _e117;
 }
 
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
@@ -681,14 +664,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_128_MathClosure_91_(in.uv, x);
         mc_GroupInstance_128_MathClosure_91_out = output;
     }
-    var mc_GroupInstance_128_MathClosure_87_out: vec4f;
-    {
-        let c = textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, vec2f((mc_GroupInstance_128_MathClosure_88_out).x, 1.0 - (mc_GroupInstance_128_MathClosure_88_out).y));
-        let f = smoothstep(0.0, 0.015, mc_GroupInstance_128_MathClosure_91_out);
-        var output: vec4f;
-        output = mc_GroupInstance_128_MathClosure_87_(in.uv, c, f);
-        mc_GroupInstance_128_MathClosure_87_out = output;
-    }
     var mc_GroupInstance_128_MathClosure_104_out: f32;
     {
         let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)), 24, 0.03))) * 0.5), 1.0));
@@ -715,12 +690,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_128_MathClosure_96_out: vec4f;
     {
-        let c_edge = mc_GroupInstance_128_MathClosure_87_out;
+        let c_edge = textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, vec2f((mc_GroupInstance_128_MathClosure_88_out).x, 1.0 - (mc_GroupInstance_128_MathClosure_88_out).y));
         let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f(0.5))), (in.geo_size_px * 0.5), vec4f(22.0)));
         let f = smoothstep(0.0, 0.015, mc_GroupInstance_128_MathClosure_91_out);
         let l = mc_GroupInstance_128_MathClosure_104_out;
         let selection = mc_GroupInstance_128_MathClosure_115_out;
-        let lumin_edge = clamp(dot((mc_GroupInstance_128_MathClosure_87_out).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        let lumin_edge = clamp(dot((textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, vec2f((mc_GroupInstance_128_MathClosure_88_out).x, 1.0 - (mc_GroupInstance_128_MathClosure_88_out).y))).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
         output = mc_GroupInstance_128_MathClosure_96_(in.uv, c_edge, e, f, l, selection, lumin_edge);
         mc_GroupInstance_128_MathClosure_96_out = output;

@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-02T17:10:01.269Z",
-    "modified": "2026-02-02T17:10:01.269Z"
+    "created": "2026-02-02T17:18:26.116Z",
+    "modified": "2026-02-02T17:18:26.116Z"
   },
   "nodes": [
     {
@@ -16,8 +16,8 @@
       "width": 160,
       "label": "Screen",
       "params": {
-        "width": 470,
-        "height": 1045
+        "width": 392,
+        "height": 871
       }
     },
     {
@@ -138,32 +138,6 @@
       }
     },
     {
-      "id": "IntInput_18",
-      "type": "IntInput",
-      "position": {
-        "x": 1880,
-        "y": -260
-      },
-      "width": 160,
-      "label": "Int Input",
-      "params": {
-        "value": 392
-      }
-    },
-    {
-      "id": "IntInput_21",
-      "type": "IntInput",
-      "position": {
-        "x": 1880,
-        "y": -180
-      },
-      "width": 160,
-      "label": "Int Input",
-      "params": {
-        "value": 871
-      }
-    },
-    {
       "id": "Rect2DGeometry_48",
       "type": "Rect2DGeometry",
       "position": {
@@ -216,127 +190,6 @@
         "radius": 0,
         "smooth": 1
       }
-    },
-    {
-      "id": "MathMultiply_116",
-      "type": "MathMultiply",
-      "position": {
-        "x": 2060,
-        "y": -260
-      },
-      "width": 160,
-      "label": "Multiply",
-      "params": {},
-      "inputs": [
-        {
-          "id": "dynamic_fixed_1",
-          "name": "input1",
-          "type": "int"
-        },
-        {
-          "id": "dynamic_fixed_2",
-          "name": "input2",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "result",
-          "name": "Result",
-          "type": "int"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_fixed_1",
-          "label": "input1",
-          "variableName": "input1",
-          "type": "int",
-          "sourceBinding": {
-            "nodeId": "IntInput_18",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_fixed_2",
-          "label": "input2",
-          "variableName": "input2",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_117",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        }
-      ]
-    },
-    {
-      "id": "FloatInput_117",
-      "type": "FloatInput",
-      "position": {
-        "x": 1880,
-        "y": -60
-      },
-      "width": 160,
-      "label": "Float Input",
-      "params": {
-        "value": 1.5
-      }
-    },
-    {
-      "id": "MathMultiply_118",
-      "type": "MathMultiply",
-      "position": {
-        "x": 2060,
-        "y": -140
-      },
-      "width": 160,
-      "label": "Multiply",
-      "params": {},
-      "inputs": [
-        {
-          "id": "dynamic_fixed_1",
-          "name": "input1",
-          "type": "int"
-        },
-        {
-          "id": "dynamic_fixed_2",
-          "name": "input2",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "result",
-          "name": "Result",
-          "type": "int"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_fixed_1",
-          "label": "input1",
-          "variableName": "input1",
-          "type": "int",
-          "sourceBinding": {
-            "nodeId": "IntInput_21",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_fixed_2",
-          "label": "input2",
-          "variableName": "input2",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_117",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        }
-      ]
     },
     {
       "id": "ImageFile_124",
@@ -714,72 +567,6 @@
       }
     },
     {
-      "id": "edge_283",
-      "from": {
-        "nodeId": "IntInput_18",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathMultiply_116",
-        "portId": "dynamic_fixed_1"
-      }
-    },
-    {
-      "id": "edge_284",
-      "from": {
-        "nodeId": "FloatInput_117",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathMultiply_116",
-        "portId": "dynamic_fixed_2"
-      }
-    },
-    {
-      "id": "edge_285",
-      "from": {
-        "nodeId": "IntInput_21",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathMultiply_118",
-        "portId": "dynamic_fixed_1"
-      }
-    },
-    {
-      "id": "edge_286",
-      "from": {
-        "nodeId": "FloatInput_117",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathMultiply_118",
-        "portId": "dynamic_fixed_2"
-      }
-    },
-    {
-      "id": "edge_287",
-      "from": {
-        "nodeId": "MathMultiply_116",
-        "portId": "result"
-      },
-      "to": {
-        "nodeId": "Screen_1",
-        "portId": "width"
-      }
-    },
-    {
-      "id": "edge_288",
-      "from": {
-        "nodeId": "MathMultiply_118",
-        "portId": "result"
-      },
-      "to": {
-        "nodeId": "Screen_1",
-        "portId": "height"
-      }
-    },
-    {
       "id": "edge_292",
       "from": {
         "nodeId": "Composite_3",
@@ -1004,7 +791,7 @@
           "type": "Sdf2D",
           "position": {
             "x": 300,
-            "y": 1260
+            "y": 1160
           },
           "width": 160,
           "label": "2D SDF",
@@ -1018,7 +805,7 @@
           "type": "GeoSize",
           "position": {
             "x": -60,
-            "y": 1260
+            "y": 1160
           },
           "width": 160,
           "label": "Geo Size",
@@ -1029,7 +816,7 @@
           "type": "MathMultiply",
           "position": {
             "x": 120,
-            "y": 1260
+            "y": 1160
           },
           "width": 160,
           "label": "Multiply",
@@ -1083,7 +870,7 @@
           "type": "FloatInput",
           "position": {
             "x": -60,
-            "y": 1320
+            "y": 1220
           },
           "width": 160,
           "label": "Float Input",
@@ -1096,7 +883,7 @@
           "type": "FloatInput",
           "position": {
             "x": 120,
-            "y": 1380
+            "y": 1280
           },
           "width": 160,
           "label": "Float Input",
@@ -1109,7 +896,7 @@
           "type": "Sdf2DBevel",
           "position": {
             "x": 540,
-            "y": 1140
+            "y": 1040
           },
           "width": 160,
           "label": "2D SDF Bevel",
@@ -1164,7 +951,7 @@
           "type": "Remap",
           "position": {
             "x": 540,
-            "y": 1300
+            "y": 1200
           },
           "width": 160,
           "label": "Remap",
@@ -1331,19 +1118,6 @@
           "params": {}
         },
         {
-          "id": "FloatInput_84",
-          "type": "FloatInput",
-          "position": {
-            "x": 540,
-            "y": 1040
-          },
-          "width": 160,
-          "label": "Float Input",
-          "params": {
-            "value": 0.8096551724
-          }
-        },
-        {
           "id": "GuassianBlurPass_85",
           "type": "GuassianBlurPass",
           "position": {
@@ -1368,62 +1142,6 @@
           "width": 160,
           "label": "Pass Texture",
           "params": {}
-        },
-        {
-          "id": "MathClosure_87",
-          "type": "MathClosure",
-          "position": {
-            "x": 1680,
-            "y": 400
-          },
-          "width": 160,
-          "label": "Math Closure",
-          "params": {
-            "source": "output = vec4(c.rgb, c.a * 0.05);"
-          },
-          "inputs": [
-            {
-              "id": "dynamic_1769531971718_1",
-              "name": "c",
-              "type": "color"
-            },
-            {
-              "id": "dynamic_1769532668102_3",
-              "name": "f",
-              "type": "float"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "vector4"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1769531971718_1",
-              "label": "c",
-              "variableName": "c",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "PassTexture_86",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1769532668102_3",
-              "label": "f",
-              "variableName": "f",
-              "type": "float",
-              "sourceBinding": {
-                "nodeId": "Remap_92",
-                "outputPortId": "result",
-                "outputLabel": "Result"
-              }
-            }
-          ]
         },
         {
           "id": "MathClosure_88",
@@ -1571,13 +1289,13 @@
           "width": 300,
           "label": "Edge Color",
           "params": {
-            "source": "c_edge.rgb = mix(vec3(1.0), c_edge.rgb, lumin_edge);\n\nc_edge.a *= e * f;\n\nc_edge.a += (mix(0.08, 0.22, lumin_edge) + l * f * 0.6 + selection * f * 0.2) * e;\n\nc_edge.rgb = mix(c_edge.rgb, vec3(1.0), l * f + selection * f);\n\nc_edge.rgb *= c_edge.a;\n\noutput = c_edge; "
+            "source": "c_edge.rgb = mix(vec3(1.0), c_edge.rgb, lumin_edge);\n\nc_edge.a *= e * f * 0.05;\n\nc_edge.a += (mix(0.08, 0.22, lumin_edge) + l * f * 0.6 + selection * f * 0.2) * e;\n\nc_edge.rgb = mix(c_edge.rgb, vec3(1.0), l * f + selection * f);\n\nc_edge.rgb *= c_edge.a;\n\noutput = c_edge; "
           },
           "inputs": [
             {
               "id": "dynamic_1769531971718_1",
               "name": "c_edge",
-              "type": "vector4"
+              "type": "color"
             },
             {
               "id": "dynamic_1769532264736_2",
@@ -1617,11 +1335,11 @@
               "portId": "dynamic_1769531971718_1",
               "label": "c_edge",
               "variableName": "c_edge",
-              "type": "vector4",
+              "type": "color",
               "sourceBinding": {
-                "nodeId": "MathClosure_87",
-                "outputPortId": "output",
-                "outputLabel": "Output"
+                "nodeId": "PassTexture_86",
+                "outputPortId": "color",
+                "outputLabel": "Color"
               }
             },
             {
@@ -1674,9 +1392,9 @@
               "variableName": "lumin_edge",
               "type": "float",
               "sourceBinding": {
-                "nodeId": "GroupInstance_123",
-                "outputPortId": "out_0",
-                "outputLabel": "out_0"
+                "nodeId": "Luminance_142",
+                "outputPortId": "value",
+                "outputLabel": "Value"
               }
             }
           ]
@@ -2057,8 +1775,8 @@
           "id": "Luminance_142",
           "type": "Luminance",
           "position": {
-            "x": 1940,
-            "y": 480
+            "x": 1680,
+            "y": 400
           },
           "width": 160,
           "label": "Luminance",
@@ -2271,17 +1989,6 @@
           }
         },
         {
-          "id": "edge_198",
-          "from": {
-            "nodeId": "Remap_92",
-            "portId": "result"
-          },
-          "to": {
-            "nodeId": "MathClosure_87",
-            "portId": "dynamic_1769532668102_3"
-          }
-        },
-        {
           "id": "edge_208",
           "from": {
             "nodeId": "Remap_64",
@@ -2469,28 +2176,6 @@
           }
         },
         {
-          "id": "edge_311",
-          "from": {
-            "nodeId": "PassTexture_86",
-            "portId": "color"
-          },
-          "to": {
-            "nodeId": "MathClosure_87",
-            "portId": "dynamic_1769531971718_1"
-          }
-        },
-        {
-          "id": "edge_314",
-          "from": {
-            "nodeId": "MathClosure_87",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "MathClosure_96",
-            "portId": "dynamic_1769531971718_1"
-          }
-        },
-        {
           "id": "edge_318",
           "from": {
             "nodeId": "GroupInstance_125",
@@ -2568,14 +2253,25 @@
           }
         },
         {
-          "id": "edge_330",
+          "id": "edge_331",
           "from": {
-            "nodeId": "MathClosure_87",
-            "portId": "output"
+            "nodeId": "PassTexture_86",
+            "portId": "color"
           },
           "to": {
             "nodeId": "Luminance_142",
             "portId": "color"
+          }
+        },
+        {
+          "id": "edge_332",
+          "from": {
+            "nodeId": "PassTexture_86",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "MathClosure_96",
+            "portId": "dynamic_1769531971718_1"
           }
         }
       ],
