@@ -1,9 +1,10 @@
-//! Compilers for vector math nodes (VectorMath, CrossProduct, DotProduct, Normalize).
+//! Compilers for vector math nodes (VectorMath, CrossProduct, DotProduct, Normalize, Refract).
 
 use anyhow::{anyhow, bail, Result};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
+use super::super::utils::coerce_to_type;
 use crate::dsl::{incoming_connection, Node, SceneDSL};
 
 /// Compile a DotProduct node.
@@ -143,6 +144,78 @@ where
         format!("normalize({})", x.expr),
         x.ty,
         x.uses_time,
+    ))
+}
+
+/// Compile a Refract node.
+///
+/// Computes the refraction vector of an incident vector about a normal.
+///
+/// Semantics (editor contract):
+/// - eta = 1.0 / ior
+/// - offset = refract(normalize(incident_vec3), normalize(normal_vec3), eta)
+/// - normal/incident are coerced to vec3 per PORT_TYPE_COMPATIBILITY before normalize.
+pub fn compile_refract<F>(
+    scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let port = out_port.unwrap_or("offset");
+    if port != "offset" {
+        bail!("Refract: unsupported output port '{port}'");
+    }
+
+    let normal_conn = incoming_connection(scene, &node.id, "normal")
+        .ok_or_else(|| anyhow!("Refract missing input normal"))?;
+    let incident_conn = incoming_connection(scene, &node.id, "incident")
+        .ok_or_else(|| anyhow!("Refract missing input incident"))?;
+
+    let normal_raw = compile_fn(
+        &normal_conn.from.node_id,
+        Some(&normal_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
+    let incident_raw = compile_fn(
+        &incident_conn.from.node_id,
+        Some(&incident_conn.from.port_id),
+        ctx,
+        cache,
+    )?;
+
+    // Coerce inputs to vec3 before normalize (per editor compatibility contract).
+    let normal = coerce_to_type(normal_raw, ValueType::Vec3)?;
+    let incident = coerce_to_type(incident_raw, ValueType::Vec3)?;
+
+    // ior is optional: incoming connection wins, otherwise fall back to node.params["ior"].
+    let ior = if let Some(conn) = incoming_connection(scene, &node.id, "ior") {
+        let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+        coerce_to_type(expr, ValueType::F32)?
+    } else {
+        let v = crate::dsl::parse_f32(&node.params, "ior").unwrap_or(1.5);
+        TypedExpr::new(crate::renderer::utils::fmt_f32(v), ValueType::F32)
+    };
+
+    let eta_expr = format!("(1.0 / ({}))", ior.expr);
+    Ok(TypedExpr::with_time(
+        format!(
+            "refract(normalize({}), normalize({}), {})",
+            incident.expr, normal.expr, eta_expr
+        ),
+        ValueType::Vec3,
+        normal.uses_time || incident.uses_time || ior.uses_time,
     ))
 }
 

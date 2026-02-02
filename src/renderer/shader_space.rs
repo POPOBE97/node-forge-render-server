@@ -1075,9 +1075,9 @@ fn parse_blend_factor(f: &str) -> Result<wgpu::BlendFactor> {
 fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
     let preset = normalize_blend_token(preset);
     Ok(match preset.as_str() {
-        "alpha" => BlendState {
+        // Premultiplied alpha (common in our renderer): RGB is assumed multiplied by A.
+        "alpha" | "premul-alpha" | "premultiplied-alpha" => BlendState {
             color: wgpu::BlendComponent {
-                // Premultiplied alpha: RGB is assumed multiplied by A.
                 src_factor: wgpu::BlendFactor::One,
                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 operation: wgpu::BlendOperation::Add,
@@ -2588,6 +2588,16 @@ mod tests {
     fn render_pass_blend_state_from_preset_alpha() {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blend_preset".to_string(), json!("alpha"));
+        let got = parse_render_pass_blend_state(&params).unwrap();
+        let expected = default_blend_state_for_preset("alpha").unwrap();
+        assert_eq!(format!("{got:?}"), format!("{expected:?}"));
+    }
+
+    #[test]
+    fn render_pass_blend_state_from_preset_premul_alpha() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("premul-alpha"));
+
         let got = parse_render_pass_blend_state(&params).unwrap();
         let expected = default_blend_state_for_preset("alpha").unwrap();
         assert_eq!(format!("{got:?}"), format!("{expected:?}"));

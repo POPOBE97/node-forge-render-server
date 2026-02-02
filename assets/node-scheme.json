@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-01T21:08:47.905Z",
+  "generatedAt": "2026-02-02T15:55:24.848Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -52,6 +52,7 @@
     "PassTexture",
     "PrincipledBSDF",
     "Rect2DGeometry",
+    "Refract",
     "Remap",
     "RenderPass",
     "RenderTexture",
@@ -397,19 +398,13 @@
     },
     {
       "type": "ColorMix",
-      "label": "Color Mix",
+      "label": "Blend Color",
       "category": "Color",
-      "description": "Mix two colors",
+      "description": "Blend N colors using a selected blending mode (folded left-to-right)",
       "inputs": [
         {
-          "id": "factor",
-          "name": "Factor",
-          "type": "float",
-          "default": 0.5
-        },
-        {
-          "id": "color1",
-          "name": "Color 1",
+          "id": "color0",
+          "name": "Color 0",
           "type": "color",
           "default": [
             1,
@@ -419,8 +414,8 @@
           ]
         },
         {
-          "id": "color2",
-          "name": "Color 2",
+          "id": "color1",
+          "name": "Color 1",
           "type": "color",
           "default": [
             0,
@@ -438,7 +433,7 @@
         }
       ],
       "defaultParams": {
-        "blendMode": "mix"
+        "mode": "normal"
       }
     },
     {
@@ -1900,6 +1895,45 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "Refract",
+      "label": "Refract",
+      "category": "Vector",
+      "description": "Refract an incident vector about a normal using IOR (internally uses eta = 1.0 / ior)",
+      "inputs": [
+        {
+          "id": "normal",
+          "name": "Normal",
+          "type": "vector3"
+        },
+        {
+          "id": "incident",
+          "name": "Incident",
+          "type": "vector3"
+        },
+        {
+          "id": "ior",
+          "name": "IOR",
+          "type": "float",
+          "default": 1.5,
+          "range": {
+            "min": 1,
+            "max": 3,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "offset",
+          "name": "Offset",
+          "type": "vector3"
+        }
+      ],
+      "defaultParams": {
+        "ior": 1.5
+      }
     },
     {
       "type": "Remap",

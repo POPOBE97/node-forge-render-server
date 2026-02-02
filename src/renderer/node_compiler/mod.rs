@@ -250,6 +250,16 @@ fn compile_expr(
             compile_fn,
         )?,
 
+        "Refract" => vector_nodes::compile_refract(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+
         // Color nodes
         "ColorMix" => color_nodes::compile_color_mix(
             scene,
