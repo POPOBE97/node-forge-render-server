@@ -335,3 +335,11 @@ pub struct WgslShaderBundle {
     /// PassTexture node ids (upstream pass nodes) referenced by this pass's material graph, in binding order.
     pub pass_textures: Vec<String>,
 }
+
+/// A CPU-side 2D convolution kernel.
+#[derive(Clone, Debug)]
+pub struct Kernel2D {
+    pub width: u32,
+    pub height: u32,
+    pub values: Vec<f32>,
+}

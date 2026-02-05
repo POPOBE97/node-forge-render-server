@@ -38,18 +38,181 @@ use crate::{
         scene_prep::{bake_data_parse_nodes, prepare_scene},
         types::ValueType,
         types::{
-            BakedDataParseMeta, BakedValue, MaterialCompileContext, Params, PassBindings,
+            BakedDataParseMeta, BakedValue, Kernel2D, MaterialCompileContext, Params, PassBindings,
             PassOutputRegistry, PassOutputSpec, TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            build_blur_image_wgsl_bundle, build_downsample_bundle, build_horizontal_blur_bundle,
+            build_blur_image_wgsl_bundle, build_downsample_bundle,
+            build_downsample_pass_wgsl_bundle, build_horizontal_blur_bundle,
             build_pass_wgsl_bundle, build_upsample_bilinear_bundle, build_vertical_blur_bundle,
             clamp_min_1, gaussian_kernel_8, gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
         },
     },
 };
+
+pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
+    // Strip JS comments so we don't accidentally match docstrings like "width/height: number".
+    fn strip_js_comments(src: &str) -> String {
+        // Minimal, non-string-aware comment stripper:
+        // - removes // line comments
+        // - removes /* block comments */
+        let mut out = String::with_capacity(src.len());
+        let mut i = 0;
+        let bytes = src.as_bytes();
+        let mut in_block = false;
+        while i < bytes.len() {
+            if in_block {
+                if i + 1 < bytes.len() && bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    in_block = false;
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+
+            // Block comment start
+            if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+                in_block = true;
+                i += 2;
+                continue;
+            }
+            // Line comment start
+            if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+                // Skip until newline
+                i += 2;
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    let source = strip_js_comments(source);
+
+    // Minimal parser for the editor-authored Kernel node `params.source`.
+    // Expected form (JavaScript-like):
+    // return { width: 3, height: 3, value: [ ... ] };
+    // or: return { width: 3, height: 3, values: [ ... ] };
+
+    fn find_field_after_colon<'a>(src: &'a str, key: &str) -> Result<&'a str> {
+        // Find `key` as an identifier (not inside comments like `width/height`) and return the
+        // substring after its ':' (trimmed).
+        let bytes = src.as_bytes();
+        let key_bytes = key.as_bytes();
+        'outer: for i in 0..=bytes.len().saturating_sub(key_bytes.len()) {
+            if &bytes[i..i + key_bytes.len()] != key_bytes {
+                continue;
+            }
+            // Word boundary before key.
+            if i > 0 {
+                let prev = bytes[i - 1];
+                if prev.is_ascii_alphanumeric() || prev == b'_' {
+                    continue;
+                }
+            }
+            // After key: skip whitespace then require ':'
+            let mut j = i + key_bytes.len();
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j >= bytes.len() || bytes[j] != b':' {
+                continue;
+            }
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            // Ensure this isn't a prefix of a longer identifier.
+            if i + key_bytes.len() < bytes.len() {
+                let next = bytes[i + key_bytes.len()];
+                if next.is_ascii_alphanumeric() || next == b'_' {
+                    continue 'outer;
+                }
+            }
+            return Ok(&src[j..]);
+        }
+        bail!("Kernel.source missing {key}")
+    }
+
+    fn parse_u32_field(src: &str, key: &str) -> Result<u32> {
+        let after_colon = find_field_after_colon(src, key)?;
+        let mut num = String::new();
+        for ch in after_colon.chars() {
+            if ch.is_ascii_digit() {
+                num.push(ch);
+            } else {
+                break;
+            }
+        }
+        if num.is_empty() {
+            bail!("Kernel.source field {key} missing numeric value");
+        }
+        Ok(num.parse::<u32>()?)
+    }
+
+    fn parse_f32_array_field(src: &str, key: &str) -> Result<Vec<f32>> {
+        let after_colon = find_field_after_colon(src, key)?;
+        let lb = after_colon
+            .find('[')
+            .ok_or_else(|| anyhow!("Kernel.source missing '[' for {key}"))?;
+        let after_lb = &after_colon[lb + 1..];
+        let rb = after_lb
+            .find(']')
+            .ok_or_else(|| anyhow!("Kernel.source missing ']' for {key}"))?;
+        let inside = &after_lb[..rb];
+
+        let mut values: Vec<f32> = Vec::new();
+        let mut token = String::new();
+        for ch in inside.chars() {
+            if ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '+' || ch == 'e' || ch == 'E'
+            {
+                token.push(ch);
+            } else if !token.trim().is_empty() {
+                values.push(token.trim().parse::<f32>()?);
+                token.clear();
+            } else {
+                token.clear();
+            }
+        }
+        if !token.trim().is_empty() {
+            values.push(token.trim().parse::<f32>()?);
+        }
+        Ok(values)
+    }
+
+    let w = parse_u32_field(source.as_str(), "width")?;
+    let h = parse_u32_field(source.as_str(), "height")?;
+    // Prefer `values` when present; otherwise fallback to `value`.
+    let values = match parse_f32_array_field(source.as_str(), "values") {
+        Ok(v) => v,
+        Err(_) => parse_f32_array_field(source.as_str(), "value")?,
+    };
+
+    let expected = (w as usize).saturating_mul(h as usize);
+    if expected == 0 {
+        bail!("Kernel.source invalid size: {w}x{h}");
+    }
+    if values.len() != expected {
+        bail!(
+            "Kernel.source values length mismatch: expected {expected} for {w}x{h}, got {}",
+            values.len()
+        );
+    }
+
+    Ok(Kernel2D {
+        width: w,
+        height: h,
+        values,
+    })
+}
 
 fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
     // Column-major mat4 multiply to match WGSL `mat4x4f` (constructed from 4 column vectors)
@@ -691,7 +854,10 @@ fn sampled_pass_node_ids(
     let mut out: HashSet<String> = HashSet::new();
 
     for (node_id, node) in nodes_by_id {
-        if !matches!(node.node_type.as_str(), "RenderPass" | "GuassianBlurPass") {
+        if !matches!(
+            node.node_type.as_str(),
+            "RenderPass" | "GuassianBlurPass" | "Downsample"
+        ) {
             continue;
         }
         let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
@@ -749,6 +915,12 @@ fn deps_for_pass_node(
         "GuassianBlurPass" => {
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
             Ok(bundle.pass_textures)
+        }
+        "Downsample" => {
+            // Downsample depends on the upstream pass provided on its `source` input.
+            let source_conn = incoming_connection(scene, pass_node_id, "source")
+                .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
+            Ok(vec![source_conn.from.node_id.clone()])
         }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
@@ -825,6 +997,8 @@ fn compute_pass_render_order(
 enum SamplerKind {
     NearestClamp,
     LinearMirror,
+    LinearRepeat,
+    LinearClamp,
 }
 
 #[derive(Clone, Debug)]
@@ -1279,8 +1453,12 @@ fn build_shader_space_from_scene_internal(
     // Track pass outputs for chain resolution.
     let mut pass_output_registry = PassOutputRegistry::new();
     let target_format = parse_texture_format(&target_node.params)?;
+    // Sampled pass outputs are typically intermediate textures (used by PassTexture / blur chains).
+    // Keep them in a linear UNORM format even when the Composite target is sRGB.
+    // This matches existing test baselines and avoids relying on sRGB attachment readback paths.
     let sampled_pass_format = match target_format {
         TextureFormat::Rgba8UnormSrgb => TextureFormat::Rgba8Unorm,
+        TextureFormat::Bgra8UnormSrgb => TextureFormat::Bgra8Unorm,
         other => other,
     };
 
@@ -1314,6 +1492,23 @@ fn build_shader_space_from_scene_internal(
     let pass_nodes_in_order =
         compute_pass_render_order(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
 
+    // Some pass nodes (RenderPass) are sampled downstream by Downsample nodes as higher-resolution
+    // sources. For those, we want the pass output texture sized to its geometry extent so the
+    // downstream Downsample actually has more source detail to work with.
+    //
+    // IMPORTANT: Existing PassTexture consumers expect legacy behavior where sampled RenderPass
+    // outputs match the Composite target resolution. So we only enable geometry-sized outputs for
+    // passes that are directly used as Downsample.source.
+    let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
+    for (node_id, node) in nodes_by_id {
+        if node.node_type != "Downsample" {
+            continue;
+        }
+        if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
+            downsample_source_pass_ids.insert(conn.from.node_id.clone());
+        }
+    }
+
     for layer_id in &pass_nodes_in_order {
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
@@ -1323,20 +1518,12 @@ fn build_shader_space_from_scene_internal(
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
 
-                // If this pass is sampled downstream (PassTexture), render into a dedicated intermediate texture.
-                // This avoids aliasing the final output and gives PassTexture a stable source.
+                // If this pass is sampled downstream, render into a dedicated intermediate texture.
+                // IMPORTANT: sampled passes are commonly used as higher-resolution sources for downstream
+                // filtering (e.g. Downsample). In that case, the pass output resolution should match the
+                // pass geometry extent, not the Composite target size.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
-                let pass_output_texture: ResourceName = if is_sampled_output {
-                    let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
-                    textures.push(TextureDecl {
-                        name: out_tex.clone(),
-                        size: [tgt_w as u32, tgt_h as u32],
-                        format: sampled_pass_format,
-                    });
-                    out_tex
-                } else {
-                    target_texture_name.clone()
-                };
+                let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
 
                 let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
 
@@ -1370,6 +1557,34 @@ fn build_shader_space_from_scene_internal(
                         ..Default::default()
                     }),
                 )?;
+
+                // Determine the render target for this pass.
+                // - If sampled downstream: render into a dedicated intermediate texture sized to the
+                //   geometry extent (rounded to integer pixels).
+                // - Otherwise: render directly into the Composite target texture.
+                let (pass_target_w_u, pass_target_h_u, pass_output_texture): (
+                    u32,
+                    u32,
+                    ResourceName,
+                ) = if is_sampled_output {
+                    let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
+                    let (w_u, h_u) = if is_downsample_source {
+                        (geo_w.max(1.0).round() as u32, geo_h.max(1.0).round() as u32)
+                    } else {
+                        // Legacy: sampled RenderPass outputs match the Composite target resolution.
+                        (tgt_w_u, tgt_h_u)
+                    };
+                    textures.push(TextureDecl {
+                        name: out_tex.clone(),
+                        size: [w_u, h_u],
+                        format: sampled_pass_format,
+                    });
+                    (w_u, h_u, out_tex)
+                } else {
+                    (tgt_w_u, tgt_h_u, target_texture_name.clone())
+                };
+                let pass_target_w = pass_target_w_u as f32;
+                let pass_target_h = pass_target_h_u as f32;
 
                 let mut baked = prepared.baked_data_parse.clone();
                 baked.extend(bake_data_parse_nodes(
@@ -1471,7 +1686,7 @@ fn build_shader_space_from_scene_internal(
 
                 let params_name: ResourceName = format!("params.{layer_id}").into();
                 let params = Params {
-                    target_size: [tgt_w, tgt_h],
+                    target_size: [pass_target_w, pass_target_h],
                     geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
                     center: [geo_x, geo_y],
                     geo_translate: [0.0, 0.0],
@@ -1571,7 +1786,7 @@ fn build_shader_space_from_scene_internal(
                 pass_output_registry.register(PassOutputSpec {
                     node_id: layer_id.clone(),
                     texture_name: pass_output_texture,
-                    resolution: [tgt_w as u32, tgt_h as u32],
+                    resolution: [pass_target_w_u, pass_target_h_u],
                     format: if is_sampled_output {
                         sampled_pass_format
                     } else {
@@ -1963,6 +2178,209 @@ fn build_shader_space_from_scene_internal(
                     },
                 });
             }
+            "Downsample" => {
+                // Downsample takes its source from `source` (pass), and downsamples into `targetSize`.
+                // If sampled downstream (PassTexture), render into an intermediate texture;
+                // otherwise render to the Composite target.
+
+                let pass_name: ResourceName = format!("sys.downsample.{layer_id}.pass").into();
+
+                // Resolve inputs.
+                let src_conn = incoming_connection(&prepared.scene, layer_id, "source")
+                    .ok_or_else(|| anyhow!("Downsample.source missing for {layer_id}"))?;
+                let src_pass_id = src_conn.from.node_id.clone();
+                let src_tex = pass_output_registry
+                    .get_texture(&src_pass_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow!(
+                        "Downsample.source references upstream pass {src_pass_id}, but its output texture is not registered yet"
+                    ))?;
+
+                let kernel_conn = incoming_connection(&prepared.scene, layer_id, "kernel")
+                    .ok_or_else(|| anyhow!("Downsample.kernel missing for {layer_id}"))?;
+                let kernel_node = find_node(nodes_by_id, &kernel_conn.from.node_id)?;
+                let kernel_src = kernel_node
+                    .params
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let kernel = parse_kernel_source_js_like(kernel_src)?;
+
+                let target_size_conn = incoming_connection(&prepared.scene, layer_id, "targetSize")
+                    .ok_or_else(|| anyhow!("Downsample.targetSize missing for {layer_id}"))?;
+                let target_size_expr = {
+                    let mut ctx = MaterialCompileContext::default();
+                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                    crate::renderer::node_compiler::compile_material_expr(
+                        &prepared.scene,
+                        nodes_by_id,
+                        &target_size_conn.from.node_id,
+                        Some(&target_size_conn.from.port_id),
+                        &mut ctx,
+                        &mut cache,
+                    )?
+                };
+                let target_size_expr = coerce_to_type(target_size_expr, ValueType::Vec2)?;
+
+                // Require CPU-known size for texture allocation.
+                // (Vector2Input is used by tests; other graphs are not supported yet.)
+                let (out_w, out_h) = {
+                    let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
+                    if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')'))
+                    {
+                        let parts: Vec<&str> = inner.split(',').collect();
+                        if parts.len() == 2 {
+                            let w = parts[0].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
+                            let h = parts[1].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
+                            (w, h)
+                        } else {
+                            bail!(
+                                "Downsample.targetSize must be vec2f(w,h), got {}",
+                                target_size_expr.expr
+                            );
+                        }
+                    } else {
+                        bail!(
+                            "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
+                            target_size_expr.expr
+                        );
+                    }
+                };
+
+                let is_sampled_output = sampled_pass_ids.contains(layer_id);
+
+                // Determine if we need to scale to Composite target size.
+                let needs_upsample = !is_sampled_output && (out_w != tgt_w_u || out_h != tgt_h_u);
+
+                // Allocate intermediate texture only when:
+                // 1. Output is sampled by downstream passes, OR
+                // 2. Output needs upsampling (different size from Composite target)
+                // Otherwise render directly to the Composite target texture.
+                let needs_intermediate = is_sampled_output || needs_upsample;
+
+                let downsample_out_tex: ResourceName = if needs_intermediate {
+                    let tex: ResourceName = format!("sys.downsample.{layer_id}.out").into();
+                    textures.push(TextureDecl {
+                        name: tex.clone(),
+                        size: [out_w, out_h],
+                        format: if is_sampled_output {
+                            sampled_pass_format
+                        } else {
+                            target_format
+                        },
+                    });
+                    tex
+                } else {
+                    target_texture_name.clone()
+                };
+
+                // Fullscreen geometry for Downsample output size.
+                let geo: ResourceName = format!("sys.downsample.{layer_id}.geo").into();
+                geometry_buffers.push((
+                    geo.clone(),
+                    make_fullscreen_geometry(out_w as f32, out_h as f32),
+                ));
+
+                // Params for Downsample pass.
+                let params_name: ResourceName = format!("params.sys.downsample.{layer_id}").into();
+                let params_val = Params {
+                    target_size: [out_w as f32, out_h as f32],
+                    geo_size: [out_w as f32, out_h as f32],
+                    center: [out_w as f32 * 0.5, out_h as f32 * 0.5],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 0.0],
+                };
+
+                // Sampling mode -> sampler kind.
+                let sampling = parse_str(&layer_node.params, "sampling").unwrap_or("Mirror");
+                let sampler_kind = match sampling {
+                    "Mirror" => SamplerKind::LinearMirror,
+                    "Repeat" => SamplerKind::LinearRepeat,
+                    "Clamp" => SamplerKind::LinearClamp,
+                    // ClampToBorder is not available in the current sampler set; treat as Clamp.
+                    "ClampToBorder" => SamplerKind::LinearClamp,
+                    other => bail!("Downsample.sampling unsupported: {other}"),
+                };
+
+                let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
+
+                render_pass_specs.push(RenderPassSpec {
+                    name: pass_name.clone(),
+                    geometry_buffer: geo.clone(),
+                    instance_buffer: None,
+                    target_texture: downsample_out_tex.clone(),
+                    params_buffer: params_name,
+                    baked_data_parse_buffer: None,
+                    params: params_val,
+                    shader_wgsl: bundle.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: src_tex.clone(),
+                        image_node_id: None,
+                    }],
+                    sampler_kind,
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(pass_name);
+
+                // If Downsample is the final layer and targetSize != Composite target,
+                // add an upsample bilinear pass to scale to Composite target size.
+                if needs_upsample {
+                    let upsample_pass_name: ResourceName =
+                        format!("sys.downsample.{layer_id}.upsample.pass").into();
+                    let upsample_geo: ResourceName =
+                        format!("sys.downsample.{layer_id}.upsample.geo").into();
+                    geometry_buffers
+                        .push((upsample_geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+
+                    let upsample_params_name: ResourceName =
+                        format!("params.sys.downsample.{layer_id}.upsample").into();
+                    let upsample_params_val = Params {
+                        target_size: [tgt_w, tgt_h],
+                        geo_size: [tgt_w, tgt_h],
+                        center: [tgt_w * 0.5, tgt_h * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    let upsample_bundle = build_upsample_bilinear_bundle();
+
+                    render_pass_specs.push(RenderPassSpec {
+                        name: upsample_pass_name.clone(),
+                        geometry_buffer: upsample_geo,
+                        instance_buffer: None,
+                        target_texture: target_texture_name.clone(),
+                        params_buffer: upsample_params_name,
+                        baked_data_parse_buffer: None,
+                        params: upsample_params_val,
+                        shader_wgsl: upsample_bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: downsample_out_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kind: SamplerKind::LinearClamp,
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(upsample_pass_name);
+                }
+
+                // Register Downsample output for chaining.
+                if is_sampled_output {
+                    pass_output_registry.register(PassOutputSpec {
+                        node_id: layer_id.clone(),
+                        texture_name: downsample_out_tex,
+                        resolution: [out_w, out_h],
+                        format: sampled_pass_format,
+                    });
+                }
+            }
             other => {
                 // To add support for new pass types:
                 // 1. Add the type to is_pass_node() function
@@ -2339,6 +2757,8 @@ fn build_shader_space_from_scene_internal(
     let nearest_sampler: ResourceName = "sampler_nearest".into();
     let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
+    let linear_repeat_sampler: ResourceName = "sampler_linear_repeat".into();
+    let linear_clamp_sampler: ResourceName = "sampler_linear_clamp".into();
     shader_space.declare_samplers(vec![
         SamplerSpec {
             name: nearest_sampler.clone(),
@@ -2373,6 +2793,30 @@ fn build_shader_space_from_scene_internal(
                 address_mode_u: wgpu::AddressMode::MirrorRepeat,
                 address_mode_v: wgpu::AddressMode::MirrorRepeat,
                 address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                ..Default::default()
+            },
+        },
+        SamplerSpec {
+            name: linear_repeat_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
+                ..Default::default()
+            },
+        },
+        SamplerSpec {
+            name: linear_clamp_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
                 ..Default::default()
             },
         },
@@ -2435,6 +2879,8 @@ fn build_shader_space_from_scene_internal(
         let sampler_name = match spec.sampler_kind {
             SamplerKind::NearestClamp => nearest_sampler.clone(),
             SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
+            SamplerKind::LinearRepeat => linear_repeat_sampler.clone(),
+            SamplerKind::LinearClamp => linear_clamp_sampler.clone(),
         };
 
         // When shader compilation fails (wgpu create_shader_module), the error message can be
