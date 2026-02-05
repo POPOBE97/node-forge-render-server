@@ -14,8 +14,9 @@ use crate::{
     renderer::{
         node_compiler::compile_material_expr,
         scene_prep::prepare_scene,
-        types::{MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
-        utils::{cpu_num_f32_min_0, to_vec4_color},
+        shader_space::parse_kernel_source_js_like,
+        types::{Kernel2D, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
+        utils::{cpu_num_f32_min_0, fmt_f32 as fmt_f32_utils, to_vec4_color},
     },
 };
 
@@ -857,6 +858,31 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
                 out.push((layer_id, bundle));
             }
+            "Downsample" => {
+                // Downsample pass WGSL uses a 2D kernel authored in a connected Kernel node.
+                let kernel_node_id = incoming_connection(&prepared.scene, &layer_id, "kernel")
+                    .map(|c| c.from.node_id.clone())
+                    .ok_or_else(|| anyhow!("Downsample.kernel missing for {layer_id}"))?;
+                let kernel_node = find_node(nodes_by_id, &kernel_node_id)?;
+                if kernel_node.node_type != "Kernel" {
+                    bail!(
+                        "Downsample.kernel must come from Kernel node, got {} for {}",
+                        kernel_node.node_type,
+                        kernel_node_id
+                    );
+                }
+                let kernel_src = kernel_node
+                    .params
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let kernel: Kernel2D = parse_kernel_source_js_like(kernel_src.as_str())?;
+
+                let pass_id = format!("sys.downsample.{layer_id}.pass");
+                let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
+                out.push((pass_id, bundle));
+            }
             "GuassianBlurPass" => {
                 // SceneDSL `radius` is authored as an analytic 1D cutoff radius in full-res pixels,
                 // not as Gaussian sigma.
@@ -903,7 +929,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 ));
             }
             other => bail!(
-                "Composite layer must be RenderPass or GuassianBlurPass, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, Downsample, or GuassianBlurPass, got {other} for {layer_id}"
             ),
         }
     }
@@ -975,6 +1001,84 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
             ));
         }
     };
+    Ok(build_fullscreen_textured_bundle(body))
+}
+
+/// Build a Downsample pass WGSL bundle.
+///
+/// The Downsample node downsamples an upstream pass into a target resolution using a 2D kernel.
+/// Sampling behavior (Mirror/Repeat/Clamp/ClampToBorder) is handled via the runtime sampler.
+pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShaderBundle> {
+    let w = kernel.width as i32;
+    let h = kernel.height as i32;
+    if w <= 0 || h <= 0 {
+        bail!(
+            "Downsample: invalid kernel size {}x{}",
+            kernel.width,
+            kernel.height
+        );
+    }
+
+    let expected = (kernel.width as usize).saturating_mul(kernel.height as usize);
+    if kernel.values.len() != expected {
+        bail!(
+            "Downsample: kernel values length mismatch: expected {expected}, got {}",
+            kernel.values.len()
+        );
+    }
+
+    // Emit the kernel as a WGSL const array.
+    let mut kernel_elems: Vec<String> = Vec::with_capacity(kernel.values.len());
+    for v in &kernel.values {
+        kernel_elems.push(fmt_f32_utils(*v));
+    }
+    let kernel_arr = format!(
+        "array<f32, {}>({})",
+        kernel.values.len(),
+        kernel_elems.join(", ")
+    );
+
+    // Convolve in source pixel space.
+    //
+    // NOTE: `in.position.xy` is the render-target pixel coordinate with top-left origin.
+    // For Downsample, we treat destination pixel coordinates as top-left oriented.
+    //
+    // Sampling behavior (Mirror/Repeat/Clamp) is handled via the runtime sampler.
+    let body = format!(
+        r#"
+    let src_dims_u = textureDimensions(src_tex);
+    let src_dims = vec2f(src_dims_u);
+    let dst_dims = params.target_size;
+    // Fragment position is pixel-centered, with top-left origin.
+    let dst_xy = vec2f(in.position.xy);
+    let scale = src_dims / dst_dims;
+
+    // Map destination pixel-center coords -> source pixel-center coords.
+    let src_center = (dst_xy - vec2f(0.5, 0.5)) * scale + vec2f(0.5, 0.5);
+
+  let kw: i32 = {w};
+  let kh: i32 = {h};
+  let half_w: i32 = kw / 2;
+  let half_h: i32 = kh / 2;
+  let k = {kernel_arr};
+
+    var sum = vec4f(0.0);
+    for (var y: i32 = 0; y < kh; y = y + 1) {{
+        for (var x: i32 = 0; x < kw; x = x + 1) {{
+            let ix = x - half_w;
+            let iy = y - half_h;
+            let sample_center = src_center + vec2f(f32(ix), f32(iy));
+            // Convert source texel-center coordinate to UV.
+            let uv = (sample_center + vec2f(0.5, 0.5)) / src_dims;
+
+            let idx: i32 = y * kw + x;
+            sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0) * k[u32(idx)];
+        }}
+    }}
+    return sum;
+  "#
+    );
+
     Ok(build_fullscreen_textured_bundle(body))
 }
 
