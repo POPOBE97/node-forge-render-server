@@ -2206,21 +2206,52 @@ fn build_shader_space_from_scene_internal(
                     .unwrap_or("");
                 let kernel = parse_kernel_source_js_like(kernel_src)?;
 
-                let target_size_conn = incoming_connection(&prepared.scene, layer_id, "targetSize")
-                    .ok_or_else(|| anyhow!("Downsample.targetSize missing for {layer_id}"))?;
-                let target_size_expr = {
-                    let mut ctx = MaterialCompileContext::default();
-                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-                    crate::renderer::node_compiler::compile_material_expr(
-                        &prepared.scene,
-                        nodes_by_id,
-                        &target_size_conn.from.node_id,
-                        Some(&target_size_conn.from.port_id),
-                        &mut ctx,
-                        &mut cache,
-                    )?
+                fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
+                    v.as_f64()
+                        .map(|x| x as f32)
+                        .or_else(|| v.as_i64().map(|x| x as f32))
+                        .or_else(|| v.as_u64().map(|x| x as f32))
+                }
+
+                // Resolve targetSize:
+                // - Prefer incoming connection (material graph)
+                // - Otherwise fall back to inline params (Downsample.params.targetSize)
+                let target_size_expr = if let Some(target_size_conn) =
+                    incoming_connection(&prepared.scene, layer_id, "targetSize")
+                {
+                    let target_size_expr = {
+                        let mut ctx = MaterialCompileContext::default();
+                        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                        crate::renderer::node_compiler::compile_material_expr(
+                            &prepared.scene,
+                            nodes_by_id,
+                            &target_size_conn.from.node_id,
+                            Some(&target_size_conn.from.port_id),
+                            &mut ctx,
+                            &mut cache,
+                        )?
+                    };
+                    coerce_to_type(target_size_expr, ValueType::Vec2)?
+                } else if let Some(v) = layer_node.params.get("targetSize") {
+                    let (x, y) = if let Some(arr) = v.as_array() {
+                        (
+                            arr.get(0).and_then(parse_json_number_f32).unwrap_or(0.0),
+                            arr.get(1).and_then(parse_json_number_f32).unwrap_or(0.0),
+                        )
+                    } else if let Some(obj) = v.as_object() {
+                        (
+                            obj.get("x").and_then(parse_json_number_f32).unwrap_or(0.0),
+                            obj.get("y").and_then(parse_json_number_f32).unwrap_or(0.0),
+                        )
+                    } else {
+                        bail!(
+                            "Downsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
+                        );
+                    };
+                    TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2)
+                } else {
+                    bail!("missing input '{layer_id}.targetSize' (no connection and no param)");
                 };
-                let target_size_expr = coerce_to_type(target_size_expr, ValueType::Vec2)?;
 
                 // Require CPU-known size for texture allocation.
                 // (Vector2Input is used by tests; other graphs are not supported yet.)
