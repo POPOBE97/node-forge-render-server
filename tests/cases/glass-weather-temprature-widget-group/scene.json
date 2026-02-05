@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-02T19:17:00.031Z",
-    "modified": "2026-02-02T19:17:00.031Z"
+    "created": "2026-02-03T09:13:42.053Z",
+    "modified": "2026-02-03T09:13:42.053Z"
   },
   "nodes": [
     {
@@ -1204,7 +1204,7 @@
           "type": "FloatInput",
           "position": {
             "x": 1100,
-            "y": 880
+            "y": 840
           },
           "width": 160,
           "label": "Float Input",
@@ -1550,7 +1550,7 @@
           "width": 201,
           "label": "Math Closure",
           "params": {
-            "source": "vec4 r = c * mix(1.0, t, show_thumb);\nr = mix(r, vec4(1.0), thumb * show_thumb);\noutput = r;"
+            "source": "vec4 r = c_ui * mix(1.0, t, show_thumb);\nr = mix(r, vec4(1.0), thumb * show_thumb);\noutput = r;"
           },
           "inputs": [
             {
@@ -1560,7 +1560,7 @@
             },
             {
               "id": "dynamic_1769589046255_2",
-              "name": "c",
+              "name": "c_ui",
               "type": "color"
             },
             {
@@ -1595,8 +1595,8 @@
             },
             {
               "portId": "dynamic_1769589046255_2",
-              "label": "c",
-              "variableName": "c",
+              "label": "c_ui",
+              "variableName": "c_ui",
               "type": "color",
               "sourceBinding": {
                 "nodeId": "ImageTexture_76",

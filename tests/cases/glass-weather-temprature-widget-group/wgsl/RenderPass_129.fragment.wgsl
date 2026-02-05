@@ -330,10 +330,10 @@ fn mc_GroupInstance_132_MathClosure_108_(uv: vec2<f32>, t: f32, size: vec2<f32>)
     return _e18;
 }
 
-fn mc_GroupInstance_132_MathClosure_111_(uv: vec2<f32>, t: f32, c: vec4<f32>, thumb: f32, show_thumb: f32) -> vec4<f32> {
+fn mc_GroupInstance_132_MathClosure_111_(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
-    var c_1: vec4<f32>;
+    var c_ui_1: vec4<f32>;
     var thumb_1: f32;
     var show_thumb_1: f32;
     var output: vec4<f32> = vec4(0f);
@@ -341,10 +341,10 @@ fn mc_GroupInstance_132_MathClosure_111_(uv: vec2<f32>, t: f32, c: vec4<f32>, th
 
     uv_1 = uv;
     t_1 = t;
-    c_1 = c;
+    c_ui_1 = c_ui;
     thumb_1 = thumb;
     show_thumb_1 = show_thumb;
-    let _e13: vec4<f32> = c_1;
+    let _e13: vec4<f32> = c_ui_1;
     let _e18: f32 = t_1;
     let _e19: f32 = show_thumb_1;
     r = (_e13 * mix(1f, _e18, _e19));
@@ -678,11 +678,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_GroupInstance_132_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_GroupInstance_132_MathClosure_108_out)) - 16.5));
-        let c = textureSample(img_tex_GroupInstance_132_ImageTexture_76, img_samp_GroupInstance_132_ImageTexture_76, (mc_GroupInstance_132_GroupInstance_125_MathClosure_99_out));
+        let c_ui = textureSample(img_tex_GroupInstance_132_ImageTexture_76, img_samp_GroupInstance_132_ImageTexture_76, (mc_GroupInstance_132_GroupInstance_125_MathClosure_99_out));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_GroupInstance_132_MathClosure_108_out)) - 16.5));
         let show_thumb = true;
         var output: vec4f;
-        output = mc_GroupInstance_132_MathClosure_111_(in.uv, t, c, thumb, select(0.0, 1.0, show_thumb));
+        output = mc_GroupInstance_132_MathClosure_111_(in.uv, t, c_ui, thumb, select(0.0, 1.0, show_thumb));
         mc_GroupInstance_132_MathClosure_111_out = output;
     }
     return blendNormal((mc_GroupInstance_132_MathClosure_111_out), (mc_GroupInstance_132_MathClosure_96_out));
