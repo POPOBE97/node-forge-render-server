@@ -2,16 +2,16 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-03T09:20:00.314Z",
-    "modified": "2026-02-03T09:20:00.314Z"
+    "created": "2026-02-05T07:37:14.037Z",
+    "modified": "2026-02-05T07:37:14.037Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": 1340,
-        "y": -460
+        "x": 1520,
+        "y": -900
       },
       "width": 160,
       "label": "Screen",
@@ -24,8 +24,8 @@
       "id": "Composite_2",
       "type": "Composite",
       "position": {
-        "x": 1140,
-        "y": -460
+        "x": 1320,
+        "y": -900
       },
       "width": 160,
       "label": "Composite",
@@ -37,14 +37,14 @@
       "id": "RenderTexture_3",
       "type": "RenderTexture",
       "position": {
-        "x": 920,
-        "y": -380
+        "x": 1120,
+        "y": -760
       },
       "width": 160,
       "label": "Render Texture",
       "params": {
-        "width": 1080,
-        "height": 2400,
+        "width": 540,
+        "height": 1200,
         "format": "rgba8unorm-srgb"
       }
     },
@@ -52,7 +52,7 @@
       "id": "ImageFile_5",
       "type": "ImageFile",
       "position": {
-        "x": 440,
+        "x": 420,
         "y": -460
       },
       "width": 192,
@@ -109,7 +109,7 @@
       "id": "Rect2DGeometry_8",
       "type": "Rect2DGeometry",
       "position": {
-        "x": 680,
+        "x": 660,
         "y": -660
       },
       "width": 160,
@@ -121,6 +121,47 @@
         "y": 1200,
         "radius": 0,
         "smooth": 1
+      }
+    },
+    {
+      "id": "Kernel_9",
+      "type": "Kernel",
+      "position": {
+        "x": 920,
+        "y": -900
+      },
+      "width": 160,
+      "label": "Kernel",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_10",
+      "type": "Downsample",
+      "position": {
+        "x": 1120,
+        "y": -900
+      },
+      "width": 160,
+      "label": "2X Downsample",
+      "params": {
+        "sampling": "Mirror"
+      }
+    },
+    {
+      "id": "Vector2Input_11",
+      "type": "Vector2Input",
+      "position": {
+        "x": 920,
+        "y": -740
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 540,
+        "y": 1200
       }
     }
   ],
@@ -148,17 +189,6 @@
       }
     },
     {
-      "id": "edge_5",
-      "from": {
-        "nodeId": "RenderPass_7",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_2",
-        "portId": "pass"
-      }
-    },
-    {
       "id": "edge_6",
       "from": {
         "nodeId": "ImageTexture_6",
@@ -181,7 +211,51 @@
       }
     },
     {
-      "id": "edge_8",
+      "id": "edge_9",
+      "from": {
+        "nodeId": "Kernel_9",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_10",
+      "from": {
+        "nodeId": "Vector2Input_11",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "targetSize"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "RenderPass_7",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_13",
       "from": {
         "nodeId": "ImageFile_5",
         "portId": "image"
