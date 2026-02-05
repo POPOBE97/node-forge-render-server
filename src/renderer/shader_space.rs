@@ -45,9 +45,10 @@ use crate::{
         utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             build_blur_image_wgsl_bundle, build_downsample_bundle,
-            build_downsample_pass_wgsl_bundle, build_horizontal_blur_bundle,
-            build_pass_wgsl_bundle, build_upsample_bilinear_bundle, build_vertical_blur_bundle,
-            clamp_min_1, gaussian_kernel_8, gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
+            build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
+            build_horizontal_blur_bundle, build_pass_wgsl_bundle, build_upsample_bilinear_bundle,
+            build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
+            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
         },
     },
 };
@@ -1492,6 +1493,9 @@ fn build_shader_space_from_scene_internal(
     let pass_nodes_in_order =
         compute_pass_render_order(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
 
+    // Track which pass node ids are direct composite layers (vs. transitive dependencies).
+    let composite_layer_ids: HashSet<String> = composite_layers_in_order.iter().cloned().collect();
+
     // Some pass nodes (RenderPass) are sampled downstream by Downsample nodes as higher-resolution
     // sources. For those, we want the pass output texture sized to its geometry extent so the
     // downstream Downsample actually has more source detail to work with.
@@ -1523,6 +1527,7 @@ fn build_shader_space_from_scene_internal(
                 // filtering (e.g. Downsample). In that case, the pass output resolution should match the
                 // pass geometry extent, not the Composite target size.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
+                let is_composite_layer = composite_layer_ids.contains(layer_id);
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
 
                 let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
@@ -1569,6 +1574,12 @@ fn build_shader_space_from_scene_internal(
                 ) = if is_sampled_output {
                     let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
                     let (w_u, h_u) = if is_downsample_source {
+                        // Optimization: when a pass is used as Downsample.source, keep its output sized
+                        // to its geometry extent for higher-resolution filtering downstream.
+                        //
+                        // NOTE: If the pass is also a direct composite layer, we still keep this
+                        // geometry-sized output so Downsample chains see the expected content.
+                        // Compositing is handled by a dedicated compose pass below.
                         (geo_w.max(1.0).round() as u32, geo_h.max(1.0).round() as u32)
                     } else {
                         // Legacy: sampled RenderPass outputs match the Composite target resolution.
@@ -1768,7 +1779,7 @@ fn build_shader_space_from_scene_internal(
 
                 render_pass_specs.push(RenderPassSpec {
                     name: pass_name.clone(),
-                    geometry_buffer,
+                    geometry_buffer: geometry_buffer.clone(),
                     instance_buffer,
                     target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
@@ -1781,6 +1792,83 @@ fn build_shader_space_from_scene_internal(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
                 composite_passes.push(pass_name);
+
+                // If a pass is sampled (so it renders to sys.pass.<id>.out) but is also a direct
+                // composite layer, we must still draw it into Composite.target.
+                //
+                // Strategy: add a dedicated compose pass that samples sys.pass.<id>.out and blends it
+                // into Composite.target at the correct layer position.
+                if is_sampled_output && is_composite_layer {
+                    let compose_pass_name: ResourceName =
+                        format!("sys.pass.{layer_id}.compose.pass").into();
+                    let compose_params_name: ResourceName =
+                        format!("params.sys.pass.{layer_id}.compose").into();
+
+                    // If the sampled output is target-sized (legacy), compose with a fullscreen quad.
+                    // If the sampled output is geometry-sized (Downsample optimization), compose with the
+                    // original geometry so it lands at the correct screen-space position.
+                    let (compose_geometry_buffer, compose_params_val) = if pass_target_w_u
+                        == tgt_w_u
+                        && pass_target_h_u == tgt_h_u
+                    {
+                        let compose_geo: ResourceName =
+                            format!("sys.pass.{layer_id}.compose.geo").into();
+                        geometry_buffers
+                            .push((compose_geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+                        (
+                            compose_geo,
+                            Params {
+                                target_size: [tgt_w, tgt_h],
+                                geo_size: [tgt_w, tgt_h],
+                                center: [tgt_w * 0.5, tgt_h * 0.5],
+                                geo_translate: [0.0, 0.0],
+                                geo_scale: [1.0, 1.0],
+                                time: 0.0,
+                                _pad0: 0.0,
+                                color: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        )
+                    } else {
+                        (
+                            geometry_buffer.clone(),
+                            Params {
+                                target_size: [tgt_w, tgt_h],
+                                geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
+                                center: [geo_x, geo_y],
+                                geo_translate: [0.0, 0.0],
+                                geo_scale: [1.0, 1.0],
+                                time: 0.0,
+                                _pad0: 0.0,
+                                color: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        )
+                    };
+
+                    // Sample render-target textures with a Y flip (same convention as PassTexture).
+                    let fragment_body =
+                        "let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n    return textureSample(src_tex, src_samp, uv);"
+                            .to_string();
+                    let bundle = build_fullscreen_textured_bundle(fragment_body);
+
+                    render_pass_specs.push(RenderPassSpec {
+                        name: compose_pass_name.clone(),
+                        geometry_buffer: compose_geometry_buffer,
+                        instance_buffer: None,
+                        target_texture: target_texture_name.clone(),
+                        params_buffer: compose_params_name,
+                        baked_data_parse_buffer: None,
+                        params: compose_params_val,
+                        shader_wgsl: bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: pass_output_texture.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kind: SamplerKind::NearestClamp,
+                        blend_state,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(compose_pass_name);
+                }
 
                 // Register output so downstream PassTexture nodes can resolve it.
                 pass_output_registry.register(PassOutputSpec {
