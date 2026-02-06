@@ -87,8 +87,62 @@ fn lerp_pos2(a: egui::Pos2, b: egui::Pos2, t: f32) -> egui::Pos2 {
     egui::pos2(lerp(a.x, b.x, t), lerp(a.y, b.y, t))
 }
 
+fn lerp_vec2(a: egui::Vec2, b: egui::Vec2, t: f32) -> egui::Vec2 {
+    egui::vec2(lerp(a.x, b.x, t), lerp(a.y, b.y, t))
+}
+
 fn lerp_rect(a: Rect, b: Rect, t: f32) -> Rect {
     Rect::from_min_max(lerp_pos2(a.min, b.min, t), lerp_pos2(a.max, b.max, t))
+}
+
+fn cover_uv_rect(dst_size: egui::Vec2, tex_size: egui::Vec2) -> Rect {
+    let dst_aspect = (dst_size.x / dst_size.y).max(0.0001);
+    let tex_aspect = (tex_size.x / tex_size.y).max(0.0001);
+
+    // Pick a sampled UV rect whose *pixel* aspect matches the destination, so the image is never
+    // stretched. Use cover behavior (center-crop) so the destination rect is fully filled.
+    let (uv_w, uv_h) = if dst_aspect > tex_aspect {
+        // Destination is wider: crop vertically.
+        (1.0, tex_aspect / dst_aspect)
+    } else {
+        // Destination is taller: crop horizontally.
+        (dst_aspect / tex_aspect, 1.0)
+    };
+
+    let size = egui::vec2(uv_w, uv_h);
+    Rect::from_center_size(pos2(0.5, 0.5), size)
+}
+
+fn clamp_uv_rect_into_unit(mut uv: Rect) -> Rect {
+    let size = uv.size();
+    // If the rect is larger than the unit square, clamping isn't meaningful; allow sampling
+    // outside [0,1] so the sampler border color can show.
+    if size.x > 1.0 || size.y > 1.0 {
+        return uv;
+    }
+
+    if uv.min.x < 0.0 {
+        let d = -uv.min.x;
+        uv.min.x += d;
+        uv.max.x += d;
+    }
+    if uv.max.x > 1.0 {
+        let d = uv.max.x - 1.0;
+        uv.min.x -= d;
+        uv.max.x -= d;
+    }
+    if uv.min.y < 0.0 {
+        let d = -uv.min.y;
+        uv.min.y += d;
+        uv.max.y += d;
+    }
+    if uv.max.y > 1.0 {
+        let d = uv.max.y - 1.0;
+        uv.min.y -= d;
+        uv.max.y -= d;
+    }
+
+    uv
 }
 
 fn ease_out_cubic(t: f32) -> f32 {
@@ -777,25 +831,29 @@ impl eframe::App for App {
                 )
             };
             let framed_canvas_rect = Rect::from_center_size(avail_rect.center(), egui::vec2(w, h));
-            let framed_view_rect = framed_canvas_rect; //.shrink(OUTER_MARGIN);
-
-            let animated_view_rect = lerp_rect(full_rect, framed_view_rect, ui_sidebar_factor);
             let animated_canvas_rect = lerp_rect(full_rect, framed_canvas_rect, ui_sidebar_factor);
-
-            let view_rect = animated_view_rect;
             let paint_frame = ui_sidebar_factor > 0.001;
 
             // Preserve pan during the animation by compensating for per-frame center drift.
             let prev_center = ctx
                 .memory(|mem| mem.data.get_temp::<egui::Pos2>(canvas_center_prev_id))
-                .unwrap_or(animated_view_rect.center());
-            let new_center = animated_view_rect.center();
+                .unwrap_or(animated_canvas_rect.center());
+            let new_center = animated_canvas_rect.center();
             self.pan += prev_center - new_center;
 
             // Fit-zoom is used for initial zoom + manual reset only. For min clamping,
             // use a stable min-zoom captured once to avoid zoom jumps across mode changes.
-            let fit_zoom = (view_rect.width() / image_size.x)
-                .min(view_rect.height() / image_size.y)
+            let fit_zoom = (animated_canvas_rect.width() / image_size.x)
+                .min(animated_canvas_rect.height() / image_size.y)
+                .max(0.01);
+
+            // When transitioning *into* Sidebar mode, the animated view rect starts at `full_rect`
+            // (factor=0) and shrinks to `framed_view_rect` (factor=1). If we use the per-frame
+            // `fit_zoom` as the animation target at the moment of the mode flip, we'd capture the
+            // full-rect zoom and then snap to the framed zoom after the animation completes.
+            // Use the framed target zoom for Sidebar transitions to keep the texture scale smooth.
+            let framed_fit_zoom = (animated_canvas_rect.width() / image_size.x)
+                .min(animated_canvas_rect.height() / image_size.y)
                 .max(0.01);
             if !self.zoom_initialized {
                 self.zoom = fit_zoom;
@@ -815,7 +873,9 @@ impl eframe::App for App {
 
             if prev_mode != window_mode {
                 let (start_zoom, start_pan, target_zoom, target_pan) = match window_mode {
-                    UiWindowMode::Sidebar => (self.zoom, self.pan, fit_zoom, egui::Vec2::ZERO),
+                    UiWindowMode::Sidebar => {
+                        (self.zoom, self.pan, framed_fit_zoom, egui::Vec2::ZERO)
+                    }
                     UiWindowMode::CanvasOnly => (
                         fit_zoom,
                         egui::Vec2::ZERO,
@@ -864,16 +924,16 @@ impl eframe::App for App {
                 self.pan = start_pan + (target_pan - start_pan) * factor;
                 self.pan_start = None;
                 if raw_t >= 1.0 {
+                    // Snap exactly to the target on the final frame to avoid a visible
+                    // end-of-animation UV jump caused by tiny float drift.
+                    self.zoom = target_zoom;
+                    self.pan = target_pan;
                     pan_zoom_anim = None;
                 }
                 ctx.memory_mut(|mem| {
                     mem.data
                         .insert_temp::<Option<UiAnim>>(pan_zoom_anim_id, pan_zoom_anim);
                 });
-            } else if window_mode == UiWindowMode::Sidebar {
-                self.zoom = fit_zoom;
-                self.pan = egui::Vec2::ZERO;
-                self.pan_start = None;
             }
 
             let pan_zoom_animating = pan_zoom_anim.is_some();
@@ -897,7 +957,7 @@ impl eframe::App for App {
             let zoom = clamp_zoom(self.zoom, effective_min_zoom);
             self.zoom = zoom;
             let draw_size = image_size * zoom;
-            let base_min = view_rect.center() - draw_size * 0.5;
+            let base_min = animated_canvas_rect.center() - draw_size * 0.5;
             let mut image_rect = Rect::from_min_size(base_min + self.pan, draw_size);
 
             let response = ui.allocate_rect(avail_rect, egui::Sense::click_and_drag());
@@ -907,7 +967,7 @@ impl eframe::App for App {
                 self.pan = egui::Vec2::ZERO;
                 self.pan_start = None;
                 let draw_size = image_size * self.zoom;
-                let base_min = view_rect.center() - draw_size * 0.5;
+                let base_min = animated_canvas_rect.center() - draw_size * 0.5;
                 image_rect = Rect::from_min_size(base_min, draw_size);
             }
 
@@ -973,15 +1033,16 @@ impl eframe::App for App {
                     let next_zoom = clamp_zoom(prev_zoom * scroll_zoom, effective_min_zoom);
                     if next_zoom != prev_zoom {
                         let prev_size = image_size * prev_zoom;
-                        let prev_min = view_rect.center() - prev_size * 0.5 + self.pan;
+                        let prev_min = animated_canvas_rect.center() - prev_size * 0.5 + self.pan;
                         let local = (pointer_pos - prev_min) / prev_size;
                         self.zoom = next_zoom;
                         let next_size = image_size * next_zoom;
                         let next_min = pointer_pos - local * next_size;
-                        let desired_pan = next_min - (view_rect.center() - next_size * 0.5);
+                        let desired_pan =
+                            next_min - (animated_canvas_rect.center() - next_size * 0.5);
                         self.pan = desired_pan;
                         image_rect = Rect::from_min_size(
-                            view_rect.center() - next_size * 0.5 + self.pan,
+                            animated_canvas_rect.center() - next_size * 0.5 + self.pan,
                             next_size,
                         );
                     }
@@ -1009,11 +1070,22 @@ impl eframe::App for App {
                 egui::CornerRadius::ZERO
             };
 
-            let image_size = image_rect.size();
-            let uv_min = (animated_canvas_rect.min - image_rect.min) / image_size;
-            let uv_max = (animated_canvas_rect.max - image_rect.min) / image_size;
-            let computed_uv =
-                Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
+            // UV mapping animation (CanvasOnly -> Sidebar): fill the rect progressively while
+            // always preserving aspect ratio (no stretching). Do this by interpolating the UV
+            // *scale* (size), not min/max independently.
+            let image_rect_size = image_rect.size();
+            let uv0_min = (animated_canvas_rect.min - image_rect.min) / image_rect_size;
+            let uv0_max = (animated_canvas_rect.max - image_rect.min) / image_rect_size;
+            let uv0 = Rect::from_min_max(pos2(uv0_min.x, uv0_min.y), pos2(uv0_max.x, uv0_max.y));
+
+            let mut uv1 = cover_uv_rect(animated_canvas_rect.size(), image_size);
+            // Keep the camera center stable while we scale to cover.
+            uv1 = Rect::from_center_size(uv0.center(), uv1.size());
+            uv1 = clamp_uv_rect_into_unit(uv1);
+
+            let uv_center = lerp_pos2(uv0.center(), uv1.center(), ui_sidebar_factor);
+            let uv_size = lerp_vec2(uv0.size(), uv1.size(), ui_sidebar_factor);
+            let computed_uv = Rect::from_center_size(uv_center, uv_size);
             ui.painter().add(
                 egui::epaint::RectShape::filled(animated_canvas_rect, rounding, Color32::WHITE)
                     .with_texture(self.color_attachment.unwrap(), computed_uv),
@@ -1021,11 +1093,19 @@ impl eframe::App for App {
 
             if response.clicked_by(egui::PointerButton::Primary) {
                 if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
-                    if animated_view_rect.contains(pointer_pos) && image_rect.contains(pointer_pos)
+                    if animated_canvas_rect.contains(pointer_pos)
+                        && (if matches!(window_mode, UiWindowMode::Sidebar) {
+                            animated_canvas_rect.contains(pointer_pos)
+                        } else {
+                            image_rect.contains(pointer_pos)
+                        })
                     {
-                        let local = (pointer_pos - image_rect.min) / image_rect.size();
-                        let x = (local.x * self.resolution[0] as f32).floor() as u32;
-                        let y = (local.y * self.resolution[1] as f32).floor() as u32;
+                        let local =
+                            (pointer_pos - animated_canvas_rect.min) / animated_canvas_rect.size();
+                        let uv_x = computed_uv.min.x + local.x * computed_uv.width();
+                        let uv_y = computed_uv.min.y + local.y * computed_uv.height();
+                        let x = (uv_x * self.resolution[0] as f32).floor() as u32;
+                        let y = (uv_y * self.resolution[1] as f32).floor() as u32;
                         if x < self.resolution[0] && y < self.resolution[1] {
                             if let Ok(image) = self
                                 .shader_space
@@ -1054,7 +1134,7 @@ impl eframe::App for App {
             ctx.memory_mut(|mem| {
                 mem.data.insert_temp(window_mode_prev_id, window_mode);
                 mem.data
-                    .insert_temp(canvas_center_prev_id, animated_view_rect.center());
+                    .insert_temp(canvas_center_prev_id, animated_canvas_rect.center());
             });
         });
 
