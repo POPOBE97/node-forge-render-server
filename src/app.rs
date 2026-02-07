@@ -320,7 +320,10 @@ fn apply_scene_resolution_to_window_state(
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        ctx.set_visuals(egui::Visuals::dark());
+        let mut visuals = egui::Visuals::dark();
+        visuals.override_text_color =
+            Some(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 204));
+        ctx.set_visuals(visuals);
 
         // UI window mode is stored in egui memory so we don't have to plumb
         // new fields through App construction.
