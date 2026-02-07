@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-06T07:07:44.563Z",
-    "modified": "2026-02-06T07:07:44.563Z"
+    "created": "2026-02-07T17:37:32.038Z",
+    "modified": "2026-02-07T17:37:32.038Z"
   },
   "nodes": [
     {
@@ -470,7 +470,7 @@
         "y": -280
       },
       "width": 160,
-      "label": "Group",
+      "label": "Geo UV",
       "params": {
         "groupId": "Geo UV"
       },
@@ -540,7 +540,7 @@
         "y": 180
       },
       "width": 160,
-      "label": "Group",
+      "label": "Geo UV",
       "params": {
         "groupId": "Geo UV"
       },
@@ -610,7 +610,7 @@
         "y": 700
       },
       "width": 160,
-      "label": "Group",
+      "label": "Geo UV",
       "params": {
         "groupId": "Geo UV"
       },
@@ -1007,7 +1007,7 @@
   "groups": [
     {
       "id": "Geo UV",
-      "name": "Group",
+      "name": "Geo UV",
       "inputs": [],
       "outputs": [
         {
@@ -1060,6 +1060,13 @@
               "type": "vector2"
             }
           ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
           "inputBindings": [
             {
               "portId": "dynamic_1770282291422_1",
@@ -1082,13 +1089,6 @@
                 "outputPortId": "xy",
                 "outputLabel": "XY"
               }
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "vector2"
             }
           ]
         }
