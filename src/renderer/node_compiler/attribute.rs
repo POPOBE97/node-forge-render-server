@@ -1,6 +1,6 @@
 //! Compiler for Attribute node (reads vertex attributes).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use super::super::types::{TypedExpr, ValueType};
 use crate::dsl::Node;

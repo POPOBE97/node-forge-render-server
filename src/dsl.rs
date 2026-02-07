@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use serde::{Deserialize, Serialize};
 
@@ -423,15 +423,8 @@ pub fn resolve_input_f32(
     node_id: &str,
     port_id: &str,
 ) -> Result<Option<f32>> {
-    Ok(
-        resolve_input_f64(scene, nodes_by_id, node_id, port_id)?.and_then(|v| {
-            if v.is_finite() {
-                Some(v as f32)
-            } else {
-                None
-            }
-        }),
-    )
+    Ok(resolve_input_f64(scene, nodes_by_id, node_id, port_id)?
+        .and_then(|v| if v.is_finite() { Some(v as f32) } else { None }))
 }
 
 fn f64_to_i64_floor(v: f64) -> Option<i64> {

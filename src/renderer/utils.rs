@@ -1,7 +1,7 @@
 //! Utility functions for the renderer module.
 
-use anyhow::{anyhow, bail, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use image::DynamicImage;
 
 use super::types::{TypedExpr, ValueType};

@@ -1,9 +1,9 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde::Deserialize;
 
-use crate::dsl::{parse_f32, parse_texture_format, parse_u32, Connection, Node, SceneDSL};
+use crate::dsl::{Connection, Node, SceneDSL, parse_f32, parse_texture_format, parse_u32};
 
 const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json");
 

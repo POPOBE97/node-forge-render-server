@@ -1,10 +1,10 @@
 //! Compilers for trigonometry nodes (Sin, Cos) and Time node.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr};
-use crate::dsl::{incoming_connection, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile a Sin node.
 ///

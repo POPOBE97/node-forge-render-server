@@ -17,22 +17,22 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
+    HeadlessRenderer, HeadlessRendererConfig, ResourceName,
     eframe::wgpu::{
-        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
+        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
     },
     pool::{
         buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
-    HeadlessRenderer, HeadlessRendererConfig, ResourceName,
 };
 
 use crate::{
-    dsl::{find_node, incoming_connection, parse_str, parse_texture_format, SceneDSL},
+    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
         node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
         scene_prep::{bake_data_parse_nodes, prepare_scene},
@@ -44,11 +44,11 @@ use crate::{
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            build_blur_image_wgsl_bundle, build_downsample_bundle,
+            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle, build_downsample_bundle,
             build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
             build_horizontal_blur_bundle, build_pass_wgsl_bundle, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
-            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
+            gaussian_mip_level_and_sigma_p,
         },
     },
 };
@@ -3177,7 +3177,7 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
 

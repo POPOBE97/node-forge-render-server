@@ -1,12 +1,12 @@
 //! Compilers for color manipulation nodes (ColorMix/Blend Color, ColorRamp, HSVAdjust, Luminance).
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::{fmt_f32, to_vec4_color};
-use crate::dsl::{incoming_connection, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
     v.as_f64()

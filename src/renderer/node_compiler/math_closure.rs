@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
-use crate::dsl::{incoming_connection, Node, NodePort, SceneDSL};
-use crate::renderer::glsl_snippet::{compile_glsl_snippet, GlslParam, GlslSnippetSpec};
+use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
+use crate::renderer::glsl_snippet::{GlslParam, GlslSnippetSpec, compile_glsl_snippet};
 use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 use crate::renderer::validation::GlslShaderStage;

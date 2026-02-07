@@ -1,11 +1,11 @@
 //! Compilers for vector math nodes (VectorMath, CrossProduct, DotProduct, Normalize, Refract).
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use super::super::utils::coerce_to_type;
-use crate::dsl::{incoming_connection, Node, SceneDSL};
+use crate::dsl::{Node, SceneDSL, incoming_connection};
 
 /// Compile a DotProduct node.
 ///
