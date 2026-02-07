@@ -476,27 +476,18 @@ fn main() -> Result<()> {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
 
-            Ok(Box::new(app::App {
+            Ok(Box::new(app::App::from_init(app::AppInit {
                 shader_space,
                 resolution,
                 window_resolution: resolution_hint,
                 follow_scene_resolution_for_window: false,
                 output_texture_name,
-                color_attachment: None,
                 start: Instant::now(),
                 passes,
-
                 scene_rx: app_scene_rx,
                 ws_hub: hub,
                 last_good,
-
-                zoom: 1.0,
-                zoom_initialized: false,
-                pan: egui::Vec2::ZERO,
-                pan_start: None,
-                last_sampled: None,
-                texture_filter: rust_wgpu_fiber::eframe::wgpu::FilterMode::Linear,
-            }))
+            })))
         }),
     )
     .map_err(|e| anyhow!("eframe run failed: {e}"))?;
