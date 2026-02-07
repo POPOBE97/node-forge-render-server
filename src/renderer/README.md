@@ -10,9 +10,9 @@ src/renderer/
 ├── types.rs                        # Core type definitions
 ├── utils.rs                        # Utility functions
 ├── validation.rs                   # WGSL validation using naga (4 tests)
-├── scene_prep.rs                   # Scene preparation and validation
+├── scene_prep/                   # Scene preparation and validation
 ├── wgsl.rs                         # WGSL shader generation
-├── shader_space.rs                 # ShaderSpace construction
+├── shader_space/                 # ShaderSpace construction
 └── node_compiler/                  # Node compilation infrastructure
     ├── mod.rs                      # Compiler framework and dispatch
     ├── input_nodes.rs              # ColorInput, FloatInput, etc. (5 tests)
@@ -53,10 +53,10 @@ WGSL validation using the naga library:
 - `validate_wgsl_with_context()` - Validate with contextual error messages
 - Includes 4 unit tests covering valid/invalid WGSL cases
 
-### scene_prep.rs
+### scene_prep/
 Scene preparation and validation:
 - `prepare_scene()` - Prepare scene for rendering (topological sort, validation)
-- `auto_wrap_primitive_pass_inputs()` - Auto-wrap primitive values into render passes
+- Internal scene-prep stages auto-wrap primitive values into render passes
 - Port type utilities for connection validation
 - Composite layer ordering
 
@@ -67,10 +67,10 @@ WGSL shader generation:
 - Gaussian blur utilities for post-processing effects
 - Helper functions for formatting WGSL code
 
-### shader_space.rs
+### shader_space/
 ShaderSpace construction:
-- `build_shader_space_from_scene()` - Build complete ShaderSpace from scene
-- `build_error_shader_space()` - Build error visualization ShaderSpace
+- `ShaderSpaceBuilder` - Build complete ShaderSpace from scene
+- `ShaderSpaceBuilder::build_error()` - Build error visualization ShaderSpace
 - `update_pass_params()` - Update uniform parameters for passes
 - Texture creation, geometry buffers, uniform buffers, pipelines
 - Composite layer handling
@@ -326,7 +326,7 @@ DSL JSON
     ↓
 Schema Validation (src/schema.rs)
     ↓
-Scene Preparation (scene_prep.rs)
+Scene Preparation (scene_prep/)
     ├── Tree-shake unused nodes
     ├── Auto-wrap primitives
     └── Topological sort
@@ -343,7 +343,7 @@ WGSL Generation (wgsl.rs)
 WGSL Validation (validation.rs)
     └── Validate with naga
     ↓
-ShaderSpace Construction (shader_space.rs)
+ShaderSpace Construction (shader_space/)
     ├── Create GPU resources
     ├── Build pipelines
     └── Setup render order
@@ -392,9 +392,9 @@ Render (rust-wgpu-fiber)
 ## Migration from renderer.rs
 
 The modular renderer structure is now **fully implemented**:
-- `scene_prep.rs` - Scene preparation and validation
+- `scene_prep/` - Scene preparation and validation
 - `wgsl.rs` - WGSL shader generation
-- `shader_space.rs` - ShaderSpace construction (1185 lines)
+- `shader_space/` - ShaderSpace construction (1185 lines)
 - `node_compiler/*` - All node compilers organized by category
 
 The original monolithic `renderer.rs` has been successfully decomposed into this modular structure.

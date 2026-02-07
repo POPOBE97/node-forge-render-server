@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use rust_wgpu_fiber::{
-    ResourceName,
-    eframe::{egui, egui_wgpu, wgpu},
-};
+use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::{protocol, renderer, ws};
 
@@ -67,31 +64,23 @@ pub fn apply_scene_update(
             }
 
             let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                renderer::build_shader_space_from_scene_for_ui(
-                    &scene,
+                renderer::ShaderSpaceBuilder::new(
                     Arc::new(render_state.device.clone()),
                     Arc::new(render_state.queue.clone()),
                 )
+                .with_options(renderer::ShaderSpaceBuildOptions {
+                    presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
+                    debug_dump_wgsl_dir: None,
+                })
+                .build(&scene)
             }));
 
             match build_result {
-                Ok(Ok((shader_space, resolution, output_texture_name, passes))) => {
-                    app.shader_space = shader_space;
-                    app.resolution = resolution;
-                    app.passes = passes;
-
-                    let mut display_name = output_texture_name.clone();
-                    let maybe_display: ResourceName =
-                        format!("{}.present.sdr.srgb", output_texture_name.as_str()).into();
-                    if app
-                        .shader_space
-                        .textures
-                        .get(maybe_display.as_str())
-                        .is_some()
-                    {
-                        display_name = maybe_display;
-                    }
-                    app.output_texture_name = display_name;
+                Ok(Ok(result)) => {
+                    app.shader_space = result.shader_space;
+                    app.resolution = result.resolution;
+                    app.passes = result.pass_bindings;
+                    app.output_texture_name = result.present_output_texture;
 
                     if let Ok(mut g) = app.last_good.lock() {
                         *g = Some(scene);
@@ -147,17 +136,16 @@ pub fn apply_scene_update(
 }
 
 fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
-    if let Ok((shader_space, resolution, output_texture_name, passes)) =
-        renderer::build_error_shader_space(
-            Arc::new(render_state.device.clone()),
-            Arc::new(render_state.queue.clone()),
-            app.resolution,
-        )
+    if let Ok(result) = renderer::ShaderSpaceBuilder::new(
+        Arc::new(render_state.device.clone()),
+        Arc::new(render_state.queue.clone()),
+    )
+    .build_error(app.resolution)
     {
-        app.shader_space = shader_space;
-        app.resolution = resolution;
-        app.output_texture_name = output_texture_name;
-        app.passes = passes;
+        app.shader_space = result.shader_space;
+        app.resolution = result.resolution;
+        app.output_texture_name = result.present_output_texture;
+        app.passes = result.pass_bindings;
     }
 }
 

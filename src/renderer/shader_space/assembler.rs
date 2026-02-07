@@ -9,6 +9,7 @@
 //! This module supports chaining pass nodes together (e.g., GuassianBlurPass -> GuassianBlurPass).
 //! Each pass that outputs to `pass` type gets an intermediate texture allocated automatically.
 //! Resolution inheritance: downstream passes inherit upstream resolution by default, but can override.
+#![allow(dead_code)]
 
 use std::{
     borrow::Cow,
@@ -20,7 +21,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
-    HeadlessRenderer, HeadlessRendererConfig, ResourceName,
+    ResourceName,
     eframe::wgpu::{
         self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
     },
@@ -823,24 +824,6 @@ pub(crate) fn resolve_geometry_for_render_pass(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn render_scene_to_png_headless(
-    scene: &SceneDSL,
-    output_path: impl AsRef<std::path::Path>,
-) -> Result<()> {
-    let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
-        .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
-
-    let (shader_space, _resolution, output_texture_name, _passes) =
-        build_shader_space_from_scene(scene, renderer.device.clone(), renderer.queue.clone())?;
-
-    shader_space.render();
-    shader_space
-        .save_texture_png(output_texture_name.as_str(), output_path)
-        .map_err(|e| anyhow!("failed to save png: {e}"))?;
-    Ok(())
-}
-
 fn sampled_pass_node_ids(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
@@ -1002,14 +985,7 @@ enum SamplerKind {
     LinearClamp,
 }
 
-#[derive(Clone, Debug)]
-struct PassTextureBinding {
-    /// ResourceName of the texture to bind.
-    texture: ResourceName,
-    /// If this binding refers to an ImageTexture node id, keep it here so the loader knows
-    /// it must provide CPU image bytes.
-    image_node_id: Option<String>,
-}
+type PassTextureBinding = crate::renderer::render_plan::types::PassTextureBinding;
 
 pub fn update_pass_params(
     shader_space: &ShaderSpace,
@@ -1044,162 +1020,11 @@ struct RenderPassSpec {
 }
 
 fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
-    // Convert straight-alpha source -> premultiplied-alpha output.
-    // If the source texture is sRGB, textureSample returns linear floats.
-    format!(
-        "\
-struct Params {{\n\
-    target_size: vec2f,\n\
-    geo_size: vec2f,\n\
-    center: vec2f,\n\
-\n\
-    geo_translate: vec2f,\n\
-    geo_scale: vec2f,\n\
-\n\
-    time: f32,\n\
-    _pad0: f32,\n\
-\n\
-    color: vec4f,\n\
-}};\n\
-\n\
-@group(0) @binding(0)\n\
-var<uniform> params: Params;\n\
-\n\
-struct VSOut {{\n\
-    @builtin(position) position: vec4f,\n\
-    @location(0) uv: vec2f,\n\
-    @location(1) frag_coord_gl: vec2f,\n\
-    @location(2) local_px: vec2f,\n\
-    @location(3) geo_size_px: vec2f,\n\
-}};\n\
-\n\
-@group(1) @binding(0)\n\
-var {tex_var}: texture_2d<f32>;\n\
-\n\
-@group(1) @binding(1)\n\
-var {samp_var}: sampler;\n\
-\n\
-@vertex\n\
-fn vs_main(\n\
-    @location(0) position: vec3f,\n\
-    @location(1) uv: vec2f,\n\
-) -> VSOut {{\n\
-    var out: VSOut;\n\
-    let _unused_geo_size = params.geo_size;\n\
-    let _unused_geo_translate = params.geo_translate;\n\
-    let _unused_geo_scale = params.geo_scale;\n\
-\n\
-    out.uv = uv;\n\
-    out.geo_size_px = params.geo_size;\n\
-    out.local_px = uv * out.geo_size_px;\n\
-\n\
-    let p_local = position;\n\
-    let p_px = params.center + p_local.xy;\n\
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
-    out.position = vec4f(ndc, position.z, 1.0);\n\
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
-    return out;\n\
-}}\n\
-\n\
-@fragment\n\
-fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
-    // Rendering into an offscreen texture produces a Y-flipped image when later\n\
-    // sampled as an ImageTexture (ImageTexture sampling does not flip UVs).\n\
-    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n\
-    let c = textureSample({tex_var}, {samp_var}, uv);\n\
-    return vec4(c.xyz * c.w, c.w);\n\
-}}\n"
-    )
+    crate::renderer::wgsl_templates::build_image_premultiply_wgsl(tex_var, samp_var)
 }
 
 fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
-    // Convert linear scene output -> sRGB-encoded bytes for display paths that treat the
-    // framebuffer as linear (common in UI renderers). The source texture is assumed to be an
-    // sRGB texture; sampling returns linear floats.
-    //
-    // Keep alpha linear (do NOT gamma-correct alpha).
-    //
-    // Also apply the same offscreen-texture Y flip used by PassTexture/premultiply paths so our
-    // bottom-left UV convention continues to render upright.
-    format!(
-        "\
-struct Params {{\n\
-    target_size: vec2f,\n\
-    geo_size: vec2f,\n\
-    center: vec2f,\n\
-\n\
-    geo_translate: vec2f,\n\
-    geo_scale: vec2f,\n\
-\n\
-    time: f32,\n\
-    _pad0: f32,\n\
-\n\
-    color: vec4f,\n\
-}};\n\
-\n\
-@group(0) @binding(0)\n\
-var<uniform> params: Params;\n\
-\n\
-struct VSOut {{\n\
-    @builtin(position) position: vec4f,\n\
-    @location(0) uv: vec2f,\n\
-    @location(1) frag_coord_gl: vec2f,\n\
-    @location(2) local_px: vec2f,\n\
-    @location(3) geo_size_px: vec2f,\n\
-}};\n\
-\n\
-@group(1) @binding(0)\n\
-var {tex_var}: texture_2d<f32>;\n\
-\n\
-@group(1) @binding(1)\n\
-var {samp_var}: sampler;\n\
-\n\
-fn linear_to_srgb_channel(x_in: f32) -> f32 {{\n\
-    let x = clamp(x_in, 0.0, 1.0);\n\
-    if (x <= 0.0031308) {{\n\
-        return x * 12.92;\n\
-    }}\n\
-    return 1.055 * pow(x, 1.0 / 2.4) - 0.055;\n\
-}}\n\
-\n\
-fn linear_to_srgb(rgb: vec3f) -> vec3f {{\n\
-    return vec3f(\n\
-        linear_to_srgb_channel(rgb.x),\n\
-        linear_to_srgb_channel(rgb.y),\n\
-        linear_to_srgb_channel(rgb.z),\n\
-    );\n\
-}}\n\
-\n\
-@vertex\n\
-fn vs_main(\n\
-    @location(0) position: vec3f,\n\
-    @location(1) uv: vec2f,\n\
-) -> VSOut {{\n\
-    var out: VSOut;\n\
-    let _unused_geo_size = params.geo_size;\n\
-    let _unused_geo_translate = params.geo_translate;\n\
-    let _unused_geo_scale = params.geo_scale;\n\
-\n\
-    out.uv = uv;\n\
-    out.geo_size_px = params.geo_size;\n\
-    out.local_px = uv * out.geo_size_px;\n\
-\n\
-    let p_local = position;\n\
-    let p_px = params.center + p_local.xy;\n\
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
-    out.position = vec4f(ndc, position.z, 1.0);\n\
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
-    return out;\n\
-}}\n\
-\n\
-@fragment\n\
-fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
-    // Sampling a render-target texture with our bottom-left UV convention requires a Y flip.
-    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n\
-    let c = textureSample({tex_var}, {samp_var}, uv);\n\
-    return vec4f(linear_to_srgb(c.xyz), c.w);\n\
-}}\n"
-    )
+    crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var)
 }
 
 // UI presentation helper: encode linear output to SDR sRGB for egui-wgpu.
@@ -1327,34 +1152,15 @@ fn parse_render_pass_blend_state(
 }
 
 fn flip_image_y_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
-    // The renderer's UV convention is bottom-left origin (GL-like).
-    // Most image sources are top-left origin, so we flip pixels once on upload.
-    let mut rgba = image.as_ref().to_rgba8();
-    image::imageops::flip_vertical_in_place(&mut rgba);
-    Arc::new(DynamicImage::ImageRgba8(rgba))
+    crate::renderer::render_plan::image_prepass::flip_image_y_rgba8(image)
 }
 
-pub fn build_shader_space_from_scene(
-    scene: &SceneDSL,
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
-) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
-    build_shader_space_from_scene_internal(scene, device, queue, false)
-}
-
-pub fn build_shader_space_from_scene_for_ui(
-    scene: &SceneDSL,
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
-) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
-    build_shader_space_from_scene_internal(scene, device, queue, true)
-}
-
-fn build_shader_space_from_scene_internal(
+pub(crate) fn build_shader_space_from_scene_internal(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     enable_display_encode: bool,
+    debug_dump_wgsl_dir: Option<PathBuf>,
 ) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
     let prepared = prepare_scene(scene)?;
     let resolution = prepared.resolution;
@@ -1376,7 +1182,8 @@ fn build_shader_space_from_scene_internal(
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
     // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
-    let sampled_pass_ids = sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
+    let sampled_pass_ids =
+        crate::renderer::render_plan::sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
 
     for id in order {
         let node = match nodes_by_id.get(id) {
@@ -1490,8 +1297,11 @@ fn build_shader_space_from_scene_internal(
 
     // Composite draw order only contains direct inputs. For chained passes, we must render
     // upstream pass dependencies first so PassTexture can resolve them.
-    let pass_nodes_in_order =
-        compute_pass_render_order(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
+    let pass_nodes_in_order = crate::renderer::render_plan::compute_pass_render_order(
+        &prepared.scene,
+        nodes_by_id,
+        composite_layers_in_order,
+    )?;
 
     // Track which pass node ids are direct composite layers (vs. transitive dependencies).
     let composite_layer_ids: HashSet<String> = composite_layers_in_order.iter().cloned().collect();
@@ -1530,7 +1340,9 @@ fn build_shader_space_from_scene_internal(
                 let is_composite_layer = composite_layer_ids.contains(layer_id);
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
 
-                let blend_state = parse_render_pass_blend_state(&layer_node.params)?;
+                let blend_state = crate::renderer::render_plan::parse_render_pass_blend_state(
+                    &layer_node.params,
+                )?;
 
                 let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
                     .map(|c| c.from.node_id.clone())
@@ -1549,7 +1361,7 @@ fn build_shader_space_from_scene_internal(
                     _vertex_inline_stmts,
                     _vertex_wgsl_decls,
                     _vertex_uses_instance_index,
-                ) = resolve_geometry_for_render_pass(
+                ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
                     ids,
@@ -1683,7 +1495,7 @@ fn build_shader_space_from_scene_internal(
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
                     vertex_uses_instance_index,
-                ) = resolve_geometry_for_render_pass(
+                ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
                     ids,
@@ -1738,10 +1550,12 @@ fn build_shader_space_from_scene_internal(
                     })
                     .collect();
 
-                texture_bindings.extend(resolve_pass_texture_bindings(
-                    &pass_output_registry,
-                    &bundle.pass_textures,
-                )?);
+                texture_bindings.extend(
+                    crate::renderer::render_plan::resolve_pass_texture_bindings(
+                        &pass_output_registry,
+                        &bundle.pass_textures,
+                    )?,
+                );
 
                 let instance_buffer = if is_instanced {
                     let b: ResourceName = format!("sys.pass.{layer_id}.instances").into();
@@ -1927,10 +1741,12 @@ fn build_shader_space_from_scene_internal(
                     })
                     .collect();
 
-                src_texture_bindings.extend(resolve_pass_texture_bindings(
-                    &pass_output_registry,
-                    &src_bundle.pass_textures,
-                )?);
+                src_texture_bindings.extend(
+                    crate::renderer::render_plan::resolve_pass_texture_bindings(
+                        &pass_output_registry,
+                        &src_bundle.pass_textures,
+                    )?,
+                );
 
                 let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
                 render_pass_specs.push(RenderPassSpec {
@@ -2069,9 +1885,11 @@ fn build_shader_space_from_scene_internal(
                     .any(|k| layer_node.params.contains_key(k));
 
                     if has_explicit_blend_params {
-                        parse_render_pass_blend_state(&layer_node.params)?
+                        crate::renderer::render_plan::parse_render_pass_blend_state(
+                            &layer_node.params,
+                        )?
                     } else {
-                        default_blend_state_for_preset("alpha")?
+                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?
                     }
                 } else {
                     BlendState::REPLACE
@@ -2292,7 +2110,7 @@ fn build_shader_space_from_scene_internal(
                     .get("source")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let kernel = parse_kernel_source_js_like(kernel_src)?;
+                let kernel = crate::renderer::render_plan::parse_kernel_source_js_like(kernel_src)?;
 
                 fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
                     v.as_f64()
@@ -3005,12 +2823,19 @@ fn build_shader_space_from_scene_internal(
         // When shader compilation fails (wgpu create_shader_module), the error message can be
         // hard to correlate back to the generated WGSL. Dump it to a predictable temp location
         // so tests can inspect the exact module wgpu validated.
-        let debug_dump_path = format!("/tmp/node-forge-pass.{}.wgsl", spec.name.as_str());
+        let debug_dump_path = debug_dump_wgsl_dir
+            .as_ref()
+            .map(|dir| dir.join(format!("node-forge-pass.{}.wgsl", spec.name.as_str())));
         let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
             label: Some("node-forge-pass"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl.clone())),
         };
-        let _ = std::fs::write(&debug_dump_path, &shader_wgsl);
+        if let Some(debug_dump_path) = debug_dump_path {
+            if let Some(parent) = debug_dump_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&debug_dump_path, &shader_wgsl);
+        }
         shader_space.render_pass(spec.name.clone(), move |builder| {
             let mut b = builder.shader(shader_desc).bind_uniform_buffer(
                 0,
@@ -3325,7 +3150,7 @@ mod tests {
     }
 }
 
-pub fn build_error_shader_space(
+pub(crate) fn build_error_shader_space_internal(
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     resolution: [u32; 2],

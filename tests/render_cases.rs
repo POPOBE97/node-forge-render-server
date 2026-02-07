@@ -264,13 +264,14 @@ fn run_case(case: &Case) {
                 )
             });
 
-        let (shader_space, _resolution, output_texture_name, _passes) =
-            renderer::build_shader_space_from_scene(
-                &scene,
-                headless.device.clone(),
-                headless.queue.clone(),
-            )
-            .unwrap_or_else(|e| panic!("case {}: failed to build shader space: {e:#}", case.name));
+        let build =
+            renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
+                .build(&scene)
+                .unwrap_or_else(|e| {
+                    panic!("case {}: failed to build shader space: {e:#}", case.name)
+                });
+        let shader_space = build.shader_space;
+        let output_texture_name = build.scene_output_texture;
 
         shader_space.render();
 

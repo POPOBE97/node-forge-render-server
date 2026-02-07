@@ -424,39 +424,55 @@ fn main() -> Result<()> {
 
             let (shader_space, resolution, output_texture_name, passes, last_good_initial) =
                 if let Some(scene) = scene.clone() {
-                    match renderer::build_shader_space_from_scene_for_ui(
-                        &scene,
+                    match renderer::ShaderSpaceBuilder::new(
                         Arc::new(render_state.device.clone()),
                         Arc::new(render_state.queue.clone()),
-                    ) {
-                        Ok((shader_space, resolution, output_texture_name, passes)) => (
-                            shader_space,
-                            resolution,
-                            output_texture_name,
-                            passes,
+                    )
+                    .with_options(renderer::ShaderSpaceBuildOptions {
+                        presentation_mode:
+                            renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
+                        debug_dump_wgsl_dir: None,
+                    })
+                    .build(&scene)
+                    {
+                        Ok(result) => (
+                            result.shader_space,
+                            result.resolution,
+                            result.present_output_texture,
+                            result.pass_bindings,
                             Some(scene),
                         ),
                         Err(e) => {
                             eprintln!(
                                 "[startup] scene build failed; showing purple error screen: {e:#}"
                             );
-                            let (shader_space, resolution, output_texture_name, passes) =
-                                renderer::build_error_shader_space(
-                                    Arc::new(render_state.device.clone()),
-                                    Arc::new(render_state.queue.clone()),
-                                    resolution_hint,
-                                )?;
-                            (shader_space, resolution, output_texture_name, passes, None)
+                            let result = renderer::ShaderSpaceBuilder::new(
+                                Arc::new(render_state.device.clone()),
+                                Arc::new(render_state.queue.clone()),
+                            )
+                            .build_error(resolution_hint)?;
+                            (
+                                result.shader_space,
+                                result.resolution,
+                                result.present_output_texture,
+                                result.pass_bindings,
+                                None,
+                            )
                         }
                     }
                 } else {
-                    let (shader_space, resolution, output_texture_name, passes) =
-                        renderer::build_error_shader_space(
-                            Arc::new(render_state.device.clone()),
-                            Arc::new(render_state.queue.clone()),
-                            resolution_hint,
-                        )?;
-                    (shader_space, resolution, output_texture_name, passes, None)
+                    let result = renderer::ShaderSpaceBuilder::new(
+                        Arc::new(render_state.device.clone()),
+                        Arc::new(render_state.queue.clone()),
+                    )
+                    .build_error(resolution_hint)?;
+                    (
+                        result.shader_space,
+                        result.resolution,
+                        result.present_output_texture,
+                        result.pass_bindings,
+                        None,
+                    )
                 };
 
             // WS scene updates (keep latest only).

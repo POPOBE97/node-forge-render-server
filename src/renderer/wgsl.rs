@@ -13,8 +13,8 @@ use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         node_compiler::compile_material_expr,
+        render_plan::{parse_kernel_source_js_like, resolve_geometry_for_render_pass},
         scene_prep::prepare_scene,
-        shader_space::parse_kernel_source_js_like,
         types::{Kernel2D, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
         utils::{cpu_num_f32_min_0, fmt_f32 as fmt_f32_utils, to_vec4_color},
     },
@@ -775,7 +775,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     _vertex_inline_stmts,
                     _vertex_wgsl_decls,
                     _vertex_uses_instance_index,
-                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
                     ids,
@@ -831,7 +831,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
                     vertex_uses_instance_index,
-                ) = crate::renderer::shader_space::resolve_geometry_for_render_pass(
+                ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
                     ids,
