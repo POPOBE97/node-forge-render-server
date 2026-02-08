@@ -61,6 +61,10 @@ pub enum SceneUpdate {
         scene: SceneDSL,
         request_id: Option<String>,
     },
+    UniformDelta {
+        updated_nodes: Vec<Node>,
+        request_id: Option<String>,
+    },
     ParseError {
         message: String,
         request_id: Option<String>,
@@ -178,6 +182,69 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
     if let Some(groups) = delta.groups.as_ref() {
         cache.groups = groups.clone();
     }
+}
+
+fn is_value_driven_input_node_type(node_type: &str) -> bool {
+    matches!(
+        node_type,
+        "BoolInput" | "FloatInput" | "IntInput" | "Vector2Input" | "Vector3Input" | "ColorInput"
+    )
+}
+
+fn is_uniform_param_key(key: &str) -> bool {
+    matches!(key, "value" | "x" | "y" | "z" | "w" | "v")
+}
+
+fn node_params_changed_only_uniform_keys(
+    prev: &std::collections::HashMap<String, Value>,
+    next: &std::collections::HashMap<String, Value>,
+) -> bool {
+    let mut saw_change = false;
+    for (key, after) in next {
+        let before = prev.get(key);
+        if before != Some(after) {
+            saw_change = true;
+            if !is_uniform_param_key(key) {
+                return false;
+            }
+        }
+    }
+
+    saw_change
+}
+
+fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta) -> bool {
+    if delta.nodes.updated.is_empty() {
+        return false;
+    }
+
+    if !delta.nodes.added.is_empty()
+        || !delta.nodes.removed.is_empty()
+        || !delta.connections.added.is_empty()
+        || !delta.connections.updated.is_empty()
+        || !delta.connections.removed.is_empty()
+        || delta.outputs.is_some()
+        || delta.groups.is_some()
+    {
+        return false;
+    }
+
+    for updated in &delta.nodes.updated {
+        let Some(prev) = cache.nodes_by_id.get(&updated.id) else {
+            return false;
+        };
+        if prev.node_type != updated.node_type {
+            return false;
+        }
+        if !is_value_driven_input_node_type(updated.node_type.as_str()) {
+            return false;
+        }
+        if !node_params_changed_only_uniform_keys(&prev.params, &updated.params) {
+            return false;
+        }
+    }
+
+    true
 }
 
 pub fn prune_invalid_connections(cache: &mut SceneCache) {
@@ -564,6 +631,7 @@ fn handle_text_message(
                     return Ok(());
                 }
 
+                let is_uniform_only_delta = delta_updates_only_uniform_values(&cache, &delta);
                 apply_scene_delta(&mut cache, &delta);
 
                 // Detect dangling references before pruning (signals a cache mismatch).
@@ -580,6 +648,19 @@ fn handle_text_message(
                 }
 
                 prune_invalid_connections(&mut cache);
+
+                if is_uniform_only_delta {
+                    *guard = Some(cache);
+                    send_scene_update(
+                        scene_tx,
+                        scene_drop_rx,
+                        SceneUpdate::UniformDelta {
+                            updated_nodes: delta.nodes.updated.clone(),
+                            request_id: msg.request_id,
+                        },
+                    );
+                    return Ok(());
+                }
 
                 let mut materialized = materialize_scene_dsl(&cache);
                 if let Err(e) = dsl::normalize_scene_defaults(&mut materialized) {
@@ -653,10 +734,175 @@ fn send_scene_update(
                 while scene_drop_rx.try_recv().is_ok() {}
                 let _ = scene_tx.try_send(update);
             }
+            SceneUpdate::UniformDelta { .. } => {
+                // Uniform-only updates are cheap and high-frequency.
+                // If the channel is full, prefer keeping the in-flight message
+                // (often a full Parsed scene) and drop this delta.
+            }
             SceneUpdate::ParseError { .. } => {
                 // Channel is full; keep the existing message rather than
                 // replacing it. A future update will replace it naturally.
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dsl::{Endpoint, Metadata, SceneDSL};
+    use serde_json::json;
+
+    fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params: serde_json::from_value(params).unwrap_or_default(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+        }
+    }
+
+    fn base_scene() -> SceneDSL {
+        SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node(
+                    "FloatInput_1",
+                    "FloatInput",
+                    json!({"value": 0.5, "min": 0.0}),
+                ),
+                node("MathAdd_1", "MathAdd", json!({})),
+            ],
+            connections: vec![Connection {
+                id: "c1".to_string(),
+                from: Endpoint {
+                    node_id: "FloatInput_1".to_string(),
+                    port_id: "value".to_string(),
+                },
+                to: Endpoint {
+                    node_id: "MathAdd_1".to_string(),
+                    port_id: "a".to_string(),
+                },
+            }],
+            outputs: Some(std::collections::HashMap::new()),
+            groups: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_accepts_float_value_change() {
+        let scene = base_scene();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "FloatInput_1",
+                    "FloatInput",
+                    json!({"value": 0.75, "min": 0.0}),
+                )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+        };
+        assert!(delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_accepts_partial_param_patch() {
+        let scene = base_scene();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node("FloatInput_1", "FloatInput", json!({"value": 0.9}))],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+        };
+        assert!(delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_rejects_structural_connection_changes() {
+        let scene = base_scene();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "FloatInput_1",
+                    "FloatInput",
+                    json!({"value": 0.75, "min": 0.0}),
+                )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: vec![Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "FloatInput_1".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "MathAdd_1".to_string(),
+                        port_id: "b".to_string(),
+                    },
+                }],
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_rejects_non_uniform_param_change() {
+        let scene = base_scene();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "FloatInput_1",
+                    "FloatInput",
+                    json!({"value": 0.75, "min": -1.0}),
+                )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
     }
 }

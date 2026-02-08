@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::{protocol, renderer, ws};
@@ -80,6 +80,55 @@ fn apply_graph_uniform_updates(app: &mut App, scene: &crate::dsl::SceneDSL) -> R
     Ok(updates.len())
 }
 
+fn apply_uniform_node_param_updates(
+    scene: &mut crate::dsl::SceneDSL,
+    updated_nodes: &[crate::dsl::Node],
+    allow_suffix_match: bool,
+) -> Result<()> {
+    for updated in updated_nodes {
+        if let Some(target) = scene.nodes.iter_mut().find(|n| n.id == updated.id) {
+            if target.node_type != updated.node_type {
+                bail!(
+                    "uniform delta node type mismatch for '{}': cached='{}' incoming='{}'",
+                    updated.id,
+                    target.node_type,
+                    updated.node_type
+                );
+            }
+            for (k, v) in &updated.params {
+                target.params.insert(k.clone(), v.clone());
+            }
+            continue;
+        }
+
+        if allow_suffix_match {
+            let suffix = format!("/{}", updated.id);
+            let mut matched = 0usize;
+            for target in &mut scene.nodes {
+                if !target.id.ends_with(&suffix) {
+                    continue;
+                }
+                if target.node_type != updated.node_type {
+                    continue;
+                }
+                for (k, v) in &updated.params {
+                    target.params.insert(k.clone(), v.clone());
+                }
+                matched += 1;
+            }
+            if matched > 0 {
+                continue;
+            }
+        }
+
+        return Err(anyhow!(
+            "uniform delta references missing node '{}'",
+            updated.id
+        ));
+    }
+    Ok(())
+}
+
 pub fn drain_latest_scene_update(app: &App) -> Option<ws::SceneUpdate> {
     let mut latest: Option<ws::SceneUpdate> = None;
     while let Ok(update) = app.scene_rx.try_recv() {
@@ -118,6 +167,69 @@ pub fn apply_scene_update(
     update: ws::SceneUpdate,
 ) -> SceneApplyResult {
     match update {
+        ws::SceneUpdate::UniformDelta {
+            updated_nodes,
+            request_id,
+        } => {
+            let scene = match app.last_good.lock() {
+                Ok(mut guard) => guard.take(),
+                Err(_) => None,
+            };
+
+            let Some(mut scene) = scene else {
+                let message =
+                    "received uniform-only update without a baseline scene; waiting for scene_update"
+                        .to_string();
+                eprintln!("[scene-runtime] {message}");
+                broadcast_error(app, request_id, "RESYNC_REQUIRED", message);
+                return SceneApplyResult {
+                    did_rebuild_shader_space: false,
+                    texture_filter_override: None,
+                };
+            };
+
+            let mut cached_uniform_scene = app.uniform_scene.take();
+            let update_result = (|| -> Result<crate::dsl::SceneDSL> {
+                apply_uniform_node_param_updates(&mut scene, &updated_nodes, false)?;
+
+                let mut uniform_scene = if let Some(cached) = cached_uniform_scene.take() {
+                    cached
+                } else {
+                    renderer::prepare_scene(&scene)
+                        .context("failed to prepare baseline scene for uniform-only update")?
+                        .scene
+                };
+
+                apply_uniform_node_param_updates(&mut uniform_scene, &updated_nodes, true)?;
+                let _ = apply_graph_uniform_updates(app, &uniform_scene)?;
+                Ok(uniform_scene)
+            })();
+
+            if let Ok(mut guard) = app.last_good.lock() {
+                *guard = Some(scene);
+            }
+
+            match update_result {
+                Ok(uniform_scene) => {
+                    app.uniform_scene = Some(uniform_scene);
+                    app.uniform_only_update_count = app.uniform_only_update_count.saturating_add(1);
+                    SceneApplyResult {
+                        did_rebuild_shader_space: false,
+                        texture_filter_override: None,
+                    }
+                }
+                Err(e) => {
+                    app.uniform_scene = None;
+                    let message = format!("uniform-only update failed: {e:#}");
+                    eprintln!("[scene-runtime] {message}");
+                    broadcast_error(app, request_id, "UNIFORM_UPDATE_FAILED", message);
+                    SceneApplyResult {
+                        did_rebuild_shader_space: false,
+                        texture_filter_override: None,
+                    }
+                }
+            }
+        }
         ws::SceneUpdate::Parsed { scene, request_id } => {
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
                 app.window_resolution,
@@ -132,7 +244,9 @@ pub fn apply_scene_update(
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(size));
             }
 
+            let mut prepared_scene_candidate: Option<crate::dsl::SceneDSL> = None;
             if let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene) {
+                prepared_scene_candidate = Some(prepared_for_fast_path.scene.clone());
                 let next_pipeline_signature =
                     renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
                         &prepared_for_fast_path.scene,
@@ -144,6 +258,7 @@ pub fn apply_scene_update(
                     match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
                         Ok(_updated_count) => {
                             app.last_pipeline_signature = Some(next_pipeline_signature);
+                            app.uniform_scene = prepared_scene_candidate;
                             app.uniform_only_update_count =
                                 app.uniform_only_update_count.saturating_add(1);
                             if let Ok(mut g) = app.last_good.lock() {
@@ -182,6 +297,8 @@ pub fn apply_scene_update(
                     app.passes = result.pass_bindings;
                     app.output_texture_name = result.present_output_texture;
                     app.last_pipeline_signature = Some(result.pipeline_signature);
+                    app.uniform_scene = prepared_scene_candidate
+                        .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
                     app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
 
                     if let Ok(mut g) = app.last_good.lock() {
@@ -196,6 +313,7 @@ pub fn apply_scene_update(
                 Ok(Err(e)) => {
                     let message = format!("{e:#}");
                     eprintln!("[error-plane] scene build failed: {message}");
+                    app.uniform_scene = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -213,6 +331,7 @@ pub fn apply_scene_update(
                     };
                     let message = format!("scene build panicked; showing error plane: {panic_msg}");
                     eprintln!("{message}");
+                    app.uniform_scene = None;
                     broadcast_error(app, request_id, "PANIC", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {

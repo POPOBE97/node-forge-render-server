@@ -165,89 +165,95 @@ fn run_headless_ws_render_once(
     // Bind errors must be fatal in headless mode; otherwise we'd block forever waiting for DSL.
     let _ws_handle = ws::spawn_ws_server(addr, scene_tx, drop_rx, hub.clone(), last_good)?;
 
-    // Wait for a single DSL update, render, reply, then exit.
-    let update = app_scene_rx
-        .recv()
-        .map_err(|e| anyhow!("scene_update channel closed: {e}"))?;
+    // Wait for a renderable SceneDSL update, render, reply, then exit.
+    loop {
+        let update = app_scene_rx
+            .recv()
+            .map_err(|e| anyhow!("scene_update channel closed: {e}"))?;
 
-    match update {
-        ws::SceneUpdate::Parsed { scene, request_id } => {
-            let out_path = if render_to_file {
-                let out = output
-                    .clone()
-                    .ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
-                validate_absolute_output_path(&out)?;
-                out
-            } else {
-                let rt = dsl::file_render_target(&scene)?
-                    .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
-
-                if let Some(out) = output.clone() {
+        match update {
+            ws::SceneUpdate::Parsed { scene, request_id } => {
+                let out_path = if render_to_file {
+                    let out = output.clone().ok_or_else(|| {
+                        anyhow!("--render-to-file requires --output <absolute path>")
+                    })?;
                     validate_absolute_output_path(&out)?;
                     out
                 } else {
-                    resolve_file_output_path(&rt)
-                }
-            };
+                    let rt = dsl::file_render_target(&scene)?
+                        .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
 
-            ensure_parent_dir_exists(&out_path)?;
+                    if let Some(out) = output.clone() {
+                        validate_absolute_output_path(&out)?;
+                        out
+                    } else {
+                        resolve_file_output_path(&rt)
+                    }
+                };
 
-            let result = renderer::render_scene_to_png_headless(&scene, &out_path);
-            match result {
-                Ok(()) => {
-                    let msg = node_forge_render_server::protocol::WSMessage {
-                        msg_type: "render_to_file_done".to_string(),
-                        timestamp: node_forge_render_server::protocol::now_millis(),
-                        request_id,
-                        payload: Some(serde_json::json!({
-                            "path": out_path.display().to_string(),
-                        })),
-                    };
-                    if let Ok(text) = serde_json::to_string(&msg) {
-                        println!("Rendered to file at {}", out_path.display());
-                        println!("[headless]: {}", text);
-                        hub.broadcast(text);
+                ensure_parent_dir_exists(&out_path)?;
+
+                let result = renderer::render_scene_to_png_headless(&scene, &out_path);
+                match result {
+                    Ok(()) => {
+                        let msg = node_forge_render_server::protocol::WSMessage {
+                            msg_type: "render_to_file_done".to_string(),
+                            timestamp: node_forge_render_server::protocol::now_millis(),
+                            request_id,
+                            payload: Some(serde_json::json!({
+                                "path": out_path.display().to_string(),
+                            })),
+                        };
+                        if let Ok(text) = serde_json::to_string(&msg) {
+                            println!("Rendered to file at {}", out_path.display());
+                            println!("[headless]: {}", text);
+                            hub.broadcast(text);
+                        }
+                    }
+                    Err(e) => {
+                        let msg = node_forge_render_server::protocol::WSMessage {
+                            msg_type: "error".to_string(),
+                            timestamp: node_forge_render_server::protocol::now_millis(),
+                            request_id,
+                            payload: Some(node_forge_render_server::protocol::ErrorPayload {
+                                code: "RENDER_TO_FILE_ERROR".to_string(),
+                                message: format!("{e:#}"),
+                            }),
+                        };
+                        if let Ok(text) = serde_json::to_string(&msg) {
+                            println!("[headless]: {}", text);
+                            hub.broadcast(text);
+                        }
                     }
                 }
-                Err(e) => {
-                    let msg = node_forge_render_server::protocol::WSMessage {
-                        msg_type: "error".to_string(),
-                        timestamp: node_forge_render_server::protocol::now_millis(),
-                        request_id,
-                        payload: Some(node_forge_render_server::protocol::ErrorPayload {
-                            code: "RENDER_TO_FILE_ERROR".to_string(),
-                            message: format!("{e:#}"),
-                        }),
-                    };
-                    if let Ok(text) = serde_json::to_string(&msg) {
-                        println!("[headless]: {}", text);
-                        hub.broadcast(text);
-                    }
-                }
+
+                // Give the ws writer loop a brief chance to flush before exiting.
+                thread::sleep(Duration::from_millis(150));
+                return Ok(());
             }
-
-            // Give the ws writer loop a brief chance to flush before exiting.
-            thread::sleep(Duration::from_millis(150));
-            Ok(())
-        }
-        ws::SceneUpdate::ParseError {
-            message,
-            request_id,
-        } => {
-            let msg = node_forge_render_server::protocol::WSMessage {
-                msg_type: "error".to_string(),
-                timestamp: node_forge_render_server::protocol::now_millis(),
+            ws::SceneUpdate::UniformDelta { .. } => {
+                // Headless one-shot render requires a full scene payload.
+                // Ignore uniform deltas and wait for Parsed / ParseError.
+            }
+            ws::SceneUpdate::ParseError {
+                message,
                 request_id,
-                payload: Some(node_forge_render_server::protocol::ErrorPayload {
-                    code: "PARSE_ERROR".to_string(),
-                    message,
-                }),
-            };
-            if let Ok(text) = serde_json::to_string(&msg) {
-                hub.broadcast(text);
+            } => {
+                let msg = node_forge_render_server::protocol::WSMessage {
+                    msg_type: "error".to_string(),
+                    timestamp: node_forge_render_server::protocol::now_millis(),
+                    request_id,
+                    payload: Some(node_forge_render_server::protocol::ErrorPayload {
+                        code: "PARSE_ERROR".to_string(),
+                        message,
+                    }),
+                };
+                if let Ok(text) = serde_json::to_string(&msg) {
+                    hub.broadcast(text);
+                }
+                thread::sleep(Duration::from_millis(150));
+                return Ok(());
             }
-            thread::sleep(Duration::from_millis(150));
-            Ok(())
         }
     }
 }
@@ -511,6 +517,7 @@ fn main() -> Result<()> {
                 scene_rx: app_scene_rx,
                 ws_hub: hub,
                 last_good,
+                uniform_scene: None,
                 last_pipeline_signature,
             })))
         }),
