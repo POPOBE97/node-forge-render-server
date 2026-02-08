@@ -3,7 +3,7 @@
   "metadata": {
     "name": "My Scene",
     "created": "2026-02-07T17:37:32.038Z",
-    "modified": "2026-02-07T17:37:32.038Z"
+    "modified": "2026-02-07T18:42:24.840Z"
   },
   "nodes": [
     {
@@ -47,6 +47,26 @@
           "id": "dynamic_1770282176856_1",
           "name": "pass2",
           "type": "pass"
+        },
+        {
+          "id": "dynamic_1770562200000_1",
+          "name": "pass5",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1770562200000_2",
+          "name": "pass6",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1770562200000_3",
+          "name": "pass7",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1770562200000_4",
+          "name": "pass8",
+          "type": "pass"
         }
       ],
       "inputBindings": [
@@ -79,6 +99,50 @@
           "type": "pass",
           "sourceBinding": {
             "nodeId": "RenderPass_32",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1770562200000_1",
+          "label": "pass5",
+          "variableName": "pass5",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_57",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1770562200000_2",
+          "label": "pass6",
+          "variableName": "pass6",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_61",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1770562200000_3",
+          "label": "pass7",
+          "variableName": "pass7",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_65",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1770562200000_4",
+          "label": "pass8",
+          "variableName": "pass8",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_69",
             "outputPortId": "pass",
             "outputLabel": "Pass"
           }
@@ -247,8 +311,8 @@
       "id": "Downsample_16",
       "type": "Downsample",
       "position": {
-        "x": 1780,
-        "y": -900
+        "x": 900,
+        "y": 1040
       },
       "width": 160,
       "label": "Mip4",
@@ -264,8 +328,8 @@
       "id": "Kernel_17",
       "type": "Kernel",
       "position": {
-        "x": 1780,
-        "y": -1060
+        "x": 900,
+        "y": 880
       },
       "width": 160,
       "label": "Kernel",
@@ -278,16 +342,16 @@
       "id": "Downsample_18",
       "type": "Downsample",
       "position": {
-        "x": 2000,
-        "y": -900
+        "x": 900,
+        "y": 1560
       },
       "width": 160,
       "label": "Mip5",
       "params": {
         "sampling": "Mirror",
         "targetSize": {
-          "x": 67,
-          "y": 150
+          "x": 33,
+          "y": 75
         }
       }
     },
@@ -295,8 +359,8 @@
       "id": "Kernel_19",
       "type": "Kernel",
       "position": {
-        "x": 2000,
-        "y": -1060
+        "x": 900,
+        "y": 1400
       },
       "width": 160,
       "label": "Kernel",
@@ -309,16 +373,16 @@
       "id": "Downsample_20",
       "type": "Downsample",
       "position": {
-        "x": 2220,
-        "y": -900
+        "x": 900,
+        "y": 2080
       },
       "width": 160,
       "label": "Mip6",
       "params": {
         "sampling": "Mirror",
         "targetSize": {
-          "x": 67,
-          "y": 150
+          "x": 16,
+          "y": 37
         }
       }
     },
@@ -326,8 +390,8 @@
       "id": "Kernel_21",
       "type": "Kernel",
       "position": {
-        "x": 2220,
-        "y": -1060
+        "x": 900,
+        "y": 1920
       },
       "width": 160,
       "label": "Kernel",
@@ -340,16 +404,16 @@
       "id": "Downsample_22",
       "type": "Downsample",
       "position": {
-        "x": 2440,
-        "y": -900
+        "x": 900,
+        "y": 2600
       },
       "width": 160,
       "label": "Mip7",
       "params": {
         "sampling": "Mirror",
         "targetSize": {
-          "x": 33,
-          "y": 75
+          "x": 8,
+          "y": 18
         }
       }
     },
@@ -357,8 +421,8 @@
       "id": "Kernel_23",
       "type": "Kernel",
       "position": {
-        "x": 2440,
-        "y": -1060
+        "x": 900,
+        "y": 2440
       },
       "width": 160,
       "label": "Kernel",
@@ -594,10 +658,10 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 270,
-        "height": 600,
-        "x": 1755,
-        "y": 2100,
+        "width": 135,
+        "height": 300,
+        "x": 1957.5,
+        "y": 2250,
         "radius": 0,
         "smooth": 1
       }
@@ -608,6 +672,286 @@
       "position": {
         "x": 900,
         "y": 700
+      },
+      "width": 160,
+      "label": "Geo UV",
+      "params": {
+        "groupId": "Geo UV"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "RenderPass_57",
+      "type": "RenderPass",
+      "position": {
+        "x": 1300,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "PassTexture_58",
+      "type": "PassTexture",
+      "position": {
+        "x": 1100,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {}
+    },
+    {
+      "id": "Rect2DGeometry_59",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 1300,
+        "y": 840
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 67,
+        "height": 150,
+        "x": 2058.5,
+        "y": 2325,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "GroupInstance_60",
+      "type": "GroupInstance",
+      "position": {
+        "x": 900,
+        "y": 1220
+      },
+      "width": 160,
+      "label": "Geo UV",
+      "params": {
+        "groupId": "Geo UV"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "RenderPass_61",
+      "type": "RenderPass",
+      "position": {
+        "x": 1300,
+        "y": 1560
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "PassTexture_62",
+      "type": "PassTexture",
+      "position": {
+        "x": 1100,
+        "y": 1560
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {}
+    },
+    {
+      "id": "Rect2DGeometry_63",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 1300,
+        "y": 1360
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 33,
+        "height": 75,
+        "x": 2108.5,
+        "y": 2362.5,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "GroupInstance_64",
+      "type": "GroupInstance",
+      "position": {
+        "x": 900,
+        "y": 1740
+      },
+      "width": 160,
+      "label": "Geo UV",
+      "params": {
+        "groupId": "Geo UV"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "RenderPass_65",
+      "type": "RenderPass",
+      "position": {
+        "x": 1300,
+        "y": 2080
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "PassTexture_66",
+      "type": "PassTexture",
+      "position": {
+        "x": 1100,
+        "y": 2080
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {}
+    },
+    {
+      "id": "Rect2DGeometry_67",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 1300,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 16,
+        "height": 37,
+        "x": 2133,
+        "y": 2381.5,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "GroupInstance_68",
+      "type": "GroupInstance",
+      "position": {
+        "x": 900,
+        "y": 2260
+      },
+      "width": 160,
+      "label": "Geo UV",
+      "params": {
+        "groupId": "Geo UV"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "RenderPass_69",
+      "type": "RenderPass",
+      "position": {
+        "x": 1300,
+        "y": 2600
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "PassTexture_70",
+      "type": "PassTexture",
+      "position": {
+        "x": 1100,
+        "y": 2600
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {}
+    },
+    {
+      "id": "Rect2DGeometry_71",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 1300,
+        "y": 2400
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "width": 8,
+        "height": 18,
+        "x": 2145,
+        "y": 2391,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "GroupInstance_72",
+      "type": "GroupInstance",
+      "position": {
+        "x": 900,
+        "y": 2780
       },
       "width": 160,
       "label": "Geo UV",
@@ -998,6 +1342,226 @@
       "to": {
         "nodeId": "Composite_2",
         "portId": "dynamic_1770361660040_1"
+      }
+    },
+    {
+      "id": "edge_57",
+      "from": {
+        "nodeId": "Rect2DGeometry_59",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_57",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_58",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "PassTexture_58",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_59",
+      "from": {
+        "nodeId": "GroupInstance_60",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "PassTexture_58",
+        "portId": "uv"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "PassTexture_58",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_57",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_61",
+      "from": {
+        "nodeId": "RenderPass_57",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "dynamic_1770562200000_1"
+      }
+    },
+    {
+      "id": "edge_62",
+      "from": {
+        "nodeId": "Rect2DGeometry_63",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_61",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "PassTexture_62",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "GroupInstance_64",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "PassTexture_62",
+        "portId": "uv"
+      }
+    },
+    {
+      "id": "edge_65",
+      "from": {
+        "nodeId": "PassTexture_62",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_61",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_66",
+      "from": {
+        "nodeId": "RenderPass_61",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "dynamic_1770562200000_2"
+      }
+    },
+    {
+      "id": "edge_67",
+      "from": {
+        "nodeId": "Rect2DGeometry_67",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_65",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_68",
+      "from": {
+        "nodeId": "Downsample_20",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "PassTexture_66",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "GroupInstance_68",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "PassTexture_66",
+        "portId": "uv"
+      }
+    },
+    {
+      "id": "edge_70",
+      "from": {
+        "nodeId": "PassTexture_66",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_65",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_71",
+      "from": {
+        "nodeId": "RenderPass_65",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "dynamic_1770562200000_3"
+      }
+    },
+    {
+      "id": "edge_72",
+      "from": {
+        "nodeId": "Rect2DGeometry_71",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_69",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_73",
+      "from": {
+        "nodeId": "Downsample_22",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "PassTexture_70",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_74",
+      "from": {
+        "nodeId": "GroupInstance_72",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "PassTexture_70",
+        "portId": "uv"
+      }
+    },
+    {
+      "id": "edge_75",
+      "from": {
+        "nodeId": "PassTexture_70",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_69",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_76",
+      "from": {
+        "nodeId": "RenderPass_69",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_2",
+        "portId": "dynamic_1770562200000_4"
       }
     }
   ],
