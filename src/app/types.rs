@@ -42,6 +42,7 @@ pub struct AppInit {
     pub scene_rx: Receiver<ws::SceneUpdate>,
     pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
+    pub last_pipeline_signature: Option<[u8; 32]>,
     pub follow_scene_resolution_for_window: bool,
 }
 
@@ -57,6 +58,9 @@ pub struct App {
     pub scene_rx: Receiver<ws::SceneUpdate>,
     pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
+    pub last_pipeline_signature: Option<[u8; 32]>,
+    pub pipeline_rebuild_count: u64,
+    pub uniform_only_update_count: u64,
 
     pub zoom: f32,
     pub zoom_initialized: bool,
@@ -94,6 +98,9 @@ impl App {
             scene_rx: init.scene_rx,
             ws_hub: init.ws_hub,
             last_good: init.last_good,
+            last_pipeline_signature: init.last_pipeline_signature,
+            pipeline_rebuild_count: 0,
+            uniform_only_update_count: 0,
             zoom: 1.0,
             zoom_initialized: false,
             min_zoom: None,

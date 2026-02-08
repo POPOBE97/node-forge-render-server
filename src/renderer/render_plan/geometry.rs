@@ -7,7 +7,7 @@ use crate::{
     dsl::{SceneDSL, find_node, incoming_connection},
     renderer::{
         node_compiler::compile_vertex_expr,
-        types::{BakedValue, MaterialCompileContext, TypedExpr, ValueType},
+        types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
     },
 };
@@ -211,6 +211,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     Option<TypedExpr>,
     Vec<String>,
     String,
+    std::collections::BTreeMap<String, GraphFieldKind>,
     bool,
 )> {
     let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
@@ -242,6 +243,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 None,
                 Vec::new(),
                 String::new(),
+                std::collections::BTreeMap::new(),
                 false,
             ))
         }
@@ -267,6 +269,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
             ) = resolve_geometry_for_render_pass(
                 scene,
@@ -289,6 +292,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
             ))
         }
@@ -311,6 +315,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
             ) = resolve_geometry_for_render_pass(
                 scene,
@@ -354,6 +359,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
             ))
         }
@@ -377,6 +383,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _translate_expr,
                 _vtx_inline_stmts,
                 _vtx_wgsl_decls,
+                _graph_input_kinds,
                 uses_instance_index,
             ) = resolve_geometry_for_render_pass(
                 scene,
@@ -515,6 +522,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 None,
                 Vec::new(),
                 String::new(),
+                std::collections::BTreeMap::new(),
                 uses_instance_index,
             ))
         }
@@ -537,6 +545,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 upstream_translate_expr,
                 mut vtx_inline_stmts,
                 mut vtx_wgsl_decls,
+                mut graph_input_kinds,
                 mut uses_instance_index,
             ) = resolve_geometry_for_render_pass(
                 scene,
@@ -563,6 +572,8 @@ pub(crate) fn resolve_geometry_for_render_pass(
             let mut local_inline_stmts: Vec<String> = Vec::new();
             let mut local_wgsl_decls = String::new();
             let mut local_uses_instance_index = false;
+            let mut local_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind> =
+                std::collections::BTreeMap::new();
 
             if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
                 let mut vtx_ctx = MaterialCompileContext {
@@ -586,6 +597,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 local_inline_stmts = vtx_ctx.inline_stmts.clone();
                 local_wgsl_decls = vtx_ctx.wgsl_decls();
                 local_uses_instance_index = vtx_ctx.uses_instance_index;
+                local_graph_input_kinds = vtx_ctx.graph_input_kinds.clone();
                 translate_expr = Some(expr);
             }
 
@@ -595,6 +607,9 @@ pub(crate) fn resolve_geometry_for_render_pass(
             }
             if local_uses_instance_index {
                 uses_instance_index = true;
+            }
+            if !local_graph_input_kinds.is_empty() {
+                graph_input_kinds = local_graph_input_kinds;
             }
 
             Ok((
@@ -609,6 +624,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
             ))
         }

@@ -16,6 +16,7 @@
 //! - `ShaderSpaceBuilder`: Build ShaderSpace resources from a scene
 
 pub mod glsl_snippet;
+pub mod graph_uniforms;
 pub mod node_compiler;
 pub mod render_plan;
 pub mod scene_prep;

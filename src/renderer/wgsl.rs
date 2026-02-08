@@ -12,10 +12,14 @@ use anyhow::{Result, anyhow, bail};
 use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
+        graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
         render_plan::{parse_kernel_source_js_like, resolve_geometry_for_render_pass},
         scene_prep::prepare_scene,
-        types::{Kernel2D, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
+        types::{
+            GraphBindingKind, GraphFieldKind, GraphSchema, Kernel2D, MaterialCompileContext,
+            TypedExpr, ValueType, WgslShaderBundle,
+        },
         utils::{cpu_num_f32_min_0, fmt_f32 as fmt_f32_utils, to_vec4_color},
     },
 };
@@ -337,6 +341,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         module,
         image_textures: Vec::new(),
         pass_textures: Vec::new(),
+        graph_schema: None,
+        graph_binding_kind: None,
     }
 }
 
@@ -390,6 +396,44 @@ impl MaterialCompileContext {
     }
 }
 
+fn merge_graph_input_kinds(
+    material_ctx: &MaterialCompileContext,
+    extra: &std::collections::BTreeMap<String, GraphFieldKind>,
+) -> Option<GraphSchema> {
+    let mut kinds = material_ctx.graph_input_kinds.clone();
+    for (node_id, kind) in extra {
+        kinds.entry(node_id.clone()).or_insert(*kind);
+    }
+    if kinds.is_empty() {
+        None
+    } else {
+        Some(build_graph_schema(&kinds))
+    }
+}
+
+fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKind) -> String {
+    let mut out = String::new();
+    out.push_str("\nstruct GraphInputs {\n");
+    for field in &schema.fields {
+        out.push_str(&format!(
+            "    // Node: {}\n    {}: {},\n",
+            field.node_id,
+            field.field_name,
+            field.kind.wgsl_slot_type()
+        ));
+    }
+    out.push_str("};\n\n");
+
+    out.push_str("@group(0) @binding(2)\n");
+    match kind {
+        GraphBindingKind::Uniform => out.push_str("var<uniform> graph_inputs: GraphInputs;\n"),
+        GraphBindingKind::StorageRead => {
+            out.push_str("var<storage, read> graph_inputs: GraphInputs;\n")
+        }
+    }
+    out
+}
+
 // The compile_material_expr function has been moved to the modular renderer::node_compiler module.
 // It is now implemented as a dispatch system that routes to specific node compiler modules.
 // See: src/renderer/node_compiler/mod.rs
@@ -406,6 +450,15 @@ pub fn build_blur_image_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     blur_pass_id: &str,
+) -> Result<WgslShaderBundle> {
+    build_blur_image_wgsl_bundle_with_graph_binding(scene, nodes_by_id, blur_pass_id, None)
+}
+
+pub fn build_blur_image_wgsl_bundle_with_graph_binding(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    blur_pass_id: &str,
+    forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse: None,
@@ -434,6 +487,11 @@ pub fn build_blur_image_wgsl_bundle(
 
     let out_color = to_vec4_color(fragment_expr);
     let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
+
+    let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
+    let graph_binding_kind = graph_schema
+        .as_ref()
+        .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
 
     let mut common = r#"
 struct Params {
@@ -467,6 +525,10 @@ var<uniform> params: Params;
  };
 "#
     .to_string();
+
+    if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
+        common.push_str(&graph_inputs_wgsl_decl(schema, kind));
+    }
 
     common.push_str(&material_ctx.wgsl_decls());
 
@@ -524,6 +586,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         module,
         image_textures,
         pass_textures,
+        graph_schema,
+        graph_binding_kind,
     })
 }
 
@@ -545,6 +609,43 @@ pub fn build_pass_wgsl_bundle(
     vertex_inline_stmts: Vec<String>,
     vertex_wgsl_decls: String,
     vertex_uses_instance_index: bool,
+) -> Result<WgslShaderBundle> {
+    build_pass_wgsl_bundle_with_graph_binding(
+        scene,
+        nodes_by_id,
+        baked_data_parse,
+        baked_data_parse_meta,
+        pass_id,
+        is_instanced,
+        vertex_translate_expr,
+        vertex_inline_stmts,
+        vertex_wgsl_decls,
+        vertex_uses_instance_index,
+        std::collections::BTreeMap::new(),
+        None,
+    )
+}
+
+pub fn build_pass_wgsl_bundle_with_graph_binding(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    baked_data_parse: Option<
+        std::sync::Arc<
+            std::collections::HashMap<
+                (String, String, String),
+                Vec<crate::renderer::types::BakedValue>,
+            >,
+        >,
+    >,
+    baked_data_parse_meta: Option<std::sync::Arc<crate::renderer::types::BakedDataParseMeta>>,
+    pass_id: &str,
+    is_instanced: bool,
+    vertex_translate_expr: Option<String>,
+    vertex_inline_stmts: Vec<String>,
+    vertex_wgsl_decls: String,
+    vertex_uses_instance_index: bool,
+    vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind>,
+    forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
@@ -576,6 +677,11 @@ pub fn build_pass_wgsl_bundle(
 
     let out_color = to_vec4_color(fragment_expr);
     let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
+
+    let graph_schema = merge_graph_input_kinds(&material_ctx, &vertex_graph_input_kinds);
+    let graph_binding_kind = graph_schema
+        .as_ref()
+        .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
 
     let mut common = r#"
 struct Params {
@@ -610,6 +716,10 @@ var<uniform> params: Params;
  };
 "#
     .to_string();
+
+    if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
+        common.push_str(&graph_inputs_wgsl_decl(schema, kind));
+    }
 
     if !(vertex_uses_instance_index || material_ctx.uses_instance_index) {
         common = common.replace("    @location(4) instance_index: u32,\n", "");
@@ -740,6 +850,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         module,
         image_textures,
         pass_textures,
+        graph_schema,
+        graph_binding_kind,
     })
 }
 
@@ -774,6 +886,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     _translate_expr,
                     _vertex_inline_stmts,
                     _vertex_wgsl_decls,
+                    _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
@@ -830,6 +943,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     translate_expr,
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
+                    vertex_graph_input_kinds,
                     vertex_uses_instance_index,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
@@ -843,7 +957,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     }),
                 )?;
 
-                let bundle = build_pass_wgsl_bundle(
+                let bundle = build_pass_wgsl_bundle_with_graph_binding(
                     &prepared.scene,
                     nodes_by_id,
                     Some(std::sync::Arc::new(baked_data_parse.clone())),
@@ -854,6 +968,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
                     vertex_uses_instance_index,
+                    vertex_graph_input_kinds,
+                    None,
                 )?;
 
                 out.push((layer_id, bundle));

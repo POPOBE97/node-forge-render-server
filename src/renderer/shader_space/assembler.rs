@@ -35,19 +35,26 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
+        graph_uniforms::{
+            choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings, hash_bytes,
+            pack_graph_values,
+        },
         node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
         scene_prep::{bake_data_parse_nodes, prepare_scene},
         types::ValueType,
         types::{
-            BakedDataParseMeta, BakedValue, Kernel2D, MaterialCompileContext, Params, PassBindings,
-            PassOutputRegistry, PassOutputSpec, TypedExpr,
+            BakedDataParseMeta, BakedValue, GraphBinding, GraphBindingKind, Kernel2D,
+            MaterialCompileContext, Params, PassBindings, PassOutputRegistry, PassOutputSpec,
+            TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle, build_downsample_bundle,
+            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
+            build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
             build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
-            build_horizontal_blur_bundle, build_pass_wgsl_bundle, build_upsample_bilinear_bundle,
+            build_horizontal_blur_bundle, build_pass_wgsl_bundle,
+            build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p,
         },
@@ -1005,6 +1012,7 @@ struct TextureDecl {
 
 #[derive(Clone)]
 struct RenderPassSpec {
+    pass_id: String,
     name: ResourceName,
     geometry_buffer: ResourceName,
     instance_buffer: Option<ResourceName>,
@@ -1012,6 +1020,8 @@ struct RenderPassSpec {
     params_buffer: ResourceName,
     baked_data_parse_buffer: Option<ResourceName>,
     params: Params,
+    graph_binding: Option<GraphBinding>,
+    graph_values: Option<Vec<u8>>,
     shader_wgsl: String,
     texture_bindings: Vec<PassTextureBinding>,
     sampler_kind: SamplerKind,
@@ -1161,7 +1171,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
     queue: Arc<wgpu::Queue>,
     enable_display_encode: bool,
     debug_dump_wgsl_dir: Option<PathBuf>,
-) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
+) -> Result<(
+    ShaderSpace,
+    [u32; 2],
+    ResourceName,
+    Vec<PassBindings>,
+    [u8; 32],
+)> {
     let prepared = prepare_scene(scene)?;
     let resolution = prepared.resolution;
     let nodes_by_id = &prepared.nodes_by_id;
@@ -1360,6 +1376,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _translate_expr,
                     _vertex_inline_stmts,
                     _vertex_wgsl_decls,
+                    _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
@@ -1494,6 +1511,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     translate_expr,
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
+                    vertex_graph_input_kinds,
                     vertex_uses_instance_index,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
@@ -1525,18 +1543,67 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let baked_buf_name: ResourceName =
                     format!("sys.pass.{layer_id}.baked_data_parse").into();
 
-                let bundle = build_pass_wgsl_bundle(
+                let baked_arc = std::sync::Arc::new(baked);
+                let translate_expr_wgsl = translate_expr.map(|e| e.expr);
+                let vertex_inline_stmts_for_bundle = vertex_inline_stmts.clone();
+                let vertex_wgsl_decls_for_bundle = vertex_wgsl_decls.clone();
+                let vertex_graph_input_kinds_for_bundle = vertex_graph_input_kinds.clone();
+
+                let mut bundle = build_pass_wgsl_bundle_with_graph_binding(
                     &prepared.scene,
                     nodes_by_id,
-                    Some(std::sync::Arc::new(baked)),
+                    Some(baked_arc.clone()),
                     baked_data_parse_meta_by_pass.get(layer_id).cloned(),
                     layer_id,
                     is_instanced,
-                    translate_expr.map(|e| e.expr),
-                    vertex_inline_stmts,
-                    vertex_wgsl_decls,
+                    translate_expr_wgsl.clone(),
+                    vertex_inline_stmts_for_bundle.clone(),
+                    vertex_wgsl_decls_for_bundle.clone(),
                     vertex_uses_instance_index,
+                    vertex_graph_input_kinds_for_bundle.clone(),
+                    None,
                 )?;
+
+                let mut graph_binding: Option<GraphBinding> = None;
+                let mut graph_values: Option<Vec<u8>> = None;
+                if let Some(schema) = bundle.graph_schema.clone() {
+                    let limits = device.limits();
+                    let kind = choose_graph_binding_kind(
+                        schema.size_bytes,
+                        limits.max_uniform_buffer_binding_size as u64,
+                        limits.max_storage_buffer_binding_size as u64,
+                    )?;
+
+                    if bundle.graph_binding_kind != Some(kind) {
+                        bundle = build_pass_wgsl_bundle_with_graph_binding(
+                            &prepared.scene,
+                            nodes_by_id,
+                            Some(baked_arc.clone()),
+                            baked_data_parse_meta_by_pass.get(layer_id).cloned(),
+                            layer_id,
+                            is_instanced,
+                            translate_expr_wgsl.clone(),
+                            vertex_inline_stmts_for_bundle.clone(),
+                            vertex_wgsl_decls_for_bundle.clone(),
+                            vertex_uses_instance_index,
+                            vertex_graph_input_kinds_for_bundle.clone(),
+                            Some(kind),
+                        )?;
+                    }
+
+                    let schema = bundle.graph_schema.clone().ok_or_else(|| {
+                        anyhow!("missing graph schema after graph binding selection")
+                    })?;
+                    let graph_buffer_name: ResourceName = format!("params.{layer_id}.graph").into();
+                    let values = pack_graph_values(&prepared.scene, &schema)?;
+                    graph_values = Some(values);
+                    graph_binding = Some(GraphBinding {
+                        buffer_name: graph_buffer_name,
+                        kind,
+                        schema,
+                    });
+                }
+
                 let shader_wgsl = bundle.module;
 
                 let mut texture_bindings: Vec<PassTextureBinding> = bundle
@@ -1592,6 +1659,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 };
 
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: layer_id.clone(),
                     name: pass_name.clone(),
                     geometry_buffer: geometry_buffer.clone(),
                     instance_buffer,
@@ -1599,6 +1667,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_name,
                     baked_data_parse_buffer,
                     params,
+                    graph_binding,
+                    graph_values,
                     shader_wgsl,
                     texture_bindings,
                     sampler_kind: SamplerKind::NearestClamp,
@@ -1665,6 +1735,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let bundle = build_fullscreen_textured_bundle(fragment_body);
 
                     render_pass_specs.push(RenderPassSpec {
+                        pass_id: compose_pass_name.as_str().to_string(),
                         name: compose_pass_name.clone(),
                         geometry_buffer: compose_geometry_buffer,
                         instance_buffer: None,
@@ -1672,6 +1743,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         params_buffer: compose_params_name,
                         baked_data_parse_buffer: None,
                         params: compose_params_val,
+                        graph_binding: None,
+                        graph_values: None,
                         shader_wgsl: bundle.module,
                         texture_bindings: vec![PassTextureBinding {
                             texture: pass_output_texture.clone(),
@@ -1728,8 +1801,37 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 };
 
                 // Build WGSL for the image input expression (similar to RenderPass material).
-                let src_bundle =
+                let mut src_bundle =
                     build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                let mut src_graph_binding: Option<GraphBinding> = None;
+                let mut src_graph_values: Option<Vec<u8>> = None;
+                if let Some(schema) = src_bundle.graph_schema.clone() {
+                    let limits = device.limits();
+                    let kind = choose_graph_binding_kind(
+                        schema.size_bytes,
+                        limits.max_uniform_buffer_binding_size as u64,
+                        limits.max_storage_buffer_binding_size as u64,
+                    )?;
+                    if src_bundle.graph_binding_kind != Some(kind) {
+                        src_bundle = build_blur_image_wgsl_bundle_with_graph_binding(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_id,
+                            Some(kind),
+                        )?;
+                    }
+                    let schema = src_bundle
+                        .graph_schema
+                        .clone()
+                        .ok_or_else(|| anyhow!("missing blur source graph schema"))?;
+                    let values = pack_graph_values(&prepared.scene, &schema)?;
+                    src_graph_values = Some(values);
+                    src_graph_binding = Some(GraphBinding {
+                        buffer_name: format!("params.sys.blur.{layer_id}.src.graph").into(),
+                        kind,
+                        schema,
+                    });
+                }
                 let mut src_texture_bindings: Vec<PassTextureBinding> = src_bundle
                     .image_textures
                     .iter()
@@ -1750,6 +1852,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: src_pass_name.as_str().to_string(),
                     name: src_pass_name.clone(),
                     geometry_buffer: geo_src,
                     instance_buffer: None,
@@ -1757,6 +1860,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_src.clone(),
                     baked_data_parse_buffer: None,
                     params: params_src_val,
+                    graph_binding: src_graph_binding,
+                    graph_values: src_graph_values,
                     shader_wgsl: src_bundle.module,
                     texture_bindings: src_texture_bindings,
                     sampler_kind: SamplerKind::NearestClamp,
@@ -1939,6 +2044,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let pass_name: ResourceName =
                         format!("sys.blur.{layer_id}.ds.{step}.pass").into();
                     render_pass_specs.push(RenderPassSpec {
+                        pass_id: pass_name.as_str().to_string(),
                         name: pass_name.clone(),
                         geometry_buffer: step_geo.clone(),
                         instance_buffer: None,
@@ -1946,6 +2052,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         params_buffer: params_name,
                         baked_data_parse_buffer: Some(baked_buf),
                         params: params_val,
+                        graph_binding: None,
+                        graph_values: None,
                         shader_wgsl: bundle.module,
                         texture_bindings: vec![PassTextureBinding {
                             texture: src_tex,
@@ -1980,6 +2088,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let pass_name_h: ResourceName =
                     format!("sys.blur.{layer_id}.h.ds{downsample_factor}.pass").into();
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: pass_name_h.as_str().to_string(),
                     name: pass_name_h.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
@@ -1987,6 +2096,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_h.clone(),
                     baked_data_parse_buffer: None,
                     params: params_h_val,
+                    graph_binding: None,
+                    graph_values: None,
                     shader_wgsl: bundle_h.module,
                     texture_bindings: vec![PassTextureBinding {
                         texture: ds_src_tex.clone(),
@@ -2015,6 +2126,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: pass_name_v.as_str().to_string(),
                     name: pass_name_v.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
@@ -2022,6 +2134,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_v.clone(),
                     baked_data_parse_buffer: None,
                     params: params_v_val,
+                    graph_binding: None,
+                    graph_values: None,
                     shader_wgsl: bundle_v.module,
                     texture_bindings: vec![PassTextureBinding {
                         texture: h_tex.clone(),
@@ -2053,6 +2167,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
                         .into();
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: pass_name_u.as_str().to_string(),
                     name: pass_name_u.clone(),
                     geometry_buffer: geo_out.clone(),
                     instance_buffer: None,
@@ -2060,6 +2175,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_u.clone(),
                     baked_data_parse_buffer: None,
                     params: params_u_val,
+                    graph_binding: None,
+                    graph_values: None,
                     shader_wgsl: bundle_u.module,
                     texture_bindings: vec![PassTextureBinding {
                         texture: v_tex.clone(),
@@ -2245,6 +2362,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
 
                 render_pass_specs.push(RenderPassSpec {
+                    pass_id: pass_name.as_str().to_string(),
                     name: pass_name.clone(),
                     geometry_buffer: geo.clone(),
                     instance_buffer: None,
@@ -2252,6 +2370,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     params_buffer: params_name,
                     baked_data_parse_buffer: None,
                     params: params_val,
+                    graph_binding: None,
+                    graph_values: None,
                     shader_wgsl: bundle.module,
                     texture_bindings: vec![PassTextureBinding {
                         texture: src_tex.clone(),
@@ -2289,6 +2409,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let upsample_bundle = build_upsample_bilinear_bundle();
 
                     render_pass_specs.push(RenderPassSpec {
+                        pass_id: upsample_pass_name.as_str().to_string(),
                         name: upsample_pass_name.clone(),
                         geometry_buffer: upsample_geo,
                         instance_buffer: None,
@@ -2296,6 +2417,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         params_buffer: upsample_params_name,
                         baked_data_parse_buffer: None,
                         params: upsample_params_val,
+                        graph_binding: None,
+                        graph_values: None,
                         shader_wgsl: upsample_bundle.module,
                         texture_bindings: vec![PassTextureBinding {
                             texture: downsample_out_tex.clone(),
@@ -2367,6 +2490,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
             let shader_wgsl = build_srgb_display_encode_wgsl("src_tex", "src_samp");
             render_pass_specs.push(RenderPassSpec {
+                pass_id: pass_name.as_str().to_string(),
                 name: pass_name.clone(),
                 geometry_buffer: geo,
                 instance_buffer: None,
@@ -2374,6 +2498,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 params_buffer: params_name,
                 baked_data_parse_buffer: None,
                 params,
+                graph_binding: None,
+                graph_values: None,
                 shader_wgsl,
                 texture_bindings: vec![PassTextureBinding {
                     texture: target_texture_name.clone(),
@@ -2408,10 +2534,15 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let pass_bindings: Vec<PassBindings> = render_pass_specs
         .iter()
         .map(|s| PassBindings {
+            pass_id: s.pass_id.clone(),
             params_buffer: s.params_buffer.clone(),
             base_params: s.params,
+            graph_binding: s.graph_binding.clone(),
+            last_graph_hash: s.graph_values.as_ref().map(|v| hash_bytes(v.as_slice())),
         })
         .collect();
+    let pipeline_signature =
+        compute_pipeline_signature_for_pass_bindings(&prepared.scene, &pass_bindings);
 
     // ---------------- data-driven declarations ----------------
     // 1) Buffers
@@ -2439,6 +2570,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
             size: core::mem::size_of::<Params>(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        if let Some(graph_binding) = pass.graph_binding.as_ref() {
+            let usage = match graph_binding.kind {
+                GraphBindingKind::Uniform => {
+                    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+                }
+                GraphBindingKind::StorageRead => {
+                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST
+                }
+            };
+            buffer_specs.push(BufferSpec::Sized {
+                name: graph_binding.buffer_name.clone(),
+                size: graph_binding.schema.size_bytes as usize,
+                usage,
+            });
+        }
     }
 
     for spec in &render_pass_specs {
@@ -2807,6 +2953,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
         let shader_wgsl = spec.shader_wgsl.clone();
         let blend_state = spec.blend_state;
         let color_load_op = spec.color_load_op;
+        let graph_binding = spec.graph_binding.clone();
 
         let texture_names: Vec<ResourceName> = spec
             .texture_bindings
@@ -2852,6 +2999,24 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     ShaderStages::VERTEX_FRAGMENT,
                     true,
                 );
+            }
+
+            if let Some(graph_binding) = graph_binding.clone() {
+                b = match graph_binding.kind {
+                    GraphBindingKind::Uniform => b.bind_uniform_buffer(
+                        0,
+                        2,
+                        graph_binding.buffer_name.clone(),
+                        ShaderStages::VERTEX_FRAGMENT,
+                    ),
+                    GraphBindingKind::StorageRead => b.bind_storage_buffer(
+                        0,
+                        2,
+                        graph_binding.buffer_name.clone(),
+                        ShaderStages::VERTEX_FRAGMENT,
+                        true,
+                    ),
+                };
             }
 
             b = b.bind_attribute_buffer(
@@ -2916,13 +3081,22 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
     for spec in &render_pass_specs {
         shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
+        if let (Some(graph_binding), Some(values)) = (&spec.graph_binding, &spec.graph_values) {
+            shader_space.write_buffer(graph_binding.buffer_name.as_str(), 0, values)?;
+        }
     }
 
     for spec in &image_prepasses {
         shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
     }
 
-    Ok((shader_space, resolution, output_texture_name, pass_bindings))
+    Ok((
+        shader_space,
+        resolution,
+        output_texture_name,
+        pass_bindings,
+        pipeline_signature,
+    ))
 }
 
 #[cfg(test)]
@@ -3154,7 +3328,13 @@ pub(crate) fn build_error_shader_space_internal(
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     resolution: [u32; 2],
-) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
+) -> Result<(
+    ShaderSpace,
+    [u32; 2],
+    ResourceName,
+    Vec<PassBindings>,
+    [u8; 32],
+)> {
     let mut shader_space = ShaderSpace::new(device, queue);
 
     let output_texture_name: ResourceName = "error_output".into();
@@ -3209,5 +3389,11 @@ pub(crate) fn build_error_shader_space_internal(
     shader_space.composite(move |composer| composer.pass(pass_name));
     shader_space.prepare();
 
-    Ok((shader_space, resolution, output_texture_name, Vec::new()))
+    Ok((
+        shader_space,
+        resolution,
+        output_texture_name,
+        Vec::new(),
+        [0_u8; 32],
+    ))
 }

@@ -22,6 +22,63 @@ pub enum ValueType {
     Vec4,
 }
 
+/// Graph input field kinds used for per-pass graph uniforms/storage buffers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum GraphFieldKind {
+    F32,
+    I32,
+    Bool,
+    Vec2,
+    Vec3,
+    Vec4Color,
+}
+
+impl GraphFieldKind {
+    pub fn uses_i32_slot(self) -> bool {
+        matches!(self, Self::I32 | Self::Bool)
+    }
+
+    pub fn wgsl_slot_type(self) -> &'static str {
+        if self.uses_i32_slot() {
+            "vec4i"
+        } else {
+            "vec4f"
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphField {
+    pub node_id: String,
+    pub field_name: String,
+    pub kind: GraphFieldKind,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GraphSchema {
+    pub fields: Vec<GraphField>,
+    pub size_bytes: u64,
+}
+
+impl GraphSchema {
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphBindingKind {
+    Uniform,
+    StorageRead,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphBinding {
+    pub buffer_name: ResourceName,
+    pub kind: GraphBindingKind,
+    pub schema: GraphSchema,
+}
+
 #[derive(Clone, Debug)]
 pub enum BakedValue {
     F32(f32),
@@ -215,6 +272,12 @@ pub struct MaterialCompileContext {
     /// Used for MathClosure nodes to generate inline `{ }` blocks that isolate
     /// variable scope and avoid naming conflicts.
     pub inline_stmts: Vec<String>,
+
+    /// Graph input nodes referenced by this compiled shader context.
+    ///
+    /// Keyed by original node id and value kind so we can emit deterministic
+    /// graph buffer schemas and pack values on the CPU side.
+    pub graph_input_kinds: BTreeMap<String, GraphFieldKind>,
 }
 
 impl MaterialCompileContext {
@@ -240,6 +303,15 @@ impl MaterialCompileContext {
         self.pass_index_by_node
             .insert(pass_node_id.to_string(), idx);
         idx
+    }
+
+    pub fn register_graph_input(&mut self, node_id: &str, kind: GraphFieldKind) {
+        // A node id should map to one stable kind (node type is fixed).
+        // If the same id is observed with a conflicting kind, keep the first
+        // to avoid introducing non-deterministic shader declarations.
+        self.graph_input_kinds
+            .entry(node_id.to_string())
+            .or_insert(kind);
     }
 
     /// Generate the WGSL variable name for a texture binding.
@@ -313,8 +385,11 @@ pub struct Params {
 /// Bindings for a render pass (uniform buffer and parameters).
 #[derive(Clone, Debug)]
 pub struct PassBindings {
+    pub pass_id: String,
     pub params_buffer: ResourceName,
     pub base_params: Params,
+    pub graph_binding: Option<GraphBinding>,
+    pub last_graph_hash: Option<[u8; 32]>,
 }
 
 /// Complete WGSL shader bundle for a render pass.
@@ -334,6 +409,10 @@ pub struct WgslShaderBundle {
     pub image_textures: Vec<String>,
     /// PassTexture node ids (upstream pass nodes) referenced by this pass's material graph, in binding order.
     pub pass_textures: Vec<String>,
+    /// Optional generated graph schema for input nodes referenced by this pass.
+    pub graph_schema: Option<GraphSchema>,
+    /// Selected graph binding kind used by generated declarations.
+    pub graph_binding_kind: Option<GraphBindingKind>,
 }
 
 /// A CPU-side 2D convolution kernel.

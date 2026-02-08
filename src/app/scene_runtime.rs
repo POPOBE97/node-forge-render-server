@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::{protocol, renderer, ws};
@@ -9,6 +10,74 @@ use super::types::App;
 pub struct SceneApplyResult {
     pub did_rebuild_shader_space: bool,
     pub texture_filter_override: Option<wgpu::FilterMode>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SceneUpdateMode {
+    Rebuild,
+    UniformOnly,
+}
+
+#[derive(Debug)]
+struct GraphBufferUpdate {
+    pass_index: usize,
+    bytes: Vec<u8>,
+    hash: [u8; 32],
+}
+
+fn choose_scene_update_mode(
+    last_pipeline_signature: Option<[u8; 32]>,
+    next_pipeline_signature: [u8; 32],
+) -> SceneUpdateMode {
+    if last_pipeline_signature == Some(next_pipeline_signature) {
+        SceneUpdateMode::UniformOnly
+    } else {
+        SceneUpdateMode::Rebuild
+    }
+}
+
+fn collect_graph_uniform_updates(
+    scene: &crate::dsl::SceneDSL,
+    passes: &[renderer::PassBindings],
+) -> Result<Vec<GraphBufferUpdate>> {
+    let mut out = Vec::new();
+    for (pass_index, pass) in passes.iter().enumerate() {
+        let Some(binding) = pass.graph_binding.as_ref() else {
+            continue;
+        };
+        let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
+            .with_context(|| format!("failed to pack graph values for pass '{}'", pass.pass_id))?;
+        let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
+        if pass.last_graph_hash != Some(hash) {
+            out.push(GraphBufferUpdate {
+                pass_index,
+                bytes,
+                hash,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn apply_graph_uniform_updates(app: &mut App, scene: &crate::dsl::SceneDSL) -> Result<usize> {
+    let updates = collect_graph_uniform_updates(scene, &app.passes)?;
+    for update in &updates {
+        let buffer_name = app.passes[update.pass_index]
+            .graph_binding
+            .as_ref()
+            .map(|b| b.buffer_name.clone())
+            .with_context(|| {
+                format!(
+                    "graph binding missing while applying update for pass '{}'",
+                    app.passes[update.pass_index].pass_id
+                )
+            })?;
+        app.shader_space
+            .write_buffer(buffer_name.as_str(), 0, update.bytes.as_slice())
+            .with_context(|| format!("failed to write graph buffer '{}'", buffer_name.as_str()))?;
+        app.passes[update.pass_index].last_graph_hash = Some(update.hash);
+    }
+    Ok(updates.len())
 }
 
 pub fn drain_latest_scene_update(app: &App) -> Option<ws::SceneUpdate> {
@@ -63,6 +132,37 @@ pub fn apply_scene_update(
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(size));
             }
 
+            if let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene) {
+                let next_pipeline_signature =
+                    renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
+                        &prepared_for_fast_path.scene,
+                        &app.passes,
+                    );
+                if choose_scene_update_mode(app.last_pipeline_signature, next_pipeline_signature)
+                    == SceneUpdateMode::UniformOnly
+                {
+                    match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
+                        Ok(_updated_count) => {
+                            app.last_pipeline_signature = Some(next_pipeline_signature);
+                            app.uniform_only_update_count =
+                                app.uniform_only_update_count.saturating_add(1);
+                            if let Ok(mut g) = app.last_good.lock() {
+                                *g = Some(scene);
+                            }
+                            return SceneApplyResult {
+                                did_rebuild_shader_space: false,
+                                texture_filter_override: None,
+                            };
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "[scene-runtime] uniform-only graph update failed; forcing rebuild: {e:#}"
+                            );
+                        }
+                    }
+                }
+            }
+
             let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 renderer::ShaderSpaceBuilder::new(
                     Arc::new(render_state.device.clone()),
@@ -81,6 +181,8 @@ pub fn apply_scene_update(
                     app.resolution = result.resolution;
                     app.passes = result.pass_bindings;
                     app.output_texture_name = result.present_output_texture;
+                    app.last_pipeline_signature = Some(result.pipeline_signature);
+                    app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
 
                     if let Ok(mut g) = app.last_good.lock() {
                         *g = Some(scene);
@@ -146,6 +248,7 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         app.resolution = result.resolution;
         app.output_texture_name = result.present_output_texture;
         app.passes = result.pass_bindings;
+        app.last_pipeline_signature = None;
     }
 }
 
@@ -167,6 +270,12 @@ fn broadcast_error(app: &App, request_id: Option<String>, code: &str, message: S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::types::{
+        GraphBinding, GraphBindingKind, GraphField, GraphFieldKind, GraphSchema, Params,
+        PassBindings,
+    };
+    use rust_wgpu_fiber::ResourceName;
+    use std::collections::HashMap;
 
     #[test]
     fn apply_scene_resolution_updates_window_state_without_forcing_resize_by_default() {
@@ -194,5 +303,134 @@ mod tests {
         let (next, resize) = apply_scene_resolution_to_window_state([800, 600], None, true);
         assert_eq!(next, [800, 600]);
         assert_eq!(resize, None);
+    }
+
+    #[test]
+    fn scene_update_mode_selects_uniform_only_when_signature_matches() {
+        let sig = [7_u8; 32];
+        assert_eq!(
+            choose_scene_update_mode(Some(sig), sig),
+            SceneUpdateMode::UniformOnly
+        );
+        assert_eq!(
+            choose_scene_update_mode(None, sig),
+            SceneUpdateMode::Rebuild
+        );
+    }
+
+    #[test]
+    fn collect_graph_uniform_updates_skips_unchanged_buffers() {
+        let scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "float1".to_string(),
+                node_type: "FloatInput".to_string(),
+                params: HashMap::from([("value".to_string(), serde_json::json!(2.0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+        };
+
+        let schema = GraphSchema {
+            fields: vec![GraphField {
+                node_id: "float1".to_string(),
+                field_name: "node_float1".to_string(),
+                kind: GraphFieldKind::F32,
+            }],
+            size_bytes: 16,
+        };
+        let bytes = renderer::graph_uniforms::pack_graph_values(&scene, &schema).unwrap();
+        let same_hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
+
+        let pass = PassBindings {
+            pass_id: "passA".to_string(),
+            params_buffer: ResourceName::from("params.passA"),
+            base_params: Params {
+                target_size: [1.0, 1.0],
+                geo_size: [1.0, 1.0],
+                center: [0.5, 0.5],
+                geo_translate: [0.0, 0.0],
+                geo_scale: [1.0, 1.0],
+                time: 0.0,
+                _pad0: 0.0,
+                color: [1.0, 1.0, 1.0, 1.0],
+            },
+            graph_binding: Some(GraphBinding {
+                buffer_name: ResourceName::from("params.passA.graph"),
+                kind: GraphBindingKind::Uniform,
+                schema,
+            }),
+            last_graph_hash: Some(same_hash),
+        };
+
+        let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn collect_graph_uniform_updates_emits_when_value_changes() {
+        let scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "float1".to_string(),
+                node_type: "FloatInput".to_string(),
+                params: HashMap::from([("value".to_string(), serde_json::json!(3.0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+        };
+
+        let schema = GraphSchema {
+            fields: vec![GraphField {
+                node_id: "float1".to_string(),
+                field_name: "node_float1".to_string(),
+                kind: GraphFieldKind::F32,
+            }],
+            size_bytes: 16,
+        };
+
+        let pass = PassBindings {
+            pass_id: "passA".to_string(),
+            params_buffer: ResourceName::from("params.passA"),
+            base_params: Params {
+                target_size: [1.0, 1.0],
+                geo_size: [1.0, 1.0],
+                center: [0.5, 0.5],
+                geo_translate: [0.0, 0.0],
+                geo_scale: [1.0, 1.0],
+                time: 0.0,
+                _pad0: 0.0,
+                color: [1.0, 1.0, 1.0, 1.0],
+            },
+            graph_binding: Some(GraphBinding {
+                buffer_name: ResourceName::from("params.passA.graph"),
+                kind: GraphBindingKind::Uniform,
+                schema,
+            }),
+            last_graph_hash: None,
+        };
+
+        let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].pass_index, 0);
+        assert_eq!(updates[0].bytes.len(), 16);
     }
 }

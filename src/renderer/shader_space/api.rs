@@ -32,6 +32,7 @@ pub struct ShaderSpaceBuildResult {
     pub scene_output_texture: ResourceName,
     pub present_output_texture: ResourceName,
     pub pass_bindings: Vec<PassBindings>,
+    pub pipeline_signature: [u8; 32],
 }
 
 pub struct ShaderSpaceBuilder {
@@ -57,7 +58,7 @@ impl ShaderSpaceBuilder {
     pub fn build(self, scene: &SceneDSL) -> Result<ShaderSpaceBuildResult> {
         let enable_display_encode =
             self.options.presentation_mode == ShaderSpacePresentationMode::UiSdrDisplayEncode;
-        let (shader_space, resolution, scene_output_texture, pass_bindings) =
+        let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature) =
             assembler::build_shader_space_from_scene_internal(
                 scene,
                 self.device,
@@ -84,11 +85,12 @@ impl ShaderSpaceBuilder {
             scene_output_texture,
             present_output_texture,
             pass_bindings,
+            pipeline_signature,
         })
     }
 
     pub fn build_error(self, resolution: [u32; 2]) -> Result<ShaderSpaceBuildResult> {
-        let (shader_space, resolution, scene_output_texture, pass_bindings) =
+        let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature) =
             error_space::build_error_shader_space(self.device, self.queue, resolution)?;
 
         Ok(ShaderSpaceBuildResult {
@@ -97,6 +99,7 @@ impl ShaderSpaceBuilder {
             present_output_texture: scene_output_texture.clone(),
             scene_output_texture,
             pass_bindings,
+            pipeline_signature,
         })
     }
 }

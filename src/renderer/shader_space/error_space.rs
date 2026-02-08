@@ -11,6 +11,12 @@ pub(crate) fn build_error_shader_space(
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     resolution: [u32; 2],
-) -> Result<(ShaderSpace, [u32; 2], ResourceName, Vec<PassBindings>)> {
+) -> Result<(
+    ShaderSpace,
+    [u32; 2],
+    ResourceName,
+    Vec<PassBindings>,
+    [u8; 32],
+)> {
     assembler::build_error_shader_space_internal(device, queue, resolution)
 }

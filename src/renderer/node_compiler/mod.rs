@@ -95,11 +95,11 @@ fn compile_expr(
 
     let result = match node.node_type.as_str() {
         // Input nodes
-        "BoolInput" => input_nodes::compile_bool_input(node, out_port)?,
-        "ColorInput" => input_nodes::compile_color_input(node, out_port)?,
-        "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port)?,
-        "Vector2Input" => input_nodes::compile_vector2_input(node, out_port)?,
-        "Vector3Input" => input_nodes::compile_vector3_input(node, out_port)?,
+        "BoolInput" => input_nodes::compile_bool_input(node, out_port, ctx)?,
+        "ColorInput" => input_nodes::compile_color_input(node, out_port, ctx)?,
+        "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port, ctx)?,
+        "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
+        "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
         "GeoSize" => input_nodes::compile_geo_size_for_stage(node, out_port, stage)?,
