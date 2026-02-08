@@ -29,6 +29,14 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+struct GraphInputs {
+    // Node: tint_b
+    node_tint_b_11c38723: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -284,5 +292,5 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return blendNormal((vec4f(0, 0, 0.7, 0.7)), (textureSample(pass_tex_pass_a, pass_samp_pass_a, vec2f((in.uv).x, 1.0 - (in.uv).y))));
+    return blendNormal((vec4f((graph_inputs.node_tint_b_11c38723).rgb * (graph_inputs.node_tint_b_11c38723).a, (graph_inputs.node_tint_b_11c38723).a)), (textureSample(pass_tex_pass_a, pass_samp_pass_a, vec2f((in.uv).x, 1.0 - (in.uv).y))));
 }

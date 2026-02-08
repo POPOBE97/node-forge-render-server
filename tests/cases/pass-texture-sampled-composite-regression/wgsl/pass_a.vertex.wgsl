@@ -29,6 +29,14 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+struct GraphInputs {
+    // Node: color_a
+    node_color_a_ec5cf8c0: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 

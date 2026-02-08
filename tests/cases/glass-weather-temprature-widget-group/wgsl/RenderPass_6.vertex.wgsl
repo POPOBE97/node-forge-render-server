@@ -29,6 +29,26 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+struct GraphInputs {
+    // Node: BoolInput_139
+    node_BoolInput_139_e7c94ac1: vec4i,
+    // Node: FloatInput_136
+    node_FloatInput_136_3ed92f17: vec4f,
+    // Node: GroupInstance_128/FloatInput_10
+    node_GroupInstance_128_FloatInput_10_0026c306: vec4f,
+    // Node: GroupInstance_128/FloatInput_12
+    node_GroupInstance_128_FloatInput_12_6629c306: vec4f,
+    // Node: GroupInstance_128/FloatInput_89
+    node_GroupInstance_128_FloatInput_89_2613dd06: vec4f,
+    // Node: GroupInstance_128/Vector3Input_105
+    node_GroupInstance_128_Vector3Input_105_c9767703: vec4f,
+    // Node: GroupInstance_128/Vector3Input_80
+    node_GroupInstance_128_Vector3Input_80_170cc9be: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)

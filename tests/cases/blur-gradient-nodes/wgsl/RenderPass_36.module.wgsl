@@ -29,16 +29,32 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
-struct GraphInputs {
-    // Node: color_a
-    node_color_a_ec5cf8c0: vec4f,
-};
-
-@group(0) @binding(2)
-var<uniform> graph_inputs: GraphInputs;
-
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
+@group(1) @binding(0)
+var pass_tex_Downsample_13: texture_2d<f32>;
+
+@group(1) @binding(1)
+var pass_samp_Downsample_13: sampler;
+
+
+// --- Extra WGSL declarations (generated) ---
+fn mc_GroupInstance_39_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+    var uv_1: vec2<f32>;
+    var xy_1: vec2<f32>;
+    var size_1: vec2<f32>;
+    var output: vec2<f32> = vec2(0f);
+
+    uv_1 = uv;
+    xy_1 = xy;
+    size_1 = size;
+    let _e9: vec2<f32> = xy_1;
+    let _e10: vec2<f32> = size_1;
+    output = (_e9 / _e10);
+    let _e12: vec2<f32> = output;
+    return _e12;
+}
+
 
  @vertex
  fn vs_main(
@@ -75,5 +91,13 @@ var<storage, read> baked_data_parse: array<vec4f>;
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f((graph_inputs.node_color_a_ec5cf8c0).rgb * (graph_inputs.node_color_a_ec5cf8c0).a, (graph_inputs.node_color_a_ec5cf8c0).a);
+        var mc_GroupInstance_39_MathClosure_30_out: vec2f;
+    {
+        let xy = in.local_px;
+        let size = in.geo_size_px;
+        var output: vec2f;
+        output = mc_GroupInstance_39_MathClosure_30_(in.uv, xy, size);
+        mc_GroupInstance_39_MathClosure_30_out = output;
+    }
+    return textureSample(pass_tex_Downsample_13, pass_samp_Downsample_13, vec2f((mc_GroupInstance_39_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_39_MathClosure_30_out).y));
 }
