@@ -1,0 +1,286 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-02-09T06:46:13.286Z",
+    "modified": "2026-02-09T06:46:13.286Z"
+  },
+  "nodes": [
+    {
+      "id": "RenderPass_1",
+      "type": "RenderPass",
+      "position": {
+        "x": 100,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Screen_2",
+      "type": "Screen",
+      "position": {
+        "x": 460,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "RenderTexture_3",
+      "type": "RenderTexture",
+      "position": {
+        "x": 100,
+        "y": 520
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm-srgb"
+      }
+    },
+    {
+      "id": "Composite_4",
+      "type": "Composite",
+      "position": {
+        "x": 280,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {}
+    },
+    {
+      "id": "Rect2DGeometry_5",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 100,
+        "y": 200
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "height": 2400,
+        "width": 1080,
+        "x": 540,
+        "y": 1200,
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "GeoFragcoord_6",
+      "type": "GeoFragcoord",
+      "position": {
+        "x": -400,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Geo Fragcoord",
+      "params": {}
+    },
+    {
+      "id": "GeoSize_7",
+      "type": "GeoSize",
+      "position": {
+        "x": -400,
+        "y": 460
+      },
+      "width": 160,
+      "label": "Geo Size",
+      "params": {}
+    },
+    {
+      "id": "MathClosure_8",
+      "type": "MathClosure",
+      "position": {
+        "x": -220,
+        "y": 400
+      },
+      "width": 271,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = vec3(input1 / input2, input3);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1770619506485_1",
+          "name": "input1",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1770619507636_2",
+          "name": "input2",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1770619535753_3",
+          "name": "input3",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1770619506485_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "GeoFragcoord_6",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_1770619507636_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "GeoSize_7",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_1770619535753_3",
+          "label": "input3",
+          "variableName": "input3",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "TimeInput_9",
+            "outputPortId": "time",
+            "outputLabel": "Time"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TimeInput_9",
+      "type": "TimeInput",
+      "position": {
+        "x": -400,
+        "y": 520
+      },
+      "width": 160,
+      "label": "Time Input",
+      "params": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "RenderPass_1",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_4",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "Composite_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_2",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "RenderTexture_3",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_4",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "Rect2DGeometry_5",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_1",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "GeoFragcoord_6",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathClosure_8",
+        "portId": "dynamic_1770619506485_1"
+      }
+    },
+    {
+      "id": "edge_7",
+      "from": {
+        "nodeId": "GeoSize_7",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathClosure_8",
+        "portId": "dynamic_1770619507636_2"
+      }
+    },
+    {
+      "id": "edge_9",
+      "from": {
+        "nodeId": "TimeInput_9",
+        "portId": "time"
+      },
+      "to": {
+        "nodeId": "MathClosure_8",
+        "portId": "dynamic_1770619535753_3"
+      }
+    },
+    {
+      "id": "edge_10",
+      "from": {
+        "nodeId": "MathClosure_8",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "RenderPass_1",
+        "portId": "material"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_4"
+  },
+  "groups": []
+}

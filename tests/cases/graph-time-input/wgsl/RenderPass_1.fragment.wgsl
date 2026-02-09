@@ -1,0 +1,69 @@
+
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
+    time: f32,
+    _pad0: f32,
+
+    // 16-byte aligned.
+    color: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+ struct VSOut {
+     @builtin(position) position: vec4f,
+     @location(0) uv: vec2f,
+     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+     @location(1) frag_coord_gl: vec2f,
+     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+     @location(2) local_px: vec2f,
+     // Geometry size in pixels after applying geometry/instance transforms.
+     @location(3) geo_size_px: vec2f,
+  };
+
+@group(0) @binding(1)
+var<storage, read> baked_data_parse: array<vec4f>;
+
+// --- Extra WGSL declarations (generated) ---
+fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec3<f32> {
+    var uv_1: vec2<f32>;
+    var input1_1: vec2<f32>;
+    var input2_1: vec2<f32>;
+    var input3_1: f32;
+    var output: vec3<f32> = vec3(0f);
+
+    uv_1 = uv;
+    input1_1 = input1_;
+    input2_1 = input2_;
+    input3_1 = input3_;
+    let _e11: vec2<f32> = input1_1;
+    let _e12: vec2<f32> = input2_1;
+    let _e13: vec2<f32> = (_e11 / _e12);
+    let _e14: f32 = input3_1;
+    output = vec3<f32>(_e13.x, _e13.y, _e14);
+    let _e18: vec3<f32> = output;
+    return _e18;
+}
+
+
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {
+        var mc_MathClosure_8_out: vec3f;
+    {
+        let input1 = in.local_px;
+        let input2 = in.geo_size_px;
+        let input3 = params.time;
+        var output: vec3f;
+        output = mc_MathClosure_8_(in.uv, input1, input2, input3);
+        mc_MathClosure_8_out = output;
+    }
+    return vec4f(mc_MathClosure_8_out, 0.0);
+}
