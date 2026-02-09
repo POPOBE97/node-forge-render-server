@@ -2,15 +2,15 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-09T06:46:13.286Z",
-    "modified": "2026-02-09T06:46:13.286Z"
+    "created": "2026-02-09T07:17:06.483Z",
+    "modified": "2026-02-09T07:17:06.483Z"
   },
   "nodes": [
     {
       "id": "RenderPass_1",
       "type": "RenderPass",
       "position": {
-        "x": 100,
+        "x": -160,
         "y": 400
       },
       "width": 160,
@@ -29,7 +29,7 @@
       "id": "Screen_2",
       "type": "Screen",
       "position": {
-        "x": 460,
+        "x": 200,
         "y": 400
       },
       "width": 160,
@@ -43,7 +43,7 @@
       "id": "RenderTexture_3",
       "type": "RenderTexture",
       "position": {
-        "x": 100,
+        "x": -160,
         "y": 520
       },
       "width": 160,
@@ -58,7 +58,7 @@
       "id": "Composite_4",
       "type": "Composite",
       "position": {
-        "x": 280,
+        "x": 20,
         "y": 400
       },
       "width": 160,
@@ -69,7 +69,7 @@
       "id": "Rect2DGeometry_5",
       "type": "Rect2DGeometry",
       "position": {
-        "x": 100,
+        "x": -160,
         "y": 200
       },
       "width": 160,
@@ -87,7 +87,7 @@
       "id": "GeoFragcoord_6",
       "type": "GeoFragcoord",
       "position": {
-        "x": -400,
+        "x": -520,
         "y": 400
       },
       "width": 160,
@@ -98,7 +98,7 @@
       "id": "GeoSize_7",
       "type": "GeoSize",
       "position": {
-        "x": -400,
+        "x": -520,
         "y": 460
       },
       "width": 160,
@@ -109,13 +109,13 @@
       "id": "MathClosure_8",
       "type": "MathClosure",
       "position": {
-        "x": -220,
+        "x": -340,
         "y": 400
       },
-      "width": 271,
+      "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "output = vec3(input1 / input2, input3);"
+        "source": "output = vec4(input1 / input2, abs(fract(input3) - 0.5), 1.0);"
       },
       "inputs": [
         {
@@ -138,7 +138,7 @@
         {
           "id": "output",
           "name": "Output",
-          "type": "vector3"
+          "type": "vector4"
         }
       ],
       "inputBindings": [
@@ -181,7 +181,7 @@
       "id": "TimeInput_9",
       "type": "TimeInput",
       "position": {
-        "x": -400,
+        "x": -520,
         "y": 520
       },
       "width": 160,
@@ -257,17 +257,6 @@
       }
     },
     {
-      "id": "edge_9",
-      "from": {
-        "nodeId": "TimeInput_9",
-        "portId": "time"
-      },
-      "to": {
-        "nodeId": "MathClosure_8",
-        "portId": "dynamic_1770619535753_3"
-      }
-    },
-    {
       "id": "edge_10",
       "from": {
         "nodeId": "MathClosure_8",
@@ -276,6 +265,17 @@
       "to": {
         "nodeId": "RenderPass_1",
         "portId": "material"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "TimeInput_9",
+        "portId": "time"
+      },
+      "to": {
+        "nodeId": "MathClosure_8",
+        "portId": "dynamic_1770619535753_3"
       }
     }
   ],
