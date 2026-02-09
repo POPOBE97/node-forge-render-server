@@ -117,11 +117,11 @@ fn main() {
         writeln!(
             f,
             "    run_case(&Case {{ name: {case_name:?}, scene_json: {scene_json:?}, baseline_png: {baseline_png}, expected_image_texture: {expected_image_texture} }});",
-            scene_json = format!("{}/scene.json", case_name),
-            baseline_png = format!("default_baseline_png({:?})", case_name),
-            expected_image_texture = "default_expected_image_texture()",
-        )
-        .unwrap();
+             scene_json = format!("{}/scene.json", case_name),
+             baseline_png = format!("default_baseline_png({:?})", case_name),
+             expected_image_texture = format!("default_expected_image_texture({case_name:?})"),
+         )
+         .unwrap();
         writeln!(f, "}}").unwrap();
         writeln!(f).unwrap();
     }

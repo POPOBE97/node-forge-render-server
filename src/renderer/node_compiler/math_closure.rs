@@ -26,8 +26,19 @@ fn map_port_type(s: Option<&str>) -> Result<ValueType> {
         "vector2" | "vec2" => Ok(ValueType::Vec2),
         "vector3" | "vec3" => Ok(ValueType::Vec3),
         "vector4" | "vec4" | "color" => Ok(ValueType::Vec4),
+        // Pass texture reference - used for multi-tap sampling inside MathClosure.
+        "pass" | "texture" => Ok(ValueType::Texture2D),
         other => bail!("unsupported MathClosure port type: {other}"),
     }
+}
+
+/// Represents a pass texture input for MathClosure that enables direct sampling.
+#[derive(Clone, Debug)]
+struct PassTextureInput {
+    /// Variable name used in the snippet (e.g., "mip0").
+    var_name: String,
+    /// Upstream pass node ID.
+    pass_node_id: String,
 }
 
 fn default_value_for(ty: ValueType) -> TypedExpr {
@@ -146,9 +157,20 @@ fn promote_type_from_source_swizzles(source: &str, param_name: &str, ty: ValueTy
 /// Instead of generating a separate helper function, this emits the snippet code inline
 /// within a `{ }` block to isolate the local variable scope and avoid naming conflicts.
 /// This produces clearer generated code for small math snippets.
+///
+/// ## Pass Texture Inputs
+///
+/// MathClosure supports `pass` type inputs for direct texture sampling. When a port has
+/// type "pass", the connected pass node's texture becomes available for sampling via:
+/// ```glsl
+/// vec4 color = samplePass(varName, uv);  // Sample at UV coordinates
+/// ```
+///
+/// This enables Mitchell-Netravali cubic upsampling and other multi-tap filters inside
+/// a MathClosure without requiring separate PassTexture nodes.
 pub fn compile_math_closure<F>(
     scene: &SceneDSL,
-    _nodes_by_id: &HashMap<String, Node>,
+    nodes_by_id: &HashMap<String, Node>,
     node: &Node,
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
@@ -182,16 +204,53 @@ where
         .unwrap_or_else(|| infer_output_type_from_source(source));
     let output_var = format!("mc_{}_out", sanitize_wgsl_ident(&node.id));
 
+    // Collect pass texture inputs for direct sampling support.
+    let mut pass_texture_inputs: Vec<PassTextureInput> = Vec::new();
+
     // Compile inputs in declared order.
     let mut param_bindings: Vec<String> = Vec::new();
     let mut uses_time = false;
 
     for port in &node.inputs {
         let param_name = port_id_to_param_name(port);
+        let port_ty = map_port_type(port.port_type.as_deref())?;
+
+        // Handle pass texture inputs specially.
+        if port_ty == ValueType::Texture2D {
+            // Find the connected pass node.
+            let conn = incoming_connection(scene, &node.id, &port.id)
+                .ok_or_else(|| anyhow!("MathClosure pass input '{}' is not connected", port.id))?;
+            let upstream_node = nodes_by_id.get(&conn.from.node_id)
+                .ok_or_else(|| anyhow!("MathClosure: upstream node not found: {}", conn.from.node_id))?;
+
+            // Validate that upstream is a pass-producing node.
+            if !matches!(
+                upstream_node.node_type.as_str(),
+                "RenderPass" | "GuassianBlurPass" | "Downsample"
+            ) {
+                bail!(
+                    "MathClosure pass input '{}' must be connected to a pass node, got {}",
+                    param_name,
+                    upstream_node.node_type
+                );
+            }
+
+            // Register this pass texture for binding.
+            ctx.register_pass_texture(&conn.from.node_id);
+
+            pass_texture_inputs.push(PassTextureInput {
+                var_name: param_name.clone(),
+                pass_node_id: conn.from.node_id.clone(),
+            });
+
+            // Don't add a parameter binding for pass inputs - they're sampled directly.
+            continue;
+        }
+
         let expected_ty = promote_type_from_source_swizzles(
             &source,
             &param_name,
-            map_port_type(port.port_type.as_deref())?,
+            port_ty,
         );
 
         let arg_expr = if let Some(conn) = incoming_connection(scene, &node.id, &port.id) {
@@ -211,10 +270,52 @@ where
     // We intentionally only use a GLSL "function" wrapper and then call the emitted WGSL function.
     // This avoids any string-level GLSL-ish -> WGSL rewrites.
     let fn_name = format!("mc_{}", sanitize_wgsl_ident(&node.id));
-    let source = source
+    let mut source = source
         .replace("vUv", "uv")
         .replace("v_UV", "uv")
         .replace("vUV", "uv");
+
+    // Build a prefix with helper function declarations for pass texture sampling.
+    // These dummy GLSL functions will be parsed by naga and converted to WGSL.
+    // We add real WGSL helper functions that do actual texture sampling.
+    let mut glsl_helper_prefix = String::new();
+
+    for pti in &pass_texture_inputs {
+        let tex_var = MaterialCompileContext::pass_tex_var_name(&pti.pass_node_id);
+        let samp_var = MaterialCompileContext::pass_sampler_var_name(&pti.pass_node_id);
+        let helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.pass_node_id));
+        // naga appends '_' to function names to avoid collisions with WGSL keywords.
+        let helper_name_with_suffix = format!("{helper_name}_");
+
+        // Add a dummy GLSL helper function that naga can parse.
+        // This function will be replaced by our actual WGSL helper in extra_wgsl_decls.
+        glsl_helper_prefix.push_str(&format!(
+            "vec4 {helper_name}(vec2 uv_arg) {{ return vec4(0.0); }}\n"
+        ));
+
+        // Replace samplePass(varName, uv) with our helper function call.
+        let pattern = format!("samplePass({}, ", pti.var_name);
+        let replacement = format!("{helper_name}(");
+        source = source.replace(&pattern, &replacement);
+
+        // Add the actual WGSL helper function that does the texture sampling.
+        // Use the name WITH suffix because naga will rename the function calls.
+        let helper_fn = format!(
+            r#"fn {helper_name_with_suffix}(uv_in: vec2f) -> vec4f {{
+    // NOTE: PassTexture Y flip for bottom-left UV convention.
+    let uv_flipped = vec2f(uv_in.x, 1.0 - uv_in.y);
+    return textureSample({tex_var}, {samp_var}, uv_flipped);
+}}
+"#,
+        );
+        ctx.extra_wgsl_decls.insert(helper_name_with_suffix, helper_fn);
+    }
+
+    let helper_prefix = if glsl_helper_prefix.is_empty() {
+        None
+    } else {
+        Some(glsl_helper_prefix)
+    };
 
     let mut glsl_params: Vec<String> = vec!["vec2 uv".to_string()];
     // We accept `uv` as the first argument for both fragment and vertex stages.
@@ -226,10 +327,17 @@ where
 
     for port in &node.inputs {
         let param_name = port_id_to_param_name(port);
+        let port_ty = map_port_type(port.port_type.as_deref())?;
+
+        // Skip pass texture inputs - they're handled via sampling helpers.
+        if port_ty == ValueType::Texture2D {
+            continue;
+        }
+
         let expected_ty = promote_type_from_source_swizzles(
             &source,
             &param_name,
-            map_port_type(port.port_type.as_deref())?,
+            port_ty,
         );
         glsl_params.push(format!("{} {}", expected_ty.glsl(), param_name));
         // NOTE: naga's GLSL frontend can lower boolean function parameters to integer types
@@ -272,6 +380,7 @@ where
             .collect(),
         body: source.clone(),
         stage,
+        helper_prefix,
     })
     .map_err(|e| anyhow!("MathClosure GLSL->WGSL failed (node={}): {e:#}", node.id))?;
 

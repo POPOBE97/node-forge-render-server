@@ -187,6 +187,124 @@ pub(crate) fn array8_f32_wgsl(values: [f32; 8]) -> String {
     format!("array<f32, 8>({})", parts.join(", "))
 }
 
+/// Build a compose pass shader that samples a source texture and draws it at a position
+/// determined by dynamic graph inputs (Vector2Input nodes for position and size).
+///
+/// This is used when a RenderPass with dynamic geometry is a Downsample source and also
+/// a composite layer. The main pass renders to an intermediate fullscreen texture, and
+/// this compose pass samples that texture and positions it on the final target using
+/// the runtime graph_inputs values.
+pub(crate) fn build_dynamic_rect_compose_bundle(
+    graph_inputs_wgsl: &str,
+    position_expr: &str,
+    size_expr: &str,
+) -> WgslShaderBundle {
+    // Shared Params struct to match the runtime uniform.
+    let common = format!(
+        r#"
+struct Params {{
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
+    time: f32,
+    _pad0: f32,
+
+    // 16-byte aligned.
+    color: vec4f,
+}};
+
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+struct VSOut {{
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
+    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+    @location(2) local_px: vec2f,
+    // Geometry size in pixels after applying geometry/instance transforms.
+    @location(3) geo_size_px: vec2f,
+}};
+
+{graph_inputs_wgsl}
+
+@group(1) @binding(0)
+var src_tex: texture_2d<f32>;
+@group(1) @binding(1)
+var src_samp: sampler;
+"#
+    );
+
+    // Vertex shader that applies dynamic position/size from graph_inputs
+    let vertex_entry = format!(
+        r#"
+@vertex
+fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
+    var out: VSOut;
+
+    // UV passed as vertex attribute.
+    out.uv = uv;
+
+    // Dynamic rect position and size from graph inputs.
+    let rect_center_px = {position_expr};
+    let rect_size_px = {size_expr};
+
+    out.geo_size_px = rect_size_px;
+    // Geometry-local pixel coordinate (GeoFragcoord).
+    out.local_px = uv * out.geo_size_px;
+
+    // Unit vertices [-0.5, 0.5] scaled by dynamic size.
+    let p_local = vec3f(position.xy * rect_size_px, position.z);
+
+    // Convert to target pixel coordinates with bottom-left origin.
+    let p_px = rect_center_px + p_local.xy;
+
+    // Convert pixels to clip space assuming bottom-left origin.
+    // (0,0) => (-1,-1), (target_size) => (1,1)
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+    out.position = vec4f(ndc, position.z, 1.0);
+
+    // Pixel-centered like GLSL gl_FragCoord.xy.
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+    return out;
+}}
+"#
+    );
+
+    // Fragment shader samples the source texture with Y flip
+    let fragment_entry = r#"
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {
+    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);
+    return textureSample(src_tex, src_samp, uv);
+}
+"#
+    .to_string();
+
+    let vertex = format!("{common}{vertex_entry}");
+    let fragment = format!("{common}{fragment_entry}");
+    let module = format!("{common}{vertex_entry}{fragment_entry}");
+
+    WgslShaderBundle {
+        common,
+        vertex,
+        fragment,
+        compute: None,
+        module,
+        image_textures: Vec::new(),
+        pass_textures: Vec::new(),
+        graph_schema: None,
+        graph_binding_kind: None,
+    }
+}
+
 pub(crate) fn build_fullscreen_textured_bundle(fragment_body: String) -> WgslShaderBundle {
     build_fullscreen_textured_bundle_with_instance_index(fragment_body, false)
 }
@@ -624,6 +742,7 @@ pub fn build_pass_wgsl_bundle(
         None,
         std::collections::BTreeMap::new(),
         None,
+        false, // fullscreen_vertex_positioning
     )
 }
 
@@ -648,6 +767,10 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     _rect2d_dynamic_inputs: Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
     vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind>,
     forced_graph_binding_kind: Option<GraphBindingKind>,
+    // When true, vertex positioning uses fullscreen within target (params.center), but
+    // geo_size_px/local_px still use dynamic size from _rect2d_dynamic_inputs if available.
+    // This is used when a pass renders to an intermediate texture that will be composited later.
+    fullscreen_vertex_positioning: bool,
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
@@ -740,7 +863,10 @@ var<uniform> params: Params;
     // include any inline statements (e.g. MathClosure local bindings) in the vertex entry.
     let vertex_inline_stmts = vertex_inline_stmts.join("\n");
 
-    let rect_unit_geometry = _rect2d_dynamic_inputs.is_some();
+    // When fullscreen_vertex_positioning is true, we use fullscreen geometry for vertex positioning
+    // but still use dynamic inputs for geo_size_px/local_px if available.
+    let rect_unit_geometry = _rect2d_dynamic_inputs.is_some() && !fullscreen_vertex_positioning;
+    let has_dynamic_geo_size = _rect2d_dynamic_inputs.is_some();
     let rect_position_expr = _rect2d_dynamic_inputs
         .as_ref()
         .and_then(|d| d.position_expr.as_ref())
@@ -853,7 +979,16 @@ var<uniform> params: Params;
                 vertex_entry.push_str(" let p_local = p_rect_local_px;\n\n");
             }
         } else {
-            vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
+            // has_dynamic_geo_size: use dynamic size for geo_size_px (GeoFragcoord/GeoSize)
+            // but keep fullscreen vertex positioning via params.center.
+            if has_dynamic_geo_size {
+                vertex_entry.push_str(" let rect_size_px_base = ");
+                vertex_entry.push_str(rect_size_expr.unwrap_or("params.geo_size"));
+                vertex_entry.push_str(";\n");
+                vertex_entry.push_str(" out.geo_size_px = rect_size_px_base;\n");
+            } else {
+                vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
+            }
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
             vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
 
@@ -1054,6 +1189,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     rect_dyn_2,
                     vertex_graph_input_kinds,
                     None,
+                    false, // fullscreen_vertex_positioning
                 )?;
 
                 out.push((layer_id, bundle));

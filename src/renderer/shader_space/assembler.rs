@@ -55,7 +55,8 @@ use crate::{
         wgsl::{
             build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
             build_downsample_bundle, build_downsample_pass_wgsl_bundle,
-            build_fullscreen_textured_bundle, build_horizontal_blur_bundle, build_pass_wgsl_bundle,
+            build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
+            build_horizontal_blur_bundle, build_pass_wgsl_bundle,
             build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
@@ -1014,9 +1015,94 @@ fn compute_pass_render_order(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SamplerKind {
     NearestClamp,
+    NearestMirror,
+    NearestRepeat,
     LinearMirror,
     LinearRepeat,
     LinearClamp,
+}
+
+fn sampler_kind_from_node_params(params: &std::collections::HashMap<String, serde_json::Value>) -> SamplerKind {
+    // Scene DSL uses ImageTexture/PassTexture params like:
+    // - addressModeU/V: "mirror-repeat" | "repeat" | "clamp-to-edge"
+    // - magFilter/minFilter: "linear" | "nearest"
+    // Legacy fields used by some scenes:
+    // - interpolation: "linear" | "nearest"
+    // - extension: "repeat" | "clamp" | "mirror-repeat"
+    let addr_u = params
+        .get("addressModeU")
+        .and_then(|v| v.as_str())
+        .or_else(|| params.get("extension").and_then(|v| v.as_str()))
+        .unwrap_or("clamp-to-edge")
+        .trim()
+        .to_ascii_lowercase();
+    let addr_v = params
+        .get("addressModeV")
+        .and_then(|v| v.as_str())
+        .or_else(|| params.get("extension").and_then(|v| v.as_str()))
+        .unwrap_or("clamp-to-edge")
+        .trim()
+        .to_ascii_lowercase();
+
+    let address = if addr_u.contains("mirror") || addr_v.contains("mirror") {
+        "mirror"
+    } else if addr_u.contains("repeat") || addr_v.contains("repeat") {
+        "repeat"
+    } else {
+        "clamp"
+    };
+
+    let mag = params.get("magFilter").and_then(|v| v.as_str());
+    let min = params.get("minFilter").and_then(|v| v.as_str());
+    let interpolation = params
+        .get("interpolation")
+        .and_then(|v| v.as_str())
+        .unwrap_or("linear")
+        .trim()
+        .to_ascii_lowercase();
+
+    let nearest = match (mag, min) {
+        (Some(mag), Some(min)) => {
+            mag.trim().eq_ignore_ascii_case("nearest")
+                && min.trim().eq_ignore_ascii_case("nearest")
+        }
+        // Legacy: single toggle.
+        _ => interpolation == "nearest",
+    };
+    match (nearest, address) {
+        (true, "mirror") => SamplerKind::NearestMirror,
+        (true, "repeat") => SamplerKind::NearestRepeat,
+        (true, _) => SamplerKind::NearestClamp,
+        (false, "mirror") => SamplerKind::LinearMirror,
+        (false, "repeat") => SamplerKind::LinearRepeat,
+        (false, _) => SamplerKind::LinearClamp,
+    }
+}
+
+fn sampler_kind_for_pass_texture(scene: &SceneDSL, upstream_pass_id: &str) -> SamplerKind {
+    // We bind pass textures by upstream pass id (see MaterialCompileContext::pass_sampler_var_name).
+    // Therefore, if multiple PassTexture nodes reference the same upstream pass, we can only pick
+    // one sampler behavior. We choose deterministically by smallest node id.
+    let mut pass_texture_nodes: Vec<&crate::dsl::Node> = Vec::new();
+    for node in scene.nodes.iter() {
+        if node.node_type != "PassTexture" {
+            continue;
+        }
+        let Some(conn) = incoming_connection(scene, &node.id, "pass") else {
+            continue;
+        };
+        if conn.from.node_id == upstream_pass_id {
+            pass_texture_nodes.push(node);
+        }
+    }
+
+    pass_texture_nodes.sort_by(|a, b| a.id.cmp(&b.id));
+    if let Some(node) = pass_texture_nodes.first() {
+        sampler_kind_from_node_params(&node.params)
+    } else {
+        // Fallback when a material references a pass output without a PassTexture node.
+        SamplerKind::LinearClamp
+    }
 }
 
 type PassTextureBinding = crate::renderer::render_plan::types::PassTextureBinding;
@@ -1051,7 +1137,7 @@ struct RenderPassSpec {
     graph_values: Option<Vec<u8>>,
     shader_wgsl: String,
     texture_bindings: Vec<PassTextureBinding>,
-    sampler_kind: SamplerKind,
+    sampler_kinds: Vec<SamplerKind>,
     blend_state: BlendState,
     color_load_op: wgpu::LoadOp<Color>,
 }
@@ -1578,17 +1664,57 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     }),
                 )?;
 
+                // When a pass is a Downsample source with dynamic geometry (rect_dyn_2.is_some()),
+                // the main pass should render fullscreen within its intermediate texture. The dynamic
+                // positioning is deferred to the compose pass that draws to the final target.
+                let use_fullscreen_for_downsample_source =
+                    is_downsample_source && rect_dyn_2.is_some();
+
+                let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
+                    if use_fullscreen_for_downsample_source {
+                        // Create a dedicated fullscreen geometry for this pass.
+                        let fs_geo: ResourceName =
+                            format!("sys.pass.{layer_id}.fullscreen.geo").into();
+                        geometry_buffers.push((
+                            fs_geo.clone(),
+                            make_fullscreen_geometry(pass_target_w, pass_target_h),
+                        ));
+                        (
+                            fs_geo,
+                            Params {
+                                target_size: [pass_target_w, pass_target_h],
+                                geo_size: [pass_target_w, pass_target_h],
+                                // Center the fullscreen geometry in the intermediate texture.
+                                center: [pass_target_w * 0.5, pass_target_h * 0.5],
+                                geo_translate: [0.0, 0.0],
+                                geo_scale: [1.0, 1.0],
+                                time: 0.0,
+                                _pad0: 0.0,
+                                color: [0.9, 0.2, 0.2, 1.0],
+                            },
+                            // Keep rect_dyn_2 so shader can access dynamic size for GeoFragcoord/GeoSize.
+                            // Vertex positioning is controlled by fullscreen_vertex_positioning flag.
+                            rect_dyn_2.clone(),
+                        )
+                    } else {
+                        (
+                            geometry_buffer.clone(),
+                            Params {
+                                target_size: [pass_target_w, pass_target_h],
+                                geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
+                                center: [geo_x, geo_y],
+                                geo_translate: [0.0, 0.0],
+                                geo_scale: [1.0, 1.0],
+                                time: 0.0,
+                                _pad0: 0.0,
+                                color: [0.9, 0.2, 0.2, 1.0],
+                            },
+                            rect_dyn_2.clone(),
+                        )
+                    };
+
                 let params_name: ResourceName = format!("params.{layer_id}").into();
-                let params = Params {
-                    target_size: [pass_target_w, pass_target_h],
-                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                    center: [geo_x, geo_y],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.9, 0.2, 0.2, 1.0],
-                };
+                let params = main_pass_params;
 
                 let is_instanced = instance_count > 1;
 
@@ -1613,9 +1739,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_inline_stmts_for_bundle.clone(),
                     vertex_wgsl_decls_for_bundle.clone(),
                     vertex_uses_instance_index,
-                    rect_dyn_2.clone(),
+                    main_pass_rect_dyn.clone(),
                     vertex_graph_input_kinds_for_bundle.clone(),
                     None,
+                    use_fullscreen_for_downsample_source,
                 )?;
 
                 let mut graph_binding: Option<GraphBinding> = None;
@@ -1640,9 +1767,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             vertex_inline_stmts_for_bundle.clone(),
                             vertex_wgsl_decls_for_bundle.clone(),
                             vertex_uses_instance_index,
-                            rect_dyn_2.clone(),
+                            main_pass_rect_dyn.clone(),
                             vertex_graph_input_kinds_for_bundle.clone(),
                             Some(kind),
+                            use_fullscreen_for_downsample_source,
                         )?;
                     }
 
@@ -1661,23 +1789,36 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 let shader_wgsl = bundle.module;
 
-                let mut texture_bindings: Vec<PassTextureBinding> = bundle
-                    .image_textures
-                    .iter()
-                    .filter_map(|id| {
-                        ids.get(id).cloned().map(|tex| PassTextureBinding {
-                            texture: tex,
-                            image_node_id: Some(id.clone()),
-                        })
-                    })
-                    .collect();
+                let mut texture_bindings: Vec<PassTextureBinding> = Vec::new();
+                let mut sampler_kinds: Vec<SamplerKind> = Vec::new();
 
-                texture_bindings.extend(
-                    crate::renderer::render_plan::resolve_pass_texture_bindings(
-                        &pass_output_registry,
-                        &bundle.pass_textures,
-                    )?,
-                );
+                // ImageTexture bindings first (must match MaterialCompileContext::wgsl_decls order).
+                for id in bundle.image_textures.iter() {
+                    let Some(tex) = ids.get(id).cloned() else {
+                        continue;
+                    };
+                    texture_bindings.push(PassTextureBinding {
+                        texture: tex,
+                        image_node_id: Some(id.clone()),
+                    });
+
+                    // Default to LinearClamp if node is missing or params are absent.
+                    let kind = nodes_by_id
+                        .get(id)
+                        .map(|n| sampler_kind_from_node_params(&n.params))
+                        .unwrap_or(SamplerKind::LinearClamp);
+                    sampler_kinds.push(kind);
+                }
+
+                // PassTexture bindings next (also must match MaterialCompileContext::wgsl_decls order).
+                let pass_bindings = crate::renderer::render_plan::resolve_pass_texture_bindings(
+                    &pass_output_registry,
+                    &bundle.pass_textures,
+                )?;
+                for (upstream_pass_id, binding) in bundle.pass_textures.iter().zip(pass_bindings) {
+                    texture_bindings.push(binding);
+                    sampler_kinds.push(sampler_kind_for_pass_texture(&prepared.scene, upstream_pass_id));
+                }
 
                 let instance_buffer = if is_instanced {
                     let b: ResourceName = format!("sys.pass.{layer_id}.instances").into();
@@ -1716,17 +1857,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 render_pass_specs.push(RenderPassSpec {
                     pass_id: layer_id.clone(),
                     name: pass_name.clone(),
-                    geometry_buffer: geometry_buffer.clone(),
+                    geometry_buffer: main_pass_geometry_buffer.clone(),
                     instance_buffer,
                     target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
                     baked_data_parse_buffer,
                     params,
-                    graph_binding,
-                    graph_values,
+                    graph_binding: graph_binding.clone(),
+                    graph_values: graph_values.clone(),
                     shader_wgsl,
                     texture_bindings,
-                    sampler_kind: SamplerKind::NearestClamp,
+                    sampler_kinds,
                     blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -1746,14 +1887,25 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     // If the sampled output is target-sized (legacy), compose with a fullscreen quad.
                     // If the sampled output is geometry-sized (Downsample optimization), compose with the
                     // original geometry so it lands at the correct screen-space position.
-                    let (compose_geometry_buffer, compose_params_val) = if pass_target_w_u
-                        == tgt_w_u
-                        && pass_target_h_u == tgt_h_u
-                    {
+                    //
+                    // When the geometry has dynamic inputs (use_fullscreen_for_downsample_source), we use
+                    // a special compose shader that reads position/size from graph_inputs and applies
+                    // the dynamic transformation.
+                    let (
+                        compose_geometry_buffer,
+                        compose_params_val,
+                        compose_bundle,
+                        compose_graph_binding,
+                        compose_graph_values,
+                    ) = if pass_target_w_u == tgt_w_u && pass_target_h_u == tgt_h_u {
+                        // Target-sized: fullscreen quad, no dynamic positioning needed.
                         let compose_geo: ResourceName =
                             format!("sys.pass.{layer_id}.compose.geo").into();
                         geometry_buffers
                             .push((compose_geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
+                        let fragment_body =
+                            "let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n    return textureSample(src_tex, src_samp, uv);"
+                                .to_string();
                         (
                             compose_geo,
                             Params {
@@ -1766,8 +1918,91 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 _pad0: 0.0,
                                 color: [0.0, 0.0, 0.0, 0.0],
                             },
+                            build_fullscreen_textured_bundle(fragment_body),
+                            None,
+                            None,
+                        )
+                    } else if use_fullscreen_for_downsample_source {
+                        // Dynamic geometry: use a unit quad and apply position/size from graph_inputs.
+                        // The compose pass shader reads the same graph_inputs as the main pass.
+                        let compose_geo: ResourceName =
+                            format!("sys.pass.{layer_id}.compose.geo").into();
+                        geometry_buffers.push((
+                            compose_geo.clone(),
+                            Arc::from(
+                                as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec(),
+                            ),
+                        ));
+
+                        // Extract position/size expressions from rect_dyn_2.
+                        let rect_dyn = rect_dyn_2.as_ref().expect(
+                            "use_fullscreen_for_downsample_source implies rect_dyn_2.is_some()",
+                        );
+                        let position_expr = rect_dyn
+                            .position_expr
+                            .as_ref()
+                            .map(|e| e.expr.as_str())
+                            .unwrap_or("params.center");
+                        let size_expr = rect_dyn
+                            .size_expr
+                            .as_ref()
+                            .map(|e| e.expr.as_str())
+                            .unwrap_or("params.geo_size");
+
+                        // Build GraphInputs WGSL declaration if we have a schema.
+                        let graph_inputs_wgsl = if let Some(gb) = graph_binding.as_ref() {
+                            let mut decl = String::new();
+                            decl.push_str("\nstruct GraphInputs {\n");
+                            for field in &gb.schema.fields {
+                                decl.push_str(&format!(
+                                    "    // Node: {}\n    {}: {},\n",
+                                    field.node_id,
+                                    field.field_name,
+                                    field.kind.wgsl_slot_type()
+                                ));
+                            }
+                            decl.push_str("};\n\n");
+                            decl.push_str("@group(0) @binding(2)\n");
+                            match gb.kind {
+                                GraphBindingKind::Uniform => {
+                                    decl.push_str("var<uniform> graph_inputs: GraphInputs;\n")
+                                }
+                                GraphBindingKind::StorageRead => {
+                                    decl.push_str("var<storage, read> graph_inputs: GraphInputs;\n")
+                                }
+                            }
+                            decl
+                        } else {
+                            String::new()
+                        };
+
+                        let bundle = build_dynamic_rect_compose_bundle(
+                            &graph_inputs_wgsl,
+                            position_expr,
+                            size_expr,
+                        );
+
+                        (
+                            compose_geo,
+                            Params {
+                                target_size: [tgt_w, tgt_h],
+                                geo_size: [pass_target_w, pass_target_h],
+                                center: [geo_x, geo_y], // Fallback if no dynamic input
+                                geo_translate: [0.0, 0.0],
+                                geo_scale: [1.0, 1.0],
+                                time: 0.0,
+                                _pad0: 0.0,
+                                color: [0.0, 0.0, 0.0, 0.0],
+                            },
+                            bundle,
+                            graph_binding.clone(),
+                            graph_values.clone(),
                         )
                     } else {
+                        // Static geometry-sized: reuse the original geometry buffer.
+                        let fragment_body =
+                            "let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n    return textureSample(src_tex, src_samp, uv);"
+                                .to_string();
                         (
                             geometry_buffer.clone(),
                             Params {
@@ -1780,14 +2015,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 _pad0: 0.0,
                                 color: [0.0, 0.0, 0.0, 0.0],
                             },
+                            build_fullscreen_textured_bundle(fragment_body),
+                            None,
+                            None,
                         )
                     };
-
-                    // Sample render-target textures with a Y flip (same convention as PassTexture).
-                    let fragment_body =
-                        "let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n    return textureSample(src_tex, src_samp, uv);"
-                            .to_string();
-                    let bundle = build_fullscreen_textured_bundle(fragment_body);
 
                     render_pass_specs.push(RenderPassSpec {
                         pass_id: compose_pass_name.as_str().to_string(),
@@ -1798,14 +2030,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         params_buffer: compose_params_name,
                         baked_data_parse_buffer: None,
                         params: compose_params_val,
-                        graph_binding: None,
-                        graph_values: None,
-                        shader_wgsl: bundle.module,
+                        graph_binding: compose_graph_binding,
+                        graph_values: compose_graph_values,
+                        shader_wgsl: compose_bundle.module,
                         texture_bindings: vec![PassTextureBinding {
                             texture: pass_output_texture.clone(),
                             image_node_id: None,
                         }],
-                        sampler_kind: SamplerKind::NearestClamp,
+                        sampler_kinds: vec![SamplerKind::NearestClamp],
                         blend_state,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
@@ -1887,23 +2119,37 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         schema,
                     });
                 }
-                let mut src_texture_bindings: Vec<PassTextureBinding> = src_bundle
-                    .image_textures
-                    .iter()
-                    .filter_map(|id| {
-                        ids.get(id).cloned().map(|tex| PassTextureBinding {
-                            texture: tex,
-                            image_node_id: Some(id.clone()),
-                        })
-                    })
-                    .collect();
+                let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
+                let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
 
-                src_texture_bindings.extend(
-                    crate::renderer::render_plan::resolve_pass_texture_bindings(
-                        &pass_output_registry,
-                        &src_bundle.pass_textures,
-                    )?,
-                );
+                for id in src_bundle.image_textures.iter() {
+                    let Some(tex) = ids.get(id).cloned() else {
+                        continue;
+                    };
+                    src_texture_bindings.push(PassTextureBinding {
+                        texture: tex,
+                        image_node_id: Some(id.clone()),
+                    });
+                    let kind = nodes_by_id
+                        .get(id)
+                        .map(|n| sampler_kind_from_node_params(&n.params))
+                        .unwrap_or(SamplerKind::LinearClamp);
+                    src_sampler_kinds.push(kind);
+                }
+
+                let src_pass_bindings = crate::renderer::render_plan::resolve_pass_texture_bindings(
+                    &pass_output_registry,
+                    &src_bundle.pass_textures,
+                )?;
+                for (upstream_pass_id, binding) in
+                    src_bundle.pass_textures.iter().zip(src_pass_bindings)
+                {
+                    src_texture_bindings.push(binding);
+                    src_sampler_kinds.push(sampler_kind_for_pass_texture(
+                        &prepared.scene,
+                        upstream_pass_id,
+                    ));
+                }
 
                 let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
                 render_pass_specs.push(RenderPassSpec {
@@ -1919,7 +2165,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     graph_values: src_graph_values,
                     shader_wgsl: src_bundle.module,
                     texture_bindings: src_texture_bindings,
-                    sampler_kind: SamplerKind::NearestClamp,
+                    sampler_kinds: src_sampler_kinds,
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -2114,7 +2360,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             texture: src_tex,
                             image_node_id: None,
                         }],
-                        sampler_kind: SamplerKind::LinearMirror,
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
@@ -2158,7 +2404,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         texture: ds_src_tex.clone(),
                         image_node_id: None,
                     }],
-                    sampler_kind: SamplerKind::LinearMirror,
+                    sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -2196,7 +2442,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         texture: h_tex.clone(),
                         image_node_id: None,
                     }],
-                    sampler_kind: SamplerKind::LinearMirror,
+                    sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -2237,7 +2483,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         texture: v_tex.clone(),
                         image_node_id: None,
                     }],
-                    sampler_kind: SamplerKind::LinearMirror,
+                    sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: blur_output_blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -2452,7 +2698,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         texture: src_tex.clone(),
                         image_node_id: None,
                     }],
-                    sampler_kind,
+                    sampler_kinds: vec![sampler_kind],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 });
@@ -2499,7 +2745,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             texture: downsample_out_tex.clone(),
                             image_node_id: None,
                         }],
-                        sampler_kind: SamplerKind::LinearClamp,
+                        sampler_kinds: vec![SamplerKind::LinearClamp],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     });
@@ -2580,7 +2826,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     texture: target_texture_name.clone(),
                     image_node_id: None,
                 }],
-                sampler_kind: SamplerKind::NearestClamp,
+                sampler_kinds: vec![SamplerKind::NearestClamp],
                 blend_state: BlendState::REPLACE,
                 color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
             });
@@ -2713,14 +2959,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut prepass_names: Vec<ResourceName> = Vec::new();
 
     // ImageTexture resources (sampled textures) referenced by any reachable RenderPass.
-    fn placeholder_image() -> Arc<DynamicImage> {
-        let img = RgbaImage::from_pixel(1, 1, Rgba([255, 0, 255, 255]));
-        Arc::new(DynamicImage::ImageRgba8(img))
-    }
-
-    fn load_image_with_fallback(rel_base: &PathBuf, path: Option<&str>) -> Arc<DynamicImage> {
+    fn load_image_from_path(rel_base: &PathBuf, path: Option<&str>, node_id: &str) -> Result<Arc<DynamicImage>> {
         let Some(p) = path.filter(|s| !s.trim().is_empty()) else {
-            return placeholder_image();
+            bail!("ImageTexture node '{node_id}' has no path specified");
         };
 
         let candidates: Vec<PathBuf> = {
@@ -2736,12 +2977,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
             }
         };
 
-        for cand in candidates {
-            if let Ok(img) = image::open(&cand) {
-                return Arc::new(img);
+        for cand in &candidates {
+            if let Ok(img) = image::open(cand) {
+                return Ok(Arc::new(img));
             }
         }
-        placeholder_image()
+
+        bail!(
+            "ImageTexture node '{node_id}': failed to load image from path '{}'. Tried: {:?}",
+            p,
+            candidates
+        );
     }
 
     fn ensure_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
@@ -2809,11 +3055,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
                     Ok(img) => flip_image_y_rgba8(ensure_rgba8(Arc::new(img))),
-                    Err(_e) => placeholder_image(),
+                    Err(e) => bail!("ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    flip_image_y_rgba8(ensure_rgba8(load_image_with_fallback(&rel_base, path)))
+                    flip_image_y_rgba8(ensure_rgba8(load_image_from_path(&rel_base, path, node_id)?))
                 }
             };
 
@@ -2914,6 +3160,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     // 3) Samplers
     let nearest_sampler: ResourceName = "sampler_nearest".into();
     let nearest_mirror_sampler: ResourceName = "sampler_nearest_mirror".into();
+    let nearest_repeat_sampler: ResourceName = "sampler_nearest_repeat".into();
     let linear_mirror_sampler: ResourceName = "sampler_linear_mirror".into();
     let linear_repeat_sampler: ResourceName = "sampler_linear_repeat".into();
     let linear_clamp_sampler: ResourceName = "sampler_linear_clamp".into();
@@ -2939,6 +3186,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 address_mode_u: wgpu::AddressMode::MirrorRepeat,
                 address_mode_v: wgpu::AddressMode::MirrorRepeat,
                 address_mode_w: wgpu::AddressMode::MirrorRepeat,
+                ..Default::default()
+            },
+        },
+        SamplerSpec {
+            name: nearest_repeat_sampler.clone(),
+            desc: wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
                 ..Default::default()
             },
         },
@@ -3035,12 +3294,20 @@ pub(crate) fn build_shader_space_from_scene_internal(
             .iter()
             .map(|b| b.texture.clone())
             .collect();
-        let sampler_name = match spec.sampler_kind {
-            SamplerKind::NearestClamp => nearest_sampler.clone(),
-            SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
-            SamplerKind::LinearRepeat => linear_repeat_sampler.clone(),
-            SamplerKind::LinearClamp => linear_clamp_sampler.clone(),
-        };
+
+        let sampler_names: Vec<ResourceName> = spec
+            .sampler_kinds
+            .iter()
+            .map(|k| match k {
+                SamplerKind::NearestClamp => nearest_sampler.clone(),
+                SamplerKind::NearestMirror => nearest_mirror_sampler.clone(),
+                SamplerKind::NearestRepeat => nearest_repeat_sampler.clone(),
+                SamplerKind::LinearMirror => linear_mirror_sampler.clone(),
+                SamplerKind::LinearRepeat => linear_repeat_sampler.clone(),
+                SamplerKind::LinearClamp => linear_clamp_sampler.clone(),
+            })
+            .collect();
+        let fallback_sampler = linear_clamp_sampler.clone();
 
         // When shader compilation fails (wgpu create_shader_module), the error message can be
         // hard to correlate back to the generated WGSL. Dump it to a predictable temp location
@@ -3116,6 +3383,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 );
             }
 
+            debug_assert_eq!(texture_names.len(), sampler_names.len());
             for (i, tex_name) in texture_names.iter().enumerate() {
                 let tex_binding = (i as u32) * 2;
                 let samp_binding = tex_binding + 1;
@@ -3124,7 +3392,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .bind_sampler(
                         1,
                         samp_binding,
-                        sampler_name.clone(),
+                        sampler_names
+                            .get(i)
+                            .cloned()
+                            .unwrap_or_else(|| fallback_sampler.clone()),
                         ShaderStages::FRAGMENT,
                     );
             }

@@ -21,6 +21,9 @@ pub struct GlslSnippetSpec {
     /// GLSL function body. Expected to write to `output`.
     pub body: String,
     pub stage: GlslShaderStage,
+    /// Optional GLSL helper function declarations to prepend at module level.
+    /// These will be converted to WGSL but won't be included in the extracted function.
+    pub helper_prefix: Option<String>,
 }
 
 pub struct CompiledGlslSnippet {
@@ -71,8 +74,9 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
     };
 
     let glsl = format!(
-        "#version 450\n\n{ret_glsl} {fn_name}({params}) {{\n    {ret_glsl} output = {ret_glsl}(0.0);\n{body}\n    return output;\n}}\n\n{entry_inputs}\nlayout(location=0) out {entry_ret} _sn_out;\nvoid main() {{\n    _sn_out = {fn_name}({arg_forward});\n}}\n",
+        "#version 450\n\n{helper_prefix}{ret_glsl} {fn_name}({params}) {{\n    {ret_glsl} output = {ret_glsl}(0.0);\n{body}\n    return output;\n}}\n\n{entry_inputs}\nlayout(location=0) out {entry_ret} _sn_out;\nvoid main() {{\n    _sn_out = {fn_name}({arg_forward});\n}}\n",
         fn_name = spec.fn_name,
+        helper_prefix = spec.helper_prefix.as_deref().unwrap_or(""),
         params = glsl_params.join(", "),
         body = indent_glsl_body(&spec.body, 1),
         entry_inputs = entry_inputs.join("\n"),
