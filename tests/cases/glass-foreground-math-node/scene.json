@@ -77,12 +77,16 @@
       "width": 160,
       "label": "Glass Rect",
       "params": {
-        "width": 200,
-        "height": 200,
-        "x": 540,
-        "y": 1200,
         "radius": 20,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 200,
+          "y": 200
+        },
+        "position": {
+          "x": 540,
+          "y": 1200
+        }
       }
     },
     {

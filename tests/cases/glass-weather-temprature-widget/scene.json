@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-28T13:41:33.811Z",
-    "modified": "2026-01-28T13:41:33.811Z"
+    "created": "2026-02-09T08:06:01.716Z",
+    "modified": "2026-02-09T08:06:01.716Z"
   },
   "nodes": [
     {
@@ -268,12 +268,16 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 397,
-        "x": 281.15,
-        "y": 1430.25,
-        "height": 44,
         "radius": 0,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 397,
+          "y": 44
+        },
+        "position": {
+          "x": 281.15,
+          "y": 1430.25
+        }
       }
     },
     {
@@ -407,12 +411,16 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 397,
-        "x": 799.11,
-        "y": 1430.25,
-        "height": 44,
         "radius": 0,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 397,
+          "y": 44
+        },
+        "position": {
+          "x": 799.11,
+          "y": 1430.25
+        }
       }
     },
     {
@@ -425,12 +433,16 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 397,
-        "x": 281.15,
-        "y": 912.29,
-        "height": 44,
         "radius": 0,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 397,
+          "y": 44
+        },
+        "position": {
+          "x": 281.15,
+          "y": 912.29
+        }
       }
     },
     {

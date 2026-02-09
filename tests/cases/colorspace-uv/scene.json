@@ -96,12 +96,16 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 1080,
-        "height": 2400,
-        "x": 540,
-        "y": 1200,
         "radius": 0,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 1080,
+          "y": 2400
+        },
+        "position": {
+          "x": 540,
+          "y": 1200
+        }
       }
     }
   ],
