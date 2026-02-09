@@ -1,9 +1,7 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use node_forge_render_server::renderer::validation;
+use node_forge_render_server::renderer::ShaderSpaceBuildOptions;
 use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
@@ -292,6 +290,28 @@ fn run_case(case: &Case) {
         )
     });
 
+    // Always dump generated WGSL to out/ for inspection (separate from goldens in wgsl/).
+    let out_wgsl_dir = out_dir.join("wgsl");
+    std::fs::create_dir_all(&out_wgsl_dir).unwrap_or_else(|e| {
+        panic!(
+            "case {}: failed to create out wgsl dir {}: {e}",
+            case.name,
+            out_wgsl_dir.display()
+        )
+    });
+    for (pass_id, bundle) in &passes {
+        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.vertex.wgsl")), &bundle.vertex)
+            .unwrap_or_else(|e| panic!("case {}: write out vertex wgsl: {e}", case.name));
+        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.fragment.wgsl")), &bundle.fragment)
+            .unwrap_or_else(|e| panic!("case {}: write out fragment wgsl: {e}", case.name));
+        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.module.wgsl")), &bundle.module)
+            .unwrap_or_else(|e| panic!("case {}: write out module wgsl: {e}", case.name));
+        if let Some(compute) = &bundle.compute {
+            std::fs::write(out_wgsl_dir.join(format!("{pass_id}.compute.wgsl")), compute)
+                .unwrap_or_else(|e| panic!("case {}: write out compute wgsl: {e}", case.name));
+        }
+    }
+
     // NOTE: Keep the baseline image immutable.
     // We always write headless render output to a separate file so developers can
     // manually inspect/copy it over the baseline if they choose.
@@ -320,12 +340,8 @@ fn run_case(case: &Case) {
         });
     }
 
-    if case.name == "simple-guassian-blur"
-        || case.name == "blend-blurs-alpha"
-        || case.name == "blur-guassian-20"
-        || case.name == "blur-guassian-60"
+    // Render in-process so we can dump intermediate textures for all cases.
     {
-        // For these cases we render in-process so we can dump intermediate textures.
         let headless =
             HeadlessRenderer::new(HeadlessRendererConfig::default()).unwrap_or_else(|e| {
                 panic!(
@@ -334,8 +350,16 @@ fn run_case(case: &Case) {
                 )
             });
 
+        // Enable WGSL dump to out/wgsl_dump for debugging shader issues.
+        let wgsl_dump_dir = out_dir.join("wgsl_dump");
+        let build_options = renderer::ShaderSpaceBuildOptions {
+            debug_dump_wgsl_dir: Some(wgsl_dump_dir),
+            ..Default::default()
+        };
+
         let build =
             renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
+                .with_options(build_options)
                 .build(&scene)
                 .unwrap_or_else(|e| {
                     panic!("case {}: failed to build shader space: {e:#}", case.name)
@@ -543,41 +567,6 @@ fn run_case(case: &Case) {
         if let Err(payload) = staged {
             std::panic::resume_unwind(payload);
         }
-    } else {
-        let exe = env!("CARGO_BIN_EXE_node-forge-render-server");
-        let output = Command::new(exe)
-            .current_dir(&case_dir)
-            .args([
-                "--headless",
-                "--render-to-file",
-                "--dsl-json",
-                scene_json
-                    .to_str()
-                    .expect("scene_json path must be valid UTF-8"),
-                "--output",
-                out_png.to_str().expect("out_png path must be valid UTF-8"),
-            ])
-            .output()
-            .expect("failed to run node-forge-render-server binary");
-
-        if !output.status.success() {
-            panic!(
-                "case {}: headless render failed (status={:?})\nstdout:\n{}\nstderr:\n{}",
-                case.name,
-                output.status.code(),
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
-        assert!(
-            out_png.exists(),
-            "case {}: expected output image at {}, but it does not exist\nstdout:\n{}\nstderr:\n{}",
-            case.name,
-            out_png.display(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
     }
 
     let meta = std::fs::metadata(&out_png).unwrap_or_else(|e| {
@@ -609,12 +598,32 @@ fn run_case(case: &Case) {
 
         if expected.dimensions() != actual.dimensions() {
             image_ok = false;
+            eprintln!(
+                "case {}: dimension mismatch expected={}x{} actual={}x{}",
+                case.name,
+                expected.width(),
+                expected.height(),
+                actual.width(),
+                actual.height()
+            );
         }
 
         // (3) Compare pixel-by-pixel vs baseline
-        let (mismatched_pixels, _max_channel_delta) = diff_stats(&expected, &actual);
+        let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
         if mismatched_pixels != 0 {
             image_ok = false;
+            if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
+                eprintln!(
+                    "case {}: baseline mismatch: {} pixels differ, max_delta={}, first at ({},{}) expected={:?} actual={:?}",
+                    case.name,
+                    mismatched_pixels,
+                    max_channel_delta,
+                    x,
+                    y,
+                    ep.0,
+                    ap.0
+                );
+            }
         }
     } else if let Some(node_id) = case.expected_image_texture {
         let node = scene
