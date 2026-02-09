@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-06T17:15:22.794Z",
+  "generatedAt": "2026-02-09T06:41:35.655Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -65,6 +65,7 @@
     "SetTransform",
     "ShaderMaterial",
     "TextureInput",
+    "TimeInput",
     "TransformGeometry",
     "Vector2Input",
     "Vector3Input",
@@ -1215,7 +1216,7 @@
     {
       "type": "GuassianBlurPass",
       "label": "Gaussian Blur Pass",
-      "category": "PipelineControl",
+      "category": "Filter",
       "description": "Apply a Gaussian blur to an image",
       "inputs": [
         {
@@ -2451,6 +2452,21 @@
       "defaultParams": {
         "path": ""
       }
+    },
+    {
+      "type": "TimeInput",
+      "label": "Time Input",
+      "category": "Input",
+      "description": "Monotonic time in seconds since render/pass start",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "time",
+          "name": "Time",
+          "type": "float"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "TransformGeometry",

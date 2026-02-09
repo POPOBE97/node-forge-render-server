@@ -1,4 +1,4 @@
-//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput).
+//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput, TimeInput).
 
 use anyhow::{Result, bail};
 
@@ -133,6 +133,25 @@ pub fn compile_vector3_input(
         format!("(graph_inputs.{field}).xyz"),
         ValueType::Vec3,
     ))
+}
+
+/// Compile a TimeInput node to WGSL.
+///
+/// TimeInput exposes monotonic time in seconds from runtime uniforms.
+///
+/// # Output
+/// - Port `time`: Type f32
+/// - Uses time: true
+pub fn compile_time_input(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("time");
+    match port {
+        "time" => Ok(TypedExpr::with_time(
+            "params.time".to_string(),
+            ValueType::F32,
+            true,
+        )),
+        other => bail!("TimeInput: unsupported output port '{other}'"),
+    }
 }
 
 /// Compile a FragCoord node to WGSL.
@@ -451,5 +470,37 @@ mod tests {
         assert_eq!(result.ty, ValueType::Bool);
         assert!(result.expr.contains("!= 0"));
         assert!(!result.uses_time);
+    }
+
+    #[test]
+    fn test_time_input_time_port() {
+        let node = Node {
+            id: "time1".to_string(),
+            node_type: "TimeInput".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let result = compile_time_input(&node, Some("time")).unwrap();
+        assert_eq!(result.ty, ValueType::F32);
+        assert_eq!(result.expr, "params.time");
+        assert!(result.uses_time);
+    }
+
+    #[test]
+    fn test_time_input_invalid_port() {
+        let node = Node {
+            id: "time1".to_string(),
+            node_type: "TimeInput".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let err = compile_time_input(&node, Some("value")).unwrap_err().to_string();
+        assert!(err.contains("TimeInput: unsupported output port 'value'"));
     }
 }

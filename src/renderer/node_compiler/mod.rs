@@ -100,6 +100,7 @@ fn compile_expr(
         "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port, ctx)?,
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
+        "TimeInput" => input_nodes::compile_time_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
         "GeoSize" => input_nodes::compile_geo_size_for_stage(node, out_port, stage)?,
