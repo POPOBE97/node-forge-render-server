@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use rust_wgpu_fiber::ResourceName;
 
 use crate::{
-    dsl::{SceneDSL, find_node, incoming_connection},
+    dsl::{find_node, incoming_connection, SceneDSL},
     renderer::{
         node_compiler::compile_vertex_expr,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_u32_min_1},
+        utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
     },
 };
 
@@ -160,18 +160,34 @@ fn resolve_rect2d_geometry_metrics(
     render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(f32, f32, f32, f32)> {
+    let default_w = render_target_size[0].max(1.0);
+    let default_h = render_target_size[1].max(1.0);
+    let default_position = [default_w * 0.5, default_h * 0.5];
+
+    // Preferred (new): vec2 inputs size/position.
+    // Back-compat (old): scalar width/height/x/y.
     let size = resolve_rect_vec2_input(scene, nodes_by_id, node, "size", material_ctx)?;
     let position = resolve_rect_vec2_input(scene, nodes_by_id, node, "position", material_ctx)?;
 
-    let default_w = render_target_size[0].max(1.0);
-    let default_h = render_target_size[1].max(1.0);
-    let default_size = [default_w, default_h];
-    let default_position = [default_w * 0.5, default_h * 0.5];
+    let size = if let Some(size) = size {
+        size
+    } else {
+        let geo_w_u = cpu_num_u32_min_1(scene, nodes_by_id, node, "width", default_w as u32)?;
+        let geo_h_u = cpu_num_u32_min_1(scene, nodes_by_id, node, "height", geo_w_u)?;
+        [geo_w_u as f32, geo_h_u as f32]
+    };
 
-    let size = size.unwrap_or(default_size);
-    let position = position.unwrap_or(default_position);
+    let position = if let Some(position) = position {
+        position
+    } else {
+        let geo_x = cpu_num_f32(scene, nodes_by_id, node, "x", default_position[0])?;
+        let geo_y = cpu_num_f32(scene, nodes_by_id, node, "y", default_position[1])?;
+        [geo_x, geo_y]
+    };
 
-    Ok((size[0].max(1.0), size[1].max(1.0), position[0], position[1]))
+    let size = [size[0].max(1.0), size[1].max(1.0)];
+
+    Ok((size[0], size[1], position[0], position[1]))
 }
 
 fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {

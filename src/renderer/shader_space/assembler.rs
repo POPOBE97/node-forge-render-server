@@ -18,26 +18,26 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use image::{DynamicImage, Rgba, RgbaImage};
 use rust_wgpu_fiber::{
-    ResourceName,
     eframe::wgpu::{
-        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
+        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
     },
     pool::{
         buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
+    ResourceName,
 };
 
 use crate::{
-    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
+    dsl::{find_node, incoming_connection, parse_str, parse_texture_format, SceneDSL},
     renderer::{
         graph_uniforms::{
-            choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings, hash_bytes,
-            pack_graph_values,
+            choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
+            graph_field_name, hash_bytes, pack_graph_values,
         },
         node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
         scene_prep::{bake_data_parse_nodes, prepare_scene},
@@ -50,13 +50,12 @@ use crate::{
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
-            build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
-            build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
-            build_horizontal_blur_bundle, build_pass_wgsl_bundle,
+            build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
+            build_downsample_bundle, build_downsample_pass_wgsl_bundle,
+            build_fullscreen_textured_bundle, build_horizontal_blur_bundle, build_pass_wgsl_bundle,
             build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
-            gaussian_mip_level_and_sigma_p,
+            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
         },
     },
 };
@@ -2313,7 +2312,27 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // (Vector2Input is used by tests; other graphs are not supported yet.)
                 let (out_w, out_h) = {
                     let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
-                    if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')'))
+                    // Vector2Input compiles to (graph_inputs.<field>).xy; if we see that shape,
+                    // try to fold the actual values from the node params.
+                    if let Some(inner) = s
+                        .strip_prefix("(graph_inputs.")
+                        .and_then(|x| x.strip_suffix(").xy"))
+                    {
+                        // Find the Vector2Input node that owns this field.
+                        if let Some((_node_id, node)) = nodes_by_id.iter().find(|(_, n)| {
+                            n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner
+                        }) {
+                            let w = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "x", 1)?;
+                            let h = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "y", 1)?;
+                            (w, h)
+                        } else {
+                            bail!(
+                                "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
+                                target_size_expr.expr
+                            );
+                        }
+                    } else if let Some(inner) =
+                        s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')'))
                     {
                         let parts: Vec<&str> = inner.split(',').collect();
                         if parts.len() == 2 {
@@ -3209,7 +3228,7 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
 
