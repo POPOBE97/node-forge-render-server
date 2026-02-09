@@ -33,6 +33,28 @@ pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
     ]
 }
 
+/// Generate interleaved vertices for a centered unit rectangle (unit quad).
+///
+/// Each vertex is `[x, y, z, u, v]` where `x,y` are in local unit space and `u,v` in [0,1].
+///
+/// The quad is centered at origin with corners at (-0.5,-0.5) .. (0.5,0.5).
+///
+/// This is used when Rect2DGeometry size/position are dynamic and applied in the vertex shader.
+pub fn rect2d_unit_geometry_vertices() -> [[f32; 5]; 6] {
+    let hw = 0.5;
+    let hh = 0.5;
+    [
+        // Triangle 1: bottom-left, bottom-right, top-right
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, -hh, 0.0, 1.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        // Triangle 2: bottom-left, top-right, top-left
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        [-hw, hh, 0.0, 0.0, 1.0],
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,5 +104,14 @@ mod tests {
         // All corners should be equidistant from center
         assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
         assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_rect2d_unit_geometry_vertices() {
+        let verts = rect2d_unit_geometry_vertices();
+        assert_eq!(verts.len(), 6);
+        assert_eq!(verts[0], [-0.5, -0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[2], [0.5, 0.5, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[5], [-0.5, 0.5, 0.0, 0.0, 1.0]);
     }
 }

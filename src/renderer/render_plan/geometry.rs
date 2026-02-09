@@ -6,11 +6,18 @@ use rust_wgpu_fiber::ResourceName;
 use crate::{
     dsl::{find_node, incoming_connection, SceneDSL},
     renderer::{
+        graph_uniforms::graph_field_name,
         node_compiler::compile_vertex_expr,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
     },
 };
+
+#[derive(Debug, Clone)]
+pub(crate) struct Rect2DDynamicInputs {
+    pub(crate) position_expr: Option<TypedExpr>,
+    pub(crate) size_expr: Option<TypedExpr>,
+}
 
 fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
     // Column-major mat4 multiply to match WGSL `mat4x4f` (constructed from 4 column vectors)
@@ -159,15 +166,97 @@ fn resolve_rect2d_geometry_metrics(
     node: &crate::dsl::Node,
     render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
-) -> Result<(f32, f32, f32, f32)> {
+) -> Result<(
+    f32,
+    f32,
+    f32,
+    f32,
+    Option<Rect2DDynamicInputs>,
+    Vec<String>,
+    String,
+    std::collections::BTreeMap<String, GraphFieldKind>,
+    bool,
+)> {
     let default_w = render_target_size[0].max(1.0);
     let default_h = render_target_size[1].max(1.0);
     let default_position = [default_w * 0.5, default_h * 0.5];
 
     // Preferred (new): vec2 inputs size/position.
     // Back-compat (old): scalar width/height/x/y.
-    let size = resolve_rect_vec2_input(scene, nodes_by_id, node, "size", material_ctx)?;
-    let position = resolve_rect_vec2_input(scene, nodes_by_id, node, "position", material_ctx)?;
+    let has_size_conn = incoming_connection(scene, &node.id, "size").is_some();
+    let has_pos_conn = incoming_connection(scene, &node.id, "position").is_some();
+
+    let mut dyn_inputs: Option<Rect2DDynamicInputs> = None;
+    let mut vertex_inline_stmts: Vec<String> = Vec::new();
+    let mut vertex_wgsl_decls = String::new();
+    let mut vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind> =
+        std::collections::BTreeMap::new();
+    let mut vertex_uses_instance_index = false;
+
+    // If Rect2DGeometry.position/size are connected, only allow Vector2Input nodes.
+    // We route those via the existing GraphInputs buffer mechanism (graph_inputs.<field>.xy).
+    let mut maybe_dyn_inputs = Rect2DDynamicInputs {
+        position_expr: None,
+        size_expr: None,
+    };
+
+    let mut has_any_dyn = false;
+    for (port_id, out_expr) in [
+        ("position", &mut maybe_dyn_inputs.position_expr),
+        ("size", &mut maybe_dyn_inputs.size_expr),
+    ] {
+        let Some(conn) = incoming_connection(scene, &node.id, port_id) else {
+            continue;
+        };
+        has_any_dyn = true;
+
+        let from_node = find_node(nodes_by_id, &conn.from.node_id)?;
+        if from_node.node_type != "Vector2Input" {
+            bail!(
+                "{}.{} only supports Vector2Input connection; got {} ({})",
+                node.id,
+                port_id,
+                from_node.node_type,
+                conn.from.node_id
+            );
+        }
+        if conn.from.port_id != "vector" {
+            bail!(
+                "{}.{} must be connected from Vector2Input.vector; got {}.{}",
+                node.id,
+                port_id,
+                conn.from.node_id,
+                conn.from.port_id
+            );
+        }
+
+        vertex_graph_input_kinds
+            .entry(conn.from.node_id.clone())
+            .or_insert(GraphFieldKind::Vec2);
+        let field = graph_field_name(&conn.from.node_id);
+        *out_expr = Some(TypedExpr::new(
+            format!("(graph_inputs.{field}).xy"),
+            ValueType::Vec2,
+        ));
+    }
+
+    if has_any_dyn {
+        dyn_inputs = Some(maybe_dyn_inputs);
+    }
+
+    // CPU metrics:
+    // - If an input is connected (dynamic), ignore the connection for CPU sizing/position.
+    // - Otherwise, use the authored inline vec2 or legacy scalar params.
+    let size = if has_size_conn {
+        parse_inline_vec2(node, "size")?
+    } else {
+        resolve_rect_vec2_input(scene, nodes_by_id, node, "size", material_ctx)?
+    };
+    let position = if has_pos_conn {
+        parse_inline_vec2(node, "position")?
+    } else {
+        resolve_rect_vec2_input(scene, nodes_by_id, node, "position", material_ctx)?
+    };
 
     let size = if let Some(size) = size {
         size
@@ -187,7 +276,17 @@ fn resolve_rect2d_geometry_metrics(
 
     let size = [size[0].max(1.0), size[1].max(1.0)];
 
-    Ok((size[0], size[1], position[0], position[1]))
+    Ok((
+        size[0],
+        size[1],
+        position[0],
+        position[1],
+        dyn_inputs,
+        vertex_inline_stmts,
+        vertex_wgsl_decls,
+        vertex_graph_input_kinds,
+        vertex_uses_instance_index,
+    ))
 }
 
 fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {
@@ -332,6 +431,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     String,
     std::collections::BTreeMap<String, GraphFieldKind>,
     bool,
+    Option<Rect2DDynamicInputs>,
 )> {
     let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
 
@@ -342,7 +442,17 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
 
-            let (geo_w, geo_h, geo_x, geo_y) = resolve_rect2d_geometry_metrics(
+            let (
+                geo_w,
+                geo_h,
+                geo_x,
+                geo_y,
+                rect_dyn,
+                vertex_inline_stmts,
+                vertex_wgsl_decls,
+                vertex_graph_input_kinds,
+                vertex_uses_instance_index,
+            ) = resolve_rect2d_geometry_metrics(
                 scene,
                 nodes_by_id,
                 geometry_node,
@@ -361,10 +471,11 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 ],
                 None,
                 None,
-                Vec::new(),
-                String::new(),
-                std::collections::BTreeMap::new(),
-                false,
+                vertex_inline_stmts,
+                vertex_wgsl_decls,
+                vertex_graph_input_kinds,
+                vertex_uses_instance_index,
+                rect_dyn,
             ))
         }
         "InstancedGeometryStart" => {
@@ -391,6 +502,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -415,6 +527,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         "InstancedGeometryEnd" => {
@@ -438,6 +551,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -483,6 +597,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         "SetTransform" => {
@@ -507,6 +622,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _vtx_wgsl_decls,
                 _graph_input_kinds,
                 uses_instance_index,
+                _rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -632,6 +748,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
             // it applies it into the base matrix here (CPU-side).
             // Also: any TransformGeometry nodes *before* SetTransform are skipped, meaning we
             // discard upstream vertex-side translate expressions and inline statements.
+            // Note: dynamic rect inputs are also discarded here.
             Ok((
                 buf,
                 w,
@@ -647,6 +764,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 String::new(),
                 std::collections::BTreeMap::new(),
                 uses_instance_index,
+                None,
             ))
         }
         "TransformGeometry" => {
@@ -670,6 +788,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 mut vtx_wgsl_decls,
                 mut graph_input_kinds,
                 mut uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -750,6 +869,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         other => {

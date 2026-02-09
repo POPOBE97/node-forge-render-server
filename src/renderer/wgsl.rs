@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    dsl::{Node, SceneDSL, find_node, incoming_connection},
+    dsl::{find_node, incoming_connection, Node, SceneDSL},
     renderer::{
         graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
@@ -621,12 +621,13 @@ pub fn build_pass_wgsl_bundle(
         vertex_inline_stmts,
         vertex_wgsl_decls,
         vertex_uses_instance_index,
+        None,
         std::collections::BTreeMap::new(),
         None,
     )
 }
 
-pub fn build_pass_wgsl_bundle_with_graph_binding(
+pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     baked_data_parse: Option<
@@ -644,6 +645,7 @@ pub fn build_pass_wgsl_bundle_with_graph_binding(
     vertex_inline_stmts: Vec<String>,
     vertex_wgsl_decls: String,
     vertex_uses_instance_index: bool,
+    _rect2d_dynamic_inputs: Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
     vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind>,
     forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
@@ -738,6 +740,16 @@ var<uniform> params: Params;
     // include any inline statements (e.g. MathClosure local bindings) in the vertex entry.
     let vertex_inline_stmts = vertex_inline_stmts.join("\n");
 
+    let rect_unit_geometry = _rect2d_dynamic_inputs.is_some();
+    let rect_position_expr = _rect2d_dynamic_inputs
+        .as_ref()
+        .and_then(|d| d.position_expr.as_ref())
+        .map(|e| e.expr.as_str());
+    let rect_size_expr = _rect2d_dynamic_inputs
+        .as_ref()
+        .and_then(|d| d.size_expr.as_ref())
+        .map(|e| e.expr.as_str());
+
     let mut vertex_args = String::new();
     vertex_args.push_str("     @location(0) position: vec3f,\n");
     vertex_args.push_str("     @location(1) uv: vec2f,\n");
@@ -784,11 +796,31 @@ var<uniform> params: Params;
         // geometry, reflect that so SDFs and other pixel-space evaluations scale with the geometry.
         vertex_entry.push_str(" let geo_sx = length(inst_m[0].xy);\n");
         vertex_entry.push_str(" let geo_sy = length(inst_m[1].xy);\n");
-        vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
-        vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-        vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
 
-        vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
+        if rect_unit_geometry {
+            // Dynamic Rect2DGeometry uses a unit quad and applies size/position in the vertex stage.
+            vertex_entry.push_str(" let rect_size_px_base = ");
+            vertex_entry.push_str(rect_size_expr.unwrap_or("params.geo_size"));
+            vertex_entry.push_str(";\n");
+            vertex_entry.push_str(" let rect_center_px = ");
+            vertex_entry.push_str(rect_position_expr.unwrap_or("params.center"));
+            vertex_entry.push_str(";\n");
+            vertex_entry.push_str(" let rect_dyn = vec4f(rect_center_px, rect_size_px_base);\n");
+
+            vertex_entry.push_str(" let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);\n");
+            vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
+            vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
+
+            vertex_entry
+                .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
+            vertex_entry.push_str(" var p_local = (inst_m * vec4f(p_rect_local_px, 1.0)).xyz;\n\n");
+        } else {
+            vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
+            vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
+            vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
+
+            vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
+        }
 
         if let Some(expr) = vertex_translate_expr.as_deref() {
             vertex_entry.push_str(" let delta_t = ");
@@ -797,24 +829,54 @@ var<uniform> params: Params;
             vertex_entry.push_str(" p_local = p_local + delta_t;\n\n");
         }
     } else {
-        vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
-        vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-        vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
-
-        if let Some(expr) = vertex_translate_expr.as_deref() {
-            vertex_entry.push_str(" let delta_t = ");
-            vertex_entry.push_str(expr);
+        if rect_unit_geometry {
+            vertex_entry.push_str(" let rect_size_px_base = ");
+            vertex_entry.push_str(rect_size_expr.unwrap_or("params.geo_size"));
             vertex_entry.push_str(";\n");
-            vertex_entry.push_str(" let p_local = position + delta_t;\n\n");
+            vertex_entry.push_str(" let rect_center_px = ");
+            vertex_entry.push_str(rect_position_expr.unwrap_or("params.center"));
+            vertex_entry.push_str(";\n");
+            vertex_entry.push_str(" let rect_dyn = vec4f(rect_center_px, rect_size_px_base);\n");
+
+            vertex_entry.push_str(" out.geo_size_px = rect_dyn.zw;\n");
+            vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
+            vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
+            vertex_entry
+                .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
+
+            if let Some(expr) = vertex_translate_expr.as_deref() {
+                vertex_entry.push_str(" let delta_t = ");
+                vertex_entry.push_str(expr);
+                vertex_entry.push_str(";\n");
+                vertex_entry.push_str(" let p_local = p_rect_local_px + delta_t;\n\n");
+            } else {
+                vertex_entry.push_str(" let p_local = p_rect_local_px;\n\n");
+            }
         } else {
-            // Keep vertex output identical for non-instanced passes.
-            vertex_entry.push_str(" let p_local = position;\n\n");
+            vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
+            vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
+            vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
+
+            if let Some(expr) = vertex_translate_expr.as_deref() {
+                vertex_entry.push_str(" let delta_t = ");
+                vertex_entry.push_str(expr);
+                vertex_entry.push_str(";\n");
+                vertex_entry.push_str(" let p_local = position + delta_t;\n\n");
+            } else {
+                // Keep vertex output identical for non-instanced passes.
+                vertex_entry.push_str(" let p_local = position;\n\n");
+            }
         }
     }
 
     vertex_entry.push_str(" // Geometry vertices are in local pixel units centered at (0,0).\n");
     vertex_entry.push_str(" // Convert to target pixel coordinates with bottom-left origin.\n");
-    vertex_entry.push_str(" let p_px = params.center + p_local.xy;\n\n");
+    if rect_unit_geometry {
+        // NOTE: rect_dyn is declared inside the rect_unit_geometry branch above.
+        vertex_entry.push_str(" let p_px = rect_dyn.xy + p_local.xy;\n\n");
+    } else {
+        vertex_entry.push_str(" let p_px = params.center + p_local.xy;\n\n");
+    }
 
     vertex_entry.push_str(" // Convert pixels to clip space assuming bottom-left origin.\n");
     vertex_entry.push_str(" // (0,0) => (-1,-1), (target_size) => (1,1)\n");
@@ -905,6 +967,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     _vertex_wgsl_decls,
                     _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
+                    _rect_dyn,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -963,6 +1026,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_wgsl_decls,
                     vertex_graph_input_kinds,
                     vertex_uses_instance_index,
+                    rect_dyn_2,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -987,6 +1051,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_inline_stmts,
                     vertex_wgsl_decls,
                     vertex_uses_instance_index,
+                    rect_dyn_2,
                     vertex_graph_input_kinds,
                     None,
                 )?;

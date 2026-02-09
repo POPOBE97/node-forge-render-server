@@ -39,7 +39,10 @@ use crate::{
             choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
             graph_field_name, hash_bytes, pack_graph_values,
         },
-        node_compiler::{compile_vertex_expr, geometry_nodes::rect2d_geometry_vertices},
+        node_compiler::{
+            compile_vertex_expr,
+            geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
+        },
         scene_prep::{bake_data_parse_nodes, prepare_scene},
         types::ValueType,
         types::{
@@ -423,6 +426,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     Vec<String>,
     String,
     bool,
+    Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
 )> {
     let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
 
@@ -442,6 +446,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 _graph_input_kinds,
                 uses_instance_index,
+                rect_dyn,
             ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -463,6 +468,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         "InstancedGeometryStart" => {
@@ -488,6 +494,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -511,6 +518,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         "InstancedGeometryEnd" => {
@@ -533,6 +541,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -577,6 +586,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         "SetTransform" => {
@@ -600,6 +610,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _vtx_inline_stmts,
                 _vtx_wgsl_decls,
                 uses_instance_index,
+                _rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -739,6 +750,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 Vec::new(),
                 String::new(),
                 uses_instance_index,
+                None,
             ))
         }
         "TransformGeometry" => {
@@ -761,6 +773,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 mut vtx_inline_stmts,
                 mut vtx_wgsl_decls,
                 mut uses_instance_index,
+                rect_dyn,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -834,6 +847,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 uses_instance_index,
+                rect_dyn,
             ))
         }
         other => {
@@ -1270,6 +1284,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _vtx_wgsl_decls,
                     _vtx_graph_input_kinds,
                     _uses_instance_index,
+                    rect_dyn,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1278,7 +1293,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     [tgt_w, tgt_h],
                     None,
                 )?;
-                let verts = rect2d_geometry_vertices(geo_w, geo_h);
+                let verts = if rect_dyn.is_some() {
+                    rect2d_unit_geometry_vertices()
+                } else {
+                    rect2d_geometry_vertices(geo_w, geo_h)
+                };
                 let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
                 geometry_buffers.push((name, bytes));
             }
@@ -1408,6 +1427,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _vertex_wgsl_decls,
                     _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
+                    _rect_dyn,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1544,6 +1564,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_wgsl_decls,
                     vertex_graph_input_kinds,
                     vertex_uses_instance_index,
+                    rect_dyn_2,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1592,6 +1613,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_inline_stmts_for_bundle.clone(),
                     vertex_wgsl_decls_for_bundle.clone(),
                     vertex_uses_instance_index,
+                    rect_dyn_2.clone(),
                     vertex_graph_input_kinds_for_bundle.clone(),
                     None,
                 )?;
@@ -1618,6 +1640,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             vertex_inline_stmts_for_bundle.clone(),
                             vertex_wgsl_decls_for_bundle.clone(),
                             vertex_uses_instance_index,
+                            rect_dyn_2.clone(),
                             vertex_graph_input_kinds_for_bundle.clone(),
                             Some(kind),
                         )?;
