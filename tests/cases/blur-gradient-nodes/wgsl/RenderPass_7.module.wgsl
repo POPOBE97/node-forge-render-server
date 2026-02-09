@@ -29,6 +29,16 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+struct GraphInputs {
+    // Node: Vector2Input_73
+    node_Vector2Input_73_b3964abd: vec4f,
+    // Node: Vector2Input_74
+    node_Vector2Input_74_329f4abd: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
