@@ -27,13 +27,19 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         "2dsdf-bevel" => None,
         "glass-weather-temprature-widget" => None,
         "blur-gradient-nodes" => None,
+        // This case previously validated output against the ImageTexture source.
+        // It now uses baseline.png to avoid duplicating GPU sampling/interpolation details in tests.
         _ => Some("baseline.png"),
     }
 }
 
-fn default_expected_image_texture() -> Option<&'static str> {
-    // If a case needs this, encode it explicitly via a custom test (or extend the generator).
-    None
+fn default_expected_image_texture(case_name: &'static str) -> Option<&'static str> {
+    // Most cases validate against a baseline.png. Some cases are easier to validate by
+    // comparing the output against the input ImageTexture bytes (with the same alpha-mode
+    // semantics as runtime).
+    match case_name {
+        _ => None,
+    }
 }
 
 fn manifest_dir() -> PathBuf {
@@ -67,6 +73,70 @@ fn diff_stats(expected: &image::RgbaImage, actual: &image::RgbaImage) -> (u64, u
         }
     }
     (mismatched_pixels, max_channel_delta)
+}
+
+fn crop_rgba8(img: &image::RgbaImage, x: u32, y: u32, w: u32, h: u32) -> image::RgbaImage {
+    let mut out = image::RgbaImage::new(w, h);
+    for oy in 0..h {
+        for ox in 0..w {
+            let p = *img.get_pixel(x + ox, y + oy);
+            out.put_pixel(ox, oy, p);
+        }
+    }
+    out
+}
+
+fn resize_nearest_rgba8(src: &image::RgbaImage, w: u32, h: u32) -> image::RgbaImage {
+    // Mirror wgpu's nearest sampling semantics closely enough for tests.
+    // Texel centers are at (i + 0.5) / src_w; choose the nearest center.
+    // NOTE: Our rect geometry uses UVs authored at vertices (0..1) and rasterization interpolates
+    // those endpoints. For a target of size W, pixel i maps more closely to i/(W-1) than to
+    // (i+0.5)/W, so we use endpoint-aligned UVs here to match runtime.
+    let sw = src.width().max(1);
+    let sh = src.height().max(1);
+
+    let mut out = image::RgbaImage::new(w, h);
+    for oy in 0..h {
+        let v = if h <= 1 {
+            0.0
+        } else {
+            (oy as f32) / ((h - 1) as f32)
+        };
+        let sy = ((v * (sh as f32)) - 0.5)
+            .floor()
+            .clamp(0.0, (sh - 1) as f32) as u32;
+        for ox in 0..w {
+            let u = if w <= 1 {
+                0.0
+            } else {
+                (ox as f32) / ((w - 1) as f32)
+            };
+            let sx = ((u * (sw as f32)) - 0.5)
+                .floor()
+                .clamp(0.0, (sw - 1) as f32) as u32;
+            out.put_pixel(ox, oy, *src.get_pixel(sx, sy));
+        }
+    }
+    out
+}
+
+fn srgb_u8_to_linear_f32(x: u8) -> f32 {
+    let s = (x as f32) / 255.0;
+    if s <= 0.04045 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_f32_to_srgb_u8(x: f32) -> u8 {
+    let x = x.clamp(0.0, 1.0);
+    let s = if x <= 0.0031308 {
+        12.92 * x
+    } else {
+        1.055 * x.powf(1.0 / 2.4) - 0.055
+    };
+    (s * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 fn first_pixel_mismatch(
@@ -524,7 +594,7 @@ fn run_case(case: &Case) {
         out_png.display()
     );
 
-    let actual = load_rgba8(&out_png);
+    let mut actual = load_rgba8(&out_png);
 
     if let Some(baseline_rel) = case.baseline_png {
         let baseline_png = case_dir.join(baseline_rel);
@@ -611,18 +681,54 @@ fn run_case(case: &Case) {
             .to_ascii_lowercase();
         if alpha_mode == "straight" {
             for p in expected.pixels_mut() {
-                let a = p.0[3] as u16;
-                p.0[0] = ((p.0[0] as u16 * a) / 255) as u8;
-                p.0[1] = ((p.0[1] as u16 * a) / 255) as u8;
-                p.0[2] = ((p.0[2] as u16 * a) / 255) as u8;
+                let a = (p.0[3] as f32) / 255.0;
+                // Runtime prepass samples sRGB textures (auto-decodes to linear) and multiplies
+                // in linear space, then later re-encodes for sRGB output.
+                let r = srgb_u8_to_linear_f32(p.0[0]) * a;
+                let g = srgb_u8_to_linear_f32(p.0[1]) * a;
+                let b = srgb_u8_to_linear_f32(p.0[2]) * a;
+                p.0[0] = linear_f32_to_srgb_u8(r);
+                p.0[1] = linear_f32_to_srgb_u8(g);
+                p.0[2] = linear_f32_to_srgb_u8(b);
             }
+        }
+
+        // Some scenes render an ImageTexture onto a sub-rect of the target. For those cases,
+        // validate the cropped output region against the expected pixels.
+        if case.name == "dyn-rect-image-texture" {
+            // This scene uses a 200x120 rect centered at (128,128).
+            // Top-left (GL-style origin bottom-left) is (28, 68) in target pixels.
+            // Our PNG output uses top-left origin, so y needs flip.
+            let crop_w: u32 = 200;
+            let crop_h: u32 = 120;
+            let x0: u32 = 28;
+            let y0_from_bottom: u32 = 68;
+            let y0: u32 = actual.height().saturating_sub(y0_from_bottom + crop_h);
+
+            actual = crop_rgba8(&actual, x0, y0, crop_w, crop_h);
+
+            // RenderPass uses NearestClamp sampling; the rect stretches the 64x64 texture
+            // to 200x120, so resize expected to match the cropped output.
+            expected = resize_nearest_rgba8(&expected, crop_w, crop_h);
         }
 
         if expected.dimensions() != actual.dimensions() {
             image_ok = false;
         }
         let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
-        let _ = max_channel_delta;
+        if mismatched_pixels != 0 {
+            if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
+                eprintln!(
+                    "case {}: first mismatch at ({},{}): expected={:?} actual={:?} max_channel_delta={}",
+                    case.name,
+                    x,
+                    y,
+                    ep.0,
+                    ap.0,
+                    max_channel_delta
+                );
+            }
+        }
         if mismatched_pixels != 0 {
             image_ok = false;
         }
