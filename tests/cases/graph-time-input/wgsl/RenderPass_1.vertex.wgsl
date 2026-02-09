@@ -33,12 +33,12 @@ var<uniform> params: Params;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec3<f32> {
+fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var input1_1: vec2<f32>;
     var input2_1: vec2<f32>;
     var input3_1: f32;
-    var output: vec3<f32> = vec3(0f);
+    var output: vec4<f32> = vec4(0f);
 
     uv_1 = uv;
     input1_1 = input1_;
@@ -47,10 +47,11 @@ fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, inpu
     let _e11: vec2<f32> = input1_1;
     let _e12: vec2<f32> = input2_1;
     let _e13: vec2<f32> = (_e11 / _e12);
-    let _e14: f32 = input3_1;
-    output = vec3<f32>(_e13.x, _e13.y, _e14);
-    let _e18: vec3<f32> = output;
-    return _e18;
+    let _e15: f32 = input3_1;
+    let _e20: f32 = input3_1;
+    output = vec4<f32>(_e13.x, _e13.y, abs((fract(_e20) - 0.5f)), 1f);
+    let _e29: vec4<f32> = output;
+    return _e29;
 }
 
 
