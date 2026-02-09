@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-07T20:03:29.760Z",
-    "modified": "2026-02-07T20:03:29.760Z"
+    "created": "2026-02-09T06:33:34.388Z",
+    "modified": "2026-02-09T06:33:34.388Z"
   },
   "nodes": [
     {
@@ -52,26 +52,26 @@
       },
       "inputs": [
         {
-          "id": "dynamic_1769531008871_1",
-          "name": "pass4",
+          "id": "dynamic_1770618809614_1",
+          "name": "pass2",
           "type": "pass"
         },
         {
-          "id": "dynamic_1769530996103_1",
+          "id": "dynamic_1770618811165_2",
           "name": "pass3",
           "type": "pass"
         },
         {
-          "id": "dynamic_1769073916803_1",
-          "name": "pass2",
+          "id": "dynamic_1770618813377_3",
+          "name": "pass4",
           "type": "pass"
         }
       ],
       "inputBindings": [
         {
-          "portId": "dynamic_1769531008871_1",
-          "label": "pass4",
-          "variableName": "pass4",
+          "portId": "dynamic_1770618809614_1",
+          "label": "pass2",
+          "variableName": "pass2",
           "type": "pass",
           "sourceBinding": {
             "nodeId": "RenderPass_6",
@@ -80,7 +80,7 @@
           }
         },
         {
-          "portId": "dynamic_1769530996103_1",
+          "portId": "dynamic_1770618811165_2",
           "label": "pass3",
           "variableName": "pass3",
           "type": "pass",
@@ -91,9 +91,9 @@
           }
         },
         {
-          "portId": "dynamic_1769073916803_1",
-          "label": "pass2",
-          "variableName": "pass2",
+          "portId": "dynamic_1770618813377_3",
+          "label": "pass4",
+          "variableName": "pass4",
           "type": "pass",
           "sourceBinding": {
             "nodeId": "RenderPass_130",
@@ -556,17 +556,6 @@
       }
     },
     {
-      "id": "edge_162",
-      "from": {
-        "nodeId": "RenderPass_6",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_3",
-        "portId": "dynamic_1769531008871_1"
-      }
-    },
-    {
       "id": "edge_292",
       "from": {
         "nodeId": "Composite_3",
@@ -633,17 +622,6 @@
       }
     },
     {
-      "id": "edge_308",
-      "from": {
-        "nodeId": "RenderPass_129",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_3",
-        "portId": "dynamic_1769530996103_1"
-      }
-    },
-    {
       "id": "edge_310",
       "from": {
         "nodeId": "ImageFile_127",
@@ -674,17 +652,6 @@
       "to": {
         "nodeId": "RenderPass_130",
         "portId": "geometry"
-      }
-    },
-    {
-      "id": "edge_313",
-      "from": {
-        "nodeId": "RenderPass_130",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_3",
-        "portId": "dynamic_1769073916803_1"
       }
     },
     {
@@ -751,6 +718,39 @@
       "to": {
         "nodeId": "GroupInstance_135",
         "portId": "in_2"
+      }
+    },
+    {
+      "id": "edge_320",
+      "from": {
+        "nodeId": "RenderPass_6",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_3",
+        "portId": "dynamic_1770618809614_1"
+      }
+    },
+    {
+      "id": "edge_321",
+      "from": {
+        "nodeId": "RenderPass_129",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_3",
+        "portId": "dynamic_1770618811165_2"
+      }
+    },
+    {
+      "id": "edge_322",
+      "from": {
+        "nodeId": "RenderPass_130",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_3",
+        "portId": "dynamic_1770618813377_3"
       }
     }
   ],
