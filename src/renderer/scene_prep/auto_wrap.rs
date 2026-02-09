@@ -144,12 +144,13 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
     let mut new_connections: Vec<Connection> = Vec::new();
     for p in &plans {
         let mut geo_params = HashMap::new();
-        geo_params.insert("width".to_string(), serde_json::json!(tgt_w));
-        geo_params.insert("height".to_string(), serde_json::json!(tgt_h));
-        // Rect2DGeometry.x/y are treated as the geometry center in target pixel space
+        geo_params.insert("size".to_string(), serde_json::json!([tgt_w, tgt_h]));
+        // Rect2DGeometry.position is the geometry center in target pixel space
         // (bottom-left origin). For a fullscreen quad, center it at (w/2, h/2).
-        geo_params.insert("x".to_string(), serde_json::json!(tgt_w * 0.5));
-        geo_params.insert("y".to_string(), serde_json::json!(tgt_h * 0.5));
+        geo_params.insert(
+            "position".to_string(),
+            serde_json::json!([tgt_w * 0.5, tgt_h * 0.5]),
+        );
 
         scene.nodes.push(Node {
             id: p.geo_id.clone(),

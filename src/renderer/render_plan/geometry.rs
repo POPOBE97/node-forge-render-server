@@ -8,7 +8,7 @@ use crate::{
     renderer::{
         node_compiler::compile_vertex_expr,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
+        utils::{coerce_to_type, cpu_num_u32_min_1},
     },
 };
 
@@ -70,6 +70,108 @@ fn parse_inline_vec3(node: &crate::dsl::Node, key: &str, default: [f32; 3]) -> [
         }
     }
     out
+}
+
+fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
+    v.as_f64()
+        .map(|x| x as f32)
+        .or_else(|| v.as_i64().map(|x| x as f32))
+        .or_else(|| v.as_u64().map(|x| x as f32))
+}
+
+fn parse_inline_vec2(node: &crate::dsl::Node, key: &str) -> Result<Option<[f32; 2]>> {
+    let Some(v) = node.params.get(key) else {
+        return Ok(None);
+    };
+
+    if let Some(arr) = v.as_array() {
+        let x = arr.first().and_then(parse_json_number_f32).unwrap_or(0.0);
+        let y = arr.get(1).and_then(parse_json_number_f32).unwrap_or(0.0);
+        return Ok(Some([x, y]));
+    }
+
+    if let Some(obj) = v.as_object() {
+        let x = obj.get("x").and_then(parse_json_number_f32).unwrap_or(0.0);
+        let y = obj.get("y").and_then(parse_json_number_f32).unwrap_or(0.0);
+        return Ok(Some([x, y]));
+    }
+
+    bail!(
+        "{}.{} must be vec2 object {{x,y}} or array [x,y]",
+        node.id,
+        key
+    );
+}
+
+fn parse_vec2_literal_expr(expr: &str) -> Option<[f32; 2]> {
+    let compact = expr.replace([' ', '\n', '\t', '\r'], "");
+    let inner = compact.strip_prefix("vec2f(")?.strip_suffix(')')?;
+    let mut parts = inner.split(',');
+    let x = parts.next()?.parse::<f32>().ok()?;
+    let y = parts.next()?.parse::<f32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some([x, y])
+}
+
+fn resolve_rect_vec2_input(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node: &crate::dsl::Node,
+    port_id: &str,
+    material_ctx: Option<&MaterialCompileContext>,
+) -> Result<Option<[f32; 2]>> {
+    if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
+        let mut ctx = MaterialCompileContext {
+            baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
+            baked_data_parse_meta: material_ctx.and_then(|c| c.baked_data_parse_meta.clone()),
+            ..Default::default()
+        };
+        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+
+        let expr = compile_vertex_expr(
+            scene,
+            nodes_by_id,
+            &conn.from.node_id,
+            Some(&conn.from.port_id),
+            &mut ctx,
+            &mut cache,
+        )?;
+        let expr = coerce_to_type(expr, ValueType::Vec2)?;
+        let parsed = parse_vec2_literal_expr(&expr.expr).ok_or_else(|| {
+            anyhow!(
+                "{}.{} must resolve to literal vec2 for CPU geometry allocation, got {}",
+                node.id,
+                port_id,
+                expr.expr
+            )
+        })?;
+        return Ok(Some(parsed));
+    }
+
+    parse_inline_vec2(node, port_id)
+}
+
+fn resolve_rect2d_geometry_metrics(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node: &crate::dsl::Node,
+    render_target_size: [f32; 2],
+    material_ctx: Option<&MaterialCompileContext>,
+) -> Result<(f32, f32, f32, f32)> {
+    let size = resolve_rect_vec2_input(scene, nodes_by_id, node, "size", material_ctx)?;
+    let position = resolve_rect_vec2_input(scene, nodes_by_id, node, "position", material_ctx)?;
+
+    let default_w = render_target_size[0].max(1.0);
+    let default_h = render_target_size[1].max(1.0);
+    let default_size = [default_w, default_h];
+    let default_position = [default_w * 0.5, default_h * 0.5];
+
+    let size = size.unwrap_or(default_size);
+    let position = position.unwrap_or(default_position);
+
+    Ok((size[0].max(1.0), size[1].max(1.0), position[0], position[1]))
 }
 
 fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {
@@ -198,6 +300,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     ids: &HashMap<String, ResourceName>,
     geometry_node_id: &str,
+    render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(
     ResourceName,
@@ -223,12 +326,13 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
 
-            let geo_w_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "width", 100)?;
-            let geo_h_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "height", geo_w_u)?;
-            let geo_w = geo_w_u as f32;
-            let geo_h = geo_h_u as f32;
-            let geo_x = cpu_num_f32(scene, nodes_by_id, geometry_node, "x", 0.0)?;
-            let geo_y = cpu_num_f32(scene, nodes_by_id, geometry_node, "y", 0.0)?;
+            let (geo_w, geo_h, geo_x, geo_y) = resolve_rect2d_geometry_metrics(
+                scene,
+                nodes_by_id,
+                geometry_node,
+                render_target_size,
+                material_ctx,
+            )?;
             Ok((
                 geometry_buffer,
                 geo_w,
@@ -276,6 +380,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -322,6 +427,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -390,6 +496,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -552,6 +659,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 

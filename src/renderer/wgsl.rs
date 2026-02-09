@@ -20,7 +20,7 @@ use crate::{
             GraphBindingKind, GraphFieldKind, GraphSchema, Kernel2D, MaterialCompileContext,
             TypedExpr, ValueType, WgslShaderBundle,
         },
-        utils::{cpu_num_f32_min_0, fmt_f32 as fmt_f32_utils, to_vec4_color},
+        utils::{cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils, to_vec4_color},
     },
 };
 
@@ -861,6 +861,23 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
     let prepared = prepare_scene(scene)?;
     let nodes_by_id = &prepared.nodes_by_id;
     let ids = &prepared.ids;
+    let output_target_node = find_node(nodes_by_id, &prepared.output_texture_node_id)?;
+    let render_target_size = [
+        cpu_num_u32_min_1(
+            &prepared.scene,
+            nodes_by_id,
+            output_target_node,
+            "width",
+            prepared.resolution[0],
+        )? as f32,
+        cpu_num_u32_min_1(
+            &prepared.scene,
+            nodes_by_id,
+            output_target_node,
+            "height",
+            prepared.resolution[1],
+        )? as f32,
+    ];
 
     let mut baked_data_parse = prepared.baked_data_parse.clone();
 
@@ -893,6 +910,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    render_target_size,
                     None,
                 )?;
 
@@ -950,6 +968,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    render_target_size,
                     Some(&MaterialCompileContext {
                         baked_data_parse: Some(std::sync::Arc::new(baked_data_parse.clone())),
                         baked_data_parse_meta: Some(meta.clone()),

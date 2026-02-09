@@ -48,7 +48,7 @@ use crate::{
             TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
-        utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
+        utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
             build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
@@ -409,6 +409,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     ids: &HashMap<String, ResourceName>,
     geometry_node_id: &str,
+    render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(
     ResourceName,
@@ -428,32 +429,41 @@ pub(crate) fn resolve_geometry_for_render_pass(
 
     match geometry_node.node_type.as_str() {
         "Rect2DGeometry" => {
-            let geometry_buffer = ids
-                .get(geometry_node_id)
-                .cloned()
-                .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
-
-            let geo_w_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "width", 100)?;
-            let geo_h_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "height", geo_w_u)?;
-            let geo_w = geo_w_u as f32;
-            let geo_h = geo_h_u as f32;
-            let geo_x = cpu_num_f32(scene, nodes_by_id, geometry_node, "x", 0.0)?;
-            let geo_y = cpu_num_f32(scene, nodes_by_id, geometry_node, "y", 0.0)?;
+            let (
+                geometry_buffer,
+                geo_w,
+                geo_h,
+                geo_x,
+                geo_y,
+                instances,
+                base_m,
+                instance_mats,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                _graph_input_kinds,
+                uses_instance_index,
+            ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                geometry_node_id,
+                render_target_size,
+                material_ctx,
+            )?;
             Ok((
                 geometry_buffer,
                 geo_w,
                 geo_h,
                 geo_x,
                 geo_y,
-                1,
-                [
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                ],
-                None,
-                None,
-                Vec::new(),
-                String::new(),
-                false,
+                instances,
+                base_m,
+                instance_mats,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
             ))
         }
         "InstancedGeometryStart" => {
@@ -484,6 +494,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -528,6 +539,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -594,6 +606,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -754,6 +767,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 nodes_by_id,
                 ids,
                 &upstream_geo_id,
+                render_target_size,
                 material_ctx,
             )?;
 
@@ -1197,53 +1211,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
-    // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
-    let sampled_pass_ids =
-        crate::renderer::render_plan::sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
-
-    for id in order {
-        let node = match nodes_by_id.get(id) {
-            Some(n) => n,
-            None => continue,
-        };
-        let name = ids
-            .get(id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing name for node: {id}"))?;
-
-        match node.node_type.as_str() {
-            "Rect2DGeometry" => {
-                let geo_w_u = cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", 100)?;
-                let geo_h_u =
-                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", geo_w_u)?;
-                let geo_w = geo_w_u as f32;
-                let geo_h = geo_h_u as f32;
-                let verts = rect2d_geometry_vertices(geo_w, geo_h);
-                let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
-                geometry_buffers.push((name, bytes));
-            }
-            "RenderTexture" => {
-                let w =
-                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", resolution[0])?;
-                let h =
-                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", resolution[1])?;
-                let format = parse_texture_format(&node.params)?;
-                textures.push(TextureDecl {
-                    name,
-                    size: [w, h],
-                    format,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    // Helper: create a fullscreen geometry buffer.
-    let make_fullscreen_geometry = |w: f32, h: f32| -> Arc<[u8]> {
-        let verts = rect2d_geometry_vertices(w, h);
-        Arc::from(as_bytes_slice(&verts).to_vec())
-    };
-
     // Output target texture is always Composite.target.
     let target_texture_id = output_texture_node_id.clone();
     let target_node = find_node(&nodes_by_id, &target_texture_id)?;
@@ -1273,6 +1240,70 @@ pub(crate) fn build_shader_space_from_scene_internal(
         .get(&target_texture_id)
         .cloned()
         .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
+
+    // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
+    let sampled_pass_ids =
+        crate::renderer::render_plan::sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
+
+    for id in order {
+        let node = match nodes_by_id.get(id) {
+            Some(n) => n,
+            None => continue,
+        };
+        let name = ids
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("missing name for node: {id}"))?;
+
+        match node.node_type.as_str() {
+            "Rect2DGeometry" => {
+                let (
+                    _geo_buf,
+                    geo_w,
+                    geo_h,
+                    _geo_x,
+                    _geo_y,
+                    _instances,
+                    _base_m,
+                    _instance_mats,
+                    _translate_expr,
+                    _vtx_inline_stmts,
+                    _vtx_wgsl_decls,
+                    _vtx_graph_input_kinds,
+                    _uses_instance_index,
+                ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &node.id,
+                    [tgt_w, tgt_h],
+                    None,
+                )?;
+                let verts = rect2d_geometry_vertices(geo_w, geo_h);
+                let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
+                geometry_buffers.push((name, bytes));
+            }
+            "RenderTexture" => {
+                let w =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "width", resolution[0])?;
+                let h =
+                    cpu_num_u32_min_1(&prepared.scene, nodes_by_id, node, "height", resolution[1])?;
+                let format = parse_texture_format(&node.params)?;
+                textures.push(TextureDecl {
+                    name,
+                    size: [w, h],
+                    format,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // Helper: create a fullscreen geometry buffer.
+    let make_fullscreen_geometry = |w: f32, h: f32| -> Arc<[u8]> {
+        let verts = rect2d_geometry_vertices(w, h);
+        Arc::from(as_bytes_slice(&verts).to_vec())
+    };
 
     // Track pass outputs for chain resolution.
     let mut pass_output_registry = PassOutputRegistry::new();
@@ -1383,6 +1414,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    [tgt_w, tgt_h],
                     Some(&MaterialCompileContext {
                         baked_data_parse: Some(std::sync::Arc::new(
                             prepared.baked_data_parse.clone(),
@@ -1518,6 +1550,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
+                    [tgt_w, tgt_h],
                     Some(&MaterialCompileContext {
                         baked_data_parse: Some(std::sync::Arc::new(baked.clone())),
                         baked_data_parse_meta: baked_data_parse_meta_by_pass.get(layer_id).cloned(),
