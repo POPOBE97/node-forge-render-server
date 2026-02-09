@@ -80,7 +80,7 @@ fn mc_MathClosure_calculateMaskLinear(uv: vec2<f32>, xy: vec2<f32>) -> f32 {
     var xy_1: vec2<f32>;
     var output: f32 = 0f;
     var textureHeight: f32 = 2400f;
-    var pStart: vec3<f32> = vec3<f32>(0f, 0f, 0f);
+    var pStart: vec3<f32> = vec3<f32>(0f, 0f, 50f);
     var pEnd: vec3<f32>;
     var qBase: vec2<f32>;
     var md: f32;
@@ -91,7 +91,7 @@ fn mc_MathClosure_calculateMaskLinear(uv: vec2<f32>, xy: vec2<f32>) -> f32 {
     uv_1 = uv;
     xy_1 = xy;
     let _e15: f32 = textureHeight;
-    pEnd = vec3<f32>(0f, _e15, 40f);
+    pEnd = vec3<f32>(0f, _e15, 0f);
     let _e19: vec3<f32> = pEnd;
     let _e21: vec3<f32> = pStart;
     qBase = (_e19.xy - _e21.xy);
