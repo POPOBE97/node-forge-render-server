@@ -1379,6 +1379,10 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
     // NOTE: `in.position.xy` is the render-target pixel coordinate with top-left origin.
     // For Downsample, we treat destination pixel coordinates as top-left oriented.
     //
+    // This algorithm matches Godot's downsample shader:
+    // 1. Compute center_xy = ceil(normalized_uv * src_dims)
+    // 2. Sample at U/D/L/R offsets with manual bilinear (4-point average at integer coords)
+    //
     // Sampling behavior (Mirror/Repeat/Clamp) is handled via the runtime sampler.
     let body = format!(
         r#"
@@ -1387,10 +1391,11 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
     let dst_dims = params.target_size;
     // Fragment position is pixel-centered, with top-left origin.
     let dst_xy = vec2f(in.position.xy);
-    let scale = src_dims / dst_dims;
-
-    // Map destination pixel-center coords -> source pixel-center coords.
-    let src_center = (dst_xy - vec2f(0.5, 0.5)) * scale + vec2f(0.5, 0.5);
+    
+    // Match Godot: center_xy = ceil(UV * src_resolution)
+    // UV = dst_xy / dst_dims (normalized), so:
+    // center_xy = ceil(dst_xy / dst_dims * src_dims) = ceil(dst_xy * src_dims / dst_dims)
+    let center_xy = ceil(dst_xy * src_dims / dst_dims);
 
   let kw: i32 = {w};
   let kh: i32 = {h};
@@ -1403,9 +1408,11 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
         for (var x: i32 = 0; x < kw; x = x + 1) {{
             let ix = x - half_w;
             let iy = y - half_h;
-            let sample_center = src_center + vec2f(f32(ix), f32(iy));
-            // Convert source texel-center coordinate to UV.
-            let uv = (sample_center + vec2f(0.5, 0.5)) / src_dims;
+            // Offset from integer center
+            let sample_xy = center_xy + vec2f(f32(ix), f32(iy));
+            // Match Godot's bilinear: sample at (xy - 0.5) in texel-center space
+            // which means UV = (sample_xy - 0.5) / src_dims
+            let uv = (sample_xy - vec2f(0.5, 0.5)) / src_dims;
 
             let idx: i32 = y * kw + x;
             sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0) * k[u32(idx)];

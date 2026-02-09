@@ -184,10 +184,9 @@ pub fn compile_frag_coord(_node: &Node, out_port: Option<&str>) -> Result<TypedE
 /// Compile a GeoFragcoord node to WGSL.
 ///
 /// GeoFragcoord provides the fragment coordinate in the *current geometry's local pixel space*.
-/// This matches the editor contract: `xy = in.uv * geometry_size`.
+/// Origin is at **bottom-left** with Y increasing upward, matching OpenGL's gl_FragCoord.
 ///
-/// In our renderer, per-pass `params.geo_size` is the geometry size in pixels.
-/// Vertex shader emits `in.uv` in [0,1] over the geometry.
+/// This is computed as: in.uv * geometry_size
 ///
 /// # Output
 /// - Port `xy`: Type vec2f

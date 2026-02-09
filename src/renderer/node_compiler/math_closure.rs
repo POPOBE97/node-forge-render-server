@@ -300,9 +300,10 @@ where
 
         // Add the actual WGSL helper function that does the texture sampling.
         // Use the name WITH suffix because naga will rename the function calls.
+        // NOTE: Our coordinate system uses bottom-left origin (like OpenGL gl_FragCoord),
+        // but texture UV uses top-left origin. We flip Y to convert.
         let helper_fn = format!(
             r#"fn {helper_name_with_suffix}(uv_in: vec2f) -> vec4f {{
-    // NOTE: PassTexture Y flip for bottom-left UV convention.
     let uv_flipped = vec2f(uv_in.x, 1.0 - uv_in.y);
     return textureSample({tex_var}, {samp_var}, uv_flipped);
 }}
