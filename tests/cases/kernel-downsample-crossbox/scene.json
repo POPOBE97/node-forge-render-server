@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-05T07:37:51.688Z",
-    "modified": "2026-02-05T07:37:51.688Z"
+    "created": "2026-02-09T08:04:09.198Z",
+    "modified": "2026-02-09T08:04:09.198Z"
   },
   "nodes": [
     {
@@ -11,7 +11,7 @@
       "type": "Screen",
       "position": {
         "x": 1520,
-        "y": -900
+        "y": -940
       },
       "width": 160,
       "label": "Screen",
@@ -25,7 +25,7 @@
       "type": "Composite",
       "position": {
         "x": 1320,
-        "y": -900
+        "y": -940
       },
       "width": 160,
       "label": "Composite",
@@ -115,12 +115,16 @@
       "width": 160,
       "label": "2D Rect",
       "params": {
-        "width": 1080,
-        "height": 2400,
-        "x": 540,
-        "y": 1200,
         "radius": 0,
-        "smooth": 1
+        "smooth": 1,
+        "size": {
+          "x": 1080,
+          "y": 2400
+        },
+        "position": {
+          "x": 540,
+          "y": 1200
+        }
       }
     },
     {
@@ -128,7 +132,7 @@
       "type": "Kernel",
       "position": {
         "x": 920,
-        "y": -900
+        "y": -940
       },
       "width": 160,
       "label": "Kernel",
@@ -142,26 +146,16 @@
       "type": "Downsample",
       "position": {
         "x": 1120,
-        "y": -900
+        "y": -940
       },
       "width": 160,
       "label": "2X Downsample",
       "params": {
-        "sampling": "Mirror"
-      }
-    },
-    {
-      "id": "Vector2Input_11",
-      "type": "Vector2Input",
-      "position": {
-        "x": 920,
-        "y": -740
-      },
-      "width": 160,
-      "label": "Vector2 Input",
-      "params": {
-        "x": 540,
-        "y": 1200
+        "sampling": "Mirror",
+        "targetSize": {
+          "x": 540,
+          "y": 1200
+        }
       }
     }
   ],
@@ -219,17 +213,6 @@
       "to": {
         "nodeId": "Downsample_10",
         "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_10",
-      "from": {
-        "nodeId": "Vector2Input_11",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "Downsample_10",
-        "portId": "targetSize"
       }
     },
     {
