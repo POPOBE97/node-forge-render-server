@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-09T06:41:35.655Z",
+  "generatedAt": "2026-02-09T07:16:44.861Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1947,28 +1947,14 @@
       "description": "Create a 2D rectangle geometry with optional rounded corners",
       "inputs": [
         {
-          "id": "width",
-          "name": "Width",
-          "type": "int",
-          "default": 100
+          "id": "size",
+          "name": "Size",
+          "type": "vector2"
         },
         {
-          "id": "height",
-          "name": "Height",
-          "type": "int",
-          "default": 100
-        },
-        {
-          "id": "x",
-          "name": "X",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "y",
-          "name": "Y",
-          "type": "float",
-          "default": 0
+          "id": "position",
+          "name": "Position",
+          "type": "vector2"
         },
         {
           "id": "radius",
