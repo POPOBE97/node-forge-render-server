@@ -16,6 +16,7 @@
 *.swp
 *.swo
 .claude/
+.agents/
 
 # Xcode
 **/xcuserdata/
