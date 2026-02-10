@@ -2,16 +2,16 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-10T15:01:56.012Z",
-    "modified": "2026-02-10T15:01:56.012Z"
+    "created": "2026-02-10T15:53:43.669Z",
+    "modified": "2026-02-10T15:53:43.669Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": 3820,
-        "y": -1320
+        "x": 4120,
+        "y": -680
       },
       "width": 160,
       "label": "Screen",
@@ -24,8 +24,8 @@
       "id": "RenderTexture_3",
       "type": "RenderTexture",
       "position": {
-        "x": 3580,
-        "y": -1360
+        "x": 3940,
+        "y": -820
       },
       "width": 160,
       "label": "Render Texture",
@@ -39,8 +39,8 @@
       "id": "RenderPass_final",
       "type": "RenderPass",
       "position": {
-        "x": 3400,
-        "y": -1220
+        "x": 3760,
+        "y": -680
       },
       "width": 160,
       "label": "Final Pass",
@@ -58,8 +58,8 @@
       "id": "Composite_84",
       "type": "Composite",
       "position": {
-        "x": 3580,
-        "y": -1220
+        "x": 3940,
+        "y": -680
       },
       "width": 160,
       "label": "Composite",
@@ -77,8 +77,8 @@
       "id": "Rect2DGeometry_final",
       "type": "Rect2DGeometry",
       "position": {
-        "x": 3400,
-        "y": -1360
+        "x": 3760,
+        "y": -820
       },
       "width": 160,
       "label": "2D Rect",
@@ -99,8 +99,8 @@
       "id": "MathClosure_calculateMaskLinear",
       "type": "MathClosure",
       "position": {
-        "x": 2320,
-        "y": -480
+        "x": 2380,
+        "y": -660
       },
       "width": 400,
       "label": "m",
@@ -200,62 +200,11 @@
       ]
     },
     {
-      "id": "MathClosure_96",
-      "type": "MathClosure",
-      "position": {
-        "x": 3140,
-        "y": -1080
-      },
-      "width": 321,
-      "label": "mvbUp",
-      "params": {
-        "source": "vec2 d     = dc * scale - 0.5;\nvec2 c     = floor(d);\nvec2 x     = c - d + 1.0;\nvec2 X     = d - c;\nvec2 x3    = x * x * x;\nvec2 coeff = 0.5 * x * x + 0.5 * x + 0.166667;\nvec2 w1   = -0.333333 * x3 + coeff;\nvec2 w2   = 1.0 - w1;\nvec2 o1   = (-0.5 * x3 + coeff) / w1 + c - 0.5;\nvec2 o2   = (X * X * X / 6.0) / w2 + c + 1.5;\n\noutput = vec2[4](w1, w2, o1, o2);"
-      },
-      "inputs": [
-        {
-          "id": "dynamic_1770733302378_1",
-          "name": "dc",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1770733316022_2",
-          "name": "scale",
-          "type": "any"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "vector2[]"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1770733302378_1",
-          "label": "dc",
-          "variableName": "dc",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoFragcoord_110",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "dynamic_1770733316022_2",
-          "label": "scale",
-          "variableName": "scale",
-          "type": "float"
-        }
-      ]
-    },
-    {
       "id": "GroupInstance_99",
       "type": "GroupInstance",
       "position": {
-        "x": 3160,
-        "y": -320
+        "x": 3020,
+        "y": -660
       },
       "width": 160,
       "label": "Group 2",
@@ -263,26 +212,6 @@
         "groupId": "Mitchell-Netravali"
       },
       "inputs": [
-        {
-          "id": "in_0",
-          "name": "w0",
-          "type": "vector2"
-        },
-        {
-          "id": "in_1",
-          "name": "w1",
-          "type": "vector2"
-        },
-        {
-          "id": "in_2",
-          "name": "w2",
-          "type": "vector2"
-        },
-        {
-          "id": "in_3",
-          "name": "w3",
-          "type": "vector2"
-        },
         {
           "id": "in_4",
           "name": "level",
@@ -292,8 +221,45 @@
       "outputs": [
         {
           "id": "out_0",
-          "name": "Output 1",
+          "name": "Color",
           "type": "color"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "in_0",
+          "label": "w0",
+          "variableName": "w0",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_1",
+          "label": "w1",
+          "variableName": "w1",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_2",
+          "label": "w2",
+          "variableName": "w2",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_3",
+          "label": "w3",
+          "variableName": "w3",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_4",
+          "label": "level",
+          "variableName": "level",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_100",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
         }
       ]
     },
@@ -381,13 +347,13 @@
       "id": "MathClosure_102",
       "type": "MathClosure",
       "position": {
-        "x": 3140,
-        "y": -660
+        "x": 3360,
+        "y": -760
       },
-      "width": 203,
-      "label": "Math Closure",
+      "width": 243,
+      "label": "fragColor",
       "params": {
-        "source": "// output = input1 + input2;"
+        "source": "float scale;\nif (mLo < 0.1) {\n  cLo = mip0;\n}\n\noutput = mix(cLo, cHi, m-mLo);"
       },
       "inputs": [
         {
@@ -401,26 +367,31 @@
           "type": "float"
         },
         {
-          "id": "dynamic_1770735352576_3",
-          "name": "xy",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1770735362294_4",
-          "name": "size",
-          "type": "vector2"
-        },
-        {
           "id": "dynamic_1770735394730_5",
           "name": "m",
           "type": "float"
+        },
+        {
+          "id": "dynamic_1770737069755_6",
+          "name": "mip0",
+          "type": "color"
+        },
+        {
+          "id": "dynamic_1770738671538_7",
+          "name": "cLo",
+          "type": "color"
+        },
+        {
+          "id": "dynamic_1770738680407_8",
+          "name": "cHi",
+          "type": "color"
         }
       ],
       "outputs": [
         {
           "id": "output",
           "name": "Output",
-          "type": "any"
+          "type": "vector4"
         }
       ],
       "inputBindings": [
@@ -447,28 +418,6 @@
           }
         },
         {
-          "portId": "dynamic_1770735352576_3",
-          "label": "xy",
-          "variableName": "xy",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoFragcoord_103",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "dynamic_1770735362294_4",
-          "label": "size",
-          "variableName": "size",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "GeoSize_104",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
           "portId": "dynamic_1770735394730_5",
           "label": "m",
           "variableName": "m",
@@ -478,37 +427,48 @@
             "outputPortId": "output",
             "outputLabel": "Output"
           }
+        },
+        {
+          "portId": "dynamic_1770737069755_6",
+          "label": "mip0",
+          "variableName": "mip0",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "GroupInstance_111",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
+          }
+        },
+        {
+          "portId": "dynamic_1770738671538_7",
+          "label": "cLo",
+          "variableName": "cLo",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "GroupInstance_99",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
+          }
+        },
+        {
+          "portId": "dynamic_1770738680407_8",
+          "label": "cHi",
+          "variableName": "cHi",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "GroupInstance_114",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
+          }
         }
       ]
-    },
-    {
-      "id": "GeoFragcoord_103",
-      "type": "GeoFragcoord",
-      "position": {
-        "x": 2820,
-        "y": -300
-      },
-      "width": 160,
-      "label": "Geo Fragcoord",
-      "params": {}
-    },
-    {
-      "id": "GeoSize_104",
-      "type": "GeoSize",
-      "position": {
-        "x": 2820,
-        "y": -240
-      },
-      "width": 160,
-      "label": "Geo Size",
-      "params": {}
     },
     {
       "id": "GeoFragcoord_105",
       "type": "GeoFragcoord",
       "position": {
-        "x": 2100,
-        "y": -480
+        "x": 2160,
+        "y": -660
       },
       "width": 160,
       "label": "Geo Fragcoord",
@@ -518,8 +478,8 @@
       "id": "FloatInput_106",
       "type": "FloatInput",
       "position": {
-        "x": 2100,
-        "y": -420
+        "x": 2160,
+        "y": -600
       },
       "width": 160,
       "label": "start_y",
@@ -531,8 +491,8 @@
       "id": "FloatInput_107",
       "type": "FloatInput",
       "position": {
-        "x": 2100,
-        "y": -340
+        "x": 2160,
+        "y": -520
       },
       "width": 160,
       "label": "end_y",
@@ -544,8 +504,8 @@
       "id": "FloatInput_108",
       "type": "FloatInput",
       "position": {
-        "x": 2100,
-        "y": -260
+        "x": 2160,
+        "y": -440
       },
       "width": 160,
       "label": "start_sigma",
@@ -557,8 +517,8 @@
       "id": "FloatInput_109",
       "type": "FloatInput",
       "position": {
-        "x": 2100,
-        "y": -180
+        "x": 2160,
+        "y": -360
       },
       "width": 160,
       "label": "end_sigma",
@@ -567,22 +527,11 @@
       }
     },
     {
-      "id": "GeoFragcoord_110",
-      "type": "GeoFragcoord",
-      "position": {
-        "x": 2880,
-        "y": -1080
-      },
-      "width": 160,
-      "label": "Geo Fragcoord",
-      "params": {}
-    },
-    {
       "id": "GroupInstance_111",
       "type": "GroupInstance",
       "position": {
-        "x": 3140,
-        "y": -1200
+        "x": 3020,
+        "y": -840
       },
       "width": 160,
       "label": "Group",
@@ -607,14 +556,28 @@
           "name": "Color",
           "type": "color"
         }
+      ],
+      "inputBindings": [
+        {
+          "portId": "in_0",
+          "label": "xy",
+          "variableName": "xy",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_1",
+          "label": "level",
+          "variableName": "level",
+          "type": "float"
+        }
       ]
     },
     {
       "id": "GeoFragcoord_112",
       "type": "GeoFragcoord",
       "position": {
-        "x": 2880,
-        "y": -1220
+        "x": 2820,
+        "y": -840
       },
       "width": 160,
       "label": "Geo Fragcoord",
@@ -624,14 +587,78 @@
       "id": "FloatInput_113",
       "type": "FloatInput",
       "position": {
-        "x": 2880,
-        "y": -1160
+        "x": 2820,
+        "y": -780
       },
       "width": 160,
       "label": "Float Input",
       "params": {
         "value": 0
       }
+    },
+    {
+      "id": "GroupInstance_114",
+      "type": "GroupInstance",
+      "position": {
+        "x": 3020,
+        "y": -480
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "Mitchell-Netravali"
+      },
+      "inputs": [
+        {
+          "id": "in_4",
+          "name": "level",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "in_0",
+          "label": "w0",
+          "variableName": "w0",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_1",
+          "label": "w1",
+          "variableName": "w1",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_2",
+          "label": "w2",
+          "variableName": "w2",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_3",
+          "label": "w3",
+          "variableName": "w3",
+          "type": "vector2"
+        },
+        {
+          "portId": "in_4",
+          "label": "level",
+          "variableName": "level",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "MathClosure_101",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
     }
   ],
   "connections": [
@@ -724,28 +751,6 @@
       }
     },
     {
-      "id": "edge_23",
-      "from": {
-        "nodeId": "GeoFragcoord_103",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "MathClosure_102",
-        "portId": "dynamic_1770735352576_3"
-      }
-    },
-    {
-      "id": "edge_24",
-      "from": {
-        "nodeId": "GeoSize_104",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "MathClosure_102",
-        "portId": "dynamic_1770735362294_4"
-      }
-    },
-    {
       "id": "edge_25",
       "from": {
         "nodeId": "MathClosure_calculateMaskLinear",
@@ -812,17 +817,6 @@
       }
     },
     {
-      "id": "edge_31",
-      "from": {
-        "nodeId": "GeoFragcoord_110",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "MathClosure_96",
-        "portId": "dynamic_1770733302378_1"
-      }
-    },
-    {
       "id": "edge_32",
       "from": {
         "nodeId": "GeoFragcoord_112",
@@ -845,14 +839,69 @@
       }
     },
     {
-      "id": "edge_34",
+      "id": "edge_40",
       "from": {
         "nodeId": "GroupInstance_111",
         "portId": "out_0"
       },
       "to": {
+        "nodeId": "MathClosure_102",
+        "portId": "dynamic_1770737069755_6"
+      }
+    },
+    {
+      "id": "edge_41",
+      "from": {
+        "nodeId": "MathClosure_102",
+        "portId": "output"
+      },
+      "to": {
         "nodeId": "RenderPass_final",
         "portId": "material"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "MathClosure_100",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GroupInstance_99",
+        "portId": "in_4"
+      }
+    },
+    {
+      "id": "edge_44",
+      "from": {
+        "nodeId": "GroupInstance_99",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "MathClosure_102",
+        "portId": "dynamic_1770738671538_7"
+      }
+    },
+    {
+      "id": "edge_45",
+      "from": {
+        "nodeId": "MathClosure_101",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GroupInstance_114",
+        "portId": "in_4"
+      }
+    },
+    {
+      "id": "edge_46",
+      "from": {
+        "nodeId": "GroupInstance_114",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "MathClosure_102",
+        "portId": "dynamic_1770738680407_8"
       }
     }
   ],
@@ -1712,26 +1761,6 @@
       "name": "Group 2",
       "inputs": [
         {
-          "id": "in_0",
-          "name": "w0",
-          "type": "vector2"
-        },
-        {
-          "id": "in_1",
-          "name": "w1",
-          "type": "vector2"
-        },
-        {
-          "id": "in_2",
-          "name": "w2",
-          "type": "vector2"
-        },
-        {
-          "id": "in_3",
-          "name": "w3",
-          "type": "vector2"
-        },
-        {
           "id": "in_4",
           "name": "level",
           "type": "float"
@@ -1740,7 +1769,7 @@
       "outputs": [
         {
           "id": "out_0",
-          "name": "Output 1",
+          "name": "Color",
           "type": "color"
         }
       ],
@@ -1750,7 +1779,7 @@
           "type": "GroupInstance",
           "position": {
             "x": 100,
-            "y": -420
+            "y": -500
           },
           "width": 160,
           "label": "Group",
@@ -1781,7 +1810,12 @@
               "portId": "in_0",
               "label": "xy",
               "variableName": "xy",
-              "type": "vector2"
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "MathClosure_105",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
             },
             {
               "portId": "in_1",
@@ -1795,24 +1829,19 @@
           "id": "MathClosure_99",
           "type": "MathClosure",
           "position": {
-            "x": 300,
+            "x": 360,
             "y": -320
           },
-          "width": 183,
+          "width": 203,
           "label": "Mitchell-Netravali",
           "params": {
-            "source": "vec4 o = vec4(0.0);\no += w0.x * w0.y * c0;\no += w1.x * w0.y * c1;\no += w0.x * w1.y * c2;\no += w1.x * w1.y * c3;\noutput = o;"
+            "source": "vec4 o = vec4(0.0);\no += w[0].x * w[0].y * c0;\no += w[1].x * w[0].y * c1;\no += w[0].x * w[1].y * c2;\no += w[1].x * w[1].y * c3;\noutput = o;"
           },
           "inputs": [
             {
-              "id": "dynamic_1770734445508_1",
-              "name": "w0",
-              "type": "vector2"
-            },
-            {
               "id": "dynamic_1770734447048_2",
-              "name": "w1",
-              "type": "vector2"
+              "name": "w",
+              "type": "vector2[]"
             },
             {
               "id": "dynamic_1770734640115_5",
@@ -1844,16 +1873,15 @@
           ],
           "inputBindings": [
             {
-              "portId": "dynamic_1770734445508_1",
-              "label": "w0",
-              "variableName": "w0",
-              "type": "vector2"
-            },
-            {
               "portId": "dynamic_1770734447048_2",
-              "label": "w1",
-              "variableName": "w1",
-              "type": "vector2"
+              "label": "w",
+              "variableName": "w",
+              "type": "vector2[]",
+              "sourceBinding": {
+                "nodeId": "MathClosure_109",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
             },
             {
               "portId": "dynamic_1770734640115_5",
@@ -1902,103 +1930,11 @@
           ]
         },
         {
-          "id": "MathClosure_100",
-          "type": "MathClosure",
-          "position": {
-            "x": -140,
-            "y": -360
-          },
-          "width": 191,
-          "label": "w3.x, w2.y",
-          "params": {
-            "source": "output = vec2(w3.x, w2.y);"
-          },
-          "inputs": [
-            {
-              "id": "dynamic_1770734745692_1",
-              "name": "w2",
-              "type": "vector2"
-            },
-            {
-              "id": "dynamic_1770734763076_2",
-              "name": "w3",
-              "type": "vector2"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "vector2"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1770734745692_1",
-              "label": "w2",
-              "variableName": "w2",
-              "type": "vector2"
-            },
-            {
-              "portId": "dynamic_1770734763076_2",
-              "label": "w3",
-              "variableName": "w3",
-              "type": "vector2"
-            }
-          ]
-        },
-        {
-          "id": "MathClosure_101",
-          "type": "MathClosure",
-          "position": {
-            "x": -140,
-            "y": -180
-          },
-          "width": 191,
-          "label": "w2.x, w3.y",
-          "params": {
-            "source": "output = vec2(w2.x, w3.y);"
-          },
-          "inputs": [
-            {
-              "id": "dynamic_1770734745692_1",
-              "name": "w2",
-              "type": "vector2"
-            },
-            {
-              "id": "dynamic_1770734763076_2",
-              "name": "w3",
-              "type": "vector2"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "vector2"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1770734745692_1",
-              "label": "w2",
-              "variableName": "w2",
-              "type": "vector2"
-            },
-            {
-              "portId": "dynamic_1770734763076_2",
-              "label": "w3",
-              "variableName": "w3",
-              "type": "vector2"
-            }
-          ]
-        },
-        {
           "id": "GroupInstance_102",
           "type": "GroupInstance",
           "position": {
             "x": 100,
-            "y": -300
+            "y": -340
           },
           "width": 160,
           "label": "Group",
@@ -2031,7 +1967,7 @@
               "variableName": "xy",
               "type": "vector2",
               "sourceBinding": {
-                "nodeId": "MathClosure_100",
+                "nodeId": "MathClosure_106",
                 "outputPortId": "output",
                 "outputLabel": "Output"
               }
@@ -2082,7 +2018,7 @@
               "variableName": "xy",
               "type": "vector2",
               "sourceBinding": {
-                "nodeId": "MathClosure_101",
+                "nodeId": "MathClosure_107",
                 "outputPortId": "output",
                 "outputLabel": "Output"
               }
@@ -2100,7 +2036,7 @@
           "type": "GroupInstance",
           "position": {
             "x": 100,
-            "y": -60
+            "y": -20
           },
           "width": 160,
           "label": "Group",
@@ -2133,7 +2069,7 @@
               "variableName": "xy",
               "type": "vector2",
               "sourceBinding": {
-                "nodeId": "MathClosure_101",
+                "nodeId": "MathClosure_108",
                 "outputPortId": "output",
                 "outputLabel": "Output"
               }
@@ -2145,31 +2081,271 @@
               "type": "float"
             }
           ]
+        },
+        {
+          "id": "MathClosure_105",
+          "type": "MathClosure",
+          "position": {
+            "x": -200,
+            "y": -500
+          },
+          "width": 240,
+          "label": "w2.x w2.y",
+          "params": {
+            "source": "output = vec2(w[2].x, w[2].y);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738050569_1",
+              "name": "w",
+              "type": "vector2[]"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738050569_1",
+              "label": "w",
+              "variableName": "w",
+              "type": "vector2[]",
+              "sourceBinding": {
+                "nodeId": "MathClosure_109",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_106",
+          "type": "MathClosure",
+          "position": {
+            "x": -200,
+            "y": -340
+          },
+          "width": 240,
+          "label": "w3.x w2.y",
+          "params": {
+            "source": "output = vec2(w[3].x, w[2].y);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738050569_1",
+              "name": "w",
+              "type": "vector2[]"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738050569_1",
+              "label": "w",
+              "variableName": "w",
+              "type": "vector2[]",
+              "sourceBinding": {
+                "nodeId": "MathClosure_109",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_107",
+          "type": "MathClosure",
+          "position": {
+            "x": -200,
+            "y": -180
+          },
+          "width": 240,
+          "label": "w2.x w3.y",
+          "params": {
+            "source": "output = vec2(w[2].x, w[3].y);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738050569_1",
+              "name": "w",
+              "type": "vector2[]"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738050569_1",
+              "label": "w",
+              "variableName": "w",
+              "type": "vector2[]",
+              "sourceBinding": {
+                "nodeId": "MathClosure_109",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_108",
+          "type": "MathClosure",
+          "position": {
+            "x": -200,
+            "y": -20
+          },
+          "width": 240,
+          "label": "w3.x w3.y",
+          "params": {
+            "source": "output = vec2(w[3].x, w[3].y);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738050569_1",
+              "name": "w",
+              "type": "vector2[]"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738050569_1",
+              "label": "w",
+              "variableName": "w",
+              "type": "vector2[]",
+              "sourceBinding": {
+                "nodeId": "MathClosure_109",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_109",
+          "type": "MathClosure",
+          "position": {
+            "x": -580,
+            "y": -420
+          },
+          "width": 321,
+          "label": "w",
+          "params": {
+            "source": "vec2 d     = dc * scale - 0.5;\nvec2 c     = floor(d);\nvec2 x     = c - d + 1.0;\nvec2 X     = d - c;\nvec2 x3    = x * x * x;\nvec2 coeff = 0.5 * x * x + 0.5 * x + 0.166667;\nvec2 w1   = -0.333333 * x3 + coeff;\nvec2 w2   = 1.0 - w1;\nvec2 o1   = (-0.5 * x3 + coeff) / w1 + c - 0.5;\nvec2 o2   = (X * X * X / 6.0) / w2 + c + 1.5;\n\noutput = vec2[4](w1, w2, o1, o2);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738325519_1",
+              "name": "dc",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1770738373654_2",
+              "name": "scale",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2[]"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738325519_1",
+              "label": "dc",
+              "variableName": "dc",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "GeoFragcoord_110",
+                "outputPortId": "xy",
+                "outputLabel": "XY"
+              }
+            },
+            {
+              "portId": "dynamic_1770738373654_2",
+              "label": "scale",
+              "variableName": "scale",
+              "type": "float",
+              "sourceBinding": {
+                "nodeId": "MathClosure_111",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "GeoFragcoord_110",
+          "type": "GeoFragcoord",
+          "position": {
+            "x": -820,
+            "y": -420
+          },
+          "width": 160,
+          "label": "Geo Fragcoord",
+          "params": {}
+        },
+        {
+          "id": "MathClosure_111",
+          "type": "MathClosure",
+          "position": {
+            "x": -820,
+            "y": -360
+          },
+          "width": 222,
+          "label": "scale",
+          "params": {
+            "source": "output = 1.0 / pow(2.0, level);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1770738419422_1",
+              "name": "level",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "float"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1770738419422_1",
+              "label": "level",
+              "variableName": "level",
+              "type": "float"
+            }
+          ]
         }
       ],
       "connections": [
-        {
-          "id": "edge_7",
-          "from": {
-            "nodeId": "MathClosure_100",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "GroupInstance_102",
-            "portId": "in_0"
-          }
-        },
-        {
-          "id": "edge_8",
-          "from": {
-            "nodeId": "MathClosure_101",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "GroupInstance_103",
-            "portId": "in_0"
-          }
-        },
         {
           "id": "edge_10",
           "from": {
@@ -2213,77 +2389,135 @@
             "nodeId": "MathClosure_99",
             "portId": "dynamic_1770734651176_8"
           }
-        }
-      ],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "MathClosure_99",
-            "portId": "dynamic_1770734445508_1"
-          }
         },
         {
-          "groupPortId": "in_1",
-          "to": {
-            "nodeId": "MathClosure_99",
-            "portId": "dynamic_1770734447048_2"
-          }
-        },
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_100",
-            "portId": "dynamic_1770734745692_1"
-          }
-        },
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_101",
-            "portId": "dynamic_1770734745692_1"
-          }
-        },
-        {
-          "groupPortId": "in_2",
+          "id": "edge_17",
+          "from": {
+            "nodeId": "MathClosure_105",
+            "portId": "output"
+          },
           "to": {
             "nodeId": "GroupInstance_97",
             "portId": "in_0"
           }
         },
         {
-          "groupPortId": "in_3",
+          "id": "edge_18",
+          "from": {
+            "nodeId": "MathClosure_106",
+            "portId": "output"
+          },
           "to": {
-            "nodeId": "MathClosure_101",
-            "portId": "dynamic_1770734763076_2"
+            "nodeId": "GroupInstance_102",
+            "portId": "in_0"
           }
         },
         {
-          "groupPortId": "in_3",
+          "id": "edge_19",
+          "from": {
+            "nodeId": "MathClosure_107",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "GroupInstance_103",
+            "portId": "in_0"
+          }
+        },
+        {
+          "id": "edge_20",
+          "from": {
+            "nodeId": "MathClosure_108",
+            "portId": "output"
+          },
           "to": {
             "nodeId": "GroupInstance_104",
             "portId": "in_0"
           }
         },
         {
-          "groupPortId": "in_3",
+          "id": "edge_21",
+          "from": {
+            "nodeId": "GeoFragcoord_110",
+            "portId": "xy"
+          },
           "to": {
-            "nodeId": "MathClosure_100",
-            "portId": "dynamic_1770734763076_2"
+            "nodeId": "MathClosure_109",
+            "portId": "dynamic_1770738325519_1"
           }
         },
         {
-          "groupPortId": "in_4",
+          "id": "edge_22",
+          "from": {
+            "nodeId": "MathClosure_109",
+            "portId": "output"
+          },
           "to": {
-            "nodeId": "GroupInstance_103",
-            "portId": "in_1"
+            "nodeId": "MathClosure_105",
+            "portId": "dynamic_1770738050569_1"
           }
         },
         {
+          "id": "edge_23",
+          "from": {
+            "nodeId": "MathClosure_109",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "MathClosure_106",
+            "portId": "dynamic_1770738050569_1"
+          }
+        },
+        {
+          "id": "edge_24",
+          "from": {
+            "nodeId": "MathClosure_109",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "MathClosure_107",
+            "portId": "dynamic_1770738050569_1"
+          }
+        },
+        {
+          "id": "edge_25",
+          "from": {
+            "nodeId": "MathClosure_109",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "MathClosure_108",
+            "portId": "dynamic_1770738050569_1"
+          }
+        },
+        {
+          "id": "edge_27",
+          "from": {
+            "nodeId": "MathClosure_111",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "MathClosure_109",
+            "portId": "dynamic_1770738373654_2"
+          }
+        },
+        {
+          "id": "edge_28",
+          "from": {
+            "nodeId": "MathClosure_109",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "MathClosure_99",
+            "portId": "dynamic_1770734447048_2"
+          }
+        }
+      ],
+      "inputBindings": [
+        {
           "groupPortId": "in_4",
           "to": {
-            "nodeId": "GroupInstance_104",
-            "portId": "in_1"
+            "nodeId": "MathClosure_111",
+            "portId": "dynamic_1770738419422_1"
           }
         },
         {
@@ -2297,6 +2531,20 @@
           "groupPortId": "in_4",
           "to": {
             "nodeId": "GroupInstance_102",
+            "portId": "in_1"
+          }
+        },
+        {
+          "groupPortId": "in_4",
+          "to": {
+            "nodeId": "GroupInstance_103",
+            "portId": "in_1"
+          }
+        },
+        {
+          "groupPortId": "in_4",
+          "to": {
+            "nodeId": "GroupInstance_104",
             "portId": "in_1"
           }
         }
