@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-10T19:01:24.516Z",
-    "modified": "2026-02-10T19:01:24.516Z"
+    "created": "2026-02-10T19:34:51.533Z",
+    "modified": "2026-02-10T19:34:51.533Z"
   },
   "nodes": [
     {
@@ -52,7 +52,7 @@
       "id": "ImageFile_5",
       "type": "ImageFile",
       "position": {
-        "x": 660,
+        "x": 680,
         "y": -760
       },
       "width": 192,
@@ -102,7 +102,36 @@
       "label": "Kernel",
       "params": {
         "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n",
+        "manualKernelWidth": 5,
+        "manualKernelHeight": 5,
+        "manualKernelValues": [
+          0.0004651421056955934,
+          -0.0017784915607895358,
+          -0.018940454487875416,
+          -0.0017784915607895354,
+          0.00046514210569559343,
+          -0.0017784915607895358,
+          0.00680014170523106,
+          0.07241967143316355,
+          0.006800141705231059,
+          -0.001778491560789536,
+          -0.018940454487875416,
+          0.07241967143316355,
+          0.7712499294614571,
+          0.07241967143316355,
+          -0.018940454487875413,
+          -0.0017784915607895364,
+          0.006800141705231059,
+          0.0724196714331636,
+          0.006800141705231062,
+          -0.0017784915607895358,
+          0.00046514210569559343,
+          -0.001778491560789536,
+          -0.018940454487875416,
+          -0.001778491560789535,
+          0.00046514210569559343
+        ]
       }
     },
     {
