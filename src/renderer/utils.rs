@@ -198,6 +198,19 @@ pub fn coerce_to_type(x: TypedExpr, target: ValueType) -> Result<TypedExpr> {
         return Ok(x);
     }
 
+    // Array coercion: arrays are only compatible with same element type.
+    // An unsized target (len==0) accepts any matching-element source.
+    if x.ty.is_array() || target.is_array() {
+        if x.ty.is_array()
+            && target.is_array()
+            && x.ty.array_element_type() == target.array_element_type()
+            && (target.array_len() == 0 || x.ty.array_len() == target.array_len())
+        {
+            return Ok(x); // keep source type with actual size
+        }
+        bail!("cannot coerce between {:?} and {:?}", x.ty, target);
+    }
+
     // Textures are opaque resources, not value expressions.
     if x.ty == ValueType::Texture2D || target == ValueType::Texture2D {
         bail!("cannot coerce between {:?} and {:?}", x.ty, target);

@@ -111,6 +111,8 @@ fn baked_from_json(ty: ValueType, v: &serde_json::Value) -> Result<BakedValue> {
 
         // DataParse outputs are baked CPU-side; GPU resources are not supported here.
         ValueType::Texture2D => bail!("cannot bake DataParse output type 'texture'"),
+        _ if ty.is_array() => bail!("cannot bake DataParse output type 'array'"),
+        _ => unreachable!(),
     }
 }
 
@@ -201,6 +203,8 @@ pub(crate) fn bake_data_parse_nodes(
                     ValueType::Vec3 => BakedValue::Vec3([0.0, 0.0, 0.0]),
                     ValueType::Vec4 => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
                     ValueType::Texture2D => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
+                    // Array types are not used in DataParse baking.
+                    _ => BakedValue::Vec4([0.0, 0.0, 0.0, 0.0]),
                 });
 
                 baked

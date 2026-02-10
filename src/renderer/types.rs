@@ -20,6 +20,13 @@ pub enum ValueType {
     Vec2,
     Vec3,
     Vec4,
+    /// Fixed-size arrays of scalar/vector elements.
+    /// Used by MathClosure for `float[]`, `vector2[]`, etc. port types.
+    /// The `usize` stores the array length (0 = unsized/unknown).
+    F32Array(usize),
+    Vec2Array(usize),
+    Vec3Array(usize),
+    Vec4Array(usize),
 }
 
 /// Graph input field kinds used for per-pass graph uniforms/storage buffers.
@@ -185,6 +192,8 @@ impl PassOutputRegistry {
 
 impl ValueType {
     /// Returns the WGSL type name for this value type.
+    ///
+    /// Panics on array types — use [`wgsl_type_string`] instead.
     pub fn wgsl(self) -> &'static str {
         match self {
             ValueType::F32 => "f32",
@@ -195,9 +204,12 @@ impl ValueType {
             ValueType::Vec2 => "vec2f",
             ValueType::Vec3 => "vec3f",
             ValueType::Vec4 => "vec4f",
+            _ if self.is_array() => panic!("array types must use wgsl_type_string()"),
+            _ => unreachable!(),
         }
     }
 
+    /// Panics on array types — not supported in the naga GLSL pipeline.
     pub fn glsl(self) -> &'static str {
         match self {
             ValueType::F32 => "float",
@@ -208,6 +220,57 @@ impl ValueType {
             ValueType::Vec2 => "vec2",
             ValueType::Vec3 => "vec3",
             ValueType::Vec4 => "vec4",
+            _ if self.is_array() => panic!("array types are not supported in GLSL path"),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Returns the WGSL type name as an owned `String`, supporting all types including arrays.
+    pub fn wgsl_type_string(self) -> String {
+        match self {
+            ValueType::F32Array(n) => format!("array<f32, {n}>"),
+            ValueType::Vec2Array(n) => format!("array<vec2f, {n}>"),
+            ValueType::Vec3Array(n) => format!("array<vec3f, {n}>"),
+            ValueType::Vec4Array(n) => format!("array<vec4f, {n}>"),
+            _ => self.wgsl().to_string(),
+        }
+    }
+
+    /// True if this is a fixed-size array type.
+    pub fn is_array(self) -> bool {
+        matches!(
+            self,
+            Self::F32Array(_) | Self::Vec2Array(_) | Self::Vec3Array(_) | Self::Vec4Array(_)
+        )
+    }
+
+    /// Returns the element type for an array, or `None` for non-array types.
+    pub fn array_element_type(self) -> Option<ValueType> {
+        match self {
+            Self::F32Array(_) => Some(Self::F32),
+            Self::Vec2Array(_) => Some(Self::Vec2),
+            Self::Vec3Array(_) => Some(Self::Vec3),
+            Self::Vec4Array(_) => Some(Self::Vec4),
+            _ => None,
+        }
+    }
+
+    /// Returns the array length (0 for non-array types).
+    pub fn array_len(self) -> usize {
+        match self {
+            Self::F32Array(n) | Self::Vec2Array(n) | Self::Vec3Array(n) | Self::Vec4Array(n) => n,
+            _ => 0,
+        }
+    }
+
+    /// Returns a copy with the given array length.
+    pub fn with_array_len(self, len: usize) -> ValueType {
+        match self {
+            Self::F32Array(_) => Self::F32Array(len),
+            Self::Vec2Array(_) => Self::Vec2Array(len),
+            Self::Vec3Array(_) => Self::Vec3Array(len),
+            Self::Vec4Array(_) => Self::Vec4Array(len),
+            _ => self,
         }
     }
 }

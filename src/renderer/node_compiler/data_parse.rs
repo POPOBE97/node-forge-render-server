@@ -32,6 +32,8 @@ fn default_value_for(ty: ValueType) -> TypedExpr {
         ValueType::Vec2 => TypedExpr::new("vec2f(0.0, 0.0)", ValueType::Vec2),
         ValueType::Vec3 => TypedExpr::new("vec3f(0.0, 0.0, 0.0)", ValueType::Vec3),
         ValueType::Vec4 => TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)", ValueType::Vec4),
+        _ if ty.is_array() => unreachable!("DataParse cannot produce array values"),
+        _ => unreachable!(),
     }
 }
 
@@ -129,6 +131,8 @@ where
             ValueType::Vec4,
         ),
         ValueType::Texture2D => unreachable!("DataParse cannot produce Texture2D values"),
+        _ if out_ty.is_array() => unreachable!("DataParse cannot produce array values"),
+        _ => unreachable!(),
     };
 
     Ok(out)
