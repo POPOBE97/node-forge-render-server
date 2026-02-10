@@ -66,13 +66,22 @@ fn compute_node_signature(
         s.hash(&mut hasher);
     }
 
-    // 3) Input connections, sorted by to_port_id for determinism
-    // Collect all input ports for this node
-    let mut input_ports: Vec<&str> = node.inputs.iter().map(|p| p.id.as_str()).collect();
+    // 3) Input connections, sorted by to_port_id for determinism.
+    // Collect ports from BOTH the node's declared inputs AND the actual incoming
+    // connections. Schema-defined ports (e.g. RenderPass.geometry, .material) may
+    // not appear in the DSL node's `inputs` array, so relying only on `node.inputs`
+    // would miss them and cause structurally different passes to look identical.
+    let mut input_ports: HashSet<String> = node.inputs.iter().map(|p| p.id.clone()).collect();
+    for ((to_nid, to_port), _) in incoming.iter() {
+        if to_nid == node_id {
+            input_ports.insert(to_port.clone());
+        }
+    }
+    let mut input_ports: Vec<String> = input_ports.into_iter().collect();
     input_ports.sort();
 
-    for port_id in input_ports {
-        let key = (node_id.to_string(), port_id.to_string());
+    for port_id in &input_ports {
+        let key = (node_id.to_string(), port_id.clone());
         if let Some(sources) = incoming.get(&key) {
             // Sort sources for determinism (usually only one per port)
             let mut sorted_sources: Vec<&(String, String)> = sources.iter().collect();
