@@ -3,6 +3,7 @@ mod composite;
 mod data_parse;
 mod group_expand;
 mod image_inline;
+mod pass_dedup;
 mod pipeline;
 mod types;
 

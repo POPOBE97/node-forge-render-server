@@ -93,10 +93,21 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
 
         // 1) Clone group nodes into main scene.
         // Also rewrite any editor metadata bindings that reference group-local node IDs.
+        // Tag each cloned node with dedup metadata so the pass dedup stage can identify
+        // structurally identical subgraphs originating from the same group definition.
         for mut n in group.nodes.clone() {
+            let original_id = n.id.clone();
             if let Some(new_id) = node_id_map.get(&n.id).cloned() {
                 n.id = new_id;
             }
+            n.params.insert(
+                "__dedup_group_id".to_string(),
+                serde_json::Value::String(group_id.to_string()),
+            );
+            n.params.insert(
+                "__dedup_original_id".to_string(),
+                serde_json::Value::String(original_id),
+            );
             rewrite_node_input_bindings(&mut n, &node_id_map);
             scene.nodes.push(n);
         }

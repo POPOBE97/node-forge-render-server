@@ -16,6 +16,7 @@ use super::{
     data_parse::bake_data_parse_nodes,
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
+    pass_dedup::dedup_identical_passes,
     types::{PreparedScene, ScenePrepReport},
 };
 
@@ -29,6 +30,18 @@ pub(crate) fn prepare_scene_with_report(
     // Expand group instances before any filtering/validation.
     let mut expanded = input.clone();
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
+
+    // Deduplicate identical pass subgraphs across group instances.
+    // This must run after expansion but before upstream reachability filtering
+    // so that orphaned upstream nodes from removed duplicates are cleaned up.
+    let dedup_report = dedup_identical_passes(&mut expanded);
+    if dedup_report.deduped_passes > 0 {
+        eprintln!(
+            "pass dedup: removed {} duplicate passes, {} orphaned nodes",
+            dedup_report.deduped_passes,
+            dedup_report.removed_nodes,
+        );
+    }
 
     // 1) Locate the RenderTarget-category node. Without it, the graph has no "main" entry.
     let scheme = schema::load_default_scheme()?;
