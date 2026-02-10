@@ -49,7 +49,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Map destination pixel to source integer grid via ceil, matching Godot's
     // downsample shader: center_xy = ceil(UV * src_resolution).
     // With UV = dst_xy / dst_dims: center_xy = ceil(dst_xy * src_dims / dst_dims).
-    let center_xy = ceil(dst_xy * src_dims / dst_dims);
+    let center_xy = dst_xy * src_dims / dst_dims;
 
   let kw: i32 = 3;
   let kh: i32 = 3;

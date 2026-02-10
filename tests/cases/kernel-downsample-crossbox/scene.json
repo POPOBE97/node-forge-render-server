@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-09T08:04:09.198Z",
-    "modified": "2026-02-09T08:04:09.198Z"
+    "created": "2026-02-10T19:01:24.516Z",
+    "modified": "2026-02-10T19:01:24.516Z"
   },
   "nodes": [
     {
@@ -52,8 +52,8 @@
       "id": "ImageFile_5",
       "type": "ImageFile",
       "position": {
-        "x": 420,
-        "y": -460
+        "x": 660,
+        "y": -760
       },
       "width": 192,
       "label": "Image File",
@@ -73,8 +73,8 @@
       "id": "ImageTexture_6",
       "type": "ImageTexture",
       "position": {
-        "x": 660,
-        "y": -460
+        "x": 900,
+        "y": -760
       },
       "width": 192,
       "label": "Image Texture",
@@ -82,49 +82,13 @@
         "path": "",
         "interpolation": "linear",
         "extension": "repeat",
+        "addressModeU": "mirror-repeat",
+        "addressModeV": "mirror-repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
         "encoderSpace": "srgb",
         "alphaMode": "straight"
-      }
-    },
-    {
-      "id": "RenderPass_7",
-      "type": "RenderPass",
-      "position": {
-        "x": 920,
-        "y": -500
-      },
-      "width": 160,
-      "label": "Render Pass",
-      "params": {
-        "name": "Render Pass",
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
-      }
-    },
-    {
-      "id": "Rect2DGeometry_8",
-      "type": "Rect2DGeometry",
-      "position": {
-        "x": 660,
-        "y": -660
-      },
-      "width": 160,
-      "label": "2D Rect",
-      "params": {
-        "radius": 0,
-        "smooth": 1,
-        "size": {
-          "x": 1080,
-          "y": 2400
-        },
-        "position": {
-          "x": 540,
-          "y": 1200
-        }
       }
     },
     {
@@ -183,28 +147,6 @@
       }
     },
     {
-      "id": "edge_6",
-      "from": {
-        "nodeId": "ImageTexture_6",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "RenderPass_7",
-        "portId": "material"
-      }
-    },
-    {
-      "id": "edge_7",
-      "from": {
-        "nodeId": "Rect2DGeometry_8",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "RenderPass_7",
-        "portId": "geometry"
-      }
-    },
-    {
       "id": "edge_9",
       "from": {
         "nodeId": "Kernel_9",
@@ -213,17 +155,6 @@
       "to": {
         "nodeId": "Downsample_10",
         "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_11",
-      "from": {
-        "nodeId": "RenderPass_7",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Downsample_10",
-        "portId": "source"
       }
     },
     {
@@ -246,6 +177,17 @@
       "to": {
         "nodeId": "ImageTexture_6",
         "portId": "image"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "ImageTexture_6",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "source"
       }
     }
   ],

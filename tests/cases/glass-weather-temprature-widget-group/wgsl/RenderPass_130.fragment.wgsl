@@ -44,6 +44,10 @@ struct GraphInputs {
     node_GroupInstance_135_Vector3Input_105_1bad8802: vec4f,
     // Node: GroupInstance_135/Vector3Input_80
     node_GroupInstance_135_Vector3Input_80_cd4f4a91: vec4f,
+    // Node: Vector2Input_144
+    node_Vector2Input_144_b8cd7189: vec4f,
+    // Node: Vector2Input_147
+    node_Vector2Input_147_d1d27189: vec4f,
 };
 
 @group(0) @binding(2)
