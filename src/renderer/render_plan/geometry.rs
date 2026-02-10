@@ -86,6 +86,35 @@ fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
         .or_else(|| v.as_u64().map(|x| x as f32))
 }
 
+/// Read CPU values from a connected Vector2Input node.
+/// Returns the (x, y) values if the port is connected to a Vector2Input node.
+/// Returns Ok(None) for dangling connections (target node not found) or non-Vector2Input sources.
+fn get_vec2_from_connected_vector2input(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node: &crate::dsl::Node,
+    port_id: &str,
+) -> Result<Option<[f32; 2]>> {
+    let Some(conn) = incoming_connection(scene, &node.id, port_id) else {
+        return Ok(None);
+    };
+
+    // Handle dangling connection: target node not found.
+    let Ok(from_node) = find_node(nodes_by_id, &conn.from.node_id) else {
+        return Ok(None);
+    };
+
+    if from_node.node_type != "Vector2Input" {
+        // Not a Vector2Input; caller should fallback to other resolution methods.
+        return Ok(None);
+    }
+
+    // Read the x/y values from the Vector2Input node's params.
+    let x = cpu_num_f32(scene, nodes_by_id, from_node, "x", 0.0)?;
+    let y = cpu_num_f32(scene, nodes_by_id, from_node, "y", 0.0)?;
+    Ok(Some([x, y]))
+}
+
 fn parse_inline_vec2(node: &crate::dsl::Node, key: &str) -> Result<Option<[f32; 2]>> {
     let Some(v) = node.params.get(key) else {
         return Ok(None);
@@ -181,20 +210,17 @@ fn resolve_rect2d_geometry_metrics(
     let default_h = render_target_size[1].max(1.0);
     let default_position = [default_w * 0.5, default_h * 0.5];
 
-    // Preferred (new): vec2 inputs size/position.
-    // Back-compat (old): scalar width/height/x/y.
-    let has_size_conn = incoming_connection(scene, &node.id, "size").is_some();
-    let has_pos_conn = incoming_connection(scene, &node.id, "position").is_some();
-
     let mut dyn_inputs: Option<Rect2DDynamicInputs> = None;
-    let mut vertex_inline_stmts: Vec<String> = Vec::new();
-    let mut vertex_wgsl_decls = String::new();
+    let vertex_inline_stmts: Vec<String> = Vec::new();
+    let vertex_wgsl_decls = String::new();
     let mut vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind> =
         std::collections::BTreeMap::new();
-    let mut vertex_uses_instance_index = false;
+    let vertex_uses_instance_index = false;
 
-    // If Rect2DGeometry.position/size are connected, only allow Vector2Input nodes.
-    // We route those via the existing GraphInputs buffer mechanism (graph_inputs.<field>.xy).
+    // If Rect2DGeometry.position/size are connected to Vector2Input nodes, route them via
+    // the GraphInputs buffer mechanism (graph_inputs.<field>.xy).
+    // If the connection is dangling (target node not found), fall back to fullscreen geometry.
+    // If connected to wrong node type, bail with an error.
     let mut maybe_dyn_inputs = Rect2DDynamicInputs {
         position_expr: None,
         size_expr: None,
@@ -208,9 +234,13 @@ fn resolve_rect2d_geometry_metrics(
         let Some(conn) = incoming_connection(scene, &node.id, port_id) else {
             continue;
         };
-        has_any_dyn = true;
 
-        let from_node = find_node(nodes_by_id, &conn.from.node_id)?;
+        // Check if the target node exists; if not, treat as dangling and use fullscreen fallback.
+        let Ok(from_node) = find_node(nodes_by_id, &conn.from.node_id) else {
+            // Dangling connection: target node not found. Fall back to fullscreen geometry.
+            continue;
+        };
+
         if from_node.node_type != "Vector2Input" {
             bail!(
                 "{}.{} only supports Vector2Input connection; got {} ({})",
@@ -230,6 +260,8 @@ fn resolve_rect2d_geometry_metrics(
             );
         }
 
+        // Valid Vector2Input connection.
+        has_any_dyn = true;
         vertex_graph_input_kinds
             .entry(conn.from.node_id.clone())
             .or_insert(GraphFieldKind::Vec2);
@@ -244,35 +276,17 @@ fn resolve_rect2d_geometry_metrics(
         dyn_inputs = Some(maybe_dyn_inputs);
     }
 
-    // CPU metrics:
-    // - If an input is connected (dynamic), ignore the connection for CPU sizing/position.
-    // - Otherwise, use the authored inline vec2 or legacy scalar params.
-    let size = if has_size_conn {
-        parse_inline_vec2(node, "size")?
-    } else {
-        resolve_rect_vec2_input(scene, nodes_by_id, node, "size", material_ctx)?
-    };
-    let position = if has_pos_conn {
-        parse_inline_vec2(node, "position")?
-    } else {
-        resolve_rect_vec2_input(scene, nodes_by_id, node, "position", material_ctx)?
-    };
+    // CPU metrics for texture allocation:
+    // - If an input is connected to a valid Vector2Input, read the actual x/y values from that node.
+    // - Otherwise (no connection, dangling, or connected to non-Vector2Input), use fullscreen geometry.
+    // Note: Inline params (params.size/params.position) are IGNORED for CPU geometry allocation
+    // when the port is intended for dynamic input. This ensures predictable fullscreen fallback.
+    let size = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "size")?;
+    let position = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "position")?;
 
-    let size = if let Some(size) = size {
-        size
-    } else {
-        let geo_w_u = cpu_num_u32_min_1(scene, nodes_by_id, node, "width", default_w as u32)?;
-        let geo_h_u = cpu_num_u32_min_1(scene, nodes_by_id, node, "height", geo_w_u)?;
-        [geo_w_u as f32, geo_h_u as f32]
-    };
-
-    let position = if let Some(position) = position {
-        position
-    } else {
-        let geo_x = cpu_num_f32(scene, nodes_by_id, node, "x", default_position[0])?;
-        let geo_y = cpu_num_f32(scene, nodes_by_id, node, "y", default_position[1])?;
-        [geo_x, geo_y]
-    };
+    // Fallback to fullscreen geometry: size = render target size, position = center.
+    let size = size.unwrap_or([default_w, default_h]);
+    let position = position.unwrap_or(default_position);
 
     let size = [size[0].max(1.0), size[1].max(1.0)];
 

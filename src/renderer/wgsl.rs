@@ -1392,10 +1392,10 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
     // Fragment position is pixel-centered, with top-left origin.
     let dst_xy = vec2f(in.position.xy);
     
-    // Match Godot: center_xy = ceil(UV * src_resolution)
-    // UV = dst_xy / dst_dims (normalized), so:
-    // center_xy = ceil(dst_xy / dst_dims * src_dims) = ceil(dst_xy * src_dims / dst_dims)
-    let center_xy = ceil(dst_xy * src_dims / dst_dims);
+    // Map destination pixel to source integer grid via ceil, matching Godot's
+    // downsample shader: center_xy = ceil(UV * src_resolution).
+    // With UV = dst_xy / dst_dims: center_xy = ceil(dst_xy * src_dims / dst_dims).
+    let center_xy = dst_xy * src_dims / dst_dims;
 
   let kw: i32 = {w};
   let kh: i32 = {h};
@@ -1408,11 +1408,12 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
         for (var x: i32 = 0; x < kw; x = x + 1) {{
             let ix = x - half_w;
             let iy = y - half_h;
-            // Offset from integer center
+            // Offset from integer center.
             let sample_xy = center_xy + vec2f(f32(ix), f32(iy));
-            // Match Godot's bilinear: sample at (xy - 0.5) in texel-center space
-            // which means UV = (sample_xy - 0.5) / src_dims
-            let uv = (sample_xy - vec2f(0.5, 0.5)) / src_dims;
+            // Sample at integer-coord / src_dims (texel boundary).
+            // With a linear sampler this gives a proper 2x2 bilinear average,
+            // matching Godot's manual bilinear() at integer coordinates.
+            let uv = sample_xy / src_dims;
 
             let idx: i32 = y * kw + x;
             sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0) * k[u32(idx)];
