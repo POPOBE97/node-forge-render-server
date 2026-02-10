@@ -58,6 +58,8 @@ struct GraphInputs {
     node_GroupInstance_99_GroupInstance_104_Vector2Input_89_6b00a0e9: vec4f,
     // Node: GroupInstance_99/GroupInstance_97/Vector2Input_89
     node_GroupInstance_99_GroupInstance_97_Vector2Input_89_9c3bbd47: vec4f,
+    // Node: Vector2Input_115
+    node_Vector2Input_115_82666989: vec4f,
 };
 
 @group(0) @binding(2)
@@ -66,382 +68,46 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_111_RenderPass_85: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_RenderPass_85: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_111_RenderPass_85: sampler;
+var pass_samp_sys_group_sampleFromMipmap_RenderPass_85: sampler;
 
 @group(1) @binding(2)
-var pass_tex_GroupInstance_111_Downsample_mip1: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip1: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp_GroupInstance_111_Downsample_mip1: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip1: sampler;
 
 @group(1) @binding(4)
-var pass_tex_GroupInstance_111_Downsample_mip2: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip2: texture_2d<f32>;
 
 @group(1) @binding(5)
-var pass_samp_GroupInstance_111_Downsample_mip2: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip2: sampler;
 
 @group(1) @binding(6)
-var pass_tex_GroupInstance_111_Downsample_mip3: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip3: texture_2d<f32>;
 
 @group(1) @binding(7)
-var pass_samp_GroupInstance_111_Downsample_mip3: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip3: sampler;
 
 @group(1) @binding(8)
-var pass_tex_GroupInstance_111_Downsample_mip4: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip4: texture_2d<f32>;
 
 @group(1) @binding(9)
-var pass_samp_GroupInstance_111_Downsample_mip4: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip4: sampler;
 
 @group(1) @binding(10)
-var pass_tex_GroupInstance_111_Downsample_mip5: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip5: texture_2d<f32>;
 
 @group(1) @binding(11)
-var pass_samp_GroupInstance_111_Downsample_mip5: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip5: sampler;
 
 @group(1) @binding(12)
-var pass_tex_GroupInstance_111_Downsample_mip6: texture_2d<f32>;
+var pass_tex_sys_group_sampleFromMipmap_Downsample_mip6: texture_2d<f32>;
 
 @group(1) @binding(13)
-var pass_samp_GroupInstance_111_Downsample_mip6: sampler;
-
-@group(1) @binding(14)
-var pass_tex_GroupInstance_99_GroupInstance_97_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(15)
-var pass_samp_GroupInstance_99_GroupInstance_97_RenderPass_85: sampler;
-
-@group(1) @binding(16)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(17)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip1: sampler;
-
-@group(1) @binding(18)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(19)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip2: sampler;
-
-@group(1) @binding(20)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(21)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip3: sampler;
-
-@group(1) @binding(22)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(23)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip4: sampler;
-
-@group(1) @binding(24)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(25)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip5: sampler;
-
-@group(1) @binding(26)
-var pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(27)
-var pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip6: sampler;
-
-@group(1) @binding(28)
-var pass_tex_GroupInstance_99_GroupInstance_102_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(29)
-var pass_samp_GroupInstance_99_GroupInstance_102_RenderPass_85: sampler;
-
-@group(1) @binding(30)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(31)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip1: sampler;
-
-@group(1) @binding(32)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(33)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip2: sampler;
-
-@group(1) @binding(34)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(35)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip3: sampler;
-
-@group(1) @binding(36)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(37)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip4: sampler;
-
-@group(1) @binding(38)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(39)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip5: sampler;
-
-@group(1) @binding(40)
-var pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(41)
-var pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip6: sampler;
-
-@group(1) @binding(42)
-var pass_tex_GroupInstance_99_GroupInstance_103_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(43)
-var pass_samp_GroupInstance_99_GroupInstance_103_RenderPass_85: sampler;
-
-@group(1) @binding(44)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(45)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip1: sampler;
-
-@group(1) @binding(46)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(47)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip2: sampler;
-
-@group(1) @binding(48)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(49)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip3: sampler;
-
-@group(1) @binding(50)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(51)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip4: sampler;
-
-@group(1) @binding(52)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(53)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip5: sampler;
-
-@group(1) @binding(54)
-var pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(55)
-var pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip6: sampler;
-
-@group(1) @binding(56)
-var pass_tex_GroupInstance_99_GroupInstance_104_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(57)
-var pass_samp_GroupInstance_99_GroupInstance_104_RenderPass_85: sampler;
-
-@group(1) @binding(58)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(59)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip1: sampler;
-
-@group(1) @binding(60)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(61)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip2: sampler;
-
-@group(1) @binding(62)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(63)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip3: sampler;
-
-@group(1) @binding(64)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(65)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip4: sampler;
-
-@group(1) @binding(66)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(67)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip5: sampler;
-
-@group(1) @binding(68)
-var pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(69)
-var pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip6: sampler;
-
-@group(1) @binding(70)
-var pass_tex_GroupInstance_114_GroupInstance_97_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(71)
-var pass_samp_GroupInstance_114_GroupInstance_97_RenderPass_85: sampler;
-
-@group(1) @binding(72)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(73)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip1: sampler;
-
-@group(1) @binding(74)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(75)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip2: sampler;
-
-@group(1) @binding(76)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(77)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip3: sampler;
-
-@group(1) @binding(78)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(79)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip4: sampler;
-
-@group(1) @binding(80)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(81)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip5: sampler;
-
-@group(1) @binding(82)
-var pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(83)
-var pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip6: sampler;
-
-@group(1) @binding(84)
-var pass_tex_GroupInstance_114_GroupInstance_102_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(85)
-var pass_samp_GroupInstance_114_GroupInstance_102_RenderPass_85: sampler;
-
-@group(1) @binding(86)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(87)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip1: sampler;
-
-@group(1) @binding(88)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(89)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip2: sampler;
-
-@group(1) @binding(90)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(91)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip3: sampler;
-
-@group(1) @binding(92)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(93)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip4: sampler;
-
-@group(1) @binding(94)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(95)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip5: sampler;
-
-@group(1) @binding(96)
-var pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(97)
-var pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip6: sampler;
-
-@group(1) @binding(98)
-var pass_tex_GroupInstance_114_GroupInstance_103_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(99)
-var pass_samp_GroupInstance_114_GroupInstance_103_RenderPass_85: sampler;
-
-@group(1) @binding(100)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(101)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip1: sampler;
-
-@group(1) @binding(102)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(103)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip2: sampler;
-
-@group(1) @binding(104)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(105)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip3: sampler;
-
-@group(1) @binding(106)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(107)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip4: sampler;
-
-@group(1) @binding(108)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(109)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip5: sampler;
-
-@group(1) @binding(110)
-var pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(111)
-var pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip6: sampler;
-
-@group(1) @binding(112)
-var pass_tex_GroupInstance_114_GroupInstance_104_RenderPass_85: texture_2d<f32>;
-
-@group(1) @binding(113)
-var pass_samp_GroupInstance_114_GroupInstance_104_RenderPass_85: sampler;
-
-@group(1) @binding(114)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip1: texture_2d<f32>;
-
-@group(1) @binding(115)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip1: sampler;
-
-@group(1) @binding(116)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip2: texture_2d<f32>;
-
-@group(1) @binding(117)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip2: sampler;
-
-@group(1) @binding(118)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip3: texture_2d<f32>;
-
-@group(1) @binding(119)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip3: sampler;
-
-@group(1) @binding(120)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip4: texture_2d<f32>;
-
-@group(1) @binding(121)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip4: sampler;
-
-@group(1) @binding(122)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip5: texture_2d<f32>;
-
-@group(1) @binding(123)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip5: sampler;
-
-@group(1) @binding(124)
-var pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip6: texture_2d<f32>;
-
-@group(1) @binding(125)
-var pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip6: sampler;
+var pass_samp_sys_group_sampleFromMipmap_Downsample_mip6: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -464,7 +130,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_111_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -476,7 +142,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -488,7 +154,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -500,7 +166,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -512,7 +178,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -524,7 +190,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -536,7 +202,7 @@ fn mc_GroupInstance_111_MathClosure_95_(uv: vec2<f32>, xy: vec2<f32>, level: f32
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_111_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -573,7 +239,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -585,7 +251,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -597,7 +263,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -609,7 +275,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -621,7 +287,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -633,7 +299,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -645,7 +311,7 @@ fn mc_GroupInstance_114_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -682,7 +348,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -694,7 +360,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -706,7 +372,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -718,7 +384,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -730,7 +396,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -742,7 +408,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -754,7 +420,7 @@ fn mc_GroupInstance_114_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -791,7 +457,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -803,7 +469,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -815,7 +481,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -827,7 +493,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -839,7 +505,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -851,7 +517,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -863,7 +529,7 @@ fn mc_GroupInstance_114_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -900,7 +566,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -912,7 +578,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -924,7 +590,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -936,7 +602,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -948,7 +614,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -960,7 +626,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -972,7 +638,7 @@ fn mc_GroupInstance_114_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -1090,7 +756,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -1102,7 +768,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -1114,7 +780,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -1126,7 +792,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -1138,7 +804,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -1150,7 +816,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -1162,7 +828,7 @@ fn mc_GroupInstance_99_GroupInstance_102_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -1199,7 +865,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -1211,7 +877,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -1223,7 +889,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -1235,7 +901,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -1247,7 +913,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -1259,7 +925,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -1271,7 +937,7 @@ fn mc_GroupInstance_99_GroupInstance_103_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -1308,7 +974,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -1320,7 +986,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -1332,7 +998,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -1344,7 +1010,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -1356,7 +1022,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -1368,7 +1034,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -1380,7 +1046,7 @@ fn mc_GroupInstance_99_GroupInstance_104_MathClosure_95_(uv: vec2<f32>, xy: vec2
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -1417,7 +1083,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
             let _e23: vec2<f32> = xy_1;
             let _e24: vec2<f32> = mip0_size_1;
             let _e28: f32 = level_1;
-            let _e32: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
+            let _e32: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(_e23, (_e24 / vec2(pow(2f, _e28))));
             output = _e32;
         }
     } else {
@@ -1429,7 +1095,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                 let _e45: vec2<f32> = xy_1;
                 let _e46: vec2<f32> = mip0_size_1;
                 let _e50: f32 = level_1;
-                let _e54: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
+                let _e54: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(_e45, (_e46 / vec2(pow(2f, _e50))));
                 output = _e54;
             }
         } else {
@@ -1441,7 +1107,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                     let _e67: vec2<f32> = xy_1;
                     let _e68: vec2<f32> = mip0_size_1;
                     let _e72: f32 = level_1;
-                    let _e76: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
+                    let _e76: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(_e67, (_e68 / vec2(pow(2f, _e72))));
                     output = _e76;
                 }
             } else {
@@ -1453,7 +1119,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                         let _e89: vec2<f32> = xy_1;
                         let _e90: vec2<f32> = mip0_size_1;
                         let _e94: f32 = level_1;
-                        let _e98: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
+                        let _e98: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(_e89, (_e90 / vec2(pow(2f, _e94))));
                         output = _e98;
                     }
                 } else {
@@ -1465,7 +1131,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                             let _e111: vec2<f32> = xy_1;
                             let _e112: vec2<f32> = mip0_size_1;
                             let _e116: f32 = level_1;
-                            let _e120: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
+                            let _e120: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(_e111, (_e112 / vec2(pow(2f, _e116))));
                             output = _e120;
                         }
                     } else {
@@ -1477,7 +1143,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                                 let _e133: vec2<f32> = xy_1;
                                 let _e134: vec2<f32> = mip0_size_1;
                                 let _e138: f32 = level_1;
-                                let _e142: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
+                                let _e142: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(_e133, (_e134 / vec2(pow(2f, _e138))));
                                 output = _e142;
                             }
                         } else {
@@ -1489,7 +1155,7 @@ fn mc_GroupInstance_99_GroupInstance_97_MathClosure_95_(uv: vec2<f32>, xy: vec2<
                                     let _e155: vec2<f32> = xy_1;
                                     let _e156: vec2<f32> = mip0_size_1;
                                     let _e160: f32 = level_1;
-                                    let _e164: vec4<f32> = sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
+                                    let _e164: vec4<f32> = sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(_e155, (_e156 / vec2(pow(2f, _e160))));
                                     output = _e164;
                                 }
                             } else {
@@ -1709,382 +1375,46 @@ fn mc_MathClosure_calculateMaskLinear(uv: vec2<f32>, xy: vec2<f32>, start_y: f32
     return _e81;
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip1, pass_samp_GroupInstance_111_Downsample_mip1, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip1, pass_samp_sys_group_sampleFromMipmap_Downsample_mip1, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip2, pass_samp_GroupInstance_111_Downsample_mip2, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip2, pass_samp_sys_group_sampleFromMipmap_Downsample_mip2, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip3, pass_samp_GroupInstance_111_Downsample_mip3, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip3, pass_samp_sys_group_sampleFromMipmap_Downsample_mip3, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip4, pass_samp_GroupInstance_111_Downsample_mip4, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip4, pass_samp_sys_group_sampleFromMipmap_Downsample_mip4, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip5, pass_samp_GroupInstance_111_Downsample_mip5, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip5, pass_samp_sys_group_sampleFromMipmap_Downsample_mip5, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_Downsample_mip6, pass_samp_GroupInstance_111_Downsample_mip6, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip6, pass_samp_sys_group_sampleFromMipmap_Downsample_mip6, uv_flipped);
 }
 
-fn sample_pass_GroupInstance_111_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
+fn sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
     let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_111_RenderPass_85, pass_samp_GroupInstance_111_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip1, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip2, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip3, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip4, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip5, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_Downsample_mip6, pass_samp_GroupInstance_114_GroupInstance_102_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_102_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_102_RenderPass_85, pass_samp_GroupInstance_114_GroupInstance_102_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip1, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip2, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip3, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip4, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip5, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_Downsample_mip6, pass_samp_GroupInstance_114_GroupInstance_103_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_103_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_103_RenderPass_85, pass_samp_GroupInstance_114_GroupInstance_103_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip1, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip2, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip3, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip4, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip5, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_Downsample_mip6, pass_samp_GroupInstance_114_GroupInstance_104_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_104_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_104_RenderPass_85, pass_samp_GroupInstance_114_GroupInstance_104_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip1, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip2, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip3, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip4, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip5, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_Downsample_mip6, pass_samp_GroupInstance_114_GroupInstance_97_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_114_GroupInstance_97_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_114_GroupInstance_97_RenderPass_85, pass_samp_GroupInstance_114_GroupInstance_97_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip1, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip2, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip3, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip4, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip5, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_Downsample_mip6, pass_samp_GroupInstance_99_GroupInstance_102_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_102_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_102_RenderPass_85, pass_samp_GroupInstance_99_GroupInstance_102_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip1, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip2, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip3, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip4, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip5, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_Downsample_mip6, pass_samp_GroupInstance_99_GroupInstance_103_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_103_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_103_RenderPass_85, pass_samp_GroupInstance_99_GroupInstance_103_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip1, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip2, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip3, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip4, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip5, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_Downsample_mip6, pass_samp_GroupInstance_99_GroupInstance_104_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_104_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_104_RenderPass_85, pass_samp_GroupInstance_99_GroupInstance_104_RenderPass_85, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip1, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip1, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip2, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip2, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip3, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip3, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip4, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip4, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip5, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip5, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_Downsample_mip6, pass_samp_GroupInstance_99_GroupInstance_97_Downsample_mip6, uv_flipped);
-}
-
-fn sample_pass_GroupInstance_99_GroupInstance_97_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
-    let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample(pass_tex_GroupInstance_99_GroupInstance_97_RenderPass_85, pass_samp_GroupInstance_99_GroupInstance_97_RenderPass_85, uv_flipped);
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_RenderPass_85, pass_samp_sys_group_sampleFromMipmap_RenderPass_85, uv_flipped);
 }
 
 
