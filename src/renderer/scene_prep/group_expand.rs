@@ -150,6 +150,28 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             }
         }
 
+        // If the instance has no outbound connections and no inbound sources
+        // (i.e. it is an orphan node), skip expansion and remove it.
+        if outbound_by_port.is_empty() && inbound_sources_by_port.is_empty() {
+            scene
+                .nodes
+                .retain(|n| !(n.id == instance_id && n.node_type == "GroupInstance"));
+            scene
+                .connections
+                .retain(|c| !(c.from.node_id == instance_id || c.to.node_id == instance_id));
+            // Also remove the cloned nodes we already added in steps 1-2.
+            let cloned_prefix = format!("{instance_id}/");
+            scene.nodes.retain(|n| !n.id.starts_with(&cloned_prefix));
+            scene
+                .connections
+                .retain(|c| {
+                    !c.from.node_id.starts_with(&cloned_prefix)
+                        && !c.to.node_id.starts_with(&cloned_prefix)
+                });
+            expanded_count += 1;
+            continue;
+        }
+
         // 3) Wire instance inputs using group.input_bindings.
         // For each group input port, forward the instance's incoming connection(s)
         // into the cloned subgraph endpoint.
