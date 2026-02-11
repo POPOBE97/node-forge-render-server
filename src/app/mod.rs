@@ -64,6 +64,17 @@ impl eframe::App for App {
         let mut request_toggle_from_sidebar = false;
         let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
         let sidebar_w = sidebar_full_w * frame_state.sidebar_factor;
+
+        // Rebuild resource snapshot when needed (pipeline changed or first frame).
+        if self.resource_snapshot_generation != self.pipeline_rebuild_count {
+            let snap =
+                ui::resource_tree::ResourceSnapshot::capture(&self.shader_space, &self.passes);
+            self.resource_tree_nodes = snap.to_tree();
+            self.resource_snapshot = Some(snap);
+            self.resource_snapshot_generation = self.pipeline_rebuild_count;
+        }
+
+        let mut sidebar_action: Option<ui::debug_sidebar::SidebarAction> = None;
         if sidebar_w > 0.0 {
             egui::SidePanel::left("debug_sidebar")
                 .exact_width(sidebar_w)
@@ -77,7 +88,7 @@ impl eframe::App for App {
                         egui::vec2(sidebar_full_w, clip_rect.height()),
                     );
 
-                    ui::debug_sidebar::show_in_rect(
+                    sidebar_action = ui::debug_sidebar::show_in_rect(
                         ctx,
                         ui,
                         frame_state.sidebar_factor,
@@ -98,8 +109,26 @@ impl eframe::App for App {
                         || {
                             request_toggle_from_sidebar = true;
                         },
+                        &self.resource_tree_nodes,
+                        &mut self.file_tree_state,
                     );
                 });
+        }
+
+        // Handle sidebar actions.
+        match sidebar_action {
+            Some(ui::debug_sidebar::SidebarAction::PreviewTexture(name)) => {
+                self.preview_texture_name =
+                    Some(rust_wgpu_fiber::ResourceName::from(name.as_str()));
+            }
+            Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
+                // Only clear the name; the canvas controller will stop using the
+                // attachment this frame and we free it next frame to avoid
+                // use-after-free when the texture was already submitted for
+                // painting earlier in this frame.
+                self.preview_texture_name = None;
+            }
+            None => {}
         }
 
         let panel_frame = egui::Frame::default()
@@ -129,6 +158,9 @@ impl eframe::App for App {
         // If a toggle happened during this frame, next frame should see
         // prev != current and start the transition animation.
         self.prev_window_mode = frame_state.mode;
+
+        // Force dark title bar.
+        ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
 
         let title = if let Some(sampled) = self.last_sampled {
             format!(

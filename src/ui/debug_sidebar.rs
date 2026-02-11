@@ -1,5 +1,8 @@
 use rust_wgpu_fiber::eframe::egui;
 
+use super::file_tree_widget::FileTreeState;
+use super::resource_tree::{FileTreeNode, NodeKind};
+
 fn node_forge_icon_texture(ctx: &egui::Context) -> egui::TextureHandle {
     let id = egui::Id::new("ui.debug_sidebar.node_forge_icon.texture");
     if let Some(tex) = ctx.memory(|mem| mem.data.get_temp::<egui::TextureHandle>(id)) {
@@ -28,12 +31,14 @@ fn node_forge_icon_texture(ctx: &egui::Context) -> egui::TextureHandle {
 
 pub const SIDEBAR_WIDTH: f32 = 340.0;
 pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
-pub const SIDEBAR_MAX_WIDTH: f32 = 460.0;
+/// Maximum sidebar width: 2/3 of the available window width.
+fn sidebar_max_width(ctx: &egui::Context) -> f32 {
+    let screen_w = ctx.screen_rect().width();
+    (screen_w * 2.0 / 3.0).max(SIDEBAR_MIN_WIDTH)
+}
 pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
-
-const CARD_RADIUS: f32 = 12.0;
 
 fn sidebar_width_id() -> egui::Id {
     egui::Id::new("ui.debug_sidebar.width")
@@ -50,7 +55,16 @@ fn sidebar_resize_handle_id() -> egui::Id {
 pub fn sidebar_width(ctx: &egui::Context) -> f32 {
     ctx.memory(|mem| mem.data.get_temp::<f32>(sidebar_width_id()))
         .unwrap_or(SIDEBAR_WIDTH)
-        .clamp(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
+        .clamp(SIDEBAR_MIN_WIDTH, sidebar_max_width(ctx))
+}
+
+/// Action returned from the sidebar to the app.
+#[derive(Clone, Debug)]
+pub enum SidebarAction {
+    /// User clicked a readable texture — preview it in the canvas.
+    PreviewTexture(String),
+    /// Clear the preview (user clicked a non-texture node).
+    ClearPreview,
 }
 
 pub fn show_in_rect(
@@ -62,12 +76,15 @@ pub fn show_in_rect(
     sidebar_rect: egui::Rect,
     mut canvas_only_button: impl FnMut(&mut egui::Ui) -> bool,
     mut toggle_canvas_only: impl FnMut(),
-) {
+    tree_nodes: &[FileTreeNode],
+    file_tree_state: &mut FileTreeState,
+) -> Option<SidebarAction> {
     if ui_sidebar_factor <= 0.0 {
-        return;
+        return None;
     }
 
     let sidebar_bg = crate::color::lab(7.78201, -0.000_014_901_2, 0.0);
+    let mut sidebar_action: Option<SidebarAction> = None;
 
     // Only allow resize once fully open and stable; during animation we want a deterministic width.
     let can_resize = ui_sidebar_factor >= 1.0 && !animation_just_finished_opening;
@@ -92,11 +109,9 @@ pub fn show_in_rect(
             });
         }
         if response.dragged() {
-            let start_w = ctx
-                .memory(|mem| mem.data.get_temp::<f32>(sidebar_resize_start_width_id()))
-                .unwrap_or_else(|| sidebar_width(ctx));
+            let current_w = sidebar_width(ctx);
             let next =
-                (start_w + response.drag_delta().x).clamp(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+                (current_w + response.drag_delta().x).clamp(SIDEBAR_MIN_WIDTH, sidebar_max_width(ctx));
             ctx.memory_mut(|mem| {
                 mem.data.insert_temp(sidebar_width_id(), next);
             });
@@ -125,56 +140,32 @@ pub fn show_in_rect(
             ui.set_clip_rect(content_rect);
             if ui_sidebar_factor > 0.01 {
                 egui::Frame::NONE
-                    .inner_margin(egui::Margin::same(8))
+                    .inner_margin(egui::Margin { left: 2, right: 6, top: 2, bottom: 2 })
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            egui::Frame::NONE
-                                .inner_margin(egui::Margin::same(6))
-                                .show(ui, |ui| {
-                                    let icon = node_forge_icon_texture(ctx);
-                                    ui.add(
-                                        egui::Image::new((icon.id(), egui::vec2(20.0, 20.0)))
-                                            .corner_radius(egui::CornerRadius::same(4)),
-                                    );
-                                    ui.add_space(6.0);
-                                    crate::ui::typography::label(ui, "Node Forge", 600.0, 16.0);
-                                });
-
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if canvas_only_button(ui) {
-                                        toggle_canvas_only();
-                                    }
-                                },
-                            );
-                        });
-                    });
-                ui.separator();
-
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for idx in 0..3 {
-                        let card_width = ui.available_size_before_wrap().x;
-                        egui::Frame::default()
-                            .fill(egui::Color32::from_gray(24))
-                            .inner_margin(egui::Margin::same(12))
-                            .corner_radius(egui::CornerRadius::same(CARD_RADIUS as u8))
-                            .show(ui, |ui| {
-                                ui.set_max_width(card_width);
-                                ui.label(egui::RichText::new(format!(
-                                    "Placeholder card {}",
-                                    idx + 1
-                                )));
-                                ui.add_space(6.0);
-                                ui.label("TODO: debug content");
-                            });
+                    let tree_response = super::file_tree_widget::show_file_tree(
+                        ui,
+                        tree_nodes,
+                        file_tree_state,
+                    );
 
-                        if idx != 2 {
-                            ui.add_space(10.0);
+                    // Translate clicks into SidebarActions.
+                    if let Some(clicked) = tree_response.clicked {
+                        match &clicked.kind {
+                            NodeKind::Pass { target_texture: Some(tex_name) } => {
+                                sidebar_action =
+                                    Some(SidebarAction::PreviewTexture(tex_name.clone()));
+                            }
+                            _ => {
+                                sidebar_action = Some(SidebarAction::ClearPreview);
+                            }
                         }
                     }
                 });
+                }); // Frame padding
             }
         });
     });
+
+    sidebar_action
 }

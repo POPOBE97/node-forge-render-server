@@ -57,3 +57,36 @@ pub fn ensure_output_texture_registered(
         sync_output_texture(app, render_state, renderer, &name, wgpu::FilterMode::Linear);
     }
 }
+
+/// Sync a preview texture (any named texture in the ShaderSpace) to an egui TextureId.
+pub fn sync_preview_texture(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    texture_name: &ResourceName,
+    filter: wgpu::FilterMode,
+) {
+    let texture = match app.shader_space.textures.get(texture_name.as_str()) {
+        Some(t) => t,
+        None => return,
+    };
+    let view = match texture.wgpu_texture_view.as_ref() {
+        Some(v) => v,
+        None => return,
+    };
+
+    if let Some(id) = app.preview_color_attachment {
+        renderer.update_egui_texture_from_wgpu_texture_with_sampler_options(
+            &render_state.device,
+            view,
+            canvas_sampler_descriptor(filter),
+            id,
+        );
+    } else {
+        app.preview_color_attachment = Some(renderer.register_native_texture_with_sampler_options(
+            &render_state.device,
+            view,
+            canvas_sampler_descriptor(filter),
+        ));
+    }
+}

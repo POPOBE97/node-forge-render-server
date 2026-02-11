@@ -13,6 +13,8 @@ use rust_wgpu_fiber::{
 use crate::{renderer, ws};
 
 use crate::ui::animation_manager::AnimationManager;
+use crate::ui::file_tree_widget::FileTreeState;
+use crate::ui::resource_tree::{FileTreeNode, ResourceSnapshot};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiWindowMode {
@@ -85,6 +87,17 @@ pub struct App {
     pub did_startup_sidebar_size: bool,
 
     pub animations: AnimationManager,
+
+    // --- Resource tree sidebar state ---
+    pub file_tree_state: FileTreeState,
+    pub resource_snapshot: Option<ResourceSnapshot>,
+    pub resource_tree_nodes: Vec<FileTreeNode>,
+    /// Last pipeline rebuild count when we cached the resource snapshot.
+    pub resource_snapshot_generation: u64,
+    /// Texture to preview in canvas (None = show main output).
+    pub preview_texture_name: Option<rust_wgpu_fiber::ResourceName>,
+    /// Registered egui TextureId for preview texture.
+    pub preview_color_attachment: Option<egui::TextureId>,
 }
 
 impl App {
@@ -122,6 +135,12 @@ impl App {
             ui_sidebar_factor: 1.0,
             did_startup_sidebar_size: false,
             animations: AnimationManager::default(),
+            file_tree_state: FileTreeState::default(),
+            resource_snapshot: None,
+            resource_tree_nodes: Vec::new(),
+            resource_snapshot_generation: u64::MAX,
+            preview_texture_name: None,
+            preview_color_attachment: None,
         }
     }
 }
