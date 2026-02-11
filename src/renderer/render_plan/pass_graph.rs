@@ -81,11 +81,12 @@ fn deps_for_pass_node(
                 Vec::new(),
                 String::new(),
                 false,
+                &HashSet::new(),
             )?;
             Ok(bundle.pass_textures)
         }
         "GuassianBlurPass" => {
-            let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
+            let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id, &HashSet::new())?;
             Ok(bundle.pass_textures)
         }
         "Downsample" => {

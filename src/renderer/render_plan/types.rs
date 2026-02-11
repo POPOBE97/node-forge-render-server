@@ -65,24 +65,12 @@ pub struct RenderPassSpec {
     pub color_load_op: wgpu::LoadOp<Color>,
 }
 
-#[derive(Clone)]
-pub struct ImagePrepassSpec {
-    pub pass_name: ResourceName,
-    pub geometry_buffer: ResourceName,
-    pub params_buffer: ResourceName,
-    pub params: Params,
-    pub src_texture: ResourceName,
-    pub dst_texture: ResourceName,
-    pub shader_wgsl: String,
-}
-
 #[derive(Clone, Default)]
 pub struct ResourcePlans {
     pub geometry_buffers: Vec<(ResourceName, Arc<[u8]>)>,
     pub instance_buffers: Vec<(ResourceName, Arc<[u8]>)>,
     pub textures: Vec<TextureDecl>,
     pub render_pass_specs: Vec<RenderPassSpec>,
-    pub image_prepasses: Vec<ImagePrepassSpec>,
     pub composite_passes: Vec<ResourceName>,
     pub pass_bindings: Vec<PassBindings>,
     pub baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>>,

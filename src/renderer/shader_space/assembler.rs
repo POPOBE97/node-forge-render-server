@@ -928,11 +928,12 @@ fn deps_for_pass_node(
                 Vec::new(),
                 String::new(),
                 false,
+                &HashSet::new(),
             )?;
             Ok(bundle.pass_textures)
         }
         "GuassianBlurPass" => {
-            let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
+            let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id, &HashSet::new())?;
             Ok(bundle.pass_textures)
         }
         "Downsample" => {
@@ -1142,10 +1143,6 @@ struct RenderPassSpec {
     color_load_op: wgpu::LoadOp<Color>,
 }
 
-fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
-    crate::renderer::wgsl_templates::build_image_premultiply_wgsl(tex_var, samp_var)
-}
-
 fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
     crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var)
 }
@@ -1309,6 +1306,23 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>> = HashMap::new();
     let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
+
+    // Collect ImageTexture node IDs that need inline premultiply (straight alpha).
+    // This set is passed to WGSL bundle builders so that compile_image_texture wraps
+    // the textureSample() call with rgb *= alpha at the sampling site.
+    let premultiply_image_nodes: HashSet<String> = nodes_by_id
+        .iter()
+        .filter(|(_, n)| n.node_type == "ImageTexture")
+        .filter(|(_, n)| {
+            let mode = n.params.get("alphaMode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("straight")
+                .trim()
+                .to_ascii_lowercase();
+            mode == "straight"
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
 
     // Output target texture is always Composite.target.
     let target_texture_id = output_texture_node_id.clone();
@@ -1743,6 +1757,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_graph_input_kinds_for_bundle.clone(),
                     None,
                     use_fullscreen_for_downsample_source,
+                    &premultiply_image_nodes,
                 )?;
 
                 let mut graph_binding: Option<GraphBinding> = None;
@@ -1771,6 +1786,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             vertex_graph_input_kinds_for_bundle.clone(),
                             Some(kind),
                             use_fullscreen_for_downsample_source,
+                            &premultiply_image_nodes,
                         )?;
                     }
 
@@ -2089,7 +2105,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 // Build WGSL for the image input expression (similar to RenderPass material).
                 let mut src_bundle =
-                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id, &premultiply_image_nodes)?;
                 let mut src_graph_binding: Option<GraphBinding> = None;
                 let mut src_graph_values: Option<Vec<u8>> = None;
                 if let Some(schema) = src_bundle.graph_schema.clone() {
@@ -2105,6 +2121,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             nodes_by_id,
                             layer_id,
                             Some(kind),
+                            &premultiply_image_nodes,
                         )?;
                     }
                     let schema = src_bundle
@@ -2943,21 +2960,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
         })
         .collect();
 
-    #[derive(Clone)]
-    struct ImagePrepass {
-        pass_name: ResourceName,
-        geometry_buffer: ResourceName,
-        params_buffer: ResourceName,
-        params: Params,
-        src_texture: ResourceName,
-        dst_texture: ResourceName,
-        shader_wgsl: String,
-    }
-
-    let mut image_prepasses: Vec<ImagePrepass> = Vec::new();
-    let mut prepass_buffer_specs: Vec<BufferSpec> = Vec::new();
-    let mut prepass_names: Vec<ResourceName> = Vec::new();
-
     // ImageTexture resources (sampled textures) referenced by any reachable RenderPass.
     fn load_image_from_path(rel_base: &PathBuf, path: Option<&str>, node_id: &str) -> Result<Arc<DynamicImage>> {
         let Some(p) = path.filter(|s| !s.trim().is_empty()) else {
@@ -3039,19 +3041,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
             };
 
-            let alpha_mode = node
-                .params
-                .get("alphaMode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("straight")
-                .trim()
-                .to_ascii_lowercase();
-            let needs_premultiply = match alpha_mode.as_str() {
-                "straight" => true,
-                "premultiplied" => false,
-                other => bail!("unsupported ImageTexture.alphaMode: {other}"),
-            };
-
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
                     Ok(img) => flip_image_y_rgba8(ensure_rgba8(Arc::new(img))),
@@ -3063,96 +3052,20 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 }
             };
 
-            let img_w = image.width();
-            let img_h = image.height();
-
             let name = ids
                 .get(node_id)
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {node_id}"))?;
 
-            if needs_premultiply {
-                let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
-
-                // Upload source as straight-alpha.
-                texture_specs.push(FiberTextureSpec::Image {
-                    name: src_name.clone(),
-                    image,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: is_srgb,
-                });
-
-                // Allocate destination texture (ALWAYS linear). This avoids an early
-                // linear->sRGB encode at the premultiply stage which would later be
-                // decoded again on sampling and can cause darkening.
-                let dst_format = TextureFormat::Rgba8Unorm;
-                texture_specs.push(FiberTextureSpec::Texture {
-                    name: name.clone(),
-                    resolution: [img_w, img_h],
-                    format: dst_format,
-                    usage: TextureUsages::RENDER_ATTACHMENT
-                        | TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::COPY_SRC,
-                });
-
-                let w = img_w as f32;
-                let h = img_h as f32;
-
-                let geo: ResourceName = format!("sys.image.{node_id}.premultiply.geo").into();
-                prepass_buffer_specs.push(BufferSpec::Init {
-                    name: geo.clone(),
-                    contents: make_fullscreen_geometry(w, h),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
-
-                let params_name: ResourceName =
-                    format!("params.sys.image.{node_id}.premultiply").into();
-                prepass_buffer_specs.push(BufferSpec::Sized {
-                    name: params_name.clone(),
-                    size: core::mem::size_of::<Params>(),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-
-                let params = Params {
-                    target_size: [w, h],
-                    geo_size: [w, h],
-                    center: [w * 0.5, h * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
-
-                let pass_name: ResourceName =
-                    format!("sys.image.{node_id}.premultiply.pass").into();
-                let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
-                let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
-                let shader_wgsl = build_image_premultiply_wgsl(&tex_var, &samp_var);
-
-                prepass_names.push(pass_name.clone());
-                image_prepasses.push(ImagePrepass {
-                    pass_name,
-                    geometry_buffer: geo,
-                    params_buffer: params_name,
-                    params,
-                    src_texture: src_name,
-                    dst_texture: name,
-                    shader_wgsl,
-                });
-            } else {
-                texture_specs.push(FiberTextureSpec::Image {
-                    name,
-                    image,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    srgb: is_srgb,
-                });
-            }
+            // Upload texture directly. Premultiply (if needed for straight-alpha) is now
+            // handled inline in the sampling pass's WGSL via premultiply_image_nodes.
+            texture_specs.push(FiberTextureSpec::Image {
+                name,
+                image,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                srgb: is_srgb,
+            });
         }
-    }
-
-    if !prepass_buffer_specs.is_empty() {
-        shader_space.declare_buffers(prepass_buffer_specs);
     }
 
     shader_space.declare_textures(texture_specs);
@@ -3238,47 +3151,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
             },
         },
     ]);
-
-    // Register image premultiply prepasses.
-    for spec in &image_prepasses {
-        let pass_name = spec.pass_name.clone();
-        let geometry_buffer = spec.geometry_buffer.clone();
-        let params_buffer = spec.params_buffer.clone();
-        let src_texture = spec.src_texture.clone();
-        let dst_texture = spec.dst_texture.clone();
-        let shader_wgsl = spec.shader_wgsl.clone();
-        let nearest_sampler_for_pass = nearest_sampler.clone();
-
-        let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
-            label: Some("node-forge-imgpm"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl.clone())),
-        };
-
-        shader_space.render_pass(pass_name, move |builder| {
-            builder
-                .shader(shader_desc)
-                .bind_uniform_buffer(0, 0, params_buffer, ShaderStages::VERTEX_FRAGMENT)
-                .bind_attribute_buffer(
-                    0,
-                    geometry_buffer,
-                    wgpu::VertexStepMode::Vertex,
-                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
-                )
-                .bind_texture(1, 0, src_texture, ShaderStages::FRAGMENT)
-                .bind_sampler(1, 1, nearest_sampler_for_pass, ShaderStages::FRAGMENT)
-                .bind_color_attachment(dst_texture)
-                .blending(BlendState::REPLACE)
-                .load_op(wgpu::LoadOp::Clear(Color::TRANSPARENT))
-        });
-    }
-
-    if !prepass_names.is_empty() {
-        let mut ordered: Vec<ResourceName> =
-            Vec::with_capacity(prepass_names.len() + composite_passes.len());
-        ordered.extend(prepass_names);
-        ordered.extend(composite_passes);
-        composite_passes = ordered;
-    }
 
     for spec in &render_pass_specs {
         let geometry_buffer = spec.geometry_buffer.clone();
@@ -3430,10 +3302,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
         if let (Some(graph_binding), Some(values)) = (&spec.graph_binding, &spec.graph_values) {
             shader_space.write_buffer(graph_binding.buffer_name.as_str(), 0, values)?;
         }
-    }
-
-    for spec in &image_prepasses {
-        shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
     }
 
     Ok((
