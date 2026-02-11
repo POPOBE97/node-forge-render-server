@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-10T17:23:24.735Z",
-    "modified": "2026-02-10T17:23:24.735Z"
+    "created": "2026-02-10T17:49:34.204Z",
+    "modified": "2026-02-10T17:49:34.204Z"
   },
   "nodes": [
     {
@@ -105,7 +105,7 @@
       "width": 400,
       "label": "m",
       "params": {
-        "source": "vec3 pStart = vec3(0.0, start_y, start_sigma);\nvec3 pEnd   = vec3(0.0, end_y, end_sigma);\nvec2 qBase = pEnd.xy - pStart.xy;\nfloat md = dot(qBase,qBase);\nvec2 q = xy - pStart.xy;\nfloat p = dot(q,qBase);\nfloat m = smoothstep(md, 0.0, p);\nm = pEnd.z + (pStart.z - pEnd.z) * m;\nm = log2(m * 1.333333);\nm = clamp(m, 0.0, 6.0);\noutput = m;"
+        "source": "vec3 pStart = vec3(0.0, start_y, start_sigma);\nvec3 pEnd   = vec3(0.0, end_y, end_sigma);\nvec2 qBase = pEnd.xy - pStart.xy;\nfloat md = dot(qBase,qBase);\nvec2 q = xy - pStart.xy;\nfloat p = dot(q,qBase);\n//float m = clamp((md - p) / md, 0.0, 1.0);\nfloat m = smoothstep(md, 0.0, p);\nm = pEnd.z + (pStart.z - pEnd.z) * m;\nm = log2(m * 1.333333);\nm = clamp(m, 0.0, 6.0);\noutput = m;"
       },
       "inputs": [
         {
