@@ -51,30 +51,12 @@ where
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, ({}))", uv_expr.expr);
 
-    // If this ImageTexture has straight alpha, wrap the sample in a premultiply operation
-    // so downstream consumers always see premultiplied-alpha data.
-    let needs_premultiply = ctx.premultiply_image_nodes.contains(&node.id);
-
-    let color_expr = if needs_premultiply {
-        // Inject the helper function once (deduplicated by key in extra_wgsl_decls).
-        ctx.extra_wgsl_decls
-            .entry("nf_premultiply".to_string())
-            .or_insert_with(|| {
-                "fn nf_premultiply(c: vec4f) -> vec4f {\n    return vec4f(c.rgb * c.a, c.a);\n}\n"
-                    .to_string()
-            });
-        format!("nf_premultiply({sample_expr})")
-    } else {
-        sample_expr.clone()
-    };
-
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
-            color_expr,
+            sample_expr,
             ValueType::Vec4,
             uv_expr.uses_time,
         )),
-        // Alpha channel is the same regardless of premultiply.
         "alpha" => Ok(TypedExpr::with_time(
             format!("({sample_expr}).w"),
             ValueType::F32,

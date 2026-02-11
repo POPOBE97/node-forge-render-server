@@ -5,7 +5,7 @@
 //! - Gaussian blur utilities for post-processing effects
 //! - Helper functions for formatting WGSL code
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
 
@@ -568,9 +568,8 @@ pub fn build_blur_image_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     blur_pass_id: &str,
-    premultiply_image_nodes: &HashSet<String>,
 ) -> Result<WgslShaderBundle> {
-    build_blur_image_wgsl_bundle_with_graph_binding(scene, nodes_by_id, blur_pass_id, None, premultiply_image_nodes)
+    build_blur_image_wgsl_bundle_with_graph_binding(scene, nodes_by_id, blur_pass_id, None)
 }
 
 pub fn build_blur_image_wgsl_bundle_with_graph_binding(
@@ -578,12 +577,10 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     nodes_by_id: &HashMap<String, Node>,
     blur_pass_id: &str,
     forced_graph_binding_kind: Option<GraphBindingKind>,
-    premultiply_image_nodes: &HashSet<String>,
 ) -> Result<WgslShaderBundle> {
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse: None,
         baked_data_parse_meta: None,
-        premultiply_image_nodes: premultiply_image_nodes.clone(),
         ..Default::default()
     };
 
@@ -730,7 +727,6 @@ pub fn build_pass_wgsl_bundle(
     vertex_inline_stmts: Vec<String>,
     vertex_wgsl_decls: String,
     vertex_uses_instance_index: bool,
-    premultiply_image_nodes: &HashSet<String>,
 ) -> Result<WgslShaderBundle> {
     build_pass_wgsl_bundle_with_graph_binding(
         scene,
@@ -747,7 +743,6 @@ pub fn build_pass_wgsl_bundle(
         std::collections::BTreeMap::new(),
         None,
         false, // fullscreen_vertex_positioning
-        premultiply_image_nodes,
     )
 }
 
@@ -776,14 +771,12 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     // geo_size_px/local_px still use dynamic size from _rect2d_dynamic_inputs if available.
     // This is used when a pass renders to an intermediate texture that will be composited later.
     fullscreen_vertex_positioning: bool,
-    premultiply_image_nodes: &HashSet<String>,
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse,
         baked_data_parse_meta,
-        premultiply_image_nodes: premultiply_image_nodes.clone(),
         ..Default::default()
     };
     let fragment_expr: TypedExpr =
@@ -1085,21 +1078,6 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
     let mut baked_data_parse = prepared.baked_data_parse.clone();
 
-    // Collect ImageTexture nodes that need inline premultiply (straight alpha).
-    let premultiply_image_nodes: HashSet<String> = nodes_by_id
-        .iter()
-        .filter(|(_, n)| n.node_type == "ImageTexture")
-        .filter(|(_, n)| {
-            let mode = n.params.get("alphaMode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("straight")
-                .trim()
-                .to_ascii_lowercase();
-            mode == "straight"
-        })
-        .map(|(id, _)| id.clone())
-        .collect();
-
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
     for layer_id in prepared.composite_layers_in_draw_order {
         let node = find_node(nodes_by_id, &layer_id)?;
@@ -1212,7 +1190,6 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_graph_input_kinds,
                     None,
                     false, // fullscreen_vertex_positioning
-                    &premultiply_image_nodes,
                 )?;
 
                 out.push((layer_id, bundle));
@@ -1266,7 +1243,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
                 // 0) Source image expression pass (renders `image` input to an intermediate texture).
                 let src_bundle =
-                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, &layer_id, &premultiply_image_nodes)?;
+                    build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, &layer_id)?;
                 out.push((format!("sys.blur.{layer_id}.src.pass"), src_bundle));
 
                 for step in &downsample_steps {

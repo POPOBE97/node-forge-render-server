@@ -2,7 +2,7 @@
 
 use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// WGSL value type for shader expressions.
@@ -341,10 +341,6 @@ pub struct MaterialCompileContext {
     /// Keyed by original node id and value kind so we can emit deterministic
     /// graph buffer schemas and pack values on the CPU side.
     pub graph_input_kinds: BTreeMap<String, GraphFieldKind>,
-
-    /// Set of ImageTexture node IDs whose `alphaMode` is `"straight"` and therefore
-    /// need inline premultiply (`rgb *= alpha`) at the sampling site.
-    pub premultiply_image_nodes: HashSet<String>,
 }
 
 impl MaterialCompileContext {
