@@ -397,6 +397,10 @@ fn mc_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32
     return _e12;
 }
 
+fn nf_premultiply(c: vec4f) -> vec4f {
+    return vec4f(c.rgb * c.a, c.a);
+}
+
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
     // Map t in [0, 1] into a symmetric [-1, 1] curve.
     var t = 0.5 + t_in * 0.5;
@@ -554,7 +558,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_MathClosure_108_out)) - 16.5));
-        let c = textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, (mc_MathClosure_99_out));
+        let c = nf_premultiply(textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, (mc_MathClosure_99_out)));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_MathClosure_108_out)) - 16.5));
         var output: vec4f;
         output = mc_MathClosure_111_(in.uv, t, c, thumb);

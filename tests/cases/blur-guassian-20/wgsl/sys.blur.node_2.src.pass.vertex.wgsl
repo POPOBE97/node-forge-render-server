@@ -35,6 +35,12 @@ var img_tex_node_7: texture_2d<f32>;
 var img_samp_node_7: sampler;
 
 
+// --- Extra WGSL declarations (generated) ---
+fn nf_premultiply(c: vec4f) -> vec4f {
+    return vec4f(c.rgb * c.a, c.a);
+}
+
+
   @vertex
   fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
       var out: VSOut;

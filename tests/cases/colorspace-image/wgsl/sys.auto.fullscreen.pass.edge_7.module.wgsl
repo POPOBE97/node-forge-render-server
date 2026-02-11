@@ -38,6 +38,12 @@ var img_tex_ImageTexture_9: texture_2d<f32>;
 var img_samp_ImageTexture_9: sampler;
 
 
+// --- Extra WGSL declarations (generated) ---
+fn nf_premultiply(c: vec4f) -> vec4f {
+    return vec4f(c.rgb * c.a, c.a);
+}
+
+
  @vertex
  fn vs_main(
      @location(0) position: vec3f,
@@ -73,5 +79,5 @@ var img_samp_ImageTexture_9: sampler;
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(img_tex_ImageTexture_9, img_samp_ImageTexture_9, (in.uv));
+    return nf_premultiply(textureSample(img_tex_ImageTexture_9, img_samp_ImageTexture_9, (in.uv)));
 }
