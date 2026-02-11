@@ -541,10 +541,6 @@ fn mc_GroupInstance_135_MathClosure_96_(uv: vec2<f32>, c_edge: vec4<f32>, e: f32
     return _e117;
 }
 
-fn nf_premultiply(c: vec4f) -> vec4f {
-    return vec4f(c.rgb * c.a, c.a);
-}
-
 fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
     // Map t in [0, 1] into a symmetric [-1, 1] curve.
     var t = 0.5 + t_in * 0.5;
@@ -706,7 +702,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_GroupInstance_135_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_GroupInstance_135_MathClosure_108_out)) - 16.5));
-        let c_ui = nf_premultiply(textureSample(img_tex_GroupInstance_135_ImageTexture_76, img_samp_GroupInstance_135_ImageTexture_76, (mc_GroupInstance_135_GroupInstance_125_MathClosure_99_out)));
+        let c_ui = textureSample(img_tex_GroupInstance_135_ImageTexture_76, img_samp_GroupInstance_135_ImageTexture_76, (mc_GroupInstance_135_GroupInstance_125_MathClosure_99_out));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_GroupInstance_135_MathClosure_108_out)) - 16.5));
         let show_thumb = ((graph_inputs.node_BoolInput_141_609f47c1).x != 0);
         var output: vec4f;
