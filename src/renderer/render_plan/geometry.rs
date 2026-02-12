@@ -866,7 +866,11 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 uses_instance_index = true;
             }
             if !local_graph_input_kinds.is_empty() {
-                graph_input_kinds = local_graph_input_kinds;
+                // Preserve upstream dynamic graph inputs (e.g. Rect2DGeometry size/position)
+                // while adding any local translate-driven inputs.
+                for (k, v) in local_graph_input_kinds {
+                    graph_input_kinds.entry(k).or_insert(v);
+                }
             }
 
             Ok((
