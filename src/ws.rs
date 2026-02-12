@@ -56,10 +56,17 @@ fn spawn_server_ping_loop(hub: WsHub) {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParsedSceneSource {
+    SceneUpdate,
+    SceneDelta,
+}
+
+#[derive(Debug, Clone)]
 pub enum SceneUpdate {
     Parsed {
         scene: SceneDSL,
         request_id: Option<String>,
+        source: ParsedSceneSource,
     },
     UniformDelta {
         updated_nodes: Vec<Node>,
@@ -582,6 +589,7 @@ fn handle_text_message(
                 SceneUpdate::Parsed {
                     scene,
                     request_id: msg.request_id,
+                    source: ParsedSceneSource::SceneUpdate,
                 },
             );
         }
@@ -682,6 +690,7 @@ fn handle_text_message(
                     SceneUpdate::Parsed {
                         scene,
                         request_id: msg.request_id,
+                        source: ParsedSceneSource::SceneDelta,
                     },
                 );
             }

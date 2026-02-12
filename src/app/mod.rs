@@ -38,6 +38,9 @@ impl eframe::App for App {
                 );
                 did_rebuild_shader_space = true;
             }
+            if apply_result.reset_viewport {
+                self.pending_view_reset = true;
+            }
         }
 
         let t = self.start.elapsed().as_secs_f32();
@@ -120,6 +123,7 @@ impl eframe::App for App {
             Some(ui::debug_sidebar::SidebarAction::PreviewTexture(name)) => {
                 self.preview_texture_name =
                     Some(rust_wgpu_fiber::ResourceName::from(name.as_str()));
+                self.pending_view_reset = true;
             }
             Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
                 // Only clear the name; the canvas controller will stop using the

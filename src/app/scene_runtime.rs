@@ -10,6 +10,7 @@ use super::types::App;
 pub struct SceneApplyResult {
     pub did_rebuild_shader_space: bool,
     pub texture_filter_override: Option<wgpu::FilterMode>,
+    pub reset_viewport: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,6 +186,7 @@ pub fn apply_scene_update(
                 return SceneApplyResult {
                     did_rebuild_shader_space: false,
                     texture_filter_override: None,
+                    reset_viewport: false,
                 };
             };
 
@@ -216,6 +218,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: false,
                         texture_filter_override: None,
+                        reset_viewport: false,
                     }
                 }
                 Err(e) => {
@@ -226,11 +229,17 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: false,
                         texture_filter_override: None,
+                        reset_viewport: false,
                     }
                 }
             }
         }
-        ws::SceneUpdate::Parsed { scene, request_id } => {
+        ws::SceneUpdate::Parsed {
+            scene,
+            request_id,
+            source,
+        } => {
+            let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
                 app.window_resolution,
                 crate::dsl::screen_resolution(&scene),
@@ -267,6 +276,7 @@ pub fn apply_scene_update(
                             return SceneApplyResult {
                                 did_rebuild_shader_space: false,
                                 texture_filter_override: None,
+                                reset_viewport: should_reset_viewport,
                             };
                         }
                         Err(e) => {
@@ -308,6 +318,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: None,
+                        reset_viewport: should_reset_viewport,
                     }
                 }
                 Ok(Err(e)) => {
@@ -319,6 +330,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: None,
+                        reset_viewport: should_reset_viewport,
                     }
                 }
                 Err(panic_payload) => {
@@ -337,6 +349,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: Some(wgpu::FilterMode::Linear),
+                        reset_viewport: should_reset_viewport,
                     }
                 }
             }
@@ -351,6 +364,7 @@ pub fn apply_scene_update(
             SceneApplyResult {
                 did_rebuild_shader_space: true,
                 texture_filter_override: None,
+                reset_viewport: false,
             }
         }
     }

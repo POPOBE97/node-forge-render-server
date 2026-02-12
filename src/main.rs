@@ -172,7 +172,11 @@ fn run_headless_ws_render_once(
             .map_err(|e| anyhow!("scene_update channel closed: {e}"))?;
 
         match update {
-            ws::SceneUpdate::Parsed { scene, request_id } => {
+            ws::SceneUpdate::Parsed {
+                scene,
+                request_id,
+                source: _,
+            } => {
                 let out_path = if render_to_file {
                     let out = output.clone().ok_or_else(|| {
                         anyhow!("--render-to-file requires --output <absolute path>")
