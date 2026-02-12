@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-10T19:39:49.033Z",
+  "generatedAt": "2026-02-12T02:16:20.701Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1252,9 +1252,9 @@
           "default": false
         },
         {
-          "id": "image",
-          "name": "Image",
-          "type": "color"
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
         },
         {
           "id": "radius",

@@ -2175,9 +2175,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 });
             }
             "GuassianBlurPass" => {
-                // GuassianBlurPass takes its source from `image` input (color type).
-                // This can be from PassTexture (sampling another pass), ImageTexture, or any color expression.
-                // We first render the image expression to an intermediate texture, then apply the blur chain.
+                // GuassianBlurPass takes its source from `pass` input.
+                // Scene prep may auto-wrap compatible non-pass sources into a fullscreen RenderPass.
+                // We first sample that source pass into an intermediate texture, then apply the blur chain.
 
                 // Determine the base resolution for this blur pass.
                 // When the blur output is sampled by a downstream RenderPass (via PassTexture),
@@ -2189,7 +2189,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .copied()
                     .unwrap_or([tgt_w as u32, tgt_h as u32]);
 
-                // Create source texture for the image input.
+                // Create source texture for the pass input.
                 let src_tex: ResourceName = format!("sys.blur.{layer_id}.src").into();
                 let src_resolution = base_resolution;
                 let src_w = src_resolution[0] as f32;
@@ -2217,7 +2217,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
 
-                // Build WGSL for the image input expression (similar to RenderPass material).
+                // Build WGSL for sampling the `pass` input source.
                 let mut src_bundle =
                     build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
                 let mut src_graph_binding: Option<GraphBinding> = None;

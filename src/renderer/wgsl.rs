@@ -562,8 +562,11 @@ fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKind) -> Strin
 //
 // Use: renderer::node_compiler::compile_material_expr instead.
 
-/// Build a WGSL shader bundle for the `image` input of a GuassianBlurPass.
-/// This compiles the color expression from the `image` port into a fullscreen shader.
+/// Build a WGSL shader bundle for the `pass` input of a GuassianBlurPass.
+///
+/// The node scheme models GuassianBlurPass's source as a `pass`-typed input. During scene prep,
+/// non-pass inputs can be auto-wrapped into a synthesized fullscreen RenderPass.
+/// This shader bundle samples the upstream pass texture into a fullscreen render target.
 pub fn build_blur_image_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -578,135 +581,22 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     blur_pass_id: &str,
     forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
-    let mut material_ctx = MaterialCompileContext {
-        baked_data_parse: None,
-        baked_data_parse_meta: None,
-        ..Default::default()
+    let _ = nodes_by_id;
+    let _ = forced_graph_binding_kind;
+
+    // Source is provided on the `pass` input.
+    let Some(conn) = incoming_connection(scene, blur_pass_id, "pass") else {
+        // No input - return transparent.
+        return Ok(build_fullscreen_textured_bundle(
+            "return vec4f(0.0, 0.0, 0.0, 0.0);".to_string(),
+        ));
     };
 
-    // Get the color expression from the `image` input.
-    let fragment_expr: TypedExpr =
-        if let Some(conn) = incoming_connection(scene, blur_pass_id, "image") {
-            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-            compile_material_expr(
-                scene,
-                nodes_by_id,
-                &conn.from.node_id,
-                Some(&conn.from.port_id),
-                &mut material_ctx,
-                &mut cache,
-            )?
-        } else {
-            // No image input - return transparent.
-            TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)".to_string(), ValueType::Vec4)
-        };
-
-    let image_textures = material_ctx.image_textures.clone();
-
-    let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
-
-    let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
-    let graph_binding_kind = graph_schema
-        .as_ref()
-        .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
-
-    let mut common = r#"
-struct Params {
-    target_size: vec2f,
-    geo_size: vec2f,
-    center: vec2f,
-
-    geo_translate: vec2f,
-    geo_scale: vec2f,
-
-    // Pack to 16-byte boundary.
-    time: f32,
-    _pad0: f32,
-
-    // 16-byte aligned.
-    color: vec4f,
-};
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
- struct VSOut {
-     @builtin(position) position: vec4f,
-     @location(0) uv: vec2f,
-     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-     @location(1) frag_coord_gl: vec2f,
-     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
-     // Geometry size in pixels after applying geometry/instance transforms.
-     @location(3) geo_size_px: vec2f,
- };
-"#
-    .to_string();
-
-    if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
-        common.push_str(&graph_inputs_wgsl_decl(schema, kind));
-    }
-
-    common.push_str(&material_ctx.wgsl_decls());
-
-    let vertex_entry = r#"
-  @vertex
-  fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
-      var out: VSOut;
-  
-      let _unused_geo_translate = params.geo_translate;
-      let _unused_geo_scale = params.geo_scale;
-
-        // UV passed as vertex attribute.
-        out.uv = uv;
-
-        out.geo_size_px = params.geo_size;
-
-        // Geometry-local pixel coordinate (GeoFragcoord).
-        out.local_px = uv * out.geo_size_px;
-
-      // Convert local pixels to target pixel coordinates with bottom-left origin.
-      let p_px = params.center + position.xy;
-  
-      // Convert pixels to clip space assuming bottom-left origin.
-      // (0,0) => (-1,-1), (target_size) => (1,1)
-      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-      out.position = vec4f(ndc, position.z, 1.0);
-  
-      // Pixel-centered like GLSL gl_FragCoord.xy.
-      out.frag_coord_gl = p_px;// + vec2f(0.5, 0.5);
-      return out;
-  }
- "#
-    .to_string();
-
-    let fragment_entry = format!(
-        r#"
-@fragment
-fn fs_main(in: VSOut) -> @location(0) vec4f {{
-    {fragment_body}
-}}
-"#
+    let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle(
+        crate::renderer::wgsl_templates::fullscreen::FullscreenTemplateSpec { flip_y: true },
     );
-
-    let vertex = format!("{common}{vertex_entry}");
-    let fragment = format!("{common}{fragment_entry}");
-    let compute = None;
-    let module = format!("{common}{vertex_entry}{fragment_entry}");
-    let pass_textures = material_ctx.pass_textures.clone();
-
-    Ok(WgslShaderBundle {
-        common,
-        vertex,
-        fragment,
-        compute,
-        module,
-        image_textures,
-        pass_textures,
-        graph_schema,
-        graph_binding_kind,
-    })
+    bundle.pass_textures = vec![conn.from.node_id.clone()];
+    Ok(bundle)
 }
 
 pub fn build_pass_wgsl_bundle(
