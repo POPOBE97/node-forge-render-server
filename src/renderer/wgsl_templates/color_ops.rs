@@ -34,10 +34,6 @@ var {tex_var}: texture_2d<f32>;\n\
 @group(1) @binding(1)\n\
 var {samp_var}: sampler;\n\
 \n\
-fn nf_uv_pass(uv: vec2f) -> vec2f {{\n\
-    return vec2f(uv.x, 1.0 - uv.y);\n\
-}}\n\
-\n\
 @vertex\n\
 fn vs_main(\n\
     @location(0) position: vec3f,\n\
@@ -50,7 +46,7 @@ fn vs_main(\n\
 \n\
     out.uv = uv;\n\
     out.geo_size_px = params.geo_size;\n\
-    out.local_px = uv * out.geo_size_px;\n\
+    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\
@@ -62,10 +58,7 @@ fn vs_main(\n\
 \n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
-    // Rendering into an offscreen texture produces a Y-flipped image when later\n\
-    // sampled as an ImageTexture (ImageTexture sampling does not flip UVs).\n\
-    let uv = nf_uv_pass(in.uv);\n\
-    let c = textureSample({tex_var}, {samp_var}, uv);\n\
+    let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
     return vec4(c.xyz * c.w, c.w);\n\
 }}\n"
     )

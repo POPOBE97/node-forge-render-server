@@ -5,8 +5,6 @@ pub fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
     //
     // Keep alpha linear (do NOT gamma-correct alpha).
     //
-    // Also apply the same offscreen-texture Y flip used by PassTexture/premultiply paths so our
-    // bottom-left UV convention continues to render upright.
     format!(
         "\
 struct Params {{\n\
@@ -40,10 +38,6 @@ var {tex_var}: texture_2d<f32>;\n\
 @group(1) @binding(1)\n\
 var {samp_var}: sampler;\n\
 \n\
-fn nf_uv_pass(uv: vec2f) -> vec2f {{\n\
-    return vec2f(uv.x, 1.0 - uv.y);\n\
-}}\n\
-\n\
 fn linear_to_srgb_channel(x_in: f32) -> f32 {{\n\
     let x = clamp(x_in, 0.0, 1.0);\n\
     if (x <= 0.0031308) {{\n\
@@ -72,7 +66,7 @@ fn vs_main(\n\
 \n\
     out.uv = uv;\n\
     out.geo_size_px = params.geo_size;\n\
-    out.local_px = uv * out.geo_size_px;\n\
+    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\
@@ -84,9 +78,7 @@ fn vs_main(\n\
 \n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
-    // Sampling a render-target texture with our bottom-left UV convention requires a Y flip.\n\
-    let uv = nf_uv_pass(in.uv);\n\
-    let c = textureSample({tex_var}, {samp_var}, uv);\n\
+    let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
     return vec4f(linear_to_srgb(c.xyz), c.w);\n\
 }}\n"
     )

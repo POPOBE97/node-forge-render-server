@@ -1,6 +1,5 @@
 pub mod blend;
 pub mod geometry;
-pub mod image_prepass;
 pub mod kernel;
 pub mod pass_graph;
 pub mod pass_handlers;

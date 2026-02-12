@@ -260,11 +260,7 @@ where
     let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
     let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
 
-    // NOTE: PassTexture is the one intentional exception where we do a fragment-space Y flip.
-    // Centralize the flip in WGSL helper `nf_uv_pass()` so we can migrate the contract later
-    // without editing scattered callsites.
-    let sample_expr =
-        format!("textureSample({tex_var}, {samp_var}, nf_uv_pass({}))", uv_expr.expr);
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
@@ -330,7 +326,7 @@ mod pass_texture_tests {
     }
 
     #[test]
-    fn test_pass_texture_color_has_v_flip() {
+    fn test_pass_texture_color_sampling_uses_uv() {
         let (scene, nodes_by_id, node) = scene_with_pass_texture();
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -348,7 +344,7 @@ mod pass_texture_tests {
 
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("textureSample"));
-        assert!(result.expr.contains("nf_uv_pass"));
+        assert!(result.expr.contains("in.uv"));
     }
 
     #[test]

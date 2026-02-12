@@ -10,6 +10,13 @@
 /// Creates 6 vertices (2 triangles) for a rectangle centered at origin.
 /// The vertices are in counter-clockwise order for front-facing triangles.
 ///
+/// UV convention: **top-left origin** — `(0,0)` at the top-left corner of the rect,
+/// `(1,1)` at the bottom-right. This matches wgpu's texture coordinate convention
+/// so that pass-to-pass texture sampling chains do not introduce Y-flips.
+///
+/// User-facing GLSL-like coordinates (`local_px`, `frag_coord_gl`) are derived
+/// from the UV in the vertex shader with a Y-flip: `local_px = vec2(uv.x, 1-uv.y) * geo_size`.
+///
 /// # Arguments
 /// * `width` - Width of the rectangle (clamped to minimum 1.0)
 /// * `height` - Height of the rectangle (clamped to minimum 1.0)
@@ -23,13 +30,14 @@ pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
     let hh = h * 0.5;
     [
         // Triangle 1: bottom-left, bottom-right, top-right
-        [-hw, -hh, 0.0, 0.0, 0.0],
-        [hw, -hh, 0.0, 1.0, 0.0],
-        [hw, hh, 0.0, 1.0, 1.0],
+        // UV uses top-left origin: BL=(0,1), BR=(1,1), TR=(1,0)
+        [-hw, -hh, 0.0, 0.0, 1.0],
+        [hw, -hh, 0.0, 1.0, 1.0],
+        [hw, hh, 0.0, 1.0, 0.0],
         // Triangle 2: bottom-left, top-right, top-left
-        [-hw, -hh, 0.0, 0.0, 0.0],
-        [hw, hh, 0.0, 1.0, 1.0],
-        [-hw, hh, 0.0, 0.0, 1.0],
+        [-hw, -hh, 0.0, 0.0, 1.0],
+        [hw, hh, 0.0, 1.0, 0.0],
+        [-hw, hh, 0.0, 0.0, 0.0],
     ]
 }
 
@@ -39,19 +47,21 @@ pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
 ///
 /// The quad is centered at origin with corners at (-0.5,-0.5) .. (0.5,0.5).
 ///
+/// UV convention: **top-left origin** — matches `rect2d_geometry_vertices`.
+///
 /// This is used when Rect2DGeometry size/position are dynamic and applied in the vertex shader.
 pub fn rect2d_unit_geometry_vertices() -> [[f32; 5]; 6] {
     let hw = 0.5;
     let hh = 0.5;
     [
         // Triangle 1: bottom-left, bottom-right, top-right
-        [-hw, -hh, 0.0, 0.0, 0.0],
-        [hw, -hh, 0.0, 1.0, 0.0],
-        [hw, hh, 0.0, 1.0, 1.0],
+        [-hw, -hh, 0.0, 0.0, 1.0],
+        [hw, -hh, 0.0, 1.0, 1.0],
+        [hw, hh, 0.0, 1.0, 0.0],
         // Triangle 2: bottom-left, top-right, top-left
-        [-hw, -hh, 0.0, 0.0, 0.0],
-        [hw, hh, 0.0, 1.0, 1.0],
-        [-hw, hh, 0.0, 0.0, 1.0],
+        [-hw, -hh, 0.0, 0.0, 1.0],
+        [hw, hh, 0.0, 1.0, 0.0],
+        [-hw, hh, 0.0, 0.0, 0.0],
     ]
 }
 
@@ -71,14 +81,15 @@ mod tests {
         let hh = 25.0;
 
         // First triangle: bottom-left, bottom-right, top-right
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
+        // UV top-left origin: BL=(0,1), BR=(1,1), TR=(1,0)
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 0.0]);
 
         // Second triangle: bottom-left, top-right, top-left
-        assert_eq!(verts[3], [-hw, -hh, 0.0, 0.0, 0.0]);
-        assert_eq!(verts[4], [hw, hh, 0.0, 1.0, 1.0]);
-        assert_eq!(verts[5], [-hw, hh, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[3], [-hw, -hh, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[4], [hw, hh, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[5], [-hw, hh, 0.0, 0.0, 0.0]);
     }
 
     #[test]
@@ -90,8 +101,8 @@ mod tests {
         let hw = 0.5;
         let hh = 0.5;
 
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 1.0]);
     }
 
     #[test]
@@ -102,16 +113,16 @@ mod tests {
         let hh = 100.0;
 
         // All corners should be equidistant from center
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 0.0]);
     }
 
     #[test]
     fn test_rect2d_unit_geometry_vertices() {
         let verts = rect2d_unit_geometry_vertices();
         assert_eq!(verts.len(), 6);
-        assert_eq!(verts[0], [-0.5, -0.5, 0.0, 0.0, 0.0]);
-        assert_eq!(verts[2], [0.5, 0.5, 0.0, 1.0, 1.0]);
-        assert_eq!(verts[5], [-0.5, 0.5, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[0], [-0.5, -0.5, 0.0, 0.0, 1.0]);
+        assert_eq!(verts[2], [0.5, 0.5, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[5], [-0.5, 0.5, 0.0, 0.0, 0.0]);
     }
 }

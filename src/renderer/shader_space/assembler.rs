@@ -55,8 +55,7 @@ use crate::{
         utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
-            build_downsample_bundle, build_downsample_bundle_with_flip,
-            build_downsample_pass_wgsl_bundle,
+            build_downsample_bundle, build_downsample_pass_wgsl_bundle,
             build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
             build_horizontal_blur_bundle, build_pass_wgsl_bundle,
             build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
@@ -1314,10 +1313,6 @@ fn parse_render_pass_blend_state(
     Ok(state)
 }
 
-fn flip_image_y_rgba8(image: Arc<DynamicImage>) -> Arc<DynamicImage> {
-    crate::renderer::render_plan::image_prepass::flip_image_y_rgba8(image)
-}
-
 pub(crate) fn build_shader_space_from_scene_internal(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
@@ -1938,8 +1933,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         geometry_buffers
                             .push((compose_geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
                         let fragment_body =
-                            "return textureSample(src_tex, src_samp, nf_uv_pass(in.uv));"
-                                .to_string();
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string();
                         (
                             compose_geo,
                             Params {
@@ -2033,8 +2027,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     } else {
                         // Static geometry-sized: reuse the original geometry buffer.
                         let fragment_body =
-                            "return textureSample(src_tex, src_samp, nf_uv_pass(in.uv));"
-                                .to_string();
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string();
                         (
                             geometry_buffer.clone(),
                             Params {
@@ -2118,7 +2111,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // Safe bypass cases:
                 // - Upstream is a pass node output (RenderPass/Blur/Downsample) with sampled format.
                 // - Upstream is an ImageTexture sampled as-is (default UV).
-                let mut first_downsample_flip_y = false;
                 let mut initial_blur_source_texture: Option<ResourceName> = None;
                 let mut initial_blur_source_image_node_id: Option<String> = None;
                 let mut initial_blur_source_sampler_kind: Option<SamplerKind> = None;
@@ -2152,10 +2144,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         base_resolution = src_spec.resolution;
                         if can_direct_bypass && src_spec.format == sampled_pass_format {
                             initial_blur_source_texture = Some(src_spec.texture_name.clone());
-                            // When bypassing the `.src.pass`, the first downsample pass samples
-                            // the upstream texture directly using @builtin(position)-derived UVs,
-                            // which are already in the correct top-left-origin texture space.
-                            first_downsample_flip_y = false;
                             // Match the sampler behavior the old `.src.pass` would have used.
                             initial_blur_source_sampler_kind = Some(
                                 sampler_kind_for_pass_texture(&prepared.scene, &src_conn.from.node_id),
@@ -2184,7 +2172,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                         Some(src_conn.from.node_id.clone());
                                     initial_blur_source_sampler_kind =
                                         Some(sampler_kind_from_node_params(&src_node.params));
-                                    first_downsample_flip_y = false;
                                 }
                             }
                         }
@@ -2471,11 +2458,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 for (step, tex, step_w, step_h, step_geo) in &step_textures {
                     let params_name: ResourceName =
                         format!("params.sys.blur.{layer_id}.ds.{step}").into();
-                    let bundle = if prev_tex.is_none() {
-                        build_downsample_bundle_with_flip(*step, first_downsample_flip_y)?
-                    } else {
-                        build_downsample_bundle(*step)?
-                    };
+                    let bundle = build_downsample_bundle(*step)?;
 
                     let sampler_kind = if prev_tex.is_none() {
                         initial_blur_source_sampler_kind.unwrap_or(SamplerKind::LinearMirror)
@@ -3221,16 +3204,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
             let image = match data_url {
                 Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => flip_image_y_rgba8(ensure_rgba8(Arc::new(img))),
+                    Ok(img) => ensure_rgba8(Arc::new(img)),
                     Err(e) => bail!(
                         "ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"
                     ),
                 },
                 _ => {
                     let path = node.params.get("path").and_then(|v| v.as_str());
-                    flip_image_y_rgba8(ensure_rgba8(load_image_from_path(
-                        &rel_base, path, node_id,
-                    )?))
+                    ensure_rgba8(load_image_from_path(&rel_base, path, node_id)?)
                 }
             };
 

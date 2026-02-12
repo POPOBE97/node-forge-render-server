@@ -239,10 +239,6 @@ struct VSOut {{
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
-
-fn nf_uv_pass(uv: vec2f) -> vec2f {{
-    return vec2f(uv.x, 1.0 - uv.y);
-}}
 "#
     );
 
@@ -261,8 +257,9 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
     let rect_size_px = {size_expr};
 
     out.geo_size_px = rect_size_px;
-    // Geometry-local pixel coordinate (GeoFragcoord).
-    out.local_px = uv * out.geo_size_px;
+    // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
+    // UV is top-left convention, so flip Y for GLSL-like local_px.
+    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
     // Unit vertices [-0.5, 0.5] scaled by dynamic size.
     let p_local = vec3f(position.xy * rect_size_px, position.z);
@@ -282,11 +279,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
 "#
     );
 
-    // Fragment shader samples the source texture using the centralized pass UV flip.
+    // Fragment shader samples the source texture directly.
     let fragment_entry = r#"
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(src_tex, src_samp, nf_uv_pass(in.uv));
+    return textureSample(src_tex, src_samp, in.uv);
 }
 "#
     .to_string();
@@ -356,12 +353,6 @@ struct VSOut {
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
-
-// Pass textures are sampled from offscreen render targets. WGSL texture UVs use (0,0) at the
-// top-left, while our graph UV convention is bottom-left, so we centralize the Y flip here.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 "#
     .to_string();
 
@@ -391,8 +382,9 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 
          out.geo_size_px = params.geo_size;
 
-         // Geometry-local pixel coordinate (GeoFragcoord).
-         out.local_px = uv * out.geo_size_px;
+         // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
+         // UV is top-left convention, so flip Y for GLSL-like local_px.
+         out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
   
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -425,8 +417,9 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 
         out.geo_size_px = params.geo_size;
 
-         // Geometry-local pixel coordinate (GeoFragcoord).
-         out.local_px = uv * out.geo_size_px;
+         // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
+         // UV is top-left convention, so flip Y for GLSL-like local_px.
+         out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -606,12 +599,7 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
         ));
 
     if source_is_pass {
-        let mut bundle =
-            crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle(
-                crate::renderer::wgsl_templates::fullscreen::FullscreenTemplateSpec {
-                    flip_y: true,
-                },
-            );
+        let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
         bundle.pass_textures = vec![conn.from.node_id.clone()];
         return Ok(bundle);
     }
@@ -679,7 +667,8 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
     out.uv = uv;
     out.geo_size_px = params.geo_size;
-    out.local_px = uv * out.geo_size_px;
+    // UV is top-left convention, so flip Y for GLSL-like local_px.
+    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
     let p_px = params.center + position.xy;
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
@@ -847,11 +836,6 @@ var<uniform> params: Params;
      @location(4) instance_index: u32,
  };
 
-// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
-// bottom-left UV convention onto WGSL's top-left texture coordinate space.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 "#
     .to_string();
 
@@ -948,7 +932,7 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 
             vertex_entry.push_str(" let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * geo_size_px;\n\n");
 
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
@@ -956,7 +940,7 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
         } else {
             vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = uv * geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * geo_size_px;\n\n");
 
             vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
         }
@@ -979,7 +963,7 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 
             vertex_entry.push_str(" out.geo_size_px = rect_dyn.zw;\n");
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\n");
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
 
@@ -1003,7 +987,7 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
                 vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
             }
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = uv * out.geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\n");
 
             if let Some(expr) = vertex_translate_expr.as_deref() {
                 vertex_entry.push_str(" let delta_t = ");
@@ -1288,90 +1272,63 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
 /// Build a downsample shader bundle for the given factor (1, 2, 4, or 8).
 pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
-    build_downsample_bundle_with_flip(factor, false)
-}
-
-/// Build a downsample shader bundle for the given factor (1, 2, 4, or 8),
-/// optionally flipping Y before sampling.
-pub fn build_downsample_bundle_with_flip(
-    factor: u32,
-    flip_y: bool,
-) -> Result<WgslShaderBundle> {
-    let sample_uv = |expr: &str| -> String {
-        if flip_y {
-            format!("nf_uv_pass({expr})")
-        } else {
-            expr.to_string()
-        }
-    };
-
     let body = match factor {
         1 => {
-            let uv_expr = sample_uv("uv");
             r#"
  let src_resolution = vec2f(textureDimensions(src_tex));
- let dst_xy = vec2f(in.position.xy);
- let uv = dst_xy / src_resolution;
- return textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
+ return textureSampleLevel(src_tex, src_samp, in.uv, 0.0);
  "#
-            .replace("__UV__", &uv_expr)
         }
         2 => {
-            let uv_expr = sample_uv("uv");
             r#"
  let src_resolution = params.target_size * 2.0;
- let dst_xy = vec2f(in.position.xy);
- let base = dst_xy * 2.0 - vec2f(0.5);
+ let src_center = in.uv * src_resolution;
+ let base = src_center - vec2f(0.5);
  
  var sum = vec4f(0.0);
  for (var y: i32 = 0; y < 2; y = y + 1) {
      for (var x: i32 = 0; x < 2; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
      }
  }
  
  return sum * 0.25;
  "#
-            .replace("__UV__", &uv_expr)
         }
         4 => {
-            let uv_expr = sample_uv("uv");
             r#"
  let src_resolution = params.target_size * 4.0;
- let dst_xy = vec2f(in.position.xy);
- let base = dst_xy * 4.0 - vec2f(1.5);
+ let src_center = in.uv * src_resolution;
+ let base = src_center - vec2f(1.5);
  
  var sum = vec4f(0.0);
  for (var y: i32 = 0; y < 4; y = y + 1) {
      for (var x: i32 = 0; x < 4; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
      }
  }
  
  return sum * (1.0 / 16.0);
  "#
-            .replace("__UV__", &uv_expr)
         }
         8 => {
-            let uv_expr = sample_uv("uv");
             r#"
  let src_resolution = params.target_size * 8.0;
- let dst_xy = vec2f(in.position.xy);
- let base = dst_xy * 8.0 - vec2f(3.5);
+ let src_center = in.uv * src_resolution;
+ let base = src_center - vec2f(3.5);
  
  var sum = vec4f(0.0);
  for (var y: i32 = 0; y < 8; y = y + 1) {
      for (var x: i32 = 0; x < 8; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
      }
  }
  
  return sum * (1.0 / 64.0);
  "#
-            .replace("__UV__", &uv_expr)
         }
         other => {
             return Err(anyhow!(
@@ -1379,7 +1336,7 @@ pub fn build_downsample_bundle_with_flip(
             ));
         }
     };
-    Ok(build_fullscreen_textured_bundle(body))
+    Ok(build_fullscreen_textured_bundle(body.to_string()))
 }
 
 /// Build a Downsample pass WGSL bundle.
@@ -1418,8 +1375,7 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
 
     // Convolve in source pixel space.
     //
-    // NOTE: `in.position.xy` is the render-target pixel coordinate with top-left origin.
-    // For Downsample, we treat destination pixel coordinates as top-left oriented.
+    // NOTE: Use `in.local_px` (UV-derived local pixel coordinate) as destination pixel-space.
     //
     // This algorithm matches Godot's downsample shader:
     // 1. Compute center_xy = ceil(normalized_uv * src_dims)
@@ -1431,13 +1387,8 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
     let dst_dims = params.target_size;
-    // Fragment position is pixel-centered, with top-left origin.
-    let dst_xy = vec2f(in.position.xy);
-    
-    // Map destination pixel to source integer grid via ceil, matching Godot's
-    // downsample shader: center_xy = ceil(UV * src_resolution).
-    // With UV = dst_xy / dst_dims: center_xy = ceil(dst_xy * src_dims / dst_dims).
-    let center_xy = dst_xy * src_dims / dst_dims;
+    // Use in.uv (top-left convention) to map directly to source pixel space.
+    let center_xy = in.uv * src_dims;
 
   let kw: i32 = {w};
   let kh: i32 = {h};
@@ -1475,7 +1426,7 @@ pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslS
     let body = format!(
         r#"
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
+ let xy = in.uv * original;
  let k = {kernel_wgsl};
  let o = {offset_wgsl};
  var color = vec4f(0.0);
@@ -1498,7 +1449,7 @@ pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslSha
     let body = format!(
         r#"
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
+ let xy = in.uv * original;
  let k = {kernel_wgsl};
  let o = {offset_wgsl};
  var color = vec4f(0.0);
@@ -1517,8 +1468,7 @@ pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslSha
 /// Build a bilinear upsample shader bundle.
 pub fn build_upsample_bilinear_bundle() -> WgslShaderBundle {
     let body = r#"
- let uv_local = in.local_px / in.geo_size_px;
- return textureSampleLevel(src_tex, src_samp, nf_uv_pass(uv_local), 0.0);
+ return textureSampleLevel(src_tex, src_samp, in.uv, 0.0);
  "#
     .to_string();
     build_fullscreen_textured_bundle(body)

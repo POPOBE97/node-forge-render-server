@@ -361,10 +361,7 @@ fn glass_texture_map(
     fg_tex: texture_2d<f32>,
     fg_samp: sampler,
 ) -> vec4f {
-    // Pass textures use WGSL texture coordinates with (0,0) at top-left.
-    // Our renderer's UV convention is bottom-left, so we flip Y here.
-    let uv2 = nf_uv_pass(uv);
-    var col = textureSample(tex, samp, uv2);
+    var col = textureSample(tex, samp, uv);
 
     if (is_bg) {
         let lum = glass_luma(col.rgb);
@@ -372,7 +369,7 @@ fn glass_texture_map(
         col = vec4f(mix(col.rgb, vec3f(0.0), dark), col.a);
     }
 
-    let fg_col = textureSample(fg_tex, fg_samp, uv2);
+    let fg_col = textureSample(fg_tex, fg_samp, uv);
     let lighten = fg_col.r;
     col = vec4f(glass_hsvv(col.rgb, lighten), col.a);
     return col;
@@ -762,8 +759,10 @@ where
      // SDF evaluation uses geometry-local pixels (not screen pixels).
      let pos_from_center = local_px - half_size_px;
 
-    // Use bottom-left UV for sampling pass textures.
-    let uv = screen_px / params.target_size;
+    // Use in.uv (top-left convention) for sampling pass/render-target textures.
+    let uv = in.uv;
+    // Bottom-left normalized UV for procedural effects (gradients, etc.).
+    let gl_uv = vec2f(in.uv.x, 1.0 - in.uv.y);
 
     // Base background color.
     var color = {bg_sample};
@@ -840,9 +839,9 @@ where
     glass_color_ratio = mix(glass_color_ratio, {u_glass_color}.rgb, {u_glass_color}.a);
     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, {u_inner_color_mix} * color_ratio), glass_mat.a);
 
-    // Inner bottom gradient.
+    // Inner bottom gradient (uses bottom-left UV for correct visual direction).
     glass_mat = vec4f(
-        glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, uv.y), 2.0) * {u_inner_bottom}),
+        glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, gl_uv.y), 2.0) * {u_inner_bottom}),
         glass_mat.a,
     );
 
