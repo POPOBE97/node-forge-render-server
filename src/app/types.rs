@@ -18,6 +18,74 @@ use crate::ui::file_tree_widget::FileTreeState;
 use crate::ui::resource_tree::{FileTreeNode, ResourceSnapshot};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RefImageMode {
+    #[default]
+    Overlay,
+    Diff,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RefImageSource {
+    Manual,
+    SceneNodePath(String),
+    SceneNodeDataUrl(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DiffMetricMode {
+    E,
+    #[default]
+    AE,
+    SE,
+    RAE,
+    RSE,
+}
+
+impl DiffMetricMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::E => "E",
+            Self::AE => "AE",
+            Self::SE => "SE",
+            Self::RAE => "RAE",
+            Self::RSE => "RSE",
+        }
+    }
+
+    pub fn shader_code(self) -> u32 {
+        match self {
+            Self::E => 0,
+            Self::AE => 1,
+            Self::SE => 2,
+            Self::RAE => 3,
+            Self::RSE => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DiffStats {
+    pub min: f32,
+    pub max: f32,
+    pub avg: f32,
+}
+
+pub struct RefImageState {
+    pub name: String,
+    pub rgba_bytes: Vec<u8>,
+    pub texture: egui::TextureHandle,
+    pub wgpu_texture: wgpu::Texture,
+    pub wgpu_texture_view: wgpu::TextureView,
+    pub size: [u32; 2],
+    pub offset: egui::Vec2,
+    pub mode: RefImageMode,
+    pub opacity: f32,
+    pub drag_start: Option<egui::Pos2>,
+    pub drag_start_offset: egui::Vec2,
+    pub source: RefImageSource,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiWindowMode {
     #[default]
     Sidebar,
@@ -112,14 +180,72 @@ pub struct App {
     pub preview_color_attachment: Option<egui::TextureId>,
     pub histogram_renderer: Option<crate::ui::histogram::HistogramRenderer>,
     pub histogram_texture_id: Option<egui::TextureId>,
+    pub histogram_dirty: bool,
+    pub ref_image: Option<RefImageState>,
+    pub diff_renderer: Option<crate::ui::diff_renderer::DiffRenderer>,
+    pub diff_texture_id: Option<egui::TextureId>,
+    pub diff_metric_mode: DiffMetricMode,
+    pub diff_stats: Option<DiffStats>,
+    pub diff_dirty: bool,
+    pub scene_uses_time: bool,
+    pub scene_reference_image_path: Option<String>,
+    pub scene_reference_image_data_url: Option<String>,
+    pub last_auto_reference_attempt: Option<String>,
+    pub time_updates_enabled: bool,
+    pub time_value_secs: f32,
+    pub time_last_raw_secs: f32,
+    pub shift_was_down: bool,
     pub pending_view_reset: bool,
     pub viewport_copy_indicator: ViewportCopyIndicator,
     pub viewport_copy_job_rx: Option<mpsc::Receiver<bool>>,
     pub viewport_copy_last_visual: Option<ViewportCopyIndicatorVisual>,
 }
 
+pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
+    scene
+        .nodes
+        .iter()
+        .any(|node| node.node_type.as_str() == "TimeInput")
+}
+
+pub(super) fn scene_reference_image_path(scene: &crate::dsl::SceneDSL) -> Option<String> {
+    scene
+        .nodes
+        .iter()
+        .find(|node| node.node_type.as_str() == "ReferenceImage")
+        .and_then(|node| node.params.get("path"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+pub(super) fn scene_reference_image_data_url(scene: &crate::dsl::SceneDSL) -> Option<String> {
+    scene
+        .nodes
+        .iter()
+        .find(|node| node.node_type.as_str() == "ReferenceImage")
+        .and_then(|node| {
+            node.params
+                .get("dataUrl")
+                .or_else(|| node.params.get("dataurl"))
+        })
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|data_url| !data_url.is_empty())
+        .map(ToOwned::to_owned)
+}
 impl App {
     pub fn from_init(init: AppInit) -> Self {
+        let initial_scene_uses_time = init.uniform_scene.as_ref().is_some_and(scene_uses_time);
+        let initial_scene_reference_image_path = init
+            .uniform_scene
+            .as_ref()
+            .and_then(scene_reference_image_path);
+        let initial_scene_reference_image_data_url = init
+            .uniform_scene
+            .as_ref()
+            .and_then(scene_reference_image_data_url);
         Self {
             shader_space: init.shader_space,
             resolution: init.resolution,
@@ -161,6 +287,21 @@ impl App {
             preview_color_attachment: None,
             histogram_renderer: None,
             histogram_texture_id: None,
+            histogram_dirty: true,
+            ref_image: None,
+            diff_renderer: None,
+            diff_texture_id: None,
+            diff_metric_mode: DiffMetricMode::AE,
+            diff_stats: None,
+            diff_dirty: false,
+            scene_uses_time: initial_scene_uses_time,
+            scene_reference_image_path: initial_scene_reference_image_path,
+            scene_reference_image_data_url: initial_scene_reference_image_data_url,
+            last_auto_reference_attempt: None,
+            time_updates_enabled: true,
+            time_value_secs: 0.0,
+            time_last_raw_secs: 0.0,
+            shift_was_down: false,
             pending_view_reset: false,
             viewport_copy_indicator: ViewportCopyIndicator::Hidden,
             viewport_copy_job_rx: None,
