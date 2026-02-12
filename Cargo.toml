@@ -18,5 +18,6 @@ naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }
 
 deno_core = { version = "0.380.0", features = ["include_icu_data"] }
 arboard = "3"
+bytemuck = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

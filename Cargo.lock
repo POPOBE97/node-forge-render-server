@@ -2782,6 +2782,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "base64",
+ "bytemuck",
  "crossbeam-channel",
  "deno_core",
  "image",
