@@ -40,7 +40,8 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
     out.uv = uv;
     out.geo_size_px = params.geo_size;
-    out.local_px = uv * out.geo_size_px;
+    // UV is top-left convention, so flip Y for GLSL-like local_px.
+    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
     let p_px = params.center + position.xy;
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);

@@ -29,11 +29,6 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
-// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
-// bottom-left UV convention onto WGSL's top-left texture coordinate space.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 
 struct GraphInputs {
     // Node: BoolInput_141
@@ -282,22 +277,6 @@ fn blendColor(src: vec4f, dst: vec4f) -> vec4f {
 
 fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
-}
-
-fn mc_GroupInstance_135_GroupInstance_125_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var xy_1: vec2<f32>;
-    var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_1 = uv;
-    xy_1 = xy;
-    size_1 = size;
-    let _e9: vec2<f32> = xy_1;
-    let _e10: vec2<f32> = size_1;
-    output = (_e9 / _e10);
-    let _e12: vec2<f32> = output;
-    return _e12;
 }
 
 fn mc_GroupInstance_135_MathClosure_104_(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
@@ -646,7 +625,7 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = uv * out.geo_size_px;
+ out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  let p_local = p_rect_local_px;

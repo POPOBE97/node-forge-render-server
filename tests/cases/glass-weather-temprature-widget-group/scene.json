@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-12T03:17:44.465Z",
-    "modified": "2026-02-12T03:17:44.465Z"
+    "created": "2026-02-12T08:06:47.352Z",
+    "modified": "2026-02-12T08:06:47.352Z"
   },
   "nodes": [
     {
@@ -1928,28 +1928,6 @@
           "params": {}
         },
         {
-          "id": "GroupInstance_125",
-          "type": "GroupInstance",
-          "position": {
-            "x": 880,
-            "y": 400
-          },
-          "width": 160,
-          "label": "Geo UV",
-          "params": {
-            "groupId": "Geo UV"
-          },
-          "inputs": [],
-          "outputs": [
-            {
-              "id": "out_0",
-              "name": "Output",
-              "type": "vector2"
-            }
-          ],
-          "inputBindings": []
-        },
-        {
           "id": "Luminance_142",
           "type": "Luminance",
           "position": {
@@ -2351,17 +2329,6 @@
           "to": {
             "nodeId": "MathClosure_108",
             "portId": "dynamic_1769588976487_2"
-          }
-        },
-        {
-          "id": "edge_318",
-          "from": {
-            "nodeId": "GroupInstance_125",
-            "portId": "out_0"
-          },
-          "to": {
-            "nodeId": "ImageTexture_76",
-            "portId": "uv"
           }
         },
         {

@@ -37,17 +37,11 @@ var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
 
-// Pass textures are sampled from offscreen render targets. WGSL texture UVs use (0,0) at the
-// top-left, while our graph UV convention is bottom-left, so we centralize the Y flip here.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
-
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
+ let xy = in.uv * original;
  let k = array<f32, 8>(0.212054133, 0.192007989, 0.075903155, 0.017631816, 0.002402914, 0, 0, 0);
  let o = array<f32, 8>(0.651252806, 2.415085316, 4.350380421, 6.290748119, 8.237553596, 0, 0, 0);
  var color = vec4f(0.0);

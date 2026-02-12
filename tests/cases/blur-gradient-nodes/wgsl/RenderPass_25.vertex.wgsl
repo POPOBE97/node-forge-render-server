@@ -29,11 +29,6 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
-// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
-// bottom-left UV convention onto WGSL's top-left texture coordinate space.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
@@ -78,7 +73,7 @@ fn mc_GroupInstance_31_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<
 
  out.geo_size_px = params.geo_size;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = uv * out.geo_size_px;
+ out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
  let p_local = position;
 

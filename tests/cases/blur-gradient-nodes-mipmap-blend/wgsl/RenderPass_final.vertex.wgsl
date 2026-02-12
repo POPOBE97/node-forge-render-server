@@ -29,11 +29,6 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
-// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
-// bottom-left UV convention onto WGSL's top-left texture coordinate space.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 
 struct GraphInputs {
     // Node: FloatInput_106
@@ -1383,37 +1378,37 @@ fn mc_MathClosure_calculateMaskLinear(uv: vec2<f32>, xy: vec2<f32>, start_y: f32
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip1_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip1, pass_samp_sys_group_sampleFromMipmap_Downsample_mip1, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip1, pass_samp_sys_group_sampleFromMipmap_Downsample_mip1, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip2_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip2, pass_samp_sys_group_sampleFromMipmap_Downsample_mip2, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip2, pass_samp_sys_group_sampleFromMipmap_Downsample_mip2, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip3_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip3, pass_samp_sys_group_sampleFromMipmap_Downsample_mip3, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip3, pass_samp_sys_group_sampleFromMipmap_Downsample_mip3, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip4_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip4, pass_samp_sys_group_sampleFromMipmap_Downsample_mip4, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip4, pass_samp_sys_group_sampleFromMipmap_Downsample_mip4, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip5_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip5, pass_samp_sys_group_sampleFromMipmap_Downsample_mip5, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip5, pass_samp_sys_group_sampleFromMipmap_Downsample_mip5, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_Downsample_mip6_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip6, pass_samp_sys_group_sampleFromMipmap_Downsample_mip6, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_Downsample_mip6, pass_samp_sys_group_sampleFromMipmap_Downsample_mip6, uv);
 }
 
 fn sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(xy_in: vec2f, res_in: vec2f) -> vec4f {
     let uv = xy_in / res_in;
-    return textureSample(pass_tex_sys_group_sampleFromMipmap_RenderPass_85, pass_samp_sys_group_sampleFromMipmap_RenderPass_85, nf_uv_pass(uv));
+    return textureSample(pass_tex_sys_group_sampleFromMipmap_RenderPass_85, pass_samp_sys_group_sampleFromMipmap_RenderPass_85, uv);
 }
 
 
@@ -1436,7 +1431,7 @@ fn sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(xy_in: vec2f, res_in: v
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = uv * out.geo_size_px;
+ out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  let p_local = p_rect_local_px;

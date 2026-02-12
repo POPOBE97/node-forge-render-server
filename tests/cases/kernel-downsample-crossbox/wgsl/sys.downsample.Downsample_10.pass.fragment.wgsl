@@ -37,25 +37,14 @@ var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
 
-// Pass textures are sampled from offscreen render targets. WGSL texture UVs use (0,0) at the
-// top-left, while our graph UV convention is bottom-left, so we centralize the Y flip here.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
-
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
     let dst_dims = params.target_size;
-    // Fragment position is pixel-centered, with top-left origin.
-    let dst_xy = vec2f(in.position.xy);
-    
-    // Map destination pixel to source integer grid via ceil, matching Godot's
-    // downsample shader: center_xy = ceil(UV * src_resolution).
-    // With UV = dst_xy / dst_dims: center_xy = ceil(dst_xy * src_dims / dst_dims).
-    let center_xy = dst_xy * src_dims / dst_dims;
+    // Use in.uv (top-left convention) to map directly to source pixel space.
+    let center_xy = in.uv * src_dims;
 
   let kw: i32 = 3;
   let kh: i32 = 3;

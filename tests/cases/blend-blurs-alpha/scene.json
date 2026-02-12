@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-12T02:47:04.548Z",
-    "modified": "2026-02-12T02:47:04.548Z"
+    "created": "2026-02-12T10:13:11.985Z",
+    "modified": "2026-02-12T10:13:11.985Z"
   },
   "nodes": [
     {
@@ -43,16 +43,16 @@
       "id": "node_2",
       "type": "RenderPass",
       "position": {
-        "x": -80,
+        "x": -100,
         "y": 420
       },
       "width": 160,
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -62,7 +62,7 @@
       "id": "node_3",
       "type": "Rect2DGeometry",
       "position": {
-        "x": -440,
+        "x": -460,
         "y": 420
       },
       "width": 160,
@@ -113,7 +113,7 @@
       "id": "node_14",
       "type": "Attribute",
       "position": {
-        "x": -260,
+        "x": -280,
         "y": 420
       },
       "width": 160,
@@ -172,7 +172,7 @@
       "id": "GuassianBlurPass_20",
       "type": "GuassianBlurPass",
       "position": {
-        "x": 120,
+        "x": 100,
         "y": 420
       },
       "width": 160,
@@ -180,14 +180,14 @@
       "params": {
         "mode": "standard",
         "radius": 60,
-        "extend": false
+        "extend": true
       }
     },
     {
       "id": "Vector2Input_22",
       "type": "Vector2Input",
       "position": {
-        "x": -620,
+        "x": -640,
         "y": 420
       },
       "width": 160,
@@ -244,28 +244,6 @@
       }
     },
     {
-      "id": "edge_18",
-      "from": {
-        "nodeId": "node_14",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "node_2",
-        "portId": "material"
-      }
-    },
-    {
-      "id": "edge_33",
-      "from": {
-        "nodeId": "GuassianBlurPass_20",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "node_1",
-        "portId": "dynamic_1767721792502_1"
-      }
-    },
-    {
       "id": "edge_35",
       "from": {
         "nodeId": "GuassianBlurPass_17",
@@ -288,17 +266,6 @@
       }
     },
     {
-      "id": "edge_38",
-      "from": {
-        "nodeId": "node_2",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "GuassianBlurPass_20",
-        "portId": "pass"
-      }
-    },
-    {
       "id": "edge_39",
       "from": {
         "nodeId": "node_15",
@@ -306,6 +273,39 @@
       },
       "to": {
         "nodeId": "GuassianBlurPass_17",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_40",
+      "from": {
+        "nodeId": "GuassianBlurPass_20",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_1",
+        "portId": "dynamic_1767721792502_1"
+      }
+    },
+    {
+      "id": "edge_41",
+      "from": {
+        "nodeId": "node_14",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "node_2",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_42",
+      "from": {
+        "nodeId": "node_2",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_20",
         "portId": "pass"
       }
     }

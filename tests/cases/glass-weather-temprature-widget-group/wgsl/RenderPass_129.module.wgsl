@@ -29,11 +29,6 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
-// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
-// bottom-left UV convention onto WGSL's top-left texture coordinate space.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
 
 struct GraphInputs {
     // Node: BoolInput_140
@@ -282,22 +277,6 @@ fn blendColor(src: vec4f, dst: vec4f) -> vec4f {
 
 fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
-}
-
-fn mc_GroupInstance_132_GroupInstance_125_MathClosure_99_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var xy_1: vec2<f32>;
-    var size_1: vec2<f32>;
-    var output: vec2<f32> = vec2(0f);
-
-    uv_1 = uv;
-    xy_1 = xy;
-    size_1 = size;
-    let _e9: vec2<f32> = xy_1;
-    let _e10: vec2<f32> = size_1;
-    output = (_e9 / _e10);
-    let _e12: vec2<f32> = output;
-    return _e12;
 }
 
 fn mc_GroupInstance_132_MathClosure_104_(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
@@ -646,7 +625,7 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = uv * out.geo_size_px;
+ out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  let p_local = p_rect_local_px;
@@ -724,28 +703,20 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_132_MathClosure_96_out: vec4f;
     {
-        let c_edge = textureSample(pass_tex_GroupInstance_132_GuassianBlurPass_85, pass_samp_GroupInstance_132_GuassianBlurPass_85, nf_uv_pass(mc_GroupInstance_132_MathClosure_88_out));
+        let c_edge = textureSample(pass_tex_GroupInstance_132_GuassianBlurPass_85, pass_samp_GroupInstance_132_GuassianBlurPass_85, mc_GroupInstance_132_MathClosure_88_out);
         let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f((graph_inputs.node_GroupInstance_132_FloatInput_10_d7a4e6d9).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_GroupInstance_132_FloatInput_12_3da8e6d9).x)));
         let f = smoothstep(0.0, 0.015, mc_GroupInstance_132_MathClosure_91_out);
         let l = mc_GroupInstance_132_MathClosure_104_out;
         let selection = mc_GroupInstance_132_MathClosure_115_out;
-        let lumin_edge = clamp(dot((textureSample(pass_tex_GroupInstance_132_GuassianBlurPass_85, pass_samp_GroupInstance_132_GuassianBlurPass_85, nf_uv_pass(mc_GroupInstance_132_MathClosure_88_out))).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        let lumin_edge = clamp(dot((textureSample(pass_tex_GroupInstance_132_GuassianBlurPass_85, pass_samp_GroupInstance_132_GuassianBlurPass_85, mc_GroupInstance_132_MathClosure_88_out)).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
         output = mc_GroupInstance_132_MathClosure_96_(in.uv, c_edge, e, f, l, selection, lumin_edge);
         mc_GroupInstance_132_MathClosure_96_out = output;
     }
-    var mc_GroupInstance_132_GroupInstance_125_MathClosure_99_out: vec2f;
-    {
-        let xy = in.local_px;
-        let size = in.geo_size_px;
-        var output: vec2f;
-        output = mc_GroupInstance_132_GroupInstance_125_MathClosure_99_(in.uv, xy, size);
-        mc_GroupInstance_132_GroupInstance_125_MathClosure_99_out = output;
-    }
     var mc_GroupInstance_132_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_GroupInstance_132_MathClosure_108_out)) - 16.5));
-        let c_ui = textureSample(img_tex_GroupInstance_132_ImageTexture_76, img_samp_GroupInstance_132_ImageTexture_76, (mc_GroupInstance_132_GroupInstance_125_MathClosure_99_out));
+        let c_ui = textureSample(img_tex_GroupInstance_132_ImageTexture_76, img_samp_GroupInstance_132_ImageTexture_76, (in.uv));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_GroupInstance_132_MathClosure_108_out)) - 16.5));
         let show_thumb = ((graph_inputs.node_BoolInput_140_13a147c1).x != 0);
         var output: vec4f;

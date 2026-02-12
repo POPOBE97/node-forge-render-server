@@ -37,12 +37,6 @@ var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
 
-// Pass textures are sampled from offscreen render targets. WGSL texture UVs use (0,0) at the
-// top-left, while our graph UV convention is bottom-left, so we centralize the Y flip here.
-fn nf_uv_pass(uv: vec2f) -> vec2f {
-    return vec2f(uv.x, 1.0 - uv.y);
-}
-
  @vertex
   fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
       var out: VSOut;
@@ -56,8 +50,9 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 
         out.geo_size_px = params.geo_size;
 
-         // Geometry-local pixel coordinate (GeoFragcoord).
-         out.local_px = uv * out.geo_size_px;
+         // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
+         // UV is top-left convention, so flip Y for GLSL-like local_px.
+         out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -79,7 +74,7 @@ fn nf_uv_pass(uv: vec2f) -> vec2f {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
+ let xy = in.uv * original;
  let k = array<f32, 8>(0.14004074, 0.158633992, 0.1072497, 0.057974186, 0.025054639, 0.008656153, 0.002390596, 0);
  let o = array<f32, 8>(0.660334766, 2.464608431, 4.436532497, 6.408857822, 8.381749153, 10.355356216, 12.329815865, 0);
  var color = vec4f(0.0);
