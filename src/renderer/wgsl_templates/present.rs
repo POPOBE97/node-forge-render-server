@@ -40,6 +40,10 @@ var {tex_var}: texture_2d<f32>;\n\
 @group(1) @binding(1)\n\
 var {samp_var}: sampler;\n\
 \n\
+fn nf_uv_pass(uv: vec2f) -> vec2f {{\n\
+    return vec2f(uv.x, 1.0 - uv.y);\n\
+}}\n\
+\n\
 fn linear_to_srgb_channel(x_in: f32) -> f32 {{\n\
     let x = clamp(x_in, 0.0, 1.0);\n\
     if (x <= 0.0031308) {{\n\
@@ -81,7 +85,7 @@ fn vs_main(\n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     // Sampling a render-target texture with our bottom-left UV convention requires a Y flip.\n\
-    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);\n\
+    let uv = nf_uv_pass(in.uv);\n\
     let c = textureSample({tex_var}, {samp_var}, uv);\n\
     return vec4f(linear_to_srgb(c.xyz), c.w);\n\
 }}\n"

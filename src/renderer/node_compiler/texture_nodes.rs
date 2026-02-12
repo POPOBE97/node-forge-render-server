@@ -261,12 +261,10 @@ where
     let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
 
     // NOTE: PassTexture is the one intentional exception where we do a fragment-space Y flip.
-    // This keeps existing baseline PNGs stable while we migrate the whole graph to a GL-like
-    // coordinate system and move image flipping out of WGSL.
-    //
-    // WGSL texture sampling uses (0,0) at top-left; our renderer's UV convention is bottom-left.
-    let flipped_uv = format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr);
-    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {flipped_uv})");
+    // Centralize the flip in WGSL helper `nf_uv_pass()` so we can migrate the contract later
+    // without editing scattered callsites.
+    let sample_expr =
+        format!("textureSample({tex_var}, {samp_var}, nf_uv_pass({}))", uv_expr.expr);
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
@@ -350,7 +348,7 @@ mod pass_texture_tests {
 
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("textureSample"));
-        assert!(result.expr.contains("1.0 - (in.uv).y"));
+        assert!(result.expr.contains("nf_uv_pass"));
     }
 
     #[test]

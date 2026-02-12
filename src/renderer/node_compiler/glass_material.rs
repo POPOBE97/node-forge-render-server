@@ -363,7 +363,7 @@ fn glass_texture_map(
 ) -> vec4f {
     // Pass textures use WGSL texture coordinates with (0,0) at top-left.
     // Our renderer's UV convention is bottom-left, so we flip Y here.
-    let uv2 = vec2f(uv.x, 1.0 - uv.y);
+    let uv2 = nf_uv_pass(uv);
     var col = textureSample(tex, samp, uv2);
 
     if (is_bg) {

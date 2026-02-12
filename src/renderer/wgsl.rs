@@ -239,6 +239,10 @@ struct VSOut {{
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
+
+fn nf_uv_pass(uv: vec2f) -> vec2f {{
+    return vec2f(uv.x, 1.0 - uv.y);
+}}
 "#
     );
 
@@ -278,12 +282,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
 "#
     );
 
-    // Fragment shader samples the source texture with Y flip
+    // Fragment shader samples the source texture using the centralized pass UV flip.
     let fragment_entry = r#"
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);
-    return textureSample(src_tex, src_samp, uv);
+    return textureSample(src_tex, src_samp, nf_uv_pass(in.uv));
 }
 "#
     .to_string();
@@ -353,6 +356,12 @@ struct VSOut {
 var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
 var src_samp: sampler;
+
+// Pass textures are sampled from offscreen render targets. WGSL texture UVs use (0,0) at the
+// top-left, while our graph UV convention is bottom-left, so we centralize the Y flip here.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
 "#
     .to_string();
 
@@ -581,9 +590,6 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     blur_pass_id: &str,
     forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
-    let _ = nodes_by_id;
-    let _ = forced_graph_binding_kind;
-
     // Source is provided on the `pass` input.
     let Some(conn) = incoming_connection(scene, blur_pass_id, "pass") else {
         // No input - return transparent.
@@ -592,11 +598,122 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
         ));
     };
 
-    let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle(
-        crate::renderer::wgsl_templates::fullscreen::FullscreenTemplateSpec { flip_y: true },
+    let source_is_pass = nodes_by_id
+        .get(&conn.from.node_id)
+        .is_some_and(|node| matches!(
+            node.node_type.as_str(),
+            "RenderPass" | "GuassianBlurPass" | "Downsample"
+        ));
+
+    if source_is_pass {
+        let mut bundle =
+            crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle(
+                crate::renderer::wgsl_templates::fullscreen::FullscreenTemplateSpec {
+                    flip_y: true,
+                },
+            );
+        bundle.pass_textures = vec![conn.from.node_id.clone()];
+        return Ok(bundle);
+    }
+
+    // Non-pass source: compile the connected material expression directly.
+    let mut material_ctx = MaterialCompileContext::default();
+    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+    let fragment_expr = compile_material_expr(
+        scene,
+        nodes_by_id,
+        &conn.from.node_id,
+        Some(&conn.from.port_id),
+        &mut material_ctx,
+        &mut cache,
+    )?;
+    let out_color = to_vec4_color(fragment_expr);
+    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
+
+    let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
+    let graph_binding_kind = graph_schema
+        .as_ref()
+        .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
+
+    let mut common = r#"
+struct Params {
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+
+    // Pack to 16-byte boundary.
+    time: f32,
+    _pad0: f32,
+
+    // 16-byte aligned.
+    color: vec4f,
+};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+struct VSOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
+    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+    @location(2) local_px: vec2f,
+    // Geometry size in pixels after applying geometry/instance transforms.
+    @location(3) geo_size_px: vec2f,
+};
+"#
+    .to_string();
+
+    if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
+        common.push_str(&graph_inputs_wgsl_decl(schema, kind));
+    }
+    common.push_str(&material_ctx.wgsl_decls());
+
+    let vertex = r#"
+@vertex
+fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+    var out: VSOut;
+    out.uv = uv;
+    out.geo_size_px = params.geo_size;
+    out.local_px = uv * out.geo_size_px;
+
+    let p_px = params.center + position.xy;
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+    out.position = vec4f(ndc, position.z, 1.0);
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+    return out;
+}
+"#;
+
+    let fragment = format!(
+        r#"
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {{
+{}
+}}
+"#,
+        fragment_body
     );
-    bundle.pass_textures = vec![conn.from.node_id.clone()];
-    Ok(bundle)
+
+    let vertex_src = format!("{common}{vertex}");
+    let fragment_src = format!("{common}{fragment}");
+    let module = format!("{common}{vertex}{fragment}");
+
+    Ok(WgslShaderBundle {
+        common,
+        vertex: vertex_src,
+        fragment: fragment_src,
+        compute: None,
+        module,
+        image_textures: material_ctx.image_textures,
+        pass_textures: material_ctx.pass_textures,
+        graph_schema,
+        graph_binding_kind,
+    })
 }
 
 pub fn build_pass_wgsl_bundle(
@@ -729,6 +846,12 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
      @location(4) instance_index: u32,
  };
+
+// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
+// bottom-left UV convention onto WGSL's top-left texture coordinate space.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
 "#
     .to_string();
 
@@ -1165,15 +1288,37 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
 
 /// Build a downsample shader bundle for the given factor (1, 2, 4, or 8).
 pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
+    build_downsample_bundle_with_flip(factor, false)
+}
+
+/// Build a downsample shader bundle for the given factor (1, 2, 4, or 8),
+/// optionally flipping Y before sampling.
+pub fn build_downsample_bundle_with_flip(
+    factor: u32,
+    flip_y: bool,
+) -> Result<WgslShaderBundle> {
+    let sample_uv = |expr: &str| -> String {
+        if flip_y {
+            format!("nf_uv_pass({expr})")
+        } else {
+            expr.to_string()
+        }
+    };
+
     let body = match factor {
-        1 => r#"
+        1 => {
+            let uv_expr = sample_uv("uv");
+            r#"
  let src_resolution = vec2f(textureDimensions(src_tex));
  let dst_xy = vec2f(in.position.xy);
  let uv = dst_xy / src_resolution;
- return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+ return textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
  "#
-        .to_string(),
-        2 => r#"
+            .replace("__UV__", &uv_expr)
+        }
+        2 => {
+            let uv_expr = sample_uv("uv");
+            r#"
  let src_resolution = params.target_size * 2.0;
  let dst_xy = vec2f(in.position.xy);
  let base = dst_xy * 2.0 - vec2f(0.5);
@@ -1182,14 +1327,17 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  for (var y: i32 = 0; y < 2; y = y + 1) {
      for (var x: i32 = 0; x < 2; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
      }
  }
  
  return sum * 0.25;
  "#
-        .to_string(),
-        4 => r#"
+            .replace("__UV__", &uv_expr)
+        }
+        4 => {
+            let uv_expr = sample_uv("uv");
+            r#"
  let src_resolution = params.target_size * 4.0;
  let dst_xy = vec2f(in.position.xy);
  let base = dst_xy * 4.0 - vec2f(1.5);
@@ -1198,14 +1346,17 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  for (var y: i32 = 0; y < 4; y = y + 1) {
      for (var x: i32 = 0; x < 4; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
      }
  }
  
  return sum * (1.0 / 16.0);
  "#
-        .to_string(),
-        8 => r#"
+            .replace("__UV__", &uv_expr)
+        }
+        8 => {
+            let uv_expr = sample_uv("uv");
+            r#"
  let src_resolution = params.target_size * 8.0;
  let dst_xy = vec2f(in.position.xy);
  let base = dst_xy * 8.0 - vec2f(3.5);
@@ -1214,13 +1365,14 @@ pub fn build_downsample_bundle(factor: u32) -> Result<WgslShaderBundle> {
  for (var y: i32 = 0; y < 8; y = y + 1) {
      for (var x: i32 = 0; x < 8; x = x + 1) {
          let uv = (base + vec2f(f32(x), f32(y))) / src_resolution;
-         sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
+         sum = sum + textureSampleLevel(src_tex, src_samp, __UV__, 0.0);
      }
  }
  
  return sum * (1.0 / 64.0);
  "#
-        .to_string(),
+            .replace("__UV__", &uv_expr)
+        }
         other => {
             return Err(anyhow!(
                 "GuassianBlurPass: unsupported downsample factor {other}"

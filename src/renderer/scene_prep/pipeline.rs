@@ -31,18 +31,6 @@ pub(crate) fn prepare_scene_with_report(
     let mut expanded = input.clone();
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
 
-    // Deduplicate identical pass subgraphs across group instances.
-    // This must run after expansion but before upstream reachability filtering
-    // so that orphaned upstream nodes from removed duplicates are cleaned up.
-    let dedup_report = dedup_identical_passes(&mut expanded);
-    if dedup_report.deduped_passes > 0 {
-        eprintln!(
-            "pass dedup: removed {} duplicate passes, {} orphaned nodes",
-            dedup_report.deduped_passes,
-            dedup_report.removed_nodes,
-        );
-    }
-
     // 1) Locate the RenderTarget-category node. Without it, the graph has no "main" entry.
     let scheme = schema::load_default_scheme()?;
     let render_targets: Vec<&Node> = expanded
@@ -103,6 +91,17 @@ pub(crate) fn prepare_scene_with_report(
     // Coerce primitive shader values into passes by synthesizing a fullscreen RenderPass.
     let mut scene = scene;
     let auto_wrapped_pass_inputs = auto_wrap_primitive_pass_inputs(&mut scene, &scheme);
+
+    // Deduplicate identical pass subgraphs after auto-wrap so that synthesized
+    // fullscreen bridge passes can also be merged.
+    let dedup_report = dedup_identical_passes(&mut scene);
+    if dedup_report.deduped_passes > 0 {
+        eprintln!(
+            "pass dedup: removed {} duplicate passes, {} orphaned nodes",
+            dedup_report.deduped_passes,
+            dedup_report.removed_nodes,
+        );
+    }
 
     // Inline ImageFile -> ImageTexture.image connections into ImageTexture params.
     let inlined_image_file_bindings =

@@ -199,19 +199,24 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
 
         let canonical_original = &members[0];
 
-        // Derive canonical name from dedup metadata if available.
+        // Derive canonical name from dedup metadata when both fields exist.
+        // For non-group-generated passes (e.g. sys.auto.fullscreen.pass.*), keep
+        // the original canonical ID to avoid unstable sys.group.unknown renames.
         let canonical_name = if let Some(node) = nodes_by_id.get(canonical_original.as_str()) {
             let group_id = node
                 .params
                 .get("__dedup_group_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+                .and_then(|v| v.as_str());
             let original_id = node
                 .params
                 .get("__dedup_original_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or(&node.id);
-            format!("sys.group.{group_id}/{original_id}")
+                .and_then(|v| v.as_str());
+            match (group_id, original_id) {
+                (Some(group_id), Some(original_id)) => {
+                    format!("sys.group.{group_id}/{original_id}")
+                }
+                _ => canonical_original.clone(),
+            }
         } else {
             canonical_original.clone()
         };
@@ -517,5 +522,55 @@ mod tests {
         let report = dedup_identical_passes(&mut scene);
         assert_eq!(report.deduped_passes, 0, "different params should not be deduped");
         assert_eq!(scene.nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_non_group_pass_keeps_canonical_id() {
+        let mut scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata { name: "test".to_string(), created: None, modified: None },
+            nodes: vec![
+                make_node("sys.auto.fullscreen.pass.edge_1", "RenderPass", HashMap::new()),
+                make_node("sys.auto.fullscreen.pass.edge_2", "RenderPass", HashMap::new()),
+                make_node("downstream", "MathClosure", HashMap::new()),
+            ],
+            connections: vec![
+                make_conn(
+                    "c1",
+                    "sys.auto.fullscreen.pass.edge_1",
+                    "output",
+                    "downstream",
+                    "in_0",
+                ),
+                make_conn(
+                    "c2",
+                    "sys.auto.fullscreen.pass.edge_2",
+                    "output",
+                    "downstream",
+                    "in_1",
+                ),
+            ],
+            outputs: None,
+            groups: Vec::new(),
+        };
+
+        let report = dedup_identical_passes(&mut scene);
+        assert_eq!(report.deduped_passes, 1);
+
+        let pass_nodes: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == "RenderPass")
+            .collect();
+        assert_eq!(pass_nodes.len(), 1);
+        assert!(
+            pass_nodes[0].id.starts_with("sys.auto.fullscreen.pass."),
+            "canonical non-group pass should keep sys.auto.* id, got {}",
+            pass_nodes[0].id
+        );
+        assert!(
+            !pass_nodes[0].id.starts_with("sys.group.unknown/"),
+            "non-group pass should not be renamed to sys.group.unknown/*"
+        );
     }
 }

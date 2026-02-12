@@ -14,7 +14,7 @@ impl Default for FullscreenTemplateSpec {
 
 pub fn build_fullscreen_sampled_bundle(spec: FullscreenTemplateSpec) -> WgslShaderBundle {
     let sample_uv = if spec.flip_y {
-        "let uv = vec2f(in.uv.x, 1.0 - in.uv.y);"
+        "let uv = nf_uv_pass(in.uv);"
     } else {
         "let uv = in.uv;"
     };

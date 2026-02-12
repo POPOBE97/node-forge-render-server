@@ -586,8 +586,7 @@ where
                 let helper_fn = format!(
                     r#"fn {helper_name_with_suffix}(xy_in: vec2f, res_in: vec2f) -> vec4f {{
     let uv = xy_in / res_in;
-    let uv_flipped = vec2f(uv.x, 1.0 - uv.y);
-    return textureSample({tex_var}, {samp_var}, uv_flipped);
+    return textureSample({tex_var}, {samp_var}, nf_uv_pass(uv));
 }}
 "#,
                 );
@@ -599,8 +598,7 @@ where
                 ));
                 let helper_fn = format!(
                     r#"fn {helper_name_with_suffix}(uv_in: vec2f) -> vec4f {{
-    let uv_flipped = vec2f(uv_in.x, 1.0 - uv_in.y);
-    return textureSample({tex_var}, {samp_var}, uv_flipped);
+    return textureSample({tex_var}, {samp_var}, nf_uv_pass(uv_in));
 }}
 "#,
                 );

@@ -104,6 +104,16 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
     // Plan first (no mutation of vectors while iterating).
     let mut plans: Vec<WrapPlan> = Vec::new();
     for (idx, c) in scene.connections.iter().enumerate() {
+        // GuassianBlurPass has a dedicated blur-source WGSL path that can consume
+        // compatible non-pass inputs directly, so avoid generating an extra
+        // auto fullscreen bridge pass for its `pass` input.
+        if nodes_by_id
+            .get(&c.to.node_id)
+            .is_some_and(|n| n.node_type == "GuassianBlurPass")
+        {
+            continue;
+        }
+
         let Some(to_ty) = get_to_port_type(scheme, &nodes_by_id, &c.to.node_id, &c.to.port_id)
         else {
             continue;
