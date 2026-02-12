@@ -1,4 +1,5 @@
 use std::{
+    sync::mpsc,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -28,6 +29,21 @@ pub struct SampledPixel {
     pub x: u32,
     pub y: u32,
     pub rgba: [u8; 4],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ViewportCopyIndicator {
+    Hidden,
+    InProgress,
+    Success { hide_at: f64 },
+    Failure { hide_at: f64 },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ViewportCopyIndicatorVisual {
+    InProgress,
+    Success,
+    Failure,
 }
 
 pub const CANVAS_RADIUS: f32 = 16.0;
@@ -88,22 +104,18 @@ pub struct App {
 
     pub animations: AnimationManager,
 
-    // --- Resource tree sidebar state ---
     pub file_tree_state: FileTreeState,
     pub resource_snapshot: Option<ResourceSnapshot>,
     pub resource_tree_nodes: Vec<FileTreeNode>,
-    /// Last pipeline rebuild count when we cached the resource snapshot.
     pub resource_snapshot_generation: u64,
-    /// Texture to preview in canvas (None = show main output).
     pub preview_texture_name: Option<rust_wgpu_fiber::ResourceName>,
-    /// Registered egui TextureId for preview texture.
     pub preview_color_attachment: Option<egui::TextureId>,
-    /// GPU histogram renderer for the currently displayed viewport texture.
     pub histogram_renderer: Option<crate::ui::histogram::HistogramRenderer>,
-    /// Registered egui TextureId for histogram texture.
     pub histogram_texture_id: Option<egui::TextureId>,
-    /// Request one-shot reset of canvas pan/zoom on next canvas frame.
     pub pending_view_reset: bool,
+    pub viewport_copy_indicator: ViewportCopyIndicator,
+    pub viewport_copy_job_rx: Option<mpsc::Receiver<bool>>,
+    pub viewport_copy_last_visual: Option<ViewportCopyIndicatorVisual>,
 }
 
 impl App {
@@ -150,6 +162,9 @@ impl App {
             histogram_renderer: None,
             histogram_texture_id: None,
             pending_view_reset: false,
+            viewport_copy_indicator: ViewportCopyIndicator::Hidden,
+            viewport_copy_job_rx: None,
+            viewport_copy_last_visual: None,
         }
     }
 }
