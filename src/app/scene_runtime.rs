@@ -5,7 +5,12 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::{protocol, renderer, ws};
 
-use super::types::App;
+use super::types::{
+    App,
+    scene_reference_image_data_url,
+    scene_reference_image_path,
+    scene_uses_time,
+};
 
 pub struct SceneApplyResult {
     pub did_rebuild_shader_space: bool,
@@ -206,6 +211,8 @@ pub fn apply_scene_update(
                 let _ = apply_graph_uniform_updates(app, &uniform_scene)?;
                 Ok(uniform_scene)
             })();
+            let scene_ref_path = scene_reference_image_path(&scene);
+            let scene_ref_data_url = scene_reference_image_data_url(&scene);
 
             if let Ok(mut guard) = app.last_good.lock() {
                 *guard = Some(scene);
@@ -213,6 +220,9 @@ pub fn apply_scene_update(
 
             match update_result {
                 Ok(uniform_scene) => {
+                    app.scene_reference_image_path = scene_ref_path;
+                    app.scene_reference_image_data_url = scene_ref_data_url;
+                    app.scene_uses_time = scene_uses_time(&uniform_scene);
                     app.uniform_scene = Some(uniform_scene);
                     app.uniform_only_update_count = app.uniform_only_update_count.saturating_add(1);
                     SceneApplyResult {
@@ -222,6 +232,9 @@ pub fn apply_scene_update(
                     }
                 }
                 Err(e) => {
+                    app.scene_reference_image_path = scene_ref_path;
+                    app.scene_reference_image_data_url = scene_ref_data_url;
+                    app.scene_uses_time = false;
                     app.uniform_scene = None;
                     let message = format!("uniform-only update failed: {e:#}");
                     eprintln!("[scene-runtime] {message}");
@@ -239,6 +252,8 @@ pub fn apply_scene_update(
             request_id,
             source,
         } => {
+            app.scene_reference_image_path = scene_reference_image_path(&scene);
+            app.scene_reference_image_data_url = scene_reference_image_data_url(&scene);
             let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
                 app.window_resolution,
@@ -267,6 +282,7 @@ pub fn apply_scene_update(
                     match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
                         Ok(_updated_count) => {
                             app.last_pipeline_signature = Some(next_pipeline_signature);
+                            app.scene_uses_time = scene_uses_time(&prepared_for_fast_path.scene);
                             app.uniform_scene = prepared_scene_candidate;
                             app.uniform_only_update_count =
                                 app.uniform_only_update_count.saturating_add(1);
@@ -309,6 +325,7 @@ pub fn apply_scene_update(
                     app.last_pipeline_signature = Some(result.pipeline_signature);
                     app.uniform_scene = prepared_scene_candidate
                         .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
+                    app.scene_uses_time = app.uniform_scene.as_ref().is_some_and(scene_uses_time);
                     app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
 
                     if let Ok(mut g) = app.last_good.lock() {
@@ -324,6 +341,7 @@ pub fn apply_scene_update(
                 Ok(Err(e)) => {
                     let message = format!("{e:#}");
                     eprintln!("[error-plane] scene build failed: {message}");
+                    app.scene_uses_time = scene_uses_time(&scene);
                     app.uniform_scene = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
@@ -343,6 +361,7 @@ pub fn apply_scene_update(
                     };
                     let message = format!("scene build panicked; showing error plane: {panic_msg}");
                     eprintln!("{message}");
+                    app.scene_uses_time = scene_uses_time(&scene);
                     app.uniform_scene = None;
                     broadcast_error(app, request_id, "PANIC", message);
                     apply_error_plane(app, render_state);
@@ -359,6 +378,9 @@ pub fn apply_scene_update(
             request_id,
         } => {
             eprintln!("[error-plane] scene parse error: {message}");
+            app.scene_reference_image_path = None;
+            app.scene_reference_image_data_url = None;
+            app.scene_uses_time = false;
             broadcast_error(app, request_id, "PARSE_ERROR", message);
             apply_error_plane(app, render_state);
             SceneApplyResult {
