@@ -124,6 +124,13 @@ Critical reminder (vertex inputs):
 - Example: `TransformGeometry.translate` must be `vec3`.
 - If upstream graph yields `vec2`, call `coerce_to_type(..., ValueType::Vec3)`.
 
+## UV conversion (short)
+- Internal `in.uv` uses WGSL texture convention: top-left origin.
+- GLSL-like local pixel coord uses bottom-left origin via:
+  `local_px = vec2(uv.x, 1.0 - uv.y) * geo_size`.
+- User-facing `Attribute.uv` is GLSL-like (bottom-left):
+  `vec2(in.uv.x, 1.0 - in.uv.y)`.
+
 ## Resource Naming Protocol (from AGENT.md)
 Rules:
 - ASCII only, deterministic, human-readable.
