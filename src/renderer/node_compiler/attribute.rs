@@ -18,11 +18,11 @@ use crate::dsl::Node;
 /// - Uses time: false
 ///
 /// # Supported Attributes
-/// - `uv`: Texture coordinates (vec2f) - from fragment shader input
+/// - `uv`: Texture coordinates (vec2f) - user-facing bottom-left semantics
 ///
 /// # Example
 /// ```wgsl
-/// in.uv  // For "uv" attribute
+/// vec2f(in.uv.x, 1.0 - in.uv.y)  // For "uv" attribute
 /// ```
 pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
     let name = node
@@ -34,7 +34,10 @@ pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedEx
 
     match name.as_str() {
         // Common aliases from GLSL graphs (e.g. vUv)
-        "uv" | "vuv" | "v_uv" => Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2)),
+        "uv" | "vuv" | "v_uv" => Ok(TypedExpr::new(
+            "vec2f(in.uv.x, 1.0 - in.uv.y)".to_string(),
+            ValueType::Vec2,
+        )),
         other => bail!(
             "unsupported Attribute.name: {} (only 'uv' is currently supported)",
             other
@@ -60,7 +63,7 @@ mod tests {
 
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
-        assert_eq!(result.expr, "in.uv");
+        assert_eq!(result.expr, "vec2f(in.uv.x, 1.0 - in.uv.y)");
         assert!(!result.uses_time);
     }
 
@@ -78,7 +81,7 @@ mod tests {
 
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
-        assert_eq!(result.expr, "in.uv");
+        assert_eq!(result.expr, "vec2f(in.uv.x, 1.0 - in.uv.y)");
     }
 
     #[test]
@@ -94,7 +97,22 @@ mod tests {
 
         let result = compile_attribute(&node, None).unwrap();
         assert_eq!(result.ty, ValueType::Vec2);
-        assert_eq!(result.expr, "in.uv");
+        assert_eq!(result.expr, "vec2f(in.uv.x, 1.0 - in.uv.y)");
+    }
+
+    #[test]
+    fn test_attribute_uv_expr_flips_y_for_bottom_left_semantics() {
+        let node = Node {
+            id: "attr1".to_string(),
+            node_type: "Attribute".to_string(),
+            params: HashMap::from([("name".to_string(), serde_json::json!("uv"))]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let result = compile_attribute(&node, None).unwrap();
+        assert!(result.expr.contains("1.0 - in.uv.y"));
     }
 
     #[test]

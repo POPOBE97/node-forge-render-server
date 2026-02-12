@@ -68,5 +68,5 @@ var<storage, read> baked_data_parse: array<vec4f>;
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f(in.uv, 0.0, 1.0);
+    return vec4f(vec2f(in.uv.x, 1.0 - in.uv.y), 0.0, 1.0);
 }
