@@ -98,6 +98,10 @@ pub struct App {
     pub preview_texture_name: Option<rust_wgpu_fiber::ResourceName>,
     /// Registered egui TextureId for preview texture.
     pub preview_color_attachment: Option<egui::TextureId>,
+    /// GPU histogram renderer for the currently displayed viewport texture.
+    pub histogram_renderer: Option<crate::ui::histogram::HistogramRenderer>,
+    /// Registered egui TextureId for histogram texture.
+    pub histogram_texture_id: Option<egui::TextureId>,
     /// Request one-shot reset of canvas pan/zoom on next canvas frame.
     pub pending_view_reset: bool,
 }
@@ -143,6 +147,8 @@ impl App {
             resource_snapshot_generation: u64::MAX,
             preview_texture_name: None,
             preview_color_attachment: None,
+            histogram_renderer: None,
+            histogram_texture_id: None,
             pending_view_reset: false,
         }
     }

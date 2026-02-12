@@ -39,6 +39,7 @@ fn sidebar_max_width(ctx: &egui::Context) -> f32 {
 pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
+const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 
 fn sidebar_width_id() -> egui::Id {
     egui::Id::new("ui.debug_sidebar.width")
@@ -76,6 +77,7 @@ pub fn show_in_rect(
     sidebar_rect: egui::Rect,
     mut canvas_only_button: impl FnMut(&mut egui::Ui) -> bool,
     mut toggle_canvas_only: impl FnMut(),
+    histogram_texture_id: Option<egui::TextureId>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
 ) -> Option<SidebarAction> {
@@ -123,7 +125,7 @@ pub fn show_in_rect(
                 egui::pos2(sidebar_rect.max.x - 0.5, sidebar_rect.min.y),
                 egui::pos2(sidebar_rect.max.x - 0.5, sidebar_rect.max.y),
             ],
-            egui::Stroke::new(1.0, egui::Color32::from_gray(32)),
+            egui::Stroke::new(1.0, SIDEBAR_DIVIDER_COLOR),
         );
     }
 
@@ -140,9 +142,49 @@ pub fn show_in_rect(
             ui.set_clip_rect(content_rect);
             if ui_sidebar_factor > 0.01 {
                 egui::Frame::NONE
-                    .inner_margin(egui::Margin { left: 2, right: 6, top: 2, bottom: 2 })
+                    .inner_margin(egui::Margin { left: 2, right: 6, top: 4, bottom: 4 })
                     .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    if let Some(texture_id) = histogram_texture_id {
+                        ui.horizontal(|ui| {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new("Histogram")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_gray(170)),
+                            );
+                        });
+
+                        let histogram_border_color =
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
+                        egui::Frame::new()
+                            .outer_margin(egui::Margin::same(4))
+                            .stroke(egui::Stroke::new(1.0, histogram_border_color))
+                            .corner_radius(egui::CornerRadius::same(4))
+                            .show(ui, |ui| {
+                                let width = ui.available_width();
+                                let size = egui::vec2(width, width * (400.0 / 768.0));
+                                let image = egui::Image::new(egui::load::SizedTexture::new(
+                                    texture_id, size,
+                                ))
+                                .corner_radius(egui::CornerRadius::same(4));
+                                ui.add(image);
+                            });
+
+                        ui.separator();
+                        ui.add_space(4.0);
+                    }
+
+                    ui.horizontal(|ui| {
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("资源树")
+                                .size(11.0)
+                                .color(egui::Color32::from_gray(170)),
+                        );
+                    });
+                    ui.add_space(4.0);
+
                     let tree_response = super::file_tree_widget::show_file_tree(
                         ui,
                         tree_nodes,

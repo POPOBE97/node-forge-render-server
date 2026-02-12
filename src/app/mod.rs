@@ -7,7 +7,7 @@ mod window_mode;
 
 pub use types::{App, AppInit, SampledPixel};
 
-use rust_wgpu_fiber::eframe::{self, egui};
+use rust_wgpu_fiber::eframe::{self, egui, wgpu};
 
 use crate::{renderer, ui};
 
@@ -53,6 +53,64 @@ impl eframe::App for App {
         self.shader_space.render();
 
         texture_bridge::ensure_output_texture_registered(self, render_state, &mut renderer_guard);
+
+        if self.histogram_renderer.is_none() {
+            self.histogram_renderer = Some(ui::histogram::HistogramRenderer::new(&render_state.device));
+        }
+
+        let display_texture_name = self
+            .preview_texture_name
+            .as_ref()
+            .unwrap_or(&self.output_texture_name);
+
+        let display_texture = self
+            .shader_space
+            .textures
+            .get(display_texture_name.as_str())
+            .or_else(|| self.shader_space.textures.get(self.output_texture_name.as_str()));
+
+        if let Some(texture) = display_texture
+            && let Some(source_view) = texture.wgpu_texture_view.as_ref()
+            && let Some(histogram_renderer) = self.histogram_renderer.as_ref()
+        {
+            let source_size = [
+                texture.wgpu_texture_desc.size.width,
+                texture.wgpu_texture_desc.size.height,
+            ];
+            histogram_renderer.update(
+                &render_state.device,
+                self.shader_space.queue.as_ref(),
+                source_view,
+                source_size,
+            );
+
+            let sampler = wgpu::SamplerDescriptor {
+                label: Some("sys.histogram.sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            };
+
+            if let Some(id) = self.histogram_texture_id {
+                renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
+                    &render_state.device,
+                    histogram_renderer.output_view(),
+                    sampler,
+                    id,
+                );
+            } else {
+                self.histogram_texture_id = Some(
+                    renderer_guard.register_native_texture_with_sampler_options(
+                        &render_state.device,
+                        histogram_renderer.output_view(),
+                        sampler,
+                    ),
+                );
+            }
+        }
 
         if did_rebuild_shader_space {
             let _ = render_state
@@ -112,6 +170,7 @@ impl eframe::App for App {
                         || {
                             request_toggle_from_sidebar = true;
                         },
+                        self.histogram_texture_id,
                         &self.resource_tree_nodes,
                         &mut self.file_tree_state,
                     );
