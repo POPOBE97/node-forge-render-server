@@ -1,3 +1,8 @@
+use std::{
+    borrow::Cow,
+    sync::mpsc,
+};
+
 use rust_wgpu_fiber::eframe::{
     egui::{self, Color32, Rect, pos2},
     egui_wgpu, wgpu,
@@ -5,7 +10,15 @@ use rust_wgpu_fiber::eframe::{
 
 use crate::ui::{
     animation_manager::{AnimationSpec, Easing},
-    viewport_indicators::{ViewportIndicator, draw_viewport_indicators},
+    viewport_indicators::{
+        VIEWPORT_INDICATOR_GAP,
+        VIEWPORT_INDICATOR_ITEM_SIZE,
+        VIEWPORT_INDICATOR_RIGHT_PAD,
+        VIEWPORT_INDICATOR_TOP_PAD,
+        ViewportIndicator,
+        ViewportIndicatorKind,
+        draw_viewport_indicator_at,
+    },
 };
 
 use super::{
@@ -13,7 +26,13 @@ use super::{
         clamp_zoom, lerp,
     },
     texture_bridge,
-    types::{App, SIDEBAR_ANIM_SECS, UiWindowMode},
+    types::{
+        App,
+        SIDEBAR_ANIM_SECS,
+        UiWindowMode,
+        ViewportCopyIndicator,
+        ViewportCopyIndicatorVisual,
+    },
     window_mode::WindowModeFrame,
 };
 
@@ -29,6 +48,39 @@ pub fn show_canvas_panel(
     now: f64,
 ) -> bool {
     let mut requested_toggle_canvas_only = false;
+
+    if let Some(rx) = app.viewport_copy_job_rx.as_ref() {
+        match rx.try_recv() {
+            Ok(success) => {
+                app.viewport_copy_job_rx = None;
+                if success {
+                    app.viewport_copy_indicator =
+                        ViewportCopyIndicator::Success { hide_at: now + 1.0 };
+                    app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Success);
+                } else {
+                    app.viewport_copy_indicator =
+                        ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
+                    app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Failure);
+                }
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                app.viewport_copy_job_rx = None;
+                app.viewport_copy_indicator =
+                    ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
+                app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Failure);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+    }
+    match app.viewport_copy_indicator {
+        ViewportCopyIndicator::Success { hide_at }
+        | ViewportCopyIndicator::Failure { hide_at } => {
+            if now >= hide_at {
+                app.viewport_copy_indicator = ViewportCopyIndicator::Hidden;
+            }
+        }
+        _ => {}
+    }
 
     if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F)) {
         requested_toggle_canvas_only = true;
@@ -184,6 +236,46 @@ pub fn show_canvas_panel(
     let mut image_rect = Rect::from_min_size(base_min + app.pan, draw_size);
 
     let response = ui.allocate_rect(avail_rect, egui::Sense::click_and_drag());
+
+    let active_texture_name = if using_preview {
+        app.preview_texture_name
+            .as_ref()
+            .map(|n| n.as_str().to_string())
+            .unwrap_or_else(|| app.output_texture_name.as_str().to_string())
+    } else {
+        app.output_texture_name.as_str().to_string()
+    };
+    response.context_menu(|ui| {
+        if ui.button("复制材质").clicked() {
+            if let Some(info) = app.shader_space.texture_info(active_texture_name.as_str())
+                && let Ok(image) = app
+                    .shader_space
+                    .read_texture_rgba8(active_texture_name.as_str())
+            {
+                let width = info.size.width as usize;
+                let height = info.size.height as usize;
+                let bytes = image.bytes;
+                let (tx, rx) = mpsc::channel::<bool>();
+                app.viewport_copy_job_rx = Some(rx);
+                app.viewport_copy_indicator = ViewportCopyIndicator::InProgress;
+                app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::InProgress);
+
+                std::thread::spawn(move || {
+                    let copied = arboard::Clipboard::new()
+                        .and_then(|mut clipboard| {
+                            clipboard.set_image(arboard::ImageData {
+                                width,
+                                height,
+                                bytes: Cow::Owned(bytes),
+                            })
+                        })
+                        .is_ok();
+                    let _ = tx.send(copied);
+                });
+            }
+            ui.close();
+        }
+    });
 
     if pan_zoom_enabled && ctx.input(|i| i.key_pressed(egui::Key::R)) {
         app.zoom = fit_zoom;
@@ -370,13 +462,69 @@ pub fn show_canvas_panel(
         wgpu::FilterMode::Nearest => ViewportIndicator {
             icon: "N",
             tooltip: "Viewport sampling: Nearest (press P to toggle Linear)",
+            kind: ViewportIndicatorKind::Text,
         },
         wgpu::FilterMode::Linear => ViewportIndicator {
             icon: "L",
             tooltip: "Viewport sampling: Linear (press P to toggle Nearest)",
+            kind: ViewportIndicatorKind::Text,
         },
     };
-    draw_viewport_indicators(ui, animated_canvas_rect, &[sampling_indicator]);
+    let copy_visible = !matches!(app.viewport_copy_indicator, ViewportCopyIndicator::Hidden);
+    let copy_anim_t = ctx.animate_bool(egui::Id::new("ui.viewport.copy_indicator.visible"), copy_visible);
+
+    let copy_visual = match app.viewport_copy_indicator {
+        ViewportCopyIndicator::InProgress => Some(ViewportCopyIndicatorVisual::InProgress),
+        ViewportCopyIndicator::Success { .. } => Some(ViewportCopyIndicatorVisual::Success),
+        ViewportCopyIndicator::Failure { .. } => Some(ViewportCopyIndicatorVisual::Failure),
+        ViewportCopyIndicator::Hidden => app.viewport_copy_last_visual,
+    };
+
+    let sampling_x = animated_canvas_rect.max.x
+        - VIEWPORT_INDICATOR_RIGHT_PAD
+        - VIEWPORT_INDICATOR_ITEM_SIZE
+        - copy_anim_t * (VIEWPORT_INDICATOR_ITEM_SIZE + VIEWPORT_INDICATOR_GAP);
+    let indicator_y = animated_canvas_rect.min.y + VIEWPORT_INDICATOR_TOP_PAD;
+    let sampling_rect = Rect::from_min_size(
+        pos2(sampling_x, indicator_y),
+        egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
+    );
+    draw_viewport_indicator_at(ui, sampling_rect, &sampling_indicator, now, 1.0);
+
+    if let Some(visual) = copy_visual
+        && copy_anim_t > 0.001
+    {
+        let copy_indicator = match visual {
+            ViewportCopyIndicatorVisual::InProgress => ViewportIndicator {
+                icon: "",
+                tooltip: "正在复制材质到剪贴板...",
+                kind: ViewportIndicatorKind::Spinner,
+            },
+            ViewportCopyIndicatorVisual::Success => ViewportIndicator {
+                icon: "✓",
+                tooltip: "复制完成",
+                kind: ViewportIndicatorKind::Success,
+            },
+            ViewportCopyIndicatorVisual::Failure => ViewportIndicator {
+                icon: "✕",
+                tooltip: "复制失败",
+                kind: ViewportIndicatorKind::Failure,
+            },
+        };
+        let slide_x = (1.0 - copy_anim_t) * 8.0;
+        let copy_rect = Rect::from_min_size(
+            pos2(
+                animated_canvas_rect.max.x - VIEWPORT_INDICATOR_RIGHT_PAD - VIEWPORT_INDICATOR_ITEM_SIZE + slide_x,
+                indicator_y,
+            ),
+            egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
+        );
+        draw_viewport_indicator_at(ui, copy_rect, &copy_indicator, now, copy_anim_t);
+    }
+
+    if copy_anim_t > 0.001 {
+        ctx.request_repaint();
+    }
 
     // Draw preview overlay badge.
     if let Some(ref preview_name) = app.preview_texture_name {

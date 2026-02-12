@@ -41,6 +41,18 @@ pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
 const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 
+fn tight_divider(ui: &mut egui::Ui) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 1.0), egui::Sense::hover());
+    ui.painter().line_segment(
+        [
+            egui::pos2(rect.min.x, rect.center().y),
+            egui::pos2(rect.max.x, rect.center().y),
+        ],
+        egui::Stroke::new(1.0, egui::Color32::from_gray(48)),
+    );
+}
+
 fn sidebar_width_id() -> egui::Id {
     egui::Id::new("ui.debug_sidebar.width")
 }
@@ -158,7 +170,12 @@ pub fn show_in_rect(
                         let histogram_border_color =
                             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
                         egui::Frame::new()
-                            .outer_margin(egui::Margin::same(4))
+                            .outer_margin(egui::Margin {
+                                left: 4,
+                                right: 0,
+                                top: 4,
+                                bottom: 4,
+                            })
                             .stroke(egui::Stroke::new(1.0, histogram_border_color))
                             .corner_radius(egui::CornerRadius::same(4))
                             .show(ui, |ui| {
@@ -171,8 +188,7 @@ pub fn show_in_rect(
                                 ui.add(image);
                             });
 
-                        ui.separator();
-                        ui.add_space(4.0);
+                        tight_divider(ui);
                     }
 
                     ui.horizontal(|ui| {
@@ -190,6 +206,10 @@ pub fn show_in_rect(
                         tree_nodes,
                         file_tree_state,
                     );
+
+                    if let Some(texture_name) = tree_response.copied_texture_name.as_ref() {
+                        ui.ctx().copy_text(texture_name.clone());
+                    }
 
                     // Translate clicks into SidebarActions.
                     if let Some(clicked) = tree_response.clicked {

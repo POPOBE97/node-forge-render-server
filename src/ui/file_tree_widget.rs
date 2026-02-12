@@ -46,6 +46,14 @@ pub struct FileTreeState {
 /// Result returned from `show_file_tree` each frame.
 pub struct FileTreeResponse {
     pub clicked: Option<FileTreeNode>,
+    pub copied_texture_name: Option<String>,
+}
+
+struct VisibleTreeEntry {
+    node: FileTreeNode,
+    parent_id: Option<String>,
+    collapse_id: Option<egui::Id>,
+    collapse_default_open: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -57,11 +65,135 @@ pub fn show_file_tree(
     nodes: &[FileTreeNode],
     state: &mut FileTreeState,
 ) -> FileTreeResponse {
-    let mut response = FileTreeResponse { clicked: None };
+    let mut response = FileTreeResponse {
+        clicked: None,
+        copied_texture_name: None,
+    };
     let root_path = ui.id().with("file_tree_root");
+    let mut visible_entries: Vec<VisibleTreeEntry> = Vec::new();
 
     for node in nodes {
-        draw_node(ui, node, 0, state, &mut response, root_path);
+        draw_node(
+            ui,
+            node,
+            0,
+            None,
+            state,
+            &mut response,
+            &mut visible_entries,
+            root_path,
+        );
+    }
+
+    if state.selected_id.is_some() {
+        let selected_index = state
+            .selected_id
+            .as_ref()
+            .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
+
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp))
+            && let Some(current) = selected_index
+            && current > 0
+        {
+            state.selected_id = Some(visible_entries[current - 1].node.id.clone());
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
+            && let Some(current) = selected_index
+            && current + 1 < visible_entries.len()
+        {
+            state.selected_id = Some(visible_entries[current + 1].node.id.clone());
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
+            && let Some(current) = selected_index
+        {
+            let current_entry = &visible_entries[current];
+
+            let collapse_target = current_entry
+                .collapse_id
+                .map(|id| (id, current_entry.collapse_default_open, false))
+                .or_else(|| {
+                    current_entry.parent_id.as_ref().and_then(|parent_id| {
+                        visible_entries
+                            .iter()
+                            .find(|entry| &entry.node.id == parent_id)
+                            .and_then(|entry| {
+                                entry
+                                    .collapse_id
+                                    .map(|id| (id, entry.collapse_default_open, true))
+                            })
+                    })
+                });
+
+            if let Some((collapse_id, default_open, set_parent_selected)) = collapse_target {
+                let mut collapsing_state =
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        collapse_id,
+                        default_open,
+                    );
+                if collapsing_state.is_open() {
+                    collapsing_state.set_open(false);
+                    collapsing_state.store(ui.ctx());
+
+                    if set_parent_selected
+                        && let Some(parent_id) = current_entry.parent_id.as_ref()
+                    {
+                        state.selected_id = Some(parent_id.clone());
+                    }
+                }
+            }
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
+            && let Some(current) = selected_index
+        {
+            let current_entry = &visible_entries[current];
+
+            let expand_target = current_entry
+                .collapse_id
+                .map(|id| (id, current_entry.collapse_default_open))
+                .or_else(|| {
+                    current_entry.parent_id.as_ref().and_then(|parent_id| {
+                        visible_entries
+                            .iter()
+                            .find(|entry| &entry.node.id == parent_id)
+                            .and_then(|entry| {
+                                entry.collapse_id.map(|id| (id, entry.collapse_default_open))
+                            })
+                    })
+                });
+
+            if let Some((collapse_id, default_open)) = expand_target {
+                let mut collapsing_state =
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        collapse_id,
+                        default_open,
+                    );
+                if !collapsing_state.is_open() {
+                    collapsing_state.set_open(true);
+                    collapsing_state.store(ui.ctx());
+                }
+            }
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::Enter))
+            && let Some(selected_id) = state.selected_id.as_ref()
+            && let Some(entry) = visible_entries
+                .iter()
+                .find(|entry| &entry.node.id == selected_id)
+            && matches!(
+                entry.node.kind,
+                NodeKind::Pass {
+                    target_texture: Some(_)
+                }
+            )
+        {
+            state.selected_id = Some(entry.node.id.clone());
+            response.clicked = Some(entry.node.clone());
+        }
     }
 
     response
@@ -75,8 +207,10 @@ fn draw_node(
     ui: &mut egui::Ui,
     node: &FileTreeNode,
     depth: usize,
+    parent_id: Option<&str>,
     state: &mut FileTreeState,
     response: &mut FileTreeResponse,
+    visible_entries: &mut Vec<VisibleTreeEntry>,
     path_hash: egui::Id,
 ) {
     let is_folder = !node.children.is_empty();
@@ -92,6 +226,19 @@ fn draw_node(
     // --- Interaction ---
     let row_id = node_path.with("row");
     let row_response = ui.interact(row_rect, row_id, egui::Sense::click());
+
+    if let NodeKind::Pass {
+        target_texture: Some(tex_name),
+    } = &node.kind
+    {
+        row_response.context_menu(|ui| {
+            if ui.button("复制材质名").clicked() {
+                response.copied_texture_name = Some(tex_name.clone());
+                ui.close();
+            }
+        });
+    }
+
     let hovered = row_response.hovered();
     let is_selected = state.selected_id.as_deref() == Some(&node.id);
 
@@ -157,14 +304,17 @@ fn draw_node(
     let cy = row_rect.center().y;
 
     // --- Chevron (folders only) ---
+    let collapse_default_open = node.id == "section.deps";
+    let collapse_id = is_folder.then_some(node_path.with("collapse"));
+
     let openness = if is_folder {
-        let collapsing_id = node_path.with("collapse");
+        let collapsing_id = collapse_id.expect("folder must have collapse id");
         let mut collapsing_state =
             egui::collapsing_header::CollapsingState::load_with_default_open(
                 ui.ctx(),
                 collapsing_id,
                 // Dependencies section defaults open.
-                node.id == "section.deps",
+                collapse_default_open,
             );
 
         if chevron_clicked {
@@ -183,6 +333,13 @@ fn draw_node(
         cx += CHEVRON_SIZE + GAP_CHEVRON_ICON;
         None
     };
+
+    visible_entries.push(VisibleTreeEntry {
+        node: node.clone(),
+        parent_id: parent_id.map(ToOwned::to_owned),
+        collapse_id,
+        collapse_default_open,
+    });
 
     // --- Icon ---
     // Only use folder icons for actual Folder nodes; passes with children keep their pass icon.
@@ -266,7 +423,16 @@ fn draw_node(
                 }
 
                 for child in &node.children {
-                    draw_node(ui, child, depth + 1, state, response, node_path);
+                    draw_node(
+                        ui,
+                        child,
+                        depth + 1,
+                        Some(node.id.as_str()),
+                        state,
+                        response,
+                        visible_entries,
+                        node_path,
+                    );
                 }
 
                 if openness < 1.0 {
