@@ -122,7 +122,7 @@ pub(crate) fn bake_data_parse_nodes(
     instance_count: u32,
 ) -> Result<HashMap<(String, String, String), Vec<BakedValue>>> {
     let mut baked: HashMap<(String, String, String), Vec<BakedValue>> = HashMap::new();
-    let mut rt = TsRuntime::new();
+    let mut rt: Option<TsRuntime> = None;
 
     for node in nodes_by_id.values() {
         if node.node_type != "DataParse" {
@@ -180,7 +180,10 @@ pub(crate) fn bake_data_parse_nodes(
 
             let script_body = format!("{bindings_src}\n{user_src}\n");
             let script = format!("(function() {{\n{}\n}})()", script_body);
-            let out: serde_json::Value = match rt.eval_script(&script) {
+            let out: serde_json::Value = match rt
+                .get_or_insert_with(TsRuntime::new)
+                .eval_script(&script)
+            {
                 Ok(v) => v,
                 Err(_) => serde_json::Value::Object(serde_json::Map::new()),
             };
