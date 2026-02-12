@@ -18,6 +18,12 @@ cargo run --release
 
 - WGSL 生成测试（如何新增/更新测试用例）：见 [docs/testing-wgsl-generation.md](docs/testing-wgsl-generation.md)
 
+## UV 约定（简短）
+
+- 内部 `in.uv` 使用 WGSL 纹理坐标：左上角为原点。
+- GLSL-like 本地像素坐标使用：`local_px = vec2(uv.x, 1.0 - uv.y) * geo_size`。
+- 用户可见的 `Attribute.uv` 保持 GLSL-like（左下角为原点）：`vec2(in.uv.x, 1.0 - in.uv.y)`。
+
 ## WebSocket 协议（最小集合）
 
 所有消息统一结构：
