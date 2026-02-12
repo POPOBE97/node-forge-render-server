@@ -95,7 +95,27 @@ fn draw_node(
     let hovered = row_response.hovered();
     let is_selected = state.selected_id.as_deref() == Some(&node.id);
 
-    if row_response.clicked() {
+    let chevron_x = row_rect.min.x + indent;
+    let chevron_rect = Rect::from_min_max(
+        Pos2::new(chevron_x - 2.0, row_rect.min.y),
+        Pos2::new(chevron_x + CHEVRON_SIZE + 2.0, row_rect.max.y),
+    );
+    let chevron_hovered = is_folder
+        && row_response
+            .hover_pos()
+            .is_some_and(|pos| chevron_rect.contains(pos));
+    if chevron_hovered {
+        ui.output_mut(|o| {
+            o.cursor_icon = egui::CursorIcon::PointingHand;
+        });
+    }
+    let chevron_clicked = is_folder
+        && row_response.clicked()
+        && row_response
+            .interact_pointer_pos()
+            .is_some_and(|pos| chevron_rect.contains(pos));
+
+    if row_response.clicked() && !chevron_clicked {
         state.selected_id = Some(node.id.clone());
         response.clicked = Some(node.clone());
     }
@@ -133,7 +153,7 @@ fn draw_node(
     }
 
     // --- Cursor X ---
-    let mut cx = row_rect.min.x + indent;
+    let mut cx = chevron_x;
     let cy = row_rect.center().y;
 
     // --- Chevron (folders only) ---
@@ -147,7 +167,7 @@ fn draw_node(
                 node.id == "section.deps",
             );
 
-        if row_response.clicked() {
+        if chevron_clicked {
             collapsing_state.toggle(ui);
         }
 
