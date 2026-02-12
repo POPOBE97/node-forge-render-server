@@ -238,7 +238,7 @@
       },
       "to": {
         "nodeId": "GuassianBlurPass_3",
-        "portId": "image"
+        "portId": "pass"
       }
     },
     {

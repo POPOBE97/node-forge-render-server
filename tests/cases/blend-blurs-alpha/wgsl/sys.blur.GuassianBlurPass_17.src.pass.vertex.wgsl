@@ -15,51 +15,57 @@ struct Params {
     color: vec4f,
 };
 
+
 @group(0) @binding(0)
 var<uniform> params: Params;
 
- struct VSOut {
-     @builtin(position) position: vec4f,
-     @location(0) uv: vec2f,
-     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-     @location(1) frag_coord_gl: vec2f,
-     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
-     // Geometry size in pixels after applying geometry/instance transforms.
-     @location(3) geo_size_px: vec2f,
- };
+struct VSOut {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
+    @location(1) frag_coord_gl: vec2f,
+    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
+    @location(2) local_px: vec2f,
+    // Geometry size in pixels after applying geometry/instance transforms.
+    @location(3) geo_size_px: vec2f,
+};
+
+
 @group(1) @binding(0)
-var pass_tex_node_11: texture_2d<f32>;
 
+var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
-var pass_samp_node_11: sampler;
+var src_samp: sampler;
 
-
-  @vertex
+ @vertex
   fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
       var out: VSOut;
-  
+ 
+      let _unused_geo_size = params.geo_size;
       let _unused_geo_translate = params.geo_translate;
-      let _unused_geo_scale = params.geo_scale;
-
+     let _unused_geo_scale = params.geo_scale;
+ 
         // UV passed as vertex attribute.
         out.uv = uv;
 
         out.geo_size_px = params.geo_size;
 
-        // Geometry-local pixel coordinate (GeoFragcoord).
-        out.local_px = uv * out.geo_size_px;
+         // Geometry-local pixel coordinate (GeoFragcoord).
+         out.local_px = uv * out.geo_size_px;
+ 
+       // Geometry vertices are in local pixel units centered at (0,0).
+       // Convert to target pixel coordinates with bottom-left origin.
+       let p_px = params.center + position.xy;
 
-      // Convert local pixels to target pixel coordinates with bottom-left origin.
-      let p_px = params.center + position.xy;
-  
-      // Convert pixels to clip space assuming bottom-left origin.
-      // (0,0) => (-1,-1), (target_size) => (1,1)
-      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-      out.position = vec4f(ndc, position.z, 1.0);
-  
+
+
+     // Convert pixels to clip space assuming bottom-left origin.
+     // (0,0) => (-1,-1), (target_size) => (1,1)
+     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+     out.position = vec4f(ndc, position.z, 1.0);
+
       // Pixel-centered like GLSL gl_FragCoord.xy.
-      out.frag_coord_gl = p_px;// + vec2f(0.5, 0.5);
+      out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
       return out;
   }
- 
+  

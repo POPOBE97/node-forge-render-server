@@ -2,16 +2,16 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-10T18:53:13.894Z",
-    "modified": "2026-02-10T18:53:13.894Z"
+    "created": "2026-02-12T03:17:44.465Z",
+    "modified": "2026-02-12T03:17:44.465Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": 2300,
-        "y": -300
+        "x": 1840,
+        "y": -400
       },
       "width": 160,
       "label": "Screen",
@@ -2339,7 +2339,7 @@
           },
           "to": {
             "nodeId": "GuassianBlurPass_85",
-            "portId": "image"
+            "portId": "pass"
           }
         },
         {

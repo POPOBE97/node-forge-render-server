@@ -124,7 +124,7 @@
       },
       "to": {
         "nodeId": "node_2",
-        "portId": "image"
+        "portId": "pass"
       }
     }
   ],

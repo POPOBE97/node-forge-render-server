@@ -613,7 +613,7 @@
       },
       "to": {
         "nodeId": "GuassianBlurPass_42",
-        "portId": "image"
+        "portId": "pass"
       }
     },
     {
