@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-12T02:16:20.701Z",
+  "generatedAt": "2026-02-12T19:56:57.342Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -55,6 +55,7 @@
     "PassTexture",
     "PrincipledBSDF",
     "Rect2DGeometry",
+    "ReferenceImage",
     "Refract",
     "Remap",
     "RenderPass",
@@ -2013,6 +2014,19 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "ReferenceImage",
+      "label": "Reference Image",
+      "category": "Texture",
+      "description": "Load an image and render it as a reference overlay (not part of graph wiring)",
+      "inputs": [],
+      "outputs": [],
+      "defaultParams": {
+        "path": "",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
     },
     {
       "type": "Refract",
