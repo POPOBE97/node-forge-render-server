@@ -39,6 +39,7 @@ pub fn show_canvas_panel(
         && ctx.input(|i| i.key_pressed(egui::Key::Escape))
     {
         app.preview_texture_name = None;
+        app.file_tree_state.selected_id = None;
         if let Some(id) = app.preview_color_attachment.take() {
             renderer.free_texture(&id);
         }
