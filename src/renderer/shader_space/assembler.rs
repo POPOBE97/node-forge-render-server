@@ -14,6 +14,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    io::Cursor,
     path::PathBuf,
     sync::Arc,
 };
@@ -50,8 +51,8 @@ use crate::{
             MaterialCompileContext, Params, PassBindings, PassOutputRegistry, PassOutputSpec,
             TypedExpr,
         },
-        utils::{as_bytes, as_bytes_slice, load_image_from_data_url},
-        utils::{coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_min_1},
+        utils::{as_bytes, as_bytes_slice, decode_data_url, load_image_from_data_url},
+        utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
             build_downsample_bundle, build_downsample_bundle_with_flip,
@@ -65,43 +66,41 @@ use crate::{
     },
 };
 
-/// Read the CPU size of a Rect2DGeometry node for blur consumer resolution.
-///
-/// Tries to resolve size from a connected Vector2Input on the `"size"` port,
-/// then falls back to inline `params.size` (`{x,y}` object), then to `default`.
-fn blur_resolve_rect2d_size(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, crate::dsl::Node>,
-    geo_node: &crate::dsl::Node,
-    default: [f32; 2],
-) -> Result<[f32; 2]> {
-    // 1. Connected Vector2Input on the "size" port.
-    if let Some(conn) = incoming_connection(scene, &geo_node.id, "size") {
-        if let Ok(from_node) = find_node(nodes_by_id, &conn.from.node_id) {
-            if from_node.node_type == "Vector2Input" {
-                let x = cpu_num_f32(scene, nodes_by_id, from_node, "x", default[0])?;
-                let y = cpu_num_f32(scene, nodes_by_id, from_node, "y", default[1])?;
-                return Ok([x, y]);
-            }
+fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]> {
+    let data_url = node
+        .params
+        .get("dataUrl")
+        .and_then(|v| v.as_str())
+        .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+
+    if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
+        let bytes = decode_data_url(s).ok()?;
+        let reader = image::ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .ok()?;
+        return reader.into_dimensions().ok().map(|(w, h)| [w, h]);
+    }
+
+    let rel_base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = node.params.get("path").and_then(|v| v.as_str());
+    let p = path.filter(|s| !s.trim().is_empty())?;
+
+    let candidates: Vec<std::path::PathBuf> = {
+        let pb = std::path::PathBuf::from(p);
+        if pb.is_absolute() {
+            vec![pb]
+        } else {
+            vec![pb.clone(), rel_base.join(&pb), rel_base.join("assets").join(&pb)]
+        }
+    };
+
+    for cand in &candidates {
+        if let Ok((w, h)) = image::image_dimensions(cand) {
+            return Some([w, h]);
         }
     }
 
-    // 2. Inline params: "size": {"x": ..., "y": ...}
-    if let Some(size_val) = geo_node.params.get("size") {
-        if let Some(obj) = size_val.as_object() {
-            let x = obj
-                .get("x")
-                .and_then(|v| v.as_f64().map(|n| n as f32))
-                .unwrap_or(default[0]);
-            let y = obj
-                .get("y")
-                .and_then(|v| v.as_f64().map(|n| n as f32))
-                .unwrap_or(default[1]);
-            return Ok([x, y]);
-        }
-    }
-
-    Ok(default)
+    None
 }
 
 pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
@@ -1498,13 +1497,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     // Track which pass node ids are direct composite layers (vs. transitive dependencies).
     let composite_layer_ids: HashSet<String> = composite_layers_in_order.iter().cloned().collect();
 
-    // Some pass nodes (RenderPass) are sampled downstream by Downsample nodes as higher-resolution
-    // sources. For those, we want the pass output texture sized to its geometry extent so the
-    // downstream Downsample actually has more source detail to work with.
-    //
-    // IMPORTANT: Existing PassTexture consumers expect legacy behavior where sampled RenderPass
-    // outputs match the Composite target resolution. So we only enable geometry-sized outputs for
-    // passes that are directly used as Downsample.source.
+    // Pass nodes used as Downsample.source keep special dynamic-geometry fullscreen handling.
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
     for (node_id, node) in nodes_by_id {
         if node.node_type != "Downsample" {
@@ -1515,83 +1508,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
         }
     }
 
-    // For sampled GuassianBlurPass passes, determine the appropriate resolution from the
-    // consumer RenderPass geometry.  Without this, blur passes default to the full Composite
-    // target resolution (e.g. 1080x2400) even when the blur result is only used within a
-    // small geometry (e.g. 397x44), wasting enormous GPU bandwidth.
-    //
-    // Walk the connection graph forward from each sampled GuassianBlurPass until we reach a
-    // consumer RenderPass.  Read its Rect2DGeometry size and record it.  If multiple
-    // consumers exist, take the maximum dimensions for quality.
-    let blur_consumer_resolution: HashMap<String, [u32; 2]> = {
-        // Build forward adjacency: from_node_id → [(to_node_id, to_port_id)]
-        let mut fwd: HashMap<&str, Vec<(&str, &str)>> = HashMap::new();
-        for conn in &prepared.scene.connections {
-            fwd.entry(conn.from.node_id.as_str())
-                .or_default()
-                .push((conn.to.node_id.as_str(), conn.to.port_id.as_str()));
-        }
-
-        let mut result: HashMap<String, [u32; 2]> = HashMap::new();
-
-        for blur_id in &sampled_pass_ids {
-            let Ok(node) = find_node(nodes_by_id, blur_id) else {
-                continue;
-            };
-            if node.node_type != "GuassianBlurPass" {
-                continue;
-            }
-
-            // BFS from the blur's output connections to find consumer RenderPass nodes.
-            let mut queue: Vec<&str> = Vec::new();
-            let mut visited: HashSet<&str> = HashSet::new();
-            if let Some(targets) = fwd.get(blur_id.as_str()) {
-                for &(to_id, _) in targets {
-                    queue.push(to_id);
-                }
-            }
-
-            while let Some(current) = queue.pop() {
-                if !visited.insert(current) {
-                    continue;
-                }
-                if let Some(cur_node) = nodes_by_id.get(current) {
-                    if cur_node.node_type == "RenderPass" {
-                        // Found consumer.  Read its geometry size.
-                        if let Some(geo_conn) =
-                            incoming_connection(&prepared.scene, current, "geometry")
-                        {
-                            if let Ok(geo_node) = find_node(nodes_by_id, &geo_conn.from.node_id) {
-                                if geo_node.node_type == "Rect2DGeometry" {
-                                    let size = blur_resolve_rect2d_size(
-                                        &prepared.scene,
-                                        nodes_by_id,
-                                        geo_node,
-                                        [tgt_w, tgt_h],
-                                    );
-                                    if let Ok(sz) = size {
-                                        let e = result.entry(blur_id.clone()).or_insert([0, 0]);
-                                        e[0] = e[0].max(sz[0].max(1.0) as u32);
-                                        e[1] = e[1].max(sz[1].max(1.0) as u32);
-                                    }
-                                }
-                            }
-                        }
-                        continue; // Don't traverse beyond RenderPass.
-                    }
-                }
-                // Continue BFS.
-                if let Some(targets) = fwd.get(current) {
-                    for &(to_id, _) in targets {
-                        queue.push(to_id);
-                    }
-                }
-            }
-        }
-
-        result
-    };
-
     for layer_id in &pass_nodes_in_order {
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
@@ -1601,10 +1517,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
 
-                // If this pass is sampled downstream, render into a dedicated intermediate texture.
-                // IMPORTANT: sampled passes are commonly used as higher-resolution sources for downstream
-                // filtering (e.g. Downsample). In that case, the pass output resolution should match the
-                // pass geometry extent, not the Composite target size.
+                // If this pass is sampled downstream, render into a dedicated intermediate texture
+                // that matches the pass geometry extent.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
                 let is_composite_layer = composite_layer_ids.contains(layer_id);
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
@@ -1657,18 +1571,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     ResourceName,
                 ) = if is_sampled_output {
                     let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
-                    let (w_u, h_u) = if is_downsample_source {
-                        // Optimization: when a pass is used as Downsample.source, keep its output sized
-                        // to its geometry extent for higher-resolution filtering downstream.
-                        //
-                        // NOTE: If the pass is also a direct composite layer, we still keep this
-                        // geometry-sized output so Downsample chains see the expected content.
-                        // Compositing is handled by a dedicated compose pass below.
-                        (geo_w.max(1.0).round() as u32, geo_h.max(1.0).round() as u32)
-                    } else {
-                        // Legacy: sampled RenderPass outputs match the Composite target resolution.
-                        (tgt_w_u, tgt_h_u)
-                    };
+                    let (w_u, h_u) = (geo_w.max(1.0).round() as u32, geo_h.max(1.0).round() as u32);
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [w_u, h_u],
@@ -1788,6 +1691,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let use_fullscreen_for_downsample_source =
                     is_downsample_source && rect_dyn_2.is_some();
 
+                // For sampled intermediate outputs, render in local texture space so downstream
+                // blur/downsample consumers operate on full geometry content independent of
+                // upstream world-space positioning.
+                let sampled_local_center = [pass_target_w * 0.5, pass_target_h * 0.5];
+                let main_pass_center = if is_sampled_output {
+                    sampled_local_center
+                } else {
+                    [geo_x, geo_y]
+                };
+
                 let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
                     if use_fullscreen_for_downsample_source {
                         // Create a dedicated fullscreen geometry for this pass.
@@ -1820,7 +1733,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             Params {
                                 target_size: [pass_target_w, pass_target_h],
                                 geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                center: [geo_x, geo_y],
+                                center: main_pass_center,
                                 geo_translate: [0.0, 0.0],
                                 geo_scale: [1.0, 1.0],
                                 time: 0.0,
@@ -2005,8 +1918,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let compose_params_name: ResourceName =
                         format!("params.sys.pass.{layer_id}.compose").into();
 
-                    // If the sampled output is target-sized (legacy), compose with a fullscreen quad.
-                    // If the sampled output is geometry-sized (Downsample optimization), compose with the
+                    // If the sampled output is target-sized, compose with a fullscreen quad.
+                    // If the sampled output is geometry-sized, compose with the
                     // original geometry so it lands at the correct screen-space position.
                     //
                     // When the geometry has dynamic inputs (use_fullscreen_for_downsample_source), we use
@@ -2181,36 +2094,63 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // We first sample that source pass into an intermediate texture, then apply the blur chain.
 
                 // Determine the base resolution for this blur pass.
-                // When the blur output is sampled by a downstream RenderPass (via PassTexture),
-                // use the consumer's geometry size instead of the full Composite target resolution.
-                // This avoids running blur chains at e.g. 1080x2400 when the output only fills
-                // a 397x44 widget.
-                let base_resolution: [u32; 2] = blur_consumer_resolution
-                    .get(layer_id)
-                    .copied()
-                    .unwrap_or([tgt_w as u32, tgt_h as u32]);
+                // Blur operates in input source texture space by default.
+                let mut base_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
+                let mut blur_output_center: Option<[f32; 2]> = None;
+
+                let radius_px =
+                    cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
+                let extend_enabled = layer_node
+                    .params
+                    .get("extend")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let extend_pad_px: u32 = if extend_enabled {
+                    radius_px.ceil().max(0.0) as u32
+                } else {
+                    0
+                };
+                let can_direct_bypass = extend_pad_px == 0;
 
                 // Optimization: skip the intermediate `sys.blur.<id>.src` pass when we can
                 // directly consume an existing texture resource as the blur source.
                 //
                 // Safe bypass cases:
-                // - Upstream is a pass node output (RenderPass/Blur/Downsample) with matching
-                //   resolution + sampled format.
-                // - Upstream is an ImageTexture sampled as-is (default UV) and its dimensions
-                //   match the blur base resolution (so no scaling is required).
+                // - Upstream is a pass node output (RenderPass/Blur/Downsample) with sampled format.
+                // - Upstream is an ImageTexture sampled as-is (default UV).
                 let mut first_downsample_flip_y = false;
                 let mut initial_blur_source_texture: Option<ResourceName> = None;
                 let mut initial_blur_source_image_node_id: Option<String> = None;
                 let mut initial_blur_source_sampler_kind: Option<SamplerKind> = None;
                 if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "pass") {
+                    if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+                        if src_node.node_type == "RenderPass" {
+                            if let Some(geo_conn) =
+                                incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
+                            {
+                                if let Ok((_, _src_geo_w, _src_geo_h, src_geo_x, src_geo_y, _, _, _, _, _, _, _, _)) =
+                                    resolve_geometry_for_render_pass(
+                                        &prepared.scene,
+                                        nodes_by_id,
+                                        ids,
+                                        &geo_conn.from.node_id,
+                                        [tgt_w, tgt_h],
+                                        None,
+                                    )
+                                {
+                                    blur_output_center = Some([src_geo_x, src_geo_y]);
+                                }
+                            }
+                        }
+                    }
+
                     // (A) Upstream pass output bypass.
-                    // When the blur input is already a pass output texture at the exact
-                    // resolution + format we need, skip generating an extra fullscreen
+                    // When the blur input is already a pass output texture with sampled format,
+                    // skip generating an extra fullscreen
                     // `sys.blur.<id>.src.pass` sampling pass.
                     if let Some(src_spec) = pass_output_registry.get(&src_conn.from.node_id) {
-                        if src_spec.resolution == base_resolution
-                            && src_spec.format == sampled_pass_format
-                        {
+                        base_resolution = src_spec.resolution;
+                        if can_direct_bypass && src_spec.format == sampled_pass_format {
                             initial_blur_source_texture = Some(src_spec.texture_name.clone());
                             // When bypassing the `.src.pass`, the first downsample pass samples
                             // the upstream texture directly using @builtin(position)-derived UVs,
@@ -2223,7 +2163,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         }
                     }
 
-                    // (B) ImageTexture direct bypass (only when resolution matches and UV is default).
+                    // (B) ImageTexture direct bypass (only when UV is default).
                     if initial_blur_source_texture.is_none() {
                         if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
                             if src_node.node_type == "ImageTexture"
@@ -2235,62 +2175,34 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 )
                                 .is_none()
                             {
-                                // Best-effort: infer image dimensions without fully decoding.
-                                let data_url = src_node
-                                    .params
-                                    .get("dataUrl")
-                                    .and_then(|v| v.as_str())
-                                    .or_else(|| src_node.params.get("data_url").and_then(|v| v.as_str()));
-
-                                let dims: Option<[u32; 2]> = if data_url
-                                    .is_some_and(|s| !s.trim().is_empty())
-                                {
-                                    None
-                                } else {
-                                    let rel_base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                                    let path = src_node.params.get("path").and_then(|v| v.as_str());
-                                    let p = path.filter(|s| !s.trim().is_empty());
-                                    let candidates: Vec<std::path::PathBuf> = p
-                                        .map(|p| {
-                                            let pb = std::path::PathBuf::from(p);
-                                            if pb.is_absolute() {
-                                                vec![pb]
-                                            } else {
-                                                vec![
-                                                    pb.clone(),
-                                                    rel_base.join(&pb),
-                                                    rel_base.join("assets").join(&pb),
-                                                ]
-                                            }
-                                        })
-                                        .unwrap_or_default();
-
-                                    let mut found: Option<[u32; 2]> = None;
-                                    for cand in &candidates {
-                                        if let Ok((w, h)) = image::image_dimensions(cand) {
-                                            found = Some([w, h]);
-                                            break;
-                                        }
-                                    }
-                                    found
-                                };
-
-                                if dims.is_some_and(|d| d == base_resolution) {
-                                    if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
-                                        initial_blur_source_texture = Some(tex);
-                                        initial_blur_source_image_node_id =
-                                            Some(src_conn.from.node_id.clone());
-                                        first_downsample_flip_y = false;
-                                    }
+                                if let Some(dims) = image_node_dimensions(src_node) {
+                                    base_resolution = dims;
+                                }
+                                if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
+                                    initial_blur_source_texture = Some(tex);
+                                    initial_blur_source_image_node_id =
+                                        Some(src_conn.from.node_id.clone());
+                                    initial_blur_source_sampler_kind =
+                                        Some(sampler_kind_from_node_params(&src_node.params));
+                                    first_downsample_flip_y = false;
                                 }
                             }
                         }
                     }
                 }
-
-                let src_resolution = base_resolution;
+                let src_content_resolution = base_resolution;
+                let src_resolution = if extend_pad_px > 0 {
+                    [
+                        src_content_resolution[0].saturating_add(extend_pad_px.saturating_mul(2)),
+                        src_content_resolution[1].saturating_add(extend_pad_px.saturating_mul(2)),
+                    ]
+                } else {
+                    src_content_resolution
+                };
                 let src_w = src_resolution[0] as f32;
                 let src_h = src_resolution[1] as f32;
+                let src_content_w = src_content_resolution[0] as f32;
+                let src_content_h = src_content_resolution[1] as f32;
                 let initial_blur_source_texture: ResourceName =
                     if let Some(existing_tex) = initial_blur_source_texture {
                         existing_tex
@@ -2303,17 +2215,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             format: sampled_pass_format,
                         });
 
-                        // Build a fullscreen pass to render the `image` input expression.
+                        // Build source pass geometry. In Extend mode, draw source content with its
+                        // original size centered in the padded target; otherwise fullscreen.
+                        let src_geo_w = if extend_pad_px > 0 { src_content_w } else { src_w };
+                        let src_geo_h = if extend_pad_px > 0 { src_content_h } else { src_h };
+
                         let geo_src: ResourceName = format!("sys.blur.{layer_id}.src.geo").into();
                         geometry_buffers
-                            .push((geo_src.clone(), make_fullscreen_geometry(src_w, src_h)));
+                            .push((geo_src.clone(), make_fullscreen_geometry(src_geo_w, src_geo_h)));
 
                         let params_src: ResourceName =
                             format!("params.sys.blur.{layer_id}.src").into();
                         let params_src_val = Params {
                             target_size: [src_w, src_h],
-                            geo_size: [src_w, src_h],
-                            // Bottom-left origin: center the geometry so it covers [0,0] to [w,h].
+                            geo_size: [src_geo_w, src_geo_h],
+                            // Center source content in the padded texture (or fullscreen if no extend).
                             center: [src_w * 0.5, src_h * 0.5],
                             geo_translate: [0.0, 0.0],
                             geo_scale: [1.0, 1.0],
@@ -2410,7 +2326,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         src_tex
                     };
 
-                // Resolution: use target resolution, but allow override via params.
+                // Resolution: use source resolution (possibly extended), but allow override via params.
                 let blur_w = cpu_num_u32_min_1(
                     &prepared.scene,
                     nodes_by_id,
@@ -2434,8 +2350,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // (see `gaussian_kernel_8`).
                 //
                 // k = sqrt(2*ln(1/eps)) with eps=0.002 -> k≈3.525494, so sigma = radius/k.
-                let radius_px =
-                    cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
                 let sigma = radius_px / 3.525_494;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
@@ -2706,10 +2620,20 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     format!("params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}")
                         .into();
                 let bundle_u = build_upsample_bilinear_bundle();
+                let upsample_target_size: [f32; 2] = if output_tex == target_texture_name {
+                    [tgt_w, tgt_h]
+                } else {
+                    [blur_w as f32, blur_h as f32]
+                };
+                let upsample_center: [f32; 2] = if output_tex == target_texture_name {
+                    blur_output_center.unwrap_or([blur_w as f32 * 0.5, blur_h as f32 * 0.5])
+                } else {
+                    [blur_w as f32 * 0.5, blur_h as f32 * 0.5]
+                };
                 let params_u_val = Params {
-                    target_size: [blur_w as f32, blur_h as f32],
+                    target_size: upsample_target_size,
                     geo_size: [blur_w as f32, blur_h as f32],
-                    center: [blur_w as f32 * 0.5, blur_h as f32 * 0.5],
+                    center: upsample_center,
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
                     time: 0.0,

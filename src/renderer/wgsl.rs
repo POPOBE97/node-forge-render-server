@@ -1517,10 +1517,8 @@ pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslSha
 /// Build a bilinear upsample shader bundle.
 pub fn build_upsample_bilinear_bundle() -> WgslShaderBundle {
     let body = r#"
- let dst_xy = vec2f(in.position.xy);
- let dst_resolution = params.target_size;
- let uv = dst_xy / dst_resolution;
- return textureSampleLevel(src_tex, src_samp, uv, 0.0);
+ let uv_local = in.local_px / in.geo_size_px;
+ return textureSampleLevel(src_tex, src_samp, nf_uv_pass(uv_local), 0.0);
  "#
     .to_string();
     build_fullscreen_textured_bundle(body)
