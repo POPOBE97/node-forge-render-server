@@ -31,8 +31,12 @@ pub struct PassInfo {
     pub is_compute: bool,
     /// Names of textures this pass samples (via bind groups).
     pub sampled_textures: Vec<String>,
-    /// How many draw calls this pass is dispatched per frame (from composition tree).
-    pub draw_call_count: u32,
+    /// Number of GPU instances per draw call (from instance-step-mode vertex buffer).
+    pub instance_count: u32,
+    /// Number of vertices (or indices) per draw call.
+    pub vertex_count: u32,
+    /// For compute passes: total workgroup dispatches.
+    pub workgroup_count: u32,
 }
 
 /// Lightweight info for a single buffer.
@@ -110,21 +114,69 @@ impl ResourceSnapshot {
                     target_format,
                     is_compute,
                     sampled_textures,
-                    draw_call_count: 0, // filled below from composition
+                    instance_count: 0,  // filled below from buffers
+                    vertex_count: 0,    // filled below from buffers
+                    workgroup_count: 0, // filled below for compute
                 }
             })
             .collect();
 
-        // Count draw calls per pass from the composition tree.
+        // Compute per-pass draw metrics from attribute bindings + buffer pool,
+        // mirroring the logic in ShaderSpace::render().
         {
-            let flat = ss.composition.flatten();
-            let mut counts: HashMap<String, u32> = HashMap::new();
-            for dep in &flat {
-                *counts.entry(dep.pass_name.as_str().to_string()).or_insert(0) += 1;
-            }
-            for p in &mut passes {
-                if let Some(&c) = counts.get(&p.name) {
-                    p.draw_call_count = c;
+            let buffers_ok = ss.buffers.lock().ok();
+            for (pass_info, (_name, pass)) in
+                passes.iter_mut().zip(ss.passes.inner.iter())
+            {
+                if pass_info.is_compute {
+                    pass_info.workgroup_count =
+                        pass.workgroup[0] * pass.workgroup[1] * pass.workgroup[2];
+                } else {
+                    let mut num_instance: u32 = 1;
+                    let mut num_vertices: u32 = 3;
+
+                    if let Some(ref bufs) = buffers_ok {
+                        for (_location, (buffer_name, step_mode, vertex_attribute)) in
+                            pass.attribute_bindings.iter()
+                        {
+                            let stride: u64 =
+                                vertex_attribute.iter().map(|a| a.format.size()).sum();
+                            if stride == 0 {
+                                continue;
+                            }
+                            if let Some(fish) = bufs.get(buffer_name.as_str()) {
+                                let buf_size = fish
+                                    .wgpu_buffer
+                                    .as_ref()
+                                    .map(|b| b.size())
+                                    .unwrap_or(0);
+                                let num = (buf_size / stride) as u32;
+                                match step_mode {
+                                    wgpu::VertexStepMode::Vertex => num_vertices = num,
+                                    wgpu::VertexStepMode::Instance => num_instance = num,
+                                }
+                            }
+                        }
+
+                        // Check index buffer for indexed draw calls.
+                        if let Some((buffer_name, format)) = pass.index_binding.as_ref() {
+                            if let Some(fish) = bufs.get(buffer_name.as_str()) {
+                                let buf_size = fish
+                                    .wgpu_buffer
+                                    .as_ref()
+                                    .map(|b| b.size())
+                                    .unwrap_or(0);
+                                let index_stride = match format {
+                                    wgpu::IndexFormat::Uint16 => 2u64,
+                                    wgpu::IndexFormat::Uint32 => 4u64,
+                                };
+                                num_vertices = (buf_size / index_stride) as u32;
+                            }
+                        }
+                    }
+
+                    pass_info.instance_count = num_instance;
+                    pass_info.vertex_count = num_vertices;
                 }
             }
         }
@@ -371,10 +423,13 @@ fn build_dependency_tree(passes: &[PassInfo]) -> Vec<FileTreeNode> {
             }
         }
 
-        let label = if pass.draw_call_count > 1 {
-            format!("{} ×{}", pass_basename(&pass.name), pass.draw_call_count)
-        } else {
-            pass_basename(&pass.name)
+        let label = {
+            let base = pass_basename(&pass.name);
+            if !pass.is_compute && pass.instance_count > 1 {
+                format!("{} (×{})", base, pass.instance_count)
+            } else {
+                base
+            }
         };
 
         FileTreeNode {
