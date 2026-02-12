@@ -3,7 +3,10 @@ use rust_wgpu_fiber::eframe::{
     egui_wgpu, wgpu,
 };
 
-use crate::ui::animation_manager::{AnimationSpec, Easing};
+use crate::ui::{
+    animation_manager::{AnimationSpec, Easing},
+    viewport_indicators::{ViewportIndicator, draw_viewport_indicators},
+};
 
 use super::{
     layout_math::{
@@ -192,6 +195,18 @@ pub fn show_canvas_panel(
         image_rect = Rect::from_min_size(base_min, draw_size);
     }
 
+    if app.pending_view_reset {
+        app.zoom = fit_zoom;
+        app.pan = egui::Vec2::ZERO;
+        app.pan_start = None;
+        app.pan_zoom_target_zoom = fit_zoom;
+        app.pan_zoom_target_pan = egui::Vec2::ZERO;
+        let draw_size = image_size * app.zoom;
+        let base_min = animated_canvas_rect.center() - draw_size * 0.5;
+        image_rect = Rect::from_min_size(base_min, draw_size);
+        app.pending_view_reset = false;
+    }
+
     if ctx.input(|i| i.key_pressed(egui::Key::P)) {
         app.texture_filter = match app.texture_filter {
             wgpu::FilterMode::Nearest => wgpu::FilterMode::Linear,
@@ -349,6 +364,18 @@ pub fn show_canvas_panel(
                 .with_texture(tex_id, computed_uv),
         );
     }
+
+    let sampling_indicator = match app.texture_filter {
+        wgpu::FilterMode::Nearest => ViewportIndicator {
+            icon: "N",
+            tooltip: "Viewport sampling: Nearest (press P to toggle Linear)",
+        },
+        wgpu::FilterMode::Linear => ViewportIndicator {
+            icon: "L",
+            tooltip: "Viewport sampling: Linear (press P to toggle Nearest)",
+        },
+    };
+    draw_viewport_indicators(ui, animated_canvas_rect, &[sampling_indicator]);
 
     // Draw preview overlay badge.
     if let Some(ref preview_name) = app.preview_texture_name {

@@ -4,3 +4,4 @@ pub mod debug_sidebar;
 pub mod file_tree_widget;
 pub mod resource_tree;
 pub mod typography;
+pub mod viewport_indicators;

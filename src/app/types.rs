@@ -98,6 +98,8 @@ pub struct App {
     pub preview_texture_name: Option<rust_wgpu_fiber::ResourceName>,
     /// Registered egui TextureId for preview texture.
     pub preview_color_attachment: Option<egui::TextureId>,
+    /// Request one-shot reset of canvas pan/zoom on next canvas frame.
+    pub pending_view_reset: bool,
 }
 
 impl App {
@@ -128,7 +130,7 @@ impl App {
             pan_zoom_target_pan: egui::Vec2::ZERO,
             canvas_center_prev: None,
             last_sampled: None,
-            texture_filter: wgpu::FilterMode::Linear,
+            texture_filter: wgpu::FilterMode::Nearest,
             follow_scene_resolution_for_window: init.follow_scene_resolution_for_window,
             window_mode: UiWindowMode::Sidebar,
             prev_window_mode: UiWindowMode::Sidebar,
@@ -141,6 +143,7 @@ impl App {
             resource_snapshot_generation: u64::MAX,
             preview_texture_name: None,
             preview_color_attachment: None,
+            pending_view_reset: false,
         }
     }
 }
