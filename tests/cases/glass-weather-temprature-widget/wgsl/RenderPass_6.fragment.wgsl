@@ -29,6 +29,12 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
+// bottom-left UV convention onto WGSL's top-left texture coordinate space.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
 struct GraphInputs {
     // Node: FloatInput_10
     node_FloatInput_10_157c0221: vec4f,
@@ -501,7 +507,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_102_out: vec4f;
     {
-        let c = textureSample(pass_tex_GuassianBlurPass_85, pass_samp_GuassianBlurPass_85, vec2f((mc_MathClosure_88_out).x, 1.0 - (mc_MathClosure_88_out).y));
+        let c = textureSample(pass_tex_GuassianBlurPass_85, pass_samp_GuassianBlurPass_85, nf_uv_pass(mc_MathClosure_88_out));
         var output: vec4f;
         output = mc_MathClosure_102_(in.uv, c);
         mc_MathClosure_102_out = output;

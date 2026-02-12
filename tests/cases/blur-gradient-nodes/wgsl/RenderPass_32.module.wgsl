@@ -29,6 +29,12 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
+// bottom-left UV convention onto WGSL's top-left texture coordinate space.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -99,5 +105,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_35_MathClosure_30_(in.uv, xy, size);
         mc_GroupInstance_35_MathClosure_30_out = output;
     }
-    return textureSample(pass_tex_Downsample_12, pass_samp_Downsample_12, vec2f((mc_GroupInstance_35_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_35_MathClosure_30_out).y));
+    return textureSample(pass_tex_Downsample_12, pass_samp_Downsample_12, nf_uv_pass(mc_GroupInstance_35_MathClosure_30_out));
 }

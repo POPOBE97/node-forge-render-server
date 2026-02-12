@@ -15,7 +15,6 @@ struct Params {
     color: vec4f,
 };
 
-
 @group(0) @binding(0)
 var<uniform> params: Params;
 
@@ -29,16 +28,14 @@ struct VSOut {
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
-
-
 @group(1) @binding(0)
+var img_tex_node_7: texture_2d<f32>;
 
-var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
-var src_samp: sampler;
+var img_samp_node_7: sampler;
+
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let uv = vec2f(in.uv.x, 1.0 - in.uv.y);
-    return textureSample(src_tex, src_samp, uv);
+return textureSample(img_tex_node_7, img_samp_node_7, (in.uv));
 }

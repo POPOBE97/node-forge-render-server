@@ -15,7 +15,6 @@ struct Params {
     color: vec4f,
 };
 
-
 @group(0) @binding(0)
 var<uniform> params: Params;
 
@@ -29,43 +28,23 @@ struct VSOut {
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
-
-
 @group(1) @binding(0)
+var img_tex_node_7: texture_2d<f32>;
 
-var src_tex: texture_2d<f32>;
 @group(1) @binding(1)
-var src_samp: sampler;
-
- @vertex
-  fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
-      var out: VSOut;
- 
-      let _unused_geo_size = params.geo_size;
-      let _unused_geo_translate = params.geo_translate;
-     let _unused_geo_scale = params.geo_scale;
- 
-        // UV passed as vertex attribute.
-        out.uv = uv;
-
-        out.geo_size_px = params.geo_size;
-
-         // Geometry-local pixel coordinate (GeoFragcoord).
-         out.local_px = uv * out.geo_size_px;
- 
-       // Geometry vertices are in local pixel units centered at (0,0).
-       // Convert to target pixel coordinates with bottom-left origin.
-       let p_px = params.center + position.xy;
+var img_samp_node_7: sampler;
 
 
+@vertex
+fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
+    var out: VSOut;
+    out.uv = uv;
+    out.geo_size_px = params.geo_size;
+    out.local_px = uv * out.geo_size_px;
 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z, 1.0);
-
-      // Pixel-centered like GLSL gl_FragCoord.xy.
-      out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-      return out;
-  }
-  
+    let p_px = params.center + position.xy;
+    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
+    out.position = vec4f(ndc, position.z, 1.0);
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+    return out;
+}

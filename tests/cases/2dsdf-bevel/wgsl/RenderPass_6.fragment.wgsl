@@ -29,6 +29,12 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
+// bottom-left UV convention onto WGSL's top-left texture coordinate space.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
 struct GraphInputs {
     // Node: FloatInput_10
     node_FloatInput_10_157c0221: vec4f,

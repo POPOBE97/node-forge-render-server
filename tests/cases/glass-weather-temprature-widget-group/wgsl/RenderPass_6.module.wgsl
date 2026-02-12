@@ -29,6 +29,12 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
   };
 
+// See `compile_pass_texture`: PassTexture sampling currently needs a Y flip to map our
+// bottom-left UV convention onto WGSL's top-left texture coordinate space.
+fn nf_uv_pass(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
 struct GraphInputs {
     // Node: BoolInput_139
     node_BoolInput_139_e7c94ac1: vec4i,
@@ -718,12 +724,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_128_MathClosure_96_out: vec4f;
     {
-        let c_edge = textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, vec2f((mc_GroupInstance_128_MathClosure_88_out).x, 1.0 - (mc_GroupInstance_128_MathClosure_88_out).y));
+        let c_edge = textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, nf_uv_pass(mc_GroupInstance_128_MathClosure_88_out));
         let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f((graph_inputs.node_GroupInstance_128_FloatInput_10_0026c306).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_GroupInstance_128_FloatInput_12_6629c306).x)));
         let f = smoothstep(0.0, 0.015, mc_GroupInstance_128_MathClosure_91_out);
         let l = mc_GroupInstance_128_MathClosure_104_out;
         let selection = mc_GroupInstance_128_MathClosure_115_out;
-        let lumin_edge = clamp(dot((textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, vec2f((mc_GroupInstance_128_MathClosure_88_out).x, 1.0 - (mc_GroupInstance_128_MathClosure_88_out).y))).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        let lumin_edge = clamp(dot((textureSample(pass_tex_GroupInstance_128_GuassianBlurPass_85, pass_samp_GroupInstance_128_GuassianBlurPass_85, nf_uv_pass(mc_GroupInstance_128_MathClosure_88_out))).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
         output = mc_GroupInstance_128_MathClosure_96_(in.uv, c_edge, e, f, l, selection, lumin_edge);
         mc_GroupInstance_128_MathClosure_96_out = output;
