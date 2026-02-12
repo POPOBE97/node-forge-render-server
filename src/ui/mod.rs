@@ -1,6 +1,7 @@
 pub mod animation_manager;
 pub mod button;
 pub mod debug_sidebar;
+pub mod diff_renderer;
 pub mod file_tree_widget;
 pub mod histogram;
 pub mod resource_tree;

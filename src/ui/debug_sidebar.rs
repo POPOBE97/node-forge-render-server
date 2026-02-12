@@ -1,5 +1,7 @@
 use rust_wgpu_fiber::eframe::egui;
 
+use crate::app::{DiffMetricMode, DiffStats, RefImageMode};
+
 use super::file_tree_widget::FileTreeState;
 use super::resource_tree::{FileTreeNode, NodeKind};
 
@@ -78,6 +80,22 @@ pub enum SidebarAction {
     PreviewTexture(String),
     /// Clear the preview (user clicked a non-texture node).
     ClearPreview,
+    /// Update reference overlay opacity.
+    SetReferenceOpacity(f32),
+    /// Toggle reference display mode.
+    ToggleReferenceMode,
+    /// Clear loaded reference image.
+    ClearReference,
+    /// Set current diff metric mode.
+    SetDiffMetricMode(DiffMetricMode),
+}
+
+#[derive(Clone, Debug)]
+pub struct ReferenceSidebarState {
+    pub mode: RefImageMode,
+    pub opacity: f32,
+    pub diff_metric_mode: DiffMetricMode,
+    pub diff_stats: Option<DiffStats>,
 }
 
 pub fn show_in_rect(
@@ -90,6 +108,7 @@ pub fn show_in_rect(
     mut canvas_only_button: impl FnMut(&mut egui::Ui) -> bool,
     mut toggle_canvas_only: impl FnMut(),
     histogram_texture_id: Option<egui::TextureId>,
+    reference: Option<&ReferenceSidebarState>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
 ) -> Option<SidebarAction> {
@@ -157,11 +176,75 @@ pub fn show_in_rect(
                     .inner_margin(egui::Margin { left: 2, right: 6, top: 4, bottom: 4 })
                     .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    if let Some(texture_id) = histogram_texture_id {
+                    if let Some(reference) = reference {
                         ui.horizontal(|ui| {
                             ui.add_space(4.0);
                             ui.label(
-                                egui::RichText::new("Histogram")
+                                egui::RichText::new("Reference Controls")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_gray(170)),
+                            );
+                        });
+                        ui.add_space(4.0);
+
+                        let mut opacity = reference.opacity;
+                        let opacity_resp = ui.add(
+                            egui::Slider::new(&mut opacity, 0.0..=1.0)
+                                .text("Opacity")
+                                .clamping(egui::SliderClamping::Always),
+                        );
+                        if opacity_resp.changed() {
+                            sidebar_action = Some(SidebarAction::SetReferenceOpacity(opacity));
+                        }
+
+                        let mode_text = match reference.mode {
+                            RefImageMode::Overlay => "Mode: Overlay",
+                            RefImageMode::Diff => "Mode: Abs Diff",
+                        };
+                        if ui.button(mode_text).clicked() {
+                            sidebar_action = Some(SidebarAction::ToggleReferenceMode);
+                        }
+
+                        ui.horizontal_wrapped(|ui| {
+                            ui.add_space(2.0);
+                            for metric in [
+                                DiffMetricMode::E,
+                                DiffMetricMode::AE,
+                                DiffMetricMode::SE,
+                                DiffMetricMode::RAE,
+                                DiffMetricMode::RSE,
+                            ] {
+                                let selected = reference.diff_metric_mode == metric;
+                                let button = egui::Button::new(metric.label()).selected(selected);
+                                if ui.add(button).clicked() {
+                                    sidebar_action = Some(SidebarAction::SetDiffMetricMode(metric));
+                                }
+                            }
+                        });
+
+                        ui.label(
+                            egui::RichText::new("Shift: toggle Overlay / Abs Diff")
+                                .size(11.0)
+                                .color(egui::Color32::from_gray(140)),
+                        );
+
+                        if ui.button("Clear Reference").clicked() {
+                            sidebar_action = Some(SidebarAction::ClearReference);
+                        }
+
+                        tight_divider(ui);
+                    }
+
+                    if let Some(texture_id) = histogram_texture_id {
+                        let histogram_title = if matches!(reference.map(|r| r.mode), Some(RefImageMode::Diff)) {
+                            "Diff Histogram"
+                        } else {
+                            "Histogram"
+                        };
+                        ui.horizontal(|ui| {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(histogram_title)
                                     .size(11.0)
                                     .color(egui::Color32::from_gray(170)),
                             );

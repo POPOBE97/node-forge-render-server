@@ -41,6 +41,7 @@ const COLOR_ICON_SAMPLER: Color32 = Color32::from_rgb(100, 160, 160);
 #[derive(Default)]
 pub struct FileTreeState {
     pub selected_id: Option<String>,
+    pub keyboard_hover_id: Option<String>,
 }
 
 /// Result returned from `show_file_tree` each frame.
@@ -85,116 +86,129 @@ pub fn show_file_tree(
         );
     }
 
-    if state.selected_id.is_some() {
-        let selected_index = state
-            .selected_id
-            .as_ref()
-            .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.keyboard_hover_id = None;
+    }
 
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp))
-            && let Some(current) = selected_index
-            && current > 0
-        {
-            state.selected_id = Some(visible_entries[current - 1].node.id.clone());
-        }
+    let mut keyboard_hover_id = state
+        .keyboard_hover_id
+        .clone()
+        .or_else(|| state.selected_id.clone())
+        .or_else(|| visible_entries.first().map(|entry| entry.node.id.clone()));
 
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
-            && let Some(current) = selected_index
-            && current + 1 < visible_entries.len()
-        {
-            state.selected_id = Some(visible_entries[current + 1].node.id.clone());
-        }
+    let keyboard_hover_index = keyboard_hover_id
+        .as_ref()
+        .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
 
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
-            && let Some(current) = selected_index
-        {
-            let current_entry = &visible_entries[current];
+    if ui.input(|i| i.key_pressed(egui::Key::ArrowUp))
+        && let Some(current) = keyboard_hover_index
+        && current > 0
+    {
+        keyboard_hover_id = Some(visible_entries[current - 1].node.id.clone());
+    }
 
-            let collapse_target = current_entry
-                .collapse_id
-                .map(|id| (id, current_entry.collapse_default_open, false))
-                .or_else(|| {
-                    current_entry.parent_id.as_ref().and_then(|parent_id| {
-                        visible_entries
-                            .iter()
-                            .find(|entry| &entry.node.id == parent_id)
-                            .and_then(|entry| {
-                                entry
-                                    .collapse_id
-                                    .map(|id| (id, entry.collapse_default_open, true))
-                            })
-                    })
-                });
+    if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
+        && let Some(current) = keyboard_hover_index
+        && current + 1 < visible_entries.len()
+    {
+        keyboard_hover_id = Some(visible_entries[current + 1].node.id.clone());
+    }
 
-            if let Some((collapse_id, default_open, set_parent_selected)) = collapse_target {
-                let mut collapsing_state =
-                    egui::collapsing_header::CollapsingState::load_with_default_open(
-                        ui.ctx(),
-                        collapse_id,
-                        default_open,
-                    );
-                if collapsing_state.is_open() {
-                    collapsing_state.set_open(false);
-                    collapsing_state.store(ui.ctx());
+    let keyboard_hover_index = keyboard_hover_id
+        .as_ref()
+        .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
 
-                    if set_parent_selected
-                        && let Some(parent_id) = current_entry.parent_id.as_ref()
-                    {
-                        state.selected_id = Some(parent_id.clone());
-                    }
+    if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
+        && let Some(current) = keyboard_hover_index
+    {
+        let current_entry = &visible_entries[current];
+
+        let collapse_target = current_entry
+            .collapse_id
+            .map(|id| (id, current_entry.collapse_default_open, false))
+            .or_else(|| {
+                current_entry.parent_id.as_ref().and_then(|parent_id| {
+                    visible_entries
+                        .iter()
+                        .find(|entry| &entry.node.id == parent_id)
+                        .and_then(|entry| {
+                            entry
+                                .collapse_id
+                                .map(|id| (id, entry.collapse_default_open, true))
+                        })
+                })
+            });
+
+        if let Some((collapse_id, default_open, set_parent_hovered)) = collapse_target {
+            let mut collapsing_state =
+                egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    collapse_id,
+                    default_open,
+                );
+            if collapsing_state.is_open() {
+                collapsing_state.set_open(false);
+                collapsing_state.store(ui.ctx());
+
+                if set_parent_hovered
+                    && let Some(parent_id) = current_entry.parent_id.as_ref()
+                {
+                    keyboard_hover_id = Some(parent_id.clone());
                 }
             }
-        }
-
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
-            && let Some(current) = selected_index
-        {
-            let current_entry = &visible_entries[current];
-
-            let expand_target = current_entry
-                .collapse_id
-                .map(|id| (id, current_entry.collapse_default_open))
-                .or_else(|| {
-                    current_entry.parent_id.as_ref().and_then(|parent_id| {
-                        visible_entries
-                            .iter()
-                            .find(|entry| &entry.node.id == parent_id)
-                            .and_then(|entry| {
-                                entry.collapse_id.map(|id| (id, entry.collapse_default_open))
-                            })
-                    })
-                });
-
-            if let Some((collapse_id, default_open)) = expand_target {
-                let mut collapsing_state =
-                    egui::collapsing_header::CollapsingState::load_with_default_open(
-                        ui.ctx(),
-                        collapse_id,
-                        default_open,
-                    );
-                if !collapsing_state.is_open() {
-                    collapsing_state.set_open(true);
-                    collapsing_state.store(ui.ctx());
-                }
-            }
-        }
-
-        if ui.input(|i| i.key_pressed(egui::Key::Enter))
-            && let Some(selected_id) = state.selected_id.as_ref()
-            && let Some(entry) = visible_entries
-                .iter()
-                .find(|entry| &entry.node.id == selected_id)
-            && matches!(
-                entry.node.kind,
-                NodeKind::Pass {
-                    target_texture: Some(_)
-                }
-            )
-        {
-            state.selected_id = Some(entry.node.id.clone());
-            response.clicked = Some(entry.node.clone());
         }
     }
+
+    if ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
+        && let Some(current) = keyboard_hover_index
+    {
+        let current_entry = &visible_entries[current];
+
+        let expand_target = current_entry
+            .collapse_id
+            .map(|id| (id, current_entry.collapse_default_open))
+            .or_else(|| {
+                current_entry.parent_id.as_ref().and_then(|parent_id| {
+                    visible_entries
+                        .iter()
+                        .find(|entry| &entry.node.id == parent_id)
+                        .and_then(|entry| {
+                            entry.collapse_id.map(|id| (id, entry.collapse_default_open))
+                        })
+                })
+            });
+
+        if let Some((collapse_id, default_open)) = expand_target {
+            let mut collapsing_state =
+                egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    collapse_id,
+                    default_open,
+                );
+            if !collapsing_state.is_open() {
+                collapsing_state.set_open(true);
+                collapsing_state.store(ui.ctx());
+            }
+        }
+    }
+
+    if ui.input(|i| i.key_pressed(egui::Key::Enter))
+        && let Some(hover_id) = keyboard_hover_id.as_ref()
+        && let Some(entry) = visible_entries
+            .iter()
+            .find(|entry| &entry.node.id == hover_id)
+        && matches!(
+            entry.node.kind,
+            NodeKind::Pass {
+                target_texture: Some(_)
+            }
+        )
+    {
+        state.selected_id = Some(entry.node.id.clone());
+        response.clicked = Some(entry.node.clone());
+    }
+
+    state.keyboard_hover_id = keyboard_hover_id;
 
     response
 }
@@ -239,7 +253,8 @@ fn draw_node(
         });
     }
 
-    let hovered = row_response.hovered();
+    let hovered = row_response.hovered()
+        || state.keyboard_hover_id.as_deref() == Some(&node.id);
     let is_selected = state.selected_id.as_deref() == Some(&node.id);
 
     let chevron_x = row_rect.min.x + indent;
@@ -264,6 +279,7 @@ fn draw_node(
 
     if row_response.clicked() && !chevron_clicked {
         state.selected_id = Some(node.id.clone());
+        state.keyboard_hover_id = Some(node.id.clone());
         response.clicked = Some(node.clone());
     }
 
