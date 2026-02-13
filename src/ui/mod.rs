@@ -1,9 +1,12 @@
 pub mod animation_manager;
 pub mod button;
+pub mod clipping_map;
 pub mod debug_sidebar;
 pub mod diff_renderer;
 pub mod file_tree_widget;
 pub mod histogram;
+pub mod parade;
 pub mod resource_tree;
 pub mod typography;
+pub mod vectorscope;
 pub mod viewport_indicators;
