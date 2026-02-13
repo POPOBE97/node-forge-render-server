@@ -5,6 +5,7 @@
 
 use rust_wgpu_fiber::eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
+use super::design_tokens::{self, TextRole};
 use super::resource_tree::{FileTreeNode, NodeKind, TreeIcon};
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,6 @@ const COLOR_HOVER_BG: Color32 = Color32::from_gray(32);
 const COLOR_SELECTED_BG: Color32 = Color32::from_gray(40);
 const COLOR_ACCENT: Color32 = Color32::from_rgb(80, 140, 220);
 const COLOR_CHEVRON: Color32 = Color32::from_gray(110);
-const COLOR_DETAIL: Color32 = Color32::from_gray(90);
 const COLOR_ICON_FOLDER: Color32 = Color32::from_rgb(100, 140, 200);
 const COLOR_ICON_PASS: Color32 = Color32::from_rgb(130, 180, 100);
 const COLOR_ICON_TEXTURE: Color32 = Color32::from_rgb(200, 150, 80);
@@ -375,22 +375,14 @@ fn draw_node(
     cx += ICON_SIZE + GAP_ICON_LABEL;
 
     // --- Label ---
-    let label_color = if is_folder {
-        Color32::from_gray(220)
+    let label_role = if is_folder {
+        TextRole::ActiveItemTitle
     } else {
-        Color32::from_gray(190)
+        TextRole::InactiveItemTitle
     };
-    let label_font = if is_folder {
-        egui::FontId::new(
-            12.0,
-            crate::ui::typography::mi_sans_family_for_weight(600.0),
-        )
-    } else {
-        egui::FontId::new(
-            12.0,
-            crate::ui::typography::mi_sans_family_for_weight(400.0),
-        )
-    };
+    let label_style = design_tokens::text_style(label_role);
+    let label_color = label_style.color;
+    let label_font = design_tokens::font_id(label_style.size, label_style.weight);
 
     // If the node has detail text, use no-wrap for the label and show detail after.
     // Otherwise let the label fill remaining space, truncating from the front with "…".
@@ -412,11 +404,9 @@ fn draw_node(
 
     // --- Detail text ---
     if let Some(detail) = &node.detail {
-        let detail_font = egui::FontId::new(
-            10.0,
-            crate::ui::typography::mi_sans_family_for_weight(300.0),
-        );
-        let detail_galley = painter.layout_no_wrap(detail.clone(), detail_font, COLOR_DETAIL);
+        let detail_style = design_tokens::text_style(TextRole::ValueLabel);
+        let detail_font = design_tokens::font_id(detail_style.size, detail_style.weight);
+        let detail_galley = painter.layout_no_wrap(detail.clone(), detail_font, detail_style.color);
         let detail_pos = Pos2::new(cx, cy - detail_galley.size().y * 0.5);
         painter.galley(detail_pos, detail_galley, Color32::PLACEHOLDER);
     }
