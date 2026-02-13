@@ -100,7 +100,11 @@ fn compute_node_signature(
     let mut bindings: Vec<(&str, &str, &str)> = Vec::new();
     for b in &node.input_bindings {
         if let Some(ref sb) = b.source_binding {
-            bindings.push((b.port_id.as_str(), sb.node_id.as_str(), sb.output_port_id.as_str()));
+            bindings.push((
+                b.port_id.as_str(),
+                sb.node_id.as_str(),
+                sb.output_port_id.as_str(),
+            ));
         }
     }
     bindings.sort();
@@ -203,10 +207,7 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
         // For non-group-generated passes (e.g. sys.auto.fullscreen.pass.*), keep
         // the original canonical ID to avoid unstable sys.group.unknown renames.
         let canonical_name = if let Some(node) = nodes_by_id.get(canonical_original.as_str()) {
-            let group_id = node
-                .params
-                .get("__dedup_group_id")
-                .and_then(|v| v.as_str());
+            let group_id = node.params.get("__dedup_group_id").and_then(|v| v.as_str());
             let original_id = node
                 .params
                 .get("__dedup_original_id")
@@ -274,7 +275,9 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
             if let Some(node) = nodes_by_id.get(up_id.as_str()) {
                 if let (Some(group_id), Some(orig_id)) = (
                     node.params.get("__dedup_group_id").and_then(|v| v.as_str()),
-                    node.params.get("__dedup_original_id").and_then(|v| v.as_str()),
+                    node.params
+                        .get("__dedup_original_id")
+                        .and_then(|v| v.as_str()),
                 ) {
                     let new_name = format!("sys.group.{group_id}/{orig_id}");
                     if *up_id != new_name {
@@ -324,9 +327,9 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
             }
             // Check all consumers
             if let Some(consumers) = outgoing.get(up_id) {
-                let all_removed = consumers.iter().all(|c| {
-                    nodes_to_remove.contains(c) || orphaned.contains(c)
-                });
+                let all_removed = consumers
+                    .iter()
+                    .all(|c| nodes_to_remove.contains(c) || orphaned.contains(c));
                 if all_removed {
                     orphaned.insert(up_id.clone());
                     changed = true;
@@ -355,7 +358,9 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
     let deduped_passes = nodes_to_remove
         .iter()
         .filter(|id| {
-            nodes_by_id.get(id.as_str()).is_some_and(|n| is_pass_node(&n.node_type))
+            nodes_by_id
+                .get(id.as_str())
+                .is_some_and(|n| is_pass_node(&n.node_type))
         })
         .count();
 
@@ -436,20 +441,48 @@ mod tests {
             node_type: node_type.to_string(),
             params,
             inputs: vec![
-                NodePort { id: "material".to_string(), name: None, port_type: None },
-                NodePort { id: "source".to_string(), name: None, port_type: None },
-                NodePort { id: "geometry".to_string(), name: None, port_type: None },
+                NodePort {
+                    id: "material".to_string(),
+                    name: None,
+                    port_type: None,
+                },
+                NodePort {
+                    id: "source".to_string(),
+                    name: None,
+                    port_type: None,
+                },
+                NodePort {
+                    id: "geometry".to_string(),
+                    name: None,
+                    port_type: None,
+                },
             ],
-            outputs: vec![NodePort { id: "output".to_string(), name: None, port_type: None }],
+            outputs: vec![NodePort {
+                id: "output".to_string(),
+                name: None,
+                port_type: None,
+            }],
             input_bindings: Vec::new(),
         }
     }
 
-    fn make_conn(id: &str, from_node: &str, from_port: &str, to_node: &str, to_port: &str) -> Connection {
+    fn make_conn(
+        id: &str,
+        from_node: &str,
+        from_port: &str,
+        to_node: &str,
+        to_port: &str,
+    ) -> Connection {
         Connection {
             id: id.to_string(),
-            from: Endpoint { node_id: from_node.to_string(), port_id: from_port.to_string() },
-            to: Endpoint { node_id: to_node.to_string(), port_id: to_port.to_string() },
+            from: Endpoint {
+                node_id: from_node.to_string(),
+                port_id: from_port.to_string(),
+            },
+            to: Endpoint {
+                node_id: to_node.to_string(),
+                port_id: to_port.to_string(),
+            },
         }
     }
 
@@ -465,7 +498,11 @@ mod tests {
 
         let mut scene = SceneDSL {
             version: "1.0".to_string(),
-            metadata: Metadata { name: "test".to_string(), created: None, modified: None },
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
             nodes: vec![
                 make_node("inst_a/RP_1", "RenderPass", params.clone()),
                 make_node("inst_b/RP_1", "RenderPass", params2),
@@ -480,12 +517,29 @@ mod tests {
         };
 
         let report = dedup_identical_passes(&mut scene);
-        assert!(report.deduped_passes >= 1, "expected at least 1 deduped pass, got {}", report.deduped_passes);
+        assert!(
+            report.deduped_passes >= 1,
+            "expected at least 1 deduped pass, got {}",
+            report.deduped_passes
+        );
 
         // Should have canonical + downstream = 2 nodes
-        let pass_nodes: Vec<_> = scene.nodes.iter().filter(|n| n.node_type == "RenderPass").collect();
-        assert_eq!(pass_nodes.len(), 1, "expected 1 RenderPass after dedup, got {}", pass_nodes.len());
-        assert!(pass_nodes[0].id.starts_with("sys.group."), "canonical should have sys.group. prefix: {}", pass_nodes[0].id);
+        let pass_nodes: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == "RenderPass")
+            .collect();
+        assert_eq!(
+            pass_nodes.len(),
+            1,
+            "expected 1 RenderPass after dedup, got {}",
+            pass_nodes.len()
+        );
+        assert!(
+            pass_nodes[0].id.starts_with("sys.group."),
+            "canonical should have sys.group. prefix: {}",
+            pass_nodes[0].id
+        );
 
         // Both connections should now point to the canonical pass
         for c in &scene.connections {
@@ -509,7 +563,11 @@ mod tests {
 
         let mut scene = SceneDSL {
             version: "1.0".to_string(),
-            metadata: Metadata { name: "test".to_string(), created: None, modified: None },
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
             nodes: vec![
                 make_node("a/RP", "RenderPass", params_a),
                 make_node("b/RP", "RenderPass", params_b),
@@ -520,7 +578,10 @@ mod tests {
         };
 
         let report = dedup_identical_passes(&mut scene);
-        assert_eq!(report.deduped_passes, 0, "different params should not be deduped");
+        assert_eq!(
+            report.deduped_passes, 0,
+            "different params should not be deduped"
+        );
         assert_eq!(scene.nodes.len(), 2);
     }
 
@@ -528,10 +589,22 @@ mod tests {
     fn test_non_group_pass_keeps_canonical_id() {
         let mut scene = SceneDSL {
             version: "1.0".to_string(),
-            metadata: Metadata { name: "test".to_string(), created: None, modified: None },
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
             nodes: vec![
-                make_node("sys.auto.fullscreen.pass.edge_1", "RenderPass", HashMap::new()),
-                make_node("sys.auto.fullscreen.pass.edge_2", "RenderPass", HashMap::new()),
+                make_node(
+                    "sys.auto.fullscreen.pass.edge_1",
+                    "RenderPass",
+                    HashMap::new(),
+                ),
+                make_node(
+                    "sys.auto.fullscreen.pass.edge_2",
+                    "RenderPass",
+                    HashMap::new(),
+                ),
                 make_node("downstream", "MathClosure", HashMap::new()),
             ],
             connections: vec![

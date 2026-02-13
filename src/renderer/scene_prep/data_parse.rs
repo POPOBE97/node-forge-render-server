@@ -180,13 +180,11 @@ pub(crate) fn bake_data_parse_nodes(
 
             let script_body = format!("{bindings_src}\n{user_src}\n");
             let script = format!("(function() {{\n{}\n}})()", script_body);
-            let out: serde_json::Value = match rt
-                .get_or_insert_with(TsRuntime::new)
-                .eval_script(&script)
-            {
-                Ok(v) => v,
-                Err(_) => serde_json::Value::Object(serde_json::Map::new()),
-            };
+            let out: serde_json::Value =
+                match rt.get_or_insert_with(TsRuntime::new).eval_script(&script) {
+                    Ok(v) => v,
+                    Err(_) => serde_json::Value::Object(serde_json::Map::new()),
+                };
             let out_obj = out.as_object();
 
             for p in &node.outputs {

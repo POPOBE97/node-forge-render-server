@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{find_node, incoming_connection, Node, SceneDSL},
+    dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
@@ -591,15 +591,16 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
         ));
     };
 
-    let source_is_pass = nodes_by_id
-        .get(&conn.from.node_id)
-        .is_some_and(|node| matches!(
+    let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
+        matches!(
             node.node_type.as_str(),
             "RenderPass" | "GuassianBlurPass" | "Downsample"
-        ));
+        )
+    });
 
     if source_is_pass {
-        let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
+        let mut bundle =
+            crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
         bundle.pass_textures = vec![conn.from.node_id.clone()];
         return Ok(bundle);
     }

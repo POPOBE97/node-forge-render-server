@@ -499,7 +499,9 @@ mod tests {
             outputs: Vec::new(),
         };
 
-        let err = compile_time_input(&node, Some("value")).unwrap_err().to_string();
+        let err = compile_time_input(&node, Some("value"))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("TimeInput: unsupported output port 'value'"));
     }
 }

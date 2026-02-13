@@ -19,22 +19,22 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
+    ResourceName,
     eframe::wgpu::{
-        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
+        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
     },
     pool::{
         buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
-    ResourceName,
 };
 
 use crate::{
-    dsl::{find_node, incoming_connection, parse_str, parse_texture_format, SceneDSL},
+    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
         graph_uniforms::{
             choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
@@ -54,13 +54,13 @@ use crate::{
         utils::{as_bytes, as_bytes_slice, decode_data_url, load_image_from_data_url},
         utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
-            build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
-            build_downsample_bundle, build_downsample_pass_wgsl_bundle,
-            build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
-            build_horizontal_blur_bundle, build_pass_wgsl_bundle,
+            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
+            build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
+            build_downsample_pass_wgsl_bundle, build_dynamic_rect_compose_bundle,
+            build_fullscreen_textured_bundle, build_horizontal_blur_bundle, build_pass_wgsl_bundle,
             build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
-            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
+            gaussian_mip_level_and_sigma_p,
         },
     },
 };
@@ -89,7 +89,11 @@ fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]> {
         if pb.is_absolute() {
             vec![pb]
         } else {
-            vec![pb.clone(), rel_base.join(&pb), rel_base.join("assets").join(&pb)]
+            vec![
+                pb.clone(),
+                rel_base.join(&pb),
+                rel_base.join("assets").join(&pb),
+            ]
         }
     };
 
@@ -2117,19 +2121,33 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "pass") {
                     if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
                         if src_node.node_type == "RenderPass" {
-                            if let Some(geo_conn) =
-                                incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
-                            {
-                                if let Ok((_, _src_geo_w, _src_geo_h, src_geo_x, src_geo_y, _, _, _, _, _, _, _, _)) =
-                                    resolve_geometry_for_render_pass(
-                                        &prepared.scene,
-                                        nodes_by_id,
-                                        ids,
-                                        &geo_conn.from.node_id,
-                                        [tgt_w, tgt_h],
-                                        None,
-                                    )
-                                {
+                            if let Some(geo_conn) = incoming_connection(
+                                &prepared.scene,
+                                &src_conn.from.node_id,
+                                "geometry",
+                            ) {
+                                if let Ok((
+                                    _,
+                                    _src_geo_w,
+                                    _src_geo_h,
+                                    src_geo_x,
+                                    src_geo_y,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                )) = resolve_geometry_for_render_pass(
+                                    &prepared.scene,
+                                    nodes_by_id,
+                                    ids,
+                                    &geo_conn.from.node_id,
+                                    [tgt_w, tgt_h],
+                                    None,
+                                ) {
                                     blur_output_center = Some([src_geo_x, src_geo_y]);
                                 }
                             }
@@ -2145,9 +2163,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         if can_direct_bypass && src_spec.format == sampled_pass_format {
                             initial_blur_source_texture = Some(src_spec.texture_name.clone());
                             // Match the sampler behavior the old `.src.pass` would have used.
-                            initial_blur_source_sampler_kind = Some(
-                                sampler_kind_for_pass_texture(&prepared.scene, &src_conn.from.node_id),
-                            );
+                            initial_blur_source_sampler_kind = Some(sampler_kind_for_pass_texture(
+                                &prepared.scene,
+                                &src_conn.from.node_id,
+                            ));
                         }
                     }
 
@@ -2190,128 +2209,138 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let src_h = src_resolution[1] as f32;
                 let src_content_w = src_content_resolution[0] as f32;
                 let src_content_h = src_content_resolution[1] as f32;
-                let initial_blur_source_texture: ResourceName =
-                    if let Some(existing_tex) = initial_blur_source_texture {
-                        existing_tex
+                let initial_blur_source_texture: ResourceName = if let Some(existing_tex) =
+                    initial_blur_source_texture
+                {
+                    existing_tex
+                } else {
+                    // Create source texture for the pass input.
+                    let src_tex: ResourceName = format!("sys.blur.{layer_id}.src").into();
+                    textures.push(TextureDecl {
+                        name: src_tex.clone(),
+                        size: src_resolution,
+                        format: sampled_pass_format,
+                    });
+
+                    // Build source pass geometry. In Extend mode, draw source content with its
+                    // original size centered in the padded target; otherwise fullscreen.
+                    let src_geo_w = if extend_pad_px > 0 {
+                        src_content_w
                     } else {
-                        // Create source texture for the pass input.
-                        let src_tex: ResourceName = format!("sys.blur.{layer_id}.src").into();
-                        textures.push(TextureDecl {
-                            name: src_tex.clone(),
-                            size: src_resolution,
-                            format: sampled_pass_format,
-                        });
-
-                        // Build source pass geometry. In Extend mode, draw source content with its
-                        // original size centered in the padded target; otherwise fullscreen.
-                        let src_geo_w = if extend_pad_px > 0 { src_content_w } else { src_w };
-                        let src_geo_h = if extend_pad_px > 0 { src_content_h } else { src_h };
-
-                        let geo_src: ResourceName = format!("sys.blur.{layer_id}.src.geo").into();
-                        geometry_buffers
-                            .push((geo_src.clone(), make_fullscreen_geometry(src_geo_w, src_geo_h)));
-
-                        let params_src: ResourceName =
-                            format!("params.sys.blur.{layer_id}.src").into();
-                        let params_src_val = Params {
-                            target_size: [src_w, src_h],
-                            geo_size: [src_geo_w, src_geo_h],
-                            // Center source content in the padded texture (or fullscreen if no extend).
-                            center: [src_w * 0.5, src_h * 0.5],
-                            geo_translate: [0.0, 0.0],
-                            geo_scale: [1.0, 1.0],
-                            time: 0.0,
-                            _pad0: 0.0,
-                            color: [0.0, 0.0, 0.0, 0.0],
-                        };
-
-                        // Build WGSL for sampling the `pass` input source.
-                        let mut src_bundle =
-                            build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
-                        let mut src_graph_binding: Option<GraphBinding> = None;
-                        let mut src_graph_values: Option<Vec<u8>> = None;
-                        if let Some(schema) = src_bundle.graph_schema.clone() {
-                            let limits = device.limits();
-                            let kind = choose_graph_binding_kind(
-                                schema.size_bytes,
-                                limits.max_uniform_buffer_binding_size as u64,
-                                limits.max_storage_buffer_binding_size as u64,
-                            )?;
-                            if src_bundle.graph_binding_kind != Some(kind) {
-                                src_bundle = build_blur_image_wgsl_bundle_with_graph_binding(
-                                    &prepared.scene,
-                                    nodes_by_id,
-                                    layer_id,
-                                    Some(kind),
-                                )?;
-                            }
-                            let schema = src_bundle
-                                .graph_schema
-                                .clone()
-                                .ok_or_else(|| anyhow!("missing blur source graph schema"))?;
-                            let values = pack_graph_values(&prepared.scene, &schema)?;
-                            src_graph_values = Some(values);
-                            src_graph_binding = Some(GraphBinding {
-                                buffer_name: format!("params.sys.blur.{layer_id}.src.graph").into(),
-                                kind,
-                                schema,
-                            });
-                        }
-                        let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
-                        let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
-
-                        for id in src_bundle.image_textures.iter() {
-                            let Some(tex) = ids.get(id).cloned() else {
-                                continue;
-                            };
-                            src_texture_bindings.push(PassTextureBinding {
-                                texture: tex,
-                                image_node_id: Some(id.clone()),
-                            });
-                            let kind = nodes_by_id
-                                .get(id)
-                                .map(|n| sampler_kind_from_node_params(&n.params))
-                                .unwrap_or(SamplerKind::LinearClamp);
-                            src_sampler_kinds.push(kind);
-                        }
-
-                        let src_pass_bindings =
-                            crate::renderer::render_plan::resolve_pass_texture_bindings(
-                                &pass_output_registry,
-                                &src_bundle.pass_textures,
-                            )?;
-                        for (upstream_pass_id, binding) in
-                            src_bundle.pass_textures.iter().zip(src_pass_bindings)
-                        {
-                            src_texture_bindings.push(binding);
-                            src_sampler_kinds.push(sampler_kind_for_pass_texture(
-                                &prepared.scene,
-                                upstream_pass_id,
-                            ));
-                        }
-
-                        let src_pass_name: ResourceName =
-                            format!("sys.blur.{layer_id}.src.pass").into();
-                        render_pass_specs.push(RenderPassSpec {
-                            pass_id: src_pass_name.as_str().to_string(),
-                            name: src_pass_name.clone(),
-                            geometry_buffer: geo_src,
-                            instance_buffer: None,
-                            target_texture: src_tex.clone(),
-                            params_buffer: params_src.clone(),
-                            baked_data_parse_buffer: None,
-                            params: params_src_val,
-                            graph_binding: src_graph_binding,
-                            graph_values: src_graph_values,
-                            shader_wgsl: src_bundle.module,
-                            texture_bindings: src_texture_bindings,
-                            sampler_kinds: src_sampler_kinds,
-                            blend_state: BlendState::REPLACE,
-                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-                        });
-                        composite_passes.push(src_pass_name);
-                        src_tex
+                        src_w
                     };
+                    let src_geo_h = if extend_pad_px > 0 {
+                        src_content_h
+                    } else {
+                        src_h
+                    };
+
+                    let geo_src: ResourceName = format!("sys.blur.{layer_id}.src.geo").into();
+                    geometry_buffers.push((
+                        geo_src.clone(),
+                        make_fullscreen_geometry(src_geo_w, src_geo_h),
+                    ));
+
+                    let params_src: ResourceName = format!("params.sys.blur.{layer_id}.src").into();
+                    let params_src_val = Params {
+                        target_size: [src_w, src_h],
+                        geo_size: [src_geo_w, src_geo_h],
+                        // Center source content in the padded texture (or fullscreen if no extend).
+                        center: [src_w * 0.5, src_h * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    // Build WGSL for sampling the `pass` input source.
+                    let mut src_bundle =
+                        build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                    let mut src_graph_binding: Option<GraphBinding> = None;
+                    let mut src_graph_values: Option<Vec<u8>> = None;
+                    if let Some(schema) = src_bundle.graph_schema.clone() {
+                        let limits = device.limits();
+                        let kind = choose_graph_binding_kind(
+                            schema.size_bytes,
+                            limits.max_uniform_buffer_binding_size as u64,
+                            limits.max_storage_buffer_binding_size as u64,
+                        )?;
+                        if src_bundle.graph_binding_kind != Some(kind) {
+                            src_bundle = build_blur_image_wgsl_bundle_with_graph_binding(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_id,
+                                Some(kind),
+                            )?;
+                        }
+                        let schema = src_bundle
+                            .graph_schema
+                            .clone()
+                            .ok_or_else(|| anyhow!("missing blur source graph schema"))?;
+                        let values = pack_graph_values(&prepared.scene, &schema)?;
+                        src_graph_values = Some(values);
+                        src_graph_binding = Some(GraphBinding {
+                            buffer_name: format!("params.sys.blur.{layer_id}.src.graph").into(),
+                            kind,
+                            schema,
+                        });
+                    }
+                    let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
+                    let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
+
+                    for id in src_bundle.image_textures.iter() {
+                        let Some(tex) = ids.get(id).cloned() else {
+                            continue;
+                        };
+                        src_texture_bindings.push(PassTextureBinding {
+                            texture: tex,
+                            image_node_id: Some(id.clone()),
+                        });
+                        let kind = nodes_by_id
+                            .get(id)
+                            .map(|n| sampler_kind_from_node_params(&n.params))
+                            .unwrap_or(SamplerKind::LinearClamp);
+                        src_sampler_kinds.push(kind);
+                    }
+
+                    let src_pass_bindings =
+                        crate::renderer::render_plan::resolve_pass_texture_bindings(
+                            &pass_output_registry,
+                            &src_bundle.pass_textures,
+                        )?;
+                    for (upstream_pass_id, binding) in
+                        src_bundle.pass_textures.iter().zip(src_pass_bindings)
+                    {
+                        src_texture_bindings.push(binding);
+                        src_sampler_kinds.push(sampler_kind_for_pass_texture(
+                            &prepared.scene,
+                            upstream_pass_id,
+                        ));
+                    }
+
+                    let src_pass_name: ResourceName =
+                        format!("sys.blur.{layer_id}.src.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: src_pass_name.as_str().to_string(),
+                        name: src_pass_name.clone(),
+                        geometry_buffer: geo_src,
+                        instance_buffer: None,
+                        target_texture: src_tex.clone(),
+                        params_buffer: params_src.clone(),
+                        baked_data_parse_buffer: None,
+                        params: params_src_val,
+                        graph_binding: src_graph_binding,
+                        graph_values: src_graph_values,
+                        shader_wgsl: src_bundle.module,
+                        texture_bindings: src_texture_bindings,
+                        sampler_kinds: src_sampler_kinds,
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(src_pass_name);
+                    src_tex
+                };
 
                 // Resolution: use source resolution (possibly extended), but allow override via params.
                 let blur_w = cpu_num_u32_min_1(
@@ -3622,9 +3651,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Rgba, RgbaImage};
     use crate::dsl::Node;
     use crate::renderer::scene_prep::composite_layers_in_draw_order;
+    use image::{Rgba, RgbaImage};
     use serde_json::json;
 
     #[test]
@@ -3697,7 +3726,7 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
 

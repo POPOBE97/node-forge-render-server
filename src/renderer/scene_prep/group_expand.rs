@@ -173,12 +173,10 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             // Also remove the cloned nodes we already added in steps 1-2.
             let cloned_prefix = format!("{instance_id}/");
             scene.nodes.retain(|n| !n.id.starts_with(&cloned_prefix));
-            scene
-                .connections
-                .retain(|c| {
-                    !c.from.node_id.starts_with(&cloned_prefix)
-                        && !c.to.node_id.starts_with(&cloned_prefix)
-                });
+            scene.connections.retain(|c| {
+                !c.from.node_id.starts_with(&cloned_prefix)
+                    && !c.to.node_id.starts_with(&cloned_prefix)
+            });
             expanded_count += 1;
             continue;
         }

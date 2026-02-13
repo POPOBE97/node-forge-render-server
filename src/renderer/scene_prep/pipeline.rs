@@ -98,8 +98,7 @@ pub(crate) fn prepare_scene_with_report(
     if dedup_report.deduped_passes > 0 {
         eprintln!(
             "pass dedup: removed {} duplicate passes, {} orphaned nodes",
-            dedup_report.deduped_passes,
-            dedup_report.removed_nodes,
+            dedup_report.deduped_passes, dedup_report.removed_nodes,
         );
     }
 

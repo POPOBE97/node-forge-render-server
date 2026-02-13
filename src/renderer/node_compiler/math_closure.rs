@@ -212,15 +212,12 @@ fn infer_array_size_from_source(source: &str, elem_ty: ValueType) -> Option<usiz
 
 /// Check whether any input or output port of a MathClosure uses an array type.
 fn has_array_ports(node: &Node) -> bool {
-    node.inputs
-        .iter()
-        .chain(node.outputs.iter())
-        .any(|p| {
-            p.port_type
-                .as_deref()
-                .map(|t| t.ends_with("[]"))
-                .unwrap_or(false)
-        })
+    node.inputs.iter().chain(node.outputs.iter()).any(|p| {
+        p.port_type
+            .as_deref()
+            .map(|t| t.ends_with("[]"))
+            .unwrap_or(false)
+    })
 }
 
 /// Convert a single GLSL statement/line to WGSL.
@@ -324,12 +321,7 @@ fn convert_glsl_exprs_to_wgsl(expr: &str) -> String {
             let after_bracket = &after[close + 1..];
             if after_bracket.starts_with('(') {
                 let replacement = format!("array<{wgsl_ty}, {size_str}>");
-                result = format!(
-                    "{}{}{}",
-                    &result[..pos],
-                    replacement,
-                    after_bracket
-                );
+                result = format!("{}{}{}", &result[..pos], replacement, after_bracket);
                 continue;
             }
             break;
@@ -469,8 +461,12 @@ where
             // Find the connected pass node.
             let conn = incoming_connection(scene, &node.id, &port.id)
                 .ok_or_else(|| anyhow!("MathClosure pass input '{}' is not connected", port.id))?;
-            let upstream_node = nodes_by_id.get(&conn.from.node_id)
-                .ok_or_else(|| anyhow!("MathClosure: upstream node not found: {}", conn.from.node_id))?;
+            let upstream_node = nodes_by_id.get(&conn.from.node_id).ok_or_else(|| {
+                anyhow!(
+                    "MathClosure: upstream node not found: {}",
+                    conn.from.node_id
+                )
+            })?;
 
             // Validate that upstream is a pass-producing node.
             if !matches!(
@@ -500,11 +496,7 @@ where
             // Array types don't get promoted from swizzle analysis.
             port_ty
         } else {
-            promote_type_from_source_swizzles(
-                &source,
-                &param_name,
-                port_ty,
-            )
+            promote_type_from_source_swizzles(&source, &param_name, port_ty)
         };
 
         let arg_expr = if let Some(conn) = incoming_connection(scene, &node.id, &port.id) {
@@ -563,7 +555,9 @@ where
                             '(' => depth += 1,
                             ')' => {
                                 depth -= 1;
-                                if depth == 0 { break; }
+                                if depth == 0 {
+                                    break;
+                                }
                             }
                             ',' if depth == 1 => commas += 1,
                             _ => {}
@@ -627,11 +621,7 @@ where
                 continue;
             }
 
-            let expected_ty = promote_type_from_source_swizzles(
-                &source,
-                &param_name,
-                port_ty,
-            );
+            let expected_ty = promote_type_from_source_swizzles(&source, &param_name, port_ty);
             glsl_params.push(format!("{} {}", expected_ty.glsl(), param_name));
             if expected_ty == ValueType::Bool {
                 wgsl_args.push(format!("select(0.0, 1.0, {param_name})"));
@@ -672,11 +662,14 @@ where
         })
         .map_err(|e| anyhow!("MathClosure GLSL->WGSL failed (node={}): {e:#}", node.id))?;
 
-        (compiled.wgsl_fn_name, compiled.wgsl_fn_decl, compiled.call_expr)
+        (
+            compiled.wgsl_fn_name,
+            compiled.wgsl_fn_decl,
+            compiled.call_expr,
+        )
     };
 
-    ctx.extra_wgsl_decls
-        .insert(wgsl_fn_name, wgsl_fn_decl);
+    ctx.extra_wgsl_decls.insert(wgsl_fn_name, wgsl_fn_decl);
 
     // Build the inline block statement with `{ }` for scope isolation.
     let ret_type = ret_ty.wgsl_type_string();

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::ResourceName;
 
 use crate::{
-    dsl::{find_node, incoming_connection, SceneDSL},
+    dsl::{SceneDSL, find_node, incoming_connection},
     renderer::{
         graph_uniforms::graph_field_name,
         node_compiler::compile_vertex_expr,
