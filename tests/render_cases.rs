@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use node_forge_render_server::renderer::validation;
 use node_forge_render_server::renderer::ShaderSpaceBuildOptions;
+use node_forge_render_server::renderer::validation;
 use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
@@ -300,15 +300,27 @@ fn run_case(case: &Case) {
         )
     });
     for (pass_id, bundle) in &passes {
-        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.vertex.wgsl")), &bundle.vertex)
-            .unwrap_or_else(|e| panic!("case {}: write out vertex wgsl: {e}", case.name));
-        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.fragment.wgsl")), &bundle.fragment)
-            .unwrap_or_else(|e| panic!("case {}: write out fragment wgsl: {e}", case.name));
-        std::fs::write(out_wgsl_dir.join(format!("{pass_id}.module.wgsl")), &bundle.module)
-            .unwrap_or_else(|e| panic!("case {}: write out module wgsl: {e}", case.name));
+        std::fs::write(
+            out_wgsl_dir.join(format!("{pass_id}.vertex.wgsl")),
+            &bundle.vertex,
+        )
+        .unwrap_or_else(|e| panic!("case {}: write out vertex wgsl: {e}", case.name));
+        std::fs::write(
+            out_wgsl_dir.join(format!("{pass_id}.fragment.wgsl")),
+            &bundle.fragment,
+        )
+        .unwrap_or_else(|e| panic!("case {}: write out fragment wgsl: {e}", case.name));
+        std::fs::write(
+            out_wgsl_dir.join(format!("{pass_id}.module.wgsl")),
+            &bundle.module,
+        )
+        .unwrap_or_else(|e| panic!("case {}: write out module wgsl: {e}", case.name));
         if let Some(compute) = &bundle.compute {
-            std::fs::write(out_wgsl_dir.join(format!("{pass_id}.compute.wgsl")), compute)
-                .unwrap_or_else(|e| panic!("case {}: write out compute wgsl: {e}", case.name));
+            std::fs::write(
+                out_wgsl_dir.join(format!("{pass_id}.compute.wgsl")),
+                compute,
+            )
+            .unwrap_or_else(|e| panic!("case {}: write out compute wgsl: {e}", case.name));
         }
     }
 
@@ -615,13 +627,7 @@ fn run_case(case: &Case) {
             if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
                 eprintln!(
                     "case {}: baseline mismatch: {} pixels differ, max_delta={}, first at ({},{}) expected={:?} actual={:?}",
-                    case.name,
-                    mismatched_pixels,
-                    max_channel_delta,
-                    x,
-                    y,
-                    ep.0,
-                    ap.0
+                    case.name, mismatched_pixels, max_channel_delta, x, y, ep.0, ap.0
                 );
             }
         }
@@ -729,12 +735,7 @@ fn run_case(case: &Case) {
             if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
                 eprintln!(
                     "case {}: first mismatch at ({},{}): expected={:?} actual={:?} max_channel_delta={}",
-                    case.name,
-                    x,
-                    y,
-                    ep.0,
-                    ap.0,
-                    max_channel_delta
+                    case.name, x, y, ep.0, ap.0, max_channel_delta
                 );
             }
         }

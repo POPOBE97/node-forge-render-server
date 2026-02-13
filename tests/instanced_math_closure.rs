@@ -1,8 +1,4 @@
-use node_forge_render_server::{
-    dsl,
-    renderer,
-    ui::resource_tree::ResourceSnapshot,
-};
+use node_forge_render_server::{dsl, renderer, ui::resource_tree::ResourceSnapshot};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
 #[test]
@@ -10,8 +6,8 @@ fn instanced_math_closure_builds_and_reports_instance_count() {
     let scene = dsl::load_scene_from_path("tests/cases/instanced-math-closure/scene.json")
         .expect("load instanced-math-closure scene.json");
 
-    let headless = HeadlessRenderer::new(HeadlessRendererConfig::default())
-        .expect("create headless renderer");
+    let headless =
+        HeadlessRenderer::new(HeadlessRendererConfig::default()).expect("create headless renderer");
 
     let build = renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
         .build(&scene)
