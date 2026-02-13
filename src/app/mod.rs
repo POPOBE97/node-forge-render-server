@@ -5,7 +5,10 @@ mod texture_bridge;
 mod types;
 mod window_mode;
 
-pub use types::{App, AppInit, DiffMetricMode, DiffStats, RefImageMode, SampledPixel};
+pub use types::{
+    AnalysisTab, App, AppInit, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode,
+    SampledPixel,
+};
 
 use rust_wgpu_fiber::eframe::{self, egui, wgpu};
 
@@ -27,7 +30,8 @@ impl eframe::App for App {
         if let Some(update) = scene_runtime::drain_latest_scene_update(self) {
             let apply_result = scene_runtime::apply_scene_update(self, ctx, render_state, update);
             self.diff_dirty = true;
-            self.histogram_dirty = true;
+            self.analysis_dirty = true;
+            self.clipping_dirty = true;
             if apply_result.did_rebuild_shader_space {
                 let filter = apply_result
                     .texture_filter_override
@@ -68,10 +72,14 @@ impl eframe::App for App {
         }
 
         if self.scene_uses_time && self.time_updates_enabled {
-            if matches!(self.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff)) {
+            if matches!(
+                self.ref_image.as_ref().map(|r| r.mode),
+                Some(RefImageMode::Diff)
+            ) {
                 self.diff_dirty = true;
             }
-            self.histogram_dirty = true;
+            self.analysis_dirty = true;
+            self.clipping_dirty = true;
         }
 
         self.shader_space.render();
@@ -87,7 +95,11 @@ impl eframe::App for App {
             .shader_space
             .textures
             .get(display_texture_name.as_str())
-            .or_else(|| self.shader_space.textures.get(self.output_texture_name.as_str()));
+            .or_else(|| {
+                self.shader_space
+                    .textures
+                    .get(self.output_texture_name.as_str())
+            });
 
         let mut computed_diff_stats = None;
         let mut did_update_diff_output = false;
@@ -97,7 +109,10 @@ impl eframe::App for App {
             && let Some(source_view) = texture.wgpu_texture_view.as_ref()
         {
             let reference_mode = reference.mode;
-            let reference_offset = [reference.offset.x.round() as i32, reference.offset.y.round() as i32];
+            let reference_offset = [
+                reference.offset.x.round() as i32,
+                reference.offset.y.round() as i32,
+            ];
             let ref_size = reference.size;
             let needs_recreate = self
                 .diff_renderer
@@ -155,87 +170,268 @@ impl eframe::App for App {
                             id,
                         );
                     } else {
-                        self.diff_texture_id = Some(
-                            renderer_guard.register_native_texture_with_sampler_options(
+                        self.diff_texture_id =
+                            Some(renderer_guard.register_native_texture_with_sampler_options(
                                 &render_state.device,
                                 diff_renderer.output_view(),
                                 sampler,
-                            ),
-                        );
+                            ));
                     }
                     self.diff_dirty = false;
-                    self.histogram_dirty = true;
+                    self.analysis_dirty = true;
+                    self.clipping_dirty = true;
                 }
             }
         }
 
         if computed_diff_stats.is_some() {
             self.diff_stats = computed_diff_stats;
-        } else if !matches!(self.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff)) {
+        } else if !matches!(
+            self.ref_image.as_ref().map(|r| r.mode),
+            Some(RefImageMode::Diff)
+        ) {
             self.diff_stats = None;
         }
 
         if self.histogram_renderer.is_none() {
-            self.histogram_renderer = Some(ui::histogram::HistogramRenderer::new(&render_state.device));
+            self.histogram_renderer =
+                Some(ui::histogram::HistogramRenderer::new(&render_state.device));
+        }
+        if self.parade_renderer.is_none() {
+            self.parade_renderer = Some(ui::parade::ParadeRenderer::new(&render_state.device));
+        }
+        if self.vectorscope_renderer.is_none() {
+            self.vectorscope_renderer = Some(ui::vectorscope::VectorscopeRenderer::new(
+                &render_state.device,
+            ));
         }
 
+        let mut analysis_source = None;
         if let Some(texture) = display_texture
             && let Some(source_view) = texture.wgpu_texture_view.as_ref()
-            && let Some(histogram_renderer) = self.histogram_renderer.as_ref()
         {
-            let mut histogram_view = source_view;
-            let mut histogram_size = [
+            let mut analysis_view = source_view;
+            let mut analysis_size = [
                 texture.wgpu_texture_desc.size.width,
                 texture.wgpu_texture_desc.size.height,
             ];
+            let mut analysis_source_is_diff = false;
 
-            if matches!(self.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff))
-                && let Some(diff_renderer) = self.diff_renderer.as_ref()
+            if matches!(
+                self.ref_image.as_ref().map(|r| r.mode),
+                Some(RefImageMode::Diff)
+            ) && let Some(diff_renderer) = self.diff_renderer.as_ref()
             {
-                histogram_view = diff_renderer.output_view();
-                histogram_size = diff_renderer.output_size();
+                analysis_view = diff_renderer.output_view();
+                analysis_size = diff_renderer.output_size();
+                analysis_source_is_diff = true;
             }
 
-            let should_update_histogram = self.histogram_dirty
-                || self.histogram_texture_id.is_none()
-                || did_update_diff_output;
+            self.analysis_source_is_diff = analysis_source_is_diff;
+            analysis_source = Some((analysis_view, analysis_size));
+        } else {
+            self.analysis_source_is_diff = false;
+        }
 
-            if should_update_histogram {
-                histogram_renderer.update(
-                    &render_state.device,
-                    self.shader_space.queue.as_ref(),
-                    histogram_view,
-                    histogram_size,
-                );
+        let mut did_update_active_analysis = false;
+        let mut did_update_clipping = false;
 
-                let sampler = wgpu::SamplerDescriptor {
-                    label: Some("sys.histogram.sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    ..Default::default()
-                };
-
-                if let Some(id) = self.histogram_texture_id {
-                    renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
-                        &render_state.device,
-                        histogram_renderer.output_view(),
-                        sampler,
-                        id,
-                    );
-                } else {
-                    self.histogram_texture_id = Some(
-                        renderer_guard.register_native_texture_with_sampler_options(
+        if let Some((analysis_view, analysis_size)) = analysis_source {
+            match self.analysis_tab {
+                AnalysisTab::Histogram => {
+                    let should_update = self.analysis_dirty
+                        || self.histogram_texture_id.is_none()
+                        || did_update_diff_output;
+                    if should_update
+                        && let Some(histogram_renderer) = self.histogram_renderer.as_ref()
+                    {
+                        histogram_renderer.update(
                             &render_state.device,
-                            histogram_renderer.output_view(),
-                            sampler,
-                        ),
-                    );
+                            self.shader_space.queue.as_ref(),
+                            analysis_view,
+                            analysis_size,
+                        );
+
+                        let sampler = wgpu::SamplerDescriptor {
+                            label: Some("sys.histogram.sampler"),
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge,
+                            address_mode_w: wgpu::AddressMode::ClampToEdge,
+                            mag_filter: wgpu::FilterMode::Nearest,
+                            min_filter: wgpu::FilterMode::Nearest,
+                            ..Default::default()
+                        };
+
+                        if let Some(id) = self.histogram_texture_id {
+                            renderer_guard
+                                .update_egui_texture_from_wgpu_texture_with_sampler_options(
+                                    &render_state.device,
+                                    histogram_renderer.output_view(),
+                                    sampler,
+                                    id,
+                                );
+                        } else {
+                            self.histogram_texture_id =
+                                Some(renderer_guard.register_native_texture_with_sampler_options(
+                                    &render_state.device,
+                                    histogram_renderer.output_view(),
+                                    sampler,
+                                ));
+                        }
+                        did_update_active_analysis = true;
+                    }
                 }
-                self.histogram_dirty = false;
+                AnalysisTab::Parade => {
+                    let should_update = self.analysis_dirty
+                        || self.parade_texture_id.is_none()
+                        || did_update_diff_output;
+                    if should_update && let Some(parade_renderer) = self.parade_renderer.as_ref() {
+                        parade_renderer.update(
+                            &render_state.device,
+                            self.shader_space.queue.as_ref(),
+                            analysis_view,
+                            analysis_size,
+                        );
+
+                        let parade_sampler = wgpu::SamplerDescriptor {
+                            label: Some("sys.scope.parade.sampler"),
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge,
+                            address_mode_w: wgpu::AddressMode::ClampToEdge,
+                            mag_filter: wgpu::FilterMode::Nearest,
+                            min_filter: wgpu::FilterMode::Nearest,
+                            ..Default::default()
+                        };
+                        if let Some(id) = self.parade_texture_id {
+                            renderer_guard
+                                .update_egui_texture_from_wgpu_texture_with_sampler_options(
+                                    &render_state.device,
+                                    parade_renderer.parade_output_view(),
+                                    parade_sampler,
+                                    id,
+                                );
+                        } else {
+                            self.parade_texture_id =
+                                Some(renderer_guard.register_native_texture_with_sampler_options(
+                                    &render_state.device,
+                                    parade_renderer.parade_output_view(),
+                                    parade_sampler,
+                                ));
+                        }
+
+                        did_update_active_analysis = true;
+                    }
+                }
+                AnalysisTab::Vectorscope => {
+                    let should_update = self.analysis_dirty
+                        || self.vectorscope_texture_id.is_none()
+                        || did_update_diff_output;
+                    if should_update
+                        && let Some(vectorscope_renderer) = self.vectorscope_renderer.as_ref()
+                    {
+                        vectorscope_renderer.update(
+                            &render_state.device,
+                            self.shader_space.queue.as_ref(),
+                            analysis_view,
+                            analysis_size,
+                        );
+
+                        let sampler = wgpu::SamplerDescriptor {
+                            label: Some("sys.scope.vectorscope.sampler"),
+                            address_mode_u: wgpu::AddressMode::ClampToEdge,
+                            address_mode_v: wgpu::AddressMode::ClampToEdge,
+                            address_mode_w: wgpu::AddressMode::ClampToEdge,
+                            mag_filter: wgpu::FilterMode::Nearest,
+                            min_filter: wgpu::FilterMode::Nearest,
+                            ..Default::default()
+                        };
+
+                        if let Some(id) = self.vectorscope_texture_id {
+                            renderer_guard
+                                .update_egui_texture_from_wgpu_texture_with_sampler_options(
+                                    &render_state.device,
+                                    vectorscope_renderer.output_view(),
+                                    sampler,
+                                    id,
+                                );
+                        } else {
+                            self.vectorscope_texture_id =
+                                Some(renderer_guard.register_native_texture_with_sampler_options(
+                                    &render_state.device,
+                                    vectorscope_renderer.output_view(),
+                                    sampler,
+                                ));
+                        }
+                        did_update_active_analysis = true;
+                    }
+                }
+                AnalysisTab::Clipping => {}
             }
+
+            let clipping_required = matches!(self.analysis_tab, AnalysisTab::Clipping);
+            if clipping_required {
+                if self.clipping_renderer.is_none() {
+                    self.clipping_renderer = Some(ui::clipping_map::ClippingMapRenderer::new(
+                        &render_state.device,
+                        analysis_size,
+                    ));
+                }
+
+                let should_update_clipping = self.analysis_dirty
+                    || self.clipping_dirty
+                    || self.clipping_texture_id.is_none()
+                    || did_update_diff_output;
+                if should_update_clipping
+                    && let Some(clipping_renderer) = self.clipping_renderer.as_mut()
+                {
+                    clipping_renderer.update(
+                        &render_state.device,
+                        self.shader_space.queue.as_ref(),
+                        analysis_view,
+                        analysis_size,
+                        self.clipping_settings.shadow_threshold,
+                        self.clipping_settings.highlight_threshold,
+                    );
+
+                    let sampler = wgpu::SamplerDescriptor {
+                        label: Some("sys.scope.clipping.sampler"),
+                        address_mode_u: wgpu::AddressMode::ClampToEdge,
+                        address_mode_v: wgpu::AddressMode::ClampToEdge,
+                        address_mode_w: wgpu::AddressMode::ClampToEdge,
+                        mag_filter: wgpu::FilterMode::Nearest,
+                        min_filter: wgpu::FilterMode::Nearest,
+                        ..Default::default()
+                    };
+
+                    if let Some(id) = self.clipping_texture_id {
+                        renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
+                            &render_state.device,
+                            clipping_renderer.output_view(),
+                            sampler,
+                            id,
+                        );
+                    } else {
+                        self.clipping_texture_id =
+                            Some(renderer_guard.register_native_texture_with_sampler_options(
+                                &render_state.device,
+                                clipping_renderer.output_view(),
+                                sampler,
+                            ));
+                    }
+
+                    did_update_clipping = true;
+                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
+                        did_update_active_analysis = true;
+                    }
+                }
+            }
+        }
+
+        if did_update_active_analysis {
+            self.analysis_dirty = false;
+        }
+        if did_update_clipping {
+            self.clipping_dirty = false;
         }
 
         if did_rebuild_shader_space {
@@ -251,14 +447,20 @@ impl eframe::App for App {
         let mut request_toggle_from_sidebar = false;
         let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
         let sidebar_w = sidebar_full_w * frame_state.sidebar_factor;
-        let reference_sidebar_state = self.ref_image.as_ref().map(|reference| {
-            ui::debug_sidebar::ReferenceSidebarState {
-                mode: reference.mode,
-                opacity: reference.opacity,
-                diff_metric_mode: self.diff_metric_mode,
-                diff_stats: self.diff_stats,
-            }
-        });
+        let reference_sidebar_state =
+            self.ref_image
+                .as_ref()
+                .map(|reference| ui::debug_sidebar::ReferenceSidebarState {
+                    mode: reference.mode,
+                    opacity: reference.opacity,
+                    diff_metric_mode: self.diff_metric_mode,
+                    diff_stats: self.diff_stats,
+                });
+        let analysis_sidebar_state = ui::debug_sidebar::AnalysisSidebarState {
+            tab: self.analysis_tab,
+            clipping: self.clipping_settings,
+            source_is_diff: self.analysis_source_is_diff,
+        };
 
         // Rebuild resource snapshot when needed (pipeline changed or first frame).
         if self.resource_snapshot_generation != self.pipeline_rebuild_count {
@@ -305,6 +507,9 @@ impl eframe::App for App {
                             request_toggle_from_sidebar = true;
                         },
                         self.histogram_texture_id,
+                        self.parade_texture_id,
+                        self.vectorscope_texture_id,
+                        analysis_sidebar_state,
                         reference_sidebar_state.as_ref(),
                         &self.resource_tree_nodes,
                         &mut self.file_tree_state,
@@ -319,7 +524,8 @@ impl eframe::App for App {
                     Some(rust_wgpu_fiber::ResourceName::from(name.as_str()));
                 self.pending_view_reset = true;
                 self.diff_dirty = true;
-                self.histogram_dirty = true;
+                self.analysis_dirty = true;
+                self.clipping_dirty = true;
             }
             Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
                 // Only clear the name; the canvas controller will stop using the
@@ -328,7 +534,8 @@ impl eframe::App for App {
                 // painting earlier in this frame.
                 self.preview_texture_name = None;
                 self.diff_dirty = true;
-                self.histogram_dirty = true;
+                self.analysis_dirty = true;
+                self.clipping_dirty = true;
             }
             Some(ui::debug_sidebar::SidebarAction::SetReferenceOpacity(opacity)) => {
                 if let Some(reference) = self.ref_image.as_mut() {
@@ -342,7 +549,8 @@ impl eframe::App for App {
                         RefImageMode::Diff => RefImageMode::Overlay,
                     };
                     self.diff_dirty = true;
-                    self.histogram_dirty = true;
+                    self.analysis_dirty = true;
+                    self.clipping_dirty = true;
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::ClearReference) => {
@@ -352,7 +560,35 @@ impl eframe::App for App {
                 if self.diff_metric_mode != mode {
                     self.diff_metric_mode = mode;
                     self.diff_dirty = true;
-                    self.histogram_dirty = true;
+                    self.analysis_dirty = true;
+                    self.clipping_dirty = true;
+                }
+            }
+            Some(ui::debug_sidebar::SidebarAction::SetAnalysisTab(tab)) => {
+                if self.analysis_tab != tab {
+                    self.analysis_tab = tab;
+                    self.analysis_dirty = true;
+                    self.clipping_dirty = true;
+                }
+            }
+            Some(ui::debug_sidebar::SidebarAction::SetClippingShadowThreshold(threshold)) => {
+                let threshold = threshold.clamp(0.0, 1.0);
+                if (self.clipping_settings.shadow_threshold - threshold).abs() > f32::EPSILON {
+                    self.clipping_settings.shadow_threshold = threshold;
+                    self.clipping_dirty = true;
+                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
+                        self.analysis_dirty = true;
+                    }
+                }
+            }
+            Some(ui::debug_sidebar::SidebarAction::SetClippingHighlightThreshold(threshold)) => {
+                let threshold = threshold.clamp(0.0, 1.0);
+                if (self.clipping_settings.highlight_threshold - threshold).abs() > f32::EPSILON {
+                    self.clipping_settings.highlight_threshold = threshold;
+                    self.clipping_dirty = true;
+                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
+                        self.analysis_dirty = true;
+                    }
                 }
             }
             None => {}
