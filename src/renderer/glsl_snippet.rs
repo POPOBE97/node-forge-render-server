@@ -71,7 +71,9 @@ pub fn compile_glsl_snippet(spec: GlslSnippetSpec) -> Result<CompiledGlslSnippet
         ValueType::Vec2 => "vec2",
         ValueType::Vec3 => "vec3",
         ValueType::Vec4 => "vec4",
-        _ if spec.return_type.is_array() => unreachable!("array return types not supported in GLSL path"),
+        _ if spec.return_type.is_array() => {
+            unreachable!("array return types not supported in GLSL path")
+        }
         _ => unreachable!(),
     };
 
