@@ -18,8 +18,8 @@ use super::{
     layout_math::{clamp_zoom, lerp},
     texture_bridge,
     types::{
-        AnalysisTab, App, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS,
-        UiWindowMode, ViewportCopyIndicator, ViewportCopyIndicatorVisual,
+        App, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS, UiWindowMode,
+        ViewportCopyIndicator, ViewportCopyIndicatorVisual,
     },
     window_mode::WindowModeFrame,
 };
@@ -921,7 +921,7 @@ pub fn show_canvas_panel(
         }
     }
 
-    if matches!(app.analysis_tab, AnalysisTab::Clipping)
+    if app.clip_enabled
         && let Some(clipping_texture_id) = app.clipping_texture_id
     {
         if app.analysis_source_is_diff {
@@ -961,7 +961,7 @@ pub fn show_canvas_panel(
         egui::Id::new("ui.viewport.pause_indicator.visible"),
         pause_visible,
     );
-    let clipping_visible = matches!(app.analysis_tab, AnalysisTab::Clipping);
+    let clipping_visible = app.clip_enabled;
     let clipping_anim_t = ctx.animate_bool(
         egui::Id::new("ui.viewport.clipping_indicator.visible"),
         clipping_visible,

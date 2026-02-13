@@ -69,7 +69,6 @@ pub enum AnalysisTab {
     Histogram,
     Parade,
     Vectorscope,
-    Clipping,
 }
 
 impl AnalysisTab {
@@ -78,7 +77,6 @@ impl AnalysisTab {
             Self::Histogram => "Histogram",
             Self::Parade => "Parade",
             Self::Vectorscope => "Vectorscope",
-            Self::Clipping => "Clipping",
         }
     }
 }
@@ -222,7 +220,7 @@ pub struct App {
     pub clipping_renderer: Option<crate::ui::clipping_map::ClippingMapRenderer>,
     pub clipping_texture_id: Option<egui::TextureId>,
     pub analysis_tab: AnalysisTab,
-    pub last_info_graphics_tab: AnalysisTab,
+    pub clip_enabled: bool,
     pub clipping_settings: ClippingSettings,
     pub analysis_dirty: bool,
     pub clipping_dirty: bool,
@@ -340,7 +338,7 @@ impl App {
             clipping_renderer: None,
             clipping_texture_id: None,
             analysis_tab: AnalysisTab::Histogram,
-            last_info_graphics_tab: AnalysisTab::Histogram,
+            clip_enabled: false,
             clipping_settings: ClippingSettings::default(),
             analysis_dirty: true,
             clipping_dirty: true,
@@ -364,5 +362,24 @@ impl App {
             viewport_copy_job_rx: None,
             viewport_copy_last_visual: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnalysisTab, ClippingSettings};
+
+    #[test]
+    fn analysis_tab_only_contains_infographics_labels() {
+        assert_eq!(AnalysisTab::Histogram.label(), "Histogram");
+        assert_eq!(AnalysisTab::Parade.label(), "Parade");
+        assert_eq!(AnalysisTab::Vectorscope.label(), "Vectorscope");
+    }
+
+    #[test]
+    fn clipping_settings_defaults_are_in_expected_ranges() {
+        let settings = ClippingSettings::default();
+        assert!((0.0..=0.25).contains(&settings.shadow_threshold));
+        assert!((0.75..=1.0).contains(&settings.highlight_threshold));
     }
 }

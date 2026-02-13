@@ -14,6 +14,50 @@ use rust_wgpu_fiber::eframe::{self, egui, wgpu};
 
 use crate::{renderer, ui};
 
+fn apply_analysis_tab_change(
+    analysis_tab: &mut AnalysisTab,
+    analysis_dirty: &mut bool,
+    clipping_dirty: &mut bool,
+    next_tab: AnalysisTab,
+) {
+    if *analysis_tab != next_tab {
+        *analysis_tab = next_tab;
+        *analysis_dirty = true;
+        *clipping_dirty = true;
+    }
+}
+
+fn apply_clip_enabled_change(clip_enabled: &mut bool, clipping_dirty: &mut bool, enabled: bool) {
+    if *clip_enabled != enabled {
+        *clip_enabled = enabled;
+        *clipping_dirty = true;
+    }
+}
+
+fn apply_clipping_shadow_threshold_change(
+    clipping_settings: &mut ClippingSettings,
+    clipping_dirty: &mut bool,
+    threshold: f32,
+) {
+    let threshold = threshold.clamp(0.0, 1.0);
+    if (clipping_settings.shadow_threshold - threshold).abs() > f32::EPSILON {
+        clipping_settings.shadow_threshold = threshold;
+        *clipping_dirty = true;
+    }
+}
+
+fn apply_clipping_highlight_threshold_change(
+    clipping_settings: &mut ClippingSettings,
+    clipping_dirty: &mut bool,
+    threshold: f32,
+) {
+    let threshold = threshold.clamp(0.0, 1.0);
+    if (clipping_settings.highlight_threshold - threshold).abs() > f32::EPSILON {
+        clipping_settings.highlight_threshold = threshold;
+        *clipping_dirty = true;
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let frame_time = ctx.input(|i| i.time);
@@ -355,10 +399,9 @@ impl eframe::App for App {
                         did_update_active_analysis = true;
                     }
                 }
-                AnalysisTab::Clipping => {}
             }
 
-            let clipping_required = matches!(self.analysis_tab, AnalysisTab::Clipping);
+            let clipping_required = self.clip_enabled;
             if clipping_required {
                 if self.clipping_renderer.is_none() {
                     self.clipping_renderer = Some(ui::clipping_map::ClippingMapRenderer::new(
@@ -410,9 +453,6 @@ impl eframe::App for App {
                     }
 
                     did_update_clipping = true;
-                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
-                        did_update_active_analysis = true;
-                    }
                 }
             }
         }
@@ -434,7 +474,6 @@ impl eframe::App for App {
         let frame_state = window_mode::update_window_mode_frame(self, now);
         window_mode::maybe_apply_startup_sidebar_sizing(self, ctx);
 
-        let mut request_toggle_from_sidebar = false;
         let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
         let sidebar_w = sidebar_full_w * frame_state.sidebar_factor;
         let reference_sidebar_state =
@@ -449,7 +488,7 @@ impl eframe::App for App {
         let analysis_sidebar_state = ui::debug_sidebar::AnalysisSidebarState {
             tab: self.analysis_tab,
             clipping: self.clipping_settings,
-            source_is_diff: self.analysis_source_is_diff,
+            clip_enabled: self.clip_enabled,
         };
 
         // Rebuild resource snapshot when needed (pipeline changed or first frame).
@@ -482,20 +521,6 @@ impl eframe::App for App {
                         frame_state.animation_just_finished_opening,
                         clip_rect,
                         sidebar_rect,
-                        |ui| {
-                            ui::button::tailwind_button(
-                                ui,
-                                "Canvas Only",
-                                "Toggle canvas-only layout",
-                                ui::button::TailwindButtonVariant::Idle,
-                                ui::button::TailwindButtonGroupPosition::Single,
-                                true,
-                            )
-                            .clicked()
-                        },
-                        || {
-                            request_toggle_from_sidebar = true;
-                        },
                         self.histogram_texture_id,
                         self.parade_texture_id,
                         self.vectorscope_texture_id,
@@ -555,51 +580,33 @@ impl eframe::App for App {
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetAnalysisTab(tab)) => {
-                let next_tab = match tab {
-                    AnalysisTab::Clipping => {
-                        if matches!(self.analysis_tab, AnalysisTab::Clipping) {
-                            match self.last_info_graphics_tab {
-                                AnalysisTab::Histogram
-                                | AnalysisTab::Parade
-                                | AnalysisTab::Vectorscope => self.last_info_graphics_tab,
-                                AnalysisTab::Clipping => AnalysisTab::Histogram,
-                            }
-                        } else {
-                            self.last_info_graphics_tab = self.analysis_tab;
-                            AnalysisTab::Clipping
-                        }
-                    }
-                    AnalysisTab::Histogram | AnalysisTab::Parade | AnalysisTab::Vectorscope => {
-                        self.last_info_graphics_tab = tab;
-                        tab
-                    }
-                };
-
-                if self.analysis_tab != next_tab {
-                    self.analysis_tab = next_tab;
-                    self.analysis_dirty = true;
-                    self.clipping_dirty = true;
-                }
+                apply_analysis_tab_change(
+                    &mut self.analysis_tab,
+                    &mut self.analysis_dirty,
+                    &mut self.clipping_dirty,
+                    tab,
+                );
+            }
+            Some(ui::debug_sidebar::SidebarAction::SetClipEnabled(enabled)) => {
+                apply_clip_enabled_change(
+                    &mut self.clip_enabled,
+                    &mut self.clipping_dirty,
+                    enabled,
+                );
             }
             Some(ui::debug_sidebar::SidebarAction::SetClippingShadowThreshold(threshold)) => {
-                let threshold = threshold.clamp(0.0, 1.0);
-                if (self.clipping_settings.shadow_threshold - threshold).abs() > f32::EPSILON {
-                    self.clipping_settings.shadow_threshold = threshold;
-                    self.clipping_dirty = true;
-                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
-                        self.analysis_dirty = true;
-                    }
-                }
+                apply_clipping_shadow_threshold_change(
+                    &mut self.clipping_settings,
+                    &mut self.clipping_dirty,
+                    threshold,
+                );
             }
             Some(ui::debug_sidebar::SidebarAction::SetClippingHighlightThreshold(threshold)) => {
-                let threshold = threshold.clamp(0.0, 1.0);
-                if (self.clipping_settings.highlight_threshold - threshold).abs() > f32::EPSILON {
-                    self.clipping_settings.highlight_threshold = threshold;
-                    self.clipping_dirty = true;
-                    if matches!(self.analysis_tab, AnalysisTab::Clipping) {
-                        self.analysis_dirty = true;
-                    }
-                }
+                apply_clipping_highlight_threshold_change(
+                    &mut self.clipping_settings,
+                    &mut self.clipping_dirty,
+                    threshold,
+                );
             }
             None => {}
         }
@@ -623,7 +630,7 @@ impl eframe::App for App {
                 );
             });
 
-        if request_toggle_from_sidebar || request_toggle_from_canvas {
+        if request_toggle_from_canvas {
             window_mode::toggle_canvas_only(self, now);
         }
 
@@ -650,5 +657,59 @@ impl eframe::App for App {
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AnalysisTab, ClippingSettings, apply_analysis_tab_change, apply_clip_enabled_change,
+        apply_clipping_highlight_threshold_change, apply_clipping_shadow_threshold_change,
+    };
+
+    #[test]
+    fn switching_infographics_tab_does_not_disable_clip() {
+        let mut tab = AnalysisTab::Histogram;
+        let clip_enabled = true;
+        let mut analysis_dirty = false;
+        let mut clipping_dirty = false;
+
+        apply_analysis_tab_change(
+            &mut tab,
+            &mut analysis_dirty,
+            &mut clipping_dirty,
+            AnalysisTab::Vectorscope,
+        );
+
+        assert_eq!(tab, AnalysisTab::Vectorscope);
+        assert!(analysis_dirty);
+        assert!(clipping_dirty);
+        assert!(clip_enabled);
+    }
+
+    #[test]
+    fn toggling_clip_does_not_change_infographics_tab() {
+        let tab = AnalysisTab::Parade;
+        let mut clip_enabled = false;
+        let mut clipping_dirty = false;
+
+        apply_clip_enabled_change(&mut clip_enabled, &mut clipping_dirty, true);
+
+        assert!(clip_enabled);
+        assert!(clipping_dirty);
+        assert_eq!(tab, AnalysisTab::Parade);
+    }
+
+    #[test]
+    fn changing_clip_threshold_marks_clipping_dirty() {
+        let mut clipping = ClippingSettings::default();
+        let mut clipping_dirty = false;
+
+        apply_clipping_shadow_threshold_change(&mut clipping, &mut clipping_dirty, 0.05);
+        assert!(clipping_dirty);
+
+        clipping_dirty = false;
+        apply_clipping_highlight_threshold_change(&mut clipping, &mut clipping_dirty, 0.95);
+        assert!(clipping_dirty);
     }
 }
