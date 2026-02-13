@@ -1,8 +1,4 @@
-use std::{
-    borrow::Cow,
-    path::Path,
-    sync::mpsc,
-};
+use std::{borrow::Cow, path::Path, sync::mpsc};
 
 use rust_wgpu_fiber::eframe::{
     egui::{self, Color32, Rect, pos2},
@@ -12,30 +8,18 @@ use rust_wgpu_fiber::eframe::{
 use crate::ui::{
     animation_manager::{AnimationSpec, Easing},
     viewport_indicators::{
-        VIEWPORT_INDICATOR_GAP,
-        VIEWPORT_INDICATOR_ITEM_SIZE,
-        VIEWPORT_INDICATOR_RIGHT_PAD,
-        VIEWPORT_INDICATOR_TOP_PAD,
-        ViewportIndicator,
-        ViewportIndicatorKind,
+        VIEWPORT_INDICATOR_GAP, VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_RIGHT_PAD,
+        VIEWPORT_INDICATOR_TOP_PAD, ViewportIndicator, ViewportIndicatorKind,
         draw_viewport_indicator_at,
     },
 };
 
 use super::{
-    layout_math::{
-        clamp_zoom, lerp,
-    },
+    layout_math::{clamp_zoom, lerp},
     texture_bridge,
     types::{
-        App,
-        RefImageMode,
-        RefImageSource,
-        RefImageState,
-        SIDEBAR_ANIM_SECS,
-        UiWindowMode,
-        ViewportCopyIndicator,
-        ViewportCopyIndicatorVisual,
+        AnalysisTab, App, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS,
+        UiWindowMode, ViewportCopyIndicator, ViewportCopyIndicatorVisual,
     },
     window_mode::WindowModeFrame,
 };
@@ -97,30 +81,30 @@ fn load_reference_image_from_path(
     let height = rgba.height();
     let rgba_bytes = rgba.into_raw();
 
-    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-        [width as usize, height as usize],
-        &rgba_bytes,
-    );
+    let color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba_bytes);
     let texture = ctx.load_texture(
         format!("reference:{}", path.display()),
         color_image,
         egui::TextureOptions::NEAREST,
     );
 
-    let wgpu_texture = render_state.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("sys.reference.image"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    let wgpu_texture = render_state
+        .device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("sys.reference.image"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
 
     app.shader_space.queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -164,7 +148,8 @@ fn load_reference_image_from_path(
         source,
     });
     app.diff_dirty = true;
-    app.histogram_dirty = true;
+    app.analysis_dirty = true;
+    app.clipping_dirty = true;
     Ok(())
 }
 
@@ -179,30 +164,30 @@ fn load_reference_image_from_bytes(
     name: String,
     source: RefImageSource,
 ) {
-    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-        [width as usize, height as usize],
-        &rgba_bytes,
-    );
+    let color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba_bytes);
     let texture = ctx.load_texture(
         format!("reference:{}", name),
         color_image,
         egui::TextureOptions::NEAREST,
     );
 
-    let wgpu_texture = render_state.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("sys.reference.image"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    let wgpu_texture = render_state
+        .device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("sys.reference.image"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
 
     app.shader_space.queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -242,7 +227,8 @@ fn load_reference_image_from_bytes(
         source,
     });
     app.diff_dirty = true;
-    app.histogram_dirty = true;
+    app.analysis_dirty = true;
+    app.clipping_dirty = true;
 }
 
 pub(super) fn sync_reference_image_from_scene(
@@ -343,7 +329,8 @@ pub(super) fn clear_reference(app: &mut App, renderer: &mut egui_wgpu::Renderer)
     app.diff_renderer = None;
     app.diff_stats = None;
     app.diff_dirty = false;
-    app.histogram_dirty = true;
+    app.analysis_dirty = true;
+    app.clipping_dirty = true;
     if let Some(id) = app.diff_texture_id.take() {
         renderer.free_texture(&id);
     }
@@ -407,16 +394,14 @@ pub fn show_canvas_panel(
             }
             Err(mpsc::TryRecvError::Disconnected) => {
                 app.viewport_copy_job_rx = None;
-                app.viewport_copy_indicator =
-                    ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
+                app.viewport_copy_indicator = ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
                 app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Failure);
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
     }
     match app.viewport_copy_indicator {
-        ViewportCopyIndicator::Success { hide_at }
-        | ViewportCopyIndicator::Failure { hide_at } => {
+        ViewportCopyIndicator::Success { hide_at } | ViewportCopyIndicator::Failure { hide_at } => {
             if now >= hide_at {
                 app.viewport_copy_indicator = ViewportCopyIndicator::Hidden;
             }
@@ -431,10 +416,14 @@ pub fn show_canvas_panel(
     if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
         app.time_updates_enabled = !app.time_updates_enabled;
         if app.scene_uses_time {
-            if matches!(app.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff)) {
+            if matches!(
+                app.ref_image.as_ref().map(|r| r.mode),
+                Some(RefImageMode::Diff)
+            ) {
                 app.diff_dirty = true;
             }
-            app.histogram_dirty = true;
+            app.analysis_dirty = true;
+            app.clipping_dirty = true;
         }
     }
 
@@ -451,7 +440,11 @@ pub fn show_canvas_panel(
     // Sync preview texture if active.
     let using_preview = if let Some(preview_name) = app.preview_texture_name.clone() {
         // Check the texture still exists.
-        if app.shader_space.textures.contains_key(preview_name.as_str()) {
+        if app
+            .shader_space
+            .textures
+            .contains_key(preview_name.as_str())
+        {
             texture_bridge::sync_preview_texture(
                 app,
                 render_state,
@@ -492,7 +485,10 @@ pub fn show_canvas_panel(
     } else {
         app.resolution
     };
-    let image_size = egui::vec2(effective_resolution[0] as f32, effective_resolution[1] as f32);
+    let image_size = egui::vec2(
+        effective_resolution[0] as f32,
+        effective_resolution[1] as f32,
+    );
 
     let animated_canvas_rect = avail_rect;
 
@@ -569,11 +565,7 @@ pub fn show_canvas_panel(
 
     let pan_zoom_animating = app.animations.is_active(ANIM_KEY_PAN_ZOOM_FACTOR);
     let pan_zoom_enabled = !pan_zoom_animating;
-    let effective_min_zoom = if pan_zoom_animating {
-        0.01
-    } else {
-        min_zoom
-    };
+    let effective_min_zoom = if pan_zoom_animating { 0.01 } else { min_zoom };
 
     if pan_zoom_enabled {
         app.pan_zoom_target_zoom = app.zoom;
@@ -700,6 +692,8 @@ pub fn show_canvas_panel(
         if ctx.input(|i| i.key_pressed(egui::Key::A)) && reference.offset != egui::Vec2::ZERO {
             reference.offset = egui::Vec2::ZERO;
             app.diff_dirty = true;
+            app.analysis_dirty = true;
+            app.clipping_dirty = true;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
             reference.opacity = 0.0;
@@ -717,6 +711,8 @@ pub fn show_canvas_panel(
                 RefImageMode::Diff => RefImageMode::Overlay,
             };
             app.diff_dirty = true;
+            app.analysis_dirty = true;
+            app.clipping_dirty = true;
         }
     }
     app.shift_was_down = shift_down;
@@ -762,6 +758,8 @@ pub fn show_canvas_panel(
                 if reference.offset != next_offset {
                     reference.offset = next_offset;
                     app.diff_dirty = true;
+                    app.analysis_dirty = true;
+                    app.clipping_dirty = true;
                 }
             } else if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary))
                 && let Some(reference) = app.ref_image.as_mut()
@@ -794,8 +792,16 @@ pub fn show_canvas_panel(
     // Only process scroll/zoom when pointer is over the canvas, so sidebar
     // scroll events don't leak into the canvas.
     let canvas_hovered = response.hovered();
-    let zoom_delta = if canvas_hovered { ctx.input(|i| i.zoom_delta()) } else { 1.0 };
-    let scroll_delta = if canvas_hovered { ctx.input(|i| i.smooth_scroll_delta) } else { egui::Vec2::ZERO };
+    let zoom_delta = if canvas_hovered {
+        ctx.input(|i| i.zoom_delta())
+    } else {
+        1.0
+    };
+    let scroll_delta = if canvas_hovered {
+        ctx.input(|i| i.smooth_scroll_delta)
+    } else {
+        egui::Vec2::ZERO
+    };
 
     // Pan with two-finger scroll (trackpad) when not pinch-zooming.
     if pan_zoom_enabled && zoom_delta == 1.0 && (scroll_delta.x != 0.0 || scroll_delta.y != 0.0) {
@@ -803,11 +809,7 @@ pub fn show_canvas_panel(
         image_rect = Rect::from_min_size(base_min + app.pan, draw_size);
     }
 
-    let scroll_zoom = if zoom_delta != 1.0 {
-        zoom_delta
-    } else {
-        1.0
-    };
+    let scroll_zoom = if zoom_delta != 1.0 { zoom_delta } else { 1.0 };
     if pan_zoom_enabled && scroll_zoom != 1.0 {
         if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
             let prev_zoom = app.zoom;
@@ -835,8 +837,7 @@ pub fn show_canvas_panel(
     {
         let checker_tex = {
             let cache_id = egui::Id::new("ui.canvas.checkerboard_texture");
-            if let Some(tex) =
-                ctx.memory(|mem| mem.data.get_temp::<egui::TextureHandle>(cache_id))
+            if let Some(tex) = ctx.memory(|mem| mem.data.get_temp::<egui::TextureHandle>(cache_id))
             {
                 tex
             } else {
@@ -885,6 +886,7 @@ pub fn show_canvas_panel(
         );
     }
 
+    let mut diff_visible_for_clipping: Option<(Rect, Rect)> = None;
     if let Some(reference) = app.ref_image.as_ref() {
         let reference_size = egui::vec2(reference.size[0] as f32, reference.size[1] as f32);
         let reference_min = image_rect.min + reference.offset * app.zoom;
@@ -894,10 +896,11 @@ pub fn show_canvas_panel(
         if visible_rect.is_positive() {
             let uv_min = (visible_rect.min - reference_rect.min) / reference_rect.size();
             let uv_max = (visible_rect.max - reference_rect.min) / reference_rect.size();
-            let reference_uv = Rect::from_min_max(
-                pos2(uv_min.x, uv_min.y),
-                pos2(uv_max.x, uv_max.y),
-            );
+            let reference_uv =
+                Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
+            if matches!(reference.mode, RefImageMode::Diff) {
+                diff_visible_for_clipping = Some((visible_rect, reference_uv));
+            }
 
             let texture_id = if matches!(reference.mode, RefImageMode::Diff) {
                 app.diff_texture_id.unwrap_or(reference.texture.id())
@@ -918,6 +921,24 @@ pub fn show_canvas_panel(
         }
     }
 
+    if matches!(app.analysis_tab, AnalysisTab::Clipping)
+        && let Some(clipping_texture_id) = app.clipping_texture_id
+    {
+        if app.analysis_source_is_diff {
+            if let Some((visible_rect, reference_uv)) = diff_visible_for_clipping {
+                ui.painter().add(
+                    egui::epaint::RectShape::filled(visible_rect, rounding, Color32::WHITE)
+                        .with_texture(clipping_texture_id, reference_uv),
+                );
+            }
+        } else {
+            ui.painter().add(
+                egui::epaint::RectShape::filled(animated_canvas_rect, rounding, Color32::WHITE)
+                    .with_texture(clipping_texture_id, computed_uv),
+            );
+        }
+    }
+
     let sampling_indicator = match app.texture_filter {
         wgpu::FilterMode::Nearest => ViewportIndicator {
             icon: "N",
@@ -931,12 +952,28 @@ pub fn show_canvas_panel(
         },
     };
     let copy_visible = !matches!(app.viewport_copy_indicator, ViewportCopyIndicator::Hidden);
-    let copy_anim_t = ctx.animate_bool(egui::Id::new("ui.viewport.copy_indicator.visible"), copy_visible);
+    let copy_anim_t = ctx.animate_bool(
+        egui::Id::new("ui.viewport.copy_indicator.visible"),
+        copy_visible,
+    );
     let pause_visible = !app.time_updates_enabled;
-    let pause_anim_t = ctx.animate_bool(egui::Id::new("ui.viewport.pause_indicator.visible"), pause_visible);
-    let stats_visible = matches!(app.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff))
-        && app.diff_stats.is_some();
-    let stats_anim_t = ctx.animate_bool(egui::Id::new("ui.viewport.diff_stats_indicator.visible"), stats_visible);
+    let pause_anim_t = ctx.animate_bool(
+        egui::Id::new("ui.viewport.pause_indicator.visible"),
+        pause_visible,
+    );
+    let clipping_visible = matches!(app.analysis_tab, AnalysisTab::Clipping);
+    let clipping_anim_t = ctx.animate_bool(
+        egui::Id::new("ui.viewport.clipping_indicator.visible"),
+        clipping_visible,
+    );
+    let stats_visible = matches!(
+        app.ref_image.as_ref().map(|r| r.mode),
+        Some(RefImageMode::Diff)
+    ) && app.diff_stats.is_some();
+    let stats_anim_t = ctx.animate_bool(
+        egui::Id::new("ui.viewport.diff_stats_indicator.visible"),
+        stats_visible,
+    );
 
     let copy_visual = match app.viewport_copy_indicator {
         ViewportCopyIndicator::InProgress => Some(ViewportCopyIndicatorVisual::InProgress),
@@ -949,16 +986,36 @@ pub fn show_canvas_panel(
     let copy_slot = copy_anim_t * (VIEWPORT_INDICATOR_ITEM_SIZE + VIEWPORT_INDICATOR_GAP);
     let pause_item_width = 44.0;
     let pause_slot = pause_anim_t * (pause_item_width + VIEWPORT_INDICATOR_GAP);
+    let clipping_slot = clipping_anim_t * (VIEWPORT_INDICATOR_ITEM_SIZE + VIEWPORT_INDICATOR_GAP);
     let sampling_x = animated_canvas_rect.max.x
         - VIEWPORT_INDICATOR_RIGHT_PAD
         - VIEWPORT_INDICATOR_ITEM_SIZE
         - copy_slot
-        - pause_slot;
+        - pause_slot
+        - clipping_slot;
     let sampling_rect = Rect::from_min_size(
         pos2(sampling_x, indicator_y),
         egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
     );
     draw_viewport_indicator_at(ui, sampling_rect, &sampling_indicator, now, 1.0);
+
+    if clipping_anim_t > 0.001 {
+        let clipping_indicator = ViewportIndicator {
+            icon: "CLIP",
+            tooltip: "Clipping overlay 已开启",
+            kind: ViewportIndicatorKind::Failure,
+        };
+        let slide_x = (1.0 - clipping_anim_t) * 8.0;
+        let clipping_rect = Rect::from_min_size(
+            pos2(
+                sampling_rect.min.x - VIEWPORT_INDICATOR_GAP - VIEWPORT_INDICATOR_ITEM_SIZE
+                    + slide_x,
+                indicator_y,
+            ),
+            egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
+        );
+        draw_viewport_indicator_at(ui, clipping_rect, &clipping_indicator, now, clipping_anim_t);
+    }
 
     if pause_anim_t > 0.001 {
         let pause_indicator = ViewportIndicator {
@@ -986,13 +1043,14 @@ pub fn show_canvas_panel(
     {
         let diff_text = format!(
             "min {:.4}  max {:.4}  avg {:.4}",
-            stats.min,
-            stats.max,
-            stats.avg
+            stats.min, stats.max, stats.avg
         );
         let diff_galley = ui.painter().layout_no_wrap(
             diff_text,
-            egui::FontId::new(10.0, crate::ui::typography::mi_sans_family_for_weight(500.0)),
+            egui::FontId::new(
+                10.0,
+                crate::ui::typography::mi_sans_family_for_weight(500.0),
+            ),
             Color32::from_rgba_unmultiplied(220, 220, 220, (220.0 * stats_anim_t) as u8),
         );
         let full_badge_w = diff_galley.size().x + 14.0;
@@ -1046,7 +1104,10 @@ pub fn show_canvas_panel(
         let slide_x = (1.0 - copy_anim_t) * 8.0;
         let copy_rect = Rect::from_min_size(
             pos2(
-                animated_canvas_rect.max.x - VIEWPORT_INDICATOR_RIGHT_PAD - VIEWPORT_INDICATOR_ITEM_SIZE + slide_x,
+                animated_canvas_rect.max.x
+                    - VIEWPORT_INDICATOR_RIGHT_PAD
+                    - VIEWPORT_INDICATOR_ITEM_SIZE
+                    + slide_x,
                 indicator_y,
             ),
             egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
@@ -1054,7 +1115,11 @@ pub fn show_canvas_panel(
         draw_viewport_indicator_at(ui, copy_rect, &copy_indicator, now, copy_anim_t);
     }
 
-    if copy_anim_t > 0.001 || pause_anim_t > 0.001 || stats_anim_t > 0.001 {
+    if copy_anim_t > 0.001
+        || pause_anim_t > 0.001
+        || clipping_anim_t > 0.001
+        || stats_anim_t > 0.001
+    {
         ctx.request_repaint();
     }
 
@@ -1070,7 +1135,8 @@ pub fn show_canvas_panel(
             .ref_image
             .as_ref()
             .is_some_and(|reference| reference.opacity > 0.001);
-        let ref_tag_anim_t = ctx.animate_bool(egui::Id::new("ui.canvas.ref_tag.visible"), ref_tag_visible);
+        let ref_tag_anim_t =
+            ctx.animate_bool(egui::Id::new("ui.canvas.ref_tag.visible"), ref_tag_visible);
 
         if let Some(reference) = app.ref_image.as_ref() {
             let mode = match reference.mode {
@@ -1079,10 +1145,7 @@ pub fn show_canvas_panel(
             };
             let badge_text = format!(
                 "Ref • {} • {}×{} • α {:.2}",
-                mode,
-                reference.size[0],
-                reference.size[1],
-                reference.opacity,
+                mode, reference.size[0], reference.size[1], reference.opacity,
             );
             let badge_galley = ui.painter().layout_no_wrap(
                 badge_text,
@@ -1096,10 +1159,16 @@ pub fn show_canvas_panel(
                 ui.painter().rect(
                     badge_rect,
                     egui::CornerRadius::same(6),
-                    with_alpha(Color32::from_rgba_unmultiplied(6, 28, 12, 196), ref_tag_anim_t),
+                    with_alpha(
+                        Color32::from_rgba_unmultiplied(6, 28, 12, 196),
+                        ref_tag_anim_t,
+                    ),
                     egui::Stroke::new(
                         1.0,
-                        with_alpha(Color32::from_rgba_unmultiplied(56, 181, 96, 220), ref_tag_anim_t),
+                        with_alpha(
+                            Color32::from_rgba_unmultiplied(56, 181, 96, 220),
+                            ref_tag_anim_t,
+                        ),
                     ),
                     egui::StrokeKind::Outside,
                 );
@@ -1115,22 +1184,21 @@ pub fn show_canvas_panel(
         if let Some(ref preview_name) = app.preview_texture_name
             && using_preview
         {
-            let badge_text = if let Some(info) = app.shader_space.texture_info(preview_name.as_str()) {
-                format!(
-                    "Preview • {} • {}×{} • {:?}",
-                    preview_name.as_str(),
-                    info.size.width,
-                    info.size.height,
-                    info.format,
-                )
-            } else {
-                format!("Preview • {}", preview_name.as_str())
-            };
-            let badge_galley = ui.painter().layout_no_wrap(
-                badge_text,
-                badge_font,
-                Color32::from_gray(220),
-            );
+            let badge_text =
+                if let Some(info) = app.shader_space.texture_info(preview_name.as_str()) {
+                    format!(
+                        "Preview • {} • {}×{} • {:?}",
+                        preview_name.as_str(),
+                        info.size.width,
+                        info.size.height,
+                        info.format,
+                    )
+                } else {
+                    format!("Preview • {}", preview_name.as_str())
+                };
+            let badge_galley =
+                ui.painter()
+                    .layout_no_wrap(badge_text, badge_font, Color32::from_gray(220));
             let badge_size = badge_galley.size() + egui::vec2(16.0, 8.0);
             let badge_rect = Rect::from_min_size(pos2(badge_x, badge_y), badge_size);
             ui.painter().rect(
