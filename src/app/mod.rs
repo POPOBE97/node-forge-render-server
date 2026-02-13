@@ -210,24 +210,14 @@ impl eframe::App for App {
         if let Some(texture) = display_texture
             && let Some(source_view) = texture.wgpu_texture_view.as_ref()
         {
-            let mut analysis_view = source_view;
-            let mut analysis_size = [
+            let analysis_view = source_view;
+            let analysis_size = [
                 texture.wgpu_texture_desc.size.width,
                 texture.wgpu_texture_desc.size.height,
             ];
-            let mut analysis_source_is_diff = false;
-
-            if matches!(
-                self.ref_image.as_ref().map(|r| r.mode),
-                Some(RefImageMode::Diff)
-            ) && let Some(diff_renderer) = self.diff_renderer.as_ref()
-            {
-                analysis_view = diff_renderer.output_view();
-                analysis_size = diff_renderer.output_size();
-                analysis_source_is_diff = true;
-            }
-
-            self.analysis_source_is_diff = analysis_source_is_diff;
+            // Infographics/clipping always sample from the rendered texture region
+            // (never the reference-sized diff texture).
+            self.analysis_source_is_diff = false;
             analysis_source = Some((analysis_view, analysis_size));
         } else {
             self.analysis_source_is_diff = false;
@@ -565,8 +555,28 @@ impl eframe::App for App {
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetAnalysisTab(tab)) => {
-                if self.analysis_tab != tab {
-                    self.analysis_tab = tab;
+                let next_tab = match tab {
+                    AnalysisTab::Clipping => {
+                        if matches!(self.analysis_tab, AnalysisTab::Clipping) {
+                            match self.last_info_graphics_tab {
+                                AnalysisTab::Histogram
+                                | AnalysisTab::Parade
+                                | AnalysisTab::Vectorscope => self.last_info_graphics_tab,
+                                AnalysisTab::Clipping => AnalysisTab::Histogram,
+                            }
+                        } else {
+                            self.last_info_graphics_tab = self.analysis_tab;
+                            AnalysisTab::Clipping
+                        }
+                    }
+                    AnalysisTab::Histogram | AnalysisTab::Parade | AnalysisTab::Vectorscope => {
+                        self.last_info_graphics_tab = tab;
+                        tab
+                    }
+                };
+
+                if self.analysis_tab != next_tab {
+                    self.analysis_tab = next_tab;
                     self.analysis_dirty = true;
                     self.clipping_dirty = true;
                 }

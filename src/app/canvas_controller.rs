@@ -1001,7 +1001,7 @@ pub fn show_canvas_panel(
 
     if clipping_anim_t > 0.001 {
         let clipping_indicator = ViewportIndicator {
-            icon: "CLIP",
+            icon: "C",
             tooltip: "Clipping overlay 已开启",
             kind: ViewportIndicatorKind::Failure,
         };

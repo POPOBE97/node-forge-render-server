@@ -42,6 +42,7 @@ pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
 const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
+const ANALYSIS_PANEL_ASPECT: f32 = 400.0 / 768.0;
 
 fn tight_divider(ui: &mut egui::Ui) {
     let width = ui.available_width();
@@ -53,6 +54,69 @@ fn tight_divider(ui: &mut egui::Ui) {
         ],
         egui::Stroke::new(1.0, egui::Color32::from_gray(48)),
     );
+}
+
+fn shadcn_tabs_trigger(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    // Match dependencies-tree row typography tokens:
+    // - regular row: 12px, weight 400, gray(190)
+    // - emphasized row: 12px, weight 600, gray(220)
+    let (text_color, font_id) = if selected {
+        (
+            egui::Color32::from_gray(220),
+            egui::FontId::new(
+                12.0,
+                crate::ui::typography::mi_sans_family_for_weight(600.0),
+            ),
+        )
+    } else {
+        (
+            egui::Color32::from_gray(190),
+            egui::FontId::new(
+                12.0,
+                crate::ui::typography::mi_sans_family_for_weight(400.0),
+            ),
+        )
+    };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font_id, text_color);
+    let desired_size = egui::vec2(galley.size().x + 16.0, 20.0);
+    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    if ui.is_rect_visible(rect) {
+        let fill = if selected {
+            egui::Color32::from_rgb(46, 46, 50)
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+        let stroke = if selected {
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26),
+            )
+        } else {
+            egui::Stroke::NONE
+        };
+
+        ui.painter().rect(
+            rect,
+            egui::CornerRadius::same(6),
+            fill,
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().galley(
+            egui::pos2(
+                rect.center().x - galley.size().x * 0.5,
+                rect.center().y - galley.size().y * 0.5 - 0.25,
+            ),
+            galley,
+            egui::Color32::PLACEHOLDER,
+        );
+    }
+
+    response
 }
 
 fn sidebar_width_id() -> egui::Id {
@@ -197,17 +261,18 @@ pub fn show_in_rect(
                     })
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
-                            if let Some(reference) = reference {
-                                ui.horizontal(|ui| {
-                                    ui.add_space(4.0);
-                                    ui.label(
-                                        egui::RichText::new("Reference Controls")
-                                            .size(11.0)
-                                            .color(egui::Color32::from_gray(170)),
-                                    );
-                                });
+                            let clipping_active = matches!(analysis.tab, AnalysisTab::Clipping);
+                            ui.horizontal(|ui| {
                                 ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new("Reference + Clipping")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(170)),
+                                );
+                            });
+                            ui.add_space(4.0);
 
+                            if let Some(reference) = reference {
                                 let mut opacity = reference.opacity;
                                 let opacity_resp = ui.add(
                                     egui::Slider::new(&mut opacity, 0.0..=1.0)
@@ -255,79 +320,54 @@ pub fn show_in_rect(
                                 if ui.button("Clear Reference").clicked() {
                                     sidebar_action = Some(SidebarAction::ClearReference);
                                 }
-
-                                tight_divider(ui);
-                            }
-
-                            let analysis_title = format!(
-                                "Analysis{}",
-                                if analysis.source_is_diff {
-                                    " (Diff Source)"
-                                } else {
-                                    ""
-                                }
-                            );
-                            ui.horizontal(|ui| {
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new(analysis_title)
+                            } else {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Drop a reference image to enable diff controls.",
+                                        )
                                         .size(11.0)
-                                        .color(egui::Color32::from_gray(170)),
-                                );
-                            });
-                            ui.add_space(4.0);
+                                        .color(egui::Color32::from_gray(130)),
+                                    );
+                                });
+                            }
 
                             ui.horizontal_wrapped(|ui| {
                                 ui.add_space(2.0);
-                                for tab in [
-                                    AnalysisTab::Histogram,
-                                    AnalysisTab::Parade,
-                                    AnalysisTab::Vectorscope,
-                                    AnalysisTab::Clipping,
-                                ] {
-                                    let selected = analysis.tab == tab;
-                                    let button = egui::Button::new(tab.label()).selected(selected);
-                                    if ui.add(button).clicked() && !selected {
-                                        sidebar_action = Some(SidebarAction::SetAnalysisTab(tab));
-                                    }
+                                let clipping_button =
+                                    egui::Button::new(AnalysisTab::Clipping.label())
+                                        .selected(clipping_active);
+                                if ui.add(clipping_button).clicked() {
+                                    sidebar_action =
+                                        Some(SidebarAction::SetAnalysisTab(AnalysisTab::Clipping));
                                 }
                             });
 
-                            if matches!(analysis.tab, AnalysisTab::Clipping) {
-                                let mut shadow_threshold = analysis.clipping.shadow_threshold;
-                                let shadow_resp = ui.add(
-                                    egui::Slider::new(&mut shadow_threshold, 0.0..=0.25)
-                                        .text("Shadow <= ")
-                                        .clamping(egui::SliderClamping::Always),
-                                );
-                                if shadow_resp.changed() {
-                                    sidebar_action = Some(
-                                        SidebarAction::SetClippingShadowThreshold(shadow_threshold),
-                                    );
-                                }
-
-                                let mut highlight_threshold = analysis.clipping.highlight_threshold;
-                                let highlight_resp = ui.add(
-                                    egui::Slider::new(&mut highlight_threshold, 0.75..=1.0)
-                                        .text("Highlight >= ")
-                                        .clamping(egui::SliderClamping::Always),
-                                );
-                                if highlight_resp.changed() {
-                                    sidebar_action =
-                                        Some(SidebarAction::SetClippingHighlightThreshold(
-                                            highlight_threshold,
-                                        ));
-                                }
+                            let mut shadow_threshold = analysis.clipping.shadow_threshold;
+                            let shadow_resp = ui.add(
+                                egui::Slider::new(&mut shadow_threshold, 0.0..=0.25)
+                                    .text("Shadow <= ")
+                                    .clamping(egui::SliderClamping::Always),
+                            );
+                            if shadow_resp.changed() {
+                                sidebar_action =
+                                    Some(SidebarAction::SetClippingShadowThreshold(shadow_threshold));
                             }
 
-                            let (selected_texture_id, image_aspect) = match analysis.tab {
-                                AnalysisTab::Histogram => (histogram_texture_id, 400.0 / 768.0),
-                                AnalysisTab::Parade => (parade_texture_id, 400.0 / 768.0),
-                                AnalysisTab::Vectorscope => (vectorscope_texture_id, 1.0),
-                                AnalysisTab::Clipping => (None, 400.0 / 768.0),
-                            };
+                            let mut highlight_threshold = analysis.clipping.highlight_threshold;
+                            let highlight_resp = ui.add(
+                                egui::Slider::new(&mut highlight_threshold, 0.75..=1.0)
+                                    .text("Highlight >= ")
+                                    .clamping(egui::SliderClamping::Always),
+                            );
+                            if highlight_resp.changed() {
+                                sidebar_action = Some(SidebarAction::SetClippingHighlightThreshold(
+                                    highlight_threshold,
+                                ));
+                            }
 
-                            if matches!(analysis.tab, AnalysisTab::Clipping) {
+                            if clipping_active {
                                 ui.horizontal(|ui| {
                                     ui.add_space(4.0);
                                     ui.label(
@@ -338,39 +378,179 @@ pub fn show_in_rect(
                                         .color(egui::Color32::from_gray(130)),
                                     );
                                 });
-                            } else {
-                                let analysis_border_color =
-                                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
-                                egui::Frame::new()
-                                    .outer_margin(egui::Margin {
-                                        left: 4,
-                                        right: 0,
-                                        top: 4,
-                                        bottom: 4,
-                                    })
-                                    .stroke(egui::Stroke::new(1.0, analysis_border_color))
-                                    .corner_radius(egui::CornerRadius::same(4))
-                                    .show(ui, |ui| {
-                                        let width = ui.available_width();
-                                        let size = egui::vec2(width, width * image_aspect);
-                                        if let Some(texture_id) = selected_texture_id {
-                                            let image = egui::Image::new(
-                                                egui::load::SizedTexture::new(texture_id, size),
+                            }
+
+                            tight_divider(ui);
+
+                            let scopes_title = format!(
+                                "InfoGraphics{}",
+                                if analysis.source_is_diff {
+                                    " (Diff Source)"
+                                } else {
+                                    ""
+                                }
+                            );
+                            ui.horizontal(|ui| {
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new(scopes_title)
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(170)),
+                                );
+                            });
+                            // Match the same title -> first-item rhythm as the 资源树 section.
+                            ui.add_space(4.0);
+
+                            ui.horizontal(|ui| {
+                                ui.add_space(4.0);
+                                let tabs = [
+                                    AnalysisTab::Histogram,
+                                    AnalysisTab::Parade,
+                                    AnalysisTab::Vectorscope,
+                                ];
+                                let trigger_gap = 2.0;
+                                let container_inner_margin = 2.0;
+                                let tabs_content_width: f32 = tabs
+                                    .iter()
+                                    .map(|tab| {
+                                        let selected = analysis.tab == *tab;
+                                        let (_, font_id) = if selected {
+                                            (
+                                                egui::Color32::from_gray(220),
+                                                egui::FontId::new(
+                                                    12.0,
+                                                    crate::ui::typography::mi_sans_family_for_weight(
+                                                        600.0,
+                                                    ),
+                                                ),
                                             )
-                                            .corner_radius(egui::CornerRadius::same(4));
-                                            ui.add(image);
                                         } else {
-                                            ui.set_min_size(size);
-                                            ui.centered_and_justified(|ui| {
+                                            (
+                                                egui::Color32::from_gray(190),
+                                                egui::FontId::new(
+                                                    12.0,
+                                                    crate::ui::typography::mi_sans_family_for_weight(
+                                                        400.0,
+                                                    ),
+                                                ),
+                                            )
+                                        };
+                                        let galley = ui.painter().layout_no_wrap(
+                                            tab.label().to_owned(),
+                                            font_id,
+                                            egui::Color32::PLACEHOLDER,
+                                        );
+                                        galley.size().x + 16.0
+                                    })
+                                    .sum::<f32>()
+                                    + trigger_gap * (tabs.len().saturating_sub(1) as f32);
+                                let tabs_width = (tabs_content_width + container_inner_margin * 2.0)
+                                    .min(ui.available_width());
+                                ui.scope(|ui| {
+                                    ui.set_width(tabs_width);
+                                    egui::Frame::new()
+                                        .fill(egui::Color32::from_rgb(39, 39, 42))
+                                        .corner_radius(egui::CornerRadius::same(4))
+                                        .inner_margin(egui::Margin::same(
+                                            container_inner_margin as i8,
+                                        ))
+                                        .show(ui, |ui| {
+                                            egui::ScrollArea::horizontal()
+                                                .id_salt(
+                                                    "ui.debug_sidebar.infographics_tabs.scroll",
+                                                )
+                                                .auto_shrink([false, true])
+                                                .show(ui, |ui| {
+                                                    ui.with_layout(
+                                                        egui::Layout::left_to_right(
+                                                            egui::Align::Center,
+                                                        ),
+                                                        |ui| {
+                                                            ui.spacing_mut().item_spacing.x =
+                                                                trigger_gap;
+                                                            for tab in tabs {
+                                                                let selected = analysis.tab == tab;
+                                                                if shadcn_tabs_trigger(
+                                                                    ui,
+                                                                    tab.label(),
+                                                                    selected,
+                                                                )
+                                                                .clicked()
+                                                                    && !selected
+                                                                {
+                                                                    sidebar_action = Some(
+                                                                        SidebarAction::SetAnalysisTab(tab),
+                                                                    );
+                                                                }
+                                                            }
+                                                        },
+                                                    );
+                                                });
+                                        });
+                                });
+                            });
+
+                            let selected_texture_id = match analysis.tab {
+                                AnalysisTab::Histogram => histogram_texture_id,
+                                AnalysisTab::Parade => parade_texture_id,
+                                AnalysisTab::Vectorscope => vectorscope_texture_id,
+                                AnalysisTab::Clipping => None,
+                            };
+
+                            let analysis_border_color =
+                                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
+                            egui::Frame::new()
+                                .outer_margin(egui::Margin {
+                                    left: 4,
+                                    right: 0,
+                                    top: 4,
+                                    bottom: 4,
+                                })
+                                .stroke(egui::Stroke::new(1.0, analysis_border_color))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .show(ui, |ui| {
+                                    let width = ui.available_width();
+                                    let panel_size =
+                                        egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
+                                    ui.allocate_ui_with_layout(
+                                        panel_size,
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            if let Some(texture_id) = selected_texture_id {
+                                                let image_size = if matches!(
+                                                    analysis.tab,
+                                                    AnalysisTab::Vectorscope
+                                                ) {
+                                                    let side = panel_size.x.min(panel_size.y);
+                                                    egui::vec2(side, side)
+                                                } else {
+                                                    panel_size
+                                                };
+                                                let image = egui::Image::new(
+                                                    egui::load::SizedTexture::new(
+                                                        texture_id,
+                                                        image_size,
+                                                    ),
+                                                )
+                                                .corner_radius(egui::CornerRadius::same(4));
+                                                ui.add_sized(image_size, image);
+                                            } else {
+                                                let empty_text = if clipping_active {
+                                                    "Clipping active: pick an InfoGraphics tab to view scopes"
+                                                } else {
+                                                    "No analysis data"
+                                                };
                                                 ui.label(
-                                                    egui::RichText::new("No analysis data")
+                                                    egui::RichText::new(empty_text)
                                                         .size(11.0)
                                                         .color(egui::Color32::from_gray(130)),
                                                 );
-                                            });
-                                        }
-                                    });
-                            }
+                                            }
+                                        },
+                                    );
+                                });
 
                             tight_divider(ui);
 
