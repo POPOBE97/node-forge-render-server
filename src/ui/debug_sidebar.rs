@@ -1,6 +1,6 @@
 use rust_wgpu_fiber::eframe::egui;
 
-use crate::app::{DiffMetricMode, DiffStats, RefImageMode};
+use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
 
 use super::file_tree_widget::FileTreeState;
 use super::resource_tree::{FileTreeNode, NodeKind};
@@ -88,6 +88,12 @@ pub enum SidebarAction {
     ClearReference,
     /// Set current diff metric mode.
     SetDiffMetricMode(DiffMetricMode),
+    /// Switch current analysis tab.
+    SetAnalysisTab(AnalysisTab),
+    /// Set clipping shadow threshold.
+    SetClippingShadowThreshold(f32),
+    /// Set clipping highlight threshold.
+    SetClippingHighlightThreshold(f32),
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +102,13 @@ pub struct ReferenceSidebarState {
     pub opacity: f32,
     pub diff_metric_mode: DiffMetricMode,
     pub diff_stats: Option<DiffStats>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AnalysisSidebarState {
+    pub tab: AnalysisTab,
+    pub clipping: ClippingSettings,
+    pub source_is_diff: bool,
 }
 
 pub fn show_in_rect(
@@ -108,6 +121,9 @@ pub fn show_in_rect(
     mut canvas_only_button: impl FnMut(&mut egui::Ui) -> bool,
     mut toggle_canvas_only: impl FnMut(),
     histogram_texture_id: Option<egui::TextureId>,
+    parade_texture_id: Option<egui::TextureId>,
+    vectorscope_texture_id: Option<egui::TextureId>,
+    analysis: AnalysisSidebarState,
     reference: Option<&ReferenceSidebarState>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
@@ -143,8 +159,8 @@ pub fn show_in_rect(
         }
         if response.dragged() {
             let current_w = sidebar_width(ctx);
-            let next =
-                (current_w + response.drag_delta().x).clamp(SIDEBAR_MIN_WIDTH, sidebar_max_width(ctx));
+            let next = (current_w + response.drag_delta().x)
+                .clamp(SIDEBAR_MIN_WIDTH, sidebar_max_width(ctx));
             ctx.memory_mut(|mem| {
                 mem.data.insert_temp(sidebar_width_id(), next);
             });
@@ -173,141 +189,227 @@ pub fn show_in_rect(
             ui.set_clip_rect(content_rect);
             if ui_sidebar_factor > 0.01 {
                 egui::Frame::NONE
-                    .inner_margin(egui::Margin { left: 2, right: 6, top: 4, bottom: 4 })
+                    .inner_margin(egui::Margin {
+                        left: 2,
+                        right: 6,
+                        top: 4,
+                        bottom: 4,
+                    })
                     .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if let Some(reference) = reference {
-                        ui.horizontal(|ui| {
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new("Reference Controls")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_gray(170)),
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            if let Some(reference) = reference {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new("Reference Controls")
+                                            .size(11.0)
+                                            .color(egui::Color32::from_gray(170)),
+                                    );
+                                });
+                                ui.add_space(4.0);
+
+                                let mut opacity = reference.opacity;
+                                let opacity_resp = ui.add(
+                                    egui::Slider::new(&mut opacity, 0.0..=1.0)
+                                        .text("Opacity")
+                                        .clamping(egui::SliderClamping::Always),
+                                );
+                                if opacity_resp.changed() {
+                                    sidebar_action =
+                                        Some(SidebarAction::SetReferenceOpacity(opacity));
+                                }
+
+                                let mode_text = match reference.mode {
+                                    RefImageMode::Overlay => "Mode: Overlay",
+                                    RefImageMode::Diff => "Mode: Abs Diff",
+                                };
+                                if ui.button(mode_text).clicked() {
+                                    sidebar_action = Some(SidebarAction::ToggleReferenceMode);
+                                }
+
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add_space(2.0);
+                                    for metric in [
+                                        DiffMetricMode::E,
+                                        DiffMetricMode::AE,
+                                        DiffMetricMode::SE,
+                                        DiffMetricMode::RAE,
+                                        DiffMetricMode::RSE,
+                                    ] {
+                                        let selected = reference.diff_metric_mode == metric;
+                                        let button =
+                                            egui::Button::new(metric.label()).selected(selected);
+                                        if ui.add(button).clicked() {
+                                            sidebar_action =
+                                                Some(SidebarAction::SetDiffMetricMode(metric));
+                                        }
+                                    }
+                                });
+
+                                ui.label(
+                                    egui::RichText::new("Shift: toggle Overlay / Abs Diff")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(140)),
+                                );
+
+                                if ui.button("Clear Reference").clicked() {
+                                    sidebar_action = Some(SidebarAction::ClearReference);
+                                }
+
+                                tight_divider(ui);
+                            }
+
+                            let analysis_title = format!(
+                                "Analysis{}",
+                                if analysis.source_is_diff {
+                                    " (Diff Source)"
+                                } else {
+                                    ""
+                                }
                             );
-                        });
-                        ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new(analysis_title)
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(170)),
+                                );
+                            });
+                            ui.add_space(4.0);
 
-                        let mut opacity = reference.opacity;
-                        let opacity_resp = ui.add(
-                            egui::Slider::new(&mut opacity, 0.0..=1.0)
-                                .text("Opacity")
-                                .clamping(egui::SliderClamping::Always),
-                        );
-                        if opacity_resp.changed() {
-                            sidebar_action = Some(SidebarAction::SetReferenceOpacity(opacity));
-                        }
+                            ui.horizontal_wrapped(|ui| {
+                                ui.add_space(2.0);
+                                for tab in [
+                                    AnalysisTab::Histogram,
+                                    AnalysisTab::Parade,
+                                    AnalysisTab::Vectorscope,
+                                    AnalysisTab::Clipping,
+                                ] {
+                                    let selected = analysis.tab == tab;
+                                    let button = egui::Button::new(tab.label()).selected(selected);
+                                    if ui.add(button).clicked() && !selected {
+                                        sidebar_action = Some(SidebarAction::SetAnalysisTab(tab));
+                                    }
+                                }
+                            });
 
-                        let mode_text = match reference.mode {
-                            RefImageMode::Overlay => "Mode: Overlay",
-                            RefImageMode::Diff => "Mode: Abs Diff",
-                        };
-                        if ui.button(mode_text).clicked() {
-                            sidebar_action = Some(SidebarAction::ToggleReferenceMode);
-                        }
+                            if matches!(analysis.tab, AnalysisTab::Clipping) {
+                                let mut shadow_threshold = analysis.clipping.shadow_threshold;
+                                let shadow_resp = ui.add(
+                                    egui::Slider::new(&mut shadow_threshold, 0.0..=0.25)
+                                        .text("Shadow <= ")
+                                        .clamping(egui::SliderClamping::Always),
+                                );
+                                if shadow_resp.changed() {
+                                    sidebar_action = Some(
+                                        SidebarAction::SetClippingShadowThreshold(shadow_threshold),
+                                    );
+                                }
 
-                        ui.horizontal_wrapped(|ui| {
-                            ui.add_space(2.0);
-                            for metric in [
-                                DiffMetricMode::E,
-                                DiffMetricMode::AE,
-                                DiffMetricMode::SE,
-                                DiffMetricMode::RAE,
-                                DiffMetricMode::RSE,
-                            ] {
-                                let selected = reference.diff_metric_mode == metric;
-                                let button = egui::Button::new(metric.label()).selected(selected);
-                                if ui.add(button).clicked() {
-                                    sidebar_action = Some(SidebarAction::SetDiffMetricMode(metric));
+                                let mut highlight_threshold = analysis.clipping.highlight_threshold;
+                                let highlight_resp = ui.add(
+                                    egui::Slider::new(&mut highlight_threshold, 0.75..=1.0)
+                                        .text("Highlight >= ")
+                                        .clamping(egui::SliderClamping::Always),
+                                );
+                                if highlight_resp.changed() {
+                                    sidebar_action =
+                                        Some(SidebarAction::SetClippingHighlightThreshold(
+                                            highlight_threshold,
+                                        ));
+                                }
+                            }
+
+                            let (selected_texture_id, image_aspect) = match analysis.tab {
+                                AnalysisTab::Histogram => (histogram_texture_id, 400.0 / 768.0),
+                                AnalysisTab::Parade => (parade_texture_id, 400.0 / 768.0),
+                                AnalysisTab::Vectorscope => (vectorscope_texture_id, 1.0),
+                                AnalysisTab::Clipping => (None, 400.0 / 768.0),
+                            };
+
+                            if matches!(analysis.tab, AnalysisTab::Clipping) {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Clipping 结果已直接叠加到主预览（右上角可见状态指示）",
+                                        )
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(130)),
+                                    );
+                                });
+                            } else {
+                                let analysis_border_color =
+                                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
+                                egui::Frame::new()
+                                    .outer_margin(egui::Margin {
+                                        left: 4,
+                                        right: 0,
+                                        top: 4,
+                                        bottom: 4,
+                                    })
+                                    .stroke(egui::Stroke::new(1.0, analysis_border_color))
+                                    .corner_radius(egui::CornerRadius::same(4))
+                                    .show(ui, |ui| {
+                                        let width = ui.available_width();
+                                        let size = egui::vec2(width, width * image_aspect);
+                                        if let Some(texture_id) = selected_texture_id {
+                                            let image = egui::Image::new(
+                                                egui::load::SizedTexture::new(texture_id, size),
+                                            )
+                                            .corner_radius(egui::CornerRadius::same(4));
+                                            ui.add(image);
+                                        } else {
+                                            ui.set_min_size(size);
+                                            ui.centered_and_justified(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new("No analysis data")
+                                                        .size(11.0)
+                                                        .color(egui::Color32::from_gray(130)),
+                                                );
+                                            });
+                                        }
+                                    });
+                            }
+
+                            tight_divider(ui);
+
+                            ui.horizontal(|ui| {
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new("资源树")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_gray(170)),
+                                );
+                            });
+                            ui.add_space(4.0);
+
+                            let tree_response = super::file_tree_widget::show_file_tree(
+                                ui,
+                                tree_nodes,
+                                file_tree_state,
+                            );
+
+                            if let Some(texture_name) = tree_response.copied_texture_name.as_ref() {
+                                ui.ctx().copy_text(texture_name.clone());
+                            }
+
+                            // Translate clicks into SidebarActions.
+                            if let Some(clicked) = tree_response.clicked {
+                                match &clicked.kind {
+                                    NodeKind::Pass {
+                                        target_texture: Some(tex_name),
+                                    } => {
+                                        sidebar_action =
+                                            Some(SidebarAction::PreviewTexture(tex_name.clone()));
+                                    }
+                                    _ => {
+                                        sidebar_action = Some(SidebarAction::ClearPreview);
+                                    }
                                 }
                             }
                         });
-
-                        ui.label(
-                            egui::RichText::new("Shift: toggle Overlay / Abs Diff")
-                                .size(11.0)
-                                .color(egui::Color32::from_gray(140)),
-                        );
-
-                        if ui.button("Clear Reference").clicked() {
-                            sidebar_action = Some(SidebarAction::ClearReference);
-                        }
-
-                        tight_divider(ui);
-                    }
-
-                    if let Some(texture_id) = histogram_texture_id {
-                        let histogram_title = if matches!(reference.map(|r| r.mode), Some(RefImageMode::Diff)) {
-                            "Diff Histogram"
-                        } else {
-                            "Histogram"
-                        };
-                        ui.horizontal(|ui| {
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new(histogram_title)
-                                    .size(11.0)
-                                    .color(egui::Color32::from_gray(170)),
-                            );
-                        });
-
-                        let histogram_border_color =
-                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 26);
-                        egui::Frame::new()
-                            .outer_margin(egui::Margin {
-                                left: 4,
-                                right: 0,
-                                top: 4,
-                                bottom: 4,
-                            })
-                            .stroke(egui::Stroke::new(1.0, histogram_border_color))
-                            .corner_radius(egui::CornerRadius::same(4))
-                            .show(ui, |ui| {
-                                let width = ui.available_width();
-                                let size = egui::vec2(width, width * (400.0 / 768.0));
-                                let image = egui::Image::new(egui::load::SizedTexture::new(
-                                    texture_id, size,
-                                ))
-                                .corner_radius(egui::CornerRadius::same(4));
-                                ui.add(image);
-                            });
-
-                        tight_divider(ui);
-                    }
-
-                    ui.horizontal(|ui| {
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new("资源树")
-                                .size(11.0)
-                                .color(egui::Color32::from_gray(170)),
-                        );
-                    });
-                    ui.add_space(4.0);
-
-                    let tree_response = super::file_tree_widget::show_file_tree(
-                        ui,
-                        tree_nodes,
-                        file_tree_state,
-                    );
-
-                    if let Some(texture_name) = tree_response.copied_texture_name.as_ref() {
-                        ui.ctx().copy_text(texture_name.clone());
-                    }
-
-                    // Translate clicks into SidebarActions.
-                    if let Some(clicked) = tree_response.clicked {
-                        match &clicked.kind {
-                            NodeKind::Pass { target_texture: Some(tex_name) } => {
-                                sidebar_action =
-                                    Some(SidebarAction::PreviewTexture(tex_name.clone()));
-                            }
-                            _ => {
-                                sidebar_action = Some(SidebarAction::ClearPreview);
-                            }
-                        }
-                    }
-                });
-                }); // Frame padding
+                    }); // Frame padding
             }
         });
     });
