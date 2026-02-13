@@ -96,9 +96,11 @@ pub fn show_file_tree(
         .or_else(|| state.selected_id.clone())
         .or_else(|| visible_entries.first().map(|entry| entry.node.id.clone()));
 
-    let keyboard_hover_index = keyboard_hover_id
-        .as_ref()
-        .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
+    let keyboard_hover_index = keyboard_hover_id.as_ref().and_then(|id| {
+        visible_entries
+            .iter()
+            .position(|entry| &entry.node.id == id)
+    });
 
     if ui.input(|i| i.key_pressed(egui::Key::ArrowUp))
         && let Some(current) = keyboard_hover_index
@@ -114,9 +116,11 @@ pub fn show_file_tree(
         keyboard_hover_id = Some(visible_entries[current + 1].node.id.clone());
     }
 
-    let keyboard_hover_index = keyboard_hover_id
-        .as_ref()
-        .and_then(|id| visible_entries.iter().position(|entry| &entry.node.id == id));
+    let keyboard_hover_index = keyboard_hover_id.as_ref().and_then(|id| {
+        visible_entries
+            .iter()
+            .position(|entry| &entry.node.id == id)
+    });
 
     if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
         && let Some(current) = keyboard_hover_index
@@ -150,9 +154,7 @@ pub fn show_file_tree(
                 collapsing_state.set_open(false);
                 collapsing_state.store(ui.ctx());
 
-                if set_parent_hovered
-                    && let Some(parent_id) = current_entry.parent_id.as_ref()
-                {
+                if set_parent_hovered && let Some(parent_id) = current_entry.parent_id.as_ref() {
                     keyboard_hover_id = Some(parent_id.clone());
                 }
             }
@@ -173,7 +175,9 @@ pub fn show_file_tree(
                         .iter()
                         .find(|entry| &entry.node.id == parent_id)
                         .and_then(|entry| {
-                            entry.collapse_id.map(|id| (id, entry.collapse_default_open))
+                            entry
+                                .collapse_id
+                                .map(|id| (id, entry.collapse_default_open))
                         })
                 })
             });
@@ -253,8 +257,7 @@ fn draw_node(
         });
     }
 
-    let hovered = row_response.hovered()
-        || state.keyboard_hover_id.as_deref() == Some(&node.id);
+    let hovered = row_response.hovered() || state.keyboard_hover_id.as_deref() == Some(&node.id);
     let is_selected = state.selected_id.as_deref() == Some(&node.id);
 
     let chevron_x = row_rect.min.x + indent;
@@ -325,13 +328,12 @@ fn draw_node(
 
     let openness = if is_folder {
         let collapsing_id = collapse_id.expect("folder must have collapse id");
-        let mut collapsing_state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(
-                ui.ctx(),
-                collapsing_id,
-                // Dependencies section defaults open.
-                collapse_default_open,
-            );
+        let mut collapsing_state = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ui.ctx(),
+            collapsing_id,
+            // Dependencies section defaults open.
+            collapse_default_open,
+        );
 
         if chevron_clicked {
             collapsing_state.toggle(ui);
@@ -394,17 +396,14 @@ fn draw_node(
     // Otherwise let the label fill remaining space, truncating from the front with "…".
     let max_label_width = row_rect.max.x - cx - 4.0; // 4px right margin
     if node.detail.is_some() {
-        let label_galley = painter.layout_no_wrap(node.label.clone(), label_font.clone(), label_color);
+        let label_galley =
+            painter.layout_no_wrap(node.label.clone(), label_font.clone(), label_color);
         let label_pos = Pos2::new(cx, cy - label_galley.size().y * 0.5);
         painter.galley(label_pos, label_galley.clone(), Color32::PLACEHOLDER);
         cx += label_galley.size().x + GAP_LABEL_DETAIL;
     } else {
-        let display_label = truncate_label_front(
-            ui,
-            &node.label,
-            &label_font,
-            max_label_width.max(20.0),
-        );
+        let display_label =
+            truncate_label_front(ui, &node.label, &label_font, max_label_width.max(20.0));
         let label_galley = painter.layout_no_wrap(display_label, label_font, label_color);
         let label_pos = Pos2::new(cx, cy - label_galley.size().y * 0.5);
         painter.galley(label_pos, label_galley.clone(), Color32::PLACEHOLDER);
@@ -478,12 +477,7 @@ fn draw_node(
 
 /// Truncate `text` from the front so it fits within `max_width` pixels,
 /// prefixing with "…" when characters are removed.
-fn truncate_label_front(
-    ui: &egui::Ui,
-    text: &str,
-    font: &egui::FontId,
-    max_width: f32,
-) -> String {
+fn truncate_label_front(ui: &egui::Ui, text: &str, font: &egui::FontId, max_width: f32) -> String {
     let painter = ui.painter();
     let measure = |s: String| -> f32 {
         painter
@@ -503,8 +497,9 @@ fn truncate_label_front(
     let mut hi = chars.len();
     while lo < hi {
         let mid = (lo + hi) / 2;
-        let candidate: String =
-            std::iter::once('…').chain(chars[mid..].iter().copied()).collect();
+        let candidate: String = std::iter::once('…')
+            .chain(chars[mid..].iter().copied())
+            .collect();
         let w = measure(candidate);
         if w > max_width {
             lo = mid + 1;
@@ -512,7 +507,9 @@ fn truncate_label_front(
             hi = mid;
         }
     }
-    std::iter::once('…').chain(chars[lo..].iter().copied()).collect()
+    std::iter::once('…')
+        .chain(chars[lo..].iter().copied())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -530,15 +527,14 @@ fn draw_chevron(painter: &egui::Painter, x: f32, y: f32, openness: f32) {
     let sin = angle.sin();
 
     let rotate = |dx: f32, dy: f32| -> Pos2 {
-        Pos2::new(center.x + dx * cos - dy * sin, center.y + dx * sin + dy * cos)
+        Pos2::new(
+            center.x + dx * cos - dy * sin,
+            center.y + dx * sin + dy * cos,
+        )
     };
 
     let s = half * 0.65;
-    let points = vec![
-        rotate(-s * 0.5, -s),
-        rotate(s, 0.0),
-        rotate(-s * 0.5, s),
-    ];
+    let points = vec![rotate(-s * 0.5, -s), rotate(s, 0.0), rotate(-s * 0.5, s)];
 
     painter.add(egui::Shape::convex_polygon(
         points,
@@ -602,25 +598,27 @@ fn draw_icon(painter: &egui::Painter, x: f32, y: f32, icon: TreeIcon) {
                 egui::Stroke::NONE,
             ));
         }
-
     }
 }
 
 fn draw_folder_icon(painter: &egui::Painter, rect: Rect, open: bool) {
     let r = rect.shrink(1.5);
     // Folder body.
-    let body = Rect::from_min_max(
-        Pos2::new(r.min.x, r.min.y + 3.0),
-        r.max,
-    );
+    let body = Rect::from_min_max(Pos2::new(r.min.x, r.min.y + 3.0), r.max);
     painter.rect_filled(body, egui::CornerRadius::same(2), COLOR_ICON_FOLDER);
 
     // Folder tab.
-    let tab = Rect::from_min_max(
-        r.min,
-        Pos2::new(r.min.x + r.width() * 0.45, r.min.y + 4.5),
+    let tab = Rect::from_min_max(r.min, Pos2::new(r.min.x + r.width() * 0.45, r.min.y + 4.5));
+    painter.rect_filled(
+        tab,
+        egui::CornerRadius {
+            nw: 2,
+            ne: 2,
+            sw: 0,
+            se: 0,
+        },
+        COLOR_ICON_FOLDER,
     );
-    painter.rect_filled(tab, egui::CornerRadius { nw: 2, ne: 2, sw: 0, se: 0 }, COLOR_ICON_FOLDER);
 
     if open {
         // Small opening indicator — a darker inner rect.

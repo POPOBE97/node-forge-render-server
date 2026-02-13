@@ -207,7 +207,9 @@ impl DiffRenderer {
         let stats_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sys.diff.stats"),
             size: STATS_BYTE_SIZE,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 

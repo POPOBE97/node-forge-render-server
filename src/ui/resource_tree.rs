@@ -8,10 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rust_wgpu_fiber::{
-    eframe::wgpu,
-    shader_space::ShaderSpace,
-};
+use rust_wgpu_fiber::{eframe::wgpu, shader_space::ShaderSpace};
 
 use crate::renderer::PassBindings;
 
@@ -73,10 +70,8 @@ impl ResourceSnapshot {
             .inner
             .iter()
             .map(|(name, pass)| {
-                let is_compute = matches!(
-                    pass.pipeline,
-                    rust_wgpu_fiber::pass::Pipeline::Compute(_)
-                );
+                let is_compute =
+                    matches!(pass.pipeline, rust_wgpu_fiber::pass::Pipeline::Compute(_));
 
                 // Collect sampled textures from bind group entries.
                 let mut sampled_textures = Vec::new();
@@ -125,9 +120,7 @@ impl ResourceSnapshot {
         // mirroring the logic in ShaderSpace::render().
         {
             let buffers_ok = ss.buffers.lock().ok();
-            for (pass_info, (_name, pass)) in
-                passes.iter_mut().zip(ss.passes.inner.iter())
-            {
+            for (pass_info, (_name, pass)) in passes.iter_mut().zip(ss.passes.inner.iter()) {
                 if pass_info.is_compute {
                     pass_info.workgroup_count =
                         pass.workgroup[0] * pass.workgroup[1] * pass.workgroup[2];
@@ -145,11 +138,8 @@ impl ResourceSnapshot {
                                 continue;
                             }
                             if let Some(fish) = bufs.get(buffer_name.as_str()) {
-                                let buf_size = fish
-                                    .wgpu_buffer
-                                    .as_ref()
-                                    .map(|b| b.size())
-                                    .unwrap_or(0);
+                                let buf_size =
+                                    fish.wgpu_buffer.as_ref().map(|b| b.size()).unwrap_or(0);
                                 let num = (buf_size / stride) as u32;
                                 match step_mode {
                                     wgpu::VertexStepMode::Vertex => num_vertices = num,
@@ -161,11 +151,8 @@ impl ResourceSnapshot {
                         // Check index buffer for indexed draw calls.
                         if let Some((buffer_name, format)) = pass.index_binding.as_ref() {
                             if let Some(fish) = bufs.get(buffer_name.as_str()) {
-                                let buf_size = fish
-                                    .wgpu_buffer
-                                    .as_ref()
-                                    .map(|b| b.size())
-                                    .unwrap_or(0);
+                                let buf_size =
+                                    fish.wgpu_buffer.as_ref().map(|b| b.size()).unwrap_or(0);
                                 let index_stride = match format {
                                     wgpu::IndexFormat::Uint16 => 2u64,
                                     wgpu::IndexFormat::Uint32 => 4u64,
@@ -248,7 +235,9 @@ pub enum TreeIcon {
 pub enum NodeKind {
     Folder,
     /// A render pass. `target_texture` is the name of its color attachment (if any).
-    Pass { target_texture: Option<String> },
+    Pass {
+        target_texture: Option<String>,
+    },
     Texture,
     Buffer,
     Sampler,
@@ -355,10 +344,8 @@ fn build_dependency_tree(passes: &[PassInfo]) -> Vec<FileTreeNode> {
         .collect();
 
     // Map: pass_name → PassInfo for quick lookup.
-    let pass_by_name: HashMap<&str, &PassInfo> = passes
-        .iter()
-        .map(|p| (p.name.as_str(), p))
-        .collect();
+    let pass_by_name: HashMap<&str, &PassInfo> =
+        passes.iter().map(|p| (p.name.as_str(), p)).collect();
 
     // For each pass, find its upstream dependencies (passes whose targets it samples).
     let mut deps: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -395,7 +382,6 @@ fn build_dependency_tree(passes: &[PassInfo]) -> Vec<FileTreeNode> {
         pass_by_name: &HashMap<&str, &PassInfo>,
         visited: &mut HashSet<String>,
     ) -> FileTreeNode {
-
         let mut children = Vec::new();
         if let Some(upstream_names) = deps.get(pass.name.as_str()) {
             for &up_name in upstream_names {

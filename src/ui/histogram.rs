@@ -211,7 +211,8 @@ impl HistogramRenderer {
             view_formats: &[],
         });
 
-        let output_texture_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let output_texture_view =
+            output_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sys.histogram.render.pipeline"),
