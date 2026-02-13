@@ -6,10 +6,7 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 use crate::{protocol, renderer, ws};
 
 use super::types::{
-    App,
-    scene_reference_image_data_url,
-    scene_reference_image_path,
-    scene_uses_time,
+    App, scene_reference_image_data_url, scene_reference_image_path, scene_uses_time,
 };
 
 pub struct SceneApplyResult {
