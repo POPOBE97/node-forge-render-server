@@ -1,7 +1,9 @@
 pub mod animation_manager;
 pub mod button;
 pub mod clipping_map;
+pub mod components;
 pub mod debug_sidebar;
+pub mod design_tokens;
 pub mod diff_renderer;
 pub mod file_tree_widget;
 pub mod histogram;
