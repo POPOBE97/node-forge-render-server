@@ -63,6 +63,41 @@ impl DiffMetricMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnalysisTab {
+    #[default]
+    Histogram,
+    Parade,
+    Vectorscope,
+    Clipping,
+}
+
+impl AnalysisTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Histogram => "Histogram",
+            Self::Parade => "Parade",
+            Self::Vectorscope => "Vectorscope",
+            Self::Clipping => "Clipping",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClippingSettings {
+    pub shadow_threshold: f32,
+    pub highlight_threshold: f32,
+}
+
+impl Default for ClippingSettings {
+    fn default() -> Self {
+        Self {
+            shadow_threshold: 0.02,
+            highlight_threshold: 0.98,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DiffStats {
     pub min: f32,
@@ -180,7 +215,17 @@ pub struct App {
     pub preview_color_attachment: Option<egui::TextureId>,
     pub histogram_renderer: Option<crate::ui::histogram::HistogramRenderer>,
     pub histogram_texture_id: Option<egui::TextureId>,
-    pub histogram_dirty: bool,
+    pub parade_renderer: Option<crate::ui::parade::ParadeRenderer>,
+    pub parade_texture_id: Option<egui::TextureId>,
+    pub vectorscope_renderer: Option<crate::ui::vectorscope::VectorscopeRenderer>,
+    pub vectorscope_texture_id: Option<egui::TextureId>,
+    pub clipping_renderer: Option<crate::ui::clipping_map::ClippingMapRenderer>,
+    pub clipping_texture_id: Option<egui::TextureId>,
+    pub analysis_tab: AnalysisTab,
+    pub clipping_settings: ClippingSettings,
+    pub analysis_dirty: bool,
+    pub clipping_dirty: bool,
+    pub analysis_source_is_diff: bool,
     pub ref_image: Option<RefImageState>,
     pub diff_renderer: Option<crate::ui::diff_renderer::DiffRenderer>,
     pub diff_texture_id: Option<egui::TextureId>,
@@ -287,7 +332,17 @@ impl App {
             preview_color_attachment: None,
             histogram_renderer: None,
             histogram_texture_id: None,
-            histogram_dirty: true,
+            parade_renderer: None,
+            parade_texture_id: None,
+            vectorscope_renderer: None,
+            vectorscope_texture_id: None,
+            clipping_renderer: None,
+            clipping_texture_id: None,
+            analysis_tab: AnalysisTab::Histogram,
+            clipping_settings: ClippingSettings::default(),
+            analysis_dirty: true,
+            clipping_dirty: true,
+            analysis_source_is_diff: false,
             ref_image: None,
             diff_renderer: None,
             diff_texture_id: None,
