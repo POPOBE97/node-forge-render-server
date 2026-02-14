@@ -688,12 +688,19 @@ pub fn show_canvas_panel(
         );
     }
 
+    if ctx.input(|i| i.key_pressed(egui::Key::C)) {
+        app.clip_enabled = !app.clip_enabled;
+        app.clipping_dirty = true;
+    }
+
     if let Some(reference) = app.ref_image.as_mut() {
         if ctx.input(|i| i.key_pressed(egui::Key::A)) && reference.offset != egui::Vec2::ZERO {
             reference.offset = egui::Vec2::ZERO;
             app.diff_dirty = true;
-            app.analysis_dirty = true;
-            app.clipping_dirty = true;
+            if matches!(reference.mode, RefImageMode::Diff) {
+                app.analysis_dirty = true;
+                app.clipping_dirty = true;
+            }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
             reference.opacity = 0.0;
@@ -758,8 +765,10 @@ pub fn show_canvas_panel(
                 if reference.offset != next_offset {
                     reference.offset = next_offset;
                     app.diff_dirty = true;
-                    app.analysis_dirty = true;
-                    app.clipping_dirty = true;
+                    if matches!(reference.mode, RefImageMode::Diff) {
+                        app.analysis_dirty = true;
+                        app.clipping_dirty = true;
+                    }
                 }
             } else if !ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary))
                 && let Some(reference) = app.ref_image.as_mut()
@@ -886,7 +895,6 @@ pub fn show_canvas_panel(
         );
     }
 
-    let mut diff_visible_for_clipping: Option<(Rect, Rect)> = None;
     if let Some(reference) = app.ref_image.as_ref() {
         let reference_size = egui::vec2(reference.size[0] as f32, reference.size[1] as f32);
         let reference_min = image_rect.min + reference.offset * app.zoom;
@@ -898,9 +906,6 @@ pub fn show_canvas_panel(
             let uv_max = (visible_rect.max - reference_rect.min) / reference_rect.size();
             let reference_uv =
                 Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
-            if matches!(reference.mode, RefImageMode::Diff) {
-                diff_visible_for_clipping = Some((visible_rect, reference_uv));
-            }
 
             let texture_id = if matches!(reference.mode, RefImageMode::Diff) {
                 app.diff_texture_id.unwrap_or(reference.texture.id())
@@ -924,19 +929,10 @@ pub fn show_canvas_panel(
     if app.clip_enabled
         && let Some(clipping_texture_id) = app.clipping_texture_id
     {
-        if app.analysis_source_is_diff {
-            if let Some((visible_rect, reference_uv)) = diff_visible_for_clipping {
-                ui.painter().add(
-                    egui::epaint::RectShape::filled(visible_rect, rounding, Color32::WHITE)
-                        .with_texture(clipping_texture_id, reference_uv),
-                );
-            }
-        } else {
-            ui.painter().add(
-                egui::epaint::RectShape::filled(animated_canvas_rect, rounding, Color32::WHITE)
-                    .with_texture(clipping_texture_id, computed_uv),
-            );
-        }
+        ui.painter().add(
+            egui::epaint::RectShape::filled(animated_canvas_rect, rounding, Color32::WHITE)
+                .with_texture(clipping_texture_id, computed_uv),
+        );
     }
 
     let sampling_indicator = match app.texture_filter {
