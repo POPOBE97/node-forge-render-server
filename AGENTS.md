@@ -151,7 +151,7 @@ Legacy names:
 
 ## UI button styling helper (from AGENT.md)
 Use `tailwind_button(...)` in `src/app.rs` to match UI button styling.
-Pass a `TailwindButtonGroupPosition` to control rounded corners in button groups
+Pass a `ButtonGroupPosition` to control rounded corners in button groups
 (use `Single` when it’s a standalone button).
 Avoid raw `ui.button(...)` for those controls unless you intend to diverge.
 
