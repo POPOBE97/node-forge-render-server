@@ -24,7 +24,6 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         // No committed baseline yet; validate render succeeds + dimensions only.
         "2dsdf-bevel" => None,
         "glass-weather-temprature-widget" => None,
-        "blur-gradient-nodes" => None,
         // This case previously validated output against the ImageTexture source.
         // It now uses baseline.png to avoid duplicating GPU sampling/interpolation details in tests.
         _ => Some("baseline.png"),

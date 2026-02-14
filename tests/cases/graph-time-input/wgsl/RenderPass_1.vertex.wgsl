@@ -48,11 +48,13 @@ fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, inpu
     let _e11: vec2<f32> = input1_1;
     let _e12: vec2<f32> = input2_1;
     let _e13: vec2<f32> = (_e11 / _e12);
-    let _e15: f32 = input3_1;
-    let _e20: f32 = input3_1;
-    output = vec4<f32>(_e13.x, _e13.y, abs((fract(_e20) - 0.5f)), 1f);
-    let _e29: vec4<f32> = output;
-    return _e29;
+    let _e14: f32 = input3_1;
+    let _e17: f32 = input3_1;
+    let _e23: f32 = input3_1;
+    let _e26: f32 = input3_1;
+    output = vec4<f32>(_e13.x, _e13.y, abs((fract((_e26 / 2f)) - 0.5f)), 1f);
+    let _e37: vec4<f32> = output;
+    return _e37;
 }
 
 

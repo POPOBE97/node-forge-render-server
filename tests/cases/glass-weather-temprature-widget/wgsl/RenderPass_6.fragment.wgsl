@@ -502,7 +502,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_102_out: vec4f;
     {
-        let c = textureSample(pass_tex_GuassianBlurPass_85, pass_samp_GuassianBlurPass_85, mc_MathClosure_88_out);
+        let c = textureSample(pass_tex_GuassianBlurPass_85, pass_samp_GuassianBlurPass_85, vec2f((mc_MathClosure_88_out).x, 1.0 - (mc_MathClosure_88_out).y));
         var output: vec4f;
         output = mc_MathClosure_102_(in.uv, c);
         mc_MathClosure_102_out = output;
