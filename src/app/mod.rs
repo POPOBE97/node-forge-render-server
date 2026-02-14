@@ -568,9 +568,6 @@ impl eframe::App for App {
                     self.clipping_dirty = true;
                 }
             }
-            Some(ui::debug_sidebar::SidebarAction::ClearReference) => {
-                canvas_controller::clear_reference(self, &mut renderer_guard);
-            }
             Some(ui::debug_sidebar::SidebarAction::SetDiffMetricMode(mode)) => {
                 if self.diff_metric_mode != mode {
                     self.diff_metric_mode = mode;
