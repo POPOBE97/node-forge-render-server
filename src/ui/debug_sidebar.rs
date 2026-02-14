@@ -4,7 +4,10 @@ use std::hash::Hash;
 
 use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
 
-use super::button::{self, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride};
+use super::button::{
+    self, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
+    ButtonGroupPosition,
+};
 use super::components::radio_button_group::{self, RadioButtonOption};
 use super::components::two_column_section;
 use super::components::value_slider;
@@ -339,6 +342,10 @@ pub enum SidebarAction {
     SetReferenceOpacity(f32),
     /// Toggle reference display mode.
     ToggleReferenceMode,
+    /// Open system picker to load/replace reference image.
+    PickReferenceImage,
+    /// Remove current reference image.
+    RemoveReferenceImage,
     /// Set current diff metric mode.
     SetDiffMetricMode(DiffMetricMode),
     /// Switch current analysis tab.
@@ -353,6 +360,7 @@ pub enum SidebarAction {
 
 #[derive(Clone, Debug)]
 pub struct ReferenceSidebarState {
+    pub name: String,
     pub mode: RefImageMode,
     pub opacity: f32,
     pub diff_metric_mode: DiffMetricMode,
@@ -482,12 +490,69 @@ fn show_ref_section(
 ) {
     let has_reference = reference.is_some();
     let reference_state = reference.cloned().unwrap_or(ReferenceSidebarState {
+        name: String::new(),
         mode: RefImageMode::Overlay,
         opacity: 0.5,
         diff_metric_mode: DiffMetricMode::default(),
         diff_stats: None,
     });
-    two_column_section::section(ui, "Ref", |ui| {
+    let ref_action = RefCell::new(None);
+    two_column_section::section_with_header_action(
+        ui,
+        "Ref",
+        |ui| {
+            let tooltip = if has_reference {
+                "Replace reference image"
+            } else {
+                "Load reference image"
+            };
+
+            let response = button::group_button(
+                ui,
+                button::GroupButtonOptions {
+                    primary: ButtonOptions {
+                        label: if has_reference {
+                            reference_state.name.as_str()
+                        } else {
+                            ""
+                        },
+                        tooltip: Some(tooltip),
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Small,
+                        enabled: true,
+                        icon: None,
+                        icon_kind: Some(button::ButtonIcon::Folder),
+                        visual_override: None,
+                        group_position: ButtonGroupPosition::Single,
+                    },
+                    secondary: has_reference.then_some(ButtonOptions {
+                        label: "",
+                        tooltip: Some("Remove reference image"),
+                        variant: ButtonVariant::Ghost,
+                        size: ButtonSize::Small,
+                        enabled: true,
+                        icon: None,
+                        icon_kind: Some(button::ButtonIcon::Trash),
+                        visual_override: None,
+                        group_position: ButtonGroupPosition::Single,
+                    }),
+                    behavior: button::GroupButtonBehavior {
+                        draw_group_hover_border: has_reference,
+                        truncate_primary_middle: has_reference,
+                    },
+                },
+            );
+
+            if response.primary.clicked() {
+                *ref_action.borrow_mut() = Some(SidebarAction::PickReferenceImage);
+            }
+            if let Some(delete_resp) = response.secondary
+                && delete_resp.clicked()
+            {
+                *ref_action.borrow_mut() = Some(SidebarAction::RemoveReferenceImage);
+            }
+        },
+        |ui| {
         let row_action = RefCell::new(None);
         ui.add_enabled_ui(has_reference, |ui| {
             sidebar_grid_row(ui, |row| {
@@ -546,9 +611,13 @@ fn show_ref_section(
             });
         });
         if let Some(action) = row_action.into_inner() {
-            *sidebar_action = Some(action);
+            *ref_action.borrow_mut() = Some(action);
         }
-    });
+    },
+    );
+    if let Some(action) = ref_action.into_inner() {
+        *sidebar_action = Some(action);
+    }
 }
 
 fn show_clip_section(
@@ -582,12 +651,12 @@ fn show_clip_section(
                     label: "",
                     tooltip: Some(tooltip),
                     variant,
-                    size: ButtonSize::ExtraSmall,
+                    size: ButtonSize::Small,
                     enabled: true,
                     icon: None,
                     icon_kind: Some(button::ButtonIcon::Eye),
                     visual_override,
-                    group_position: button::TailwindButtonGroupPosition::Single,
+                    group_position: button::ButtonGroupPosition::Single,
                 },
             );
             if response.clicked() {

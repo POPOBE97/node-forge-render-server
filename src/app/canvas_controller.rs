@@ -342,6 +342,26 @@ pub(super) fn clear_reference(app: &mut App, renderer: &mut egui_wgpu::Renderer)
     }
 }
 
+pub(super) fn pick_reference_image_from_dialog(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+) -> anyhow::Result<bool> {
+    let mut picker = rfd::FileDialog::new().add_filter("Image", &["png", "jpg", "jpeg"]);
+    if let Some(reference) = app.ref_image.as_ref() {
+        picker = picker.set_file_name(reference.name.as_str());
+    }
+
+    let Some(path) = picker.pick_file() else {
+        return Ok(false);
+    };
+
+    load_reference_image_from_path(app, ctx, render_state, renderer, &path, RefImageSource::Manual)?;
+    app.last_auto_reference_attempt = None;
+    Ok(true)
+}
+
 fn maybe_handle_reference_drop(
     app: &mut App,
     ctx: &egui::Context,

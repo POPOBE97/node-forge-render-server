@@ -569,6 +569,7 @@ impl eframe::App for App {
             self.ref_image
                 .as_ref()
                 .map(|reference| ui::debug_sidebar::ReferenceSidebarState {
+                    name: reference.name.clone(),
                     mode: reference.mode,
                     opacity: reference.opacity,
                     diff_metric_mode: self.diff_metric_mode,
@@ -653,6 +654,21 @@ impl eframe::App for App {
                         RefImageMode::Diff => RefImageMode::Overlay,
                     };
                     self.diff_dirty = true;
+                }
+            }
+            Some(ui::debug_sidebar::SidebarAction::PickReferenceImage) => {
+                if let Err(e) = canvas_controller::pick_reference_image_from_dialog(
+                    self,
+                    ctx,
+                    render_state,
+                    &mut renderer_guard,
+                ) {
+                    eprintln!("[reference-image] failed to load manually-picked reference image: {e:#}");
+                }
+            }
+            Some(ui::debug_sidebar::SidebarAction::RemoveReferenceImage) => {
+                if self.ref_image.is_some() {
+                    canvas_controller::clear_reference(self, &mut renderer_guard);
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetDiffMetricMode(mode)) => {
