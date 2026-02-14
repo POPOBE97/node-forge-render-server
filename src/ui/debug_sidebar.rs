@@ -32,10 +32,13 @@ const SIDEBAR_GRID_GAP: f32 = 8.0;
 const SIDEBAR_GRID_LABEL_GAP: f32 = 4.0;
 const SIDEBAR_GRID_ROW_GAP: f32 = 8.0;
 const SIDEBAR_SLIDER_VALUE_GAP: f32 = 0.0;
-const SIDEBAR_SECTION_DIVIDER_GAP: f32 = 8.0;
+const SIDEBAR_SECTION_DIVIDER_GAP: f32 = 4.0;
 const VALUE_LABEL_TEXT_PADDING_X: f32 = 4.0;
 const VALUE_LABEL_DIVIDER_WIDTH: f32 = 1.0;
 const SIDEBAR_CONTENT_SIDE_PADDING: i8 = 16;
+
+const SECTION_TOP_PADDING: f32 = 4.0;
+const SECTION_BOTTOM_PADDING: f32 = 8.0;
 
 fn tight_divider(ui: &mut egui::Ui) {
     let width = ui.available_width();
@@ -45,14 +48,15 @@ fn tight_divider(ui: &mut egui::Ui) {
             egui::pos2(rect.min.x, rect.center().y),
             egui::pos2(rect.max.x, rect.center().y),
         ],
-        egui::Stroke::new(design_tokens::LINE_THICKNESS_1, design_tokens::white(20)),
+        egui::Stroke::new(design_tokens::LINE_THICKNESS_1, design_tokens::white(10)),
     );
 }
 
 fn section_divider(ui: &mut egui::Ui) {
-    ui.add_space(SIDEBAR_SECTION_DIVIDER_GAP);
+    // first section's buttom padding -> divider -> next section's top padding -> content
+    ui.add_space(SECTION_BOTTOM_PADDING);
     tight_divider(ui);
-    ui.add_space(SIDEBAR_SECTION_DIVIDER_GAP);
+    ui.add_space(SECTION_TOP_PADDING);
 }
 
 fn with_sidebar_content_padding(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
@@ -442,8 +446,8 @@ pub fn show_in_rect(
                     .inner_margin(egui::Margin {
                         left: 0,
                         right: 0,
-                        top: 16,
-                        bottom: 6,
+                        top: SECTION_TOP_PADDING as i8,
+                        bottom: SECTION_BOTTOM_PADDING as i8,
                     })
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
