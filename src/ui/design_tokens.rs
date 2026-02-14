@@ -2,9 +2,11 @@ use rust_wgpu_fiber::eframe::egui::{self, Color32, FontId, RichText};
 
 use super::typography;
 
-pub const FONT_SIZE_9: f32 = 9.0;
-pub const FONT_SIZE_11: f32 = 11.0;
-pub const FONT_SIZE_13: f32 = 13.0;
+pub const FONT_SIZE_9: f32 = 11.0;
+pub const FONT_SIZE_11: f32 = 13.0;
+pub const FONT_SIZE_13: f32 = 15.0;
+pub const CONTROL_ROW_HEIGHT: f32 = 26.0;
+pub const RESOURCE_ACTIVE_BG: Color32 = Color32::from_gray(40);
 
 pub const LINE_THICKNESS_05: f32 = 0.5;
 pub const LINE_THICKNESS_1: f32 = 1.0;
