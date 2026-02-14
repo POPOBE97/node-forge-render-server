@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
 
+use super::button::{self, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride};
 use super::components::radio_button_group::{self, RadioButtonOption};
 use super::components::two_column_section;
 use super::components::value_slider;
@@ -215,7 +216,7 @@ fn slider_with_value(
                     let painter = ui.painter_at(label_rect);
                     painter.rect(
                         label_rect,
-                        right_only_radius(4),
+                        right_only_radius(design_tokens::BORDER_RADIUS_SMALL as u8),
                         design_tokens::RESOURCE_ACTIVE_BG,
                         label_border_stroke,
                         egui::StrokeKind::Inside,
@@ -479,29 +480,36 @@ fn show_ref_section(
     reference: Option<&ReferenceSidebarState>,
     sidebar_action: &mut Option<SidebarAction>,
 ) {
+    let has_reference = reference.is_some();
+    let reference_state = reference.cloned().unwrap_or(ReferenceSidebarState {
+        mode: RefImageMode::Overlay,
+        opacity: 0.5,
+        diff_metric_mode: DiffMetricMode::default(),
+        diff_stats: None,
+    });
     two_column_section::section(ui, "Ref", |ui| {
-        if let Some(reference) = reference {
-            let row_action = RefCell::new(None);
+        let row_action = RefCell::new(None);
+        ui.add_enabled_ui(has_reference, |ui| {
             sidebar_grid_row(ui, |row| {
                 row.place(1, 2, |ui| {
                     sidebar_group_cell(ui, "Mode", |ui| {
-                        let mut mode = reference.mode;
+                        let mut mode = reference_state.mode;
                         if radio_button_group::radio_button_group(
                             ui,
                             "ui.debug_sidebar.ref.mode",
                             &mut mode,
                             &mode_options(),
-                        ) && mode != reference.mode
+                        ) && mode != reference_state.mode
                         {
                             *row_action.borrow_mut() = Some(SidebarAction::ToggleReferenceMode);
                         }
                     });
                 });
-                match reference.mode {
+                match reference_state.mode {
                     RefImageMode::Overlay => {
                         row.place(3, 2, |ui| {
                             sidebar_group_cell(ui, "Mix", |ui| {
-                                let mut opacity = reference.opacity;
+                                let mut opacity = reference_state.opacity;
                                 let changed = slider_with_value(
                                     ui,
                                     "ui.debug_sidebar.ref.opacity",
@@ -520,13 +528,13 @@ fn show_ref_section(
                     RefImageMode::Diff => {
                         row.place(3, 2, |ui| {
                             sidebar_group_cell(ui, "Metrice", |ui| {
-                                let mut metric = reference.diff_metric_mode;
+                                let mut metric = reference_state.diff_metric_mode;
                                 if radio_button_group::radio_button_group(
                                     ui,
                                     "ui.debug_sidebar.ref.metric",
                                     &mut metric,
                                     &diff_metric_options(),
-                                ) && metric != reference.diff_metric_mode
+                                ) && metric != reference_state.diff_metric_mode
                                 {
                                     *row_action.borrow_mut() =
                                         Some(SidebarAction::SetDiffMetricMode(metric));
@@ -536,14 +544,9 @@ fn show_ref_section(
                     }
                 }
             });
-            if let Some(action) = row_action.into_inner() {
-                *sidebar_action = Some(action);
-            }
-        } else {
-            ui.label(design_tokens::rich_text(
-                "Drop a reference image to enable comparison controls.",
-                TextRole::InactiveItemTitle,
-            ));
+        });
+        if let Some(action) = row_action.into_inner() {
+            *sidebar_action = Some(action);
         }
     });
 }
@@ -553,48 +556,93 @@ fn show_clip_section(
     analysis: AnalysisSidebarState,
     sidebar_action: &mut Option<SidebarAction>,
 ) {
-    two_column_section::section(ui, "Clip", |ui| {
-        let row_action = RefCell::new(None);
-        sidebar_grid_row(ui, |row| {
-            row.place(1, 2, |ui| {
-                sidebar_group_cell(ui, "Shadow", |ui| {
-                    let mut shadow = analysis.clipping.shadow_threshold;
-                    let changed = slider_with_value(
-                        ui,
-                        "ui.debug_sidebar.clip.shadow",
-                        &mut shadow,
-                        0.0,
-                        0.25,
-                        Some(&|v| format!("{:.0}%", v * 100.0)),
-                    );
-                    if changed {
-                        *row_action.borrow_mut() =
-                            Some(SidebarAction::SetClippingShadowThreshold(shadow));
-                    }
+    let clip_action = RefCell::new(None);
+    two_column_section::section_with_header_action(
+        ui,
+        "Clip",
+        |ui| {
+            let (tooltip, variant, visual_override) = if analysis.clip_enabled {
+                (
+                    "Disable clip",
+                    ButtonVariant::Outline,
+                    Some(ButtonVisualOverride {
+                        bg: design_tokens::indicator_success_bg(),
+                        hover_bg: design_tokens::indicator_success_bg(),
+                        active_bg: design_tokens::indicator_success_bg(),
+                        text: design_tokens::indicator_success_fg(),
+                        border: design_tokens::indicator_success_border(),
+                    }),
+                )
+            } else {
+                ("Enable clip", ButtonVariant::Ghost, None)
+            };
+            let response = button::button(
+                ui,
+                ButtonOptions {
+                    label: "",
+                    tooltip: Some(tooltip),
+                    variant,
+                    size: ButtonSize::ExtraSmall,
+                    enabled: true,
+                    icon: None,
+                    icon_kind: Some(button::ButtonIcon::Eye),
+                    visual_override,
+                    group_position: button::TailwindButtonGroupPosition::Single,
+                },
+            );
+            if response.clicked() {
+                *clip_action.borrow_mut() =
+                    Some(SidebarAction::SetClipEnabled(!analysis.clip_enabled));
+            }
+        },
+        |ui| {
+            let row_action = RefCell::new(None);
+            ui.add_enabled_ui(analysis.clip_enabled, |ui| {
+                sidebar_grid_row(ui, |row| {
+                    row.place(1, 2, |ui| {
+                        sidebar_group_cell(ui, "Shadow", |ui| {
+                            let mut shadow = analysis.clipping.shadow_threshold;
+                            let changed = slider_with_value(
+                                ui,
+                                "ui.debug_sidebar.clip.shadow",
+                                &mut shadow,
+                                0.0,
+                                0.25,
+                                Some(&|v| format!("{:.0}%", v * 100.0)),
+                            );
+                            if changed {
+                                *row_action.borrow_mut() =
+                                    Some(SidebarAction::SetClippingShadowThreshold(shadow));
+                            }
+                        });
+                    });
+                    row.place(3, 2, |ui| {
+                        sidebar_group_cell(ui, "Highlight", |ui| {
+                            let mut highlight = analysis.clipping.highlight_threshold;
+                            let changed = slider_with_value(
+                                ui,
+                                "ui.debug_sidebar.clip.highlight",
+                                &mut highlight,
+                                0.75,
+                                1.0,
+                                Some(&|v| format!("{:.0}%", v * 100.0)),
+                            );
+                            if changed {
+                                *row_action.borrow_mut() =
+                                    Some(SidebarAction::SetClippingHighlightThreshold(highlight));
+                            }
+                        });
+                    });
                 });
             });
-            row.place(3, 2, |ui| {
-                sidebar_group_cell(ui, "Highlight", |ui| {
-                    let mut highlight = analysis.clipping.highlight_threshold;
-                    let changed = slider_with_value(
-                        ui,
-                        "ui.debug_sidebar.clip.highlight",
-                        &mut highlight,
-                        0.75,
-                        1.0,
-                        Some(&|v| format!("{:.0}%", v * 100.0)),
-                    );
-                    if changed {
-                        *row_action.borrow_mut() =
-                            Some(SidebarAction::SetClippingHighlightThreshold(highlight));
-                    }
-                });
-            });
-        });
-        if let Some(action) = row_action.into_inner() {
-            *sidebar_action = Some(action);
-        }
-    });
+            if let Some(action) = row_action.into_inner() {
+                *clip_action.borrow_mut() = Some(action);
+            }
+        },
+    );
+    if let Some(action) = clip_action.into_inner() {
+        *sidebar_action = Some(action);
+    }
 }
 
 fn show_infographics_section(
@@ -644,7 +692,9 @@ fn show_infographics_section(
                         design_tokens::LINE_THICKNESS_1,
                         analysis_border_color,
                     ))
-                    .corner_radius(design_tokens::radius(4))
+                    .corner_radius(design_tokens::radius(
+                        design_tokens::BORDER_RADIUS_SMALL as u8,
+                    ))
                     .show(ui, |ui| {
                         let width = ui.available_width();
                         let panel_size = egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
@@ -662,7 +712,9 @@ fn show_infographics_section(
                                     let image = egui::Image::new(egui::load::SizedTexture::new(
                                         texture_id, image_size,
                                     ))
-                                    .corner_radius(design_tokens::radius(4));
+                                    .corner_radius(design_tokens::radius(
+                                        design_tokens::BORDER_RADIUS_SMALL as u8,
+                                    ));
                                     ui.add_sized(image_size, image);
                                 } else {
                                     ui.label(design_tokens::rich_text(

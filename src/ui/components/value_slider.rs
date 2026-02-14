@@ -9,7 +9,7 @@ const EDGE_INSET_X: f32 = 8.0;
 const EDGE_INSET_Y: f32 = 6.0;
 const INDICATOR_WIDTH: f32 = 2.0;
 const INDICATOR_HEIGHT: f32 = VALUE_SLIDER_HEIGHT - EDGE_INSET_Y * 2.0;
-const SLIDER_RADIUS: u8 = 4;
+const SLIDER_RADIUS: u8 = design_tokens::BORDER_RADIUS_SMALL as u8;
 
 fn left_only_radius(px: u8) -> egui::CornerRadius {
     let canonical = (px.clamp(2, 24) / 2) * 2;

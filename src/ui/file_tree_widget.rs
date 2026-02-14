@@ -20,7 +20,7 @@ const ICON_SIZE: f32 = 14.0;
 const GAP_CHEVRON_ICON: f32 = 4.0;
 const GAP_ICON_LABEL: f32 = 6.0;
 const GAP_LABEL_DETAIL: f32 = 6.0;
-const HOVER_RADIUS: f32 = 4.0;
+const HOVER_RADIUS: u8 = design_tokens::BORDER_RADIUS_SMALL as u8;
 
 // Colours
 const COLOR_HOVER_BG: Color32 = Color32::from_gray(32);
@@ -307,13 +307,13 @@ fn draw_node(
         );
         painter.rect_filled(
             bg_rect,
-            egui::CornerRadius::same(HOVER_RADIUS as u8),
+            egui::CornerRadius::same(HOVER_RADIUS),
             COLOR_SELECTED_BG,
         );
     } else if hovered {
         painter.rect_filled(
             row_inner,
-            egui::CornerRadius::same(HOVER_RADIUS as u8),
+            egui::CornerRadius::same(HOVER_RADIUS),
             COLOR_HOVER_BG,
         );
     }

@@ -8,7 +8,22 @@ const COLUMN_GAP: f32 = 8.0;
 const LABEL_TO_CONTROL_GAP: f32 = 4.0;
 
 pub fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
-    ui.label(design_tokens::rich_text(title, TextRole::SectionTitle));
+    section_with_header_action(ui, title, |_| {}, body);
+}
+
+pub fn section_with_header_action(
+    ui: &mut egui::Ui,
+    title: &str,
+    header_action: impl FnOnce(&mut egui::Ui),
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    ui.horizontal(|ui| {
+        ui.label(design_tokens::rich_text(title, TextRole::SectionTitle));
+        ui.with_layout(
+            egui::Layout::right_to_left(egui::Align::Center),
+            header_action,
+        );
+    });
     ui.add_space(SECTION_TO_PANEL_GAP);
     egui::Frame::new()
         .fill(PANEL_BG)
