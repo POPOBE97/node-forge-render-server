@@ -246,7 +246,7 @@ fn slider_with_value(
                         text_style.color,
                     );
                     let text_pos = egui::pos2(
-                        text_rect.right() - galley.size().x,
+                        text_rect.center().x - galley.size().x * 0.5,
                         text_rect.center().y - galley.size().y * 0.5 - 0.25,
                     );
                     painter.galley(text_pos, galley, text_style.color);
