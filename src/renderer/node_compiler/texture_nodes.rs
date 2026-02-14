@@ -246,12 +246,19 @@ where
     // Register this pass texture for binding.
     let _pass_index = ctx.register_pass_texture(upstream_node_id);
 
-    // If an explicit UV input is provided, use it; otherwise default to fragment input uv.
-    let uv_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, &node.id, "uv") {
-        compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?
-    } else {
-        TypedExpr::new("in.uv".to_string(), ValueType::Vec2)
-    };
+    // If an explicit UV input is provided, treat it as user-facing UV semantics
+    // (bottom-left origin) and convert to texture-sampling UV space (top-left origin).
+    //
+    // If no UV input is connected, use `in.uv` directly (already top-left origin).
+    let (uv_expr, has_explicit_uv): (TypedExpr, bool) =
+        if let Some(conn) = incoming_connection(scene, &node.id, "uv") {
+            (
+                compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?,
+                true,
+            )
+        } else {
+            (TypedExpr::new("in.uv".to_string(), ValueType::Vec2), false)
+        };
 
     if uv_expr.ty != ValueType::Vec2 {
         bail!("PassTexture.uv must be vector2, got {:?}", uv_expr.ty);
@@ -260,7 +267,12 @@ where
     let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
     let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
 
-    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {})", uv_expr.expr);
+    let sample_uv_expr = if has_explicit_uv {
+        format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr)
+    } else {
+        uv_expr.expr.clone()
+    };
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {sample_uv_expr})");
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
@@ -345,6 +357,76 @@ mod pass_texture_tests {
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("textureSample"));
         assert!(result.expr.contains("in.uv"));
+        assert!(!result.expr.contains("1.0 -"));
+    }
+
+    fn mock_compile_uv_user_space(
+        _node_id: &str,
+        _out_port: Option<&str>,
+        _ctx: &mut MaterialCompileContext,
+        _cache: &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr> {
+        Ok(TypedExpr::new("user_uv".to_string(), ValueType::Vec2))
+    }
+
+    #[test]
+    fn test_pass_texture_explicit_uv_flips_y_for_sampling_space() {
+        let nodes = vec![
+            Node {
+                id: "up".to_string(),
+                node_type: "RenderPass".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+                input_bindings: Vec::new(),
+                outputs: Vec::new(),
+            },
+            Node {
+                id: "uvsrc".to_string(),
+                node_type: "MathClosure".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+                input_bindings: Vec::new(),
+                outputs: Vec::new(),
+            },
+            Node {
+                id: "pt".to_string(),
+                node_type: "PassTexture".to_string(),
+                params: HashMap::new(),
+                inputs: Vec::new(),
+                input_bindings: Vec::new(),
+                outputs: Vec::new(),
+            },
+        ];
+
+        let connections: Vec<Connection> = vec![
+            test_connection("up", "pass", "pt", "pass"),
+            test_connection("uvsrc", "output", "pt", "uv"),
+        ];
+
+        let scene = test_scene(nodes, connections);
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let node = nodes_by_id.get("pt").unwrap().clone();
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_pass_texture(
+            &scene,
+            &nodes_by_id,
+            &node,
+            Some("color"),
+            &mut ctx,
+            &mut cache,
+            mock_compile_uv_user_space,
+        )
+        .unwrap();
+
+        assert!(result.expr.contains("vec2f((user_uv).x, 1.0 - (user_uv).y)"));
     }
 
     #[test]

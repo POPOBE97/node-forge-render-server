@@ -30,6 +30,16 @@ var<uniform> params: Params;
   };
 
 
+struct GraphInputs {
+    // Node: Vector2Input_79
+    node_Vector2Input_79_b1a74abd: vec4f,
+    // Node: Vector2Input_80
+    node_Vector2Input_80_01e553bd: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -71,15 +81,19 @@ fn mc_GroupInstance_39_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<
  // UV passed as vertex attribute.
  out.uv = uv;
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_Vector2Input_79_b1a74abd).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_80_01e553bd).xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
- let p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ let p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  // Convert pixels to clip space assuming bottom-left origin.
  // (0,0) => (-1,-1), (target_size) => (1,1)
@@ -100,5 +114,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_39_MathClosure_30_(in.uv, xy, size);
         mc_GroupInstance_39_MathClosure_30_out = output;
     }
-    return textureSample(pass_tex_Downsample_13, pass_samp_Downsample_13, mc_GroupInstance_39_MathClosure_30_out);
+    return textureSample(pass_tex_Downsample_13, pass_samp_Downsample_13, vec2f((mc_GroupInstance_39_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_39_MathClosure_30_out).y));
 }

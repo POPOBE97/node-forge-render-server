@@ -30,6 +30,16 @@ var<uniform> params: Params;
   };
 
 
+struct GraphInputs {
+    // Node: Vector2Input_75
+    node_Vector2Input_75_e5a04abd: vec4f,
+    // Node: Vector2Input_76
+    node_Vector2Input_76_cc9b4abd: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -67,5 +77,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_31_MathClosure_30_(in.uv, xy, size);
         mc_GroupInstance_31_MathClosure_30_out = output;
     }
-    return textureSample(pass_tex_Downsample_10, pass_samp_Downsample_10, mc_GroupInstance_31_MathClosure_30_out);
+    return textureSample(pass_tex_Downsample_10, pass_samp_Downsample_10, vec2f((mc_GroupInstance_31_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_31_MathClosure_30_out).y));
 }
