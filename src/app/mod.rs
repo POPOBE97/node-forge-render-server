@@ -515,15 +515,10 @@ impl eframe::App for App {
                         self.clipping_settings.highlight_threshold,
                     );
 
-                    let sampler = wgpu::SamplerDescriptor {
-                        label: Some("sys.scope.clipping.sampler"),
-                        address_mode_u: wgpu::AddressMode::ClampToEdge,
-                        address_mode_v: wgpu::AddressMode::ClampToEdge,
-                        address_mode_w: wgpu::AddressMode::ClampToEdge,
-                        mag_filter: wgpu::FilterMode::Nearest,
-                        min_filter: wgpu::FilterMode::Nearest,
-                        ..Default::default()
-                    };
+                    let mut sampler = texture_bridge::canvas_sampler_descriptor(
+                        wgpu::FilterMode::Nearest,
+                    );
+                    sampler.label = Some("sys.scope.clipping.sampler");
 
                     if let Some(id) = self.clipping_texture_id {
                         renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
