@@ -24,7 +24,7 @@ const HOVER_RADIUS: f32 = 4.0;
 
 // Colours
 const COLOR_HOVER_BG: Color32 = Color32::from_gray(32);
-const COLOR_SELECTED_BG: Color32 = Color32::from_gray(40);
+const COLOR_SELECTED_BG: Color32 = design_tokens::RESOURCE_ACTIVE_BG;
 const COLOR_ACCENT: Color32 = Color32::from_rgb(80, 140, 220);
 const COLOR_CHEVRON: Color32 = Color32::from_gray(110);
 const COLOR_ICON_FOLDER: Color32 = Color32::from_rgb(100, 140, 200);

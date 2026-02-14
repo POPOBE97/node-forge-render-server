@@ -4,9 +4,21 @@ use rust_wgpu_fiber::eframe::egui;
 
 use crate::ui::design_tokens;
 
-pub const VALUE_SLIDER_HEIGHT: f32 = 18.0;
+pub const VALUE_SLIDER_HEIGHT: f32 = design_tokens::CONTROL_ROW_HEIGHT;
 const INDICATOR_WIDTH: f32 = 2.0;
 const INDICATOR_HEIGHT: f32 = 12.0;
+const EDGE_INSET_X: f32 = 4.0;
+const SLIDER_RADIUS: u8 = 4;
+
+fn left_only_radius(px: u8) -> egui::CornerRadius {
+    let canonical = (px.clamp(2, 24) / 2) * 2;
+    egui::CornerRadius {
+        nw: canonical,
+        ne: 0,
+        sw: canonical,
+        se: 0,
+    }
+}
 
 pub struct ValueSliderOutput {
     pub response: egui::Response,
@@ -43,6 +55,7 @@ pub fn value_slider(
 ) -> ValueSliderOutput {
     let desired_size = egui::vec2(ui.available_width(), VALUE_SLIDER_HEIGHT);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let track_rect = rect.shrink2(egui::vec2(EDGE_INSET_X, 0.0));
     let id = ui.make_persistent_id(id_source);
     let mut response = ui.interact(rect, id, egui::Sense::click_and_drag());
     response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -51,7 +64,8 @@ pub fn value_slider(
     if (response.clicked() || response.dragged())
         && let Some(pointer) = ui.ctx().pointer_latest_pos()
     {
-        let t = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+        let width = track_rect.width().max(f32::EPSILON);
+        let t = ((pointer.x - track_rect.left()) / width).clamp(0.0, 1.0);
         let next = clamp_to_range(value_from_normalized(t, min, max), min, max);
         if (*value - next).abs() > f32::EPSILON {
             *value = next;
@@ -61,15 +75,20 @@ pub fn value_slider(
 
     let t = normalized_value(*value, min, max);
     let painter = ui.painter_at(rect);
+    let border_stroke = if response.hovered() || response.dragged() {
+        egui::Stroke::new(design_tokens::LINE_THICKNESS_05, design_tokens::white(20))
+    } else {
+        egui::Stroke::NONE
+    };
     painter.rect(
         rect,
-        design_tokens::radius(4),
-        design_tokens::white(15),
-        egui::Stroke::new(design_tokens::LINE_THICKNESS_05, design_tokens::white(20)),
+        left_only_radius(SLIDER_RADIUS),
+        design_tokens::RESOURCE_ACTIVE_BG,
+        border_stroke,
         egui::StrokeKind::Inside,
     );
 
-    let indicator_x = rect.left() + rect.width() * t;
+    let indicator_x = track_rect.left() + track_rect.width() * t;
     let indicator_rect = egui::Rect::from_center_size(
         egui::pos2(indicator_x, rect.center().y),
         egui::vec2(INDICATOR_WIDTH, INDICATOR_HEIGHT),
