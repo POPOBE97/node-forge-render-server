@@ -5,10 +5,10 @@ use rust_wgpu_fiber::eframe::egui::{self, Margin};
 use crate::ui::{design_tokens, typography};
 
 const GROUP_HEIGHT: f32 = design_tokens::CONTROL_ROW_HEIGHT;
-const GROUP_PADDING: i8 = 2;
+const GROUP_PADDING: i8 = 3;
 const ITEM_GAP: f32 = 2.0;
 const ITEM_RADIUS: u8 = 4;
-const ITEM_TEXT_SIZE: f32 = design_tokens::FONT_SIZE_9;
+const ITEM_TEXT_SIZE: f32 = design_tokens::FONT_SIZE_13;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RadioButtonOption<'a, T> {

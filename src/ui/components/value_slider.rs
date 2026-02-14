@@ -5,9 +5,10 @@ use rust_wgpu_fiber::eframe::egui;
 use crate::ui::design_tokens;
 
 pub const VALUE_SLIDER_HEIGHT: f32 = design_tokens::CONTROL_ROW_HEIGHT;
+const EDGE_INSET_X: f32 = 8.0;
+const EDGE_INSET_Y: f32 = 6.0;
 const INDICATOR_WIDTH: f32 = 2.0;
-const INDICATOR_HEIGHT: f32 = 12.0;
-const EDGE_INSET_X: f32 = 4.0;
+const INDICATOR_HEIGHT: f32 = VALUE_SLIDER_HEIGHT - EDGE_INSET_Y * 2.0;
 const SLIDER_RADIUS: u8 = 4;
 
 fn left_only_radius(px: u8) -> egui::CornerRadius {
@@ -55,7 +56,7 @@ pub fn value_slider(
 ) -> ValueSliderOutput {
     let desired_size = egui::vec2(ui.available_width(), VALUE_SLIDER_HEIGHT);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
-    let track_rect = rect.shrink2(egui::vec2(EDGE_INSET_X, 0.0));
+    let track_rect = rect.shrink2(egui::vec2(EDGE_INSET_X, EDGE_INSET_Y));
     let id = ui.make_persistent_id(id_source);
     let mut response = ui.interact(rect, id, egui::Sense::click_and_drag());
     response = response.on_hover_cursor(egui::CursorIcon::PointingHand);

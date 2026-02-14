@@ -2,10 +2,11 @@ use rust_wgpu_fiber::eframe::egui::{self, Color32, FontId, RichText};
 
 use super::typography;
 
-pub const FONT_SIZE_9: f32 = 11.0;
-pub const FONT_SIZE_11: f32 = 13.0;
-pub const FONT_SIZE_13: f32 = 15.0;
-pub const CONTROL_ROW_HEIGHT: f32 = 26.0;
+pub const FONT_SIZE_9: f32 = 9.0;
+pub const FONT_SIZE_11: f32 = 11.0;
+pub const FONT_SIZE_13: f32 = 13.0;
+pub const FONT_SIZE_15: f32 = 15.0;
+pub const CONTROL_ROW_HEIGHT: f32 = 28.0;
 pub const RESOURCE_ACTIVE_BG: Color32 = Color32::from_gray(40);
 
 pub const LINE_THICKNESS_05: f32 = 0.5;
@@ -50,27 +51,27 @@ pub struct TextStyleToken {
 pub fn text_style(role: TextRole) -> TextStyleToken {
     match role {
         TextRole::SectionTitle => TextStyleToken {
-            size: FONT_SIZE_11,
+            size: FONT_SIZE_13,
             weight: FontWeight::Medium,
             color: white(90),
         },
         TextRole::AttributeTitle => TextStyleToken {
-            size: FONT_SIZE_9,
+            size: FONT_SIZE_11,
             weight: FontWeight::Normal,
             color: white(60),
         },
         TextRole::ActiveItemTitle => TextStyleToken {
-            size: FONT_SIZE_11,
+            size: FONT_SIZE_13,
             weight: FontWeight::Medium,
             color: white(90),
         },
         TextRole::InactiveItemTitle => TextStyleToken {
-            size: FONT_SIZE_11,
+            size: FONT_SIZE_13,
             weight: FontWeight::Normal,
             color: white(60),
         },
         TextRole::ValueLabel => TextStyleToken {
-            size: FONT_SIZE_11,
+            size: FONT_SIZE_13,
             weight: FontWeight::Normal,
             color: white(80),
         },
@@ -138,12 +139,12 @@ mod tests {
     #[test]
     fn semantic_text_roles_match_contract() {
         let section = text_style(TextRole::SectionTitle);
-        assert_eq!(section.size, FONT_SIZE_11);
+        assert_eq!(section.size, FONT_SIZE_13);
         assert_eq!(section.weight, FontWeight::Medium);
         assert_eq!(section.color, white(90));
 
         let attr = text_style(TextRole::AttributeTitle);
-        assert_eq!(attr.size, FONT_SIZE_9);
+        assert_eq!(attr.size, FONT_SIZE_11);
         assert_eq!(attr.weight, FontWeight::Normal);
         assert_eq!(attr.color, white(60));
     }
