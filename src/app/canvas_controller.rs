@@ -7,10 +7,10 @@ use rust_wgpu_fiber::eframe::{
 
 use crate::ui::{
     animation_manager::{AnimationSpec, Easing},
+    design_tokens,
     viewport_indicators::{
-        VIEWPORT_INDICATOR_GAP, VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_RIGHT_PAD,
-        VIEWPORT_INDICATOR_TOP_PAD, ViewportIndicator, ViewportIndicatorKind,
-        draw_viewport_indicator_at,
+        ViewportIndicator, ViewportIndicatorEntry, ViewportIndicatorInteraction,
+        ViewportIndicatorKind,
     },
 };
 
@@ -19,12 +19,18 @@ use super::{
     texture_bridge,
     types::{
         App, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS, UiWindowMode,
-        ViewportCopyIndicator, ViewportCopyIndicatorVisual,
+        ViewportOperationIndicator, ViewportOperationIndicatorVisual,
     },
     window_mode::WindowModeFrame,
 };
 
 const ANIM_KEY_PAN_ZOOM_FACTOR: &str = "ui.canvas.pan_zoom.factor";
+const VIEWPORT_OPERATION_TIMEOUT_SECS: f64 = 5.0;
+const ORDER_OPERATION: i32 = 0;
+const ORDER_PAUSE: i32 = 10;
+const ORDER_SAMPLING: i32 = 20;
+const ORDER_CLIPPING: i32 = 30;
+const ORDER_STATS: i32 = 40;
 
 fn with_alpha(color: Color32, alpha: f32) -> Color32 {
     let a = ((color.a() as f32) * alpha.clamp(0.0, 1.0)).round() as u8;
@@ -378,32 +384,56 @@ pub fn show_canvas_panel(
 ) -> bool {
     let mut requested_toggle_canvas_only = false;
 
-    if let Some(rx) = app.viewport_copy_job_rx.as_ref() {
+    if let Some(rx) = app.viewport_operation_job_rx.as_ref() {
         match rx.try_recv() {
-            Ok(success) => {
-                app.viewport_copy_job_rx = None;
-                if success {
-                    app.viewport_copy_indicator =
-                        ViewportCopyIndicator::Success { hide_at: now + 1.0 };
-                    app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Success);
-                } else {
-                    app.viewport_copy_indicator =
-                        ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
-                    app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Failure);
+            Ok((request_id, success)) => {
+                app.viewport_operation_job_rx = None;
+                if matches!(
+                    app.viewport_operation_indicator,
+                    ViewportOperationIndicator::InProgress {
+                        request_id: active_request_id,
+                        ..
+                    } if active_request_id == request_id
+                ) {
+                    if success {
+                        app.viewport_operation_indicator =
+                            ViewportOperationIndicator::Success { hide_at: now + 1.0 };
+                        app.viewport_operation_last_visual =
+                            Some(ViewportOperationIndicatorVisual::Success);
+                    } else {
+                        app.viewport_operation_indicator =
+                            ViewportOperationIndicator::Failure { hide_at: now + 1.0 };
+                        app.viewport_operation_last_visual =
+                            Some(ViewportOperationIndicatorVisual::Failure);
+                    }
                 }
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                app.viewport_copy_job_rx = None;
-                app.viewport_copy_indicator = ViewportCopyIndicator::Failure { hide_at: now + 1.0 };
-                app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::Failure);
+                app.viewport_operation_job_rx = None;
+                app.viewport_operation_indicator = ViewportOperationIndicator::Failure {
+                    hide_at: now + 1.0,
+                };
+                app.viewport_operation_last_visual = Some(ViewportOperationIndicatorVisual::Failure);
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
     }
-    match app.viewport_copy_indicator {
-        ViewportCopyIndicator::Success { hide_at } | ViewportCopyIndicator::Failure { hide_at } => {
+
+    if let ViewportOperationIndicator::InProgress { started_at, .. } = app.viewport_operation_indicator
+        && now - started_at >= VIEWPORT_OPERATION_TIMEOUT_SECS
+    {
+        app.viewport_operation_job_rx = None;
+        app.viewport_operation_indicator = ViewportOperationIndicator::Failure {
+            hide_at: now + 1.0,
+        };
+        app.viewport_operation_last_visual = Some(ViewportOperationIndicatorVisual::Failure);
+    }
+
+    match app.viewport_operation_indicator {
+        ViewportOperationIndicator::Success { hide_at }
+        | ViewportOperationIndicator::Failure { hide_at } => {
             if now >= hide_at {
-                app.viewport_copy_indicator = ViewportCopyIndicator::Hidden;
+                app.viewport_operation_indicator = ViewportOperationIndicator::Hidden;
             }
         }
         _ => {}
@@ -583,12 +613,12 @@ pub fn show_canvas_panel(
     if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
         ui.painter().rect_filled(
             animated_canvas_rect,
-            egui::CornerRadius::same(8),
+            egui::CornerRadius::same(design_tokens::BORDER_RADIUS_REGULAR as u8),
             Color32::from_rgba_unmultiplied(80, 130, 255, 36),
         );
         ui.painter().rect_stroke(
             animated_canvas_rect.shrink(2.0),
-            egui::CornerRadius::same(8),
+            egui::CornerRadius::same(design_tokens::BORDER_RADIUS_REGULAR as u8),
             egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(120, 170, 255, 220)),
             egui::StrokeKind::Outside,
         );
@@ -619,10 +649,16 @@ pub fn show_canvas_panel(
                 let width = info.size.width as usize;
                 let height = info.size.height as usize;
                 let bytes = image.bytes;
-                let (tx, rx) = mpsc::channel::<bool>();
-                app.viewport_copy_job_rx = Some(rx);
-                app.viewport_copy_indicator = ViewportCopyIndicator::InProgress;
-                app.viewport_copy_last_visual = Some(ViewportCopyIndicatorVisual::InProgress);
+                app.viewport_operation_request_id = app.viewport_operation_request_id.wrapping_add(1);
+                let request_id = app.viewport_operation_request_id;
+                let (tx, rx) = mpsc::channel::<(u64, bool)>();
+                app.viewport_operation_job_rx = Some(rx);
+                app.viewport_operation_indicator = ViewportOperationIndicator::InProgress {
+                    started_at: now,
+                    request_id,
+                };
+                app.viewport_operation_last_visual =
+                    Some(ViewportOperationIndicatorVisual::InProgress);
 
                 std::thread::spawn(move || {
                     let copied = arboard::Clipboard::new()
@@ -634,7 +670,7 @@ pub fn show_canvas_panel(
                             })
                         })
                         .is_ok();
-                    let _ = tx.send(copied);
+                    let _ = tx.send((request_id, copied));
                 });
             }
             ui.close();
@@ -947,175 +983,106 @@ pub fn show_canvas_panel(
             kind: ViewportIndicatorKind::Text,
         },
     };
-    let copy_visible = !matches!(app.viewport_copy_indicator, ViewportCopyIndicator::Hidden);
-    let copy_anim_t = ctx.animate_bool(
-        egui::Id::new("ui.viewport.copy_indicator.visible"),
-        copy_visible,
-    );
-    let pause_visible = !app.time_updates_enabled;
-    let pause_anim_t = ctx.animate_bool(
-        egui::Id::new("ui.viewport.pause_indicator.visible"),
-        pause_visible,
-    );
-    let clipping_visible = app.clip_enabled;
-    let clipping_anim_t = ctx.animate_bool(
-        egui::Id::new("ui.viewport.clipping_indicator.visible"),
-        clipping_visible,
-    );
-    let stats_visible = matches!(
-        app.ref_image.as_ref().map(|r| r.mode),
-        Some(RefImageMode::Diff)
-    ) && app.diff_stats.is_some();
-    let stats_anim_t = ctx.animate_bool(
-        egui::Id::new("ui.viewport.diff_stats_indicator.visible"),
-        stats_visible,
-    );
-
-    let copy_visual = match app.viewport_copy_indicator {
-        ViewportCopyIndicator::InProgress => Some(ViewportCopyIndicatorVisual::InProgress),
-        ViewportCopyIndicator::Success { .. } => Some(ViewportCopyIndicatorVisual::Success),
-        ViewportCopyIndicator::Failure { .. } => Some(ViewportCopyIndicatorVisual::Failure),
-        ViewportCopyIndicator::Hidden => app.viewport_copy_last_visual,
+    let operation_visual = match app.viewport_operation_indicator {
+        ViewportOperationIndicator::InProgress { .. } => {
+            Some(ViewportOperationIndicatorVisual::InProgress)
+        }
+        ViewportOperationIndicator::Success { .. } => Some(ViewportOperationIndicatorVisual::Success),
+        ViewportOperationIndicator::Failure { .. } => Some(ViewportOperationIndicatorVisual::Failure),
+        ViewportOperationIndicator::Hidden => app.viewport_operation_last_visual,
     };
 
-    let indicator_y = animated_canvas_rect.min.y + VIEWPORT_INDICATOR_TOP_PAD;
-    let copy_slot = copy_anim_t * (VIEWPORT_INDICATOR_ITEM_SIZE + VIEWPORT_INDICATOR_GAP);
-    let pause_item_width = 44.0;
-    let pause_slot = pause_anim_t * (pause_item_width + VIEWPORT_INDICATOR_GAP);
-    let clipping_slot = clipping_anim_t * (VIEWPORT_INDICATOR_ITEM_SIZE + VIEWPORT_INDICATOR_GAP);
-    let sampling_x = animated_canvas_rect.max.x
-        - VIEWPORT_INDICATOR_RIGHT_PAD
-        - VIEWPORT_INDICATOR_ITEM_SIZE
-        - copy_slot
-        - pause_slot
-        - clipping_slot;
-    let sampling_rect = Rect::from_min_size(
-        pos2(sampling_x, indicator_y),
-        egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
-    );
-    draw_viewport_indicator_at(ui, sampling_rect, &sampling_indicator, now, 1.0);
+    app.viewport_indicator_manager.begin_frame();
 
-    if clipping_anim_t > 0.001 {
-        let clipping_indicator = ViewportIndicator {
-            icon: "C",
-            tooltip: "Clipping overlay 已开启",
-            kind: ViewportIndicatorKind::Failure,
-        };
-        let slide_x = (1.0 - clipping_anim_t) * 8.0;
-        let clipping_rect = Rect::from_min_size(
-            pos2(
-                sampling_rect.min.x - VIEWPORT_INDICATOR_GAP - VIEWPORT_INDICATOR_ITEM_SIZE
-                    + slide_x,
-                indicator_y,
-            ),
-            egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
-        );
-        draw_viewport_indicator_at(ui, clipping_rect, &clipping_indicator, now, clipping_anim_t);
-    }
-
-    if pause_anim_t > 0.001 {
-        let pause_indicator = ViewportIndicator {
-            icon: "PAUSE",
-            tooltip: "Time 更新已暂停（Space 恢复）",
-            kind: ViewportIndicatorKind::Failure,
-        };
-        let slide_x = (1.0 - pause_anim_t) * 8.0;
-        let pause_rect = Rect::from_min_size(
-            pos2(
-                animated_canvas_rect.max.x
-                    - VIEWPORT_INDICATOR_RIGHT_PAD
-                    - pause_item_width
-                    - copy_slot
-                    + slide_x,
-                indicator_y,
-            ),
-            egui::vec2(pause_item_width, VIEWPORT_INDICATOR_ITEM_SIZE),
-        );
-        draw_viewport_indicator_at(ui, pause_rect, &pause_indicator, now, pause_anim_t);
-    }
-
-    if let Some(stats) = app.diff_stats
-        && stats_anim_t > 0.001
-    {
-        let diff_text = format!(
-            "min {:.4}  max {:.4}  avg {:.4}",
-            stats.min, stats.max, stats.avg
-        );
-        let diff_galley = ui.painter().layout_no_wrap(
-            diff_text,
-            egui::FontId::new(
-                10.0,
-                crate::ui::typography::mi_sans_family_for_weight(500.0),
-            ),
-            Color32::from_rgba_unmultiplied(220, 220, 220, (220.0 * stats_anim_t) as u8),
-        );
-        let full_badge_w = diff_galley.size().x + 14.0;
-        let slide_x = (1.0 - stats_anim_t) * 8.0;
-        let badge_x = sampling_rect.min.x - VIEWPORT_INDICATOR_GAP - full_badge_w + slide_x;
-        let badge_rect = Rect::from_min_size(
-            pos2(badge_x, indicator_y),
-            egui::vec2(full_badge_w, VIEWPORT_INDICATOR_ITEM_SIZE),
-        );
-
-        ui.painter().rect(
-            badge_rect,
-            egui::CornerRadius::same(6),
-            Color32::from_rgba_unmultiplied(0, 0, 0, (176.0 * stats_anim_t) as u8),
-            egui::Stroke::new(
-                1.0,
-                Color32::from_rgba_unmultiplied(52, 52, 52, (220.0 * stats_anim_t) as u8),
-            ),
-            egui::StrokeKind::Outside,
-        );
-        ui.painter().galley(
-            pos2(
-                badge_rect.min.x + 7.0,
-                badge_rect.center().y - diff_galley.size().y * 0.5,
-            ),
-            diff_galley,
-            Color32::PLACEHOLDER,
-        );
-    }
-
-    if let Some(visual) = copy_visual
-        && copy_anim_t > 0.001
-    {
-        let copy_indicator = match visual {
-            ViewportCopyIndicatorVisual::InProgress => ViewportIndicator {
+    if let Some(visual) = operation_visual {
+        let operation_indicator = match visual {
+            ViewportOperationIndicatorVisual::InProgress => ViewportIndicator {
                 icon: "",
                 tooltip: "正在复制材质到剪贴板...",
                 kind: ViewportIndicatorKind::Spinner,
             },
-            ViewportCopyIndicatorVisual::Success => ViewportIndicator {
+            ViewportOperationIndicatorVisual::Success => ViewportIndicator {
                 icon: "✓",
                 tooltip: "复制完成",
                 kind: ViewportIndicatorKind::Success,
             },
-            ViewportCopyIndicatorVisual::Failure => ViewportIndicator {
+            ViewportOperationIndicatorVisual::Failure => ViewportIndicator {
                 icon: "✕",
                 tooltip: "复制失败",
                 kind: ViewportIndicatorKind::Failure,
             },
         };
-        let slide_x = (1.0 - copy_anim_t) * 8.0;
-        let copy_rect = Rect::from_min_size(
-            pos2(
-                animated_canvas_rect.max.x
-                    - VIEWPORT_INDICATOR_RIGHT_PAD
-                    - VIEWPORT_INDICATOR_ITEM_SIZE
-                    + slide_x,
-                indicator_y,
-            ),
-            egui::vec2(VIEWPORT_INDICATOR_ITEM_SIZE, VIEWPORT_INDICATOR_ITEM_SIZE),
-        );
-        draw_viewport_indicator_at(ui, copy_rect, &copy_indicator, now, copy_anim_t);
+        app.viewport_indicator_manager.register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "operation",
+                ORDER_OPERATION,
+                !matches!(
+                    app.viewport_operation_indicator,
+                    ViewportOperationIndicator::Hidden
+                ),
+                operation_indicator,
+            )
+        });
     }
 
-    if copy_anim_t > 0.001
-        || pause_anim_t > 0.001
-        || clipping_anim_t > 0.001
-        || stats_anim_t > 0.001
-    {
+    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
+        animated: false,
+        interaction: ViewportIndicatorInteraction::HoverOnly,
+        callback_id: None,
+        ..ViewportIndicatorEntry::compact("sampling", ORDER_SAMPLING, true, sampling_indicator)
+    });
+
+    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
+        interaction: ViewportIndicatorInteraction::HoverOnly,
+        callback_id: None,
+        ..ViewportIndicatorEntry::compact(
+            "pause",
+            ORDER_PAUSE,
+            !app.time_updates_enabled,
+            ViewportIndicator {
+                icon: "PAUSE",
+                tooltip: "Time 更新已暂停（Space 恢复）",
+                kind: ViewportIndicatorKind::Failure,
+            },
+        )
+    });
+
+    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
+        interaction: ViewportIndicatorInteraction::HoverOnly,
+        callback_id: None,
+        ..ViewportIndicatorEntry::compact(
+            "clipping",
+            ORDER_CLIPPING,
+            app.clip_enabled,
+            ViewportIndicator {
+                icon: "C",
+                tooltip: "Clipping overlay 已开启",
+                kind: ViewportIndicatorKind::Failure,
+            },
+        )
+    });
+
+    if let Some(stats) = app.diff_stats {
+        app.viewport_indicator_manager
+            .register(ViewportIndicatorEntry {
+                interaction: ViewportIndicatorInteraction::HoverOnly,
+                callback_id: None,
+                ..ViewportIndicatorEntry::text_badge(
+                    "diff_stats",
+                    ORDER_STATS,
+                    matches!(app.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff)),
+                    format!("min {:.4}  max {:.4}  avg {:.4}", stats.min, stats.max, stats.avg),
+                    "Diff 统计",
+                )
+            });
+    }
+
+    let indicator_result = app
+        .viewport_indicator_manager
+        .render(ui, ctx, animated_canvas_rect, now);
+    if indicator_result.needs_repaint {
         ctx.request_repaint();
     }
 

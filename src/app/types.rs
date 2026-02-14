@@ -139,15 +139,15 @@ pub struct SampledPixel {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ViewportCopyIndicator {
+pub enum ViewportOperationIndicator {
     Hidden,
-    InProgress,
+    InProgress { started_at: f64, request_id: u64 },
     Success { hide_at: f64 },
     Failure { hide_at: f64 },
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ViewportCopyIndicatorVisual {
+pub enum ViewportOperationIndicatorVisual {
     InProgress,
     Success,
     Failure,
@@ -253,9 +253,11 @@ pub struct App {
     pub time_last_raw_secs: f32,
     pub shift_was_down: bool,
     pub pending_view_reset: bool,
-    pub viewport_copy_indicator: ViewportCopyIndicator,
-    pub viewport_copy_job_rx: Option<mpsc::Receiver<bool>>,
-    pub viewport_copy_last_visual: Option<ViewportCopyIndicatorVisual>,
+    pub viewport_indicator_manager: crate::ui::viewport_indicators::ViewportIndicatorManager,
+    pub viewport_operation_indicator: ViewportOperationIndicator,
+    pub viewport_operation_job_rx: Option<mpsc::Receiver<(u64, bool)>>,
+    pub viewport_operation_last_visual: Option<ViewportOperationIndicatorVisual>,
+    pub viewport_operation_request_id: u64,
 }
 
 pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
@@ -378,9 +380,11 @@ impl App {
             time_last_raw_secs: 0.0,
             shift_was_down: false,
             pending_view_reset: false,
-            viewport_copy_indicator: ViewportCopyIndicator::Hidden,
-            viewport_copy_job_rx: None,
-            viewport_copy_last_visual: None,
+            viewport_indicator_manager: Default::default(),
+            viewport_operation_indicator: ViewportOperationIndicator::Hidden,
+            viewport_operation_job_rx: None,
+            viewport_operation_last_visual: None,
+            viewport_operation_request_id: 0,
         }
     }
 }
