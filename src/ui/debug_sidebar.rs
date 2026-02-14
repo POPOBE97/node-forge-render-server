@@ -1,5 +1,6 @@
 use rust_wgpu_fiber::eframe::egui;
 use std::cell::RefCell;
+use std::hash::Hash;
 
 use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
 
@@ -22,6 +23,15 @@ pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
 const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 const ANALYSIS_PANEL_ASPECT: f32 = 400.0 / 768.0;
+const SIDEBAR_GRID_COLUMNS: usize = 4;
+const SIDEBAR_GRID_GAP: f32 = 8.0;
+const SIDEBAR_GRID_LABEL_GAP: f32 = 4.0;
+const SIDEBAR_GRID_ROW_GAP: f32 = 8.0;
+const SIDEBAR_SLIDER_VALUE_GAP: f32 = 0.0;
+const SIDEBAR_SECTION_DIVIDER_GAP: f32 = 8.0;
+const VALUE_LABEL_TEXT_PADDING_X: f32 = 4.0;
+const VALUE_LABEL_DIVIDER_WIDTH: f32 = 1.0;
+const SIDEBAR_CONTENT_SIDE_PADDING: i8 = 16;
 
 fn tight_divider(ui: &mut egui::Ui) {
     let width = ui.available_width();
@@ -35,8 +45,217 @@ fn tight_divider(ui: &mut egui::Ui) {
     );
 }
 
-fn value_label(ui: &mut egui::Ui, value: impl Into<String>) {
-    ui.label(design_tokens::rich_text(value, TextRole::ValueLabel));
+fn section_divider(ui: &mut egui::Ui) {
+    ui.add_space(SIDEBAR_SECTION_DIVIDER_GAP);
+    tight_divider(ui);
+    ui.add_space(SIDEBAR_SECTION_DIVIDER_GAP);
+}
+
+fn with_sidebar_content_padding(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: SIDEBAR_CONTENT_SIDE_PADDING,
+            right: SIDEBAR_CONTENT_SIDE_PADDING,
+            top: 0,
+            bottom: 0,
+        })
+        .show(ui, body);
+}
+
+fn fixed_value_label_width(ui: &egui::Ui) -> f32 {
+    let text_style = design_tokens::text_style(TextRole::ValueLabel);
+    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
+    let text_width = ui
+        .painter()
+        .layout_no_wrap("100%".to_string(), label_font, text_style.color)
+        .size()
+        .x
+        .ceil();
+    text_width + VALUE_LABEL_TEXT_PADDING_X * 2.0 + VALUE_LABEL_DIVIDER_WIDTH
+}
+
+fn right_only_radius(px: u8) -> egui::CornerRadius {
+    let canonical = (px.clamp(2, 24) / 2) * 2;
+    egui::CornerRadius {
+        nw: 0,
+        ne: canonical,
+        sw: 0,
+        se: canonical,
+    }
+}
+
+fn sidebar_background_color() -> egui::Color32 {
+    crate::color::lab(7.78201, -0.000_014_901_2, 0.0)
+}
+
+fn sidebar_group_cell(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui)) {
+    sidebar_grid_label(ui, label);
+    ui.add_space(SIDEBAR_GRID_LABEL_GAP);
+    body(ui);
+}
+
+fn sidebar_grid_label(ui: &mut egui::Ui, label: &str) {
+    ui.label(design_tokens::rich_text(label, TextRole::AttributeTitle));
+}
+
+fn sidebar_grid_column_width(available_width: f32) -> f32 {
+    let total_gap = SIDEBAR_GRID_GAP * (SIDEBAR_GRID_COLUMNS.saturating_sub(1) as f32);
+    ((available_width - total_gap).max(0.0)) / SIDEBAR_GRID_COLUMNS as f32
+}
+
+fn sidebar_grid_span_width(column_width: f32, span: usize) -> f32 {
+    let clamped_span = span.clamp(1, SIDEBAR_GRID_COLUMNS);
+    column_width * clamped_span as f32 + SIDEBAR_GRID_GAP * (clamped_span.saturating_sub(1) as f32)
+}
+
+struct SidebarGridRow<'a> {
+    ui: &'a mut egui::Ui,
+    column_width: f32,
+    next_col: usize,
+}
+
+impl SidebarGridRow<'_> {
+    fn place(&mut self, col_start: usize, col_span: usize, body: impl FnOnce(&mut egui::Ui)) {
+        if self.next_col > SIDEBAR_GRID_COLUMNS {
+            return;
+        }
+        // Child UIs can mutate spacing; force the row gap before each placement.
+        self.ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
+
+        let col_start = col_start.max(self.next_col).clamp(1, SIDEBAR_GRID_COLUMNS);
+        if col_start > self.next_col {
+            let spacer_span = col_start - self.next_col;
+            self.ui.allocate_ui_with_layout(
+                egui::vec2(sidebar_grid_span_width(self.column_width, spacer_span), 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |_ui| {},
+            );
+        }
+
+        let max_span = SIDEBAR_GRID_COLUMNS.saturating_sub(col_start - 1).max(1);
+        let col_span = col_span.clamp(1, max_span);
+        self.ui.allocate_ui_with_layout(
+            egui::vec2(sidebar_grid_span_width(self.column_width, col_span), 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            body,
+        );
+        self.next_col = col_start + col_span;
+    }
+}
+
+fn sidebar_grid_row(ui: &mut egui::Ui, body: impl FnOnce(&mut SidebarGridRow<'_>)) {
+    let column_width = sidebar_grid_column_width(ui.available_width());
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
+        let mut row = SidebarGridRow {
+            ui,
+            column_width,
+            next_col: 1,
+        };
+        body(&mut row);
+    });
+}
+
+fn slider_with_value(
+    ui: &mut egui::Ui,
+    id_source: impl Hash,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    formatter: Option<&dyn Fn(f32) -> String>,
+) -> bool {
+    let mut changed = false;
+    let mut formatted_value = formatter
+        .map(|f| f(*value))
+        .unwrap_or_else(|| format!("{:.3}", *value));
+    let label_width = fixed_value_label_width(ui);
+    let slider_width = (ui.available_width() - SIDEBAR_SLIDER_VALUE_GAP - label_width).max(0.0);
+    let text_style = design_tokens::text_style(TextRole::ValueLabel);
+    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
+    let sidebar_bg = sidebar_background_color();
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), design_tokens::CONTROL_ROW_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = SIDEBAR_SLIDER_VALUE_GAP;
+            ui.allocate_ui_with_layout(
+                egui::vec2(slider_width, design_tokens::CONTROL_ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(slider_width, value_slider::VALUE_SLIDER_HEIGHT),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            let out = value_slider::value_slider(
+                                ui, id_source, value, min, max, formatter,
+                            );
+                            changed = out.changed;
+                            formatted_value = out.formatted_value;
+                        },
+                    );
+                },
+            );
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_width, design_tokens::CONTROL_ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let (label_rect, label_response) = ui.allocate_exact_size(
+                        egui::vec2(label_width, value_slider::VALUE_SLIDER_HEIGHT),
+                        egui::Sense::hover(),
+                    );
+                    let label_border_stroke = if label_response.hovered() {
+                        egui::Stroke::new(
+                            design_tokens::LINE_THICKNESS_05,
+                            design_tokens::white(20),
+                        )
+                    } else {
+                        egui::Stroke::NONE
+                    };
+                    let painter = ui.painter_at(label_rect);
+                    painter.rect(
+                        label_rect,
+                        right_only_radius(4),
+                        design_tokens::RESOURCE_ACTIVE_BG,
+                        label_border_stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.line_segment(
+                        [
+                            egui::pos2(label_rect.left(), label_rect.top()),
+                            egui::pos2(label_rect.left(), label_rect.bottom()),
+                        ],
+                        egui::Stroke::new(VALUE_LABEL_DIVIDER_WIDTH, sidebar_bg),
+                    );
+
+                    let text_rect = egui::Rect::from_min_max(
+                        egui::pos2(
+                            label_rect.left()
+                                + VALUE_LABEL_DIVIDER_WIDTH
+                                + VALUE_LABEL_TEXT_PADDING_X,
+                            label_rect.top(),
+                        ),
+                        egui::pos2(
+                            label_rect.right() - VALUE_LABEL_TEXT_PADDING_X,
+                            label_rect.bottom(),
+                        ),
+                    );
+                    let galley = painter.layout_no_wrap(
+                        formatted_value.clone(),
+                        label_font.clone(),
+                        text_style.color,
+                    );
+                    let text_pos = egui::pos2(
+                        text_rect.right() - galley.size().x,
+                        text_rect.center().y - galley.size().y * 0.5 - 0.25,
+                    );
+                    painter.galley(text_pos, galley, text_style.color);
+                },
+            );
+        },
+    );
+
+    changed
 }
 
 fn mode_options() -> [RadioButtonOption<'static, RefImageMode>; 2] {
@@ -94,19 +313,6 @@ fn analysis_tab_options() -> [RadioButtonOption<'static, AnalysisTab>; 3] {
     ]
 }
 
-fn bool_options() -> [RadioButtonOption<'static, bool>; 2] {
-    [
-        RadioButtonOption {
-            value: false,
-            label: "Off",
-        },
-        RadioButtonOption {
-            value: true,
-            label: "On",
-        },
-    ]
-}
-
 fn sidebar_width_id() -> egui::Id {
     egui::Id::new("ui.debug_sidebar.width")
 }
@@ -132,8 +338,6 @@ pub enum SidebarAction {
     SetReferenceOpacity(f32),
     /// Toggle reference display mode.
     ToggleReferenceMode,
-    /// Clear loaded reference image.
-    ClearReference,
     /// Set current diff metric mode.
     SetDiffMetricMode(DiffMetricMode),
     /// Switch current analysis tab.
@@ -180,7 +384,7 @@ pub fn show_in_rect(
         return None;
     }
 
-    let sidebar_bg = crate::color::lab(7.78201, -0.000_014_901_2, 0.0);
+    let sidebar_bg = sidebar_background_color();
     let mut sidebar_action: Option<SidebarAction> = None;
 
     let can_resize = ui_sidebar_factor >= 1.0 && !animation_just_finished_opening;
@@ -227,32 +431,40 @@ pub fn show_in_rect(
             if ui_sidebar_factor > 0.01 {
                 egui::Frame::NONE
                     .inner_margin(egui::Margin {
-                        left: 4,
-                        right: 8,
-                        top: 6,
+                        left: 0,
+                        right: 0,
+                        top: 16,
                         bottom: 6,
                     })
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
-                            show_ref_section(ui, reference, &mut sidebar_action);
-                            tight_divider(ui);
-                            show_clip_section(ui, analysis, &mut sidebar_action);
-                            tight_divider(ui);
-                            show_infographics_section(
-                                ui,
-                                analysis.tab,
-                                histogram_texture_id,
-                                parade_texture_id,
-                                vectorscope_texture_id,
-                                &mut sidebar_action,
-                            );
-                            tight_divider(ui);
-                            show_resource_tree_section(
-                                ui,
-                                tree_nodes,
-                                file_tree_state,
-                                &mut sidebar_action,
-                            );
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_ref_section(ui, reference, &mut sidebar_action);
+                            });
+                            section_divider(ui);
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_clip_section(ui, analysis, &mut sidebar_action);
+                            });
+                            section_divider(ui);
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_infographics_section(
+                                    ui,
+                                    analysis.tab,
+                                    histogram_texture_id,
+                                    parade_texture_id,
+                                    vectorscope_texture_id,
+                                    &mut sidebar_action,
+                                );
+                            });
+                            section_divider(ui);
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_resource_tree_section(
+                                    ui,
+                                    tree_nodes,
+                                    file_tree_state,
+                                    &mut sidebar_action,
+                                );
+                            });
                         });
                     });
             }
@@ -270,10 +482,9 @@ fn show_ref_section(
     two_column_section::section(ui, "Ref", |ui| {
         if let Some(reference) = reference {
             let row_action = RefCell::new(None);
-            two_column_section::row(
-                ui,
-                |ui| {
-                    two_column_section::cell(ui, "Mode", |ui| {
+            sidebar_grid_row(ui, |row| {
+                row.place(1, 2, |ui| {
+                    sidebar_group_cell(ui, "Mode", |ui| {
                         let mut mode = reference.mode;
                         if radio_button_group::radio_button_group(
                             ui,
@@ -285,107 +496,49 @@ fn show_ref_section(
                             *row_action.borrow_mut() = Some(SidebarAction::ToggleReferenceMode);
                         }
                     });
-                },
-                |ui| match reference.mode {
+                });
+                match reference.mode {
                     RefImageMode::Overlay => {
-                        two_column_section::cell(ui, "Mix", |ui| {
-                            let mut opacity = reference.opacity;
-                            let slider = value_slider::value_slider(
-                                ui,
-                                "ui.debug_sidebar.ref.opacity",
-                                &mut opacity,
-                                0.0,
-                                1.0,
-                                Some(&|v| format!("{:.0}%", v * 100.0)),
-                            );
-                            if slider.changed {
-                                *row_action.borrow_mut() =
-                                    Some(SidebarAction::SetReferenceOpacity(opacity));
-                            }
+                        row.place(3, 2, |ui| {
+                            sidebar_group_cell(ui, "Mix", |ui| {
+                                let mut opacity = reference.opacity;
+                                let changed = slider_with_value(
+                                    ui,
+                                    "ui.debug_sidebar.ref.opacity",
+                                    &mut opacity,
+                                    0.0,
+                                    1.0,
+                                    Some(&|v| format!("{:.0}%", v * 100.0)),
+                                );
+                                if changed {
+                                    *row_action.borrow_mut() =
+                                        Some(SidebarAction::SetReferenceOpacity(opacity));
+                                }
+                            });
                         });
                     }
                     RefImageMode::Diff => {
-                        two_column_section::cell(ui, "Metrice", |ui| {
-                            let mut metric = reference.diff_metric_mode;
-                            if radio_button_group::radio_button_group(
-                                ui,
-                                "ui.debug_sidebar.ref.metric",
-                                &mut metric,
-                                &diff_metric_options(),
-                            ) && metric != reference.diff_metric_mode
-                            {
-                                *row_action.borrow_mut() =
-                                    Some(SidebarAction::SetDiffMetricMode(metric));
-                            }
+                        row.place(3, 2, |ui| {
+                            sidebar_group_cell(ui, "Metrice", |ui| {
+                                let mut metric = reference.diff_metric_mode;
+                                if radio_button_group::radio_button_group(
+                                    ui,
+                                    "ui.debug_sidebar.ref.metric",
+                                    &mut metric,
+                                    &diff_metric_options(),
+                                ) && metric != reference.diff_metric_mode
+                                {
+                                    *row_action.borrow_mut() =
+                                        Some(SidebarAction::SetDiffMetricMode(metric));
+                                }
+                            });
                         });
                     }
-                },
-            );
+                }
+            });
             if let Some(action) = row_action.into_inner() {
                 *sidebar_action = Some(action);
             }
-
-            ui.add_space(6.0);
-            let row_action = RefCell::new(None);
-            two_column_section::row(
-                ui,
-                |ui| {
-                    two_column_section::cell(ui, "Quick", |ui| {
-                        ui.horizontal(|ui| {
-                            if quick_value_button(ui, "1", (reference.opacity - 0.0).abs() < 1e-6)
-                                .clicked()
-                            {
-                                *row_action.borrow_mut() =
-                                    Some(SidebarAction::SetReferenceOpacity(0.0));
-                            }
-                            if quick_value_button(ui, "2", (reference.opacity - 1.0).abs() < 1e-6)
-                                .clicked()
-                            {
-                                *row_action.borrow_mut() =
-                                    Some(SidebarAction::SetReferenceOpacity(1.0));
-                            }
-                        });
-                    });
-                },
-                |ui| {
-                    two_column_section::cell(ui, "Action", |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(design_tokens::rich_text(
-                                    "Clear",
-                                    TextRole::ValueLabel,
-                                ))
-                                .fill(design_tokens::white(15))
-                                .corner_radius(design_tokens::radius(4))
-                                .stroke(egui::Stroke::NONE),
-                            )
-                            .clicked()
-                        {
-                            *row_action.borrow_mut() = Some(SidebarAction::ClearReference);
-                        }
-                    });
-                },
-            );
-            if let Some(action) = row_action.into_inner() {
-                *sidebar_action = Some(action);
-            }
-
-            if let Some(stats) = reference.diff_stats {
-                ui.add_space(6.0);
-                ui.label(design_tokens::rich_text(
-                    format!(
-                        "min {:.4}  max {:.4}  avg {:.4}",
-                        stats.min, stats.max, stats.avg
-                    ),
-                    TextRole::AttributeTitle,
-                ));
-            }
-
-            ui.add_space(4.0);
-            ui.label(design_tokens::rich_text(
-                "Shift toggles Over/Diff. Keys 1/2 set opacity 0%/100%.",
-                TextRole::AttributeTitle,
-            ));
         } else {
             ui.label(design_tokens::rich_text(
                 "Drop a reference image to enable comparison controls.",
@@ -393,8 +546,6 @@ fn show_ref_section(
             ));
         }
     });
-
-    ui.add_space(8.0);
 }
 
 fn show_clip_section(
@@ -403,78 +554,47 @@ fn show_clip_section(
     sidebar_action: &mut Option<SidebarAction>,
 ) {
     two_column_section::section(ui, "Clip", |ui| {
-        two_column_section::row(
-            ui,
-            |ui| {
-                two_column_section::cell(ui, "Enable", |ui| {
-                    let mut enabled = analysis.clip_enabled;
-                    if radio_button_group::radio_button_group(
+        let row_action = RefCell::new(None);
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 2, |ui| {
+                sidebar_group_cell(ui, "Shadow", |ui| {
+                    let mut shadow = analysis.clipping.shadow_threshold;
+                    let changed = slider_with_value(
                         ui,
-                        "ui.debug_sidebar.clip.enable",
-                        &mut enabled,
-                        &bool_options(),
-                    ) && enabled != analysis.clip_enabled
-                    {
-                        *sidebar_action = Some(SidebarAction::SetClipEnabled(enabled));
+                        "ui.debug_sidebar.clip.shadow",
+                        &mut shadow,
+                        0.0,
+                        0.25,
+                        Some(&|v| format!("{:.0}%", v * 100.0)),
+                    );
+                    if changed {
+                        *row_action.borrow_mut() =
+                            Some(SidebarAction::SetClippingShadowThreshold(shadow));
                     }
                 });
-            },
-            |ui| {
-                two_column_section::cell(ui, "State", |ui| {
-                    value_label(ui, if analysis.clip_enabled { "On" } else { "Off" });
+            });
+            row.place(3, 2, |ui| {
+                sidebar_group_cell(ui, "Highlight", |ui| {
+                    let mut highlight = analysis.clipping.highlight_threshold;
+                    let changed = slider_with_value(
+                        ui,
+                        "ui.debug_sidebar.clip.highlight",
+                        &mut highlight,
+                        0.75,
+                        1.0,
+                        Some(&|v| format!("{:.0}%", v * 100.0)),
+                    );
+                    if changed {
+                        *row_action.borrow_mut() =
+                            Some(SidebarAction::SetClippingHighlightThreshold(highlight));
+                    }
                 });
-            },
-        );
-
-        ui.add_space(6.0);
-        let row_action = RefCell::new(None);
-        two_column_section::row(
-            ui,
-            |ui| {
-                two_column_section::cell(ui, "Shadow <=", |ui| {
-                    ui.add_enabled_ui(analysis.clip_enabled, |ui| {
-                        let mut shadow = analysis.clipping.shadow_threshold;
-                        let slider = value_slider::value_slider(
-                            ui,
-                            "ui.debug_sidebar.clip.shadow",
-                            &mut shadow,
-                            0.0,
-                            0.25,
-                            Some(&|v| format!("{:.3}", v)),
-                        );
-                        if slider.changed {
-                            *row_action.borrow_mut() =
-                                Some(SidebarAction::SetClippingShadowThreshold(shadow));
-                        }
-                    });
-                });
-            },
-            |ui| {
-                two_column_section::cell(ui, "Highlight >=", |ui| {
-                    ui.add_enabled_ui(analysis.clip_enabled, |ui| {
-                        let mut highlight = analysis.clipping.highlight_threshold;
-                        let slider = value_slider::value_slider(
-                            ui,
-                            "ui.debug_sidebar.clip.highlight",
-                            &mut highlight,
-                            0.75,
-                            1.0,
-                            Some(&|v| format!("{:.3}", v)),
-                        );
-                        if slider.changed {
-                            *row_action.borrow_mut() =
-                                Some(SidebarAction::SetClippingHighlightThreshold(highlight));
-                        }
-                    });
-                });
-            },
-        );
+            });
+        });
         if let Some(action) = row_action.into_inner() {
             *sidebar_action = Some(action);
         }
     });
-
-    ui.add_space(8.0);
 }
 
 fn show_infographics_section(
@@ -486,10 +606,9 @@ fn show_infographics_section(
     sidebar_action: &mut Option<SidebarAction>,
 ) {
     two_column_section::section(ui, "Infographics", |ui| {
-        two_column_section::row(
-            ui,
-            |ui| {
-                two_column_section::cell(ui, "Scope", |ui| {
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 4, |ui| {
+                sidebar_group_cell(ui, "Scope", |ui| {
                     let mut selected_tab = tab;
                     if radio_button_group::radio_button_group(
                         ui,
@@ -501,65 +620,62 @@ fn show_infographics_section(
                         *sidebar_action = Some(SidebarAction::SetAnalysisTab(selected_tab));
                     }
                 });
-            },
-            |ui| {
-                two_column_section::cell(ui, "View", |ui| {
-                    value_label(ui, tab.label());
-                });
-            },
-        );
+            });
+        });
 
-        ui.add_space(6.0);
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
         let selected_texture_id = match tab {
             AnalysisTab::Histogram => histogram_texture_id,
             AnalysisTab::Parade => parade_texture_id,
             AnalysisTab::Vectorscope => vectorscope_texture_id,
         };
 
-        let analysis_border_color = design_tokens::white(20);
-        egui::Frame::new()
-            .outer_margin(egui::Margin {
-                left: 0,
-                right: 0,
-                top: 0,
-                bottom: 0,
-            })
-            .stroke(egui::Stroke::new(
-                design_tokens::LINE_THICKNESS_1,
-                analysis_border_color,
-            ))
-            .corner_radius(design_tokens::radius(4))
-            .show(ui, |ui| {
-                let width = ui.available_width();
-                let panel_size = egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
-                ui.allocate_ui_with_layout(
-                    panel_size,
-                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| {
-                        if let Some(texture_id) = selected_texture_id {
-                            let image_size = if matches!(tab, AnalysisTab::Vectorscope) {
-                                let side = panel_size.x.min(panel_size.y);
-                                egui::vec2(side, side)
-                            } else {
-                                panel_size
-                            };
-                            let image = egui::Image::new(egui::load::SizedTexture::new(
-                                texture_id, image_size,
-                            ))
-                            .corner_radius(design_tokens::radius(4));
-                            ui.add_sized(image_size, image);
-                        } else {
-                            ui.label(design_tokens::rich_text(
-                                "No analysis data",
-                                TextRole::InactiveItemTitle,
-                            ));
-                        }
-                    },
-                );
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 4, |ui| {
+                let analysis_border_color = design_tokens::white(20);
+                egui::Frame::new()
+                    .outer_margin(egui::Margin {
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                    })
+                    .stroke(egui::Stroke::new(
+                        design_tokens::LINE_THICKNESS_1,
+                        analysis_border_color,
+                    ))
+                    .corner_radius(design_tokens::radius(4))
+                    .show(ui, |ui| {
+                        let width = ui.available_width();
+                        let panel_size = egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
+                        ui.allocate_ui_with_layout(
+                            panel_size,
+                            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                            |ui| {
+                                if let Some(texture_id) = selected_texture_id {
+                                    let image_size = if matches!(tab, AnalysisTab::Vectorscope) {
+                                        let side = panel_size.x.min(panel_size.y);
+                                        egui::vec2(side, side)
+                                    } else {
+                                        panel_size
+                                    };
+                                    let image = egui::Image::new(egui::load::SizedTexture::new(
+                                        texture_id, image_size,
+                                    ))
+                                    .corner_radius(design_tokens::radius(4));
+                                    ui.add_sized(image_size, image);
+                                } else {
+                                    ui.label(design_tokens::rich_text(
+                                        "No analysis data",
+                                        TextRole::InactiveItemTitle,
+                                    ));
+                                }
+                            },
+                        );
+                    });
             });
+        });
     });
-
-    ui.add_space(8.0);
 }
 
 fn show_resource_tree_section(
@@ -589,24 +705,4 @@ fn show_resource_tree_section(
             }
         }
     });
-}
-
-fn quick_value_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
-    ui.add(
-        egui::Button::new(design_tokens::rich_text(
-            label,
-            if selected {
-                TextRole::ActiveItemTitle
-            } else {
-                TextRole::InactiveItemTitle
-            },
-        ))
-        .fill(if selected {
-            design_tokens::black(80)
-        } else {
-            design_tokens::white(15)
-        })
-        .corner_radius(design_tokens::radius(4))
-        .stroke(egui::Stroke::NONE),
-    )
 }
