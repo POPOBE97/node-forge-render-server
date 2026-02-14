@@ -31,7 +31,7 @@ pub enum RefImageSource {
     SceneNodeDataUrl(String),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DiffMetricMode {
     E,
     #[default]
@@ -101,6 +101,12 @@ pub struct DiffStats {
     pub min: f32,
     pub max: f32,
     pub avg: f32,
+}
+
+pub struct AnalysisSourceDomain<'a> {
+    pub texture_name: &'a str,
+    pub view: &'a wgpu::TextureView,
+    pub size: [u32; 2],
 }
 
 pub struct RefImageState {
@@ -225,12 +231,19 @@ pub struct App {
     pub analysis_dirty: bool,
     pub clipping_dirty: bool,
     pub analysis_source_is_diff: bool,
+    pub analysis_source_key: Option<u64>,
     pub ref_image: Option<RefImageState>,
     pub diff_renderer: Option<crate::ui::diff_renderer::DiffRenderer>,
     pub diff_texture_id: Option<egui::TextureId>,
     pub diff_metric_mode: DiffMetricMode,
     pub diff_stats: Option<DiffStats>,
     pub diff_dirty: bool,
+    pub last_diff_request_key: Option<u64>,
+    pub last_diff_stats_request_key: Option<u64>,
+    pub last_histogram_request_key: Option<u64>,
+    pub last_parade_request_key: Option<u64>,
+    pub last_vectorscope_request_key: Option<u64>,
+    pub last_clipping_request_key: Option<u64>,
     pub scene_uses_time: bool,
     pub scene_reference_image_path: Option<String>,
     pub scene_reference_image_data_url: Option<String>,
@@ -343,12 +356,19 @@ impl App {
             analysis_dirty: true,
             clipping_dirty: true,
             analysis_source_is_diff: false,
+            analysis_source_key: None,
             ref_image: None,
             diff_renderer: None,
             diff_texture_id: None,
             diff_metric_mode: DiffMetricMode::AE,
             diff_stats: None,
             diff_dirty: false,
+            last_diff_request_key: None,
+            last_diff_stats_request_key: None,
+            last_histogram_request_key: None,
+            last_parade_request_key: None,
+            last_vectorscope_request_key: None,
+            last_clipping_request_key: None,
             scene_uses_time: initial_scene_uses_time,
             scene_reference_image_path: initial_scene_reference_image_path,
             scene_reference_image_data_url: initial_scene_reference_image_data_url,

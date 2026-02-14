@@ -10,9 +10,58 @@ pub use types::{
     SampledPixel,
 };
 
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
+
 use rust_wgpu_fiber::eframe::{self, egui, wgpu};
 
-use crate::{renderer, ui};
+use crate::{app::types::AnalysisSourceDomain, renderer, ui};
+
+fn hash_key<T: Hash + ?Sized>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn analysis_source_request_key(source: &AnalysisSourceDomain<'_>) -> u64 {
+    hash_key(&(source.texture_name, source.size))
+}
+
+fn diff_request_key(
+    source_key: u64,
+    reference_size: [u32; 2],
+    reference_offset: [i32; 2],
+    metric_mode: DiffMetricMode,
+) -> u64 {
+    hash_key(&(source_key, reference_size, reference_offset, metric_mode))
+}
+
+fn diff_stats_request_key(diff_key: u64) -> u64 {
+    hash_key(&(diff_key, "stats"))
+}
+
+fn histogram_request_key(source_key: u64) -> u64 {
+    hash_key(&(source_key, "histogram"))
+}
+
+fn parade_request_key(source_key: u64) -> u64 {
+    hash_key(&(source_key, "parade"))
+}
+
+fn vectorscope_request_key(source_key: u64) -> u64 {
+    hash_key(&(source_key, "vectorscope"))
+}
+
+fn clipping_request_key(source_key: u64, settings: ClippingSettings, enabled: bool) -> u64 {
+    hash_key(&(
+        source_key,
+        enabled,
+        settings.shadow_threshold.to_bits(),
+        settings.highlight_threshold.to_bits(),
+    ))
+}
 
 fn apply_analysis_tab_change(
     analysis_tab: &mut AnalysisTab,
@@ -130,27 +179,45 @@ impl eframe::App for App {
 
         texture_bridge::ensure_output_texture_registered(self, render_state, &mut renderer_guard);
 
-        let display_texture_name = self
-            .preview_texture_name
-            .as_ref()
-            .unwrap_or(&self.output_texture_name);
+        let output_texture_name = self.output_texture_name.as_str();
+        let (display_texture_name, display_texture) =
+            if let Some(preview_name) = self.preview_texture_name.as_ref() {
+                if let Some(texture) = self.shader_space.textures.get(preview_name.as_str()) {
+                    (preview_name.as_str(), Some(texture))
+                } else {
+                    (
+                        output_texture_name,
+                        self.shader_space.textures.get(output_texture_name),
+                    )
+                }
+            } else {
+                (
+                    output_texture_name,
+                    self.shader_space.textures.get(output_texture_name),
+                )
+            };
 
-        let display_texture = self
-            .shader_space
-            .textures
-            .get(display_texture_name.as_str())
-            .or_else(|| {
-                self.shader_space
-                    .textures
-                    .get(self.output_texture_name.as_str())
-            });
+        let render_source = display_texture.and_then(|texture| {
+            texture
+                .wgpu_texture_view
+                .as_ref()
+                .map(|view| AnalysisSourceDomain {
+                    texture_name: display_texture_name,
+                    view,
+                    size: [
+                        texture.wgpu_texture_desc.size.width,
+                        texture.wgpu_texture_desc.size.height,
+                    ],
+                })
+        });
+        let render_source_key = render_source.as_ref().map(analysis_source_request_key);
 
         let mut computed_diff_stats = None;
         let mut did_update_diff_output = false;
 
         if let Some(reference) = self.ref_image.as_ref()
-            && let Some(texture) = display_texture
-            && let Some(source_view) = texture.wgpu_texture_view.as_ref()
+            && let Some(source) = render_source.as_ref()
+            && let Some(source_key) = render_source_key
         {
             let reference_mode = reference.mode;
             let reference_offset = [
@@ -171,27 +238,35 @@ impl eframe::App for App {
             }
 
             if let Some(diff_renderer) = self.diff_renderer.as_mut() {
-                let source_size = [
-                    texture.wgpu_texture_desc.size.width,
-                    texture.wgpu_texture_desc.size.height,
-                ];
+                let request_key = diff_request_key(
+                    source_key,
+                    reference.size,
+                    reference_offset,
+                    self.diff_metric_mode,
+                );
+                let stats_key = diff_stats_request_key(request_key);
                 let should_update_diff = matches!(reference_mode, RefImageMode::Diff)
-                    && (self.diff_dirty || needs_recreate || self.diff_texture_id.is_none());
+                    && (self.diff_dirty
+                        || needs_recreate
+                        || self.diff_texture_id.is_none()
+                        || self.last_diff_request_key != Some(request_key)
+                        || self.last_diff_stats_request_key != Some(stats_key));
 
                 if should_update_diff {
                     let diff_stats = diff_renderer.update(
                         &render_state.device,
                         self.shader_space.queue.as_ref(),
-                        source_view,
-                        source_size,
+                        source.view,
+                        source.size,
                         &reference.wgpu_texture_view,
                         reference.size,
                         reference_offset,
                         self.diff_metric_mode,
-                        matches!(reference_mode, RefImageMode::Diff),
+                        true,
                     );
                     did_update_diff_output = true;
-
+                    self.last_diff_request_key = Some(request_key);
+                    self.last_diff_stats_request_key = Some(stats_key);
                     computed_diff_stats = diff_stats;
                 }
 
@@ -222,11 +297,34 @@ impl eframe::App for App {
                             ));
                     }
                     self.diff_dirty = false;
-                    self.analysis_dirty = true;
-                    self.clipping_dirty = true;
                 }
             }
         }
+
+        let mut analysis_source = render_source;
+        if matches!(
+            self.ref_image.as_ref().map(|r| r.mode),
+            Some(RefImageMode::Diff)
+        ) && let Some(diff_renderer) = self.diff_renderer.as_ref()
+        {
+            analysis_source = Some(AnalysisSourceDomain {
+                texture_name: "sys.diff.analysis",
+                view: diff_renderer.analysis_output_view(),
+                size: diff_renderer.analysis_output_size(),
+            });
+            self.analysis_source_is_diff = true;
+        } else {
+            self.analysis_source_is_diff = false;
+        }
+        let analysis_source_key = analysis_source.as_ref().map(|source| {
+            let base_key = analysis_source_request_key(source);
+            if self.analysis_source_is_diff {
+                hash_key(&(base_key, self.last_diff_request_key))
+            } else {
+                base_key
+            }
+        });
+        self.analysis_source_key = analysis_source_key;
 
         if computed_diff_stats.is_some() {
             self.diff_stats = computed_diff_stats;
@@ -235,6 +333,7 @@ impl eframe::App for App {
             Some(RefImageMode::Diff)
         ) {
             self.diff_stats = None;
+            self.last_diff_stats_request_key = None;
         }
 
         if self.histogram_renderer.is_none() {
@@ -250,40 +349,26 @@ impl eframe::App for App {
             ));
         }
 
-        let mut analysis_source = None;
-        if let Some(texture) = display_texture
-            && let Some(source_view) = texture.wgpu_texture_view.as_ref()
-        {
-            let analysis_view = source_view;
-            let analysis_size = [
-                texture.wgpu_texture_desc.size.width,
-                texture.wgpu_texture_desc.size.height,
-            ];
-            // Infographics/clipping always sample from the rendered texture region
-            // (never the reference-sized diff texture).
-            self.analysis_source_is_diff = false;
-            analysis_source = Some((analysis_view, analysis_size));
-        } else {
-            self.analysis_source_is_diff = false;
-        }
-
         let mut did_update_active_analysis = false;
         let mut did_update_clipping = false;
 
-        if let Some((analysis_view, analysis_size)) = analysis_source {
+        if let Some(source) = analysis_source.as_ref()
+            && let Some(source_key) = analysis_source_key
+        {
             match self.analysis_tab {
                 AnalysisTab::Histogram => {
+                    let request_key = histogram_request_key(source_key);
                     let should_update = self.analysis_dirty
                         || self.histogram_texture_id.is_none()
-                        || did_update_diff_output;
+                        || self.last_histogram_request_key != Some(request_key);
                     if should_update
                         && let Some(histogram_renderer) = self.histogram_renderer.as_ref()
                     {
                         histogram_renderer.update(
                             &render_state.device,
                             self.shader_space.queue.as_ref(),
-                            analysis_view,
-                            analysis_size,
+                            source.view,
+                            source.size,
                         );
 
                         let sampler = wgpu::SamplerDescriptor {
@@ -312,19 +397,21 @@ impl eframe::App for App {
                                     sampler,
                                 ));
                         }
+                        self.last_histogram_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
                 AnalysisTab::Parade => {
+                    let request_key = parade_request_key(source_key);
                     let should_update = self.analysis_dirty
                         || self.parade_texture_id.is_none()
-                        || did_update_diff_output;
+                        || self.last_parade_request_key != Some(request_key);
                     if should_update && let Some(parade_renderer) = self.parade_renderer.as_ref() {
                         parade_renderer.update(
                             &render_state.device,
                             self.shader_space.queue.as_ref(),
-                            analysis_view,
-                            analysis_size,
+                            source.view,
+                            source.size,
                         );
 
                         let parade_sampler = wgpu::SamplerDescriptor {
@@ -352,22 +439,23 @@ impl eframe::App for App {
                                     parade_sampler,
                                 ));
                         }
-
+                        self.last_parade_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
                 AnalysisTab::Vectorscope => {
+                    let request_key = vectorscope_request_key(source_key);
                     let should_update = self.analysis_dirty
                         || self.vectorscope_texture_id.is_none()
-                        || did_update_diff_output;
+                        || self.last_vectorscope_request_key != Some(request_key);
                     if should_update
                         && let Some(vectorscope_renderer) = self.vectorscope_renderer.as_ref()
                     {
                         vectorscope_renderer.update(
                             &render_state.device,
                             self.shader_space.queue.as_ref(),
-                            analysis_view,
-                            analysis_size,
+                            source.view,
+                            source.size,
                         );
 
                         let sampler = wgpu::SamplerDescriptor {
@@ -396,32 +484,33 @@ impl eframe::App for App {
                                     sampler,
                                 ));
                         }
+                        self.last_vectorscope_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
             }
 
-            let clipping_required = self.clip_enabled;
-            if clipping_required {
+            if self.clip_enabled {
+                let request_key = clipping_request_key(source_key, self.clipping_settings, true);
                 if self.clipping_renderer.is_none() {
                     self.clipping_renderer = Some(ui::clipping_map::ClippingMapRenderer::new(
                         &render_state.device,
-                        analysis_size,
+                        source.size,
                     ));
                 }
 
                 let should_update_clipping = self.analysis_dirty
                     || self.clipping_dirty
                     || self.clipping_texture_id.is_none()
-                    || did_update_diff_output;
+                    || self.last_clipping_request_key != Some(request_key);
                 if should_update_clipping
                     && let Some(clipping_renderer) = self.clipping_renderer.as_mut()
                 {
                     clipping_renderer.update(
                         &render_state.device,
                         self.shader_space.queue.as_ref(),
-                        analysis_view,
-                        analysis_size,
+                        source.view,
+                        source.size,
                         self.clipping_settings.shadow_threshold,
                         self.clipping_settings.highlight_threshold,
                     );
@@ -451,7 +540,7 @@ impl eframe::App for App {
                                 sampler,
                             ));
                     }
-
+                    self.last_clipping_request_key = Some(request_key);
                     did_update_clipping = true;
                 }
             }
@@ -564,16 +653,12 @@ impl eframe::App for App {
                         RefImageMode::Diff => RefImageMode::Overlay,
                     };
                     self.diff_dirty = true;
-                    self.analysis_dirty = true;
-                    self.clipping_dirty = true;
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetDiffMetricMode(mode)) => {
                 if self.diff_metric_mode != mode {
                     self.diff_metric_mode = mode;
                     self.diff_dirty = true;
-                    self.analysis_dirty = true;
-                    self.clipping_dirty = true;
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetAnalysisTab(tab)) => {
@@ -660,8 +745,10 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::{
-        AnalysisTab, ClippingSettings, apply_analysis_tab_change, apply_clip_enabled_change,
-        apply_clipping_highlight_threshold_change, apply_clipping_shadow_threshold_change,
+        AnalysisTab, ClippingSettings, DiffMetricMode, apply_analysis_tab_change,
+        apply_clip_enabled_change, apply_clipping_highlight_threshold_change,
+        apply_clipping_shadow_threshold_change, clipping_request_key, diff_request_key, hash_key,
+        histogram_request_key, parade_request_key, vectorscope_request_key,
     };
 
     #[test]
@@ -708,5 +795,48 @@ mod tests {
         clipping_dirty = false;
         apply_clipping_highlight_threshold_change(&mut clipping, &mut clipping_dirty, 0.95);
         assert!(clipping_dirty);
+    }
+
+    #[test]
+    fn request_keys_change_with_source_domain() {
+        let source_a = hash_key(&("output", [128_u32, 128_u32]));
+        let source_b = hash_key(&("output", [256_u32, 128_u32]));
+        assert_ne!(
+            histogram_request_key(source_a),
+            histogram_request_key(source_b)
+        );
+        assert_ne!(parade_request_key(source_a), parade_request_key(source_b));
+        assert_ne!(
+            vectorscope_request_key(source_a),
+            vectorscope_request_key(source_b)
+        );
+    }
+
+    #[test]
+    fn diff_request_key_changes_with_offset_and_metric() {
+        let source_key = hash_key(&("output", [320_u32, 180_u32]));
+        let key_1 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE);
+        let key_2 = diff_request_key(source_key, [64, 64], [1, 0], DiffMetricMode::AE);
+        let key_3 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::SE);
+        assert_ne!(key_1, key_2);
+        assert_ne!(key_1, key_3);
+    }
+
+    #[test]
+    fn clipping_request_key_changes_with_toggle_and_thresholds() {
+        let source_key = hash_key(&("output", [1920_u32, 1080_u32]));
+        let base_settings = ClippingSettings::default();
+        let base = clipping_request_key(source_key, base_settings, true);
+        let toggled = clipping_request_key(source_key, base_settings, false);
+        let changed_threshold = clipping_request_key(
+            source_key,
+            ClippingSettings {
+                shadow_threshold: 0.05,
+                ..base_settings
+            },
+            true,
+        );
+        assert_ne!(base, toggled);
+        assert_ne!(base, changed_threshold);
     }
 }
