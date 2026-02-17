@@ -1,9 +1,9 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-21T07:11:22.302Z",
-    "modified": "2026-01-21T07:11:22.302Z"
+    "created": "2026-02-17T13:48:17.433Z",
+    "modified": "2026-02-17T13:48:17.433Z"
   },
   "nodes": [
     {
@@ -218,6 +218,20 @@
         "y": 200,
         "z": 0
       }
+    },
+    {
+      "id": "Vector2Input_18",
+      "type": "Vector2Input",
+      "position": {
+        "x": -600,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 100,
+        "y": 100
+      }
     }
   ],
   "connections": [
@@ -330,9 +344,22 @@
         "nodeId": "TransformGeometry_11",
         "portId": "translate"
       }
+    },
+    {
+      "id": "edge_18",
+      "from": {
+        "nodeId": "Vector2Input_18",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "size"
+      }
     }
   ],
   "outputs": {
     "composite": "Composite_7"
-  }
+  },
+  "assets": {},
+  "groups": []
 }

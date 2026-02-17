@@ -1,9 +1,9 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-22T10:59:36.173Z",
-    "modified": "2026-01-22T10:59:36.173Z"
+    "created": "2026-02-17T13:43:37.394Z",
+    "modified": "2026-02-17T13:43:37.394Z"
   },
   "nodes": [
     {
@@ -453,6 +453,34 @@
       "params": {
         "value": -0.2
       }
+    },
+    {
+      "id": "Vector2Input_40",
+      "type": "Vector2Input",
+      "position": {
+        "x": -680,
+        "y": -640
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 1,
+        "y": 1
+      }
+    },
+    {
+      "id": "Vector2Input_41",
+      "type": "Vector2Input",
+      "position": {
+        "x": -680,
+        "y": -540
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 0,
+        "y": 0
+      }
     }
   ],
   "connections": [
@@ -686,9 +714,33 @@
         "nodeId": "RenderPass_4",
         "portId": "material"
       }
+    },
+    {
+      "id": "edge_65",
+      "from": {
+        "nodeId": "Vector2Input_40",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_66",
+      "from": {
+        "nodeId": "Vector2Input_41",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "position"
+      }
     }
   ],
   "outputs": {
     "composite": "Composite_7"
-  }
+  },
+  "assets": {},
+  "groups": []
 }

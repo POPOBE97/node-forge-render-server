@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "metadata": {
     "name": "My Scene",
     "created": "2026-01-21T09:05:40.120Z",
@@ -168,5 +168,6 @@
   ],
   "outputs": {
     "composite": "Composite_2"
-  }
+  },
+  "assets": {}
 }

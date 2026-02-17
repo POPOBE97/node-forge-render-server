@@ -1,9 +1,9 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-21T07:10:24.370Z",
-    "modified": "2026-01-21T07:10:24.370Z"
+    "created": "2026-02-17T13:26:20.369Z",
+    "modified": "2026-02-17T13:26:20.369Z"
   },
   "nodes": [
     {
@@ -986,6 +986,20 @@
           "type": "vector2"
         }
       ]
+    },
+    {
+      "id": "Vector2Input_3",
+      "type": "Vector2Input",
+      "position": {
+        "x": 600,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 200,
+        "y": 200
+      }
     }
   ],
   "connections": [
@@ -1417,9 +1431,22 @@
         "nodeId": "foreground_pass",
         "portId": "geometry"
       }
+    },
+    {
+      "id": "edge_42",
+      "from": {
+        "nodeId": "Vector2Input_3",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "rect_geometry",
+        "portId": "size"
+      }
     }
   ],
   "outputs": {
     "composite": "composite_1"
-  }
+  },
+  "assets": {},
+  "groups": []
 }
