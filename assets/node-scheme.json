@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-12T19:56:57.342Z",
+  "generatedAt": "2026-02-17T09:55:41.276Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -23,11 +23,13 @@
     "File",
     "FloatInput",
     "FragCoord",
+    "GLTFGeometry",
     "GeoFragcoord",
     "GeoSize",
     "GeometryFromFile",
     "GeometryPrimitive",
     "GlassMaterial",
+    "GradientBlur",
     "GradientTexture",
     "GroupInstance",
     "GuassianBlurPass",
@@ -1196,6 +1198,49 @@
       }
     },
     {
+      "type": "GLTFGeometry",
+      "label": "GLTF Geometry",
+      "category": "Geometry",
+      "description": "Load geometry from a glTF/glb file",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "geometry",
+          "name": "Geometry",
+          "type": "geometry"
+        }
+      ],
+      "defaultParams": {
+        "path": ""
+      }
+    },
+    {
+      "type": "GradientBlur",
+      "label": "Gradient Blur",
+      "category": "Filter",
+      "description": "Apply gradient-based blur to a source pass using a mask material",
+      "inputs": [
+        {
+          "id": "source",
+          "name": "Source",
+          "type": "pass"
+        },
+        {
+          "id": "mask",
+          "name": "Mask",
+          "type": "material"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
       "type": "GradientTexture",
       "label": "Gradient Texture",
       "category": "Texture",
@@ -1330,7 +1375,7 @@
       "type": "ImageFile",
       "label": "Image File",
       "category": "Input",
-      "description": "Embed a single image file (base64 data URL) into the scene",
+      "description": "Embed a single image file into the scene (stored as asset in archive)",
       "inputs": [],
       "outputs": [
         {
@@ -1340,8 +1385,7 @@
         }
       ],
       "defaultParams": {
-        "dataUrl": "",
-        "path": ""
+        "assetId": ""
       }
     },
     {
@@ -1374,7 +1418,7 @@
         }
       ],
       "defaultParams": {
-        "path": "",
+        "assetId": "",
         "interpolation": "linear",
         "extension": "repeat",
         "addressModeU": "repeat",
@@ -2023,7 +2067,7 @@
       "inputs": [],
       "outputs": [],
       "defaultParams": {
-        "path": "",
+        "assetId": "",
         "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
