@@ -1271,7 +1271,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     if let Some(conn) = incoming_connection(&prepared.scene, &layer_id, "source") {
                         if let Some(src_node) = nodes_by_id.get(&conn.from.node_id) {
                             if src_node.node_type == "ImageTexture" {
-                                if let Some(dims) = crate::renderer::shader_space::image_node_dimensions(src_node) {
+                                if let Some(dims) = crate::renderer::shader_space::image_node_dimensions(src_node, None) {
                                     res = dims;
                                 }
                             }

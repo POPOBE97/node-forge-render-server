@@ -86,6 +86,7 @@ pub(crate) fn prepare_scene_with_report(
         outputs: expanded.outputs.clone(),
         // Groups are not needed after expansion; keep for completeness.
         groups: expanded.groups.clone(),
+        assets: expanded.assets.clone(),
     };
 
     // Coerce primitive shader values into passes by synthesizing a fullscreen RenderPass.

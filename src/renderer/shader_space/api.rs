@@ -4,7 +4,11 @@ use anyhow::Result;
 use rust_wgpu_fiber::shader_space::ShaderSpace;
 use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 
-use crate::{dsl::SceneDSL, renderer::types::PassBindings};
+use crate::{
+    asset_store::AssetStore,
+    dsl::SceneDSL,
+    renderer::types::PassBindings,
+};
 
 use super::{assembler, error_space};
 
@@ -39,6 +43,7 @@ pub struct ShaderSpaceBuilder {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     options: ShaderSpaceBuildOptions,
+    asset_store: Option<AssetStore>,
 }
 
 impl ShaderSpaceBuilder {
@@ -47,11 +52,17 @@ impl ShaderSpaceBuilder {
             device,
             queue,
             options: ShaderSpaceBuildOptions::default(),
+            asset_store: None,
         }
     }
 
     pub fn with_options(mut self, options: ShaderSpaceBuildOptions) -> Self {
         self.options = options;
+        self
+    }
+
+    pub fn with_asset_store(mut self, store: AssetStore) -> Self {
+        self.asset_store = Some(store);
         self
     }
 
@@ -65,6 +76,7 @@ impl ShaderSpaceBuilder {
                 self.queue,
                 enable_display_encode,
                 self.options.debug_dump_wgsl_dir.clone(),
+                self.asset_store.as_ref(),
             )?;
 
         let present_output_texture = if enable_display_encode {

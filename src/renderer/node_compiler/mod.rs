@@ -357,6 +357,7 @@ pub mod test_utils {
             connections,
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         }
     }
 
@@ -377,6 +378,7 @@ pub mod test_utils {
             connections,
             outputs: Some(outputs),
             groups: Vec::new(),
+            assets: Default::default(),
         }
     }
 

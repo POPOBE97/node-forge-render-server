@@ -552,6 +552,7 @@ mod tests {
                 "MathAdd_1".to_string(),
             )])),
             groups: Vec::new(),
+            assets: Default::default(),
         }
     }
 
@@ -590,6 +591,7 @@ mod tests {
             connections: Vec::new(),
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         };
 
         let schema = GraphSchema {
@@ -648,6 +650,7 @@ mod tests {
             connections: Vec::new(),
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         };
 
         let pass = PassBindings {

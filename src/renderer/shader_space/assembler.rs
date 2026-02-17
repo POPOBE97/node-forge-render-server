@@ -65,7 +65,28 @@ use crate::{
     },
 };
 
-pub(crate) fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]> {
+pub(crate) fn image_node_dimensions(
+    node: &crate::dsl::Node,
+    asset_store: Option<&crate::asset_store::AssetStore>,
+) -> Option<[u32; 2]> {
+    // Prefer assetId → asset_store lookup.
+    if let Some(asset_id) = node
+        .params
+        .get("assetId")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+    {
+        if let Some(store) = asset_store {
+            if let Some(data) = store.get(asset_id) {
+                let reader = image::ImageReader::new(Cursor::new(&data.bytes))
+                    .with_guessed_format()
+                    .ok()?;
+                return reader.into_dimensions().ok().map(|(w, h)| [w, h]);
+            }
+        }
+    }
+
+    // Legacy fallback: dataUrl.
     let data_url = node
         .params
         .get("dataUrl")
@@ -80,6 +101,7 @@ pub(crate) fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]>
         return reader.into_dimensions().ok().map(|(w, h)| [w, h]);
     }
 
+    // Legacy fallback: file path.
     let rel_base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = node.params.get("path").and_then(|v| v.as_str());
     let p = path.filter(|s| !s.trim().is_empty())?;
@@ -1351,6 +1373,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     queue: Arc<wgpu::Queue>,
     enable_display_encode: bool,
     debug_dump_wgsl_dir: Option<PathBuf>,
+    asset_store: Option<&crate::asset_store::AssetStore>,
 ) -> Result<(
     ShaderSpace,
     [u32; 2],
@@ -2210,7 +2233,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 )
                                 .is_none()
                             {
-                                if let Some(dims) = image_node_dimensions(src_node) {
+                                if let Some(dims) = image_node_dimensions(src_node, asset_store) {
                                     base_resolution = dims;
                                 }
                                 if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
@@ -2732,7 +2755,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     // (B) Direct ImageTexture.
                     if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
                         if src_node.node_type == "ImageTexture" {
-                            if let Some(dims) = image_node_dimensions(src_node) {
+                            if let Some(dims) = image_node_dimensions(src_node, asset_store) {
                                 gb_src_resolution = dims;
                             }
                         }
@@ -3758,13 +3781,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 );
             }
 
-            // Prefer inlined data URL (data:image/...;base64,...) if present.
-            // Fallback to file path lookup.
-            let data_url = node
+            // Load image: prefer assetId → asset_store, then legacy dataUrl, then legacy path.
+            let asset_id = node
                 .params
-                .get("dataUrl")
+                .get("assetId")
                 .and_then(|v| v.as_str())
-                .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+                .filter(|s| !s.trim().is_empty());
 
             let encoder_space = node
                 .params
@@ -3779,16 +3801,37 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 other => bail!("unsupported ImageTexture.encoderSpace: {other}"),
             };
 
-            let image = match data_url {
-                Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
-                    Ok(img) => ensure_rgba8(Arc::new(img)),
-                    Err(e) => bail!(
-                        "ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"
-                    ),
-                },
-                _ => {
-                    let path = node.params.get("path").and_then(|v| v.as_str());
-                    ensure_rgba8(load_image_from_path(&rel_base, path, node_id)?)
+            let image = if let Some(aid) = asset_id {
+                if let Some(store) = asset_store {
+                    match store.load_image(aid)? {
+                        Some(img) => ensure_rgba8(Arc::new(img)),
+                        None => bail!(
+                            "ImageTexture node '{node_id}': asset '{aid}' not found in asset store"
+                        ),
+                    }
+                } else {
+                    bail!(
+                        "ImageTexture node '{node_id}': has assetId '{aid}' but no asset store provided"
+                    )
+                }
+            } else {
+                // Legacy fallback: dataUrl, then path.
+                let data_url = node
+                    .params
+                    .get("dataUrl")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+                match data_url {
+                    Some(s) if !s.trim().is_empty() => match load_image_from_data_url(s) {
+                        Ok(img) => ensure_rgba8(Arc::new(img)),
+                        Err(e) => bail!(
+                            "ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"
+                        ),
+                    },
+                    _ => {
+                        let path = node.params.get("path").and_then(|v| v.as_str());
+                        ensure_rgba8(load_image_from_path(&rel_base, path, node_id)?)
+                    }
                 }
             };
 
@@ -4387,6 +4430,7 @@ mod tests {
                 String::from("out"),
             )])),
             groups: Vec::new(),
+            assets: Default::default(),
         };
 
         let nodes_by_id: HashMap<String, Node> = scene

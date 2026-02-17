@@ -6,10 +6,26 @@ use crate::dsl::{Node, SceneDSL};
 
 pub(crate) fn copy_image_file_params_into_image_texture(
     dst: &mut Node,
+    asset_id: Option<serde_json::Value>,
     data_url: Option<serde_json::Value>,
     path: Option<serde_json::Value>,
 ) {
-    // Minimal contract: ImageFile provides {dataUrl, path}; ImageTexture consumes those as params.
+    // Prefer assetId (new protocol). Legacy: {dataUrl, path}.
+    if let Some(v) = asset_id {
+        if v.as_str().is_some_and(|s| !s.trim().is_empty()) {
+            let already = dst
+                .params
+                .get("assetId")
+                .and_then(|x| x.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if !already {
+                dst.params.insert("assetId".to_string(), v);
+            }
+            return; // assetId is authoritative; skip legacy params.
+        }
+    }
+
+    // Legacy fallbacks.
     if let Some(v) = data_url {
         if v.as_str().is_some_and(|s| !s.trim().is_empty()) {
             let already = dst
@@ -39,7 +55,7 @@ pub(crate) fn copy_image_file_params_into_image_texture(
 pub(crate) fn inline_image_file_connections_into_image_textures(
     scene: &mut SceneDSL,
 ) -> Result<usize> {
-    // ImageTexture currently loads its image from params.{dataUrl,path} at runtime.
+    // ImageTexture currently loads its image from params.{assetId,dataUrl,path} at runtime.
     // But the node scheme models image flow as a connection: ImageFile.image -> ImageTexture.image.
     // Inline that connection by copying the ImageFile params into the connected ImageTexture.
     //
@@ -52,8 +68,12 @@ pub(crate) fn inline_image_file_connections_into_image_textures(
         .collect();
 
     // Collect destinations we need to patch without holding overlapping borrows.
-    let mut patches: Vec<(String, Option<serde_json::Value>, Option<serde_json::Value>)> =
-        Vec::new();
+    let mut patches: Vec<(
+        String,
+        Option<serde_json::Value>,
+        Option<serde_json::Value>,
+        Option<serde_json::Value>,
+    )> = Vec::new();
     for c in &scene.connections {
         if c.to.port_id != "image" {
             continue;
@@ -81,14 +101,14 @@ pub(crate) fn inline_image_file_connections_into_image_textures(
             );
         }
 
-        // Note: prefer dataUrl if present; but copy both so runtime can fallback.
+        let asset_id = src.params.get("assetId").cloned();
         let data_url = src.params.get("dataUrl").cloned();
         let path = src.params.get("path").cloned();
-        patches.push((dst.id.clone(), data_url, path));
+        patches.push((dst.id.clone(), asset_id, data_url, path));
     }
 
     // Apply patches to the real scene.
-    for (dst_id, data_url, path) in &patches {
+    for (dst_id, asset_id, data_url, path) in &patches {
         let Some(dst) = scene.nodes.iter_mut().find(|n| n.id == *dst_id) else {
             bail!(
                 "missing ImageTexture node '{}' when inlining ImageFile",
@@ -102,7 +122,12 @@ pub(crate) fn inline_image_file_connections_into_image_textures(
                 dst.node_type
             );
         }
-        copy_image_file_params_into_image_texture(dst, data_url.clone(), path.clone());
+        copy_image_file_params_into_image_texture(
+            dst,
+            asset_id.clone(),
+            data_url.clone(),
+            path.clone(),
+        );
     }
 
     Ok(patches.len())

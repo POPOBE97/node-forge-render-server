@@ -334,6 +334,7 @@ mod tests {
             connections,
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         }
     }
 

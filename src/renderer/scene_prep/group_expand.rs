@@ -216,7 +216,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 })?;
 
                 // Read the source node first (immutable borrow), then mutate the destination.
-                let (data_url, path) = {
+                let (asset_id, data_url, path) = {
                     let src_node = scene
                         .nodes
                         .iter()
@@ -233,6 +233,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     }
 
                     (
+                        src_node.params.get("assetId").cloned(),
                         src_node.params.get("dataUrl").cloned(),
                         src_node.params.get("path").cloned(),
                     )
@@ -256,7 +257,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     );
                 }
 
-                copy_image_file_params_into_image_texture(dst, data_url, path);
+                copy_image_file_params_into_image_texture(dst, asset_id, data_url, path);
 
                 any = true;
             } else {
