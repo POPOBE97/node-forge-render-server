@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use node_forge_render_server::asset_store::AssetStore;
 use node_forge_render_server::renderer::ShaderSpaceBuildOptions;
 use node_forge_render_server::renderer::validation;
 use node_forge_render_server::{dsl, renderer};
@@ -8,7 +9,7 @@ use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 #[derive(Clone, Debug)]
 struct Case {
     name: &'static str,
-    scene_json: &'static str,
+    scene_source: &'static str,
     baseline_png: Option<&'static str>,
     expected_image_texture: Option<&'static str>,
 }
@@ -154,26 +155,106 @@ fn first_pixel_mismatch(
     None
 }
 
+/// Load an image from a scene node, trying assetId → asset_store, then dataUrl, then path.
+fn load_image_from_node(
+    node: &dsl::Node,
+    case_dir: &Path,
+    asset_store: &AssetStore,
+    case_name: &str,
+) -> image::DynamicImage {
+    // 1) Try assetId → asset_store
+    if let Some(asset_id) = node.params.get("assetId").and_then(|v| v.as_str()) {
+        if !asset_id.is_empty() {
+            if let Some(img) = asset_store.load_image(asset_id).unwrap_or_else(|e| {
+                panic!(
+                    "case {case_name}: failed to load asset {asset_id} for node {}: {e}",
+                    node.id
+                )
+            }) {
+                return img;
+            }
+        }
+    }
+    // 2) Fallback: dataUrl
+    let data_url = node
+        .params
+        .get("dataUrl")
+        .and_then(|v| v.as_str())
+        .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
+    if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
+        return node_forge_render_server::renderer::utils::load_image_from_data_url(s)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "case {case_name}: failed to decode dataUrl for node {}: {e}",
+                    node.id
+                )
+            });
+    }
+    // 3) Fallback: path
+    let path = node
+        .params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| {
+            panic!(
+                "case {case_name}: node {} has no assetId/dataUrl/path",
+                node.id
+            )
+        });
+    let cand = case_dir.join(path);
+    image::open(&cand).unwrap_or_else(|e| {
+        panic!(
+            "case {case_name}: failed to open image {}: {e}",
+            cand.display()
+        )
+    })
+}
+
 fn run_case(case: &Case) {
     let cases_root = cases_root();
     let case_dir = cases_root.join(case.name);
 
-    let scene_json = cases_root.join(case.scene_json);
+    let scene_source = cases_root.join(case.scene_source);
     assert!(
-        scene_json.exists(),
-        "case {}: missing scene json at {}",
+        scene_source.exists(),
+        "case {}: missing scene source at {}",
         case.name,
-        scene_json.display()
+        scene_source.display()
     );
 
-    // (1) Base test: generate WGSL and ensure it validates.
-    let scene = dsl::load_scene_from_path(&scene_json).unwrap_or_else(|e| {
-        panic!(
-            "case {}: failed to load scene {}: {e}",
-            case.name,
-            scene_json.display()
+    // Load scene + assets based on source type (.nforge or .json)
+    let (scene, asset_store) = if scene_source.extension().is_some_and(|e| e == "nforge") {
+        let (s, store) =
+            node_forge_render_server::asset_store::load_from_nforge(&scene_source)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "case {}: failed to load .nforge {}: {e}",
+                        case.name,
+                        scene_source.display()
+                    )
+                });
+        (s, store)
+    } else {
+        let s = dsl::load_scene_from_path(&scene_source).unwrap_or_else(|e| {
+            panic!(
+                "case {}: failed to load scene {}: {e}",
+                case.name,
+                scene_source.display()
+            )
+        });
+        // Load assets from the scene directory (assets/ subfolder via scene.assets manifest)
+        let store = node_forge_render_server::asset_store::load_from_scene_dir(
+            &s,
+            scene_source.parent().unwrap_or_else(|| Path::new(".")),
         )
-    });
+        .unwrap_or_else(|e| {
+            panic!(
+                "case {}: failed to load assets from scene dir: {e}",
+                case.name
+            )
+        });
+        (s, store)
+    };
 
     let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
         .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
@@ -371,6 +452,7 @@ fn run_case(case: &Case) {
         let build =
             renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
                 .with_options(build_options)
+                .with_asset_store(asset_store.clone())
                 .build(&scene)
                 .unwrap_or_else(|e| {
                     panic!("case {}: failed to build shader space: {e:#}", case.name)
@@ -460,7 +542,6 @@ fn run_case(case: &Case) {
                 let mut premultiplied_actual = save_and_load("node_7", &premultiply_out);
                 image::imageops::flip_vertical_in_place(&mut premultiplied_actual);
 
-                // Keep strict validation for this golden case.
                 let node = scene
                     .nodes
                     .iter()
@@ -468,39 +549,7 @@ fn run_case(case: &Case) {
                     .unwrap_or_else(|| {
                         panic!("case {}: missing ImageTexture node node_7", case.name)
                     });
-                let data_url = node
-                    .params
-                    .get("dataUrl")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
-                let expected_img = if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
-                    node_forge_render_server::renderer::utils::load_image_from_data_url(s)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "case {}: failed to decode expected image dataUrl for premultiply: {e}",
-                                case.name
-                            )
-                        })
-                } else {
-                    let path = node
-                        .params
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "case {}: ImageTexture node_7 has no dataUrl/path",
-                                case.name
-                            )
-                        });
-                    let cand = case_dir.join(path);
-                    image::open(&cand).unwrap_or_else(|e| {
-                        panic!(
-                            "case {}: failed to open expected image {}: {e}",
-                            case.name,
-                            cand.display()
-                        )
-                    })
-                };
+                let expected_img = load_image_from_node(node, &case_dir, &asset_store, case.name);
                 let mut premultiplied_expected = expected_img.to_rgba8();
                 for p in premultiplied_expected.pixels_mut() {
                     let a = p.0[3] as u16;
@@ -647,40 +696,9 @@ fn run_case(case: &Case) {
             case.name
         );
 
-        let data_url = node
-            .params
-            .get("dataUrl")
-            .and_then(|v| v.as_str())
-            .or_else(|| node.params.get("data_url").and_then(|v| v.as_str()));
-        let expected_img = if let Some(s) = data_url.filter(|s| !s.trim().is_empty()) {
-            node_forge_render_server::renderer::utils::load_image_from_data_url(s).unwrap_or_else(
-                |e| {
-                    panic!(
-                        "case {}: failed to decode expected image dataUrl: {e}",
-                        case.name
-                    )
-                },
-            )
-        } else {
-            let path = node
-                .params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "case {}: expected image node has no dataUrl/path",
-                        case.name
-                    )
-                });
-            let cand = case_dir.join(path);
-            image::open(&cand).unwrap_or_else(|e| {
-                panic!(
-                    "case {}: failed to open expected image {}: {e}",
-                    case.name,
-                    cand.display()
-                )
-            })
-        };
+        let data_url = None::<&str>; // legacy — kept for reference; actual loading below
+        let _ = data_url;
+        let expected_img = load_image_from_node(node, &case_dir, &asset_store, case.name);
 
         let mut expected = expected_img.to_rgba8();
 

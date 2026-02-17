@@ -45,6 +45,7 @@ fn base_scene() -> SceneDSL {
         connections: vec![conn("c1", "a", "b")],
         outputs: Some(HashMap::from([(String::from("main"), String::from("b"))])),
         groups: Vec::new(),
+        assets: Default::default(),
     }
 }
 
@@ -68,6 +69,7 @@ fn scene_update_replaces_cache() {
         connections: vec![],
         outputs: None,
         groups: Vec::new(),
+        assets: Default::default(),
     };
 
     apply_scene_update(&mut cache, &scene2);
