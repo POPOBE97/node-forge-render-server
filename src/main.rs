@@ -5,13 +5,14 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use node_forge_render_server::{app, dsl, renderer, ws};
+use node_forge_render_server::{app, asset_store, dsl, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
 #[derive(Debug, Default, Clone)]
 struct Cli {
     headless: bool,
     dsl_json: Option<PathBuf>,
+    nforge: Option<PathBuf>,
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
     render_to_file: bool,
@@ -31,6 +32,13 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                     return Err(anyhow!("missing value for --dsl-json"));
                 };
                 cli.dsl_json = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--nforge" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --nforge"));
+                };
+                cli.nforge = Some(PathBuf::from(v));
                 i += 2;
             }
             "--outputdir" | "--output-dir" => {
@@ -53,7 +61,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --render-to-file, --output <abs/path/to/output.png>, --outputdir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --output <abs/path/to/output.png>, --outputdir <dir>)"
                 ));
             }
         }
@@ -119,6 +127,12 @@ fn run_headless_json_render_once(
     dsl::normalize_scene_defaults(&mut scene)
         .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
 
+    // Load assets from the scene directory if the scene has an assets manifest.
+    let base_dir = dsl_json_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let store = asset_store::load_from_scene_dir(&scene, base_dir)?;
+
     let out_path = if render_to_file {
         let out =
             output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
@@ -144,7 +158,45 @@ fn run_headless_json_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    renderer::render_scene_to_png_headless(&scene, &out_path)?;
+    renderer::render_scene_to_png_headless(&scene, &out_path, Some(&store))?;
+    println!("[headless] saved: {}", out_path.display());
+    Ok(())
+}
+
+fn run_headless_nforge_render_once(
+    nforge_path: &std::path::Path,
+    output_dir: Option<PathBuf>,
+    output: Option<PathBuf>,
+    render_to_file: bool,
+) -> Result<()> {
+    let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
+
+    let out_path = if render_to_file {
+        let out =
+            output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
+        validate_absolute_output_path(&out)?;
+        out
+    } else {
+        let rt = dsl::file_render_target(&scene)?
+            .ok_or_else(|| anyhow!("--nforge headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+
+        if let Some(out) = output {
+            validate_absolute_output_path(&out)?;
+            out
+        } else {
+            let output_dir = output_dir.unwrap_or_else(|| {
+                nforge_path
+                    .parent()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| PathBuf::from("."))
+            });
+            resolve_file_output_path_under(&output_dir, &rt)
+        }
+    };
+
+    ensure_parent_dir_exists(&out_path)?;
+
+    renderer::render_scene_to_png_headless(&scene, &out_path, Some(&store))?;
     println!("[headless] saved: {}", out_path.display());
     Ok(())
 }
@@ -162,8 +214,9 @@ fn run_headless_ws_render_once(
 
     let last_good = Arc::new(Mutex::new(None));
     let hub = ws::WsHub::default();
+    let asset_store = asset_store::AssetStore::new();
     // Bind errors must be fatal in headless mode; otherwise we'd block forever waiting for DSL.
-    let _ws_handle = ws::spawn_ws_server(addr, scene_tx, drop_rx, hub.clone(), last_good)?;
+    let _ws_handle = ws::spawn_ws_server(addr, scene_tx, drop_rx, hub.clone(), last_good, asset_store.clone())?;
 
     // Wait for a renderable SceneDSL update, render, reply, then exit.
     loop {
@@ -197,7 +250,7 @@ fn run_headless_ws_render_once(
 
                 ensure_parent_dir_exists(&out_path)?;
 
-                let result = renderer::render_scene_to_png_headless(&scene, &out_path);
+                let result = renderer::render_scene_to_png_headless(&scene, &out_path, None);
                 match result {
                     Ok(()) => {
                         let msg = node_forge_render_server::protocol::WSMessage {
@@ -370,6 +423,14 @@ fn main() -> Result<()> {
 
     // Script-friendly mode: pass DSL JSON directly.
     if cli.headless {
+        if let Some(nforge_path) = cli.nforge.as_deref() {
+            return run_headless_nforge_render_once(
+                nforge_path,
+                cli.output_dir,
+                cli.output,
+                cli.render_to_file,
+            );
+        }
         if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
             return run_headless_json_render_once(
                 dsl_json_path,
@@ -500,12 +561,14 @@ fn main() -> Result<()> {
 
             let last_good = Arc::new(Mutex::new(last_good_initial));
             let hub = ws::WsHub::default();
+            let asset_store = asset_store::AssetStore::new();
             if let Err(e) = ws::spawn_ws_server(
                 "0.0.0.0:8080",
                 scene_tx,
                 drop_rx,
                 hub.clone(),
                 last_good.clone(),
+                asset_store.clone(),
             ) {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
@@ -523,6 +586,7 @@ fn main() -> Result<()> {
                 last_good,
                 uniform_scene: None,
                 last_pipeline_signature,
+                asset_store,
             })))
         }),
     )

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod asset_store;
 pub mod color;
 pub mod dsl;
 pub mod graph;
