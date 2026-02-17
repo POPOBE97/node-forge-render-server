@@ -18,9 +18,7 @@ use crate::{
     dsl::{Node, SceneDSL, incoming_connection},
     renderer::{
         node_compiler::compile_material_expr,
-        types::{
-            GraphBindingKind, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle,
-        },
+        types::{GraphBindingKind, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
         utils::{coerce_to_type, to_vec4_color},
         wgsl::{build_fullscreen_textured_bundle, graph_inputs_wgsl_decl, merge_graph_input_kinds},
     },
@@ -51,12 +49,7 @@ pub fn build_gradient_blur_source_wgsl_bundle(
     nodes_by_id: &HashMap<String, Node>,
     gb_node_id: &str,
 ) -> Result<WgslShaderBundle> {
-    build_gradient_blur_source_wgsl_bundle_with_graph_binding(
-        scene,
-        nodes_by_id,
-        gb_node_id,
-        None,
-    )
+    build_gradient_blur_source_wgsl_bundle_with_graph_binding(scene, nodes_by_id, gb_node_id, None)
 }
 
 pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
@@ -229,11 +222,15 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
     assert_eq!(mip_pass_ids.len(), GB_MIP_LEVELS as usize);
 
     // --- 1. Compile the mask expression ----------------------------------
-    let mask_conn = incoming_connection(scene, gb_node_id, "mask")
-        .ok_or_else(|| anyhow::anyhow!("GradientBlur {gb_node_id}: 'mask' input is not connected"))?;
+    let mask_conn = incoming_connection(scene, gb_node_id, "mask").ok_or_else(|| {
+        anyhow::anyhow!("GradientBlur {gb_node_id}: 'mask' input is not connected")
+    })?;
 
     let mask_upstream = nodes_by_id.get(&mask_conn.from.node_id).ok_or_else(|| {
-        anyhow::anyhow!("GradientBlur: mask upstream node not found: {}", mask_conn.from.node_id)
+        anyhow::anyhow!(
+            "GradientBlur: mask upstream node not found: {}",
+            mask_conn.from.node_id
+        )
     })?;
 
     // Validate mask is a material expression, not a pass.
