@@ -2,8 +2,8 @@
   "version": "1.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-10T17:49:34.204Z",
-    "modified": "2026-02-10T17:49:34.204Z"
+    "created": "2026-02-14T18:47:24.180Z",
+    "modified": "2026-02-14T18:47:24.180Z"
   },
   "nodes": [
     {
@@ -484,7 +484,7 @@
       "width": 160,
       "label": "start_y",
       "params": {
-        "value": 0
+        "value": 48
       }
     },
     {
@@ -497,7 +497,7 @@
       "width": 160,
       "label": "end_y",
       "params": {
-        "value": 2496
+        "value": 2400
       }
     },
     {
@@ -685,17 +685,6 @@
       "to": {
         "nodeId": "RenderPass_final",
         "portId": "geometry"
-      }
-    },
-    {
-      "id": "conn_final_comp",
-      "from": {
-        "nodeId": "RenderPass_final",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_84",
-        "portId": "pass"
       }
     },
     {
@@ -927,6 +916,17 @@
       "to": {
         "nodeId": "Rect2DGeometry_final",
         "portId": "size"
+      }
+    },
+    {
+      "id": "edge_48",
+      "from": {
+        "nodeId": "RenderPass_final",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_84",
+        "portId": "pass"
       }
     }
   ],
