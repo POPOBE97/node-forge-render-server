@@ -65,7 +65,7 @@ use crate::{
     },
 };
 
-fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]> {
+pub(crate) fn image_node_dimensions(node: &crate::dsl::Node) -> Option<[u32; 2]> {
     let data_url = node
         .params
         .get("dataUrl")
@@ -917,7 +917,7 @@ fn sampled_pass_node_ids(
     for (node_id, node) in nodes_by_id {
         if !matches!(
             node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample"
+            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
         ) {
             continue;
         }
@@ -982,6 +982,34 @@ fn deps_for_pass_node(
             let source_conn = incoming_connection(scene, pass_node_id, "source")
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
             Ok(vec![source_conn.from.node_id.clone()])
+        }
+        "GradientBlur" => {
+            // GradientBlur reads "source" input (not "pass").
+            let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
+                return Ok(Vec::new());
+            };
+            let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|n| {
+                matches!(
+                    n.node_type.as_str(),
+                    "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
+                )
+            });
+            if source_is_pass {
+                Ok(vec![conn.from.node_id.clone()])
+            } else {
+                // Non-pass source: compile the material expression to find transitive pass deps.
+                let mut ctx = crate::renderer::types::MaterialCompileContext::default();
+                let mut cache = std::collections::HashMap::new();
+                crate::renderer::node_compiler::compile_material_expr(
+                    scene,
+                    nodes_by_id,
+                    &conn.from.node_id,
+                    Some(&conn.from.port_id),
+                    &mut ctx,
+                    &mut cache,
+                )?;
+                Ok(ctx.pass_textures)
+            }
         }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
@@ -2684,6 +2712,526 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     texture_name: output_tex,
                     resolution: [blur_w, blur_h],
                     format: if sampled_pass_ids.contains(layer_id) {
+                        sampled_pass_format
+                    } else {
+                        target_format
+                    },
+                });
+            }
+            "GradientBlur" => {
+                use crate::renderer::wgsl_gradient_blur::*;
+
+                // ---------- resolve source dimensions ----------
+                let mut gb_src_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
+
+                if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
+                    // (A) Upstream pass output.
+                    if let Some(src_spec) = pass_output_registry.get(&src_conn.from.node_id) {
+                        gb_src_resolution = src_spec.resolution;
+                    }
+                    // (B) Direct ImageTexture.
+                    if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+                        if src_node.node_type == "ImageTexture" {
+                            if let Some(dims) = image_node_dimensions(src_node) {
+                                gb_src_resolution = dims;
+                            }
+                        }
+                    }
+                }
+
+                let [padded_w, padded_h] = gradient_blur_padded_size(gb_src_resolution[0], gb_src_resolution[1]);
+                let src_w = gb_src_resolution[0] as f32;
+                let src_h = gb_src_resolution[1] as f32;
+                let pad_w = padded_w as f32;
+                let pad_h = padded_h as f32;
+                let pad_offset_x = (pad_w - src_w) * 0.5;
+                let pad_offset_y = (pad_h - src_h) * 0.5;
+
+                let is_sampled_output = sampled_pass_ids.contains(layer_id);
+
+                // ---------- source pass ----------
+                // Attempt direct bypass (ImageTexture or upstream pass output).
+                let mut initial_source_texture: Option<ResourceName> = None;
+                let mut initial_source_image_node_id: Option<String> = None;
+                let mut initial_source_sampler_kind: Option<SamplerKind> = None;
+
+                if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
+                    // (A) upstream pass output bypass
+                    if let Some(spec) = pass_output_registry.get(&src_conn.from.node_id) {
+                        if spec.format == sampled_pass_format {
+                            initial_source_texture = Some(spec.texture_name.clone());
+                            initial_source_sampler_kind = Some(sampler_kind_for_pass_texture(
+                                &prepared.scene,
+                                &src_conn.from.node_id,
+                            ));
+                        }
+                    }
+                    // (B) direct ImageTexture bypass
+                    if initial_source_texture.is_none() {
+                        if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+                            if src_node.node_type == "ImageTexture"
+                                && src_conn.from.port_id == "color"
+                                && incoming_connection(
+                                    &prepared.scene,
+                                    &src_conn.from.node_id,
+                                    "uv",
+                                )
+                                .is_none()
+                            {
+                                if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
+                                    initial_source_texture = Some(tex);
+                                    initial_source_image_node_id =
+                                        Some(src_conn.from.node_id.clone());
+                                    initial_source_sampler_kind =
+                                        Some(sampler_kind_from_node_params(&src_node.params));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let source_texture: ResourceName = if let Some(existing_tex) =
+                    initial_source_texture
+                {
+                    existing_tex
+                } else {
+                    // Create intermediate source texture.
+                    let src_tex: ResourceName = format!("sys.gb.{layer_id}.src").into();
+                    textures.push(TextureDecl {
+                        name: src_tex.clone(),
+                        size: gb_src_resolution,
+                        format: sampled_pass_format,
+                    });
+
+                    let geo_src: ResourceName = format!("sys.gb.{layer_id}.src.geo").into();
+                    geometry_buffers.push((
+                        geo_src.clone(),
+                        make_fullscreen_geometry(src_w, src_h),
+                    ));
+
+                    let params_src: ResourceName = format!("params.sys.gb.{layer_id}.src").into();
+                    let params_src_val = Params {
+                        target_size: [src_w, src_h],
+                        geo_size: [src_w, src_h],
+                        center: [src_w * 0.5, src_h * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    let mut src_bundle = build_gradient_blur_source_wgsl_bundle(
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_id,
+                    )?;
+                    let mut src_graph_binding: Option<GraphBinding> = None;
+                    let mut src_graph_values: Option<Vec<u8>> = None;
+                    if let Some(schema) = src_bundle.graph_schema.clone() {
+                        let limits = device.limits();
+                        let kind = choose_graph_binding_kind(
+                            schema.size_bytes,
+                            limits.max_uniform_buffer_binding_size as u64,
+                            limits.max_storage_buffer_binding_size as u64,
+                        )?;
+                        if src_bundle.graph_binding_kind != Some(kind) {
+                            src_bundle =
+                                build_gradient_blur_source_wgsl_bundle_with_graph_binding(
+                                    &prepared.scene,
+                                    nodes_by_id,
+                                    layer_id,
+                                    Some(kind),
+                                )?;
+                        }
+                        let schema = src_bundle
+                            .graph_schema
+                            .clone()
+                            .ok_or_else(|| anyhow!("missing gb source graph schema"))?;
+                        let values = pack_graph_values(&prepared.scene, &schema)?;
+                        src_graph_values = Some(values);
+                        src_graph_binding = Some(GraphBinding {
+                            buffer_name: format!("params.sys.gb.{layer_id}.src.graph").into(),
+                            kind,
+                            schema,
+                        });
+                    }
+
+                    let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
+                    let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
+
+                    for id in src_bundle.image_textures.iter() {
+                        let Some(tex) = ids.get(id).cloned() else {
+                            continue;
+                        };
+                        src_texture_bindings.push(PassTextureBinding {
+                            texture: tex,
+                            image_node_id: Some(id.clone()),
+                        });
+                        let kind = nodes_by_id
+                            .get(id)
+                            .map(|n| sampler_kind_from_node_params(&n.params))
+                            .unwrap_or(SamplerKind::LinearClamp);
+                        src_sampler_kinds.push(kind);
+                    }
+
+                    let src_pass_bindings = resolve_pass_texture_bindings(
+                        &pass_output_registry,
+                        &src_bundle.pass_textures,
+                    )?;
+                    for (upstream_pass_id, binding) in
+                        src_bundle.pass_textures.iter().zip(src_pass_bindings)
+                    {
+                        src_texture_bindings.push(binding);
+                        src_sampler_kinds.push(sampler_kind_for_pass_texture(
+                            &prepared.scene,
+                            upstream_pass_id,
+                        ));
+                    }
+
+                    let src_pass_name: ResourceName =
+                        format!("sys.gb.{layer_id}.src.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: src_pass_name.as_str().to_string(),
+                        name: src_pass_name.clone(),
+                        geometry_buffer: geo_src,
+                        instance_buffer: None,
+                        target_texture: src_tex.clone(),
+                        params_buffer: params_src.clone(),
+                        baked_data_parse_buffer: None,
+                        params: params_src_val,
+                        graph_binding: src_graph_binding,
+                        graph_values: src_graph_values,
+                        shader_wgsl: src_bundle.module,
+                        texture_bindings: src_texture_bindings,
+                        sampler_kinds: src_sampler_kinds,
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(src_pass_name);
+                    src_tex
+                };
+
+                // ---------- pad pass ----------
+                let pad_tex: ResourceName = format!("sys.gb.{layer_id}.pad").into();
+                textures.push(TextureDecl {
+                    name: pad_tex.clone(),
+                    size: [padded_w, padded_h],
+                    format: sampled_pass_format,
+                });
+
+                let pad_geo: ResourceName = format!("sys.gb.{layer_id}.pad.geo").into();
+                geometry_buffers.push((
+                    pad_geo.clone(),
+                    make_fullscreen_geometry(pad_w, pad_h),
+                ));
+
+                let params_pad: ResourceName = format!("params.sys.gb.{layer_id}.pad").into();
+                let params_pad_val = Params {
+                    target_size: [pad_w, pad_h],
+                    geo_size: [pad_w, pad_h],
+                    center: [pad_w * 0.5, pad_h * 0.5],
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 0.0],
+                };
+
+                let pad_bundle =
+                    build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
+
+                let pad_pass_name: ResourceName =
+                    format!("sys.gb.{layer_id}.pad.pass").into();
+                render_pass_specs.push(RenderPassSpec {
+                    pass_id: pad_pass_name.as_str().to_string(),
+                    name: pad_pass_name.clone(),
+                    geometry_buffer: pad_geo,
+                    instance_buffer: None,
+                    target_texture: pad_tex.clone(),
+                    params_buffer: params_pad,
+                    baked_data_parse_buffer: None,
+                    params: params_pad_val,
+                    graph_binding: None,
+                    graph_values: None,
+                    shader_wgsl: pad_bundle.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: source_texture.clone(),
+                        image_node_id: initial_source_image_node_id.clone(),
+                    }],
+                    // Always use mirror-repeat for the pad pass so the
+                    // padding region reflects the source content.
+                    sampler_kinds: vec![SamplerKind::LinearMirror],
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(pad_pass_name);
+
+                // ---------- mip chain ----------
+                let mip_pass_ids: Vec<String> = (0..GB_MIP_LEVELS)
+                    .map(|i| {
+                        if i == 0 {
+                            format!("sys.gb.{layer_id}.pad")
+                        } else {
+                            format!("sys.gb.{layer_id}.mip{i}")
+                        }
+                    })
+                    .collect();
+
+                let mut prev_mip_tex = pad_tex.clone();
+                let mut cur_mip_w = padded_w;
+                let mut cur_mip_h = padded_h;
+
+                for i in 1..GB_MIP_LEVELS {
+                    cur_mip_w = clamp_min_1(cur_mip_w / 2);
+                    cur_mip_h = clamp_min_1(cur_mip_h / 2);
+                    let mip_tex: ResourceName =
+                        format!("sys.gb.{layer_id}.mip{i}").into();
+                    textures.push(TextureDecl {
+                        name: mip_tex.clone(),
+                        size: [cur_mip_w, cur_mip_h],
+                        format: sampled_pass_format,
+                    });
+
+                    let mip_geo: ResourceName =
+                        format!("sys.gb.{layer_id}.mip{i}.geo").into();
+                    geometry_buffers.push((
+                        mip_geo.clone(),
+                        make_fullscreen_geometry(cur_mip_w as f32, cur_mip_h as f32),
+                    ));
+
+                    let params_mip: ResourceName =
+                        format!("params.sys.gb.{layer_id}.mip{i}").into();
+                    let params_mip_val = Params {
+                        target_size: [cur_mip_w as f32, cur_mip_h as f32],
+                        geo_size: [cur_mip_w as f32, cur_mip_h as f32],
+                        center: [cur_mip_w as f32 * 0.5, cur_mip_h as f32 * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    let ds_bundle = crate::renderer::wgsl::build_downsample_pass_wgsl_bundle(
+                        &gradient_blur_cross_kernel(),
+                    )?;
+
+                    let mip_pass_name: ResourceName =
+                        format!("sys.gb.{layer_id}.mip{i}.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: mip_pass_name.as_str().to_string(),
+                        name: mip_pass_name.clone(),
+                        geometry_buffer: mip_geo,
+                        instance_buffer: None,
+                        target_texture: mip_tex.clone(),
+                        params_buffer: params_mip,
+                        baked_data_parse_buffer: None,
+                        params: params_mip_val,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: ds_bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: prev_mip_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    });
+                    composite_passes.push(mip_pass_name);
+                    prev_mip_tex = mip_tex;
+                }
+
+                // ---------- register mip pass outputs ----------
+                // Register each mip texture so the composite pass can resolve them.
+                for (i, mip_id) in mip_pass_ids.iter().enumerate() {
+                    let mip_w = clamp_min_1(padded_w >> i);
+                    let mip_h = clamp_min_1(padded_h >> i);
+                    let tex_name: ResourceName = mip_id.clone().into();
+                    pass_output_registry.register(PassOutputSpec {
+                        node_id: mip_id.clone(),
+                        texture_name: tex_name,
+                        resolution: [mip_w, mip_h],
+                        format: sampled_pass_format,
+                    });
+                }
+
+                // ---------- composite/final pass ----------
+                let output_tex: ResourceName = if is_sampled_output {
+                    let out: ResourceName = format!("sys.gb.{layer_id}.out").into();
+                    textures.push(TextureDecl {
+                        name: out.clone(),
+                        size: gb_src_resolution,
+                        format: sampled_pass_format,
+                    });
+                    out
+                } else {
+                    target_texture_name.clone()
+                };
+
+                let final_geo: ResourceName =
+                    format!("sys.gb.{layer_id}.final.geo").into();
+                geometry_buffers.push((
+                    final_geo.clone(),
+                    make_fullscreen_geometry(src_w, src_h),
+                ));
+
+                let params_final: ResourceName =
+                    format!("params.sys.gb.{layer_id}.final").into();
+                let final_target_size = if output_tex == target_texture_name {
+                    [tgt_w, tgt_h]
+                } else {
+                    [src_w, src_h]
+                };
+                let final_center = if output_tex == target_texture_name {
+                    [src_w * 0.5, src_h * 0.5]
+                } else {
+                    [src_w * 0.5, src_h * 0.5]
+                };
+                let params_final_val = Params {
+                    target_size: final_target_size,
+                    geo_size: [src_w, src_h],
+                    center: final_center,
+                    geo_translate: [0.0, 0.0],
+                    geo_scale: [1.0, 1.0],
+                    time: 0.0,
+                    _pad0: 0.0,
+                    color: [0.0, 0.0, 0.0, 0.0],
+                };
+
+                let mut composite_bundle = build_gradient_blur_composite_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_id,
+                    &mip_pass_ids,
+                    [pad_w, pad_h],
+                    [pad_offset_x, pad_offset_y],
+                )?;
+
+                let mut final_graph_binding: Option<GraphBinding> = None;
+                let mut final_graph_values: Option<Vec<u8>> = None;
+                if let Some(schema) = composite_bundle.graph_schema.clone() {
+                    let limits = device.limits();
+                    let kind = choose_graph_binding_kind(
+                        schema.size_bytes,
+                        limits.max_uniform_buffer_binding_size as u64,
+                        limits.max_storage_buffer_binding_size as u64,
+                    )?;
+                    if composite_bundle.graph_binding_kind != Some(kind) {
+                        composite_bundle =
+                            build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_id,
+                                &mip_pass_ids,
+                                [pad_w, pad_h],
+                                [pad_offset_x, pad_offset_y],
+                                Some(kind),
+                            )?;
+                    }
+                    let schema = composite_bundle
+                        .graph_schema
+                        .clone()
+                        .ok_or_else(|| anyhow!("missing gb composite graph schema"))?;
+                    let values = pack_graph_values(&prepared.scene, &schema)?;
+                    final_graph_values = Some(values);
+                    final_graph_binding = Some(GraphBinding {
+                        buffer_name: format!("params.sys.gb.{layer_id}.final.graph").into(),
+                        kind,
+                        schema,
+                    });
+                }
+
+                // Build texture bindings for the composite pass.
+                let mut final_texture_bindings: Vec<PassTextureBinding> = Vec::new();
+                let mut final_sampler_kinds: Vec<SamplerKind> = Vec::new();
+
+                // Image textures from mask expression.
+                for id in composite_bundle.image_textures.iter() {
+                    let Some(tex) = ids.get(id).cloned() else {
+                        continue;
+                    };
+                    final_texture_bindings.push(PassTextureBinding {
+                        texture: tex,
+                        image_node_id: Some(id.clone()),
+                    });
+                    let kind = nodes_by_id
+                        .get(id)
+                        .map(|n| sampler_kind_from_node_params(&n.params))
+                        .unwrap_or(SamplerKind::LinearClamp);
+                    final_sampler_kinds.push(kind);
+                }
+
+                // Pass textures (mip textures + any from mask expression).
+                let final_pass_bindings = resolve_pass_texture_bindings(
+                    &pass_output_registry,
+                    &composite_bundle.pass_textures,
+                )?;
+                for (upstream_pass_id, binding) in
+                    composite_bundle.pass_textures.iter().zip(final_pass_bindings)
+                {
+                    final_texture_bindings.push(binding);
+                    // Use LinearClamp for mip textures (hardware bilinear in shader).
+                    if upstream_pass_id.contains("sys.gb.") {
+                        final_sampler_kinds.push(SamplerKind::LinearClamp);
+                    } else {
+                        final_sampler_kinds.push(sampler_kind_for_pass_texture(
+                            &prepared.scene,
+                            upstream_pass_id,
+                        ));
+                    }
+                }
+
+                let final_blend_state: BlendState = if output_tex == target_texture_name {
+                    let has_explicit_blend = [
+                        "blend_preset",
+                        "blendfunc",
+                        "src_factor",
+                        "dst_factor",
+                        "src_alpha_factor",
+                        "dst_alpha_factor",
+                    ]
+                    .into_iter()
+                    .any(|k| layer_node.params.contains_key(k));
+                    if has_explicit_blend {
+                        crate::renderer::render_plan::parse_render_pass_blend_state(
+                            &layer_node.params,
+                        )?
+                    } else {
+                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?
+                    }
+                } else {
+                    BlendState::REPLACE
+                };
+
+                let final_pass_name: ResourceName =
+                    format!("sys.gb.{layer_id}.final.pass").into();
+                render_pass_specs.push(RenderPassSpec {
+                    pass_id: final_pass_name.as_str().to_string(),
+                    name: final_pass_name.clone(),
+                    geometry_buffer: final_geo,
+                    instance_buffer: None,
+                    target_texture: output_tex.clone(),
+                    params_buffer: params_final,
+                    baked_data_parse_buffer: None,
+                    params: params_final_val,
+                    graph_binding: final_graph_binding,
+                    graph_values: final_graph_values,
+                    shader_wgsl: composite_bundle.module,
+                    texture_bindings: final_texture_bindings,
+                    sampler_kinds: final_sampler_kinds,
+                    blend_state: final_blend_state,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                });
+                composite_passes.push(final_pass_name);
+
+                // Register GradientBlur output for downstream chaining.
+                pass_output_registry.register(PassOutputSpec {
+                    node_id: layer_id.clone(),
+                    texture_name: output_tex,
+                    resolution: gb_src_resolution,
+                    format: if is_sampled_output {
                         sampled_pass_format
                     } else {
                         target_format

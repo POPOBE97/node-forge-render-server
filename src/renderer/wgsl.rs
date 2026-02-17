@@ -516,7 +516,7 @@ impl MaterialCompileContext {
     }
 }
 
-fn merge_graph_input_kinds(
+pub(crate) fn merge_graph_input_kinds(
     material_ctx: &MaterialCompileContext,
     extra: &std::collections::BTreeMap<String, GraphFieldKind>,
 ) -> Option<GraphSchema> {
@@ -531,7 +531,7 @@ fn merge_graph_input_kinds(
     }
 }
 
-fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKind) -> String {
+pub(crate) fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKind) -> String {
     let mut out = String::new();
     out.push_str("\nstruct GraphInputs {\n");
     for field in &schema.fields {
@@ -1261,6 +1261,72 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"),
                     build_upsample_bilinear_bundle(),
                 ));
+            }
+            "GradientBlur" => {
+                use crate::renderer::wgsl_gradient_blur::*;
+
+                // Resolve source dimensions to compute padding.
+                let src_resolution = {
+                    let mut res = prepared.resolution;
+                    if let Some(conn) = incoming_connection(&prepared.scene, &layer_id, "source") {
+                        if let Some(src_node) = nodes_by_id.get(&conn.from.node_id) {
+                            if src_node.node_type == "ImageTexture" {
+                                if let Some(dims) = crate::renderer::shader_space::image_node_dimensions(src_node) {
+                                    res = dims;
+                                }
+                            }
+                        }
+                    }
+                    res
+                };
+                let [padded_w, padded_h] = gradient_blur_padded_size(src_resolution[0], src_resolution[1]);
+                let src_w = src_resolution[0] as f32;
+                let src_h = src_resolution[1] as f32;
+                let pad_w = padded_w as f32;
+                let pad_h = padded_h as f32;
+                let pad_offset = [(pad_w - src_w) * 0.5, (pad_h - src_h) * 0.5];
+
+                // 0) Source pass
+                let src_bundle = build_gradient_blur_source_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    &layer_id,
+                )?;
+                out.push((format!("sys.gb.{layer_id}.src.pass"), src_bundle));
+
+                // 1) Pad pass
+                let pad_bundle =
+                    build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
+                out.push((format!("sys.gb.{layer_id}.pad.pass"), pad_bundle));
+
+                // 2) Mip chain (6 downsample passes)
+                let mip_pass_ids: Vec<String> = (0..GB_MIP_LEVELS)
+                    .map(|i| {
+                        if i == 0 {
+                            format!("sys.gb.{layer_id}.pad")
+                        } else {
+                            format!("sys.gb.{layer_id}.mip{i}")
+                        }
+                    })
+                    .collect();
+
+                for i in 1..GB_MIP_LEVELS {
+                    let ds_bundle = build_downsample_pass_wgsl_bundle(
+                        &gradient_blur_cross_kernel(),
+                    )?;
+                    out.push((format!("sys.gb.{layer_id}.mip{i}.pass"), ds_bundle));
+                }
+
+                // 3) Final composite pass
+                let composite_bundle = build_gradient_blur_composite_wgsl_bundle(
+                    &prepared.scene,
+                    nodes_by_id,
+                    &layer_id,
+                    &mip_pass_ids,
+                    [pad_w, pad_h],
+                    pad_offset,
+                )?;
+                out.push((format!("sys.gb.{layer_id}.final.pass"), composite_bundle));
             }
             other => bail!(
                 "Composite layer must be RenderPass, Downsample, or GuassianBlurPass, got {other} for {layer_id}"

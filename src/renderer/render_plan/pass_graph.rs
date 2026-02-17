@@ -28,7 +28,7 @@ pub(crate) fn sampled_pass_node_ids(
     for (node_id, node) in nodes_by_id {
         if !matches!(
             node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample"
+            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
         ) {
             continue;
         }
@@ -93,6 +93,34 @@ fn deps_for_pass_node(
             let source_conn = incoming_connection(scene, pass_node_id, "source")
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
             Ok(vec![source_conn.from.node_id.clone()])
+        }
+        "GradientBlur" => {
+            // GradientBlur reads "source" input (not "pass").
+            let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
+                return Ok(Vec::new());
+            };
+            let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|n| {
+                matches!(
+                    n.node_type.as_str(),
+                    "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
+                )
+            });
+            if source_is_pass {
+                Ok(vec![conn.from.node_id.clone()])
+            } else {
+                // Non-pass source: compile the material expression to find transitive pass deps.
+                let mut ctx = crate::renderer::types::MaterialCompileContext::default();
+                let mut cache = std::collections::HashMap::new();
+                crate::renderer::node_compiler::compile_material_expr(
+                    scene,
+                    nodes_by_id,
+                    &conn.from.node_id,
+                    Some(&conn.from.port_id),
+                    &mut ctx,
+                    &mut cache,
+                )?;
+                Ok(ctx.pass_textures)
+            }
         }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }

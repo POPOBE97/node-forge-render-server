@@ -25,6 +25,7 @@ pub mod types;
 pub mod utils;
 pub mod validation;
 pub mod wgsl;
+pub mod wgsl_gradient_blur;
 pub mod wgsl_templates;
 
 // Re-export key types and functions for backward compatibility

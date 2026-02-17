@@ -109,7 +109,7 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
         // auto fullscreen bridge pass for its `pass` input.
         if nodes_by_id
             .get(&c.to.node_id)
-            .is_some_and(|n| n.node_type == "GuassianBlurPass")
+            .is_some_and(|n| n.node_type == "GuassianBlurPass" || n.node_type == "GradientBlur")
         {
             continue;
         }
