@@ -51,12 +51,46 @@ if (!isRequest) {
 
 const ws = new WebSocket(wsUrl);
 let receivedAny = false;
+let pendingAssets = 0;
+let closeTimer = null;
+
+// Resolve the directory containing the scene file for asset path resolution.
+const sceneDir = scenePath ? path.dirname(path.resolve(scenePath)) : null;
+
+/**
+ * Upload an asset as a binary frame using the new spec format:
+ * [header_len: u32 BE][JSON header (UTF-8)][raw asset data]
+ */
+function uploadAsset(assetId, assetBytes, mimeType, originalName) {
+  const header = JSON.stringify({
+    type: 'asset_upload',
+    assetId,
+    mimeType: mimeType || 'application/octet-stream',
+    originalName: originalName || '',
+    size: assetBytes.length,
+    timestamp: Date.now(),
+  });
+  const headerBuf = Buffer.from(header, 'utf8');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(headerBuf.length, 0);
+  const frame = Buffer.concat([lenBuf, headerBuf, assetBytes]);
+  ws.send(frame);
+  console.log(`[client] uploaded asset '${assetId}' (${assetBytes.length} bytes, ${mimeType || '?'})`);
+}
+
+function scheduleClose(delay) {
+  if (closeTimer) clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    if (pendingAssets <= 0) ws.close();
+  }, delay);
+}
 
 ws.on('open', () => {
   ws.send(JSON.stringify(msg));
   if (!isRequest) {
     console.log(`[client] sent scene_update requestId=${requestId}`);
-    setTimeout(() => ws.close(), 100);
+    // Don't close immediately — wait for possible asset_request messages.
+    scheduleClose(2000);
   } else {
     console.log(`[client] sent scene_request requestId=${requestId}`);
     setTimeout(() => {
@@ -65,15 +99,46 @@ ws.on('open', () => {
   }
 });
 
-ws.on('message', (data) => {
+ws.on('message', (data, isBinary) => {
+  // Binary messages are not expected from server in this tool; ignore.
+  if (isBinary) return;
+
   const text = data.toString('utf8');
   receivedAny = true;
+  let parsed;
   try {
-    const parsed = JSON.parse(text);
-    console.log('[server]', JSON.stringify(parsed, null, 2));
+    parsed = JSON.parse(text);
   } catch {
     console.log('[server]', text);
+    return;
   }
+
+  // Handle asset_request from the server.
+  if (parsed.type === 'asset_request' && parsed.payload && sceneDir && msg.payload) {
+    const ids = parsed.payload.assetIds || (parsed.payload.assetId ? [parsed.payload.assetId] : []);
+    const assets = msg.payload.assets || {};
+    for (const id of ids) {
+      const entry = assets[id];
+      if (!entry || !entry.path) {
+        console.warn(`[client] asset_request for '${id}' but no manifest entry found`);
+        continue;
+      }
+      const assetPath = path.resolve(sceneDir, entry.path);
+      if (!fs.existsSync(assetPath)) {
+        console.warn(`[client] asset '${id}' not found at ${assetPath}`);
+        continue;
+      }
+      pendingAssets++;
+      const assetBytes = fs.readFileSync(assetPath);
+      uploadAsset(id, assetBytes, entry.mimeType, entry.originalName);
+      pendingAssets--;
+    }
+    // Give the server a moment to rebuild, then close.
+    scheduleClose(1000);
+    return;
+  }
+
+  console.log('[server]', JSON.stringify(parsed, null, 2));
 
   if (isRequest) {
     ws.close();
