@@ -37,4 +37,7 @@ pub use shader_space::{
 };
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};
-pub use wgsl::{build_all_pass_wgsl_bundles_from_scene, build_pass_wgsl_bundle};
+pub use wgsl::{
+    build_all_pass_wgsl_bundles_from_scene, build_all_pass_wgsl_bundles_from_scene_with_assets,
+    build_pass_wgsl_bundle,
+};

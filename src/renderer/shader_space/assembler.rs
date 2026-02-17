@@ -478,6 +478,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     geometry_node_id: &str,
     render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
+    asset_store: Option<&crate::asset_store::AssetStore>,
 ) -> Result<(
     ResourceName,
     f32,
@@ -492,6 +493,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     String,
     bool,
     Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
+    Option<std::sync::Arc<[u8]>>,
 )> {
     let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
 
@@ -512,6 +514,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -519,6 +522,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 geometry_node_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
             Ok((
                 geometry_buffer,
@@ -534,6 +538,50 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
+            ))
+        }
+        "GLTFGeometry" => {
+            let (
+                geometry_buffer,
+                geo_w,
+                geo_h,
+                geo_x,
+                geo_y,
+                instances,
+                base_m,
+                instance_mats,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                _graph_input_kinds,
+                uses_instance_index,
+                rect_dyn,
+                normals_bytes,
+            ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                scene,
+                nodes_by_id,
+                ids,
+                geometry_node_id,
+                render_target_size,
+                material_ctx,
+                asset_store,
+            )?;
+            Ok((
+                geometry_buffer,
+                geo_w,
+                geo_h,
+                geo_x,
+                geo_y,
+                instances,
+                base_m,
+                instance_mats,
+                translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                uses_instance_index,
+                rect_dyn,
+                normals_bytes,
             ))
         }
         "InstancedGeometryStart" => {
@@ -560,6 +608,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -567,6 +616,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             let count_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "count", 1)?;
@@ -584,6 +634,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         "InstancedGeometryEnd" => {
@@ -607,6 +658,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -614,6 +666,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // Find InstancedGeometryStart by matching zoneId.
@@ -652,6 +705,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         "SetTransform" => {
@@ -676,6 +730,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _vtx_wgsl_decls,
                 uses_instance_index,
                 _rect_dyn,
+                _normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -683,6 +738,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // SetTransform overrides the accumulated base matrix.
@@ -816,6 +872,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 String::new(),
                 uses_instance_index,
                 None,
+                None,
             ))
         }
         "TransformGeometry" => {
@@ -839,6 +896,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 mut vtx_wgsl_decls,
                 mut uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -846,6 +904,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // Adjust logical size by inline scale, so UV/GeoFragCoord stay correct.
@@ -913,11 +972,12 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vtx_wgsl_decls,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         other => {
             bail!(
-                "RenderPass.geometry must resolve to Rect2DGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
+                "RenderPass.geometry must resolve to Rect2DGeometry/GLTFGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
             )
         }
     }
@@ -1226,6 +1286,7 @@ struct RenderPassSpec {
     name: ResourceName,
     geometry_buffer: ResourceName,
     instance_buffer: Option<ResourceName>,
+    normals_buffer: Option<ResourceName>,
     target_texture: ResourceName,
     params_buffer: ResourceName,
     baked_data_parse_buffer: Option<ResourceName>,
@@ -1461,6 +1522,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _vtx_graph_input_kinds,
                     _uses_instance_index,
                     rect_dyn,
+                    _normals_bytes,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1468,6 +1530,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     &node.id,
                     [tgt_w, tgt_h],
                     None,
+                    asset_store,
                 )?;
                 let verts = if rect_dyn.is_some() {
                     rect2d_unit_geometry_vertices()
@@ -1476,6 +1539,84 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 };
                 let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
                 geometry_buffers.push((name, bytes));
+            }
+            "GLTFGeometry" => {
+                // resolve_geometry_for_render_pass already loads the mesh, remaps
+                // vertices to pixel space, and returns normals bytes.  We call it
+                // here so we get the pixel-space vertex data for the GPU buffer.
+                let (
+                    _geo_buf,
+                    geo_w,
+                    geo_h,
+                    _geo_x,
+                    _geo_y,
+                    _instances,
+                    _base_m,
+                    _instance_mats,
+                    _translate_expr,
+                    _vtx_inline_stmts,
+                    _vtx_wgsl_decls,
+                    _vtx_graph_input_kinds,
+                    _uses_instance_index,
+                    _rect_dyn,
+                    normals_bytes,
+                ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                    &prepared.scene,
+                    nodes_by_id,
+                    ids,
+                    &node.id,
+                    [tgt_w, tgt_h],
+                    None,
+                    asset_store,
+                )?;
+
+                // Re-load and remap to pixel space (same logic as resolve) to get
+                // the actual vertex bytes for buffer creation.
+                let asset_id = node
+                    .params
+                    .get("assetId")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| anyhow!("GLTFGeometry missing assetId"))?;
+                let entry = prepared
+                    .scene
+                    .assets
+                    .get(asset_id)
+                    .ok_or_else(|| anyhow!("GLTFGeometry asset not found: {asset_id}"))?;
+                let file_path = if entry.original_name.is_empty() {
+                    &entry.path
+                } else {
+                    &entry.original_name
+                };
+                let store = asset_store.ok_or_else(|| anyhow!("GLTFGeometry: no asset store"))?;
+                let data = store
+                    .get(asset_id)
+                    .ok_or_else(|| anyhow!("GLTFGeometry: asset '{asset_id}' not in store"))?;
+                let (raw_verts, _normals) =
+                    crate::renderer::node_compiler::geometry_nodes::load_geometry_from_asset(
+                        &data.bytes,
+                        file_path,
+                    )?;
+
+                // Model is in normalized coordinates (roughly -1..1 from DDC).
+                // Scale to pixel space by multiplying by half the render target size.
+                let half_w = tgt_w * 0.5;
+
+                let verts: Vec<[f32; 5]> = raw_verts
+                    .into_iter()
+                    .map(|v| [v[0] * half_w, v[1] * half_w, v[2] * half_w, v[3], v[4]])
+                    .collect();
+
+                let vert_bytes: Arc<[u8]> =
+                    Arc::from(bytemuck::cast_slice::<[f32; 5], u8>(&verts).to_vec());
+                geometry_buffers.push((name.clone(), vert_bytes));
+                if let Some(nb) = normals_bytes {
+                    let normals_name: ResourceName = format!("{name}.normals").into();
+                    geometry_buffers.push((normals_name, nb));
+                }
+
+                // Suppress unused-variable warnings for geo_w/geo_h.
+                let _ = (geo_w, geo_h);
             }
             "RenderTexture" => {
                 let w =
@@ -1596,6 +1737,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
                     _rect_dyn,
+                    normals_bytes,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1609,6 +1751,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         baked_data_parse_meta: None,
                         ..Default::default()
                     }),
+                    asset_store,
                 )?;
 
                 // Determine the render target for this pass.
@@ -1722,6 +1865,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_graph_input_kinds,
                     vertex_uses_instance_index,
                     rect_dyn_2,
+                    _normals_bytes_2,
                 ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1733,6 +1877,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         baked_data_parse_meta: baked_data_parse_meta_by_pass.get(layer_id).cloned(),
                         ..Default::default()
                     }),
+                    asset_store,
                 )?;
 
                 // When a pass is a Downsample source with dynamic geometry (rect_dyn_2.is_some()),
@@ -1809,6 +1954,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let vertex_wgsl_decls_for_bundle = vertex_wgsl_decls.clone();
                 let vertex_graph_input_kinds_for_bundle = vertex_graph_input_kinds.clone();
 
+                let has_normals = normals_bytes.is_some();
+
                 let mut bundle = build_pass_wgsl_bundle_with_graph_binding(
                     &prepared.scene,
                     nodes_by_id,
@@ -1824,6 +1971,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     vertex_graph_input_kinds_for_bundle.clone(),
                     None,
                     use_fullscreen_for_downsample_source,
+                    has_normals,
                 )?;
 
                 let mut graph_binding: Option<GraphBinding> = None;
@@ -1852,6 +2000,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             vertex_graph_input_kinds_for_bundle.clone(),
                             Some(kind),
                             use_fullscreen_for_downsample_source,
+                            has_normals,
                         )?;
                     }
 
@@ -1943,6 +2092,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pass_name.clone(),
                     geometry_buffer: main_pass_geometry_buffer.clone(),
                     instance_buffer,
+                    normals_buffer: normals_bytes.as_ref().map(|_| {
+                        let nb_name: ResourceName =
+                            format!("{}.normals", main_pass_geometry_buffer).into();
+                        nb_name
+                    }),
                     target_texture: pass_output_texture.clone(),
                     params_buffer: params_name,
                     baked_data_parse_buffer,
@@ -2106,6 +2260,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: compose_pass_name.clone(),
                         geometry_buffer: compose_geometry_buffer,
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: target_texture_name.clone(),
                         params_buffer: compose_params_name,
                         baked_data_parse_buffer: None,
@@ -2191,6 +2346,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                     _,
                                     _,
                                     _,
+                                    _,
                                 )) = resolve_geometry_for_render_pass(
                                     &prepared.scene,
                                     nodes_by_id,
@@ -2198,6 +2354,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                     &geo_conn.from.node_id,
                                     [tgt_w, tgt_h],
                                     None,
+                                    asset_store,
                                 ) {
                                     blur_output_center = Some([src_geo_x, src_geo_y]);
                                 }
@@ -2377,6 +2534,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: src_pass_name.clone(),
                         geometry_buffer: geo_src,
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: src_tex.clone(),
                         params_buffer: params_src.clone(),
                         baked_data_parse_buffer: None,
@@ -2578,6 +2736,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: pass_name.clone(),
                         geometry_buffer: step_geo.clone(),
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: tex.clone(),
                         params_buffer: params_name,
                         baked_data_parse_buffer: Some(baked_buf),
@@ -2622,6 +2781,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pass_name_h.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: h_tex.clone(),
                     params_buffer: params_h.clone(),
                     baked_data_parse_buffer: None,
@@ -2660,6 +2820,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pass_name_v.clone(),
                     geometry_buffer: geo_ds.clone(),
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: v_tex.clone(),
                     params_buffer: params_v.clone(),
                     baked_data_parse_buffer: None,
@@ -2711,6 +2872,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pass_name_u.clone(),
                     geometry_buffer: geo_out.clone(),
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: output_tex.clone(),
                     params_buffer: params_u.clone(),
                     baked_data_parse_buffer: None,
@@ -2762,7 +2924,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     }
                 }
 
-                let [padded_w, padded_h] = gradient_blur_padded_size(gb_src_resolution[0], gb_src_resolution[1]);
+                let [padded_w, padded_h] =
+                    gradient_blur_padded_size(gb_src_resolution[0], gb_src_resolution[1]);
                 let src_w = gb_src_resolution[0] as f32;
                 let src_h = gb_src_resolution[1] as f32;
                 let pad_w = padded_w as f32;
@@ -2827,10 +2990,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     });
 
                     let geo_src: ResourceName = format!("sys.gb.{layer_id}.src.geo").into();
-                    geometry_buffers.push((
-                        geo_src.clone(),
-                        make_fullscreen_geometry(src_w, src_h),
-                    ));
+                    geometry_buffers
+                        .push((geo_src.clone(), make_fullscreen_geometry(src_w, src_h)));
 
                     let params_src: ResourceName = format!("params.sys.gb.{layer_id}.src").into();
                     let params_src_val = Params {
@@ -2859,13 +3020,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             limits.max_storage_buffer_binding_size as u64,
                         )?;
                         if src_bundle.graph_binding_kind != Some(kind) {
-                            src_bundle =
-                                build_gradient_blur_source_wgsl_bundle_with_graph_binding(
-                                    &prepared.scene,
-                                    nodes_by_id,
-                                    layer_id,
-                                    Some(kind),
-                                )?;
+                            src_bundle = build_gradient_blur_source_wgsl_bundle_with_graph_binding(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_id,
+                                Some(kind),
+                            )?;
                         }
                         let schema = src_bundle
                             .graph_schema
@@ -2912,13 +3072,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         ));
                     }
 
-                    let src_pass_name: ResourceName =
-                        format!("sys.gb.{layer_id}.src.pass").into();
+                    let src_pass_name: ResourceName = format!("sys.gb.{layer_id}.src.pass").into();
                     render_pass_specs.push(RenderPassSpec {
                         pass_id: src_pass_name.as_str().to_string(),
                         name: src_pass_name.clone(),
                         geometry_buffer: geo_src,
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: src_tex.clone(),
                         params_buffer: params_src.clone(),
                         baked_data_parse_buffer: None,
@@ -2944,10 +3104,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 });
 
                 let pad_geo: ResourceName = format!("sys.gb.{layer_id}.pad.geo").into();
-                geometry_buffers.push((
-                    pad_geo.clone(),
-                    make_fullscreen_geometry(pad_w, pad_h),
-                ));
+                geometry_buffers.push((pad_geo.clone(), make_fullscreen_geometry(pad_w, pad_h)));
 
                 let params_pad: ResourceName = format!("params.sys.gb.{layer_id}.pad").into();
                 let params_pad_val = Params {
@@ -2961,16 +3118,15 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     color: [0.0, 0.0, 0.0, 0.0],
                 };
 
-                let pad_bundle =
-                    build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
+                let pad_bundle = build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
 
-                let pad_pass_name: ResourceName =
-                    format!("sys.gb.{layer_id}.pad.pass").into();
+                let pad_pass_name: ResourceName = format!("sys.gb.{layer_id}.pad.pass").into();
                 render_pass_specs.push(RenderPassSpec {
                     pass_id: pad_pass_name.as_str().to_string(),
                     name: pad_pass_name.clone(),
                     geometry_buffer: pad_geo,
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: pad_tex.clone(),
                     params_buffer: params_pad,
                     baked_data_parse_buffer: None,
@@ -3008,16 +3164,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 for i in 1..GB_MIP_LEVELS {
                     cur_mip_w = clamp_min_1(cur_mip_w / 2);
                     cur_mip_h = clamp_min_1(cur_mip_h / 2);
-                    let mip_tex: ResourceName =
-                        format!("sys.gb.{layer_id}.mip{i}").into();
+                    let mip_tex: ResourceName = format!("sys.gb.{layer_id}.mip{i}").into();
                     textures.push(TextureDecl {
                         name: mip_tex.clone(),
                         size: [cur_mip_w, cur_mip_h],
                         format: sampled_pass_format,
                     });
 
-                    let mip_geo: ResourceName =
-                        format!("sys.gb.{layer_id}.mip{i}.geo").into();
+                    let mip_geo: ResourceName = format!("sys.gb.{layer_id}.mip{i}.geo").into();
                     geometry_buffers.push((
                         mip_geo.clone(),
                         make_fullscreen_geometry(cur_mip_w as f32, cur_mip_h as f32),
@@ -3047,6 +3201,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: mip_pass_name.clone(),
                         geometry_buffer: mip_geo,
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: mip_tex.clone(),
                         params_buffer: params_mip,
                         baked_data_parse_buffer: None,
@@ -3093,15 +3248,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     target_texture_name.clone()
                 };
 
-                let final_geo: ResourceName =
-                    format!("sys.gb.{layer_id}.final.geo").into();
-                geometry_buffers.push((
-                    final_geo.clone(),
-                    make_fullscreen_geometry(src_w, src_h),
-                ));
+                let final_geo: ResourceName = format!("sys.gb.{layer_id}.final.geo").into();
+                geometry_buffers.push((final_geo.clone(), make_fullscreen_geometry(src_w, src_h)));
 
-                let params_final: ResourceName =
-                    format!("params.sys.gb.{layer_id}.final").into();
+                let params_final: ResourceName = format!("params.sys.gb.{layer_id}.final").into();
                 let final_target_size = if output_tex == target_texture_name {
                     [tgt_w, tgt_h]
                 } else {
@@ -3191,8 +3341,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     &pass_output_registry,
                     &composite_bundle.pass_textures,
                 )?;
-                for (upstream_pass_id, binding) in
-                    composite_bundle.pass_textures.iter().zip(final_pass_bindings)
+                for (upstream_pass_id, binding) in composite_bundle
+                    .pass_textures
+                    .iter()
+                    .zip(final_pass_bindings)
                 {
                     final_texture_bindings.push(binding);
                     // Use LinearClamp for mip textures (hardware bilinear in shader).
@@ -3228,13 +3380,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     BlendState::REPLACE
                 };
 
-                let final_pass_name: ResourceName =
-                    format!("sys.gb.{layer_id}.final.pass").into();
+                let final_pass_name: ResourceName = format!("sys.gb.{layer_id}.final.pass").into();
                 render_pass_specs.push(RenderPassSpec {
                     pass_id: final_pass_name.as_str().to_string(),
                     name: final_pass_name.clone(),
                     geometry_buffer: final_geo,
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: output_tex.clone(),
                     params_buffer: params_final,
                     baked_data_parse_buffer: None,
@@ -3446,6 +3598,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pass_name.clone(),
                     geometry_buffer: geo.clone(),
                     instance_buffer: None,
+                    normals_buffer: None,
                     target_texture: downsample_out_tex.clone(),
                     params_buffer: params_name,
                     baked_data_parse_buffer: None,
@@ -3493,6 +3646,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: upsample_pass_name.clone(),
                         geometry_buffer: upsample_geo,
                         instance_buffer: None,
+                        normals_buffer: None,
                         target_texture: target_texture_name.clone(),
                         params_buffer: upsample_params_name,
                         baked_data_parse_buffer: None,
@@ -3574,6 +3728,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 name: pass_name.clone(),
                 geometry_buffer: geo,
                 instance_buffer: None,
+                normals_buffer: None,
                 target_texture: display_tex.clone(),
                 params_buffer: params_name,
                 baked_data_parse_buffer: None,
@@ -4133,6 +4288,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         5 => Float32x4
                     ]
                     .to_vec(),
+                );
+            }
+
+            if let Some(normals_buffer) = spec.normals_buffer.clone() {
+                let normals_slot = if spec.instance_buffer.is_some() { 2 } else { 1 };
+                b = b.bind_attribute_buffer(
+                    normals_slot,
+                    normals_buffer,
+                    wgpu::VertexStepMode::Vertex,
+                    vertex_attr_array![6 => Float32x3].to_vec(),
                 );
             }
 

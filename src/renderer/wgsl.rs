@@ -740,6 +740,7 @@ pub fn build_pass_wgsl_bundle(
         std::collections::BTreeMap::new(),
         None,
         false, // fullscreen_vertex_positioning
+        false, // has_normals
     )
 }
 
@@ -768,6 +769,8 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     // geo_size_px/local_px still use dynamic size from _rect2d_dynamic_inputs if available.
     // This is used when a pass renders to an intermediate texture that will be composited later.
     fullscreen_vertex_positioning: bool,
+    // When true, the vertex shader declares @location(6) normal: vec3f and passes it through VSOut.
+    has_normals: bool,
 ) -> Result<WgslShaderBundle> {
     // If RenderPass.material is connected, compile the upstream subgraph into an expression.
     // Otherwise, fallback to constant color.
@@ -835,6 +838,7 @@ var<uniform> params: Params;
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
      @location(4) instance_index: u32,
+     @location(5) normal: vec3f,
  };
 
 "#
@@ -846,6 +850,10 @@ var<uniform> params: Params;
 
     if !(vertex_uses_instance_index || material_ctx.uses_instance_index) {
         common = common.replace("    @location(4) instance_index: u32,\n", "");
+    }
+
+    if !has_normals {
+        common = common.replace("     @location(5) normal: vec3f,\n", "");
     }
 
     if material_ctx.baked_data_parse_meta.is_some() {
@@ -889,6 +897,10 @@ var<uniform> params: Params;
         vertex_args.push_str("     @builtin(instance_index) instance_index: u32,\n");
     }
 
+    if has_normals {
+        vertex_args.push_str("     @location(6) normal: vec3f,\n");
+    }
+
     let mut vertex_entry = String::new();
     vertex_entry.push_str("\n @vertex\n fn vs_main(\n");
     vertex_entry.push_str(&vertex_args);
@@ -911,6 +923,10 @@ var<uniform> params: Params;
 
     vertex_entry.push_str(" // UV passed as vertex attribute.\n");
     vertex_entry.push_str(" out.uv = uv;\n\n");
+
+    if has_normals {
+        vertex_entry.push_str(" out.normal = normal;\n\n");
+    }
 
     if is_instanced {
         vertex_entry.push_str(" let inst_m = mat4x4f(i0, i1, i2, i3);\n");
@@ -1053,6 +1069,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
 pub fn build_all_pass_wgsl_bundles_from_scene(
     scene: &SceneDSL,
 ) -> Result<Vec<(String, WgslShaderBundle)>> {
+    build_all_pass_wgsl_bundles_from_scene_with_assets(scene, None)
+}
+
+pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
+    scene: &SceneDSL,
+    asset_store: Option<&crate::asset_store::AssetStore>,
+) -> Result<Vec<(String, WgslShaderBundle)>> {
     let prepared = prepare_scene(scene)?;
     let nodes_by_id = &prepared.nodes_by_id;
     let ids = &prepared.ids;
@@ -1101,6 +1124,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     _vertex_graph_input_kinds,
                     _vertex_uses_instance_index,
                     _rect_dyn,
+                    _normals_bytes,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1108,6 +1132,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     &render_geo_node_id,
                     render_target_size,
                     None,
+                    asset_store,
                 )?;
 
                 let is_instanced = instance_count > 1;
@@ -1160,6 +1185,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_graph_input_kinds,
                     vertex_uses_instance_index,
                     rect_dyn_2,
+                    _normals_bytes_2,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1171,6 +1197,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                         baked_data_parse_meta: Some(meta.clone()),
                         ..Default::default()
                     }),
+                    asset_store,
                 )?;
 
                 let bundle = build_pass_wgsl_bundle_with_graph_binding(
@@ -1188,6 +1215,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     vertex_graph_input_kinds,
                     None,
                     false, // fullscreen_vertex_positioning
+                    false, // has_normals
                 )?;
 
                 out.push((layer_id, bundle));
@@ -1271,7 +1299,11 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     if let Some(conn) = incoming_connection(&prepared.scene, &layer_id, "source") {
                         if let Some(src_node) = nodes_by_id.get(&conn.from.node_id) {
                             if src_node.node_type == "ImageTexture" {
-                                if let Some(dims) = crate::renderer::shader_space::image_node_dimensions(src_node, None) {
+                                if let Some(dims) =
+                                    crate::renderer::shader_space::image_node_dimensions(
+                                        src_node, None,
+                                    )
+                                {
                                     res = dims;
                                 }
                             }
@@ -1279,7 +1311,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     }
                     res
                 };
-                let [padded_w, padded_h] = gradient_blur_padded_size(src_resolution[0], src_resolution[1]);
+                let [padded_w, padded_h] =
+                    gradient_blur_padded_size(src_resolution[0], src_resolution[1]);
                 let src_w = src_resolution[0] as f32;
                 let src_h = src_resolution[1] as f32;
                 let pad_w = padded_w as f32;
@@ -1295,8 +1328,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                 out.push((format!("sys.gb.{layer_id}.src.pass"), src_bundle));
 
                 // 1) Pad pass
-                let pad_bundle =
-                    build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
+                let pad_bundle = build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
                 out.push((format!("sys.gb.{layer_id}.pad.pass"), pad_bundle));
 
                 // 2) Mip chain (6 downsample passes)
@@ -1311,9 +1343,8 @@ pub fn build_all_pass_wgsl_bundles_from_scene(
                     .collect();
 
                 for i in 1..GB_MIP_LEVELS {
-                    let ds_bundle = build_downsample_pass_wgsl_bundle(
-                        &gradient_blur_cross_kernel(),
-                    )?;
+                    let ds_bundle =
+                        build_downsample_pass_wgsl_bundle(&gradient_blur_cross_kernel())?;
                     out.push((format!("sys.gb.{layer_id}.mip{i}.pass"), ds_bundle));
                 }
 

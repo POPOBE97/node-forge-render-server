@@ -1,13 +1,16 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::ResourceName;
 
 use crate::{
+    asset_store::AssetStore,
     dsl::{SceneDSL, find_node, incoming_connection},
     renderer::{
         graph_uniforms::graph_field_name,
         node_compiler::compile_vertex_expr,
+        node_compiler::geometry_nodes::load_geometry_from_asset,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
     },
@@ -194,7 +197,7 @@ fn resolve_rect2d_geometry_metrics(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     node: &crate::dsl::Node,
     render_target_size: [f32; 2],
-    material_ctx: Option<&MaterialCompileContext>,
+    _material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(
     f32,
     f32,
@@ -431,6 +434,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     geometry_node_id: &str,
     render_target_size: [f32; 2],
     material_ctx: Option<&MaterialCompileContext>,
+    asset_store: Option<&AssetStore>,
 ) -> Result<(
     ResourceName,
     f32,
@@ -446,6 +450,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
     std::collections::BTreeMap<String, GraphFieldKind>,
     bool,
     Option<Rect2DDynamicInputs>,
+    Option<Arc<[u8]>>,
 )> {
     let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
 
@@ -490,6 +495,85 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 vertex_graph_input_kinds,
                 vertex_uses_instance_index,
                 rect_dyn,
+                None,
+            ))
+        }
+        "GLTFGeometry" => {
+            let geometry_buffer = ids
+                .get(geometry_node_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
+
+            let asset_id = geometry_node
+                .params
+                .get("assetId")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| {
+                    anyhow!(
+                        "GLTFGeometry.params.assetId must be a non-empty string (node {})",
+                        geometry_node_id
+                    )
+                })?;
+
+            let entry = scene
+                .assets
+                .get(asset_id)
+                .ok_or_else(|| anyhow!("GLTFGeometry asset not found: {asset_id}"))?;
+
+            let file_path = if entry.original_name.is_empty() {
+                &entry.path
+            } else {
+                &entry.original_name
+            };
+            let lower = file_path.to_ascii_lowercase();
+            if !lower.ends_with(".gltf") && !lower.ends_with(".glb") && !lower.ends_with(".obj") {
+                bail!("GLTFGeometry only supports .gltf/.glb/.obj assets, got: {file_path}");
+            }
+
+            let store = asset_store.ok_or_else(|| {
+                anyhow!("GLTFGeometry node '{geometry_node_id}': no asset store provided")
+            })?;
+            let data = store.get(asset_id).ok_or_else(|| {
+                anyhow!("GLTFGeometry node '{geometry_node_id}': asset '{asset_id}' not found in asset store")
+            })?;
+
+            let (verts, normals) = load_geometry_from_asset(&data.bytes, file_path)?;
+
+            // Model is in normalized coordinates (roughly -1..1 from DDC).
+            // Scale to pixel space by multiplying by half the render target size.
+            let [tgt_w, tgt_h] = render_target_size;
+            let half_w = tgt_w * 0.5;
+            let half_h = tgt_h * 0.5;
+            let geo_w = tgt_w;
+            let geo_h = tgt_h;
+
+            let verts: Vec<[f32; 5]> = verts
+                .into_iter()
+                .map(|v| [v[0] * half_w, v[1] * half_h, v[2] * half_w, v[3], v[4]])
+                .collect();
+
+            let normals_bytes: Option<Arc<[u8]>> =
+                normals.map(|n| Arc::from(bytemuck::cast_slice::<[f32; 3], u8>(&n).to_vec()));
+
+            Ok((
+                geometry_buffer,
+                geo_w,
+                geo_h,
+                0.0,
+                0.0,
+                1,
+                [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                None,
+                None,
+                Vec::new(),
+                String::new(),
+                std::collections::BTreeMap::new(),
+                false,
+                None,
+                normals_bytes,
             ))
         }
         "InstancedGeometryStart" => {
@@ -517,6 +601,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -524,6 +609,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             let count_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "count", 1)?;
@@ -542,6 +628,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         "InstancedGeometryEnd" => {
@@ -566,6 +653,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -573,6 +661,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // Find InstancedGeometryStart by matching zoneId.
@@ -612,6 +701,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         "SetTransform" => {
@@ -637,6 +727,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _graph_input_kinds,
                 uses_instance_index,
                 _rect_dyn,
+                _normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -644,6 +735,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // SetTransform overrides the accumulated base matrix.
@@ -779,6 +871,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 std::collections::BTreeMap::new(),
                 uses_instance_index,
                 None,
+                None,
             ))
         }
         "TransformGeometry" => {
@@ -803,6 +896,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 mut graph_input_kinds,
                 mut uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -810,6 +904,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 &upstream_geo_id,
                 render_target_size,
                 material_ctx,
+                asset_store,
             )?;
 
             // Adjust logical size by inline scale, so UV/GeoFragCoord stay correct.
@@ -888,11 +983,12 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 graph_input_kinds,
                 uses_instance_index,
                 rect_dyn,
+                normals_bytes,
             ))
         }
         other => {
             bail!(
-                "RenderPass.geometry must resolve to Rect2DGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
+                "RenderPass.geometry must resolve to Rect2DGeometry/GLTFGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
             )
         }
     }
