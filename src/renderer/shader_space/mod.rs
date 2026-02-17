@@ -8,4 +8,5 @@ pub use api::{
     ShaderSpacePresentationMode,
 };
 pub use assembler::update_pass_params;
+pub(crate) use assembler::image_node_dimensions;
 pub use headless::render_scene_to_png_headless;
