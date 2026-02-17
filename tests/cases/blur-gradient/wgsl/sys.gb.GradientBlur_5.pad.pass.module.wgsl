@@ -72,10 +72,10 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let src_coord = vec2f(
-        in.uv.x * 1152.0 - 36.0,
-        (1.0 - in.uv.y) * 2496.0 - 48.0 + 1.0
-    );
-    let src_uv = src_coord / vec2f(1080.0, 2400.0);
+    let padded_size = vec2f(1152.0, 2496.0);
+    let src_size = vec2f(1080.0, 2400.0);
+    let offset = vec2f(36.0, 48.0);
+    let src_coord = in.uv * padded_size - offset;
+    let src_uv = src_coord / src_size;
     return textureSampleLevel(src_tex, src_samp, src_uv, 0.0);
 }

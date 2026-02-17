@@ -30,10 +30,10 @@ struct VSOut {
 };
 
 @group(1) @binding(0)
-var img_tex_ImageTexture_6: texture_2d<f32>;
+var img_tex_ImageTexture_10: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_ImageTexture_6: sampler;
+var img_samp_ImageTexture_10: sampler;
 
 
 @vertex

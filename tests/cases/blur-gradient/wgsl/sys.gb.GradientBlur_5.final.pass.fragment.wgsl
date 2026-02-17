@@ -78,39 +78,19 @@ fn mc_MathClosure_7_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> f32 {
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
     var output: f32 = 0f;
-    var pStart: vec3<f32> = vec3<f32>(0f, 48f, 30f);
-    var pEnd: vec3<f32> = vec3<f32>(0f, 2400f, 0f);
-    var qBase: vec2<f32>;
-    var md: f32;
-    var q: vec2<f32>;
-    var p: f32;
-    var m: f32;
+    var uv_2: vec2<f32>;
 
     uv_1 = uv;
     xy_1 = xy;
     size_1 = size;
-    let _e19: vec3<f32> = pEnd;
-    let _e21: vec3<f32> = pStart;
-    qBase = (_e19.xy - _e21.xy);
-    let _e27: vec2<f32> = qBase;
-    let _e28: vec2<f32> = qBase;
-    md = dot(_e27, _e28);
-    let _e31: vec2<f32> = xy_1;
-    let _e32: vec3<f32> = pStart;
-    q = (_e31 - _e32.xy);
-    let _e38: vec2<f32> = q;
-    let _e39: vec2<f32> = qBase;
-    p = dot(_e38, _e39);
-    let _e45: f32 = md;
-    let _e47: f32 = p;
-    m = smoothstep(_e45, 0f, _e47);
-    let _e50: vec3<f32> = pEnd;
-    let _e52: vec3<f32> = pStart;
-    let _e54: vec3<f32> = pEnd;
-    let _e57: f32 = m;
-    output = (_e50.z + ((_e52.z - _e54.z) * _e57));
-    let _e60: f32 = output;
-    return _e60;
+    let _e9: vec2<f32> = xy_1;
+    let _e10: vec2<f32> = size_1;
+    uv_2 = (_e9 / _e10);
+    let _e15: vec2<f32> = uv_2;
+    let _e19: vec2<f32> = uv_2;
+    output = mix(30f, 0f, _e19.y);
+    let _e22: f32 = output;
+    return _e22;
 }
 
 
@@ -131,7 +111,7 @@ fn gb_mvb_up(dc: vec2f, scale: f32) -> array<vec2f, 4> {
 }
 
 fn gb_sample_from_mipmap(xy: vec2f, resolution: vec2f, level: i32) -> vec4f {
-    let uv = xy / resolution;
+    let uv = vec2f(xy.x, resolution.y - xy.y) / resolution;
     if (level == 0) {
         return textureSampleLevel(pass_tex_sys_gb_GradientBlur_5_pad, pass_samp_sys_gb_GradientBlur_5_pad, uv, 0.0);
     } else if (level == 1) {
@@ -174,12 +154,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
     let gb_mip0_size = vec2f(1152.0, 2496.0);
 
-    // Use local_px directly as coordinate into padded mip textures.
-    // The pad pass stores the source upside-down so that
-    // `uv = local_px / resolution` naturally maps bottom-left screen
-    // to the correct content, matching the graph-based mipmap-blend
-    // reference.
-    let gb_coord = in.local_px;
+    // Transform from user coordinates (original image space) to padded
+    // texture coordinates.  User (0,0) → padded (pad_offset).
+    let gb_pad_offset = vec2f(36.0, 48.0);
+    let gb_coord = in.local_px + gb_pad_offset;
 
     // Floor / ceil mip levels.
     let gb_mLo = floor(gb_m);

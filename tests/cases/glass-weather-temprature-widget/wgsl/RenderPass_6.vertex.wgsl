@@ -41,6 +41,10 @@ struct GraphInputs {
     node_FloatInput_84_38afe820: vec4f,
     // Node: FloatInput_89
     node_FloatInput_89_1faae820: vec4f,
+    // Node: Vector2Input_119
+    node_Vector2Input_119_4e6d6989: vec4f,
+    // Node: Vector2Input_120
+    node_Vector2Input_120_72a16b89: vec4f,
     // Node: Vector3Input_105
     node_Vector3Input_105_12e9923b: vec4f,
     // Node: Vector3Input_80
@@ -492,15 +496,19 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
  // UV passed as vertex attribute.
  out.uv = uv;
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_Vector2Input_119_4e6d6989).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_120_72a16b89).xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
 
- let p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ let p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  // Convert pixels to clip space assuming bottom-left origin.
  // (0,0) => (-1,-1), (target_size) => (1,1)

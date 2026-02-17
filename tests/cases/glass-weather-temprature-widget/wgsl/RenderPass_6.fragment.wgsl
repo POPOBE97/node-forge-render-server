@@ -41,6 +41,10 @@ struct GraphInputs {
     node_FloatInput_84_38afe820: vec4f,
     // Node: FloatInput_89
     node_FloatInput_89_1faae820: vec4f,
+    // Node: Vector2Input_119
+    node_Vector2Input_119_4e6d6989: vec4f,
+    // Node: Vector2Input_120
+    node_Vector2Input_120_72a16b89: vec4f,
     // Node: Vector3Input_105
     node_Vector3Input_105_12e9923b: vec4f,
     // Node: Vector3Input_80

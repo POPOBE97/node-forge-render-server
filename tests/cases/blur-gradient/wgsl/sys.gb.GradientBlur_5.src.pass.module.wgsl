@@ -30,10 +30,10 @@ struct VSOut {
 };
 
 @group(1) @binding(0)
-var img_tex_ImageTexture_6: texture_2d<f32>;
+var img_tex_ImageTexture_10: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_ImageTexture_6: sampler;
+var img_samp_ImageTexture_10: sampler;
 
 
 @vertex
@@ -53,5 +53,5 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-return textureSample(img_tex_ImageTexture_6, img_samp_ImageTexture_6, (in.uv));
+return textureSample(img_tex_ImageTexture_10, img_samp_ImageTexture_10, (in.uv));
 }
