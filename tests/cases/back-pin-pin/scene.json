@@ -1,0 +1,209 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-02-17T17:31:12.151Z",
+    "modified": "2026-02-17T17:31:12.151Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "position": {
+        "x": -500,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "GLTFGeometry_2",
+      "type": "GLTFGeometry",
+      "position": {
+        "x": -1320,
+        "y": 260
+      },
+      "width": 192,
+      "label": "GTLF/OBJ Geometry",
+      "params": {
+        "assetId": "3b37d2ec3249",
+        "path": "/Users/ruiyao/Downloads/card-edge-mesh.obj"
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": -860,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Composite_5",
+      "type": "Composite",
+      "position": {
+        "x": -680,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {}
+    },
+    {
+      "id": "RenderTexture_6",
+      "type": "RenderTexture",
+      "position": {
+        "x": -680,
+        "y": 120
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm-srgb"
+      }
+    },
+    {
+      "id": "ColorInput_7",
+      "type": "ColorInput",
+      "position": {
+        "x": -1080,
+        "y": 360
+      },
+      "width": 160,
+      "label": "Color Input",
+      "params": {
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "TransformGeometry_8",
+      "type": "TransformGeometry",
+      "position": {
+        "x": -1080,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Transform Geometry",
+      "params": {
+        "mode": "Components",
+        "translate": {
+          "x": 0,
+          "y": 0,
+          "z": -100
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "RenderTexture_6",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "ColorInput_7",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_7",
+      "from": {
+        "nodeId": "GLTFGeometry_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "TransformGeometry_8",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_8",
+      "from": {
+        "nodeId": "TransformGeometry_8",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_5"
+  },
+  "assets": {
+    "3b37d2ec3249": {
+      "path": "assets/3b37d2ec3249.glb",
+      "originalName": "rings.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 65920
+    }
+  },
+  "groups": []
+}
