@@ -13,6 +13,17 @@ pub struct FileRenderTarget {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AssetEntry {
+    pub path: String,
+    #[serde(rename = "originalName", default)]
+    pub original_name: String,
+    #[serde(rename = "mimeType", default)]
+    pub mime_type: String,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SceneDSL {
     pub version: String,
     pub metadata: Metadata,
@@ -21,6 +32,8 @@ pub struct SceneDSL {
     pub outputs: Option<HashMap<String, String>>,
     #[serde(default)]
     pub groups: Vec<GroupDSL>,
+    #[serde(default)]
+    pub assets: HashMap<String, AssetEntry>,
 }
 
 /// A reusable subgraph definition referenced by `GroupInstance` nodes.
@@ -95,6 +108,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
         connections: scene.connections.clone(),
         outputs: scene.outputs.clone(),
         groups: scene.groups.clone(),
+        assets: scene.assets.clone(),
     }
 }
 
