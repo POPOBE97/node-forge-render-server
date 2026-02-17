@@ -243,8 +243,52 @@ pub(super) fn sync_reference_image_from_scene(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
 ) {
+    let desired_asset_id = app.scene_reference_image_asset_id.clone();
     let desired_data_url = app.scene_reference_image_data_url.clone();
     let desired_path = app.scene_reference_image_path.clone();
+
+    // Prefer assetId → asset_store lookup.
+    if let Some(asset_id) = desired_asset_id {
+        let already_loaded = matches!(
+            app.ref_image.as_ref().map(|r| &r.source),
+            Some(RefImageSource::SceneNodeAssetId(v)) if v == &asset_id
+        );
+        if already_loaded {
+            return;
+        }
+        let attempt_key = format!("assetid:{}", asset_id);
+        if app.last_auto_reference_attempt.as_deref() == Some(attempt_key.as_str()) {
+            return;
+        }
+        app.last_auto_reference_attempt = Some(attempt_key);
+
+        match app.asset_store.load_image(&asset_id) {
+            Ok(Some(decoded)) => {
+                let rgba = decoded.to_rgba8();
+                let width = rgba.width();
+                let height = rgba.height();
+                let rgba_bytes = rgba.into_raw();
+                load_reference_image_from_bytes(
+                    app,
+                    ctx,
+                    render_state,
+                    renderer,
+                    rgba_bytes,
+                    width,
+                    height,
+                    format!("ReferenceImage(assetId:{asset_id})"),
+                    RefImageSource::SceneNodeAssetId(asset_id),
+                );
+            }
+            Ok(None) => {
+                eprintln!("[reference-image] asset '{asset_id}' not found in asset store");
+            }
+            Err(e) => {
+                eprintln!("[reference-image] failed to decode asset '{asset_id}': {e:#}");
+            }
+        }
+        return;
+    }
 
     if let Some(data_url) = desired_data_url {
         let already_loaded = matches!(
@@ -322,7 +366,7 @@ pub(super) fn sync_reference_image_from_scene(
             app.last_auto_reference_attempt = None;
             if matches!(
                 app.ref_image.as_ref().map(|r| &r.source),
-                Some(RefImageSource::SceneNodePath(_) | RefImageSource::SceneNodeDataUrl(_))
+                Some(RefImageSource::SceneNodePath(_) | RefImageSource::SceneNodeDataUrl(_) | RefImageSource::SceneNodeAssetId(_))
             ) {
                 clear_reference(app, renderer);
             }

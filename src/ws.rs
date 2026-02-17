@@ -11,6 +11,7 @@ use serde_json::Value;
 use tungstenite::{Error as WsError, Message, accept};
 
 use crate::{
+    asset_store::{AssetData, AssetStore},
     dsl,
     dsl::{Connection, GroupDSL, Metadata, Node, SceneDSL},
     protocol::{ErrorPayload, WSMessage, now_millis},
@@ -118,6 +119,7 @@ pub struct SceneCache {
     pub connections_by_id: SceneCacheConnectionsById,
     pub outputs: SceneOutputs,
     pub groups: Vec<GroupDSL>,
+    pub assets: std::collections::HashMap<String, crate::dsl::AssetEntry>,
 }
 
 impl SceneCache {
@@ -129,6 +131,7 @@ impl SceneCache {
             connections_by_id: std::collections::HashMap::new(),
             outputs: scene.outputs.clone().unwrap_or_default(),
             groups: scene.groups.clone(),
+            assets: scene.assets.clone(),
         };
         apply_scene_update(&mut cache, scene);
         cache
@@ -139,6 +142,7 @@ pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
     cache.version = scene.version.clone();
     cache.metadata = scene.metadata.clone();
     cache.groups = scene.groups.clone();
+    cache.assets = scene.assets.clone();
 
     cache.nodes_by_id.clear();
     for node in &scene.nodes {
@@ -276,6 +280,7 @@ pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
         connections: cache.connections_by_id.values().cloned().collect(),
         outputs: Some(cache.outputs.clone()),
         groups: cache.groups.clone(),
+        assets: cache.assets.clone(),
     }
 }
 
@@ -305,6 +310,7 @@ pub fn spawn_ws_server(
     scene_drop_rx: Receiver<SceneUpdate>,
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
+    asset_store: AssetStore,
 ) -> Result<thread::JoinHandle<()>> {
     let scene_cache = Arc::new(Mutex::new(None::<SceneCache>));
     let addr_str = addr.to_string();
@@ -324,6 +330,7 @@ pub fn spawn_ws_server(
             hub.clone(),
             last_good,
             scene_cache,
+            asset_store,
         ) {
             report_internal_error(&hub, None, "WS_SERVER_FAILED", &format!("{e:#}"));
         }
@@ -354,6 +361,7 @@ fn run_ws_server(
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
+    asset_store: AssetStore,
 ) -> Result<()> {
     // Treat server lifecycle logs as editor-facing diagnostics.
     let startup = WSMessage::<Value> {
@@ -382,6 +390,7 @@ fn run_ws_server(
         let hub = hub.clone();
         let last_good = last_good.clone();
         let scene_cache = scene_cache.clone();
+        let asset_store = asset_store.clone();
 
         thread::spawn(move || {
             if let Err(e) = handle_client(
@@ -391,6 +400,7 @@ fn run_ws_server(
                 hub.clone(),
                 last_good,
                 scene_cache,
+                asset_store,
             ) {
                 report_internal_error(&hub, None, "WS_CLIENT_ENDED", &format!("{e:#}"));
             }
@@ -407,6 +417,7 @@ fn handle_client(
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
+    asset_store: AssetStore,
 ) -> Result<()> {
     // Handshake is easier with a blocking socket, switch to non-blocking afterwards.
     let mut ws = accept(stream).context("websocket handshake failed")?;
@@ -433,6 +444,7 @@ fn handle_client(
                     &scene_drop_rx,
                     &last_good,
                     &scene_cache,
+                    &asset_store,
                 ) {
                     report_internal_error(
                         &hub,
@@ -442,8 +454,14 @@ fn handle_client(
                     );
                 }
             }
-            Ok(Message::Binary(_)) => {
-                // ignore
+            Ok(Message::Binary(data)) => {
+                handle_binary_asset_upload(
+                    &data,
+                    &asset_store,
+                    &scene_cache,
+                    &scene_tx,
+                    &scene_drop_rx,
+                );
             }
             Ok(Message::Ping(payload)) => {
                 let _ = ws.send(Message::Pong(payload));
@@ -471,6 +489,7 @@ fn handle_text_message(
     scene_drop_rx: &Receiver<SceneUpdate>,
     last_good: &Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
+    asset_store: &AssetStore,
 ) -> Result<()> {
     let msg: WSMessage<Value> = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -572,6 +591,18 @@ fn handle_text_message(
                     },
                 );
                 return Ok(());
+            }
+
+            // Request any assets referenced by the scene that are missing from the store.
+            let referenced_ids: Vec<String> = scene.assets.keys().cloned().collect();
+            let missing = asset_store.missing_ids(&referenced_ids);
+            if !missing.is_empty() {
+                eprintln!(
+                    "[asset-request] requesting {} missing asset(s): {:?}",
+                    missing.len(),
+                    missing
+                );
+                send_asset_request(ws, &missing);
             }
 
             if let Ok(mut guard) = scene_cache.lock() {
@@ -695,6 +726,43 @@ fn handle_text_message(
                 );
             }
         }
+        "asset_remove" => {
+            if let Some(payload) = msg.payload {
+                if let Some(asset_id) = payload.get("assetId").and_then(|v| v.as_str()) {
+                    asset_store.remove(asset_id);
+                    // Also remove from scene cache assets if present.
+                    if let Ok(mut guard) = scene_cache.lock() {
+                        if let Some(cache) = guard.as_mut() {
+                            cache.assets.remove(asset_id);
+                        }
+                    }
+                }
+            }
+        }
+        "asset_request" => {
+            // Client requests an asset by id; reply with binary frame if available.
+            if let Some(payload) = msg.payload {
+                if let Some(asset_id) = payload.get("assetId").and_then(|v| v.as_str()) {
+                    if let Some(data) = asset_store.get(asset_id) {
+                        // Binary frame format: [id_len: u32 LE][asset_id bytes][payload bytes]
+                        let id_bytes = asset_id.as_bytes();
+                        let mut frame =
+                            Vec::with_capacity(4 + id_bytes.len() + data.bytes.len());
+                        frame.extend_from_slice(&(id_bytes.len() as u32).to_le_bytes());
+                        frame.extend_from_slice(id_bytes);
+                        frame.extend_from_slice(&data.bytes);
+                        let _ = ws.send(Message::Binary(frame));
+                    } else {
+                        send_error(
+                            ws,
+                            msg.request_id,
+                            "ASSET_NOT_FOUND",
+                            &format!("asset '{asset_id}' not found"),
+                        );
+                    }
+                }
+            }
+        }
         other => {
             send_error(
                 ws,
@@ -706,6 +774,142 @@ fn handle_text_message(
     }
 
     Ok(())
+}
+
+/// Try parsing the new binary frame format:
+/// `[header_len: u32 BE][JSON header (UTF-8)][raw asset data]`
+///
+/// Falls back to the legacy format:
+/// `[id_len: u32 LE][asset_id bytes][payload bytes]`
+///
+/// After storing the asset, if the current scene references it, re-send the
+/// scene for rendering so the pipeline picks up the newly-available asset.
+fn handle_binary_asset_upload(
+    data: &[u8],
+    asset_store: &AssetStore,
+    scene_cache: &Arc<Mutex<Option<SceneCache>>>,
+    scene_tx: &Sender<SceneUpdate>,
+    scene_drop_rx: &Receiver<SceneUpdate>,
+) {
+    if data.len() < 4 {
+        return;
+    }
+
+    let mut uploaded_asset_id: Option<String> = None;
+
+    // Try new format first: big-endian header length + JSON header + raw data.
+    let header_len_be = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if header_len_be > 0
+        && header_len_be < data.len().saturating_sub(4)
+        && data.len() >= 4 + header_len_be
+    {
+        let header_bytes = &data[4..4 + header_len_be];
+        if let Ok(header_str) = std::str::from_utf8(header_bytes) {
+            if let Ok(header) = serde_json::from_str::<Value>(header_str) {
+                if header.get("type").and_then(|v| v.as_str()) == Some("asset_upload") {
+                    if let Some(asset_id) =
+                        header.get("assetId").and_then(|v| v.as_str())
+                    {
+                        let mime = header
+                            .get("mimeType")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("application/octet-stream")
+                            .to_string();
+                        let original_name = header
+                            .get("originalName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let payload = data[4 + header_len_be..].to_vec();
+                        eprintln!(
+                            "[asset-upload] received '{}' ({} bytes, {})",
+                            asset_id,
+                            payload.len(),
+                            mime
+                        );
+                        let aid = asset_id.to_string();
+                        asset_store.insert(
+                            aid.clone(),
+                            AssetData {
+                                bytes: payload,
+                                mime_type: mime,
+                                original_name,
+                            },
+                        );
+                        uploaded_asset_id = Some(aid);
+                    }
+                }
+            }
+        }
+    }
+
+    // Legacy format: [id_len: u32 LE][asset_id bytes][payload bytes]
+    if uploaded_asset_id.is_none() {
+        let id_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+        if data.len() < 4 + id_len {
+            return;
+        }
+        let asset_id = match std::str::from_utf8(&data[4..4 + id_len]) {
+            Ok(s) => s.to_string(),
+            Err(_) => return,
+        };
+        let payload = data[4 + id_len..].to_vec();
+
+        let mime = if payload.starts_with(b"\x89PNG") {
+            "image/png"
+        } else if payload.starts_with(b"\xff\xd8\xff") {
+            "image/jpeg"
+        } else {
+            "application/octet-stream"
+        };
+
+        eprintln!(
+            "[asset-upload] received '{}' ({} bytes, {}) [legacy format]",
+            asset_id,
+            payload.len(),
+            mime
+        );
+        asset_store.insert(
+            asset_id.clone(),
+            AssetData {
+                bytes: payload,
+                mime_type: mime.to_string(),
+                original_name: String::new(),
+            },
+        );
+        uploaded_asset_id = Some(asset_id);
+    }
+
+    // If the current scene references this asset, re-send it for rendering.
+    if let Some(aid) = uploaded_asset_id {
+        let scene_references_asset = scene_cache
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.assets.contains_key(&aid)))
+            .unwrap_or(false);
+
+        if scene_references_asset {
+            if let Some(scene) = scene_cache
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(materialize_scene_dsl))
+            {
+                eprintln!(
+                    "[asset-upload] asset '{}' referenced by current scene; triggering re-render",
+                    aid
+                );
+                send_scene_update(
+                    scene_tx,
+                    scene_drop_rx,
+                    SceneUpdate::Parsed {
+                        scene,
+                        request_id: None,
+                        source: ParsedSceneSource::SceneUpdate,
+                    },
+                );
+            }
+        }
+    }
 }
 
 fn send_error(
@@ -725,6 +929,31 @@ fn send_error(
     };
 
     if let Ok(text) = serde_json::to_string(&err) {
+        let _ = ws.send(Message::Text(text));
+    }
+}
+
+/// Send an `asset_request` message to the editor for a list of missing asset IDs.
+fn send_asset_request(
+    ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
+    asset_ids: &[String],
+) {
+    #[derive(serde::Serialize)]
+    struct AssetRequestPayload {
+        #[serde(rename = "assetIds")]
+        asset_ids: Vec<String>,
+    }
+
+    let req = WSMessage {
+        msg_type: "asset_request".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(AssetRequestPayload {
+            asset_ids: asset_ids.to_vec(),
+        }),
+    };
+
+    if let Ok(text) = serde_json::to_string(&req) {
         let _ = ws.send(Message::Text(text));
     }
 }
@@ -802,6 +1031,7 @@ mod tests {
             }],
             outputs: Some(std::collections::HashMap::new()),
             groups: Vec::new(),
+            assets: Default::default(),
         }
     }
 

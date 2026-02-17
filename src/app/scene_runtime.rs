@@ -6,7 +6,8 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 use crate::{protocol, renderer, ws};
 
 use super::types::{
-    App, scene_reference_image_data_url, scene_reference_image_path, scene_uses_time,
+    App, scene_reference_image_asset_id, scene_reference_image_data_url,
+    scene_reference_image_path, scene_uses_time,
 };
 
 pub struct SceneApplyResult {
@@ -210,6 +211,7 @@ pub fn apply_scene_update(
             })();
             let scene_ref_path = scene_reference_image_path(&scene);
             let scene_ref_data_url = scene_reference_image_data_url(&scene);
+            let scene_ref_asset_id = scene_reference_image_asset_id(&scene);
 
             if let Ok(mut guard) = app.last_good.lock() {
                 *guard = Some(scene);
@@ -219,6 +221,7 @@ pub fn apply_scene_update(
                 Ok(uniform_scene) => {
                     app.scene_reference_image_path = scene_ref_path;
                     app.scene_reference_image_data_url = scene_ref_data_url;
+                    app.scene_reference_image_asset_id = scene_ref_asset_id;
                     app.scene_uses_time = scene_uses_time(&uniform_scene);
                     app.uniform_scene = Some(uniform_scene);
                     app.uniform_only_update_count = app.uniform_only_update_count.saturating_add(1);
@@ -231,6 +234,7 @@ pub fn apply_scene_update(
                 Err(e) => {
                     app.scene_reference_image_path = scene_ref_path;
                     app.scene_reference_image_data_url = scene_ref_data_url;
+                    app.scene_reference_image_asset_id = scene_ref_asset_id;
                     app.scene_uses_time = false;
                     app.uniform_scene = None;
                     let message = format!("uniform-only update failed: {e:#}");
@@ -251,6 +255,7 @@ pub fn apply_scene_update(
         } => {
             app.scene_reference_image_path = scene_reference_image_path(&scene);
             app.scene_reference_image_data_url = scene_reference_image_data_url(&scene);
+            app.scene_reference_image_asset_id = scene_reference_image_asset_id(&scene);
             let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
                 app.window_resolution,
@@ -310,6 +315,7 @@ pub fn apply_scene_update(
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
                     debug_dump_wgsl_dir: None,
                 })
+                .with_asset_store(app.asset_store.clone())
                 .build(&scene)
             }));
 
@@ -490,6 +496,7 @@ mod tests {
             connections: Vec::new(),
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         };
 
         let schema = GraphSchema {
@@ -548,6 +555,7 @@ mod tests {
             connections: Vec::new(),
             outputs: None,
             groups: Vec::new(),
+            assets: Default::default(),
         };
 
         let schema = GraphSchema {

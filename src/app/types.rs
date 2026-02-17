@@ -29,6 +29,7 @@ pub enum RefImageSource {
     Manual,
     SceneNodePath(String),
     SceneNodeDataUrl(String),
+    SceneNodeAssetId(String),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -170,6 +171,7 @@ pub struct AppInit {
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub follow_scene_resolution_for_window: bool,
+    pub asset_store: crate::asset_store::AssetStore,
 }
 
 pub struct App {
@@ -247,6 +249,8 @@ pub struct App {
     pub scene_uses_time: bool,
     pub scene_reference_image_path: Option<String>,
     pub scene_reference_image_data_url: Option<String>,
+    pub scene_reference_image_asset_id: Option<String>,
+    pub asset_store: crate::asset_store::AssetStore,
     pub last_auto_reference_attempt: Option<String>,
     pub time_updates_enabled: bool,
     pub time_value_secs: f32,
@@ -294,6 +298,18 @@ pub(super) fn scene_reference_image_data_url(scene: &crate::dsl::SceneDSL) -> Op
         .filter(|data_url| !data_url.is_empty())
         .map(ToOwned::to_owned)
 }
+
+pub(super) fn scene_reference_image_asset_id(scene: &crate::dsl::SceneDSL) -> Option<String> {
+    scene
+        .nodes
+        .iter()
+        .find(|node| node.node_type.as_str() == "ReferenceImage")
+        .and_then(|node| node.params.get("assetId"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(ToOwned::to_owned)
+}
 impl App {
     pub fn from_init(init: AppInit) -> Self {
         let initial_scene_uses_time = init.uniform_scene.as_ref().is_some_and(scene_uses_time);
@@ -305,6 +321,10 @@ impl App {
             .uniform_scene
             .as_ref()
             .and_then(scene_reference_image_data_url);
+        let initial_scene_reference_image_asset_id = init
+            .uniform_scene
+            .as_ref()
+            .and_then(scene_reference_image_asset_id);
         Self {
             shader_space: init.shader_space,
             resolution: init.resolution,
@@ -374,6 +394,8 @@ impl App {
             scene_uses_time: initial_scene_uses_time,
             scene_reference_image_path: initial_scene_reference_image_path,
             scene_reference_image_data_url: initial_scene_reference_image_data_url,
+            scene_reference_image_asset_id: initial_scene_reference_image_asset_id,
+            asset_store: init.asset_store,
             last_auto_reference_attempt: None,
             time_updates_enabled: true,
             time_value_secs: 0.0,
