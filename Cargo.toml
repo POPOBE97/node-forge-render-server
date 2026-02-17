@@ -21,5 +21,7 @@ deno_core = { version = "0.380.0", features = ["include_icu_data"] }
 arboard = "3"
 bytemuck = { version = "1", features = ["derive"] }
 rfd = "0.15"
+gltf = "1"
+tobj = "4"
 
 [dev-dependencies]
