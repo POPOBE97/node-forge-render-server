@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 
 use crate::dsl::SceneDSL;
 

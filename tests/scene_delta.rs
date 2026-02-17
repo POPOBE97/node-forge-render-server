@@ -101,6 +101,7 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
         },
         outputs: None,
         groups: None,
+        assets: None,
     };
 
     apply_scene_delta(&mut cache, &delta);

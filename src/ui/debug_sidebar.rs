@@ -5,8 +5,7 @@ use std::hash::Hash;
 use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
 
 use super::button::{
-    self, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
-    ButtonGroupPosition,
+    self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
 };
 use super::components::radio_button_group::{self, RadioButtonOption};
 use super::components::two_column_section;
@@ -557,67 +556,67 @@ fn show_ref_section(
             }
         },
         |ui| {
-        let row_action = RefCell::new(None);
-        ui.add_enabled_ui(has_reference, |ui| {
-            sidebar_grid_row(ui, |row| {
-                row.place(1, 2, |ui| {
-                    sidebar_group_cell(ui, "Mode", |ui| {
-                        let mut mode = reference_state.mode;
-                        if radio_button_group::radio_button_group(
-                            ui,
-                            "ui.debug_sidebar.ref.mode",
-                            &mut mode,
-                            &mode_options(),
-                        ) && mode != reference_state.mode
-                        {
-                            *row_action.borrow_mut() = Some(SidebarAction::ToggleReferenceMode);
-                        }
+            let row_action = RefCell::new(None);
+            ui.add_enabled_ui(has_reference, |ui| {
+                sidebar_grid_row(ui, |row| {
+                    row.place(1, 2, |ui| {
+                        sidebar_group_cell(ui, "Mode", |ui| {
+                            let mut mode = reference_state.mode;
+                            if radio_button_group::radio_button_group(
+                                ui,
+                                "ui.debug_sidebar.ref.mode",
+                                &mut mode,
+                                &mode_options(),
+                            ) && mode != reference_state.mode
+                            {
+                                *row_action.borrow_mut() = Some(SidebarAction::ToggleReferenceMode);
+                            }
+                        });
                     });
+                    match reference_state.mode {
+                        RefImageMode::Overlay => {
+                            row.place(3, 2, |ui| {
+                                sidebar_group_cell(ui, "Mix", |ui| {
+                                    let mut opacity = reference_state.opacity;
+                                    let changed = slider_with_value(
+                                        ui,
+                                        "ui.debug_sidebar.ref.opacity",
+                                        &mut opacity,
+                                        0.0,
+                                        1.0,
+                                        Some(&|v| format!("{:.0}%", v * 100.0)),
+                                    );
+                                    if changed {
+                                        *row_action.borrow_mut() =
+                                            Some(SidebarAction::SetReferenceOpacity(opacity));
+                                    }
+                                });
+                            });
+                        }
+                        RefImageMode::Diff => {
+                            row.place(3, 2, |ui| {
+                                sidebar_group_cell(ui, "Metrice", |ui| {
+                                    let mut metric = reference_state.diff_metric_mode;
+                                    if radio_button_group::radio_button_group(
+                                        ui,
+                                        "ui.debug_sidebar.ref.metric",
+                                        &mut metric,
+                                        &diff_metric_options(),
+                                    ) && metric != reference_state.diff_metric_mode
+                                    {
+                                        *row_action.borrow_mut() =
+                                            Some(SidebarAction::SetDiffMetricMode(metric));
+                                    }
+                                });
+                            });
+                        }
+                    }
                 });
-                match reference_state.mode {
-                    RefImageMode::Overlay => {
-                        row.place(3, 2, |ui| {
-                            sidebar_group_cell(ui, "Mix", |ui| {
-                                let mut opacity = reference_state.opacity;
-                                let changed = slider_with_value(
-                                    ui,
-                                    "ui.debug_sidebar.ref.opacity",
-                                    &mut opacity,
-                                    0.0,
-                                    1.0,
-                                    Some(&|v| format!("{:.0}%", v * 100.0)),
-                                );
-                                if changed {
-                                    *row_action.borrow_mut() =
-                                        Some(SidebarAction::SetReferenceOpacity(opacity));
-                                }
-                            });
-                        });
-                    }
-                    RefImageMode::Diff => {
-                        row.place(3, 2, |ui| {
-                            sidebar_group_cell(ui, "Metrice", |ui| {
-                                let mut metric = reference_state.diff_metric_mode;
-                                if radio_button_group::radio_button_group(
-                                    ui,
-                                    "ui.debug_sidebar.ref.metric",
-                                    &mut metric,
-                                    &diff_metric_options(),
-                                ) && metric != reference_state.diff_metric_mode
-                                {
-                                    *row_action.borrow_mut() =
-                                        Some(SidebarAction::SetDiffMetricMode(metric));
-                                }
-                            });
-                        });
-                    }
-                }
             });
-        });
-        if let Some(action) = row_action.into_inner() {
-            *ref_action.borrow_mut() = Some(action);
-        }
-    },
+            if let Some(action) = row_action.into_inner() {
+                *ref_action.borrow_mut() = Some(action);
+            }
+        },
     );
     if let Some(action) = ref_action.into_inner() {
         *sidebar_action = Some(action);

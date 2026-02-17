@@ -131,7 +131,10 @@ impl ViewportIndicatorManager {
 
         for entry in &entries {
             let anim_t = if entry.animated {
-                ctx.animate_bool(egui::Id::new(format!("ui.viewport.indicator.{}", entry.key)), entry.visible)
+                ctx.animate_bool(
+                    egui::Id::new(format!("ui.viewport.indicator.{}", entry.key)),
+                    entry.visible,
+                )
             } else if entry.visible {
                 1.0
             } else {
@@ -151,10 +154,8 @@ impl ViewportIndicatorManager {
                 0.0
             };
             let x = right_edge - width - occupied_width + slide_x;
-            let rect = Rect::from_min_size(
-                pos2(x, y),
-                egui::vec2(width, VIEWPORT_INDICATOR_ITEM_SIZE),
-            );
+            let rect =
+                Rect::from_min_size(pos2(x, y), egui::vec2(width, VIEWPORT_INDICATOR_ITEM_SIZE));
 
             let response = match &entry.content {
                 ViewportIndicatorContent::Compact {
@@ -167,14 +168,7 @@ impl ViewportIndicatorManager {
                         tooltip,
                         kind: *kind,
                     };
-                    draw_viewport_indicator_at(
-                        ui,
-                        rect,
-                        &indicator,
-                        now,
-                        anim_t,
-                        entry.interaction,
-                    )
+                    draw_viewport_indicator_at(ui, rect, &indicator, now, anim_t, entry.interaction)
                 }
                 ViewportIndicatorContent::TextBadge { text, tooltip } => {
                     draw_text_badge_at(ui, rect, text, tooltip, anim_t, entry.interaction)

@@ -224,15 +224,14 @@ fn run_case(case: &Case) {
 
     // Load scene + assets based on source type (.nforge or .json)
     let (scene, asset_store) = if scene_source.extension().is_some_and(|e| e == "nforge") {
-        let (s, store) =
-            node_forge_render_server::asset_store::load_from_nforge(&scene_source)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "case {}: failed to load .nforge {}: {e}",
-                        case.name,
-                        scene_source.display()
-                    )
-                });
+        let (s, store) = node_forge_render_server::asset_store::load_from_nforge(&scene_source)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "case {}: failed to load .nforge {}: {e}",
+                    case.name,
+                    scene_source.display()
+                )
+            });
         (s, store)
     } else {
         let s = dsl::load_scene_from_path(&scene_source).unwrap_or_else(|e| {
@@ -256,8 +255,9 @@ fn run_case(case: &Case) {
         (s, store)
     };
 
-    let passes = renderer::build_all_pass_wgsl_bundles_from_scene(&scene)
-        .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
+    let passes =
+        renderer::build_all_pass_wgsl_bundles_from_scene_with_assets(&scene, Some(&asset_store))
+            .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
 
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
     let wgsl_dir = case_dir.join("wgsl");

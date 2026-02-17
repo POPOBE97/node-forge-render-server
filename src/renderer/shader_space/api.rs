@@ -4,11 +4,7 @@ use anyhow::Result;
 use rust_wgpu_fiber::shader_space::ShaderSpace;
 use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 
-use crate::{
-    asset_store::AssetStore,
-    dsl::SceneDSL,
-    renderer::types::PassBindings,
-};
+use crate::{asset_store::AssetStore, dsl::SceneDSL, renderer::types::PassBindings};
 
 use super::{assembler, error_space};
 

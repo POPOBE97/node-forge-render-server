@@ -216,7 +216,14 @@ fn run_headless_ws_render_once(
     let hub = ws::WsHub::default();
     let asset_store = asset_store::AssetStore::new();
     // Bind errors must be fatal in headless mode; otherwise we'd block forever waiting for DSL.
-    let _ws_handle = ws::spawn_ws_server(addr, scene_tx, drop_rx, hub.clone(), last_good, asset_store.clone())?;
+    let _ws_handle = ws::spawn_ws_server(
+        addr,
+        scene_tx,
+        drop_rx,
+        hub.clone(),
+        last_good,
+        asset_store.clone(),
+    )?;
 
     // Wait for a renderable SceneDSL update, render, reply, then exit.
     loop {

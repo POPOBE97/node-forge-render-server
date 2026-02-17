@@ -515,9 +515,8 @@ impl eframe::App for App {
                         self.clipping_settings.highlight_threshold,
                     );
 
-                    let mut sampler = texture_bridge::canvas_sampler_descriptor(
-                        wgpu::FilterMode::Nearest,
-                    );
+                    let mut sampler =
+                        texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
                     sampler.label = Some("sys.scope.clipping.sampler");
 
                     if let Some(id) = self.clipping_texture_id {
@@ -658,7 +657,9 @@ impl eframe::App for App {
                     render_state,
                     &mut renderer_guard,
                 ) {
-                    eprintln!("[reference-image] failed to load manually-picked reference image: {e:#}");
+                    eprintln!(
+                        "[reference-image] failed to load manually-picked reference image: {e:#}"
+                    );
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::RemoveReferenceImage) => {

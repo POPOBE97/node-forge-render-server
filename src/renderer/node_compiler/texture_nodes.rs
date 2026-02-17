@@ -426,7 +426,11 @@ mod pass_texture_tests {
         )
         .unwrap();
 
-        assert!(result.expr.contains("vec2f((user_uv).x, 1.0 - (user_uv).y)"));
+        assert!(
+            result
+                .expr
+                .contains("vec2f((user_uv).x, 1.0 - (user_uv).y)")
+        );
     }
 
     #[test]

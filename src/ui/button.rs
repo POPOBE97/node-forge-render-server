@@ -376,8 +376,14 @@ fn draw_trash_icon(painter: &egui::Painter, icon_rect: egui::Rect, color: Color3
     let col2 = body_left + (body_right - body_left) * 0.67;
     let col_top = body_top + icon_rect.height() * 0.08;
     let col_bottom = body_bottom - icon_rect.height() * 0.08;
-    painter.line_segment([egui::pos2(col1, col_top), egui::pos2(col1, col_bottom)], stroke);
-    painter.line_segment([egui::pos2(col2, col_top), egui::pos2(col2, col_bottom)], stroke);
+    painter.line_segment(
+        [egui::pos2(col1, col_top), egui::pos2(col1, col_bottom)],
+        stroke,
+    );
+    painter.line_segment(
+        [egui::pos2(col2, col_top), egui::pos2(col2, col_bottom)],
+        stroke,
+    );
 }
 
 fn paint_button_icon(
@@ -395,7 +401,10 @@ fn paint_button_icon(
         let center_x = (rect.left() + horizontal_padding + side * 0.5)
             .max(rect.left() + side * 0.5)
             .min(rect.right() - side * 0.5 - 1.0);
-        egui::Rect::from_center_size(egui::pos2(center_x, rect.center().y), egui::vec2(side, side))
+        egui::Rect::from_center_size(
+            egui::pos2(center_x, rect.center().y),
+            egui::vec2(side, side),
+        )
     } else {
         icon_square_rect(rect, icon_size)
     };
@@ -514,9 +523,9 @@ pub fn button(ui: &mut egui::Ui, options: ButtonOptions<'_>) -> egui::Response {
                 text,
             );
             if has_icon_and_text {
-                let galley = ui
-                    .painter()
-                    .layout_no_wrap(options.label.to_string(), font_id.clone(), text);
+                let galley =
+                    ui.painter()
+                        .layout_no_wrap(options.label.to_string(), font_id.clone(), text);
                 let text_pos = egui::pos2(
                     icon_rect.right() + ICON_LABEL_GAP_PX,
                     response.rect.center().y - galley.size().y * 0.5,
@@ -540,24 +549,23 @@ pub fn group_button(ui: &mut egui::Ui, mut options: GroupButtonOptions<'_>) -> G
         secondary.group_position = ButtonGroupPosition::Last;
     }
 
-    let truncated_primary_label = if options.behavior.truncate_primary_middle
-        && !options.primary.label.is_empty()
-    {
-        let secondary_width = options
-            .secondary
-            .as_ref()
-            .map(|secondary| estimate_button_width(ui, *secondary, secondary.label))
-            .unwrap_or(0.0);
-        let max_primary_width = (ui.available_width() - secondary_width).max(0.0);
-        Some(truncate_middle_to_width(
-            ui,
-            options.primary.label,
-            max_primary_width,
-            options.primary,
-        ))
-    } else {
-        None
-    };
+    let truncated_primary_label =
+        if options.behavior.truncate_primary_middle && !options.primary.label.is_empty() {
+            let secondary_width = options
+                .secondary
+                .as_ref()
+                .map(|secondary| estimate_button_width(ui, *secondary, secondary.label))
+                .unwrap_or(0.0);
+            let max_primary_width = (ui.available_width() - secondary_width).max(0.0);
+            Some(truncate_middle_to_width(
+                ui,
+                options.primary.label,
+                max_primary_width,
+                options.primary,
+            ))
+        } else {
+            None
+        };
 
     let primary_label = truncated_primary_label
         .as_deref()
@@ -591,15 +599,23 @@ pub fn group_button(ui: &mut egui::Ui, mut options: GroupButtonOptions<'_>) -> G
         let separator_x = primary_resp.rect.right() - design_tokens::LINE_THICKNESS_1 * 0.5;
         ui.painter().line_segment(
             [
-                egui::pos2(separator_x, group_rect.top() + design_tokens::LINE_THICKNESS_1),
-                egui::pos2(separator_x, group_rect.bottom() - design_tokens::LINE_THICKNESS_1),
+                egui::pos2(
+                    separator_x,
+                    group_rect.top() + design_tokens::LINE_THICKNESS_1,
+                ),
+                egui::pos2(
+                    separator_x,
+                    group_rect.bottom() - design_tokens::LINE_THICKNESS_1,
+                ),
             ],
             egui::Stroke::new(design_tokens::LINE_THICKNESS_1, design_tokens::white(20)),
         );
     }
 
     let group_hovered = primary_resp.hovered()
-        || secondary_resp.as_ref().is_some_and(|response| response.hovered());
+        || secondary_resp
+            .as_ref()
+            .is_some_and(|response| response.hovered());
 
     if has_secondary && options.behavior.draw_group_hover_border {
         ui.painter().rect_stroke(

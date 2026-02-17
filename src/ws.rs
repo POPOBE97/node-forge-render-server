@@ -90,6 +90,11 @@ pub struct SceneDelta {
     // Keep this optional for forward-compatibility if editors start sending deltas.
     #[serde(default)]
     pub groups: Option<Vec<GroupDSL>>,
+    /// Asset metadata added/updated by this delta.  Optional because older
+    /// editors may not include it; in that case we synthesize entries from
+    /// the binary AssetStore.
+    #[serde(default)]
+    pub assets: Option<std::collections::HashMap<String, crate::dsl::AssetEntry>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -192,6 +197,53 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
 
     if let Some(groups) = delta.groups.as_ref() {
         cache.groups = groups.clone();
+    }
+
+    // Merge asset metadata carried by the delta.
+    if let Some(assets) = delta.assets.as_ref() {
+        for (id, entry) in assets {
+            cache.assets.insert(id.clone(), entry.clone());
+        }
+    }
+}
+
+/// Scan nodes for `assetId` param references that are missing from the
+/// scene-level `assets` map.  When the binary data is already available in
+/// the `AssetStore` we synthesize an `AssetEntry` from it so that downstream
+/// geometry resolution can find the metadata without requiring the editor to
+/// explicitly include `assets` in every `scene_delta`.
+fn ensure_asset_metadata_for_nodes(
+    nodes_by_id: &SceneCacheNodesById,
+    assets: &mut std::collections::HashMap<String, crate::dsl::AssetEntry>,
+    asset_store: &AssetStore,
+) {
+    for node in nodes_by_id.values() {
+        if let Some(aid) = node
+            .params
+            .get("assetId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            if assets.contains_key(aid) {
+                continue;
+            }
+            // Try to construct an AssetEntry from the binary store.
+            if let Some(data) = asset_store.get(aid) {
+                eprintln!(
+                    "[asset-metadata] synthesized AssetEntry for '{}' from asset store (original_name='{}')",
+                    aid, data.original_name
+                );
+                assets.insert(
+                    aid.to_string(),
+                    crate::dsl::AssetEntry {
+                        path: data.original_name.clone(),
+                        original_name: data.original_name,
+                        mime_type: data.mime_type,
+                        size: Some(data.bytes.len() as u64),
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -673,6 +725,26 @@ fn handle_text_message(
                 let is_uniform_only_delta = delta_updates_only_uniform_values(&cache, &delta);
                 apply_scene_delta(&mut cache, &delta);
 
+                // Ensure asset metadata exists for every node that references an
+                // assetId.  When the editor doesn't include the `assets` map in
+                // the delta we synthesize an AssetEntry from the binary AssetStore
+                // (which was populated earlier via sendAllAssets / asset_upload).
+                ensure_asset_metadata_for_nodes(&cache.nodes_by_id, &mut cache.assets, asset_store);
+
+                // Request any asset binaries the store hasn't received yet.
+                {
+                    let referenced_ids: Vec<String> = cache.assets.keys().cloned().collect();
+                    let missing = asset_store.missing_ids(&referenced_ids);
+                    if !missing.is_empty() {
+                        eprintln!(
+                            "[asset-request] (scene_delta) requesting {} missing asset(s): {:?}",
+                            missing.len(),
+                            missing
+                        );
+                        send_asset_request(ws, &missing);
+                    }
+                }
+
                 // Detect dangling references before pruning (signals a cache mismatch).
                 if has_dangling_connection_references(&cache) {
                     send_error(
@@ -746,8 +818,7 @@ fn handle_text_message(
                     if let Some(data) = asset_store.get(asset_id) {
                         // Binary frame format: [id_len: u32 LE][asset_id bytes][payload bytes]
                         let id_bytes = asset_id.as_bytes();
-                        let mut frame =
-                            Vec::with_capacity(4 + id_bytes.len() + data.bytes.len());
+                        let mut frame = Vec::with_capacity(4 + id_bytes.len() + data.bytes.len());
                         frame.extend_from_slice(&(id_bytes.len() as u32).to_le_bytes());
                         frame.extend_from_slice(id_bytes);
                         frame.extend_from_slice(&data.bytes);
@@ -807,9 +878,7 @@ fn handle_binary_asset_upload(
         if let Ok(header_str) = std::str::from_utf8(header_bytes) {
             if let Ok(header) = serde_json::from_str::<Value>(header_str) {
                 if header.get("type").and_then(|v| v.as_str()) == Some("asset_upload") {
-                    if let Some(asset_id) =
-                        header.get("assetId").and_then(|v| v.as_str())
-                    {
+                    if let Some(asset_id) = header.get("assetId").and_then(|v| v.as_str()) {
                         let mime = header
                             .get("mimeType")
                             .and_then(|v| v.as_str())
@@ -882,13 +951,47 @@ fn handle_binary_asset_upload(
 
     // If the current scene references this asset, re-send it for rendering.
     if let Some(aid) = uploaded_asset_id {
-        let scene_references_asset = scene_cache
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.assets.contains_key(&aid)))
-            .unwrap_or(false);
+        let mut should_rerender = false;
 
-        if scene_references_asset {
+        if let Ok(mut guard) = scene_cache.lock() {
+            if let Some(cache) = guard.as_mut() {
+                if cache.assets.contains_key(&aid) {
+                    // Metadata already present; just need to re-render.
+                    should_rerender = true;
+                } else {
+                    // Check if any node references this asset via its params.
+                    // If so, synthesize the AssetEntry from the store and flag
+                    // re-render so the pipeline picks up the newly-available
+                    // geometry/texture.
+                    let node_refs_asset = cache.nodes_by_id.values().any(|n| {
+                        n.params
+                            .get("assetId")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|id| id == aid)
+                    });
+                    if node_refs_asset {
+                        if let Some(data) = asset_store.get(&aid) {
+                            eprintln!(
+                                "[asset-upload] synthesized AssetEntry for '{}' referenced by node (original_name='{}')",
+                                aid, data.original_name
+                            );
+                            cache.assets.insert(
+                                aid.clone(),
+                                crate::dsl::AssetEntry {
+                                    path: data.original_name.clone(),
+                                    original_name: data.original_name,
+                                    mime_type: data.mime_type,
+                                    size: Some(data.bytes.len() as u64),
+                                },
+                            );
+                        }
+                        should_rerender = true;
+                    }
+                }
+            }
+        }
+
+        if should_rerender {
             if let Some(scene) = scene_cache
                 .lock()
                 .ok()
@@ -934,10 +1037,7 @@ fn send_error(
 }
 
 /// Send an `asset_request` message to the editor for a list of missing asset IDs.
-fn send_asset_request(
-    ws: &mut tungstenite::WebSocket<std::net::TcpStream>,
-    asset_ids: &[String],
-) {
+fn send_asset_request(ws: &mut tungstenite::WebSocket<std::net::TcpStream>, asset_ids: &[String]) {
     #[derive(serde::Serialize)]
     struct AssetRequestPayload {
         #[serde(rename = "assetIds")]
@@ -1057,6 +1157,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            assets: None,
         };
         assert!(delta_updates_only_uniform_values(&cache, &delta));
     }
@@ -1079,6 +1180,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            assets: None,
         };
         assert!(delta_updates_only_uniform_values(&cache, &delta));
     }
@@ -1115,6 +1217,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            assets: None,
         };
         assert!(!delta_updates_only_uniform_values(&cache, &delta));
     }
@@ -1141,6 +1244,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            assets: None,
         };
         assert!(!delta_updates_only_uniform_values(&cache, &delta));
     }

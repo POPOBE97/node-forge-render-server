@@ -366,7 +366,11 @@ pub(super) fn sync_reference_image_from_scene(
             app.last_auto_reference_attempt = None;
             if matches!(
                 app.ref_image.as_ref().map(|r| &r.source),
-                Some(RefImageSource::SceneNodePath(_) | RefImageSource::SceneNodeDataUrl(_) | RefImageSource::SceneNodeAssetId(_))
+                Some(
+                    RefImageSource::SceneNodePath(_)
+                        | RefImageSource::SceneNodeDataUrl(_)
+                        | RefImageSource::SceneNodeAssetId(_)
+                )
             ) {
                 clear_reference(app, renderer);
             }
@@ -401,7 +405,14 @@ pub(super) fn pick_reference_image_from_dialog(
         return Ok(false);
     };
 
-    load_reference_image_from_path(app, ctx, render_state, renderer, &path, RefImageSource::Manual)?;
+    load_reference_image_from_path(
+        app,
+        ctx,
+        render_state,
+        renderer,
+        &path,
+        RefImageSource::Manual,
+    )?;
     app.last_auto_reference_attempt = None;
     Ok(true)
 }
@@ -474,22 +485,22 @@ pub fn show_canvas_panel(
             }
             Err(mpsc::TryRecvError::Disconnected) => {
                 app.viewport_operation_job_rx = None;
-                app.viewport_operation_indicator = ViewportOperationIndicator::Failure {
-                    hide_at: now + 1.0,
-                };
-                app.viewport_operation_last_visual = Some(ViewportOperationIndicatorVisual::Failure);
+                app.viewport_operation_indicator =
+                    ViewportOperationIndicator::Failure { hide_at: now + 1.0 };
+                app.viewport_operation_last_visual =
+                    Some(ViewportOperationIndicatorVisual::Failure);
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
     }
 
-    if let ViewportOperationIndicator::InProgress { started_at, .. } = app.viewport_operation_indicator
+    if let ViewportOperationIndicator::InProgress { started_at, .. } =
+        app.viewport_operation_indicator
         && now - started_at >= VIEWPORT_OPERATION_TIMEOUT_SECS
     {
         app.viewport_operation_job_rx = None;
-        app.viewport_operation_indicator = ViewportOperationIndicator::Failure {
-            hide_at: now + 1.0,
-        };
+        app.viewport_operation_indicator =
+            ViewportOperationIndicator::Failure { hide_at: now + 1.0 };
         app.viewport_operation_last_visual = Some(ViewportOperationIndicatorVisual::Failure);
     }
 
@@ -713,7 +724,8 @@ pub fn show_canvas_panel(
                 let width = info.size.width as usize;
                 let height = info.size.height as usize;
                 let bytes = image.bytes;
-                app.viewport_operation_request_id = app.viewport_operation_request_id.wrapping_add(1);
+                app.viewport_operation_request_id =
+                    app.viewport_operation_request_id.wrapping_add(1);
                 let request_id = app.viewport_operation_request_id;
                 let (tx, rx) = mpsc::channel::<(u64, bool)>();
                 app.viewport_operation_job_rx = Some(rx);
@@ -1051,8 +1063,12 @@ pub fn show_canvas_panel(
         ViewportOperationIndicator::InProgress { .. } => {
             Some(ViewportOperationIndicatorVisual::InProgress)
         }
-        ViewportOperationIndicator::Success { .. } => Some(ViewportOperationIndicatorVisual::Success),
-        ViewportOperationIndicator::Failure { .. } => Some(ViewportOperationIndicatorVisual::Failure),
+        ViewportOperationIndicator::Success { .. } => {
+            Some(ViewportOperationIndicatorVisual::Success)
+        }
+        ViewportOperationIndicator::Failure { .. } => {
+            Some(ViewportOperationIndicatorVisual::Failure)
+        }
         ViewportOperationIndicator::Hidden => app.viewport_operation_last_visual,
     };
 
@@ -1076,57 +1092,61 @@ pub fn show_canvas_panel(
                 kind: ViewportIndicatorKind::Failure,
             },
         };
-        app.viewport_indicator_manager.register(ViewportIndicatorEntry {
+        app.viewport_indicator_manager
+            .register(ViewportIndicatorEntry {
+                interaction: ViewportIndicatorInteraction::HoverOnly,
+                callback_id: None,
+                ..ViewportIndicatorEntry::compact(
+                    "operation",
+                    ORDER_OPERATION,
+                    !matches!(
+                        app.viewport_operation_indicator,
+                        ViewportOperationIndicator::Hidden
+                    ),
+                    operation_indicator,
+                )
+            });
+    }
+
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            animated: false,
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact("sampling", ORDER_SAMPLING, true, sampling_indicator)
+        });
+
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
             interaction: ViewportIndicatorInteraction::HoverOnly,
             callback_id: None,
             ..ViewportIndicatorEntry::compact(
-                "operation",
-                ORDER_OPERATION,
-                !matches!(
-                    app.viewport_operation_indicator,
-                    ViewportOperationIndicator::Hidden
-                ),
-                operation_indicator,
+                "pause",
+                ORDER_PAUSE,
+                !app.time_updates_enabled,
+                ViewportIndicator {
+                    icon: "PAUSE",
+                    tooltip: "Time 更新已暂停（Space 恢复）",
+                    kind: ViewportIndicatorKind::Failure,
+                },
             )
         });
-    }
 
-    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
-        animated: false,
-        interaction: ViewportIndicatorInteraction::HoverOnly,
-        callback_id: None,
-        ..ViewportIndicatorEntry::compact("sampling", ORDER_SAMPLING, true, sampling_indicator)
-    });
-
-    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
-        interaction: ViewportIndicatorInteraction::HoverOnly,
-        callback_id: None,
-        ..ViewportIndicatorEntry::compact(
-            "pause",
-            ORDER_PAUSE,
-            !app.time_updates_enabled,
-            ViewportIndicator {
-                icon: "PAUSE",
-                tooltip: "Time 更新已暂停（Space 恢复）",
-                kind: ViewportIndicatorKind::Failure,
-            },
-        )
-    });
-
-    app.viewport_indicator_manager.register(ViewportIndicatorEntry {
-        interaction: ViewportIndicatorInteraction::HoverOnly,
-        callback_id: None,
-        ..ViewportIndicatorEntry::compact(
-            "clipping",
-            ORDER_CLIPPING,
-            app.clip_enabled,
-            ViewportIndicator {
-                icon: "C",
-                tooltip: "Clipping overlay 已开启",
-                kind: ViewportIndicatorKind::Failure,
-            },
-        )
-    });
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "clipping",
+                ORDER_CLIPPING,
+                app.clip_enabled,
+                ViewportIndicator {
+                    icon: "C",
+                    tooltip: "Clipping overlay 已开启",
+                    kind: ViewportIndicatorKind::Failure,
+                },
+            )
+        });
 
     if let Some(stats) = app.diff_stats {
         app.viewport_indicator_manager
@@ -1136,16 +1156,22 @@ pub fn show_canvas_panel(
                 ..ViewportIndicatorEntry::text_badge(
                     "diff_stats",
                     ORDER_STATS,
-                    matches!(app.ref_image.as_ref().map(|r| r.mode), Some(RefImageMode::Diff)),
-                    format!("min {:.4}  max {:.4}  avg {:.4}", stats.min, stats.max, stats.avg),
+                    matches!(
+                        app.ref_image.as_ref().map(|r| r.mode),
+                        Some(RefImageMode::Diff)
+                    ),
+                    format!(
+                        "min {:.4}  max {:.4}  avg {:.4}",
+                        stats.min, stats.max, stats.avg
+                    ),
                     "Diff 统计",
                 )
             });
     }
 
-    let indicator_result = app
-        .viewport_indicator_manager
-        .render(ui, ctx, animated_canvas_rect, now);
+    let indicator_result =
+        app.viewport_indicator_manager
+            .render(ui, ctx, animated_canvas_rect, now);
     if indicator_result.needs_repaint {
         ctx.request_repaint();
     }
