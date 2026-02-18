@@ -9,10 +9,9 @@ use crate::{
     dsl::{SceneDSL, find_node, incoming_connection},
     renderer::{
         graph_uniforms::graph_field_name,
-        node_compiler::compile_vertex_expr,
         node_compiler::geometry_nodes::load_geometry_from_asset,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1},
+        utils::{cpu_num_f32, cpu_num_u32_min_1},
     },
 };
 
@@ -142,56 +141,6 @@ fn parse_inline_vec2(node: &crate::dsl::Node, key: &str) -> Result<Option<[f32; 
     );
 }
 
-fn parse_vec2_literal_expr(expr: &str) -> Option<[f32; 2]> {
-    let compact = expr.replace([' ', '\n', '\t', '\r'], "");
-    let inner = compact.strip_prefix("vec2f(")?.strip_suffix(')')?;
-    let mut parts = inner.split(',');
-    let x = parts.next()?.parse::<f32>().ok()?;
-    let y = parts.next()?.parse::<f32>().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some([x, y])
-}
-
-fn resolve_rect_vec2_input(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, crate::dsl::Node>,
-    node: &crate::dsl::Node,
-    port_id: &str,
-    material_ctx: Option<&MaterialCompileContext>,
-) -> Result<Option<[f32; 2]>> {
-    if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
-        let mut ctx = MaterialCompileContext {
-            baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
-            baked_data_parse_meta: material_ctx.and_then(|c| c.baked_data_parse_meta.clone()),
-            ..Default::default()
-        };
-        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-
-        let expr = compile_vertex_expr(
-            scene,
-            nodes_by_id,
-            &conn.from.node_id,
-            Some(&conn.from.port_id),
-            &mut ctx,
-            &mut cache,
-        )?;
-        let expr = coerce_to_type(expr, ValueType::Vec2)?;
-        let parsed = parse_vec2_literal_expr(&expr.expr).ok_or_else(|| {
-            anyhow!(
-                "{}.{} must resolve to literal vec2 for CPU geometry allocation, got {}",
-                node.id,
-                port_id,
-                expr.expr
-            )
-        })?;
-        return Ok(Some(parsed));
-    }
-
-    parse_inline_vec2(node, port_id)
-}
-
 fn resolve_rect2d_geometry_metrics(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
@@ -280,16 +229,32 @@ fn resolve_rect2d_geometry_metrics(
     }
 
     // CPU metrics for texture allocation:
-    // - If an input is connected to a valid Vector2Input, read the actual x/y values from that node.
-    // - Otherwise (no connection, dangling, or connected to non-Vector2Input), use fullscreen geometry.
-    // Note: Inline params (params.size/params.position) are IGNORED for CPU geometry allocation
-    // when the port is intended for dynamic input. This ensures predictable fullscreen fallback.
-    let size = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "size")?;
-    let position = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "position")?;
+    // - Connected Vector2Input wins.
+    // - If unconnected, inline params win.
+    // - Otherwise, fall back to coord-domain fullscreen defaults.
+    let size_connected = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "size")?;
+    let position_connected =
+        get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "position")?;
+    let has_size_conn = incoming_connection(scene, &node.id, "size").is_some();
+    let has_position_conn = incoming_connection(scene, &node.id, "position").is_some();
 
-    // Fallback to fullscreen geometry: size = render target size, position = center.
-    let size = size.unwrap_or([default_w, default_h]);
-    let position = position.unwrap_or(default_position);
+    let size_inline = if has_size_conn {
+        None
+    } else {
+        parse_inline_vec2(node, "size")?
+    };
+    let position_inline = if has_position_conn {
+        None
+    } else {
+        parse_inline_vec2(node, "position")?
+    };
+
+    let size = size_connected
+        .or(size_inline)
+        .unwrap_or([default_w, default_h]);
+    let position = position_connected
+        .or(position_inline)
+        .unwrap_or(default_position);
 
     let size = [size[0].max(1.0), size[1].max(1.0)];
 
@@ -548,9 +513,9 @@ pub(crate) fn resolve_geometry_for_render_pass(
             let geo_w = tgt_w;
             let geo_h = tgt_h;
 
-            let verts: Vec<[f32; 5]> = verts
+            let _verts: Vec<[f32; 5]> = verts
                 .into_iter()
-                .map(|v| [v[0] * half_w, v[1] * half_h, v[2] * half_w, v[3], v[4]])
+                .map(|v| [v[0] * half_w, v[1] * half_w, v[2] * half_w, v[3], v[4]])
                 .collect();
 
             let normals_bytes: Option<Arc<[u8]>> =
@@ -722,12 +687,12 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 _base_m,
                 _upstream_instance_mats,
                 _translate_expr,
-                _vtx_inline_stmts,
-                _vtx_wgsl_decls,
-                _graph_input_kinds,
+                upstream_vtx_inline_stmts,
+                upstream_vtx_wgsl_decls,
+                upstream_graph_input_kinds,
                 uses_instance_index,
-                _rect_dyn,
-                _normals_bytes,
+                upstream_rect_dyn,
+                upstream_normals_bytes,
             ) = resolve_geometry_for_render_pass(
                 scene,
                 nodes_by_id,
@@ -852,9 +817,23 @@ pub(crate) fn resolve_geometry_for_render_pass(
 
             // Important: SetTransform should NOT forward its translate input into the vertex shader;
             // it applies it into the base matrix here (CPU-side).
-            // Also: any TransformGeometry nodes *before* SetTransform are skipped, meaning we
-            // discard upstream vertex-side translate expressions and inline statements.
-            // Note: dynamic rect inputs are also discarded here.
+            // Keep upstream dynamic Rect2D graph inputs and normals metadata intact.
+            let (vtx_inline_stmts, vtx_wgsl_decls, graph_input_kinds, rect_dyn) =
+                if upstream_rect_dyn.is_some() {
+                    (
+                        upstream_vtx_inline_stmts,
+                        upstream_vtx_wgsl_decls,
+                        upstream_graph_input_kinds,
+                        upstream_rect_dyn,
+                    )
+                } else {
+                    (
+                        Vec::new(),
+                        String::new(),
+                        std::collections::BTreeMap::new(),
+                        None,
+                    )
+                };
             Ok((
                 buf,
                 w,
@@ -866,12 +845,12 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 m,
                 instance_mats,
                 None,
-                Vec::new(),
-                String::new(),
-                std::collections::BTreeMap::new(),
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                graph_input_kinds,
                 uses_instance_index,
-                None,
-                None,
+                rect_dyn,
+                upstream_normals_bytes,
             ))
         }
         "TransformGeometry" => {
@@ -883,18 +862,18 @@ pub(crate) fn resolve_geometry_for_render_pass(
 
             let (
                 buf,
-                mut w,
-                mut h,
+                w,
+                h,
                 x,
                 y,
                 instances,
-                base_m,
-                instance_mats,
-                upstream_translate_expr,
-                mut vtx_inline_stmts,
-                mut vtx_wgsl_decls,
-                mut graph_input_kinds,
-                mut uses_instance_index,
+                upstream_base_m,
+                upstream_instance_mats,
+                _upstream_translate_expr,
+                vtx_inline_stmts,
+                vtx_wgsl_decls,
+                graph_input_kinds,
+                uses_instance_index,
                 rect_dyn,
                 normals_bytes,
             ) = resolve_geometry_for_render_pass(
@@ -907,73 +886,116 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 asset_store,
             )?;
 
-            // Adjust logical size by inline scale, so UV/GeoFragCoord stay correct.
-            if let Some(s) = geometry_node.params.get("scale") {
-                if let Some(obj) = s.as_object() {
-                    if let Some(vx) = obj.get("x").and_then(|v| v.as_f64()) {
-                        w *= vx as f32;
-                    }
-                    if let Some(vy) = obj.get("y").and_then(|v| v.as_f64()) {
-                        h *= vy as f32;
-                    }
-                }
-            }
+            let mode = geometry_node
+                .params
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Components");
+            let is_matrix_mode = mode == "Matrix";
 
-            // Vertex-stage translate overrides upstream translate.
-            let mut translate_expr = upstream_translate_expr;
-            let mut local_inline_stmts: Vec<String> = Vec::new();
-            let mut local_wgsl_decls = String::new();
-            let mut local_uses_instance_index = false;
-            let mut local_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind> =
-                std::collections::BTreeMap::new();
-
-            if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
-                let mut vtx_ctx = MaterialCompileContext {
-                    baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
-                    baked_data_parse_meta: material_ctx
-                        .and_then(|c| c.baked_data_parse_meta.clone()),
-                    ..Default::default()
-                };
-                let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-
-                let expr = compile_vertex_expr(
-                    scene,
-                    nodes_by_id,
-                    &conn.from.node_id,
-                    Some(&conn.from.port_id),
-                    &mut vtx_ctx,
-                    &mut cache,
-                )?;
-                let expr = coerce_to_type(expr, ValueType::Vec3)?;
-
-                local_inline_stmts = vtx_ctx.inline_stmts.clone();
-                local_wgsl_decls = vtx_ctx.wgsl_decls();
-                local_uses_instance_index = vtx_ctx.uses_instance_index;
-                local_graph_input_kinds = vtx_ctx.graph_input_kinds.clone();
-                translate_expr = Some(expr);
+            let mut base_m = upstream_base_m;
+            let mut instance_mats = upstream_instance_mats;
+            let inline_local_m = if is_matrix_mode {
+                parse_inline_mat4(geometry_node, "matrix").unwrap_or([
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ])
             } else {
-                // No connected translate port — apply inline translate params as constant.
-                let t = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
-                if t[0] != 0.0 || t[1] != 0.0 || t[2] != 0.0 {
-                    translate_expr = Some(TypedExpr::new(
-                        format!("vec3f({:.6}, {:.6}, {:.6})", t[0], t[1], t[2]),
-                        ValueType::Vec3,
-                    ));
+                compute_trs_matrix(geometry_node)
+            };
+
+            // TransformGeometry and SetTransform now share the same matrix upload path:
+            // local transform is composed CPU-side and applied via instance/base matrices.
+            base_m = mat4_mul(inline_local_m, base_m);
+            if let Some(mats) = instance_mats.as_mut() {
+                for m in mats.iter_mut() {
+                    *m = mat4_mul(inline_local_m, *m);
                 }
             }
 
-            if !local_inline_stmts.is_empty() {
-                vtx_inline_stmts = local_inline_stmts;
-                vtx_wgsl_decls = local_wgsl_decls;
-            }
-            if local_uses_instance_index {
-                uses_instance_index = true;
-            }
-            if !local_graph_input_kinds.is_empty() {
-                // Preserve upstream dynamic graph inputs (e.g. Rect2DGeometry size/position)
-                // while adding any local translate-driven inputs.
-                for (k, v) in local_graph_input_kinds {
-                    graph_input_kinds.entry(k).or_insert(v);
+            if !is_matrix_mode {
+                if let Some(material_ctx) = material_ctx {
+                    if let (Some(baked), Some(meta)) = (
+                        material_ctx.baked_data_parse.as_ref(),
+                        material_ctx.baked_data_parse_meta.as_ref(),
+                    ) {
+                        let translate_key =
+                            incoming_connection(scene, &geometry_node.id, "translate").map(
+                                |conn| {
+                                    (
+                                        meta.pass_id.clone(),
+                                        conn.from.node_id.clone(),
+                                        conn.from.port_id.clone(),
+                                    )
+                                },
+                            );
+
+                        let scale_key =
+                            incoming_connection(scene, &geometry_node.id, "scale").map(|conn| {
+                                (
+                                    meta.pass_id.clone(),
+                                    conn.from.node_id.clone(),
+                                    conn.from.port_id.clone(),
+                                )
+                            });
+
+                        let rotate_key = incoming_connection(scene, &geometry_node.id, "rotate")
+                            .map(|conn| {
+                                (
+                                    meta.pass_id.clone(),
+                                    conn.from.node_id.clone(),
+                                    conn.from.port_id.clone(),
+                                )
+                            });
+
+                        let has_any = translate_key
+                            .as_ref()
+                            .is_some_and(|k| baked.contains_key(k))
+                            || scale_key.as_ref().is_some_and(|k| baked.contains_key(k))
+                            || rotate_key.as_ref().is_some_and(|k| baked.contains_key(k));
+
+                        if has_any {
+                            let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instances as usize);
+                            for i in 0..instances as usize {
+                                let t_conn = translate_key
+                                    .as_ref()
+                                    .and_then(|k| baked.get(k))
+                                    .and_then(|vs| vs.get(i))
+                                    .cloned()
+                                    .map(baked_to_vec3_translate)
+                                    .unwrap_or([0.0, 0.0, 0.0]);
+                                let s_conn = scale_key
+                                    .as_ref()
+                                    .and_then(|k| baked.get(k))
+                                    .and_then(|vs| vs.get(i))
+                                    .cloned()
+                                    .map(baked_to_vec3_scale)
+                                    .unwrap_or([1.0, 1.0, 1.0]);
+                                let r_conn = rotate_key
+                                    .as_ref()
+                                    .and_then(|k| baked.get(k))
+                                    .and_then(|vs| vs.get(i))
+                                    .cloned()
+                                    .map(baked_to_vec3_rotate_deg)
+                                    .unwrap_or([0.0, 0.0, 0.0]);
+
+                                let rz = r_conn[2].to_radians();
+                                let conn_m = mat4_mul(
+                                    mat4_translate(t_conn[0], t_conn[1], t_conn[2]),
+                                    mat4_mul(
+                                        mat4_rotate_z(rz),
+                                        mat4_scale(s_conn[0], s_conn[1], s_conn[2]),
+                                    ),
+                                );
+
+                                let upstream_m = instance_mats
+                                    .as_ref()
+                                    .and_then(|um| um.get(i).copied())
+                                    .unwrap_or(base_m);
+                                mats.push(mat4_mul(conn_m, upstream_m));
+                            }
+                            instance_mats = Some(mats);
+                        }
+                    }
                 }
             }
 
@@ -986,7 +1008,7 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 instances,
                 base_m,
                 instance_mats,
-                translate_expr,
+                None,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 graph_input_kinds,
@@ -999,6 +1021,260 @@ pub(crate) fn resolve_geometry_for_render_pass(
             bail!(
                 "RenderPass.geometry must resolve to Rect2DGeometry/GLTFGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
             )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use rust_wgpu_fiber::ResourceName;
+    use serde_json::json;
+
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+
+    use super::{compute_trs_matrix, resolve_geometry_for_render_pass};
+
+    fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params: params
+                .as_object()
+                .cloned()
+                .map(|m| m.into_iter().collect())
+                .unwrap_or_default(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+        }
+    }
+
+    fn conn(
+        id: &str,
+        from_node: &str,
+        from_port: &str,
+        to_node: &str,
+        to_port: &str,
+    ) -> Connection {
+        Connection {
+            id: id.to_string(),
+            from: Endpoint {
+                node_id: from_node.to_string(),
+                port_id: from_port.to_string(),
+            },
+            to: Endpoint {
+                node_id: to_node.to_string(),
+                port_id: to_port.to_string(),
+            },
+        }
+    }
+
+    fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
+        SceneDSL {
+            version: "1.0.0".to_string(),
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections,
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        }
+    }
+
+    fn ids_for(nodes: &[Node]) -> HashMap<String, ResourceName> {
+        nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.id.clone().into()))
+            .collect()
+    }
+
+    fn approx_eq(a: f32, b: f32) {
+        assert!((a - b).abs() < 1e-4, "expected {a} ~= {b}");
+    }
+
+    #[test]
+    fn rect2d_inline_size_and_position_are_used_when_unconnected() {
+        let nodes = vec![node(
+            "rect",
+            "Rect2DGeometry",
+            json!({"size": {"x": 108.0, "y": 240.0}, "position": {"x": 54.0, "y": 120.0}}),
+        )];
+        let scene = scene(nodes.clone(), vec![]);
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (_buf, w, h, x, y, ..) = resolve_geometry_for_render_pass(
+            &scene,
+            &nodes_by_id,
+            &ids,
+            "rect",
+            [400.0, 400.0],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(w, 108.0);
+        assert_eq!(h, 240.0);
+        assert_eq!(x, 54.0);
+        assert_eq!(y, 120.0);
+    }
+
+    #[test]
+    fn set_transform_preserves_upstream_dynamic_rect_context() {
+        let nodes = vec![
+            node("size_in", "Vector2Input", json!({"x": 108.0, "y": 240.0})),
+            node("pos_in", "Vector2Input", json!({"x": 54.0, "y": 120.0})),
+            node("rect", "Rect2DGeometry", json!({})),
+            node("set", "SetTransform", json!({})),
+        ];
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "size_in", "vector", "rect", "size"),
+                conn("c2", "pos_in", "vector", "rect", "position"),
+                conn("c3", "rect", "geometry", "set", "geometry"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (
+            _buf,
+            _w,
+            _h,
+            _x,
+            _y,
+            _inst,
+            _m,
+            _mats,
+            _translate,
+            _inline,
+            _decls,
+            graph_inputs,
+            _ii,
+            rect_dyn,
+            normals,
+        ) = resolve_geometry_for_render_pass(
+            &scene,
+            &nodes_by_id,
+            &ids,
+            "set",
+            [400.0, 400.0],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(rect_dyn.is_some());
+        assert!(graph_inputs.contains_key("size_in"));
+        assert!(graph_inputs.contains_key("pos_in"));
+        assert!(normals.is_none());
+    }
+
+    #[test]
+    fn transform_geometry_applies_inline_rotation_to_base_matrix() {
+        let nodes = vec![
+            node("rect", "Rect2DGeometry", json!({})),
+            node(
+                "xf",
+                "TransformGeometry",
+                json!({"mode": "Components", "rotate": {"x": 0.0, "y": 0.0, "z": 90.0}}),
+            ),
+        ];
+        let scene = scene(
+            nodes.clone(),
+            vec![conn("c1", "rect", "geometry", "xf", "geometry")],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (_buf, _w, _h, _x, _y, _inst, base_m, _mats, translate, ..) =
+            resolve_geometry_for_render_pass(
+                &scene,
+                &nodes_by_id,
+                &ids,
+                "xf",
+                [400.0, 400.0],
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert!(translate.is_none());
+        approx_eq(base_m[0], 0.0);
+        approx_eq(base_m[1], 1.0);
+        approx_eq(base_m[4], -1.0);
+        approx_eq(base_m[5], 0.0);
+    }
+
+    #[test]
+    fn transform_geometry_matrix_and_components_modes_share_matrix_path() {
+        let comp_params = json!({
+            "mode": "Components",
+            "translate": {"x": 10.0, "y": 20.0, "z": 0.0},
+            "rotate": {"x": 0.0, "y": 0.0, "z": 30.0},
+            "scale": {"x": 2.0, "y": 3.0, "z": 1.0}
+        });
+        let comp_node = node("xf_comp", "TransformGeometry", comp_params.clone());
+        let matrix = compute_trs_matrix(&comp_node);
+
+        let nodes = vec![
+            node("rect", "Rect2DGeometry", json!({})),
+            comp_node,
+            node(
+                "xf_mat",
+                "TransformGeometry",
+                json!({"mode": "Matrix", "matrix": matrix}),
+            ),
+        ];
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "rect", "geometry", "xf_comp", "geometry"),
+                conn("c2", "rect", "geometry", "xf_mat", "geometry"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (_buf, _w, _h, _x, _y, _inst, comp_m, _mats, comp_translate, ..) =
+            resolve_geometry_for_render_pass(
+                &scene,
+                &nodes_by_id,
+                &ids,
+                "xf_comp",
+                [400.0, 400.0],
+                None,
+                None,
+            )
+            .unwrap();
+        let (_buf, _w, _h, _x, _y, _inst, mat_m, _mats, mat_translate, ..) =
+            resolve_geometry_for_render_pass(
+                &scene,
+                &nodes_by_id,
+                &ids,
+                "xf_mat",
+                [400.0, 400.0],
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert!(comp_translate.is_none());
+        assert!(mat_translate.is_none());
+        for i in 0..16 {
+            approx_eq(comp_m[i], mat_m[i]);
         }
     }
 }
