@@ -2250,7 +2250,7 @@
           "id": "msaaSampleCount",
           "name": "MSAA",
           "type": "int",
-          "default": 0
+          "default": 1
         }
       ],
       "outputs": [
@@ -2268,7 +2268,7 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 0
+        "msaaSampleCount": 1
       }
     },
     {

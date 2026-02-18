@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-17T19:30:43.518Z",
-    "modified": "2026-02-17T19:30:43.518Z"
+    "created": "2026-02-18T07:32:09.802Z",
+    "modified": "2026-02-18T07:32:09.802Z"
   },
   "nodes": [
     {
@@ -50,7 +50,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 4
       }
     },
     {
@@ -63,26 +64,8 @@
       "width": 160,
       "label": "Composite",
       "params": {},
-      "inputs": [
-        {
-          "id": "dynamic_1771356576672_1",
-          "name": "pass2",
-          "type": "pass"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1771356576672_1",
-          "label": "pass2",
-          "variableName": "pass2",
-          "type": "pass",
-          "sourceBinding": {
-            "nodeId": "RenderPass_4",
-            "outputPortId": "pass",
-            "outputLabel": "Pass"
-          }
-        }
-      ]
+      "inputs": [],
+      "inputBindings": []
     },
     {
       "id": "RenderTexture_6",
@@ -129,8 +112,8 @@
       "params": {
         "mode": "Components",
         "translate": {
-          "x": 0,
-          "y": 0,
+          "x": 540,
+          "y": 1200,
           "z": 0
         },
         "scale": {
@@ -149,8 +132,8 @@
       "id": "Downsample_10",
       "type": "Downsample",
       "position": {
-        "x": -660,
-        "y": 260
+        "x": -860,
+        "y": 620
       },
       "width": 160,
       "label": "Downsample",
@@ -166,78 +149,169 @@
       "id": "Kernel_11",
       "type": "Kernel",
       "position": {
-        "x": -660,
-        "y": 80
+        "x": -860,
+        "y": 440
       },
       "width": 160,
-      "label": "Kernel",
+      "label": "Mip1",
       "params": {
         "preset": "CrossBox",
         "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
     },
     {
-      "id": "RenderPass_12",
-      "type": "RenderPass",
+      "id": "Downsample_12",
+      "type": "Downsample",
       "position": {
-        "x": -440,
-        "y": 260
+        "x": -860,
+        "y": 1040
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "Downsample",
       "params": {
-        "name": "Render Pass",
-        "blend_preset": "alpha",
-        "blendfunc": "add",
-        "src_factor": "src-alpha",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "targetSize": {
+          "x": 270,
+          "y": 600
+        },
+        "sampling": "Mirror"
       }
     },
     {
-      "id": "PassTexture_13",
-      "type": "PassTexture",
+      "id": "Kernel_13",
+      "type": "Kernel",
       "position": {
-        "x": -440,
-        "y": 380
+        "x": -860,
+        "y": 860
       },
       "width": 160,
-      "label": "Pass Texture",
+      "label": "Mip2",
       "params": {
-        "addressModeU": "clamp-to-edge",
-        "addressModeV": "clamp-to-edge",
-        "magFilter": "nearest",
-        "minFilter": "nearest",
-        "mipmapFilter": "nearest"
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
     },
     {
-      "id": "Rect2DGeometry_14",
-      "type": "Rect2DGeometry",
+      "id": "Downsample_14",
+      "type": "Downsample",
       "position": {
-        "x": -440,
-        "y": 120
+        "x": -860,
+        "y": 1460
       },
       "width": 160,
-      "label": "2D Rect",
+      "label": "Downsample",
       "params": {
-        "radius": 0,
-        "smooth": 1
+        "targetSize": {
+          "x": 135,
+          "y": 300
+        },
+        "sampling": "Mirror"
       }
     },
     {
-      "id": "Vector2Input_15",
-      "type": "Vector2Input",
+      "id": "Kernel_15",
+      "type": "Kernel",
       "position": {
-        "x": -440,
-        "y": 20
+        "x": -860,
+        "y": 1280
       },
       "width": 160,
-      "label": "Vector2 Input",
+      "label": "Mip3",
       "params": {
-        "x": 540,
-        "y": 1200
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_16",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "targetSize": {
+          "x": 135,
+          "y": 300
+        },
+        "sampling": "Mirror"
+      }
+    },
+    {
+      "id": "Kernel_17",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 1700
+      },
+      "width": 160,
+      "label": "Mip4",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_18",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "targetSize": {
+          "x": 67,
+          "y": 150
+        },
+        "sampling": "Mirror"
+      }
+    },
+    {
+      "id": "Kernel_19",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 2120
+      },
+      "width": 160,
+      "label": "Mip5",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_20",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "targetSize": {
+          "x": 67,
+          "y": 150
+        },
+        "sampling": "Mirror"
+      }
+    },
+    {
+      "id": "Kernel_21",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 2540
+      },
+      "width": 160,
+      "label": "Mip6",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
     }
   ],
@@ -322,67 +396,122 @@
     {
       "id": "edge_12",
       "from": {
-        "nodeId": "Downsample_10",
-        "portId": "output"
+        "nodeId": "Kernel_13",
+        "portId": "kernel"
       },
       "to": {
-        "nodeId": "PassTexture_13",
-        "portId": "pass"
+        "nodeId": "Downsample_12",
+        "portId": "kernel"
       }
     },
     {
       "id": "edge_13",
       "from": {
-        "nodeId": "PassTexture_13",
-        "portId": "color"
+        "nodeId": "Downsample_10",
+        "portId": "output"
       },
       "to": {
-        "nodeId": "RenderPass_12",
-        "portId": "material"
+        "nodeId": "Downsample_12",
+        "portId": "sampling"
       }
     },
     {
       "id": "edge_14",
       "from": {
-        "nodeId": "Rect2DGeometry_14",
-        "portId": "geometry"
+        "nodeId": "Kernel_15",
+        "portId": "kernel"
       },
       "to": {
-        "nodeId": "RenderPass_12",
-        "portId": "geometry"
+        "nodeId": "Downsample_14",
+        "portId": "kernel"
       }
     },
     {
       "id": "edge_15",
       "from": {
-        "nodeId": "RenderPass_12",
-        "portId": "pass"
+        "nodeId": "Downsample_12",
+        "portId": "output"
       },
       "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
+        "nodeId": "Downsample_14",
+        "portId": "sampling"
       }
     },
     {
       "id": "edge_16",
       "from": {
-        "nodeId": "Vector2Input_15",
-        "portId": "vector"
+        "nodeId": "Kernel_17",
+        "portId": "kernel"
       },
       "to": {
-        "nodeId": "Rect2DGeometry_14",
-        "portId": "size"
+        "nodeId": "Downsample_16",
+        "portId": "kernel"
       }
     },
     {
       "id": "edge_17",
+      "from": {
+        "nodeId": "Downsample_14",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_16",
+        "portId": "sampling"
+      }
+    },
+    {
+      "id": "edge_18",
+      "from": {
+        "nodeId": "Kernel_19",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_19",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "sampling"
+      }
+    },
+    {
+      "id": "edge_20",
+      "from": {
+        "nodeId": "Kernel_21",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_21",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "sampling"
+      }
+    },
+    {
+      "id": "edge_22",
       "from": {
         "nodeId": "RenderPass_4",
         "portId": "pass"
       },
       "to": {
         "nodeId": "Composite_5",
-        "portId": "dynamic_1771356576672_1"
+        "portId": "pass"
       }
     }
   ],

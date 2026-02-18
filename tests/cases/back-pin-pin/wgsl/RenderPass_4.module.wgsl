@@ -59,8 +59,7 @@ var<storage, read> baked_data_parse: array<vec4f>;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
 
- let delta_t = vec3f(540.000000, 1200.000000, 0.000000);
- let p_local = position + delta_t;
+ let p_local = position;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

@@ -35,6 +35,10 @@ struct GraphInputs {
     node_FloatInput_10_157c0221: vec4f,
     // Node: FloatInput_12
     node_FloatInput_12_af780221: vec4f,
+    // Node: Vector2Input_67
+    node_Vector2Input_67_d6ac4dbd: vec4f,
+    // Node: Vector2Input_68
+    node_Vector2Input_68_87bf4dbd: vec4f,
 };
 
 @group(0) @binding(2)
