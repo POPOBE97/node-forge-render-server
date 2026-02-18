@@ -318,6 +318,41 @@ fn sampled_pass_node_ids(
     Ok(out)
 }
 
+fn sampled_pass_node_ids_from_roots(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    roots_in_draw_order: &[String],
+) -> Result<HashSet<String>> {
+    let reachable = compute_pass_render_order(scene, nodes_by_id, roots_in_draw_order)?;
+    let reachable_set: HashSet<String> = reachable.iter().cloned().collect();
+
+    let mut out: HashSet<String> = HashSet::new();
+    for node_id in reachable {
+        let Some(node) = nodes_by_id.get(&node_id) else {
+            continue;
+        };
+        if !is_pass_like_node_type(&node.node_type) {
+            continue;
+        }
+
+        // Composite being reachable should not by itself force its input layers
+        // to be treated as sampled outputs. We only mark passes sampled when a
+        // non-Composite pass node actually samples them as textures.
+        if node.node_type == "Composite" {
+            continue;
+        }
+
+        let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
+        for dep in deps {
+            if reachable_set.contains(&dep) {
+                out.insert(dep);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 fn resolve_pass_texture_bindings(
     pass_output_registry: &PassOutputRegistry,
     pass_node_ids: &[String],
@@ -668,18 +703,33 @@ fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
 const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
 
 fn sampled_render_pass_output_size(
-    has_processing_consumer: bool,
-    coord_size_u: [u32; 2],
+    _has_processing_consumer: bool,
+    _is_downsample_source: bool,
+    _coord_size_u: [u32; 2],
     geo_size: [f32; 2],
 ) -> [u32; 2] {
-    if has_processing_consumer {
-        coord_size_u
-    } else {
-        [
-            geo_size[0].max(1.0).round() as u32,
-            geo_size[1].max(1.0).round() as u32,
-        ]
-    }
+    [
+        geo_size[0].max(1.0).round() as u32,
+        geo_size[1].max(1.0).round() as u32,
+    ]
+}
+
+fn gaussian_blur_extend_upsample_geo_size(
+    src_content_resolution: [u32; 2],
+    padded_blur_resolution: [u32; 2],
+) -> [f32; 2] {
+    let src_w = src_content_resolution[0].max(1) as f32;
+    let src_h = src_content_resolution[1].max(1) as f32;
+    let padded_w = padded_blur_resolution[0].max(1) as f32;
+    let padded_h = padded_blur_resolution[1].max(1) as f32;
+    // Extend grows blur texture from `src` -> `padded`.
+    // For the final upsample pass we scale geometry by that same factor so
+    // the original content footprint is preserved (no apparent shrink).
+    let extend_scale_x = padded_w / src_w;
+    let extend_scale_y = padded_h / src_h;
+    let scaled_w = src_w * extend_scale_x;
+    let scaled_h = src_h * extend_scale_y;
+    [scaled_w.max(1.0).round(), scaled_h.max(1.0).round()]
 }
 
 pub(crate) fn build_shader_space_from_scene_internal(
@@ -756,9 +806,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
         .cloned()
         .ok_or_else(|| anyhow!("missing name for node: {}", target_texture_id))?;
 
-    // Pass nodes that are sampled via PassTexture must have a dedicated output texture.
+    // Pass nodes sampled by reachable downstream pass nodes must have dedicated
+    // intermediate outputs. Restrict to currently reachable pass roots to avoid
+    // dead branches forcing sampled-output paths.
     let sampled_pass_ids =
-        crate::renderer::render_plan::sampled_pass_node_ids(&prepared.scene, nodes_by_id)?;
+        sampled_pass_node_ids_from_roots(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
 
     for id in order {
         let node = match nodes_by_id.get(id) {
@@ -895,12 +947,30 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
     // Pass nodes used as Downsample.source keep special dynamic-geometry fullscreen handling.
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
+    let mut gaussian_source_pass_ids: HashSet<String> = HashSet::new();
+    let mut gradient_source_pass_ids: HashSet<String> = HashSet::new();
     for (node_id, node) in nodes_by_id {
-        if node.node_type != "Downsample" {
+        if node.node_type == "Downsample" {
+            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
+                downsample_source_pass_ids.insert(conn.from.node_id.clone());
+            }
             continue;
         }
-        if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-            downsample_source_pass_ids.insert(conn.from.node_id.clone());
+        if node.node_type == "GuassianBlurPass" {
+            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
+                gaussian_source_pass_ids.insert(conn.from.node_id.clone());
+            }
+            continue;
+        }
+        if node.node_type == "GradientBlur" {
+            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
+                let src_is_pass_like = nodes_by_id
+                    .get(&conn.from.node_id)
+                    .is_some_and(|n| is_pass_like_node_type(&n.node_type));
+                if src_is_pass_like {
+                    gradient_source_pass_ids.insert(conn.from.node_id.clone());
+                }
+            }
         }
     }
 
@@ -943,6 +1013,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             .is_some_and(|n| is_draw_pass_node_type(&n.node_type))
                 });
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
+                let is_blur_source = gaussian_source_pass_ids.contains(layer_id)
+                    || gradient_source_pass_ids.contains(layer_id);
                 let pass_coord_size = draw_coord_size_by_pass
                     .get(layer_id)
                     .copied()
@@ -1011,6 +1083,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
                     let [w_u, h_u] = sampled_render_pass_output_size(
                         has_processing_consumer,
+                        is_downsample_source || is_blur_source,
                         [pass_coord_w_u, pass_coord_h_u],
                         [geo_w, geo_h],
                     );
@@ -1154,14 +1227,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     asset_store,
                 )?;
 
-                // When a pass is a Downsample source with dynamic geometry (rect_dyn_2.is_some()),
-                // the main pass should render fullscreen within its intermediate texture. The dynamic
-                // positioning is deferred to the compose pass that draws to the final target.
+                // For intermediate pass outputs that will be blitted into a final Composition target,
+                // render the main pass in local texture space (fullscreen in its own output), then
+                // apply scene placement at compose time. This preserves size/position when blitting.
                 let use_fullscreen_for_downsample_source =
                     is_downsample_source && rect_dyn_2.is_some();
+                let use_fullscreen_for_local_blit =
+                    is_sampled_output && !has_processing_consumer && has_composition_consumer;
+                let use_fullscreen_main_pass =
+                    use_fullscreen_for_downsample_source || use_fullscreen_for_local_blit;
 
                 let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
-                    if use_fullscreen_for_downsample_source {
+                    if use_fullscreen_main_pass {
                         // Create a dedicated fullscreen geometry for this pass.
                         let fs_geo: ResourceName =
                             format!("sys.pass.{layer_id}.fullscreen.geo").into();
@@ -1241,6 +1318,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let vertex_graph_input_kinds_for_bundle = vertex_graph_input_kinds.clone();
 
                 let has_normals = normals_bytes.is_some();
+                let fullscreen_vertex_positioning =
+                    use_fullscreen_main_pass && rect_dyn_2.is_some();
 
                 let mut bundle = build_pass_wgsl_bundle_with_graph_binding(
                     &prepared.scene,
@@ -1256,7 +1335,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     main_pass_rect_dyn.clone(),
                     vertex_graph_input_kinds_for_bundle.clone(),
                     None,
-                    use_fullscreen_for_downsample_source,
+                    fullscreen_vertex_positioning,
                     has_normals,
                 )?;
 
@@ -1285,7 +1364,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             main_pass_rect_dyn.clone(),
                             vertex_graph_input_kinds_for_bundle.clone(),
                             Some(kind),
-                            use_fullscreen_for_downsample_source,
+                            fullscreen_vertex_positioning,
                             has_normals,
                         )?;
                     }
@@ -1418,11 +1497,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 .into();
 
                         // If the sampled output is target-sized, compose with a fullscreen quad.
-                        // If the sampled output is geometry-sized, compose with the original
-                        // geometry so it lands at the correct screen-space position.
-                        //
-                        // When the geometry has dynamic inputs (use_fullscreen_for_downsample_source),
-                        // use the dynamic compose shader that reads position/size from graph_inputs.
+                        // If it is intermediate/local-sized, compose with original placement (size/position).
                         let (
                             compose_geometry_buffer,
                             compose_params_val,
@@ -1455,7 +1530,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 None,
                                 None,
                             )
-                        } else if use_fullscreen_for_downsample_source {
+                        } else if use_fullscreen_main_pass && rect_dyn_2.is_some() {
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -1467,7 +1542,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             ));
 
                             let rect_dyn = rect_dyn_2.as_ref().expect(
-                                "use_fullscreen_for_downsample_source implies rect_dyn_2.is_some()",
+                                "fullscreen-main-pass dynamic compose implies rect_dyn_2.is_some()",
                             );
                             let position_expr = rect_dyn
                                 .position_expr
@@ -1527,6 +1602,38 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 bundle,
                                 graph_binding.clone(),
                                 graph_values.clone(),
+                            )
+                        } else if use_fullscreen_for_local_blit {
+                            let compose_geo: ResourceName =
+                                format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
+                                    .into();
+                            geometry_buffers.push((
+                                compose_geo.clone(),
+                                Arc::from(
+                                    as_bytes_slice(&rect2d_geometry_vertices(
+                                        geo_w.max(1.0),
+                                        geo_h.max(1.0),
+                                    ))
+                                    .to_vec(),
+                                ),
+                            ));
+                            let fragment_body =
+                                "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                            (
+                                compose_geo,
+                                Params {
+                                    target_size: [comp_tgt_w, comp_tgt_h],
+                                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
+                                    center: [geo_x, geo_y],
+                                    geo_translate: [0.0, 0.0],
+                                    geo_scale: [1.0, 1.0],
+                                    time: 0.0,
+                                    _pad0: 0.0,
+                                    color: [0.0, 0.0, 0.0, 0.0],
+                                },
+                                build_fullscreen_textured_bundle(fragment_body),
+                                None,
+                                None,
                             )
                         } else {
                             let fragment_body =
@@ -1631,8 +1738,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             ) {
                                 if let Ok((
                                     _,
-                                    _src_geo_w,
-                                    _src_geo_h,
+                                    src_geo_w,
+                                    src_geo_h,
                                     src_geo_x,
                                     src_geo_y,
                                     _,
@@ -1656,6 +1763,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                         asset_store,
                                     )
                                 {
+                                    base_resolution = [
+                                        src_geo_w.max(1.0).round() as u32,
+                                        src_geo_h.max(1.0).round() as u32,
+                                    ];
                                     blur_output_center = Some([src_geo_x, src_geo_y]);
                                 }
                             }
@@ -1955,6 +2066,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 } else {
                     target_texture_name.clone()
                 };
+                let upsample_geo_size: [f32; 2] = if extend_pad_px > 0
+                    && output_tex == target_texture_name
+                {
+                    gaussian_blur_extend_upsample_geo_size(src_content_resolution, [blur_w, blur_h])
+                } else {
+                    [blur_w as f32, blur_h as f32]
+                };
 
                 let pass_blend_state =
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
@@ -1979,7 +2097,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
                 geometry_buffers.push((
                     geo_out.clone(),
-                    make_fullscreen_geometry(blur_w as f32, blur_h as f32),
+                    make_fullscreen_geometry(upsample_geo_size[0], upsample_geo_size[1]),
                 ));
 
                 // Downsample chain
@@ -2147,13 +2265,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     [blur_w as f32, blur_h as f32]
                 };
                 let upsample_center: [f32; 2] = if output_tex == target_texture_name {
-                    blur_output_center.unwrap_or([blur_w as f32 * 0.5, blur_h as f32 * 0.5])
+                    blur_output_center
+                        .unwrap_or([upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5])
                 } else {
-                    [blur_w as f32 * 0.5, blur_h as f32 * 0.5]
+                    [upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5]
                 };
                 let params_u_val = Params {
                     target_size: upsample_target_size,
-                    geo_size: [blur_w as f32, blur_h as f32],
+                    geo_size: upsample_geo_size,
                     center: upsample_center,
                     geo_translate: [0.0, 0.0],
                     geo_scale: [1.0, 1.0],
@@ -2221,7 +2340,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         format!("sys.blur.{layer_id}.to.{composition_id}.compose.geo").into();
                     geometry_buffers.push((
                         compose_geo.clone(),
-                        make_fullscreen_geometry(comp_w, comp_h),
+                        make_fullscreen_geometry(blur_w as f32, blur_h as f32),
                     ));
                     let compose_pass_name: ResourceName =
                         format!("sys.blur.{layer_id}.to.{composition_id}.compose.pass").into();
@@ -2229,8 +2348,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         format!("params.sys.blur.{layer_id}.to.{composition_id}.compose").into();
                     let compose_params = Params {
                         target_size: [comp_w, comp_h],
-                        geo_size: [comp_w, comp_h],
-                        center: [comp_w * 0.5, comp_h * 0.5],
+                        geo_size: [blur_w as f32, blur_h as f32],
+                        center: blur_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
                         geo_translate: [0.0, 0.0],
                         geo_scale: [1.0, 1.0],
                         time: 0.0,
@@ -2272,8 +2391,53 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 // ---------- resolve source dimensions ----------
                 let mut gb_src_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
+                let mut gb_output_center: Option<[f32; 2]> = None;
 
                 if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
+                    if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+                        if src_node.node_type == "RenderPass" {
+                            if let Some(geo_conn) = incoming_connection(
+                                &prepared.scene,
+                                &src_conn.from.node_id,
+                                "geometry",
+                            ) {
+                                if let Ok((
+                                    _,
+                                    src_geo_w,
+                                    src_geo_h,
+                                    src_geo_x,
+                                    src_geo_y,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                    _,
+                                )) =
+                                    crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                                        &prepared.scene,
+                                        nodes_by_id,
+                                        ids,
+                                        &geo_conn.from.node_id,
+                                        [tgt_w, tgt_h],
+                                        None,
+                                        asset_store,
+                                    )
+                                {
+                                    gb_src_resolution = [
+                                        src_geo_w.max(1.0).round() as u32,
+                                        src_geo_h.max(1.0).round() as u32,
+                                    ];
+                                    gb_output_center = Some([src_geo_x, src_geo_y]);
+                                }
+                            }
+                        }
+                    }
+
                     // (A) Upstream pass output.
                     if let Some(src_spec) = pass_output_registry.get(&src_conn.from.node_id) {
                         gb_src_resolution = src_spec.resolution;
@@ -2632,7 +2796,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     [src_w, src_h]
                 };
                 let final_center = if output_tex == target_texture_name {
-                    [src_w * 0.5, src_h * 0.5]
+                    gb_output_center.unwrap_or([src_w * 0.5, src_h * 0.5])
                 } else {
                     [src_w * 0.5, src_h * 0.5]
                 };
@@ -2798,18 +2962,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     let comp_h = comp_ctx.target_size_px[1];
                     let compose_geo: ResourceName =
                         format!("sys.gb.{layer_id}.to.{composition_id}.compose.geo").into();
-                    geometry_buffers.push((
-                        compose_geo.clone(),
-                        make_fullscreen_geometry(comp_w, comp_h),
-                    ));
+                    geometry_buffers
+                        .push((compose_geo.clone(), make_fullscreen_geometry(src_w, src_h)));
                     let compose_pass_name: ResourceName =
                         format!("sys.gb.{layer_id}.to.{composition_id}.compose.pass").into();
                     let compose_params_name: ResourceName =
                         format!("params.sys.gb.{layer_id}.to.{composition_id}.compose").into();
                     let compose_params = Params {
                         target_size: [comp_w, comp_h],
-                        geo_size: [comp_w, comp_h],
-                        center: [comp_w * 0.5, comp_h * 0.5],
+                        geo_size: [src_w, src_h],
+                        center: gb_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
                         geo_translate: [0.0, 0.0],
                         geo_scale: [1.0, 1.0],
                         time: 0.0,
@@ -4113,14 +4275,27 @@ mod tests {
 
     #[test]
     fn sampled_render_pass_output_size_uses_coord_domain_for_processing_consumers() {
-        let got = sampled_render_pass_output_size(true, [1080, 2400], [200.0, 200.0]);
+        let got = sampled_render_pass_output_size(true, false, [1080, 2400], [200.0, 200.0]);
         assert_eq!(got, [1080, 2400]);
     }
 
     #[test]
     fn sampled_render_pass_output_size_keeps_geometry_extent_without_processing_consumers() {
-        let got = sampled_render_pass_output_size(false, [1080, 2400], [200.0, 200.0]);
+        let got = sampled_render_pass_output_size(false, false, [1080, 2400], [200.0, 200.0]);
         assert_eq!(got, [200, 200]);
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_uses_geometry_extent_for_downsample_sources() {
+        let got = sampled_render_pass_output_size(true, true, [2160, 2400], [1080.0, 2400.0]);
+        assert_eq!(got, [1080, 2400]);
+    }
+
+    #[test]
+    fn gaussian_blur_extend_upsample_geo_size_cancels_shrink() {
+        let geo_size = gaussian_blur_extend_upsample_geo_size([200, 120], [240, 160]);
+        assert!((geo_size[0] - 240.0).abs() < 1e-6);
+        assert!((geo_size[1] - 160.0).abs() < 1e-6);
     }
 
     #[test]
@@ -4334,6 +4509,113 @@ mod tests {
         assert!(
             sampled.contains("pass_up"),
             "expected sampled passes to include pass_up, got: {sampled:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_pass_ids_from_roots_ignores_dead_branch_sampling() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "dead-branch-sampling".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                crate::dsl::Node {
+                    id: "out".to_string(),
+                    node_type: "Composite".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "rt".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(100)),
+                        ("height".to_string(), json!(100)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "p_live".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "ds_dead".to_string(),
+                    node_type: "Downsample".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+            ],
+            connections: vec![
+                crate::dsl::Connection {
+                    id: "c_target".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "rt".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_out".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "p_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                // Dead branch: Downsample consumes p_live but is not reachable from Composite output.
+                crate::dsl::Connection {
+                    id: "c_dead_source".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "p_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "ds_dead".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(HashMap::from([(
+                String::from("composite"),
+                String::from("out"),
+            )])),
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let roots = vec![String::from("p_live")];
+        let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &roots)?;
+        assert!(
+            !sampled.contains("p_live"),
+            "dead branch should not force p_live to sampled output, got: {sampled:?}"
         );
 
         Ok(())

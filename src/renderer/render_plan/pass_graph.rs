@@ -14,30 +14,6 @@ use crate::{
 
 use super::types::PassTextureBinding;
 
-pub(crate) fn sampled_pass_node_ids(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, crate::dsl::Node>,
-) -> Result<HashSet<String>> {
-    // A pass must render into a dedicated intermediate texture if it will be sampled later.
-    //
-    // Originally we only treated passes referenced by explicit PassTexture nodes as "sampled".
-    // But some material nodes (e.g. GlassMaterial) can directly depend on upstream pass textures
-    // without a PassTexture node in the graph. Those dependencies show up in WGSL bundle
-    // `pass_textures`, so we detect sampling by scanning all pass nodes and collecting their
-    // referenced pass textures.
-    let mut out: HashSet<String> = HashSet::new();
-
-    for (node_id, node) in nodes_by_id {
-        if !is_pass_like_node_type(&node.node_type) {
-            continue;
-        }
-        let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
-        out.extend(deps);
-    }
-
-    Ok(out)
-}
-
 pub(crate) fn resolve_pass_texture_bindings(
     pass_output_registry: &PassOutputRegistry,
     pass_node_ids: &[String],
