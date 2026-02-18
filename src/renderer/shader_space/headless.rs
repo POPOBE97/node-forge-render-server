@@ -18,6 +18,7 @@ pub fn render_scene_to_png_headless(
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
     let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
+        .with_adapter(renderer.adapter.clone())
         .with_options(ShaderSpaceBuildOptions::default());
     if let Some(store) = asset_store {
         builder = builder.with_asset_store(store.clone());

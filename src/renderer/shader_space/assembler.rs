@@ -52,7 +52,7 @@ use crate::{
             TypedExpr,
         },
         utils::{as_bytes, as_bytes_slice, decode_data_url, load_image_from_data_url},
-        utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1},
+        utils::{coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_floor, cpu_num_u32_min_1},
         wgsl::{
             ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
             build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
@@ -1291,6 +1291,7 @@ struct TextureDecl {
     name: ResourceName,
     size: [u32; 2],
     format: TextureFormat,
+    sample_count: u32,
 }
 
 #[derive(Clone)]
@@ -1301,6 +1302,7 @@ struct RenderPassSpec {
     instance_buffer: Option<ResourceName>,
     normals_buffer: Option<ResourceName>,
     target_texture: ResourceName,
+    resolve_target: Option<ResourceName>,
     params_buffer: ResourceName,
     baked_data_parse_buffer: Option<ResourceName>,
     params: Params,
@@ -1311,6 +1313,51 @@ struct RenderPassSpec {
     sampler_kinds: Vec<SamplerKind>,
     blend_state: BlendState,
     color_load_op: wgpu::LoadOp<Color>,
+    sample_count: u32,
+}
+
+fn validate_render_pass_msaa_request(pass_id: &str, requested: u32) -> Result<()> {
+    if matches!(requested, 0 | 2 | 4 | 8) {
+        Ok(())
+    } else {
+        bail!("RenderPass.msaaSampleCount for {pass_id} must be one of 0,2,4,8, got {requested}");
+    }
+}
+
+fn select_effective_msaa_sample_count(
+    pass_id: &str,
+    requested: u32,
+    target_format: TextureFormat,
+    device_features: wgpu::Features,
+    adapter: Option<&wgpu::Adapter>,
+) -> Result<u32> {
+    validate_render_pass_msaa_request(pass_id, requested)?;
+
+    if requested == 0 {
+        return Ok(1);
+    }
+    let mut supported = target_format
+        .guaranteed_format_features(device_features)
+        .flags
+        .supported_sample_counts();
+
+    if device_features.contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
+        if let Some(adapter) = adapter {
+            supported = adapter
+                .get_texture_format_features(target_format)
+                .flags
+                .supported_sample_counts();
+        }
+    }
+
+    if supported.contains(&requested) {
+        Ok(requested)
+    } else {
+        eprintln!(
+            "[msaa] RenderPass {pass_id}: {requested}x unsupported for {target_format:?}; supported={supported:?}; falling back to 1x"
+        );
+        Ok(1)
+    }
 }
 
 fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
@@ -1445,6 +1492,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
+    adapter: Option<&wgpu::Adapter>,
     enable_display_encode: bool,
     debug_dump_wgsl_dir: Option<PathBuf>,
     asset_store: Option<&crate::asset_store::AssetStore>,
@@ -1641,6 +1689,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name,
                     size: [w, h],
                     format,
+                    sample_count: 1,
                 });
             }
             _ => {}
@@ -1681,6 +1730,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: name.clone(),
                     size: [tgt_w_u, tgt_h_u],
                     format: TextureFormat::Rgba8Unorm,
+                    sample_count: 1,
                 });
                 Some(name)
             }
@@ -1721,8 +1771,22 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .cloned()
                     .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
 
-                // If this pass is sampled downstream, render into a dedicated intermediate texture
-                // that matches the pass geometry extent.
+                let requested_msaa = cpu_num_u32_floor(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    "msaaSampleCount",
+                    0,
+                )?;
+                let msaa_sample_count = select_effective_msaa_sample_count(
+                    layer_id,
+                    requested_msaa,
+                    sampled_pass_format,
+                    device.features(),
+                    adapter,
+                )?;
+                // Only passes sampled downstream use geometry-sized intermediate outputs.
+                // MSAA alone must not force this path, otherwise vertex-space behavior diverges from 1x.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
                 let is_composite_layer = composite_layer_ids.contains(layer_id);
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
@@ -1767,7 +1831,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     asset_store,
                 )?;
 
-                // Determine the render target for this pass.
+                // Determine the single-sample output target for this pass.
                 // - If sampled downstream: render into a dedicated intermediate texture sized to the
                 //   geometry extent (rounded to integer pixels).
                 // - Otherwise: render directly into the Composite target texture.
@@ -1782,10 +1846,35 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: out_tex.clone(),
                         size: [w_u, h_u],
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
                     (w_u, h_u, out_tex)
                 } else {
                     (tgt_w_u, tgt_h_u, target_texture_name.clone())
+                };
+                let pass_output_format = if is_sampled_output {
+                    sampled_pass_format
+                } else {
+                    target_format
+                };
+                let (pass_render_target_texture, pass_resolve_target) = if msaa_sample_count > 1 {
+                    // Key MSAA color attachments by resolve target so passes that resolve into the
+                    // same output can share load/clear behavior.
+                    let msaa_tex: ResourceName = format!(
+                        "sys.msaa.{}.{}.color",
+                        pass_output_texture.as_str(),
+                        msaa_sample_count
+                    )
+                    .into();
+                    textures.push(TextureDecl {
+                        name: msaa_tex.clone(),
+                        size: [pass_target_w_u, pass_target_h_u],
+                        format: pass_output_format,
+                        sample_count: msaa_sample_count,
+                    });
+                    (msaa_tex, Some(pass_output_texture.clone()))
+                } else {
+                    (pass_output_texture.clone(), None)
                 };
                 let pass_target_w = pass_target_w_u as f32;
                 let pass_target_h = pass_target_h_u as f32;
@@ -2111,7 +2200,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             format!("{}.normals", main_pass_geometry_buffer).into();
                         nb_name
                     }),
-                    target_texture: pass_output_texture.clone(),
+                    target_texture: pass_render_target_texture.clone(),
+                    resolve_target: pass_resolve_target,
                     params_buffer: params_name,
                     baked_data_parse_buffer,
                     params,
@@ -2122,6 +2212,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds,
                     blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: msaa_sample_count,
                 });
                 composite_passes.push(pass_name);
 
@@ -2276,6 +2367,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: target_texture_name.clone(),
+                        resolve_target: None,
                         params_buffer: compose_params_name,
                         baked_data_parse_buffer: None,
                         params: compose_params_val,
@@ -2289,6 +2381,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: vec![SamplerKind::NearestClamp],
                         blend_state,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(compose_pass_name);
                 }
@@ -2442,6 +2535,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: src_tex.clone(),
                         size: src_resolution,
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
 
                     // Build source pass geometry. In Extend mode, draw source content with its
@@ -2550,6 +2644,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: src_tex.clone(),
+                        resolve_target: None,
                         params_buffer: params_src.clone(),
                         baked_data_parse_buffer: None,
                         params: params_src_val,
@@ -2560,6 +2655,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: src_sampler_kinds,
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(src_pass_name);
                     src_tex
@@ -2621,6 +2717,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: tex.clone(),
                         size: [next_w, next_h],
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
                     let geo: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.geo").into();
                     geometry_buffers.push((
@@ -2642,11 +2739,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: h_tex.clone(),
                     size: [ds_w, ds_h],
                     format: sampled_pass_format,
+                    sample_count: 1,
                 });
                 textures.push(TextureDecl {
                     name: v_tex.clone(),
                     size: [ds_w, ds_h],
                     format: sampled_pass_format,
+                    sample_count: 1,
                 });
 
                 // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
@@ -2657,6 +2756,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: out_tex.clone(),
                         size: [blur_w, blur_h],
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
                     out_tex
                 } else {
@@ -2752,6 +2852,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: tex.clone(),
+                        resolve_target: None,
                         params_buffer: params_name,
                         baked_data_parse_buffer: Some(baked_buf),
                         params: params_val,
@@ -2765,6 +2866,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: vec![sampler_kind],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(pass_name);
                     prev_tex = Some(tex.clone());
@@ -2797,6 +2899,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: h_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_h.clone(),
                     baked_data_parse_buffer: None,
                     params: params_h_val,
@@ -2810,6 +2913,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
                 composite_passes.push(pass_name_h);
 
@@ -2836,6 +2940,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: v_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_v.clone(),
                     baked_data_parse_buffer: None,
                     params: params_v_val,
@@ -2849,6 +2954,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
 
                 composite_passes.push(pass_name_v);
@@ -2888,6 +2994,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: output_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_u.clone(),
                     baked_data_parse_buffer: None,
                     params: params_u_val,
@@ -2901,6 +3008,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: blur_output_blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
 
                 composite_passes.push(pass_name_u);
@@ -3001,6 +3109,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: src_tex.clone(),
                         size: gb_src_resolution,
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
 
                     let geo_src: ResourceName = format!("sys.gb.{layer_id}.src.geo").into();
@@ -3094,6 +3203,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: src_tex.clone(),
+                        resolve_target: None,
                         params_buffer: params_src.clone(),
                         baked_data_parse_buffer: None,
                         params: params_src_val,
@@ -3104,6 +3214,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: src_sampler_kinds,
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(src_pass_name);
                     src_tex
@@ -3115,6 +3226,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     name: pad_tex.clone(),
                     size: [padded_w, padded_h],
                     format: sampled_pass_format,
+                    sample_count: 1,
                 });
 
                 let pad_geo: ResourceName = format!("sys.gb.{layer_id}.pad.geo").into();
@@ -3142,6 +3254,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: pad_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_pad,
                     baked_data_parse_buffer: None,
                     params: params_pad_val,
@@ -3157,6 +3270,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
                 composite_passes.push(pad_pass_name);
 
@@ -3183,6 +3297,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: mip_tex.clone(),
                         size: [cur_mip_w, cur_mip_h],
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
 
                     let mip_geo: ResourceName = format!("sys.gb.{layer_id}.mip{i}.geo").into();
@@ -3217,6 +3332,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: mip_tex.clone(),
+                        resolve_target: None,
                         params_buffer: params_mip,
                         baked_data_parse_buffer: None,
                         params: params_mip_val,
@@ -3230,6 +3346,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: vec![SamplerKind::LinearMirror],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(mip_pass_name);
                     prev_mip_tex = mip_tex;
@@ -3256,6 +3373,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         name: out.clone(),
                         size: gb_src_resolution,
                         format: sampled_pass_format,
+                        sample_count: 1,
                     });
                     out
                 } else {
@@ -3402,6 +3520,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: output_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_final,
                     baked_data_parse_buffer: None,
                     params: params_final_val,
@@ -3412,6 +3531,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: final_sampler_kinds,
                     blend_state: final_blend_state,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
                 composite_passes.push(final_pass_name);
 
@@ -3568,6 +3688,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         } else {
                             target_format
                         },
+                        sample_count: 1,
                     });
                     tex
                 } else {
@@ -3614,6 +3735,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     instance_buffer: None,
                     normals_buffer: None,
                     target_texture: downsample_out_tex.clone(),
+                    resolve_target: None,
                     params_buffer: params_name,
                     baked_data_parse_buffer: None,
                     params: params_val,
@@ -3627,6 +3749,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     sampler_kinds: vec![sampler_kind],
                     blend_state: BlendState::REPLACE,
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
                 });
                 composite_passes.push(pass_name);
 
@@ -3662,6 +3785,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         instance_buffer: None,
                         normals_buffer: None,
                         target_texture: target_texture_name.clone(),
+                        resolve_target: None,
                         params_buffer: upsample_params_name,
                         baked_data_parse_buffer: None,
                         params: upsample_params_val,
@@ -3675,6 +3799,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         sampler_kinds: vec![SamplerKind::LinearClamp],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
                     });
                     composite_passes.push(upsample_pass_name);
                 }
@@ -3744,6 +3869,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 instance_buffer: None,
                 normals_buffer: None,
                 target_texture: display_tex.clone(),
+                resolve_target: None,
                 params_buffer: params_name,
                 baked_data_parse_buffer: None,
                 params,
@@ -3757,6 +3883,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 sampler_kinds: vec![SamplerKind::NearestClamp],
                 blend_state: BlendState::REPLACE,
                 color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                sample_count: 1,
             });
 
             // Make sure it runs last.
@@ -3865,9 +3992,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
             name: t.name.clone(),
             resolution: t.size,
             format: t.format,
-            usage: TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
+            usage: if t.sample_count > 1 {
+                TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC
+            } else {
+                TextureUsages::RENDER_ATTACHMENT
+                    | TextureUsages::TEXTURE_BINDING
+                    | TextureUsages::COPY_SRC
+            },
+            sample_count: t.sample_count,
         })
         .collect();
 
@@ -4056,6 +4188,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     usage: TextureUsages::RENDER_ATTACHMENT
                         | TextureUsages::TEXTURE_BINDING
                         | TextureUsages::COPY_SRC,
+                    sample_count: 1,
                 });
 
                 let w = img_w as f32;
@@ -4205,6 +4338,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
     for spec in &render_pass_specs {
         let geometry_buffer = spec.geometry_buffer.clone();
         let target_texture = spec.target_texture.clone();
+        let resolve_target = spec.resolve_target.clone();
+        let sample_count = spec.sample_count;
         let params_buffer = spec.params_buffer.clone();
         let shader_wgsl = spec.shader_wgsl.clone();
         let blend_state = spec.blend_state;
@@ -4332,9 +4467,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     );
             }
 
-            b.bind_color_attachment(target_texture)
-                .blending(blend_state)
-                .load_op(color_load_op)
+            b = b
+                .bind_color_attachment(target_texture)
+                .sample_count(sample_count);
+            if let Some(resolve_target) = resolve_target.clone() {
+                b = b.resolve_target(resolve_target);
+            }
+            b.blending(blend_state).load_op(color_load_op)
         });
     }
 
@@ -4492,6 +4631,59 @@ mod tests {
         let params: HashMap<String, serde_json::Value> = HashMap::new();
         let got = parse_render_pass_blend_state(&params).unwrap();
         assert_eq!(format!("{got:?}"), format!("{:?}", BlendState::REPLACE));
+    }
+
+    #[test]
+    fn msaa_requested_zero_maps_to_single_sample() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            0,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn msaa_unsupported_falls_back_to_single_sample_when_adapter_unavailable() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            2,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn msaa_invalid_value_is_rejected() {
+        let err = select_effective_msaa_sample_count(
+            "rp",
+            3,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect_err("invalid value must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("must be one of 0,2,4,8"));
+    }
+
+    #[test]
+    fn msaa_guaranteed_4x_is_kept_without_adapter_specific_feature() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            4,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 4);
     }
 
     #[test]
@@ -4685,6 +4877,7 @@ pub(crate) fn build_error_shader_space_internal(
         usage: TextureUsages::RENDER_ATTACHMENT
             | TextureUsages::TEXTURE_BINDING
             | TextureUsages::COPY_SRC,
+        sample_count: 1,
     }]);
 
     let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {

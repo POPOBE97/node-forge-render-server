@@ -311,6 +311,7 @@ pub fn apply_scene_update(
                     Arc::new(render_state.device.clone()),
                     Arc::new(render_state.queue.clone()),
                 )
+                .with_adapter(render_state.adapter.clone())
                 .with_options(renderer::ShaderSpaceBuildOptions {
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
                     debug_dump_wgsl_dir: None,
@@ -400,6 +401,7 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         Arc::new(render_state.device.clone()),
         Arc::new(render_state.queue.clone()),
     )
+    .with_adapter(render_state.adapter.clone())
     .build_error(app.resolution)
     {
         app.shader_space = result.shader_space;

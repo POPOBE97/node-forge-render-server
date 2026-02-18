@@ -478,10 +478,20 @@ fn main() -> Result<()> {
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
-                device_descriptor: std::sync::Arc::new(|_adapter| wgpu::DeviceDescriptor {
-                    label: Some("eframe wgpu device"),
-                    required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
-                    ..Default::default()
+                device_descriptor: std::sync::Arc::new(|adapter| {
+                    let mut required_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+                    if adapter
+                        .features()
+                        .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES)
+                    {
+                        required_features |=
+                            wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+                    }
+                    wgpu::DeviceDescriptor {
+                        label: Some("eframe wgpu device"),
+                        required_features,
+                        ..Default::default()
+                    }
                 }),
                 ..Default::default()
             }),
@@ -512,6 +522,7 @@ fn main() -> Result<()> {
                     Arc::new(render_state.device.clone()),
                     Arc::new(render_state.queue.clone()),
                 )
+                .with_adapter(render_state.adapter.clone())
                 .with_options(renderer::ShaderSpaceBuildOptions {
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
                     debug_dump_wgsl_dir: None,
@@ -534,6 +545,7 @@ fn main() -> Result<()> {
                             Arc::new(render_state.device.clone()),
                             Arc::new(render_state.queue.clone()),
                         )
+                        .with_adapter(render_state.adapter.clone())
                         .build_error(resolution_hint)?;
                         (
                             result.shader_space,
@@ -550,6 +562,7 @@ fn main() -> Result<()> {
                     Arc::new(render_state.device.clone()),
                     Arc::new(render_state.queue.clone()),
                 )
+                .with_adapter(render_state.adapter.clone())
                 .build_error(resolution_hint)?;
                 (
                     result.shader_space,

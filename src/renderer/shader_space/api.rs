@@ -38,6 +38,7 @@ pub struct ShaderSpaceBuildResult {
 pub struct ShaderSpaceBuilder {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
+    adapter: Option<wgpu::Adapter>,
     options: ShaderSpaceBuildOptions,
     asset_store: Option<AssetStore>,
 }
@@ -47,9 +48,15 @@ impl ShaderSpaceBuilder {
         Self {
             device,
             queue,
+            adapter: None,
             options: ShaderSpaceBuildOptions::default(),
             asset_store: None,
         }
+    }
+
+    pub fn with_adapter(mut self, adapter: wgpu::Adapter) -> Self {
+        self.adapter = Some(adapter);
+        self
     }
 
     pub fn with_options(mut self, options: ShaderSpaceBuildOptions) -> Self {
@@ -70,6 +77,7 @@ impl ShaderSpaceBuilder {
                 scene,
                 self.device,
                 self.queue,
+                self.adapter.as_ref(),
                 enable_display_encode,
                 self.options.debug_dump_wgsl_dir.clone(),
                 self.asset_store.as_ref(),
