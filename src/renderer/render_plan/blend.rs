@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::wgpu::{self, BlendState};
 
 use crate::dsl::parse_str;
@@ -49,10 +49,21 @@ fn parse_blend_factor(f: &str) -> Result<wgpu::BlendFactor> {
 pub(crate) fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
     let preset = normalize_blend_token(preset);
     Ok(match preset.as_str() {
-        // Premultiplied alpha (common in our renderer): RGB is assumed multiplied by A.
-        "alpha" | "premul-alpha" | "premultiplied-alpha" => BlendState {
+        "premul-alpha" | "premul" | "premultiplied-alpha" => BlendState {
             color: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+        "alpha" => BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 operation: wgpu::BlendOperation::Add,
             },
@@ -82,6 +93,44 @@ pub(crate) fn default_blend_state_for_preset(preset: &str) -> Result<BlendState>
     })
 }
 
+fn require_custom_str<'a>(
+    params: &'a HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<&'a str> {
+    let Some(raw) = params.get(key) else {
+        bail!("blend_preset=custom requires '{key}'");
+    };
+    raw.as_str()
+        .ok_or_else(|| anyhow!("blend_preset=custom requires '{key}' to be a string"))
+}
+
+fn parse_custom_blend_state(params: &HashMap<String, serde_json::Value>) -> Result<BlendState> {
+    let blendfunc = require_custom_str(params, "blendfunc")?;
+    let src_factor = require_custom_str(params, "src_factor")?;
+    let dst_factor = require_custom_str(params, "dst_factor")?;
+    let src_alpha_factor = require_custom_str(params, "src_alpha_factor")?;
+    let dst_alpha_factor = require_custom_str(params, "dst_alpha_factor")?;
+
+    Ok(BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: parse_blend_factor(src_factor)
+                .with_context(|| "invalid custom blend param 'src_factor'")?,
+            dst_factor: parse_blend_factor(dst_factor)
+                .with_context(|| "invalid custom blend param 'dst_factor'")?,
+            operation: parse_blend_operation(blendfunc)
+                .with_context(|| "invalid custom blend param 'blendfunc'")?,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: parse_blend_factor(src_alpha_factor)
+                .with_context(|| "invalid custom blend param 'src_alpha_factor'")?,
+            dst_factor: parse_blend_factor(dst_alpha_factor)
+                .with_context(|| "invalid custom blend param 'dst_alpha_factor'")?,
+            operation: parse_blend_operation(blendfunc)
+                .with_context(|| "invalid custom blend param 'blendfunc'")?,
+        },
+    })
+}
+
 pub(crate) fn parse_render_pass_blend_state(
     params: &HashMap<String, serde_json::Value>,
 ) -> Result<BlendState> {
@@ -94,6 +143,9 @@ pub(crate) fn parse_render_pass_blend_state(
         let preset_norm = normalize_blend_token(preset);
         if matches!(preset_norm.as_str(), "opaque" | "none" | "off" | "replace") {
             return Ok(BlendState::REPLACE);
+        }
+        if preset_norm == "custom" {
+            return parse_custom_blend_state(params);
         }
     }
 
@@ -123,4 +175,109 @@ pub(crate) fn parse_render_pass_blend_state(
     }
 
     Ok(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn assert_blend_state_eq(actual: BlendState, expected: BlendState) {
+        assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+    }
+
+    #[test]
+    fn preset_alpha_matches_contract() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("alpha"));
+        let got = parse_render_pass_blend_state(&params).expect("parse alpha blend preset");
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        assert_blend_state_eq(got, expected);
+    }
+
+    #[test]
+    fn preset_premul_alpha_matches_contract() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("premul_alpha"));
+        let got = parse_render_pass_blend_state(&params).expect("parse premul-alpha blend preset");
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        assert_blend_state_eq(got, expected);
+    }
+
+    #[test]
+    fn preset_add_matches_contract() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("add"));
+        let got = parse_render_pass_blend_state(&params).expect("parse add blend preset");
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        assert_blend_state_eq(got, expected);
+    }
+
+    #[test]
+    fn custom_preset_requires_all_explicit_fields() {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        params.insert("blend_preset".to_string(), json!("custom"));
+        let err = parse_render_pass_blend_state(&params)
+            .expect_err("custom preset without factors fails");
+        assert!(format!("{err:#}").contains("blend_preset=custom requires 'blendfunc'"));
+    }
+
+    #[test]
+    fn custom_preset_uses_verbatim_values() {
+        let params: HashMap<String, serde_json::Value> = HashMap::from([
+            ("blend_preset".to_string(), json!("custom")),
+            ("blendfunc".to_string(), json!("reverse-subtract")),
+            ("src_factor".to_string(), json!("one")),
+            ("dst_factor".to_string(), json!("one")),
+            ("src_alpha_factor".to_string(), json!("src-alpha")),
+            ("dst_alpha_factor".to_string(), json!("one-minus-src-alpha")),
+        ]);
+        let got = parse_render_pass_blend_state(&params).expect("parse custom blend preset");
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::ReverseSubtract,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::ReverseSubtract,
+            },
+        };
+        assert_blend_state_eq(got, expected);
+    }
 }

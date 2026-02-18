@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
     ResourceName,
@@ -36,7 +36,9 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
-        geometry_resolver::{is_pass_like_node_type, resolve_scene_draw_contexts},
+        geometry_resolver::{
+            is_draw_pass_node_type, is_pass_like_node_type, resolve_scene_draw_contexts,
+        },
         graph_uniforms::{
             choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
             graph_field_name, hash_bytes, pack_graph_values,
@@ -665,124 +667,19 @@ fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
 // We use dot-separated segments (no `__`) so the names read well and extend naturally to HDR.
 const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
 
-fn normalize_blend_token(s: &str) -> String {
-    s.trim().to_ascii_lowercase().replace('_', "-")
-}
-
-fn parse_blend_operation(op: &str) -> Result<wgpu::BlendOperation> {
-    let op = normalize_blend_token(op);
-    Ok(match op.as_str() {
-        "add" => wgpu::BlendOperation::Add,
-        "subtract" => wgpu::BlendOperation::Subtract,
-        "reverse-subtract" | "rev-subtract" => wgpu::BlendOperation::ReverseSubtract,
-        "min" => wgpu::BlendOperation::Min,
-        "max" => wgpu::BlendOperation::Max,
-        other => bail!("unsupported blendfunc/blend operation: {other}"),
-    })
-}
-
-fn parse_blend_factor(f: &str) -> Result<wgpu::BlendFactor> {
-    let f = normalize_blend_token(f);
-    Ok(match f.as_str() {
-        "zero" => wgpu::BlendFactor::Zero,
-        "one" => wgpu::BlendFactor::One,
-
-        "src" | "src-color" => wgpu::BlendFactor::Src,
-        "one-minus-src" | "one-minus-src-color" => wgpu::BlendFactor::OneMinusSrc,
-
-        "src-alpha" => wgpu::BlendFactor::SrcAlpha,
-        "one-minus-src-alpha" => wgpu::BlendFactor::OneMinusSrcAlpha,
-
-        "dst" | "dst-color" => wgpu::BlendFactor::Dst,
-        "one-minus-dst" | "one-minus-dst-color" => wgpu::BlendFactor::OneMinusDst,
-
-        "dst-alpha" => wgpu::BlendFactor::DstAlpha,
-        "one-minus-dst-alpha" => wgpu::BlendFactor::OneMinusDstAlpha,
-
-        "src-alpha-saturated" => wgpu::BlendFactor::SrcAlphaSaturated,
-        "constant" | "blend-color" => wgpu::BlendFactor::Constant,
-        "one-minus-constant" | "one-minus-blend-color" => wgpu::BlendFactor::OneMinusConstant,
-        other => bail!("unsupported blend factor: {other}"),
-    })
-}
-
-fn default_blend_state_for_preset(preset: &str) -> Result<BlendState> {
-    let preset = normalize_blend_token(preset);
-    Ok(match preset.as_str() {
-        // Premultiplied alpha (common in our renderer): RGB is assumed multiplied by A.
-        "alpha" | "premul-alpha" | "premultiplied-alpha" => BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-        },
-        "add" | "additive" => BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-        },
-        "opaque" | "none" | "off" | "replace" => BlendState::REPLACE,
-        // "custom" means: start from a neutral blend state and let explicit
-        // blendfunc/src/dst overrides drive the final state.
-        "custom" => BlendState::REPLACE,
-        other => bail!("unsupported blend_preset: {other}"),
-    })
-}
-
-fn parse_render_pass_blend_state(
-    params: &HashMap<String, serde_json::Value>,
-) -> Result<BlendState> {
-    // Start with preset if present; otherwise default to REPLACE.
-    // Note: RenderPass has scheme defaults for blendfunc/factors. If a user sets only
-    // `blend_preset=replace` (common intent: disable blending), those default factor keys will
-    // still exist in params after default-merging. We must treat replace/off/none/opaque as
-    // authoritative and ignore factor overrides.
-    if let Some(preset) = parse_str(params, "blend_preset") {
-        let preset_norm = normalize_blend_token(preset);
-        if matches!(preset_norm.as_str(), "opaque" | "none" | "off" | "replace") {
-            return Ok(BlendState::REPLACE);
-        }
-    }
-
-    let mut state = if let Some(preset) = parse_str(params, "blend_preset") {
-        default_blend_state_for_preset(preset)?
+fn sampled_render_pass_output_size(
+    has_processing_consumer: bool,
+    coord_size_u: [u32; 2],
+    geo_size: [f32; 2],
+) -> [u32; 2] {
+    if has_processing_consumer {
+        coord_size_u
     } else {
-        BlendState::REPLACE
-    };
-
-    // Override with explicit params if present.
-    if let Some(op) = parse_str(params, "blendfunc") {
-        let op = parse_blend_operation(op)?;
-        state.color.operation = op;
-        state.alpha.operation = op;
+        [
+            geo_size[0].max(1.0).round() as u32,
+            geo_size[1].max(1.0).round() as u32,
+        ]
     }
-    if let Some(src) = parse_str(params, "src_factor") {
-        state.color.src_factor = parse_blend_factor(src)?;
-    }
-    if let Some(dst) = parse_str(params, "dst_factor") {
-        state.color.dst_factor = parse_blend_factor(dst)?;
-    }
-    if let Some(src) = parse_str(params, "src_alpha_factor") {
-        state.alpha.src_factor = parse_blend_factor(src)?;
-    }
-    if let Some(dst) = parse_str(params, "dst_alpha_factor") {
-        state.alpha.dst_factor = parse_blend_factor(dst)?;
-    }
-
-    Ok(state)
 }
 
 pub(crate) fn build_shader_space_from_scene_internal(
@@ -1038,15 +935,29 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .cloned()
                     .unwrap_or_default();
                 let has_composition_consumer = !composition_consumers.is_empty();
+                let has_processing_consumer = prepared.scene.connections.iter().any(|conn| {
+                    conn.from.node_id == *layer_id
+                        && conn.from.port_id == "pass"
+                        && nodes_by_id
+                            .get(&conn.to.node_id)
+                            .is_some_and(|n| is_draw_pass_node_type(&n.node_type))
+                });
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
                 let pass_coord_size = draw_coord_size_by_pass
                     .get(layer_id)
                     .copied()
                     .unwrap_or([tgt_w, tgt_h]);
+                let pass_coord_w_u = pass_coord_size[0].max(1.0).round() as u32;
+                let pass_coord_h_u = pass_coord_size[1].max(1.0).round() as u32;
 
-                let blend_state = crate::renderer::render_plan::parse_render_pass_blend_state(
-                    &layer_node.params,
-                )?;
+                let blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {} node '{layer_id}'",
+                                layer_node.node_type
+                            )
+                        })?;
 
                 let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
                     .map(|c| c.from.node_id.clone())
@@ -1087,8 +998,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 )?;
 
                 // Determine the single-sample output target for this pass.
-                // - If sampled downstream: render into a dedicated intermediate texture sized to the
-                //   geometry extent (rounded to integer pixels).
+                // - If sampled by downstream processing passes: keep coord-domain sizing so all
+                //   processing passes share the same inferred render-target space.
+                // - If sampled only by non-processing consumers (e.g. PassTexture/material paths):
+                //   keep geometry-sized intermediates.
                 // - Otherwise: render directly into the Composite target texture.
                 let (pass_target_w_u, pass_target_h_u, pass_output_texture): (
                     u32,
@@ -1096,7 +1009,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     ResourceName,
                 ) = if is_sampled_output {
                     let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
-                    let (w_u, h_u) = (geo_w.max(1.0).round() as u32, geo_h.max(1.0).round() as u32);
+                    let [w_u, h_u] = sampled_render_pass_output_size(
+                        has_processing_consumer,
+                        [pass_coord_w_u, pass_coord_h_u],
+                        [geo_w, geo_h],
+                    );
                     textures.push(TextureDecl {
                         name: out_tex.clone(),
                         size: [w_u, h_u],
@@ -2039,32 +1956,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     target_texture_name.clone()
                 };
 
-                // When multiple layers render to the same Composite.target, we must blend the later
-                // layers over the earlier result (otherwise the later layer overwrites and it looks
-                // like only one draw contributed).
-                //
-                // - For sampled outputs (PassTexture), keep REPLACE for determinism.
-                // - For final output, default to alpha blending, but allow explicit overrides via
-                //   RenderPass-style blend params if present.
+                let pass_blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {} node '{layer_id}'",
+                                layer_node.node_type
+                            )
+                        })?;
                 let blur_output_blend_state: BlendState = if output_tex == target_texture_name {
-                    let has_explicit_blend_params = [
-                        "blend_preset",
-                        "blendfunc",
-                        "src_factor",
-                        "dst_factor",
-                        "src_alpha_factor",
-                        "dst_alpha_factor",
-                    ]
-                    .into_iter()
-                    .any(|k| layer_node.params.contains_key(k));
-
-                    if has_explicit_blend_params {
-                        crate::renderer::render_plan::parse_render_pass_blend_state(
-                            &layer_node.params,
-                        )?
-                    } else {
-                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?
-                    }
+                    pass_blend_state
                 } else {
                     BlendState::REPLACE
                 };
@@ -2359,7 +2260,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             image_node_id: None,
                         }],
                         sampler_kinds: vec![SamplerKind::LinearClamp],
-                        blend_state: blur_output_blend_state,
+                        blend_state: pass_blend_state,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                         sample_count: 1,
                     });
@@ -2831,24 +2732,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     }
                 }
 
+                let pass_blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {} node '{layer_id}'",
+                                layer_node.node_type
+                            )
+                        })?;
                 let final_blend_state: BlendState = if output_tex == target_texture_name {
-                    let has_explicit_blend = [
-                        "blend_preset",
-                        "blendfunc",
-                        "src_factor",
-                        "dst_factor",
-                        "src_alpha_factor",
-                        "dst_alpha_factor",
-                    ]
-                    .into_iter()
-                    .any(|k| layer_node.params.contains_key(k));
-                    if has_explicit_blend {
-                        crate::renderer::render_plan::parse_render_pass_blend_state(
-                            &layer_node.params,
-                        )?
-                    } else {
-                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?
-                    }
+                    pass_blend_state
                 } else {
                     BlendState::REPLACE
                 };
@@ -2946,7 +2839,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             image_node_id: None,
                         }],
                         sampler_kinds: vec![SamplerKind::LinearClamp],
-                        blend_state: final_blend_state,
+                        blend_state: pass_blend_state,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                         sample_count: 1,
                     });
@@ -2959,6 +2852,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // otherwise render to the Composite target.
 
                 let pass_name: ResourceName = format!("sys.downsample.{layer_id}.pass").into();
+                let pass_blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {} node '{layer_id}'",
+                                layer_node.node_type
+                            )
+                        })?;
 
                 // Resolve inputs.
                 let src_conn = incoming_connection(&prepared.scene, layer_id, "source")
@@ -3153,7 +3054,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         image_node_id: None,
                     }],
                     sampler_kinds: vec![sampler_kind],
-                    blend_state: BlendState::REPLACE,
+                    blend_state: if downsample_out_tex == target_texture_name {
+                        pass_blend_state
+                    } else {
+                        BlendState::REPLACE
+                    },
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     sample_count: 1,
                 });
@@ -3203,7 +3108,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             image_node_id: None,
                         }],
                         sampler_kinds: vec![SamplerKind::LinearClamp],
-                        blend_state: BlendState::REPLACE,
+                        blend_state: pass_blend_state,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                         sample_count: 1,
                     });
@@ -3226,8 +3131,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .cloned()
                     .unwrap_or_default();
                 if !composition_consumers.is_empty() {
-                    let compose_blend_state =
-                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?;
+                    let compose_blend_state = pass_blend_state;
                     for composition_id in composition_consumers {
                         let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
                             continue;
@@ -3297,6 +3201,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 };
                 let comp_target_node = find_node(nodes_by_id, &comp_ctx.target_texture_node_id)?;
                 let comp_target_format = parse_texture_format(&comp_target_node.params)?;
+                let pass_blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {} node '{layer_id}'",
+                                layer_node.node_type
+                            )
+                        })?;
                 pass_output_registry.register(PassOutputSpec {
                     node_id: layer_id.clone(),
                     texture_name: comp_ctx.target_texture_name.clone(),
@@ -3313,8 +3225,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     .cloned()
                     .unwrap_or_default();
                 if !composition_consumers.is_empty() {
-                    let compose_blend_state =
-                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?;
+                    let compose_blend_state = pass_blend_state;
                     for downstream_comp_id in composition_consumers {
                         let Some(dst_ctx) = composition_contexts.get(&downstream_comp_id) else {
                             continue;
@@ -4155,7 +4066,7 @@ mod tests {
         params.insert("src_alpha_factor".to_string(), json!("one"));
         params.insert("dst_alpha_factor".to_string(), json!("one-minus-src-alpha"));
 
-        let got = parse_render_pass_blend_state(&params).unwrap();
+        let got = crate::renderer::render_plan::parse_render_pass_blend_state(&params).unwrap();
         let expected = BlendState {
             color: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,
@@ -4175,8 +4086,9 @@ mod tests {
     fn render_pass_blend_state_from_preset_alpha() {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blend_preset".to_string(), json!("alpha"));
-        let got = parse_render_pass_blend_state(&params).unwrap();
-        let expected = default_blend_state_for_preset("alpha").unwrap();
+        let got = crate::renderer::render_plan::parse_render_pass_blend_state(&params).unwrap();
+        let expected =
+            crate::renderer::render_plan::blend::default_blend_state_for_preset("alpha").unwrap();
         assert_eq!(format!("{got:?}"), format!("{expected:?}"));
     }
 
@@ -4185,16 +4097,30 @@ mod tests {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blend_preset".to_string(), json!("premul-alpha"));
 
-        let got = parse_render_pass_blend_state(&params).unwrap();
-        let expected = default_blend_state_for_preset("alpha").unwrap();
+        let got = crate::renderer::render_plan::parse_render_pass_blend_state(&params).unwrap();
+        let expected =
+            crate::renderer::render_plan::blend::default_blend_state_for_preset("premul_alpha")
+                .unwrap();
         assert_eq!(format!("{got:?}"), format!("{expected:?}"));
     }
 
     #[test]
     fn render_pass_blend_state_defaults_to_replace() {
         let params: HashMap<String, serde_json::Value> = HashMap::new();
-        let got = parse_render_pass_blend_state(&params).unwrap();
+        let got = crate::renderer::render_plan::parse_render_pass_blend_state(&params).unwrap();
         assert_eq!(format!("{got:?}"), format!("{:?}", BlendState::REPLACE));
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_uses_coord_domain_for_processing_consumers() {
+        let got = sampled_render_pass_output_size(true, [1080, 2400], [200.0, 200.0]);
+        assert_eq!(got, [1080, 2400]);
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_keeps_geometry_extent_without_processing_consumers() {
+        let got = sampled_render_pass_output_size(false, [1080, 2400], [200.0, 200.0]);
+        assert_eq!(got, [200, 200]);
     }
 
     #[test]
