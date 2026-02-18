@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-14T17:47:01.439Z",
-    "modified": "2026-02-14T17:47:01.439Z"
+    "created": "2026-02-18T18:45:53.686Z",
+    "modified": "2026-02-18T18:45:53.686Z"
   },
   "nodes": [
     {
@@ -30,6 +30,12 @@
       "width": 160,
       "label": "Composite",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "alpha": 1
       },
       "inputs": [
@@ -169,7 +175,7 @@
       "type": "RenderPass",
       "position": {
         "x": 1300,
-        "y": -900
+        "y": -860
       },
       "width": 160,
       "label": "Render Pass",
@@ -180,7 +186,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -188,7 +195,7 @@
       "type": "Rect2DGeometry",
       "position": {
         "x": 1300,
-        "y": -1040
+        "y": -1000
       },
       "width": 160,
       "label": "2D Rect",
@@ -242,6 +249,12 @@
       "width": 160,
       "label": "Mip1",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 540,
@@ -259,6 +272,12 @@
       "width": 160,
       "label": "Mip2",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 270,
@@ -276,6 +295,12 @@
       "width": 160,
       "label": "Mip3",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 135,
@@ -321,6 +346,12 @@
       "width": 160,
       "label": "Mip4",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 67,
@@ -352,6 +383,12 @@
       "width": 160,
       "label": "Mip5",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 33,
@@ -383,6 +420,12 @@
       "width": 160,
       "label": "Mip6",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 16,
@@ -414,6 +457,12 @@
       "width": 160,
       "label": "Mip7",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "sampling": "Mirror",
         "targetSize": {
           "x": 8,
@@ -468,12 +517,13 @@
       "id": "ImageTexture_24",
       "type": "ImageTexture",
       "position": {
-        "x": 900,
-        "y": -900
+        "x": 1300,
+        "y": -1320
       },
-      "width": 192,
+      "width": 160,
       "label": "Image Texture",
       "params": {
+        "assetId": "eea2468df096",
         "interpolation": "linear",
         "extension": "repeat",
         "addressModeU": "mirror-repeat",
@@ -482,8 +532,7 @@
         "minFilter": "nearest",
         "mipmapFilter": "nearest",
         "encoderSpace": "srgb",
-        "alphaMode": "straight",
-        "assetId": "eea2468df096"
+        "alphaMode": "straight"
       }
     },
     {
@@ -502,7 +551,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -582,7 +632,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -662,7 +713,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -742,7 +794,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -822,7 +875,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -902,7 +956,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -982,7 +1037,8 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -1050,8 +1106,8 @@
       "id": "Vector2Input_73",
       "type": "Vector2Input",
       "position": {
-        "x": 920,
-        "y": -1120
+        "x": 940,
+        "y": -1000
       },
       "width": 160,
       "label": "Mip0 Size",
@@ -1064,8 +1120,8 @@
       "id": "Vector2Input_74",
       "type": "Vector2Input",
       "position": {
-        "x": 920,
-        "y": -980
+        "x": 940,
+        "y": -900
       },
       "width": 160,
       "label": "Mip0 Position",
@@ -1268,6 +1324,21 @@
       "params": {
         "x": 2145,
         "y": 2391
+      }
+    },
+    {
+      "id": "ReferenceImage_89",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 2640,
+        "y": -620
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "3111ea5e8e03",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
       }
     }
   ],
@@ -2046,6 +2117,20 @@
   "outputs": {
     "composite": "Composite_2"
   },
+  "assets": {
+    "eea2468df096": {
+      "path": "assets/eea2468df096.png",
+      "originalName": "baseline-test.png",
+      "mimeType": "image/png",
+      "size": 284985
+    },
+    "3111ea5e8e03": {
+      "path": "assets/3111ea5e8e03.png",
+      "originalName": "baseline.png",
+      "mimeType": "image/png",
+      "size": 1372955
+    }
+  },
   "groups": [
     {
       "id": "Geo UV",
@@ -2173,13 +2258,5 @@
         }
       ]
     }
-  ],
-  "assets": {
-    "eea2468df096": {
-      "path": "assets/eea2468df096.png",
-      "originalName": "baseline-test.png",
-      "mimeType": "image/png",
-      "size": 284985
-    }
-  }
+  ]
 }

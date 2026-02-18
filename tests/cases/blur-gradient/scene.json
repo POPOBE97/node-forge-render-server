@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-17T13:24:33.049Z",
-    "modified": "2026-02-17T13:24:33.049Z"
+    "created": "2026-02-18T17:52:59.367Z",
+    "modified": "2026-02-18T17:52:59.367Z"
   },
   "nodes": [
     {
@@ -29,7 +29,14 @@
       },
       "width": 160,
       "label": "Composite",
-      "params": {}
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "id": "RenderTexture_4",
@@ -55,7 +62,14 @@
       },
       "width": 160,
       "label": "Gradient Blur",
-      "params": {}
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "id": "MathClosure_7",
@@ -156,6 +170,21 @@
         "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
+    },
+    {
+      "id": "ReferenceImage_11",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 1060,
+        "y": 520
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "994c0c87978b",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
     }
   ],
   "connections": [
@@ -246,6 +275,12 @@
       "originalName": "baseline-test.png",
       "mimeType": "image/png",
       "size": 284985
+    },
+    "994c0c87978b": {
+      "path": "assets/994c0c87978b.png",
+      "originalName": "baseline.png",
+      "mimeType": "image/png",
+      "size": 1713883
     }
   },
   "groups": []

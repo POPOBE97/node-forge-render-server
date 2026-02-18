@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-12T10:13:11.985Z",
-    "modified": "2026-02-12T10:13:11.985Z"
+    "created": "2026-02-18T19:37:02.987Z",
+    "modified": "2026-02-18T19:37:02.987Z"
   },
   "nodes": [
     {
@@ -16,6 +16,12 @@
       "width": 160,
       "label": "Composite Output",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "alpha": 1
       },
       "inputs": [
@@ -44,7 +50,7 @@
       "type": "RenderPass",
       "position": {
         "x": -100,
-        "y": 420
+        "y": 560
       },
       "width": 160,
       "label": "Render Pass",
@@ -55,14 +61,15 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
       "id": "node_3",
       "type": "Rect2DGeometry",
       "position": {
-        "x": -460,
+        "x": -100,
         "y": 420
       },
       "width": 160,
@@ -113,8 +120,8 @@
       "id": "node_14",
       "type": "Attribute",
       "position": {
-        "x": -280,
-        "y": 420
+        "x": -300,
+        "y": 620
       },
       "width": 160,
       "label": "Attribute",
@@ -140,6 +147,7 @@
       "width": 192,
       "label": "Image Texture",
       "params": {
+        "assetId": "eea2468df096",
         "interpolation": "linear",
         "extension": "repeat",
         "addressModeU": "repeat",
@@ -148,8 +156,7 @@
         "minFilter": "linear",
         "mipmapFilter": "linear",
         "encoderSpace": "linear",
-        "alphaMode": "straight",
-        "assetId": "eea2468df096"
+        "alphaMode": "straight"
       }
     },
     {
@@ -164,6 +171,12 @@
       "params": {
         "mode": "standard",
         "radius": 20,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "extend": false
       }
     },
@@ -179,6 +192,12 @@
       "params": {
         "mode": "standard",
         "radius": 60,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "extend": true
       }
     },
@@ -186,7 +205,7 @@
       "id": "Vector2Input_22",
       "type": "Vector2Input",
       "position": {
-        "x": -640,
+        "x": -300,
         "y": 420
       },
       "width": 160,
@@ -194,6 +213,35 @@
       "params": {
         "x": 200,
         "y": 200
+      }
+    },
+    {
+      "id": "ReferenceImage_23",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 100,
+        "y": 580
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "d7d367951854",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
+    },
+    {
+      "id": "Vector2Input_24",
+      "type": "Vector2Input",
+      "position": {
+        "x": -300,
+        "y": 520
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 100,
+        "y": 100
       }
     }
   ],
@@ -229,17 +277,6 @@
       "to": {
         "nodeId": "node_12",
         "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_17",
-      "from": {
-        "nodeId": "node_3",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "node_14",
-        "portId": "geometry"
       }
     },
     {
@@ -307,18 +344,35 @@
         "nodeId": "GuassianBlurPass_20",
         "portId": "pass"
       }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "Vector2Input_24",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "node_3",
+        "portId": "position"
+      }
     }
   ],
   "outputs": {
     "composite": "node_1"
   },
-  "groups": [],
   "assets": {
     "eea2468df096": {
       "path": "assets/eea2468df096.png",
       "originalName": "baseline-test.png",
       "mimeType": "image/png",
       "size": 284985
+    },
+    "d7d367951854": {
+      "path": "assets/d7d367951854.png",
+      "originalName": "baseline.png",
+      "mimeType": "image/png",
+      "size": 1540299
     }
-  }
+  },
+  "groups": []
 }
