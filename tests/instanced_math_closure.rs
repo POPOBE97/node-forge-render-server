@@ -10,6 +10,7 @@ fn instanced_math_closure_builds_and_reports_instance_count() {
         HeadlessRenderer::new(HeadlessRendererConfig::default()).expect("create headless renderer");
 
     let build = renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
+        .with_adapter(headless.adapter.clone())
         .build(&scene)
         .expect("build shader space");
 

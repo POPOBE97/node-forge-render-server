@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use node_forge_render_server::asset_store::AssetStore;
-use node_forge_render_server::renderer::ShaderSpaceBuildOptions;
 use node_forge_render_server::renderer::validation;
 use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
@@ -451,6 +450,7 @@ fn run_case(case: &Case) {
 
         let build =
             renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
+                .with_adapter(headless.adapter.clone())
                 .with_options(build_options)
                 .with_asset_store(asset_store.clone())
                 .build(&scene)
