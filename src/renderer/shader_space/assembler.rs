@@ -36,14 +36,12 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
+        geometry_resolver::{PlacementPolicy, is_pass_like_node_type, resolve_scene_draw_contexts},
         graph_uniforms::{
             choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
             graph_field_name, hash_bytes, pack_graph_values,
         },
-        node_compiler::{
-            compile_vertex_expr,
-            geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
-        },
+        node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         scene_prep::{bake_data_parse_nodes, prepare_scene},
         types::ValueType,
         types::{
@@ -290,190 +288,9 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
     })
 }
 
-fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
-    // Column-major mat4 multiply to match WGSL `mat4x4f` (constructed from 4 column vectors)
-    // and the `inst_m * vec4f(position, 1.0)` convention in the vertex shader.
-    //
-    // out = a * b
-    // out[r,c] = sum_k a[r,k] * b[k,c]
-    // idx(r,c) = c*4 + r
-    let mut out = [0.0f32; 16];
-    for c in 0..4 {
-        for r in 0..4 {
-            out[c * 4 + r] = a[0 * 4 + r] * b[c * 4 + 0]
-                + a[1 * 4 + r] * b[c * 4 + 1]
-                + a[2 * 4 + r] * b[c * 4 + 2]
-                + a[3 * 4 + r] * b[c * 4 + 3];
-        }
-    }
-    out
-}
-
-fn mat4_translate(tx: f32, ty: f32, tz: f32) -> [f32; 16] {
-    [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, tx, ty, tz, 1.0,
-    ]
-}
-
-fn mat4_scale(sx: f32, sy: f32, sz: f32) -> [f32; 16] {
-    [
-        sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
-}
-
-fn mat4_rotate_z(rad: f32) -> [f32; 16] {
-    let c = rad.cos();
-    let s = rad.sin();
-    [
-        c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
-}
-
 const IDENTITY_MAT4: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
-
-fn parse_inline_vec3(node: &crate::dsl::Node, key: &str, default: [f32; 3]) -> [f32; 3] {
-    let mut out = default;
-    if let Some(v) = node.params.get(key) {
-        if let Some(obj) = v.as_object() {
-            out[0] = obj
-                .get("x")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(out[0] as f64) as f32;
-            out[1] = obj
-                .get("y")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(out[1] as f64) as f32;
-            out[2] = obj
-                .get("z")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(out[2] as f64) as f32;
-        }
-    }
-    out
-}
-
-fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {
-    let Some(v) = node.params.get(key) else {
-        return None;
-    };
-
-    if let Some(arr) = v.as_array() {
-        if arr.len() == 16 {
-            let mut m = [0.0f32; 16];
-            for (i, x) in arr.iter().enumerate() {
-                m[i] = x.as_f64().unwrap_or(0.0) as f32;
-            }
-            return Some(m);
-        }
-    }
-
-    // Allow object form: { m00:..., m01:..., ... } is not supported (yet).
-    None
-}
-
-fn compute_trs_matrix(node: &crate::dsl::Node) -> [f32; 16] {
-    // T * Rz * S for now.
-    // Note: rotate is authored in degrees.
-    let t = parse_inline_vec3(node, "translate", [0.0, 0.0, 0.0]);
-    let s = parse_inline_vec3(node, "scale", [1.0, 1.0, 1.0]);
-    let r = parse_inline_vec3(node, "rotate", [0.0, 0.0, 0.0]);
-    let rz = r[2].to_radians();
-
-    mat4_mul(
-        mat4_translate(t[0], t[1], t[2]),
-        mat4_mul(mat4_rotate_z(rz), mat4_scale(s[0], s[1], s[2])),
-    )
-}
-
-fn compute_set_transform_matrix(
-    _scene: &SceneDSL,
-    _nodes_by_id: &HashMap<String, crate::dsl::Node>,
-    node: &crate::dsl::Node,
-) -> Result<[f32; 16]> {
-    let mode = node
-        .params
-        .get("mode")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Components");
-
-    match mode {
-        "Matrix" => {
-            if let Some(m) = parse_inline_mat4(node, "matrix") {
-                Ok(m)
-            } else {
-                // The scheme says matrix:any (usually connected). For now we only accept inline arrays.
-                // If users want dynamic matrices, they'll need a dedicated CPU-side feature.
-                Ok([
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                ])
-            }
-        }
-        _ => Ok(compute_trs_matrix(node)),
-    }
-}
-
-fn baked_to_vec3_translate(v: BakedValue) -> [f32; 3] {
-    match v {
-        BakedValue::Vec3(v) => v,
-        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
-        BakedValue::Vec2([x, y]) => [x, y, 0.0],
-        BakedValue::F32(x) => [x, 0.0, 0.0],
-        BakedValue::I32(x) => [x as f32, 0.0, 0.0],
-        BakedValue::U32(x) => [x as f32, 0.0, 0.0],
-        BakedValue::Bool(x) => {
-            if x {
-                [1.0, 0.0, 0.0]
-            } else {
-                [0.0, 0.0, 0.0]
-            }
-        }
-    }
-}
-
-fn baked_to_vec3_scale(v: BakedValue) -> [f32; 3] {
-    match v {
-        BakedValue::Vec3(v) => v,
-        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
-        BakedValue::Vec2([x, y]) => [x, y, 1.0],
-        BakedValue::F32(x) => [x, x, 1.0],
-        BakedValue::I32(x) => {
-            let x = x as f32;
-            [x, x, 1.0]
-        }
-        BakedValue::U32(x) => {
-            let x = x as f32;
-            [x, x, 1.0]
-        }
-        BakedValue::Bool(x) => {
-            if x {
-                [1.0, 1.0, 1.0]
-            } else {
-                [0.0, 0.0, 1.0]
-            }
-        }
-    }
-}
-
-fn baked_to_vec3_rotate_deg(v: BakedValue) -> [f32; 3] {
-    match v {
-        BakedValue::Vec3(v) => v,
-        BakedValue::Vec4([x, y, z, _w]) => [x, y, z],
-        BakedValue::Vec2([x, y]) => [x, y, 0.0],
-        // Common authoring pattern: scalar rotation means Z rotation.
-        BakedValue::F32(z) => [0.0, 0.0, z],
-        BakedValue::I32(z) => [0.0, 0.0, z as f32],
-        BakedValue::U32(z) => [0.0, 0.0, z as f32],
-        BakedValue::Bool(x) => {
-            if x {
-                [0.0, 0.0, 1.0]
-            } else {
-                [0.0, 0.0, 0.0]
-            }
-        }
-    }
-}
 
 pub(crate) fn resolve_geometry_for_render_pass(
     scene: &SceneDSL,
@@ -499,501 +316,48 @@ pub(crate) fn resolve_geometry_for_render_pass(
     Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
     Option<std::sync::Arc<[u8]>>,
 )> {
-    let geometry_node = find_node(nodes_by_id, geometry_node_id)?;
+    let (
+        geometry_buffer,
+        geo_w,
+        geo_h,
+        geo_x,
+        geo_y,
+        instances,
+        base_m,
+        instance_mats,
+        translate_expr,
+        vtx_inline_stmts,
+        vtx_wgsl_decls,
+        _graph_input_kinds,
+        uses_instance_index,
+        rect_dyn,
+        normals_bytes,
+    ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+        scene,
+        nodes_by_id,
+        ids,
+        geometry_node_id,
+        render_target_size,
+        material_ctx,
+        asset_store,
+    )?;
 
-    match geometry_node.node_type.as_str() {
-        "Rect2DGeometry" => {
-            let (
-                geometry_buffer,
-                geo_w,
-                geo_h,
-                geo_x,
-                geo_y,
-                instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                _graph_input_kinds,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                geometry_node_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-            Ok((
-                geometry_buffer,
-                geo_w,
-                geo_h,
-                geo_x,
-                geo_y,
-                instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ))
-        }
-        "GLTFGeometry" => {
-            let (
-                geometry_buffer,
-                geo_w,
-                geo_h,
-                geo_x,
-                geo_y,
-                instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                _graph_input_kinds,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                geometry_node_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-            Ok((
-                geometry_buffer,
-                geo_w,
-                geo_h,
-                geo_x,
-                geo_y,
-                instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ))
-        }
-        "InstancedGeometryStart" => {
-            // Treat start as a passthrough wrapper for geometry resolution.
-            // The instancing count is finalized at InstancedGeometryEnd.
-            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "base")
-                .or_else(|| incoming_connection(scene, geometry_node_id, "geometry"))
-                .map(|c| c.from.node_id.clone())
-                .ok_or_else(|| {
-                    anyhow!("InstancedGeometryStart.base missing for {geometry_node_id}")
-                })?;
-
-            let (
-                buf,
-                w,
-                h,
-                x,
-                y,
-                _instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ) = resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                &upstream_geo_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-
-            let count_u = cpu_num_u32_min_1(scene, nodes_by_id, geometry_node, "count", 1)?;
-            Ok((
-                buf,
-                w,
-                h,
-                x,
-                y,
-                count_u,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ))
-        }
-        "InstancedGeometryEnd" => {
-            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
-                .map(|c| c.from.node_id.clone())
-                .ok_or_else(|| {
-                    anyhow!("InstancedGeometryEnd.geometry missing for {geometry_node_id}")
-                })?;
-
-            let (
-                buf,
-                w,
-                h,
-                x,
-                y,
-                _instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ) = resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                &upstream_geo_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-
-            // Find InstancedGeometryStart by matching zoneId.
-            let zone_id = geometry_node
-                .params
-                .get("zoneId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if zone_id.trim().is_empty() {
-                bail!("InstancedGeometryEnd.zoneId missing for {geometry_node_id}");
-            }
-
-            let start = nodes_by_id
-                .values()
-                .find(|n| {
-                    n.node_type == "InstancedGeometryStart"
-                        && n.params.get("zoneId").and_then(|v| v.as_str()) == Some(zone_id)
-                })
-                .ok_or_else(|| {
-                    anyhow!("InstancedGeometryStart with zoneId '{zone_id}' not found")
-                })?;
-
-            let count_u = cpu_num_u32_min_1(scene, nodes_by_id, start, "count", 1)?;
-
-            Ok((
-                buf,
-                w,
-                h,
-                x,
-                y,
-                count_u,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ))
-        }
-        "SetTransform" => {
-            // Geometry chain: SetTransform.geometry -> base geometry buffer.
-            // Unlike TransformGeometry, this sets the base transform directly at CPU instance-buffer initialization.
-
-            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
-                .map(|c| c.from.node_id.clone())
-                .ok_or_else(|| anyhow!("SetTransform.geometry missing for {geometry_node_id}"))?;
-
-            let (
-                buf,
-                w,
-                h,
-                x,
-                y,
-                instances,
-                _base_m,
-                _upstream_instance_mats,
-                _translate_expr,
-                _vtx_inline_stmts,
-                _vtx_wgsl_decls,
-                uses_instance_index,
-                _rect_dyn,
-                _normals_bytes,
-            ) = resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                &upstream_geo_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-
-            // SetTransform overrides the accumulated base matrix.
-            let m = compute_set_transform_matrix(scene, nodes_by_id, geometry_node)?;
-
-            // Bake per-instance base matrices if any of translate/scale/rotate are connected and
-            // baked values are available.
-            //
-            // Semantics A: SetTransform result replaces upstream base matrix.
-            // Connected components behave like "deltas" on top of inline params:
-            // - translate: additive
-            // - rotate: additive degrees (Z only currently)
-            // - scale: multiplicative
-            let mut instance_mats: Option<Vec<[f32; 16]>> = None;
-            if let Some(material_ctx) = material_ctx {
-                if let (Some(baked), Some(meta)) = (
-                    material_ctx.baked_data_parse.as_ref(),
-                    material_ctx.baked_data_parse_meta.as_ref(),
-                ) {
-                    let translate_key = incoming_connection(scene, &geometry_node.id, "translate")
-                        .map(|conn| {
-                            (
-                                meta.pass_id.clone(),
-                                conn.from.node_id.clone(),
-                                conn.from.port_id.clone(),
-                            )
-                        });
-
-                    let scale_key =
-                        incoming_connection(scene, &geometry_node.id, "scale").map(|conn| {
-                            (
-                                meta.pass_id.clone(),
-                                conn.from.node_id.clone(),
-                                conn.from.port_id.clone(),
-                            )
-                        });
-
-                    let rotate_key =
-                        incoming_connection(scene, &geometry_node.id, "rotate").map(|conn| {
-                            (
-                                meta.pass_id.clone(),
-                                conn.from.node_id.clone(),
-                                conn.from.port_id.clone(),
-                            )
-                        });
-
-                    let has_any = translate_key
-                        .as_ref()
-                        .is_some_and(|k| baked.contains_key(k))
-                        || scale_key.as_ref().is_some_and(|k| baked.contains_key(k))
-                        || rotate_key.as_ref().is_some_and(|k| baked.contains_key(k));
-
-                    if has_any {
-                        let t_inline =
-                            parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
-                        let s_inline = parse_inline_vec3(geometry_node, "scale", [1.0, 1.0, 1.0]);
-                        let r_inline = parse_inline_vec3(geometry_node, "rotate", [0.0, 0.0, 0.0]);
-
-                        let instances = instances;
-                        let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instances as usize);
-                        for i in 0..instances as usize {
-                            let t_conn = translate_key
-                                .as_ref()
-                                .and_then(|k| baked.get(k))
-                                .and_then(|vs| vs.get(i))
-                                .cloned()
-                                .map(baked_to_vec3_translate)
-                                .unwrap_or([0.0, 0.0, 0.0]);
-
-                            let s_conn = scale_key
-                                .as_ref()
-                                .and_then(|k| baked.get(k))
-                                .and_then(|vs| vs.get(i))
-                                .cloned()
-                                .map(baked_to_vec3_scale)
-                                .unwrap_or([1.0, 1.0, 1.0]);
-
-                            let r_conn = rotate_key
-                                .as_ref()
-                                .and_then(|k| baked.get(k))
-                                .and_then(|vs| vs.get(i))
-                                .cloned()
-                                .map(baked_to_vec3_rotate_deg)
-                                .unwrap_or([0.0, 0.0, 0.0]);
-
-                            // Combine inline + connected components.
-                            let t = [
-                                t_inline[0] + t_conn[0],
-                                t_inline[1] + t_conn[1],
-                                t_inline[2] + t_conn[2],
-                            ];
-                            let s = [
-                                s_inline[0] * s_conn[0],
-                                s_inline[1] * s_conn[1],
-                                s_inline[2] * s_conn[2],
-                            ];
-                            let r = [
-                                r_inline[0] + r_conn[0],
-                                r_inline[1] + r_conn[1],
-                                r_inline[2] + r_conn[2],
-                            ];
-
-                            let rz = r[2].to_radians();
-                            let m_i = mat4_mul(
-                                mat4_translate(t[0], t[1], t[2]),
-                                mat4_mul(mat4_rotate_z(rz), mat4_scale(s[0], s[1], s[2])),
-                            );
-                            mats.push(m_i);
-                        }
-                        instance_mats = Some(mats);
-                    }
-                }
-            }
-
-            // Important: SetTransform should NOT forward its translate input into the vertex shader;
-            // it applies it into the base matrix here (CPU-side).
-            // Also: any TransformGeometry nodes *before* SetTransform are skipped, meaning we
-            // discard upstream vertex-side translate expressions and inline statements.
-            Ok((
-                buf,
-                w,
-                h,
-                x,
-                y,
-                instances,
-                // Replace upstream base matrix (per user semantics A).
-                m,
-                instance_mats,
-                None,
-                Vec::new(),
-                String::new(),
-                uses_instance_index,
-                None,
-                None,
-            ))
-        }
-        "TransformGeometry" => {
-            let upstream_geo_id = incoming_connection(scene, geometry_node_id, "geometry")
-                .map(|c| c.from.node_id.clone())
-                .ok_or_else(|| {
-                    anyhow!("TransformGeometry.geometry missing for {geometry_node_id}")
-                })?;
-
-            let (
-                buf,
-                mut w,
-                mut h,
-                x,
-                y,
-                instances,
-                base_m,
-                instance_mats,
-                upstream_translate_expr,
-                mut vtx_inline_stmts,
-                mut vtx_wgsl_decls,
-                mut uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ) = resolve_geometry_for_render_pass(
-                scene,
-                nodes_by_id,
-                ids,
-                &upstream_geo_id,
-                render_target_size,
-                material_ctx,
-                asset_store,
-            )?;
-
-            // Adjust logical size by inline scale, so UV/GeoFragCoord stay correct.
-            if let Some(s) = geometry_node.params.get("scale") {
-                if let Some(obj) = s.as_object() {
-                    if let Some(vx) = obj.get("x").and_then(|v| v.as_f64()) {
-                        w *= vx as f32;
-                    }
-                    if let Some(vy) = obj.get("y").and_then(|v| v.as_f64()) {
-                        h *= vy as f32;
-                    }
-                }
-            }
-
-            // Vertex-stage translate overrides upstream translate.
-            let mut translate_expr = upstream_translate_expr;
-            let mut local_inline_stmts: Vec<String> = Vec::new();
-            let mut local_wgsl_decls = String::new();
-            let mut local_uses_instance_index = false;
-
-            if let Some(conn) = incoming_connection(scene, &geometry_node.id, "translate") {
-                let mut vtx_ctx = MaterialCompileContext {
-                    baked_data_parse: material_ctx.and_then(|c| c.baked_data_parse.clone()),
-                    baked_data_parse_meta: material_ctx
-                        .and_then(|c| c.baked_data_parse_meta.clone()),
-                    ..Default::default()
-                };
-                let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-
-                let expr = compile_vertex_expr(
-                    scene,
-                    nodes_by_id,
-                    &conn.from.node_id,
-                    Some(&conn.from.port_id),
-                    &mut vtx_ctx,
-                    &mut cache,
-                )?;
-                let expr = coerce_to_type(expr, ValueType::Vec3)?;
-
-                local_inline_stmts = vtx_ctx.inline_stmts.clone();
-                local_wgsl_decls = vtx_ctx.wgsl_decls();
-                local_uses_instance_index = vtx_ctx.uses_instance_index;
-                translate_expr = Some(expr);
-            } else {
-                // No connected translate port — apply inline translate params as constant.
-                let t = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
-                if t[0] != 0.0 || t[1] != 0.0 || t[2] != 0.0 {
-                    translate_expr = Some(TypedExpr::new(
-                        format!("vec3f({:.6}, {:.6}, {:.6})", t[0], t[1], t[2]),
-                        ValueType::Vec3,
-                    ));
-                }
-            }
-
-            if !local_inline_stmts.is_empty() {
-                vtx_inline_stmts = local_inline_stmts;
-                vtx_wgsl_decls = local_wgsl_decls;
-            }
-            if local_uses_instance_index {
-                uses_instance_index = true;
-            }
-
-            Ok((
-                buf,
-                w,
-                h,
-                x,
-                y,
-                instances,
-                base_m,
-                instance_mats,
-                translate_expr,
-                vtx_inline_stmts,
-                vtx_wgsl_decls,
-                uses_instance_index,
-                rect_dyn,
-                normals_bytes,
-            ))
-        }
-        other => {
-            bail!(
-                "RenderPass.geometry must resolve to Rect2DGeometry/GLTFGeometry/TransformGeometry/InstancedGeometryEnd, got {other}"
-            )
-        }
-    }
+    Ok((
+        geometry_buffer,
+        geo_w,
+        geo_h,
+        geo_x,
+        geo_y,
+        instances,
+        base_m,
+        instance_mats,
+        translate_expr,
+        vtx_inline_stmts,
+        vtx_wgsl_decls,
+        uses_instance_index,
+        rect_dyn,
+        normals_bytes,
+    ))
 }
 
 fn sampled_pass_node_ids(
@@ -1010,10 +374,7 @@ fn sampled_pass_node_ids(
     let mut out: HashSet<String> = HashSet::new();
 
     for (node_id, node) in nodes_by_id {
-        if !matches!(
-            node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
-        ) {
+        if !is_pass_like_node_type(&node.node_type) {
             continue;
         }
         let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
@@ -1078,17 +439,19 @@ fn deps_for_pass_node(
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
             Ok(vec![source_conn.from.node_id.clone()])
         }
+        "Composite" => crate::renderer::scene_prep::composite_layers_in_draw_order(
+            scene,
+            nodes_by_id,
+            pass_node_id,
+        ),
         "GradientBlur" => {
             // GradientBlur reads "source" input (not "pass").
             let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
                 return Ok(Vec::new());
             };
-            let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|n| {
-                matches!(
-                    n.node_type.as_str(),
-                    "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
-                )
-            });
+            let source_is_pass = nodes_by_id
+                .get(&conn.from.node_id)
+                .is_some_and(|n| is_pass_like_node_type(&n.node_type));
             if source_is_pass {
                 Ok(vec![conn.from.node_id.clone()])
             } else {
@@ -1317,10 +680,10 @@ struct RenderPassSpec {
 }
 
 fn validate_render_pass_msaa_request(pass_id: &str, requested: u32) -> Result<()> {
-    if matches!(requested, 0 | 2 | 4 | 8) {
+    if matches!(requested, 1 | 2 | 4 | 8) {
         Ok(())
     } else {
-        bail!("RenderPass.msaaSampleCount for {pass_id} must be one of 0,2,4,8, got {requested}");
+        bail!("RenderPass.msaaSampleCount for {pass_id} must be one of 1,2,4,8, got {requested}");
     }
 }
 
@@ -1332,10 +695,6 @@ fn select_effective_msaa_sample_count(
     adapter: Option<&wgpu::Adapter>,
 ) -> Result<u32> {
     validate_render_pass_msaa_request(pass_id, requested)?;
-
-    if requested == 0 {
-        return Ok(1);
-    }
     let mut supported = target_format
         .guaranteed_format_features(device_features)
         .flags
@@ -1350,14 +709,20 @@ fn select_effective_msaa_sample_count(
         }
     }
 
-    if supported.contains(&requested) {
-        Ok(requested)
-    } else {
-        eprintln!(
-            "[msaa] RenderPass {pass_id}: {requested}x unsupported for {target_format:?}; supported={supported:?}; falling back to 1x"
-        );
-        Ok(1)
+    let mut effective = 1u32;
+    for candidate in [8u32, 4u32, 2u32, 1u32] {
+        if candidate <= requested && supported.contains(&candidate) {
+            effective = candidate;
+            break;
+        }
     }
+
+    if effective != requested {
+        eprintln!(
+            "[msaa] RenderPass {pass_id}: {requested}x unsupported for {target_format:?}; supported={supported:?}; downgraded to {effective}x"
+        );
+    }
+    Ok(effective)
 }
 
 fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
@@ -1512,6 +877,30 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let composite_layers_in_order = &prepared.composite_layers_in_draw_order;
     let order = &prepared.topo_order;
 
+    let resolved_contexts =
+        resolve_scene_draw_contexts(&prepared.scene, nodes_by_id, ids, resolution)?;
+    let composition_contexts = resolved_contexts.composition_contexts.clone();
+    let composition_consumers_by_source = resolved_contexts.composition_consumers_by_source;
+    let mut draw_coord_size_by_pass: HashMap<String, [f32; 2]> = HashMap::new();
+    for ctx in &resolved_contexts.draw_contexts {
+        match draw_coord_size_by_pass.get(&ctx.pass_node_id).copied() {
+            None => {
+                draw_coord_size_by_pass.insert(ctx.pass_node_id.clone(), ctx.coord_domain.size_px);
+            }
+            Some(existing) => {
+                if existing != ctx.coord_domain.size_px
+                    && matches!(
+                        ctx.placement_policy,
+                        PlacementPolicy::PreserveForComposition
+                    )
+                {
+                    draw_coord_size_by_pass
+                        .insert(ctx.pass_node_id.clone(), ctx.coord_domain.size_px);
+                }
+            }
+        }
+    }
+
     let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
     let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
     let mut textures: Vec<TextureDecl> = Vec::new();
@@ -1662,6 +1051,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // Model is in normalized coordinates (roughly -1..1 from DDC).
                 // Scale to pixel space by multiplying by half the render target size.
                 let half_w = tgt_w * 0.5;
+                let half_h = tgt_h * 0.5;
 
                 let verts: Vec<[f32; 5]> = raw_verts
                     .into_iter()
@@ -1748,9 +1138,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
         composite_layers_in_order,
     )?;
 
-    // Track which pass node ids are direct composite layers (vs. transitive dependencies).
-    let composite_layer_ids: HashSet<String> = composite_layers_in_order.iter().cloned().collect();
-
     // Pass nodes used as Downsample.source keep special dynamic-geometry fullscreen handling.
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
     for (node_id, node) in nodes_by_id {
@@ -1776,7 +1163,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     nodes_by_id,
                     layer_node,
                     "msaaSampleCount",
-                    0,
+                    1,
                 )?;
                 let msaa_sample_count = select_effective_msaa_sample_count(
                     layer_id,
@@ -1788,8 +1175,16 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // Only passes sampled downstream use geometry-sized intermediate outputs.
                 // MSAA alone must not force this path, otherwise vertex-space behavior diverges from 1x.
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
-                let is_composite_layer = composite_layer_ids.contains(layer_id);
+                let composition_consumers = composition_consumers_by_source
+                    .get(layer_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let has_composition_consumer = !composition_consumers.is_empty();
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
+                let pass_coord_size = draw_coord_size_by_pass
+                    .get(layer_id)
+                    .copied()
+                    .unwrap_or([tgt_w, tgt_h]);
 
                 let blend_state = crate::renderer::render_plan::parse_render_pass_blend_state(
                     &layer_node.params,
@@ -1798,6 +1193,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
                     .map(|c| c.from.node_id.clone())
                     .ok_or_else(|| anyhow!("RenderPass.geometry missing for {layer_id}"))?;
+                let render_geo_is_rect =
+                    find_node(nodes_by_id, &render_geo_node_id)?.node_type == "Rect2DGeometry";
 
                 let (
                     geometry_buffer,
@@ -1806,7 +1203,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     geo_x,
                     geo_y,
                     instance_count,
-                    base_m,
+                    _base_m,
                     _instance_mats,
                     _translate_expr,
                     _vertex_inline_stmts,
@@ -1820,7 +1217,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
-                    [tgt_w, tgt_h],
+                    pass_coord_size,
                     Some(&MaterialCompileContext {
                         baked_data_parse: Some(std::sync::Arc::new(
                             prepared.baked_data_parse.clone(),
@@ -1959,7 +1356,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     _geo_x_2,
                     _geo_y_2,
                     _instance_count_2,
-                    _base_m_2,
+                    base_m_2,
                     instance_mats_2,
                     translate_expr,
                     vertex_inline_stmts,
@@ -1973,7 +1370,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     nodes_by_id,
                     ids,
                     &render_geo_node_id,
-                    [tgt_w, tgt_h],
+                    pass_coord_size,
                     Some(&MaterialCompileContext {
                         baked_data_parse: Some(std::sync::Arc::new(baked.clone())),
                         baked_data_parse_meta: baked_data_parse_meta_by_pass.get(layer_id).cloned(),
@@ -2025,8 +1422,27 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             rect_dyn_2.clone(),
                         )
                     } else {
+                        let resolved_geometry_buffer: ResourceName = if render_geo_is_rect {
+                            let geo_name: ResourceName =
+                                format!("sys.pass.{layer_id}.resolved.geo").into();
+                            let geo_bytes: Arc<[u8]> = if rect_dyn_2.is_some() {
+                                Arc::from(as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec())
+                            } else {
+                                Arc::from(
+                                    as_bytes_slice(&rect2d_geometry_vertices(
+                                        geo_w.max(1.0),
+                                        geo_h.max(1.0),
+                                    ))
+                                    .to_vec(),
+                                )
+                            };
+                            geometry_buffers.push((geo_name.clone(), geo_bytes));
+                            geo_name
+                        } else {
+                            geometry_buffer.clone()
+                        };
                         (
-                            geometry_buffer.clone(),
+                            resolved_geometry_buffer,
                             Params {
                                 target_size: [pass_target_w, pass_target_h],
                                 geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
@@ -2044,8 +1460,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let params_name: ResourceName = format!("params.{layer_id}").into();
                 let params = main_pass_params;
 
-                let has_non_identity_base_m = base_m != IDENTITY_MAT4;
-                let is_instanced = instance_count > 1 || has_non_identity_base_m;
+                let has_non_identity_base_m = base_m_2 != IDENTITY_MAT4;
+                let has_instance_mats = instance_mats_2.as_ref().is_some_and(|m| !m.is_empty());
+                let is_instanced =
+                    instance_count > 1 || has_non_identity_base_m || has_instance_mats;
 
                 // Internal resource naming helpers for this pass node.
                 let baked_buf_name: ResourceName =
@@ -2166,7 +1584,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     } else {
                         let mut mats: Vec<[f32; 16]> = Vec::with_capacity(instance_count as usize);
                         for _ in 0..instance_count {
-                            mats.push(base_m);
+                            mats.push(base_m_2);
                         }
                         mats
                     };
@@ -2216,174 +1634,181 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 });
                 composite_passes.push(pass_name);
 
-                // If a pass is sampled (so it renders to sys.pass.<id>.out) but is also a direct
-                // composite layer, we must still draw it into Composite.target.
-                //
-                // Strategy: add a dedicated compose pass that samples sys.pass.<id>.out and blends it
-                // into Composite.target at the correct layer position.
-                if is_sampled_output && is_composite_layer {
-                    let compose_pass_name: ResourceName =
-                        format!("sys.pass.{layer_id}.compose.pass").into();
-                    let compose_params_name: ResourceName =
-                        format!("params.sys.pass.{layer_id}.compose").into();
+                // If a pass is sampled (so it renders to sys.pass.<id>.out) and consumed by one
+                // or more Composition nodes, synthesize compose passes per Composition consumer.
+                if is_sampled_output && has_composition_consumer {
+                    for composition_id in composition_consumers {
+                        let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
+                            continue;
+                        };
+                        let comp_tgt_w = comp_ctx.target_size_px[0];
+                        let comp_tgt_h = comp_ctx.target_size_px[1];
+                        let comp_tgt_w_u = comp_tgt_w.max(1.0).round() as u32;
+                        let comp_tgt_h_u = comp_tgt_h.max(1.0).round() as u32;
 
-                    // If the sampled output is target-sized, compose with a fullscreen quad.
-                    // If the sampled output is geometry-sized, compose with the
-                    // original geometry so it lands at the correct screen-space position.
-                    //
-                    // When the geometry has dynamic inputs (use_fullscreen_for_downsample_source), we use
-                    // a special compose shader that reads position/size from graph_inputs and applies
-                    // the dynamic transformation.
-                    let (
-                        compose_geometry_buffer,
-                        compose_params_val,
-                        compose_bundle,
-                        compose_graph_binding,
-                        compose_graph_values,
-                    ) = if pass_target_w_u == tgt_w_u && pass_target_h_u == tgt_h_u {
-                        // Target-sized: fullscreen quad, no dynamic positioning needed.
-                        let compose_geo: ResourceName =
-                            format!("sys.pass.{layer_id}.compose.geo").into();
-                        geometry_buffers
-                            .push((compose_geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
-                        let fragment_body =
-                            "return textureSample(src_tex, src_samp, in.uv);".to_string();
-                        (
-                            compose_geo,
-                            Params {
-                                target_size: [tgt_w, tgt_h],
-                                geo_size: [tgt_w, tgt_h],
-                                center: [tgt_w * 0.5, tgt_h * 0.5],
-                                geo_translate: [0.0, 0.0],
-                                geo_scale: [1.0, 1.0],
-                                time: 0.0,
-                                _pad0: 0.0,
-                                color: [0.0, 0.0, 0.0, 0.0],
-                            },
-                            build_fullscreen_textured_bundle(fragment_body),
-                            None,
-                            None,
-                        )
-                    } else if use_fullscreen_for_downsample_source {
-                        // Dynamic geometry: use a unit quad and apply position/size from graph_inputs.
-                        // The compose pass shader reads the same graph_inputs as the main pass.
-                        let compose_geo: ResourceName =
-                            format!("sys.pass.{layer_id}.compose.geo").into();
-                        geometry_buffers.push((
-                            compose_geo.clone(),
-                            Arc::from(as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec()),
-                        ));
+                        let compose_pass_name: ResourceName =
+                            format!("sys.pass.{layer_id}.to.{composition_id}.compose.pass").into();
+                        let compose_params_name: ResourceName =
+                            format!("params.sys.pass.{layer_id}.to.{composition_id}.compose")
+                                .into();
 
-                        // Extract position/size expressions from rect_dyn_2.
-                        let rect_dyn = rect_dyn_2.as_ref().expect(
-                            "use_fullscreen_for_downsample_source implies rect_dyn_2.is_some()",
-                        );
-                        let position_expr = rect_dyn
-                            .position_expr
-                            .as_ref()
-                            .map(|e| e.expr.as_str())
-                            .unwrap_or("params.center");
-                        let size_expr = rect_dyn
-                            .size_expr
-                            .as_ref()
-                            .map(|e| e.expr.as_str())
-                            .unwrap_or("params.geo_size");
+                        // If the sampled output is target-sized, compose with a fullscreen quad.
+                        // If the sampled output is geometry-sized, compose with the original
+                        // geometry so it lands at the correct screen-space position.
+                        //
+                        // When the geometry has dynamic inputs (use_fullscreen_for_downsample_source),
+                        // use the dynamic compose shader that reads position/size from graph_inputs.
+                        let (
+                            compose_geometry_buffer,
+                            compose_params_val,
+                            compose_bundle,
+                            compose_graph_binding,
+                            compose_graph_values,
+                        ) = if pass_target_w_u == comp_tgt_w_u && pass_target_h_u == comp_tgt_h_u {
+                            let compose_geo: ResourceName =
+                                format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
+                                    .into();
+                            geometry_buffers.push((
+                                compose_geo.clone(),
+                                make_fullscreen_geometry(comp_tgt_w, comp_tgt_h),
+                            ));
+                            let fragment_body =
+                                "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                            (
+                                compose_geo,
+                                Params {
+                                    target_size: [comp_tgt_w, comp_tgt_h],
+                                    geo_size: [comp_tgt_w, comp_tgt_h],
+                                    center: [comp_tgt_w * 0.5, comp_tgt_h * 0.5],
+                                    geo_translate: [0.0, 0.0],
+                                    geo_scale: [1.0, 1.0],
+                                    time: 0.0,
+                                    _pad0: 0.0,
+                                    color: [0.0, 0.0, 0.0, 0.0],
+                                },
+                                build_fullscreen_textured_bundle(fragment_body),
+                                None,
+                                None,
+                            )
+                        } else if use_fullscreen_for_downsample_source {
+                            let compose_geo: ResourceName =
+                                format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
+                                    .into();
+                            geometry_buffers.push((
+                                compose_geo.clone(),
+                                Arc::from(
+                                    as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec(),
+                                ),
+                            ));
 
-                        // Build GraphInputs WGSL declaration if we have a schema.
-                        let graph_inputs_wgsl = if let Some(gb) = graph_binding.as_ref() {
-                            let mut decl = String::new();
-                            decl.push_str("\nstruct GraphInputs {\n");
-                            for field in &gb.schema.fields {
-                                decl.push_str(&format!(
-                                    "    // Node: {}\n    {}: {},\n",
-                                    field.node_id,
-                                    field.field_name,
-                                    field.kind.wgsl_slot_type()
-                                ));
-                            }
-                            decl.push_str("};\n\n");
-                            decl.push_str("@group(0) @binding(2)\n");
-                            match gb.kind {
-                                GraphBindingKind::Uniform => {
-                                    decl.push_str("var<uniform> graph_inputs: GraphInputs;\n")
+                            let rect_dyn = rect_dyn_2.as_ref().expect(
+                                "use_fullscreen_for_downsample_source implies rect_dyn_2.is_some()",
+                            );
+                            let position_expr = rect_dyn
+                                .position_expr
+                                .as_ref()
+                                .map(|e| e.expr.as_str())
+                                .unwrap_or("params.center");
+                            let size_expr = rect_dyn
+                                .size_expr
+                                .as_ref()
+                                .map(|e| e.expr.as_str())
+                                .unwrap_or("params.geo_size");
+
+                            let graph_inputs_wgsl = if let Some(gb) = graph_binding.as_ref() {
+                                let mut decl = String::new();
+                                decl.push_str("\nstruct GraphInputs {\n");
+                                for field in &gb.schema.fields {
+                                    decl.push_str(&format!(
+                                        "    // Node: {}\n    {}: {},\n",
+                                        field.node_id,
+                                        field.field_name,
+                                        field.kind.wgsl_slot_type()
+                                    ));
                                 }
-                                GraphBindingKind::StorageRead => {
-                                    decl.push_str("var<storage, read> graph_inputs: GraphInputs;\n")
+                                decl.push_str("};\n\n");
+                                decl.push_str("@group(0) @binding(2)\n");
+                                match gb.kind {
+                                    GraphBindingKind::Uniform => {
+                                        decl.push_str("var<uniform> graph_inputs: GraphInputs;\n")
+                                    }
+                                    GraphBindingKind::StorageRead => decl.push_str(
+                                        "var<storage, read> graph_inputs: GraphInputs;\n",
+                                    ),
                                 }
-                            }
-                            decl
+                                decl
+                            } else {
+                                String::new()
+                            };
+
+                            let bundle = build_dynamic_rect_compose_bundle(
+                                &graph_inputs_wgsl,
+                                position_expr,
+                                size_expr,
+                            );
+
+                            (
+                                compose_geo,
+                                Params {
+                                    target_size: [comp_tgt_w, comp_tgt_h],
+                                    geo_size: [pass_target_w, pass_target_h],
+                                    center: [geo_x, geo_y],
+                                    geo_translate: [0.0, 0.0],
+                                    geo_scale: [1.0, 1.0],
+                                    time: 0.0,
+                                    _pad0: 0.0,
+                                    color: [0.0, 0.0, 0.0, 0.0],
+                                },
+                                bundle,
+                                graph_binding.clone(),
+                                graph_values.clone(),
+                            )
                         } else {
-                            String::new()
+                            let fragment_body =
+                                "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                            (
+                                main_pass_geometry_buffer.clone(),
+                                Params {
+                                    target_size: [comp_tgt_w, comp_tgt_h],
+                                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
+                                    center: [geo_x, geo_y],
+                                    geo_translate: [0.0, 0.0],
+                                    geo_scale: [1.0, 1.0],
+                                    time: 0.0,
+                                    _pad0: 0.0,
+                                    color: [0.0, 0.0, 0.0, 0.0],
+                                },
+                                build_fullscreen_textured_bundle(fragment_body),
+                                None,
+                                None,
+                            )
                         };
 
-                        let bundle = build_dynamic_rect_compose_bundle(
-                            &graph_inputs_wgsl,
-                            position_expr,
-                            size_expr,
-                        );
-
-                        (
-                            compose_geo,
-                            Params {
-                                target_size: [tgt_w, tgt_h],
-                                geo_size: [pass_target_w, pass_target_h],
-                                center: [geo_x, geo_y], // Fallback if no dynamic input
-                                geo_translate: [0.0, 0.0],
-                                geo_scale: [1.0, 1.0],
-                                time: 0.0,
-                                _pad0: 0.0,
-                                color: [0.0, 0.0, 0.0, 0.0],
-                            },
-                            bundle,
-                            graph_binding.clone(),
-                            graph_values.clone(),
-                        )
-                    } else {
-                        // Static geometry-sized: reuse the original geometry buffer.
-                        let fragment_body =
-                            "return textureSample(src_tex, src_samp, in.uv);".to_string();
-                        (
-                            geometry_buffer.clone(),
-                            Params {
-                                target_size: [tgt_w, tgt_h],
-                                geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                center: [geo_x, geo_y],
-                                geo_translate: [0.0, 0.0],
-                                geo_scale: [1.0, 1.0],
-                                time: 0.0,
-                                _pad0: 0.0,
-                                color: [0.0, 0.0, 0.0, 0.0],
-                            },
-                            build_fullscreen_textured_bundle(fragment_body),
-                            None,
-                            None,
-                        )
-                    };
-
-                    render_pass_specs.push(RenderPassSpec {
-                        pass_id: compose_pass_name.as_str().to_string(),
-                        name: compose_pass_name.clone(),
-                        geometry_buffer: compose_geometry_buffer,
-                        instance_buffer: None,
-                        normals_buffer: None,
-                        target_texture: target_texture_name.clone(),
-                        resolve_target: None,
-                        params_buffer: compose_params_name,
-                        baked_data_parse_buffer: None,
-                        params: compose_params_val,
-                        graph_binding: compose_graph_binding,
-                        graph_values: compose_graph_values,
-                        shader_wgsl: compose_bundle.module,
-                        texture_bindings: vec![PassTextureBinding {
-                            texture: pass_output_texture.clone(),
-                            image_node_id: None,
-                        }],
-                        sampler_kinds: vec![SamplerKind::NearestClamp],
-                        blend_state,
-                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-                        sample_count: 1,
-                    });
-                    composite_passes.push(compose_pass_name);
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: compose_pass_name.as_str().to_string(),
+                            name: compose_pass_name.clone(),
+                            geometry_buffer: compose_geometry_buffer,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: comp_ctx.target_texture_name.clone(),
+                            resolve_target: None,
+                            params_buffer: compose_params_name,
+                            baked_data_parse_buffer: None,
+                            params: compose_params_val,
+                            graph_binding: compose_graph_binding,
+                            graph_values: compose_graph_values,
+                            shader_wgsl: compose_bundle.module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: pass_output_texture.clone(),
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::NearestClamp],
+                            blend_state,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(compose_pass_name);
+                    }
                 }
 
                 // Register output so downstream PassTexture nodes can resolve it.
@@ -3014,9 +2439,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 composite_passes.push(pass_name_u);
 
                 // Register this GuassianBlurPass output for potential downstream chaining.
+                let blur_output_tex = output_tex.clone();
                 pass_output_registry.register(PassOutputSpec {
                     node_id: layer_id.clone(),
-                    texture_name: output_tex,
+                    texture_name: blur_output_tex.clone(),
                     resolution: [blur_w, blur_h],
                     format: if sampled_pass_ids.contains(layer_id) {
                         sampled_pass_format
@@ -3024,6 +2450,70 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         target_format
                     },
                 });
+
+                let composition_consumers = composition_consumers_by_source
+                    .get(layer_id)
+                    .cloned()
+                    .unwrap_or_default();
+                for composition_id in composition_consumers {
+                    let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
+                        continue;
+                    };
+                    if blur_output_tex == comp_ctx.target_texture_name {
+                        continue;
+                    }
+
+                    let comp_w = comp_ctx.target_size_px[0];
+                    let comp_h = comp_ctx.target_size_px[1];
+                    let compose_geo: ResourceName =
+                        format!("sys.blur.{layer_id}.to.{composition_id}.compose.geo").into();
+                    geometry_buffers.push((
+                        compose_geo.clone(),
+                        make_fullscreen_geometry(comp_w, comp_h),
+                    ));
+                    let compose_pass_name: ResourceName =
+                        format!("sys.blur.{layer_id}.to.{composition_id}.compose.pass").into();
+                    let compose_params_name: ResourceName =
+                        format!("params.sys.blur.{layer_id}.to.{composition_id}.compose").into();
+                    let compose_params = Params {
+                        target_size: [comp_w, comp_h],
+                        geo_size: [comp_w, comp_h],
+                        center: [comp_w * 0.5, comp_h * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: compose_pass_name.as_str().to_string(),
+                        name: compose_pass_name.clone(),
+                        geometry_buffer: compose_geo,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: comp_ctx.target_texture_name.clone(),
+                        resolve_target: None,
+                        params_buffer: compose_params_name,
+                        baked_data_parse_buffer: None,
+                        params: compose_params,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: build_fullscreen_textured_bundle(
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                        )
+                        .module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: blur_output_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearClamp],
+                        blend_state: blur_output_blend_state,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    composite_passes.push(compose_pass_name);
+                }
             }
             "GradientBlur" => {
                 use crate::renderer::wgsl_gradient_blur::*;
@@ -3536,9 +3026,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 composite_passes.push(final_pass_name);
 
                 // Register GradientBlur output for downstream chaining.
+                let gradient_output_tex = output_tex.clone();
                 pass_output_registry.register(PassOutputSpec {
                     node_id: layer_id.clone(),
-                    texture_name: output_tex,
+                    texture_name: gradient_output_tex.clone(),
                     resolution: gb_src_resolution,
                     format: if is_sampled_output {
                         sampled_pass_format
@@ -3546,6 +3037,70 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         target_format
                     },
                 });
+
+                let composition_consumers = composition_consumers_by_source
+                    .get(layer_id)
+                    .cloned()
+                    .unwrap_or_default();
+                for composition_id in composition_consumers {
+                    let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
+                        continue;
+                    };
+                    if gradient_output_tex == comp_ctx.target_texture_name {
+                        continue;
+                    }
+
+                    let comp_w = comp_ctx.target_size_px[0];
+                    let comp_h = comp_ctx.target_size_px[1];
+                    let compose_geo: ResourceName =
+                        format!("sys.gb.{layer_id}.to.{composition_id}.compose.geo").into();
+                    geometry_buffers.push((
+                        compose_geo.clone(),
+                        make_fullscreen_geometry(comp_w, comp_h),
+                    ));
+                    let compose_pass_name: ResourceName =
+                        format!("sys.gb.{layer_id}.to.{composition_id}.compose.pass").into();
+                    let compose_params_name: ResourceName =
+                        format!("params.sys.gb.{layer_id}.to.{composition_id}.compose").into();
+                    let compose_params = Params {
+                        target_size: [comp_w, comp_h],
+                        geo_size: [comp_w, comp_h],
+                        center: [comp_w * 0.5, comp_h * 0.5],
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: compose_pass_name.as_str().to_string(),
+                        name: compose_pass_name.clone(),
+                        geometry_buffer: compose_geo,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: comp_ctx.target_texture_name.clone(),
+                        resolve_target: None,
+                        params_buffer: compose_params_name,
+                        baked_data_parse_buffer: None,
+                        params: compose_params,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: build_fullscreen_textured_bundle(
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                        )
+                        .module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: gradient_output_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearClamp],
+                        blend_state: final_blend_state,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    composite_passes.push(compose_pass_name);
+                }
             }
             "Downsample" => {
                 // Downsample takes its source from `source` (pass), and downsamples into `targetSize`.
@@ -3805,13 +3360,171 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 }
 
                 // Register Downsample output for chaining.
+                let downsample_output_tex = downsample_out_tex.clone();
                 if is_sampled_output {
                     pass_output_registry.register(PassOutputSpec {
                         node_id: layer_id.clone(),
-                        texture_name: downsample_out_tex,
+                        texture_name: downsample_output_tex.clone(),
                         resolution: [out_w, out_h],
                         format: sampled_pass_format,
                     });
+                }
+
+                let composition_consumers = composition_consumers_by_source
+                    .get(layer_id)
+                    .cloned()
+                    .unwrap_or_default();
+                if !composition_consumers.is_empty() {
+                    let compose_blend_state =
+                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?;
+                    for composition_id in composition_consumers {
+                        let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
+                            continue;
+                        };
+                        if downsample_output_tex == comp_ctx.target_texture_name {
+                            continue;
+                        }
+                        let comp_w = comp_ctx.target_size_px[0];
+                        let comp_h = comp_ctx.target_size_px[1];
+                        let compose_geo: ResourceName =
+                            format!("sys.downsample.{layer_id}.to.{composition_id}.compose.geo")
+                                .into();
+                        geometry_buffers.push((
+                            compose_geo.clone(),
+                            make_fullscreen_geometry(comp_w, comp_h),
+                        ));
+                        let compose_pass_name: ResourceName =
+                            format!("sys.downsample.{layer_id}.to.{composition_id}.compose.pass")
+                                .into();
+                        let compose_params_name: ResourceName =
+                            format!("params.sys.downsample.{layer_id}.to.{composition_id}.compose")
+                                .into();
+                        let compose_params = Params {
+                            target_size: [comp_w, comp_h],
+                            geo_size: [comp_w, comp_h],
+                            center: [comp_w * 0.5, comp_h * 0.5],
+                            geo_translate: [0.0, 0.0],
+                            geo_scale: [1.0, 1.0],
+                            time: 0.0,
+                            _pad0: 0.0,
+                            color: [0.0, 0.0, 0.0, 0.0],
+                        };
+
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: compose_pass_name.as_str().to_string(),
+                            name: compose_pass_name.clone(),
+                            geometry_buffer: compose_geo,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: comp_ctx.target_texture_name.clone(),
+                            resolve_target: None,
+                            params_buffer: compose_params_name,
+                            baked_data_parse_buffer: None,
+                            params: compose_params,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: build_fullscreen_textured_bundle(
+                                "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                            )
+                            .module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: downsample_output_tex.clone(),
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::LinearClamp],
+                            blend_state: compose_blend_state,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(compose_pass_name);
+                    }
+                }
+            }
+            "Composite" => {
+                let Some(comp_ctx) = composition_contexts.get(layer_id) else {
+                    bail!("missing resolved Composition context for '{layer_id}'");
+                };
+                let comp_target_node = find_node(nodes_by_id, &comp_ctx.target_texture_node_id)?;
+                let comp_target_format = parse_texture_format(&comp_target_node.params)?;
+                pass_output_registry.register(PassOutputSpec {
+                    node_id: layer_id.clone(),
+                    texture_name: comp_ctx.target_texture_name.clone(),
+                    resolution: [
+                        comp_ctx.target_size_px[0].max(1.0).round() as u32,
+                        comp_ctx.target_size_px[1].max(1.0).round() as u32,
+                    ],
+                    format: comp_target_format,
+                });
+
+                // Implicit Composition -> Composition fullscreen blit.
+                let composition_consumers = composition_consumers_by_source
+                    .get(layer_id)
+                    .cloned()
+                    .unwrap_or_default();
+                if !composition_consumers.is_empty() {
+                    let compose_blend_state =
+                        crate::renderer::render_plan::default_blend_state_for_preset("alpha")?;
+                    for downstream_comp_id in composition_consumers {
+                        let Some(dst_ctx) = composition_contexts.get(&downstream_comp_id) else {
+                            continue;
+                        };
+                        if dst_ctx.composition_node_id == comp_ctx.composition_node_id {
+                            continue;
+                        }
+                        if dst_ctx.target_texture_name == comp_ctx.target_texture_name {
+                            continue;
+                        }
+                        let dst_w = dst_ctx.target_size_px[0];
+                        let dst_h = dst_ctx.target_size_px[1];
+                        let geo: ResourceName =
+                            format!("sys.comp.{layer_id}.to.{downstream_comp_id}.compose.geo")
+                                .into();
+                        geometry_buffers
+                            .push((geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
+                        let pass_name: ResourceName =
+                            format!("sys.comp.{layer_id}.to.{downstream_comp_id}.compose.pass")
+                                .into();
+                        let params_name: ResourceName =
+                            format!("params.sys.comp.{layer_id}.to.{downstream_comp_id}.compose")
+                                .into();
+                        let params = Params {
+                            target_size: [dst_w, dst_h],
+                            geo_size: [dst_w, dst_h],
+                            center: [dst_w * 0.5, dst_h * 0.5],
+                            geo_translate: [0.0, 0.0],
+                            geo_scale: [1.0, 1.0],
+                            time: 0.0,
+                            _pad0: 0.0,
+                            color: [0.0, 0.0, 0.0, 0.0],
+                        };
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: pass_name.as_str().to_string(),
+                            name: pass_name.clone(),
+                            geometry_buffer: geo,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: dst_ctx.target_texture_name.clone(),
+                            resolve_target: None,
+                            params_buffer: params_name,
+                            baked_data_parse_buffer: None,
+                            params,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: build_fullscreen_textured_bundle(
+                                "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                            )
+                            .module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: comp_ctx.target_texture_name.clone(),
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::LinearClamp],
+                            blend_state: compose_blend_state,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(pass_name);
+                    }
                 }
             }
             other => {
@@ -3820,7 +3533,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // 2. Add a match arm here with the rendering logic
                 // 3. Register the output in pass_output_registry for chain support
                 bail!(
-                    "Composite layer must be a pass node (RenderPass/GuassianBlurPass), got {other} for {layer_id}. \
+                    "Composite layer must be a pass node (RenderPass/GuassianBlurPass/Downsample/GradientBlur/Composite), got {other} for {layer_id}. \
                      To enable chain support for new pass types, update is_pass_node() and add handling here."
                 )
             }
@@ -4634,10 +4347,10 @@ mod tests {
     }
 
     #[test]
-    fn msaa_requested_zero_maps_to_single_sample() {
+    fn msaa_requested_one_kept_as_single_sample() {
         let got = select_effective_msaa_sample_count(
             "rp",
-            0,
+            1,
             TextureFormat::Rgba8Unorm,
             wgpu::Features::empty(),
             None,
@@ -4647,7 +4360,7 @@ mod tests {
     }
 
     #[test]
-    fn msaa_unsupported_falls_back_to_single_sample_when_adapter_unavailable() {
+    fn msaa_unsupported_downgrades_to_single_sample_when_adapter_unavailable() {
         let got = select_effective_msaa_sample_count(
             "rp",
             2,
@@ -4663,14 +4376,14 @@ mod tests {
     fn msaa_invalid_value_is_rejected() {
         let err = select_effective_msaa_sample_count(
             "rp",
-            3,
+            0,
             TextureFormat::Rgba8Unorm,
             wgpu::Features::empty(),
             None,
         )
         .expect_err("invalid value must fail");
         let msg = format!("{err:#}");
-        assert!(msg.contains("must be one of 0,2,4,8"));
+        assert!(msg.contains("must be one of 1,2,4,8"));
     }
 
     #[test]
@@ -4678,6 +4391,19 @@ mod tests {
         let got = select_effective_msaa_sample_count(
             "rp",
             4,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 4);
+    }
+
+    #[test]
+    fn msaa_8x_downgrades_to_4x_when_8x_unsupported() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            8,
             TextureFormat::Rgba8Unorm,
             wgpu::Features::empty(),
             None,
@@ -4832,6 +4558,130 @@ mod tests {
             sampled.contains("pass_up"),
             "expected sampled passes to include pass_up, got: {sampled:?}"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn pass_order_supports_nested_composition_routing_nodes() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "nested-comp".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                crate::dsl::Node {
+                    id: "comp_a".to_string(),
+                    node_type: "Composite".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "comp_b".to_string(),
+                    node_type: "Composite".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "rt_a".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(100)),
+                        ("height".to_string(), json!(100)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "rt_b".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(200)),
+                        ("height".to_string(), json!(200)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                crate::dsl::Node {
+                    id: "ds".to_string(),
+                    node_type: "Downsample".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+            ],
+            connections: vec![
+                crate::dsl::Connection {
+                    id: "c_ta".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "rt_a".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "comp_a".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_tb".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "rt_b".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "comp_b".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_source".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "comp_a".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "ds".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "c_out".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "ds".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "comp_b".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("comp_b")])?;
+        assert_eq!(order, vec!["comp_a", "ds", "comp_b"]);
+
+        let sampled = sampled_pass_node_ids(&scene, &nodes_by_id)?;
+        assert!(sampled.contains("comp_a"), "sampled={sampled:?}");
+        assert!(sampled.contains("ds"), "sampled={sampled:?}");
 
         Ok(())
     }
