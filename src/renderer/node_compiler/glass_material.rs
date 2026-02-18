@@ -177,7 +177,7 @@ fn resolve_pass_binding(
     // Only pass-producing nodes are valid.
     if !matches!(
         upstream.node_type.as_str(),
-        "RenderPass" | "GuassianBlurPass" | "GradientBlur"
+        "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
     ) {
         bail!(
             "GlassMaterial.{port_id} must be connected to a pass node, got {}",

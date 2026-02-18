@@ -349,7 +349,11 @@ fn wgsl_f32(x: f32) -> String {
 }
 
 fn offset_in_local_px(expr: &str, dx: f32, dy: f32) -> String {
-    let off = format!("(in.local_px.xy + vec2f({}, {}))", wgsl_f32(dx), wgsl_f32(dy));
+    let off = format!(
+        "(in.local_px.xy + vec2f({}, {}))",
+        wgsl_f32(dx),
+        wgsl_f32(dy)
+    );
     expr.replace("in.local_px.xy", &off)
 }
 
