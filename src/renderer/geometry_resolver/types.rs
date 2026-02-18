@@ -49,18 +49,11 @@ pub struct ResolvedGeometry {
     pub source: ResolvedGeometrySource,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PlacementPolicy {
-    PreserveForComposition,
-    NormalizeForProcessing,
-}
-
 #[derive(Clone, Debug)]
 pub struct ResolvedDrawContext {
     pub pass_node_id: String,
     pub downstream_node_id: String,
     pub downstream_port_id: String,
-    pub placement_policy: PlacementPolicy,
     pub coord_domain: CoordDomain,
     pub geometry: ResolvedGeometry,
 }

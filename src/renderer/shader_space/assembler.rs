@@ -36,7 +36,7 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
-        geometry_resolver::{PlacementPolicy, is_pass_like_node_type, resolve_scene_draw_contexts},
+        geometry_resolver::{is_pass_like_node_type, resolve_scene_draw_contexts},
         graph_uniforms::{
             choose_graph_binding_kind, compute_pipeline_signature_for_pass_bindings,
             graph_field_name, hash_bytes, pack_graph_values,
@@ -291,74 +291,6 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
 const IDENTITY_MAT4: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
-
-pub(crate) fn resolve_geometry_for_render_pass(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, crate::dsl::Node>,
-    ids: &HashMap<String, ResourceName>,
-    geometry_node_id: &str,
-    render_target_size: [f32; 2],
-    material_ctx: Option<&MaterialCompileContext>,
-    asset_store: Option<&crate::asset_store::AssetStore>,
-) -> Result<(
-    ResourceName,
-    f32,
-    f32,
-    f32,
-    f32,
-    u32,
-    [f32; 16],
-    Option<Vec<[f32; 16]>>,
-    Option<TypedExpr>,
-    Vec<String>,
-    String,
-    bool,
-    Option<crate::renderer::render_plan::geometry::Rect2DDynamicInputs>,
-    Option<std::sync::Arc<[u8]>>,
-)> {
-    let (
-        geometry_buffer,
-        geo_w,
-        geo_h,
-        geo_x,
-        geo_y,
-        instances,
-        base_m,
-        instance_mats,
-        translate_expr,
-        vtx_inline_stmts,
-        vtx_wgsl_decls,
-        _graph_input_kinds,
-        uses_instance_index,
-        rect_dyn,
-        normals_bytes,
-    ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-        scene,
-        nodes_by_id,
-        ids,
-        geometry_node_id,
-        render_target_size,
-        material_ctx,
-        asset_store,
-    )?;
-
-    Ok((
-        geometry_buffer,
-        geo_w,
-        geo_h,
-        geo_x,
-        geo_y,
-        instances,
-        base_m,
-        instance_mats,
-        translate_expr,
-        vtx_inline_stmts,
-        vtx_wgsl_decls,
-        uses_instance_index,
-        rect_dyn,
-        normals_bytes,
-    ))
-}
 
 fn sampled_pass_node_ids(
     scene: &SceneDSL,
@@ -883,22 +815,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let composition_consumers_by_source = resolved_contexts.composition_consumers_by_source;
     let mut draw_coord_size_by_pass: HashMap<String, [f32; 2]> = HashMap::new();
     for ctx in &resolved_contexts.draw_contexts {
-        match draw_coord_size_by_pass.get(&ctx.pass_node_id).copied() {
-            None => {
-                draw_coord_size_by_pass.insert(ctx.pass_node_id.clone(), ctx.coord_domain.size_px);
-            }
-            Some(existing) => {
-                if existing != ctx.coord_domain.size_px
-                    && matches!(
-                        ctx.placement_policy,
-                        PlacementPolicy::PreserveForComposition
-                    )
-                {
-                    draw_coord_size_by_pass
-                        .insert(ctx.pass_node_id.clone(), ctx.coord_domain.size_px);
-                }
-            }
-        }
+        // If a pass appears in multiple draw contexts, keep the most recent inferred domain.
+        draw_coord_size_by_pass.insert(ctx.pass_node_id.clone(), ctx.coord_domain.size_px);
     }
 
     let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
@@ -991,83 +909,23 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 geometry_buffers.push((name, bytes));
             }
             "GLTFGeometry" => {
-                // resolve_geometry_for_render_pass already loads the mesh, remaps
-                // vertices to pixel space, and returns normals bytes.  We call it
-                // here so we get the pixel-space vertex data for the GPU buffer.
-                let (
-                    _geo_buf,
-                    geo_w,
-                    geo_h,
-                    _geo_x,
-                    _geo_y,
-                    _instances,
-                    _base_m,
-                    _instance_mats,
-                    _translate_expr,
-                    _vtx_inline_stmts,
-                    _vtx_wgsl_decls,
-                    _vtx_graph_input_kinds,
-                    _uses_instance_index,
-                    _rect_dyn,
-                    normals_bytes,
-                ) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                    &prepared.scene,
-                    nodes_by_id,
-                    ids,
-                    &node.id,
-                    [tgt_w, tgt_h],
-                    None,
-                    asset_store,
-                )?;
-
-                // Re-load and remap to pixel space (same logic as resolve) to get
-                // the actual vertex bytes for buffer creation.
-                let asset_id = node
-                    .params
-                    .get("assetId")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty())
-                    .ok_or_else(|| anyhow!("GLTFGeometry missing assetId"))?;
-                let entry = prepared
-                    .scene
-                    .assets
-                    .get(asset_id)
-                    .ok_or_else(|| anyhow!("GLTFGeometry asset not found: {asset_id}"))?;
-                let file_path = if entry.original_name.is_empty() {
-                    &entry.path
-                } else {
-                    &entry.original_name
-                };
                 let store = asset_store.ok_or_else(|| anyhow!("GLTFGeometry: no asset store"))?;
-                let data = store
-                    .get(asset_id)
-                    .ok_or_else(|| anyhow!("GLTFGeometry: asset '{asset_id}' not in store"))?;
-                let (raw_verts, _normals) =
-                    crate::renderer::node_compiler::geometry_nodes::load_geometry_from_asset(
-                        &data.bytes,
-                        file_path,
-                    )?;
-
-                // Model is in normalized coordinates (roughly -1..1 from DDC).
-                // Scale to pixel space by multiplying by half the render target size.
-                let half_w = tgt_w * 0.5;
-                let half_h = tgt_h * 0.5;
-
-                let verts: Vec<[f32; 5]> = raw_verts
-                    .into_iter()
-                    .map(|v| [v[0] * half_w, v[1] * half_w, v[2] * half_w, v[3], v[4]])
-                    .collect();
+                let loaded = crate::renderer::render_plan::load_gltf_geometry_pixel_space(
+                    &prepared.scene,
+                    &node.id,
+                    node,
+                    [tgt_w, tgt_h],
+                    store,
+                )?;
+                let verts = loaded.vertices;
 
                 let vert_bytes: Arc<[u8]> =
                     Arc::from(bytemuck::cast_slice::<[f32; 5], u8>(&verts).to_vec());
                 geometry_buffers.push((name.clone(), vert_bytes));
-                if let Some(nb) = normals_bytes {
+                if let Some(nb) = loaded.normals_bytes {
                     let normals_name: ResourceName = format!("{name}.normals").into();
                     geometry_buffers.push((normals_name, nb));
                 }
-
-                // Suppress unused-variable warnings for geo_w/geo_h.
-                let _ = (geo_w, geo_h);
             }
             "RenderTexture" => {
                 let w =
@@ -1385,16 +1243,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let use_fullscreen_for_downsample_source =
                     is_downsample_source && rect_dyn_2.is_some();
 
-                // For sampled intermediate outputs, render in local texture space so downstream
-                // blur/downsample consumers operate on full geometry content independent of
-                // upstream world-space positioning.
-                let sampled_local_center = [pass_target_w * 0.5, pass_target_h * 0.5];
-                let main_pass_center = if is_sampled_output {
-                    sampled_local_center
-                } else {
-                    [geo_x, geo_y]
-                };
-
                 let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
                     if use_fullscreen_for_downsample_source {
                         // Create a dedicated fullscreen geometry for this pass.
@@ -1446,7 +1294,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             Params {
                                 target_size: [pass_target_w, pass_target_h],
                                 geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                center: main_pass_center,
+                                center: [geo_x, geo_y],
                                 geo_translate: [0.0, 0.0],
                                 geo_scale: [1.0, 1.0],
                                 time: 0.0,
@@ -1879,15 +1727,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                     _,
                                     _,
                                     _,
-                                )) = resolve_geometry_for_render_pass(
-                                    &prepared.scene,
-                                    nodes_by_id,
-                                    ids,
-                                    &geo_conn.from.node_id,
-                                    [tgt_w, tgt_h],
-                                    None,
-                                    asset_store,
-                                ) {
+                                    _,
+                                )) =
+                                    crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                                        &prepared.scene,
+                                        nodes_by_id,
+                                        ids,
+                                        &geo_conn.from.node_id,
+                                        [tgt_w, tgt_h],
+                                        None,
+                                        asset_store,
+                                    )
+                                {
                                     blur_output_center = Some([src_geo_x, src_geo_y]);
                                 }
                             }

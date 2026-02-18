@@ -7,8 +7,8 @@ use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         geometry_resolver::types::{
-            CoordDomain, NodeRole, PlacementPolicy, ResolvedCompositionContext,
-            ResolvedDrawContext, ResolvedGeometry, ResolvedGeometrySource, ResolvedSceneContexts,
+            CoordDomain, NodeRole, ResolvedCompositionContext, ResolvedDrawContext,
+            ResolvedGeometry, ResolvedGeometrySource, ResolvedSceneContexts,
             is_composition_route_node_type, is_draw_pass_node_type, is_pass_like_node_type,
         },
         render_plan::resolve_geometry_for_render_pass,
@@ -150,7 +150,6 @@ fn resolve_draw_geometry(
     ids: &HashMap<String, ResourceName>,
     pass_node_id: &str,
     coord_size_px: [f32; 2],
-    placement_policy: PlacementPolicy,
 ) -> Result<ResolvedGeometry> {
     let pass_node = find_node(nodes_by_id, pass_node_id)?;
     if pass_node.node_type != "RenderPass" {
@@ -179,14 +178,10 @@ fn resolve_draw_geometry(
         None,
     )?;
 
-    let center_px = match placement_policy {
-        PlacementPolicy::NormalizeForProcessing => [geo_w * 0.5, geo_h * 0.5],
-        PlacementPolicy::PreserveForComposition => [geo_x, geo_y],
-    };
-
     Ok(ResolvedGeometry {
         size_px: [geo_w, geo_h],
-        center_px,
+        // Preserve resolved geometry placement for both processing chains and composition.
+        center_px: [geo_x, geo_y],
         source: ResolvedGeometrySource::DirectGeometry(geometry_node_id),
     })
 }
@@ -261,25 +256,21 @@ pub fn resolve_scene_draw_contexts(
             continue;
         }
 
-        let (placement_policy, composition_node_id) =
-            if is_composition_route_node_type(&to_node.node_type) {
-                (
-                    PlacementPolicy::PreserveForComposition,
-                    conn.to.node_id.clone(),
-                )
-            } else {
-                let nearest = nearest_downstream_composition(
-                    scene,
-                    nodes_by_id,
-                    &conn.to.node_id,
-                    &live_pass_like_nodes,
-                )?;
-                let Some(composition_node_id) = nearest else {
-                    // Dead pass branch: not consumed by any composition layer.
-                    continue;
-                };
-                (PlacementPolicy::NormalizeForProcessing, composition_node_id)
+        let composition_node_id = if is_composition_route_node_type(&to_node.node_type) {
+            conn.to.node_id.clone()
+        } else {
+            let nearest = nearest_downstream_composition(
+                scene,
+                nodes_by_id,
+                &conn.to.node_id,
+                &live_pass_like_nodes,
+            )?;
+            let Some(composition_node_id) = nearest else {
+                // Dead pass branch: not consumed by any composition layer.
+                continue;
             };
+            composition_node_id
+        };
 
         let coord_domain = build_coord_domain(
             scene,
@@ -294,13 +285,11 @@ pub fn resolve_scene_draw_contexts(
             ids,
             &conn.from.node_id,
             coord_domain.size_px,
-            placement_policy,
         )?;
         out.draw_contexts.push(ResolvedDrawContext {
             pass_node_id: conn.from.node_id.clone(),
             downstream_node_id: conn.to.node_id.clone(),
             downstream_port_id: conn.to.port_id.clone(),
-            placement_policy,
             coord_domain,
             geometry,
         });
@@ -470,6 +459,46 @@ mod tests {
             .unwrap();
         assert_eq!(rp_ctx.geometry.size_px, [320.0, 240.0]);
         assert_eq!(rp_ctx.geometry.center_px, [160.0, 120.0]);
+    }
+
+    #[test]
+    fn processing_edges_preserve_render_pass_geometry_center() {
+        let nodes = vec![
+            node(
+                "rect",
+                "Rect2DGeometry",
+                json!({
+                    "size": {"x": 40.0, "y": 30.0},
+                    "position": {"x": 12.0, "y": 18.0}
+                }),
+            ),
+            node("rp", "RenderPass", json!({})),
+            node("ds", "Downsample", json!({})),
+            node("comp", "Composite", json!({})),
+            node("rt", "RenderTexture", json!({"width": 320, "height": 240})),
+        ];
+        let ids = ids_for(&nodes);
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "rect", "geometry", "rp", "geometry"),
+                conn("c2", "rp", "pass", "ds", "source"),
+                conn("c3", "ds", "pass", "comp", "pass"),
+                conn("c4", "rt", "texture", "comp", "target"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
+
+        let resolved =
+            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080]).unwrap();
+        let rp_to_ds = resolved
+            .draw_contexts
+            .iter()
+            .find(|c| c.pass_node_id == "rp" && c.downstream_node_id == "ds")
+            .unwrap();
+        assert_eq!(rp_to_ds.geometry.size_px, [40.0, 30.0]);
+        assert_eq!(rp_to_ds.geometry.center_px, [12.0, 18.0]);
     }
 
     #[test]

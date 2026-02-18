@@ -7,6 +7,7 @@
 //! - `validation`: WGSL validation using naga
 //! - `scene_prep`: Scene preparation and validation
 //! - `render_plan`: Render planning utilities and pass graph helpers
+//! - `geometry_resolver`: Canonical draw-context geometry/coord inference
 //! - `wgsl`: WGSL shader generation
 //! - `shader_space`: ShaderSpace construction
 //! - `wgsl_templates`: Reusable WGSL templates for fullscreen effects

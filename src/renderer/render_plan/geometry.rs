@@ -21,6 +21,74 @@ pub(crate) struct Rect2DDynamicInputs {
     pub(crate) size_expr: Option<TypedExpr>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct LoadedGltfGeometry {
+    pub(crate) vertices: Vec<[f32; 5]>,
+    pub(crate) normals_bytes: Option<Arc<[u8]>>,
+    pub(crate) size_px: [f32; 2],
+}
+
+pub(crate) fn load_gltf_geometry_pixel_space(
+    scene: &SceneDSL,
+    geometry_node_id: &str,
+    geometry_node: &crate::dsl::Node,
+    render_target_size: [f32; 2],
+    asset_store: &AssetStore,
+) -> Result<LoadedGltfGeometry> {
+    let asset_id = geometry_node
+        .params
+        .get("assetId")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "GLTFGeometry.params.assetId must be a non-empty string (node {})",
+                geometry_node_id
+            )
+        })?;
+
+    let entry = scene
+        .assets
+        .get(asset_id)
+        .ok_or_else(|| anyhow!("GLTFGeometry asset not found: {asset_id}"))?;
+
+    let file_path = if entry.original_name.is_empty() {
+        &entry.path
+    } else {
+        &entry.original_name
+    };
+    let lower = file_path.to_ascii_lowercase();
+    if !lower.ends_with(".gltf") && !lower.ends_with(".glb") && !lower.ends_with(".obj") {
+        bail!("GLTFGeometry only supports .gltf/.glb/.obj assets, got: {file_path}");
+    }
+
+    let data = asset_store.get(asset_id).ok_or_else(|| {
+        anyhow!(
+            "GLTFGeometry node '{geometry_node_id}': asset '{asset_id}' not found in asset store"
+        )
+    })?;
+    let (verts, normals) = load_geometry_from_asset(&data.bytes, file_path)?;
+
+    // Model is in normalized coordinates (roughly -1..1 from DDC).
+    // Scale to pixel space by multiplying by half the render target size.
+    let [tgt_w, tgt_h] = render_target_size;
+    let half_w = tgt_w * 0.5;
+    // Intentionally use isotropic XY scaling in pixel space to preserve source geometry aspect.
+    let vertices: Vec<[f32; 5]> = verts
+        .into_iter()
+        .map(|v| [v[0] * half_w, v[1] * half_w, v[2] * half_w, v[3], v[4]])
+        .collect();
+
+    let normals_bytes =
+        normals.map(|n| Arc::from(bytemuck::cast_slice::<[f32; 3], u8>(&n).to_vec()));
+
+    Ok(LoadedGltfGeometry {
+        vertices,
+        normals_bytes,
+        size_px: [tgt_w, tgt_h],
+    })
+}
+
 fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
     // Column-major mat4 multiply to match WGSL `mat4x4f` (constructed from 4 column vectors)
     // and the `inst_m * vec4f(position, 1.0)` convention in the vertex shader.
@@ -469,57 +537,20 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 .cloned()
                 .ok_or_else(|| anyhow!("missing name for node: {}", geometry_node_id))?;
 
-            let asset_id = geometry_node
-                .params
-                .get("assetId")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| {
-                    anyhow!(
-                        "GLTFGeometry.params.assetId must be a non-empty string (node {})",
-                        geometry_node_id
-                    )
-                })?;
-
-            let entry = scene
-                .assets
-                .get(asset_id)
-                .ok_or_else(|| anyhow!("GLTFGeometry asset not found: {asset_id}"))?;
-
-            let file_path = if entry.original_name.is_empty() {
-                &entry.path
-            } else {
-                &entry.original_name
-            };
-            let lower = file_path.to_ascii_lowercase();
-            if !lower.ends_with(".gltf") && !lower.ends_with(".glb") && !lower.ends_with(".obj") {
-                bail!("GLTFGeometry only supports .gltf/.glb/.obj assets, got: {file_path}");
-            }
-
             let store = asset_store.ok_or_else(|| {
                 anyhow!("GLTFGeometry node '{geometry_node_id}': no asset store provided")
             })?;
-            let data = store.get(asset_id).ok_or_else(|| {
-                anyhow!("GLTFGeometry node '{geometry_node_id}': asset '{asset_id}' not found in asset store")
-            })?;
-
-            let (verts, normals) = load_geometry_from_asset(&data.bytes, file_path)?;
-
-            // Model is in normalized coordinates (roughly -1..1 from DDC).
-            // Scale to pixel space by multiplying by half the render target size.
-            let [tgt_w, tgt_h] = render_target_size;
-            let half_w = tgt_w * 0.5;
-            let half_h = tgt_h * 0.5;
-            let geo_w = tgt_w;
-            let geo_h = tgt_h;
-
-            let _verts: Vec<[f32; 5]> = verts
-                .into_iter()
-                .map(|v| [v[0] * half_w, v[1] * half_w, v[2] * half_w, v[3], v[4]])
-                .collect();
-
-            let normals_bytes: Option<Arc<[u8]>> =
-                normals.map(|n| Arc::from(bytemuck::cast_slice::<[f32; 3], u8>(&n).to_vec()));
+            let loaded = load_gltf_geometry_pixel_space(
+                scene,
+                geometry_node_id,
+                geometry_node,
+                render_target_size,
+                store,
+            )?;
+            let geo_w = loaded.size_px[0];
+            let geo_h = loaded.size_px[1];
+            let _verts = loaded.vertices;
+            let normals_bytes = loaded.normals_bytes;
 
             Ok((
                 geometry_buffer,
