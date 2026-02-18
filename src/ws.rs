@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashSet, VecDeque},
     net::TcpListener,
     sync::{Arc, Mutex},
     thread,
@@ -305,9 +306,54 @@ fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta) -> 
         if !node_params_changed_only_uniform_keys(&prev.params, &updated.params) {
             return false;
         }
+        if uniform_delta_change_affects_geometry_allocation(cache, &updated.id) {
+            return false;
+        }
     }
 
     true
+}
+
+fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
+    matches!(
+        (node_type, port_id),
+        ("Rect2DGeometry", "size")
+            | ("Downsample", "targetSize")
+            | ("RenderTexture", "width")
+            | ("RenderTexture", "height")
+    )
+}
+
+fn uniform_delta_change_affects_geometry_allocation(
+    cache: &SceneCache,
+    updated_node_id: &str,
+) -> bool {
+    let mut queue: VecDeque<String> = VecDeque::from([updated_node_id.to_string()]);
+    let mut visited: HashSet<String> = HashSet::new();
+
+    while let Some(from_id) = queue.pop_front() {
+        if !visited.insert(from_id.clone()) {
+            continue;
+        }
+
+        for conn in cache.connections_by_id.values() {
+            if conn.from.node_id != from_id {
+                continue;
+            }
+
+            if let Some(dst_node) = cache.nodes_by_id.get(&conn.to.node_id) {
+                if is_geometry_allocation_sink(
+                    dst_node.node_type.as_str(),
+                    conn.to.port_id.as_str(),
+                ) {
+                    return true;
+                }
+            }
+            queue.push_back(conn.to.node_id.clone());
+        }
+    }
+
+    false
 }
 
 pub fn prune_invalid_connections(cache: &mut SceneCache) {
@@ -1235,6 +1281,92 @@ mod tests {
                     "FloatInput",
                     json!({"value": 0.75, "min": -1.0}),
                 )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            assets: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_rejects_geometry_allocation_sensitive_change() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("v2", "Vector2Input", json!({"x": 108.0, "y": 240.0})),
+                node("rect", "Rect2DGeometry", json!({})),
+                node("pass", "RenderPass", json!({})),
+                node("comp", "Composite", json!({})),
+                node("rt", "RenderTexture", json!({"width": 400, "height": 400})),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "v2".to_string(),
+                        port_id: "vector".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "size".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c3".to_string(),
+                    from: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c4".to_string(),
+                    from: Endpoint {
+                        node_id: "rt".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(std::collections::HashMap::new()),
+            groups: Vec::new(),
+            assets: Default::default(),
+        };
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node("v2", "Vector2Input", json!({"x": 54.0, "y": 120.0}))],
                 removed: Vec::new(),
             },
             connections: SceneDeltaConnections {
