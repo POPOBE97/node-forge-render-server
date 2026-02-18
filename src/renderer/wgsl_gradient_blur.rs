@@ -67,7 +67,7 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
     let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
         matches!(
             node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
+            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
         )
     });
 
@@ -236,7 +236,7 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
     // Validate mask is a material expression, not a pass.
     if matches!(
         mask_upstream.node_type.as_str(),
-        "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
+        "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
     ) {
         bail!(
             "GradientBlur: unsupported capability — mask must be a material expression, got pass node {} ({})",

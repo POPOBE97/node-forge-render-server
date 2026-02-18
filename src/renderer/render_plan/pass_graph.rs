@@ -5,6 +5,8 @@ use anyhow::{Result, anyhow, bail};
 use crate::{
     dsl::{SceneDSL, incoming_connection},
     renderer::{
+        geometry_resolver::is_pass_like_node_type,
+        scene_prep::composite_layers_in_draw_order,
         types::PassOutputRegistry,
         wgsl::{build_blur_image_wgsl_bundle, build_pass_wgsl_bundle},
     },
@@ -26,10 +28,7 @@ pub(crate) fn sampled_pass_node_ids(
     let mut out: HashSet<String> = HashSet::new();
 
     for (node_id, node) in nodes_by_id {
-        if !matches!(
-            node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
-        ) {
+        if !is_pass_like_node_type(&node.node_type) {
             continue;
         }
         let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
@@ -94,17 +93,15 @@ fn deps_for_pass_node(
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
             Ok(vec![source_conn.from.node_id.clone()])
         }
+        "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
         "GradientBlur" => {
             // GradientBlur reads "source" input (not "pass").
             let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
                 return Ok(Vec::new());
             };
-            let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|n| {
-                matches!(
-                    n.node_type.as_str(),
-                    "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur"
-                )
-            });
+            let source_is_pass = nodes_by_id
+                .get(&conn.from.node_id)
+                .is_some_and(|n| is_pass_like_node_type(&n.node_type));
             if source_is_pass {
                 Ok(vec![conn.from.node_id.clone()])
             } else {

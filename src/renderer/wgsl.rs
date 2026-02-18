@@ -594,7 +594,7 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
         matches!(
             node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample"
+            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
         )
     });
 
@@ -949,7 +949,8 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
+            vertex_entry
+                .push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
 
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
@@ -957,7 +958,8 @@ var<uniform> params: Params;
         } else {
             vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
+            vertex_entry
+                .push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
 
             vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
         }
@@ -980,7 +982,9 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" out.geo_size_px = rect_dyn.zw;\n");
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n");
+            vertex_entry.push_str(
+                " out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n",
+            );
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
 
@@ -1004,7 +1008,9 @@ var<uniform> params: Params;
                 vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
             }
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n");
+            vertex_entry.push_str(
+                " out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n",
+            );
 
             if let Some(expr) = vertex_translate_expr.as_deref() {
                 vertex_entry.push_str(" let delta_t = ");
