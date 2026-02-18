@@ -262,6 +262,10 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
                 errors.push(msg);
             }
         }
+
+        if let Err(msg) = validate_render_pass_msaa_sample_count(n) {
+            errors.push(msg);
+        }
     }
 
     for c in &scene.connections {
@@ -276,6 +280,35 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
             errors.len(),
             errors.join("\n- ")
         )
+    }
+}
+
+fn validate_render_pass_msaa_sample_count(node: &Node) -> std::result::Result<(), String> {
+    if node.node_type != "RenderPass" {
+        return Ok(());
+    }
+
+    let Some(value) = node.params.get("msaaSampleCount") else {
+        return Ok(());
+    };
+
+    let Some(v) = value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|x| i64::try_from(x).ok()))
+    else {
+        return Err(format!(
+            "invalid RenderPass.msaaSampleCount for '{}': expected integer, got {}",
+            node.id, value
+        ));
+    };
+
+    if matches!(v, 0 | 2 | 4 | 8) {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid RenderPass.msaaSampleCount for '{}': must be one of 0,2,4,8, got {}",
+            node.id, v
+        ))
     }
 }
 
