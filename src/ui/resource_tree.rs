@@ -85,9 +85,13 @@ impl ResourceSnapshot {
                 sampled_textures.sort();
                 sampled_textures.dedup();
 
+                // For MSAA render passes, preview/dependency consumers should use the
+                // single-sample resolve target (when present), not the multisampled
+                // color attachment that cannot be sampled by egui.
                 let target_texture = pass
-                    .color_attachment
+                    .resolve_target
                     .as_ref()
+                    .or(pass.color_attachment.as_ref())
                     .map(|r| r.as_str().to_string());
 
                 // Look up target texture info.

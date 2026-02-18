@@ -1,7 +1,7 @@
 //! Deduplicates identical render pass subgraphs across expanded group instances.
 //!
 //! After `expand_group_instances()`, multiple GroupInstance expansions may create
-//! structurally identical pass nodes (RenderPass, Downsample, GuassianBlurPass)
+//! structurally identical pass nodes (RenderPass, Downsample, GuassianBlurPass, Composite)
 //! with the same shader logic but different node IDs. This module detects such
 //! duplicates using recursive Merkle content signatures and merges them so that
 //! only one canonical copy exists.
@@ -16,7 +16,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::dsl::SceneDSL;
 
 /// Pass node types that produce render passes and can be deduplicated.
-const PASS_NODE_TYPES: &[&str] = &["RenderPass", "Downsample", "GuassianBlurPass"];
+const PASS_NODE_TYPES: &[&str] = &["RenderPass", "Downsample", "GuassianBlurPass", "Composite"];
 
 fn is_pass_node(node_type: &str) -> bool {
     PASS_NODE_TYPES.contains(&node_type)

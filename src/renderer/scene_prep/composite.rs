@@ -48,3 +48,25 @@ pub fn composite_layers_in_draw_order(
 
     Ok(layers)
 }
+
+/// Build draw-order layer lists for every Composite node in the scene.
+pub fn composition_layers_by_id(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+) -> Result<HashMap<String, Vec<String>>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    let mut ids: Vec<String> = nodes_by_id
+        .values()
+        .filter(|n| n.node_type == "Composite")
+        .map(|n| n.id.clone())
+        .collect();
+    ids.sort();
+
+    for id in ids {
+        out.insert(
+            id.clone(),
+            composite_layers_in_draw_order(scene, nodes_by_id, &id)?,
+        );
+    }
+    Ok(out)
+}

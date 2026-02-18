@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     auto_wrap::auto_wrap_primitive_pass_inputs,
-    composite::composite_layers_in_draw_order,
+    composite::composition_layers_by_id,
     data_parse::bake_data_parse_nodes,
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
@@ -129,8 +129,11 @@ pub(crate) fn prepare_scene_with_report(
 
     let topo_order = topo_sort(&scene)?;
 
-    let composite_layers_in_draw_order =
-        composite_layers_in_draw_order(&scene, &nodes_by_id, &output_node_id)?;
+    let composition_layers_by_id = composition_layers_by_id(&scene, &nodes_by_id)?;
+    let composite_layers_in_draw_order = composition_layers_by_id
+        .get(&output_node_id)
+        .cloned()
+        .ok_or_else(|| anyhow!("missing layer order for output Composite '{output_node_id}'"))?;
 
     let output_node = find_node(&nodes_by_id, &output_node_id)?;
     if output_node.node_type != "Composite" {
@@ -170,6 +173,7 @@ pub(crate) fn prepare_scene_with_report(
         ids,
         topo_order,
         composite_layers_in_draw_order,
+        composition_layers_by_id,
         output_texture_node_id,
         output_texture_name,
         resolution,

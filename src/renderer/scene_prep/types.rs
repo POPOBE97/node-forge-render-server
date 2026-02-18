@@ -11,6 +11,7 @@ pub struct PreparedScene {
     pub ids: HashMap<String, ResourceName>,
     pub topo_order: Vec<String>,
     pub composite_layers_in_draw_order: Vec<String>,
+    pub composition_layers_by_id: HashMap<String, Vec<String>>,
     pub output_texture_node_id: String,
     pub output_texture_name: ResourceName,
     pub resolution: [u32; 2],
