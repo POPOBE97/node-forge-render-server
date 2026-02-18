@@ -4,6 +4,10 @@
 
 **DSL JSON → 图解析/验证 → WGSL 着色器生成 → rust-wgpu-fiber ShaderSpace → eframe/egui 窗口显示**
 
+> 更新说明（2026-02）  
+> 本文档保留了历史实现背景。几何/坐标推导的最新规范请以  
+> `docs/geometry-coordination-resolver-refactor.md` 为准。
+
 ---
 
 ## 1. 架构概览
@@ -17,7 +21,9 @@
 | [src/dsl.rs](../src/dsl.rs) | DSL 数据结构定义，JSON 解析，默认参数合并 |
 | [src/graph.rs](../src/graph.rs) | 拓扑排序，上游可达节点计算 |
 | [src/schema.rs](../src/schema.rs) | 节点类型 scheme 加载，场景验证，端口类型检查 |
-| [src/renderer.rs](../src/renderer.rs) | 核心渲染逻辑：场景准备、WGSL 生成、ShaderSpace 构建 |
+| [src/renderer/mod.rs](../src/renderer/mod.rs) | 渲染模块入口与 API 导出 |
+| [src/renderer/geometry_resolver/](../src/renderer/geometry_resolver) | 统一几何/坐标推导（draw context + composition context） |
+| [src/renderer/shader_space/assembler.rs](../src/renderer/shader_space/assembler.rs) | ShaderSpace 资源构建与合成路由实现 |
 | [src/ws.rs](../src/ws.rs) | WebSocket 服务器，接收实时场景更新 |
 
 ### 1.2 数据流
@@ -30,7 +36,7 @@
                                                            │
                                                            ▼
 ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-│  eframe 窗口渲染 │ ◄─── │   ShaderSpace   │ ◄─── │  renderer.rs    │
+│  eframe 窗口渲染 │ ◄─── │   ShaderSpace   │ ◄─── │  renderer/*     │
 │  egui 纹理显示   │      │   prepare/render │      │  WGSL 生成       │
 └─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
@@ -167,7 +173,7 @@ pub fn upstream_reachable(scene: &SceneDSL, start: &str) -> HashSet<String>
 
 ---
 
-## 5. 渲染器实现 (\`src/renderer.rs\`)
+## 5. 渲染器实现（模块化：\`src/renderer/*\`）
 
 ### 5.1 场景准备流程
 

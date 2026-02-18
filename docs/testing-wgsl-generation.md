@@ -5,6 +5,24 @@
 - **Golden 对比**：生成结果必须与预期输出文件一致（防止节点扩展时出现回归）。
 - **语法校验**：用 `naga` 解析 `module.wgsl`，确保 WGSL 至少是语法有效的（不依赖 GPU）。
 
+## 几何/坐标重构后的测试补充
+
+几何与坐标推导已经迁移到 canonical resolver（`src/renderer/geometry_resolver/`）。  
+除了 WGSL golden，本仓库还需要覆盖以下回归点：
+
+- 最近下游 `Composite` 坐标域推导（同分支，不跨分支）
+- `Rect2DGeometry` 默认值与优先级（连接输入 > inline > 默认）
+- 处理链路 normalize 与合成链路 preserve 的差异
+- 未被消费分支的 tree-shake（不应报 downstream composition 缺失）
+- `Composite -> Composite` 隐式 fullscreen blit
+
+建议执行：
+
+```bash
+cargo test --lib geometry_resolver::resolver::tests -- --nocapture
+cargo test --test render_cases
+```
+
 ---
 
 ## 1. 用例目录结构（支持一组测试里包含多个输入 case）
@@ -124,4 +142,5 @@ cargo test
 ## 6. 相关代码位置
 
 - 测试入口：`tests/wgsl_generation.rs`
-- 生成 API：`src/renderer.rs`（`build_all_pass_wgsl_bundles_from_scene` / `build_pass_wgsl_bundle`）
+- 几何/坐标 resolver：`src/renderer/geometry_resolver/resolver.rs`
+- 生成 API：`src/renderer/wgsl.rs`（`build_all_pass_wgsl_bundles_from_scene` / `build_pass_wgsl_bundle`）

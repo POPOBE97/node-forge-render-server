@@ -1,5 +1,25 @@
 # Renderer Refactoring Implementation Guide
 
+## 2026-02 Addendum: Canonical Geometry/Coord Resolver
+
+This guide is mostly historical (module extraction phases). The current geometry/coordination source of truth is:
+
+- `docs/geometry-coordination-resolver-refactor.md`
+
+Implemented addendum highlights:
+
+- Added canonical resolver module:
+  - `src/renderer/geometry_resolver/mod.rs`
+  - `src/renderer/geometry_resolver/types.rs`
+  - `src/renderer/geometry_resolver/resolver.rs`
+- `Composite` is now explicitly non-draw routing/target-binding.
+- Draw context inference now preserves resolved geometry placement across processing and composition edges.
+- Nested `Composite -> Composite` is supported through implicit fullscreen blit synthesis in assembler.
+- Geometry logic de-duplicated:
+  - canonical geometry metrics in `src/renderer/render_plan/geometry.rs`
+  - assembler consumes canonical outputs instead of re-implementing GLTF/geometry resolution.
+- Tree-shaken inference now skips dead pass branches, avoiding false "no downstream Composition" errors.
+
 ## 🎉 Phase 5 Complete: ShaderSpace Module Extracted!
 
 The renderer refactoring has completed Phase 5! ShaderSpace construction logic has been successfully extracted into a dedicated module.

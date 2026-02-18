@@ -10,9 +10,11 @@ src/renderer/
 ├── types.rs                        # Core type definitions
 ├── utils.rs                        # Utility functions
 ├── validation.rs                   # WGSL validation using naga (4 tests)
-├── scene_prep/                   # Scene preparation and validation
+├── scene_prep/                     # Scene preparation and validation
+├── render_plan/                    # Pass graph + geometry metric helpers
+├── geometry_resolver/              # Canonical coord/geometry context resolver
 ├── wgsl.rs                         # WGSL shader generation
-├── shader_space/                 # ShaderSpace construction
+├── shader_space/                   # ShaderSpace construction
 └── node_compiler/                  # Node compilation infrastructure
     ├── mod.rs                      # Compiler framework and dispatch
     ├── input_nodes.rs              # ColorInput, FloatInput, etc. (5 tests)
@@ -58,7 +60,21 @@ Scene preparation and validation:
 - `prepare_scene()` - Prepare scene for rendering (topological sort, validation)
 - Internal scene-prep stages auto-wrap primitive values into render passes
 - Port type utilities for connection validation
-- Composite layer ordering
+- Composition layer ordering (`Composite.pass` + `dynamic_*`)
+- Output contract: `RenderTarget.pass <- Composite` and `Composite.target <- RenderTexture`
+
+### render_plan/
+Render-plan helpers used by WGSL generation and ShaderSpace assembly:
+- `pass_graph.rs` - Pass dependency traversal and sampled-pass detection
+- `geometry.rs` - Canonical geometry metrics/transform resolution for draw paths
+- Shared GLTF/OBJ pixel-space loader (`load_gltf_geometry_pixel_space`)
+
+### geometry_resolver/
+Canonical coordination and geometry context inference:
+- `resolve_scene_draw_contexts()` - Single entrypoint for draw-pass context resolution
+- Node role classification: `DrawPass`, `CompositionRoute`, `Other`
+- Resolved geometry placement is preserved across both processing and composition edges
+- Composition contexts and consumer mappings used by assembler
 
 ### wgsl.rs
 WGSL shader generation:
@@ -73,7 +89,8 @@ ShaderSpace construction:
 - `ShaderSpaceBuilder::build_error()` - Build error visualization ShaderSpace
 - `update_pass_params()` - Update uniform parameters for passes
 - Texture creation, geometry buffers, uniform buffers, pipelines
-- Composite layer handling
+- Resolver-driven pass placement and composition routing
+- Implicit `Composite -> Composite` fullscreen blit synthesis
 
 ### node_compiler/
 Node compilation infrastructure and implementations:
@@ -329,7 +346,14 @@ Schema Validation (src/schema.rs)
 Scene Preparation (scene_prep/)
     ├── Tree-shake unused nodes
     ├── Auto-wrap primitives
+    ├── Resolve composition layers/targets
     └── Topological sort
+    ↓
+Geometry And Coord Resolution (geometry_resolver/)
+    ├── Resolve composition target domains
+    ├── Resolve draw contexts per consumer edge
+    ├── Preserve resolved geometry placement for all consumer edges
+    └── Tree-shake dead pass-like branches for inference
     ↓
 Node Compilation (node_compiler/*)
     ├── Dispatch to specific compiler
@@ -346,6 +370,7 @@ WGSL Validation (validation.rs)
 ShaderSpace Construction (shader_space/)
     ├── Create GPU resources
     ├── Build pipelines
+    ├── Synthesize compose passes (including nested composite blits)
     └── Setup render order
     ↓
 Render (rust-wgpu-fiber)
@@ -386,6 +411,7 @@ Render (rust-wgpu-fiber)
 ## Documentation
 
 - **Architecture**: `docs/renderer-refactoring-architecture.md`
+- **Geometry/Coord Refactor (Source of Truth)**: `docs/geometry-coordination-resolver-refactor.md`
 - **Implementation Guide**: `docs/renderer-refactoring-implementation-guide.md`
 - **Original Implementation**: `docs/dsl-to-rust-wgpu-fiber-implementation.md`
 

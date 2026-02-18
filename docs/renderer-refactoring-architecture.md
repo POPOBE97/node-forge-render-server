@@ -4,6 +4,17 @@
 
 This document describes the refactored architecture for `renderer.rs`, transforming it from a monolithic 2723-line file into a modular, compiler-like system.
 
+## 2026-02 Geometry/Coordination Update
+
+Geometry and coordinate-domain inference has been further refactored into a canonical resolver pipeline.
+
+- Canonical reference: `docs/geometry-coordination-resolver-refactor.md`
+- Primary implementation: `src/renderer/geometry_resolver/`
+- `Composite` is routing/target-binding only (non-draw); draw geometry is resolved per draw-pass context.
+- Consumer-aware policy now controls placement:
+  - preserve placement for composition consumers
+  - normalize to local space for processing consumers
+
 ## Current Structure (Before Refactoring)
 
 ```
@@ -24,9 +35,11 @@ src/renderer/
 ├── mod.rs                          # Module entry point, re-exports
 ├── types.rs                        # Core type definitions
 ├── utils.rs                        # Utility functions
-├── scene_prep.rs                   # Scene preparation and validation
+├── scene_prep/                     # Scene preparation and validation
+├── render_plan/                    # Pass graph + geometry helpers
+├── geometry_resolver/              # Canonical coord/geometry inference
 ├── wgsl.rs                         # WGSL shader bundle generation
-├── shader_space.rs                 # ShaderSpace construction
+├── shader_space/                   # ShaderSpace construction
 ├── validation.rs                   # WGSL validation using naga
 └── node_compiler/
     ├── mod.rs                      # Compiler infrastructure
@@ -39,8 +52,8 @@ src/renderer/
     ├── color_nodes.rs              # ColorMix, ColorRamp, HSVAdjust
     ├── shader_nodes.rs             # EmissionShader, PrincipledBSDF, MixShader
     ├── material_nodes.rs           # MaterialFromShader, PBRMaterial, ShaderMaterial
-    ├── pass_nodes.rs               # RenderPass, GuassianBlurPass, ComputePass, Composite
-    └── geometry_nodes.rs           # Rect2DGeometry, GeometryPrimitive, etc.
+    ├── pass_nodes.rs               # Pass node compilation helpers
+    └── geometry_nodes.rs           # Geometry node compilation helpers
 ```
 
 ## Module Responsibilities
@@ -64,11 +77,22 @@ src/renderer/
 - `decode_data_url()`: Data URL parsing
 - `load_image_from_data_url()`: Image loading
 
-### scene_prep.rs
+### scene_prep/
 - `PreparedScene`: Prepared scene with topo order
 - `prepare_scene()`: Main scene preparation function
 - `auto_wrap_primitive_pass_inputs()`: Auto-wrap primitives to passes
 - Port type utilities (`port_type_contains`, etc.)
+- Composition layer ordering and output target contract resolution
+
+### render_plan/
+- `pass_graph.rs`: pass dependency traversal and sampled-pass discovery
+- `geometry.rs`: geometry metrics, Rect2D defaults, transform matrix composition, GLTF pixel-space loading
+
+### geometry_resolver/
+- `resolve_scene_draw_contexts()`: canonical entrypoint for draw contexts
+- resolves `NodeRole`, `ResolvedDrawContext`, `ResolvedCompositionContext`
+- infers nearest downstream composition domains on live branches only
+- enforces `Composite.target <- RenderTexture` coordinate-domain contract
 
 ### wgsl.rs
 - `build_fullscreen_textured_bundle()`: Fullscreen quad shader
@@ -77,11 +101,12 @@ src/renderer/
 - Gaussian blur utilities
 - WGSL formatting utilities
 
-### shader_space.rs
-- `build_shader_space_from_scene()`: Main ShaderSpace builder
+### shader_space/
+- `build_shader_space_from_scene_internal()`: Main ShaderSpace builder
 - `build_error_shader_space()`: Error visualization builder
 - Texture/sampler/buffer creation
-- Composite layer handling
+- resolver-driven placement + compose pass synthesis
+- implicit `Composite -> Composite` fullscreen blit generation
 - Blend state parsing
 
 ### validation.rs
@@ -127,12 +152,19 @@ DSL JSON
     ↓
 Schema Validation (schema.rs)
     ↓
-Scene Preparation (scene_prep.rs)
+Scene Preparation (scene_prep/)
     ├── Locate RenderTarget
     ├── Tree-shake unused nodes
     ├── Auto-wrap primitives
     ├── Validate connections
+    ├── Resolve composition layers/targets
     └── Topological sort
+    ↓
+Geometry/Coord Resolution (geometry_resolver/)
+    ├── Build composition contexts from Composite.target
+    ├── Resolve draw contexts per consumer edge
+    ├── Preserve resolved geometry placement for all consumer edges
+    └── Tree-shake dead pass branches for inference
     ↓
 WGSL Generation (wgsl.rs + node_compiler/*)
     ├── For each RenderPass node:
@@ -145,12 +177,14 @@ WGSL Generation (wgsl.rs + node_compiler/*)
     │   └── Validate WGSL (validation.rs + naga)
     └── Return all bundles
     ↓
-ShaderSpace Construction (shader_space.rs)
+ShaderSpace Construction (shader_space/)
     ├── Create textures (RenderTexture, ImageTexture)
     ├── Create geometry buffers (Rect2DGeometry)
     ├── Create uniform buffers (Params)
     ├── Create pipelines (RenderPass)
-    ├── Handle composite layers
+    ├── Handle composition routing
+    ├── Synthesize sampled-pass compose passes
+    ├── Synthesize Composite -> Composite blits
     └── Setup render order
     ↓
 Render (rust-wgpu-fiber)

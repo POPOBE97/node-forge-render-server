@@ -18,6 +18,11 @@ cargo run --release
 
 - WGSL 生成测试（如何新增/更新测试用例）：见 [docs/testing-wgsl-generation.md](docs/testing-wgsl-generation.md)
 
+## 几何与坐标推导（Refactor）
+
+- 几何/坐标统一解析方案与语义说明：
+  [docs/geometry-coordination-resolver-refactor.md](docs/geometry-coordination-resolver-refactor.md)
+
 ## UV 约定（简短）
 
 - 内部 `in.uv` 使用 WGSL 纹理坐标：左上角为原点。
