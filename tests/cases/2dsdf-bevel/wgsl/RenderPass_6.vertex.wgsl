@@ -24,7 +24,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
@@ -160,18 +160,19 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
  let geo_sy = length(inst_m[1].xy);
  let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
  out.geo_size_px = geo_size_px;
- out.local_px = vec2f(uv.x, 1.0 - uv.y) * geo_size_px;
+ out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);
 
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
+ out.local_px = vec3f(out.local_px.xy, p_local.z);
  let p_px = params.center + p_local.xy;
 
  // Convert pixels to clip space assuming bottom-left origin.
  // (0,0) => (-1,-1), (target_size) => (1,1)
  let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
- out.position = vec4f(ndc, position.z, 1.0);
+ out.position = vec4f(ndc, p_local.z / params.target_size.x, 1.0);
 
  // Pixel-centered like GLSL gl_FragCoord.xy.
  out.frag_coord_gl = p_px + vec2f(0.5, 0.5);

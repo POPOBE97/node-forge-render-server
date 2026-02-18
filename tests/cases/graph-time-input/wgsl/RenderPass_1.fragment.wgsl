@@ -24,7 +24,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
@@ -62,7 +62,7 @@ fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, inpu
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_MathClosure_8_out: vec4f;
     {
-        let input1 = in.local_px;
+        let input1 = in.local_px.xy;
         let input2 = in.geo_size_px;
         let input3 = params.time;
         var output: vec4f;

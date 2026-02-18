@@ -24,7 +24,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
@@ -86,19 +86,20 @@ fn mc_GroupInstance_39_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+ out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  let p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
+ out.local_px = vec3f(out.local_px.xy, p_local.z);
  let p_px = rect_dyn.xy + p_local.xy;
 
  // Convert pixels to clip space assuming bottom-left origin.
  // (0,0) => (-1,-1), (target_size) => (1,1)
  let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
- out.position = vec4f(ndc, position.z, 1.0);
+ out.position = vec4f(ndc, p_local.z / params.target_size.x, 1.0);
 
  // Pixel-centered like GLSL gl_FragCoord.xy.
  out.frag_coord_gl = p_px + vec2f(0.5, 0.5);

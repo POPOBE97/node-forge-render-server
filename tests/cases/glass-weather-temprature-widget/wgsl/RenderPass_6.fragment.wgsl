@@ -24,7 +24,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
@@ -486,12 +486,12 @@ fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_MathClosure_79_out: vec2f;
     {
-        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
+        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
         let i = (graph_inputs.node_Vector3Input_80_82af6f66).xyz;
-        let xy = in.local_px;
+        let xy = in.local_px.xy;
         let size = in.geo_size_px;
         let ior = (graph_inputs.node_FloatInput_84_38afe820).x;
-        let depth = sdf2d_bevel_smooth5(sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03);
+        let depth = sdf2d_bevel_smooth5(sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03);
         var output: vec2f;
         output = mc_MathClosure_79_(in.uv, n, i, xy, size, ior, depth);
         mc_MathClosure_79_out = output;
@@ -513,7 +513,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_63_out: f32;
     {
-        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
+        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
         var output: f32;
         output = mc_MathClosure_63_(in.uv, n);
         mc_MathClosure_63_out = output;
@@ -550,7 +550,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_99_out: vec2f;
     {
-        let xy = in.local_px;
+        let xy = in.local_px.xy;
         let size = in.geo_size_px;
         var output: vec2f;
         output = mc_MathClosure_99_(in.uv, xy, size);
@@ -558,9 +558,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_111_out: vec4f;
     {
-        let t = smoothstep(0.0, 1.0, (length((in.local_px - mc_MathClosure_108_out)) - 16.5));
+        let t = smoothstep(0.0, 1.0, (length((in.local_px.xy - mc_MathClosure_108_out)) - 16.5));
         let c = textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, (mc_MathClosure_99_out));
-        let thumb = smoothstep(-7.0, -8.0, (length((in.local_px - mc_MathClosure_108_out)) - 16.5));
+        let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - mc_MathClosure_108_out)) - 16.5));
         var output: vec4f;
         output = mc_MathClosure_111_(in.uv, t, c, thumb);
         mc_MathClosure_111_out = output;
@@ -574,7 +574,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_104_out: f32;
     {
-        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
+        let n = normalize(vec3f(-(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(-1.0, 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), -(((sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, 1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03)) - (sdf2d_bevel_smooth5(sdf2d_round_rect(((in.local_px.xy + vec2f(0.0, -1.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)), 24, 0.03))) * 0.5), 1.0));
         let i = (graph_inputs.node_Vector3Input_105_12e9923b).xyz;
         var output: f32;
         output = mc_MathClosure_104_(in.uv, n, i);
@@ -582,7 +582,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_MathClosure_115_out: f32;
     {
-        let sdf = (length((in.local_px - mc_MathClosure_108_out)) - 16.5);
+        let sdf = (length((in.local_px.xy - mc_MathClosure_108_out)) - 16.5);
         var output: f32;
         output = mc_MathClosure_115_(in.uv, sdf);
         mc_MathClosure_115_out = output;
@@ -590,7 +590,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_MathClosure_96_out: vec4f;
     {
         let c_edge = mc_MathClosure_94_out;
-        let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)));
+        let e = smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)));
         let c_ui = mc_MathClosure_103_out;
         let f = smoothstep(0.0, 0.015, mc_MathClosure_91_out);
         let l = mc_MathClosure_104_out;

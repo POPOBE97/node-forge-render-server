@@ -24,7 +24,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
@@ -42,11 +42,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     out.uv = uv;
     out.geo_size_px = params.geo_size;
     // UV is top-left convention, so flip Y for GLSL-like local_px.
-    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
     return out;
 }

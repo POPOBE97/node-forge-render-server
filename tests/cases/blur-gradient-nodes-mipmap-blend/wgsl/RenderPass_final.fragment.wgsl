@@ -24,7 +24,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
@@ -1416,7 +1416,7 @@ fn sample_pass_sys_group_sampleFromMipmap_RenderPass_85_(xy_in: vec2f, res_in: v
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_MathClosure_calculateMaskLinear_out: f32;
     {
-        let xy = in.local_px;
+        let xy = in.local_px.xy;
         let start_y = (graph_inputs.node_FloatInput_106_79ef3817).x;
         let end_y = (graph_inputs.node_FloatInput_107_c6ed3817).x;
         let start_sigma = (graph_inputs.node_FloatInput_108_77003917).x;
@@ -1441,7 +1441,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_111_MathClosure_95_out: vec4f;
     {
-        let xy = in.local_px;
+        let xy = in.local_px.xy;
         let level = (graph_inputs.node_FloatInput_113_a3d73517).x;
         let mip0_size = (graph_inputs.node_GroupInstance_111_Vector2Input_89_d77a1c71).xy;
         var output: vec4f;
@@ -1457,7 +1457,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_99_MathClosure_109_out: array<vec2f, 4>;
     {
-        let dc = in.local_px;
+        let dc = in.local_px.xy;
         let scale = mc_GroupInstance_99_MathClosure_111_out;
         var output: array<vec2f, 4>;
         output = mc_GroupInstance_99_MathClosure_109(in.uv, dc, scale);
@@ -1547,7 +1547,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var mc_GroupInstance_114_MathClosure_109_out: array<vec2f, 4>;
     {
-        let dc = in.local_px;
+        let dc = in.local_px.xy;
         let scale = mc_GroupInstance_114_MathClosure_111_out;
         var output: array<vec2f, 4>;
         output = mc_GroupInstance_114_MathClosure_109(in.uv, dc, scale);

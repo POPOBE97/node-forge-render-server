@@ -24,7 +24,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
@@ -135,7 +135,7 @@ fn gb_sample_from_mipmap(xy: vec2f, resolution: vec2f, level: i32) -> vec4f {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_MathClosure_7_out: f32;
     {
-        let xy = in.local_px;
+        let xy = in.local_px.xy;
         let size = in.geo_size_px;
         var output: f32;
         output = mc_MathClosure_7_(in.uv, xy, size);
@@ -157,7 +157,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Transform from user coordinates (original image space) to padded
     // texture coordinates.  User (0,0) → padded (pad_offset).
     let gb_pad_offset = vec2f(36.0, 48.0);
-    let gb_coord = in.local_px + gb_pad_offset;
+    let gb_coord = in.local_px.xy + gb_pad_offset;
 
     // Floor / ceil mip levels.
     let gb_mLo = floor(gb_m);
