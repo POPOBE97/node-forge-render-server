@@ -2,15 +2,15 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-17T17:31:12.151Z",
-    "modified": "2026-02-17T17:31:12.151Z"
+    "created": "2026-02-17T19:30:43.518Z",
+    "modified": "2026-02-17T19:30:43.518Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": -500,
+        "x": -20,
         "y": 260
       },
       "width": 160,
@@ -24,7 +24,7 @@
       "id": "GLTFGeometry_2",
       "type": "GLTFGeometry",
       "position": {
-        "x": -1320,
+        "x": -1280,
         "y": 260
       },
       "width": 192,
@@ -45,9 +45,9 @@
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
@@ -57,18 +57,38 @@
       "id": "Composite_5",
       "type": "Composite",
       "position": {
-        "x": -680,
+        "x": -200,
         "y": 260
       },
       "width": 160,
       "label": "Composite",
-      "params": {}
+      "params": {},
+      "inputs": [
+        {
+          "id": "dynamic_1771356576672_1",
+          "name": "pass2",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771356576672_1",
+          "label": "pass2",
+          "variableName": "pass2",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        }
+      ]
     },
     {
       "id": "RenderTexture_6",
       "type": "RenderTexture",
       "position": {
-        "x": -680,
+        "x": -200,
         "y": 120
       },
       "width": 160,
@@ -83,8 +103,8 @@
       "id": "ColorInput_7",
       "type": "ColorInput",
       "position": {
-        "x": -1080,
-        "y": 360
+        "x": -1060,
+        "y": 640
       },
       "width": 160,
       "label": "Color Input",
@@ -98,22 +118,17 @@
       }
     },
     {
-      "id": "TransformGeometry_8",
-      "type": "TransformGeometry",
+      "id": "SetTransform_8",
+      "type": "SetTransform",
       "position": {
-        "x": -1080,
+        "x": -1060,
         "y": 260
       },
       "width": 160,
-      "label": "Transform Geometry",
+      "label": "Set Transform",
       "params": {
         "mode": "Components",
         "translate": {
-          "x": 0,
-          "y": 0,
-          "z": -100
-        },
-        "rotate": {
           "x": 0,
           "y": 0,
           "z": 0
@@ -122,22 +137,111 @@
           "x": 1,
           "y": 1,
           "z": 1
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
         }
+      }
+    },
+    {
+      "id": "Downsample_10",
+      "type": "Downsample",
+      "position": {
+        "x": -660,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "targetSize": {
+          "x": 540,
+          "y": 1200
+        },
+        "sampling": "Mirror"
+      }
+    },
+    {
+      "id": "Kernel_11",
+      "type": "Kernel",
+      "position": {
+        "x": -660,
+        "y": 80
+      },
+      "width": 160,
+      "label": "Kernel",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "RenderPass_12",
+      "type": "RenderPass",
+      "position": {
+        "x": -440,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "alpha",
+        "blendfunc": "add",
+        "src_factor": "src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "PassTexture_13",
+      "type": "PassTexture",
+      "position": {
+        "x": -440,
+        "y": 380
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_14",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -440,
+        "y": 120
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "Vector2Input_15",
+      "type": "Vector2Input",
+      "position": {
+        "x": -440,
+        "y": 20
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 540,
+        "y": 1200
       }
     }
   ],
   "connections": [
-    {
-      "id": "edge_2",
-      "from": {
-        "nodeId": "RenderPass_4",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
-      }
-    },
     {
       "id": "edge_3",
       "from": {
@@ -172,25 +276,113 @@
       }
     },
     {
-      "id": "edge_7",
+      "id": "edge_6",
       "from": {
         "nodeId": "GLTFGeometry_2",
         "portId": "geometry"
       },
       "to": {
-        "nodeId": "TransformGeometry_8",
+        "nodeId": "SetTransform_8",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_7",
+      "from": {
+        "nodeId": "SetTransform_8",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
         "portId": "geometry"
       }
     },
     {
       "id": "edge_8",
       "from": {
-        "nodeId": "TransformGeometry_8",
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "PassTexture_13",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_13",
+      "from": {
+        "nodeId": "PassTexture_13",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_12",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "Rect2DGeometry_14",
         "portId": "geometry"
       },
       "to": {
-        "nodeId": "RenderPass_4",
+        "nodeId": "RenderPass_12",
         "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_15",
+      "from": {
+        "nodeId": "RenderPass_12",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_16",
+      "from": {
+        "nodeId": "Vector2Input_15",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_14",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_17",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "dynamic_1771356576672_1"
       }
     }
   ],
