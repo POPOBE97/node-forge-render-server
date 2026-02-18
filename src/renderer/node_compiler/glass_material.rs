@@ -749,7 +749,7 @@ where
  var {out_var}: vec4f;
  {{
      let screen_px = in.frag_coord_gl;
-     let local_px = in.local_px;
+     let local_px = in.local_px.xy;
      let size_px = in.geo_size_px;
      let half_size_px = size_px * 0.5;
 

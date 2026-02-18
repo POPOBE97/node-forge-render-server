@@ -194,7 +194,8 @@ pub fn compile_frag_coord(_node: &Node, out_port: Option<&str>) -> Result<TypedE
 pub fn compile_geo_fragcoord(_node: &Node, out_port: Option<&str>) -> Result<TypedExpr> {
     let port = out_port.unwrap_or("xy");
     match port {
-        "xy" => Ok(TypedExpr::new("in.local_px".to_string(), ValueType::Vec2)),
+        "xy" => Ok(TypedExpr::new("in.local_px.xy".to_string(), ValueType::Vec2)),
+        "xyz" => Ok(TypedExpr::new("in.local_px".to_string(), ValueType::Vec3)),
         other => bail!("GeoFragcoord: unsupported output port '{other}'"),
     }
 }
@@ -291,7 +292,7 @@ mod fragcoord_tests {
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
-        assert_eq!(expr.expr, "in.local_px");
+        assert_eq!(expr.expr, "in.local_px.xy");
         assert!(!expr.uses_time);
     }
 

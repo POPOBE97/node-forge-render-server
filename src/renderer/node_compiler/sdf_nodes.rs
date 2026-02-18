@@ -258,7 +258,7 @@ where
     // Note: `gl_FragCoord` (render-target space) cannot be made instance/geometry-local
     // without knowing the per-geometry (or per-instance) inverse transform. So Sdf2D uses
     // the geometry-local contract instead.
-    let frag_local_px = TypedExpr::new("in.local_px".to_string(), ValueType::Vec2);
+    let frag_local_px = TypedExpr::new("in.local_px.xy".to_string(), ValueType::Vec2);
 
     // `position` is interpreted as the SDF shape center (in the same local pixel space).
     // If not provided, default to centered at origin.
@@ -349,8 +349,8 @@ fn wgsl_f32(x: f32) -> String {
 }
 
 fn offset_in_local_px(expr: &str, dx: f32, dy: f32) -> String {
-    let off = format!("(in.local_px + vec2f({}, {}))", wgsl_f32(dx), wgsl_f32(dy));
-    expr.replace("in.local_px", &off)
+    let off = format!("(in.local_px.xy + vec2f({}, {}))", wgsl_f32(dx), wgsl_f32(dy));
+    expr.replace("in.local_px.xy", &off)
 }
 
 pub fn compile_sdf2d_bevel<F>(

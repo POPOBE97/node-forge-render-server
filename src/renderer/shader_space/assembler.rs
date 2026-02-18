@@ -329,6 +329,10 @@ fn mat4_rotate_z(rad: f32) -> [f32; 16] {
     ]
 }
 
+const IDENTITY_MAT4: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+
 fn parse_inline_vec3(node: &crate::dsl::Node, key: &str, default: [f32; 3]) -> [f32; 3] {
     let mut out = default;
     if let Some(v) = node.params.get(key) {
@@ -948,6 +952,15 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 local_wgsl_decls = vtx_ctx.wgsl_decls();
                 local_uses_instance_index = vtx_ctx.uses_instance_index;
                 translate_expr = Some(expr);
+            } else {
+                // No connected translate port — apply inline translate params as constant.
+                let t = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
+                if t[0] != 0.0 || t[1] != 0.0 || t[2] != 0.0 {
+                    translate_expr = Some(TypedExpr::new(
+                        format!("vec3f({:.6}, {:.6}, {:.6})", t[0], t[1], t[2]),
+                        ValueType::Vec3,
+                    ));
+                }
             }
 
             if !local_inline_stmts.is_empty() {
@@ -1942,7 +1955,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let params_name: ResourceName = format!("params.{layer_id}").into();
                 let params = main_pass_params;
 
-                let is_instanced = instance_count > 1;
+                let has_non_identity_base_m = base_m != IDENTITY_MAT4;
+                let is_instanced = instance_count > 1 || has_non_identity_base_m;
 
                 // Internal resource naming helpers for this pass node.
                 let baked_buf_name: ResourceName =

@@ -228,7 +228,7 @@ struct VSOut {{
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 }};
@@ -259,7 +259,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
     out.geo_size_px = rect_size_px;
     // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
     // UV is top-left convention, so flip Y for GLSL-like local_px.
-    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     // Unit vertices [-0.5, 0.5] scaled by dynamic size.
     let p_local = vec3f(position.xy * rect_size_px, position.z);
@@ -270,7 +270,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
     // Convert pixels to clip space assuming bottom-left origin.
     // (0,0) => (-1,-1), (target_size) => (1,1)
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
 
     // Pixel-centered like GLSL gl_FragCoord.xy.
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -341,7 +341,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
     @location(4) instance_index: u32,
@@ -384,7 +384,7 @@ var src_samp: sampler;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
   
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -395,7 +395,7 @@ var src_samp: sampler;
      // Convert pixels to clip space assuming bottom-left origin.
      // (0,0) => (-1,-1), (target_size) => (1,1)
      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z, 1.0);
+     out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
 
      // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -419,7 +419,7 @@ var src_samp: sampler;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -430,7 +430,7 @@ var src_samp: sampler;
      // Convert pixels to clip space assuming bottom-left origin.
      // (0,0) => (-1,-1), (target_size) => (1,1)
      let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z, 1.0);
+     out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
 
       // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -650,7 +650,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
@@ -669,11 +669,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     out.uv = uv;
     out.geo_size_px = params.geo_size;
     // UV is top-left convention, so flip Y for GLSL-like local_px.
-    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;
+    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z, 1.0);
+    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
     return out;
 }
@@ -834,7 +834,7 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
      @location(4) instance_index: u32,
@@ -949,7 +949,7 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
 
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
@@ -957,7 +957,7 @@ var<uniform> params: Params;
         } else {
             vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
 
             vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
         }
@@ -980,7 +980,7 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" out.geo_size_px = rect_dyn.zw;\n");
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n");
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
 
@@ -1004,7 +1004,7 @@ var<uniform> params: Params;
                 vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
             }
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(" out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n");
 
             if let Some(expr) = vertex_translate_expr.as_deref() {
                 vertex_entry.push_str(" let delta_t = ");
@@ -1020,6 +1020,8 @@ var<uniform> params: Params;
 
     vertex_entry.push_str(" // Geometry vertices are in local pixel units centered at (0,0).\n");
     vertex_entry.push_str(" // Convert to target pixel coordinates with bottom-left origin.\n");
+    // Update local_px.z with the final transformed Z from p_local.
+    vertex_entry.push_str(" out.local_px = vec3f(out.local_px.xy, p_local.z);\n");
     if rect_unit_geometry {
         // NOTE: rect_dyn is declared inside the rect_unit_geometry branch above.
         vertex_entry.push_str(" let p_px = rect_dyn.xy + p_local.xy;\n\n");
@@ -1030,7 +1032,7 @@ var<uniform> params: Params;
     vertex_entry.push_str(" // Convert pixels to clip space assuming bottom-left origin.\n");
     vertex_entry.push_str(" // (0,0) => (-1,-1), (target_size) => (1,1)\n");
     vertex_entry.push_str(" let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n");
-    vertex_entry.push_str(" out.position = vec4f(ndc, position.z, 1.0);\n\n");
+    vertex_entry.push_str(" out.position = vec4f(ndc, p_local.z / params.target_size.x, 1.0);\n\n");
 
     vertex_entry.push_str(" // Pixel-centered like GLSL gl_FragCoord.xy.\n");
     vertex_entry.push_str(" out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n");

@@ -951,6 +951,15 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 local_uses_instance_index = vtx_ctx.uses_instance_index;
                 local_graph_input_kinds = vtx_ctx.graph_input_kinds.clone();
                 translate_expr = Some(expr);
+            } else {
+                // No connected translate port — apply inline translate params as constant.
+                let t = parse_inline_vec3(geometry_node, "translate", [0.0, 0.0, 0.0]);
+                if t[0] != 0.0 || t[1] != 0.0 || t[2] != 0.0 {
+                    translate_expr = Some(TypedExpr::new(
+                        format!("vec3f({:.6}, {:.6}, {:.6})", t[0], t[1], t[2]),
+                        ValueType::Vec3,
+                    ));
+                }
             }
 
             if !local_inline_stmts.is_empty() {

@@ -28,7 +28,7 @@ struct VSOut {{\n\
     @builtin(position) position: vec4f,\n\
     @location(0) uv: vec2f,\n\
     @location(1) frag_coord_gl: vec2f,\n\
-    @location(2) local_px: vec2f,\n\
+    @location(2) local_px: vec3f,\n\
     @location(3) geo_size_px: vec2f,\n\
 }};\n\
 \n\
@@ -66,12 +66,12 @@ fn vs_main(\n\
 \n\
     out.uv = uv;\n\
     out.geo_size_px = params.geo_size;\n\
-    out.local_px = vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px;\n\
+    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\
     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
-    out.position = vec4f(ndc, position.z, 1.0);\n\
+    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);\n\
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
     return out;\n\
 }}\n\
