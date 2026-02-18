@@ -2,16 +2,16 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-18T07:32:09.802Z",
-    "modified": "2026-02-18T07:32:09.802Z"
+    "created": "2026-02-18T16:03:02.512Z",
+    "modified": "2026-02-18T16:03:02.512Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": -20,
-        "y": 260
+        "x": -420,
+        "y": 620
       },
       "width": 160,
       "label": "Screen",
@@ -58,8 +58,8 @@
       "id": "Composite_5",
       "type": "Composite",
       "position": {
-        "x": -200,
-        "y": 260
+        "x": -600,
+        "y": 620
       },
       "width": 160,
       "label": "Composite",
@@ -71,8 +71,8 @@
       "id": "RenderTexture_6",
       "type": "RenderTexture",
       "position": {
-        "x": -200,
-        "y": 120
+        "x": -600,
+        "y": 480
       },
       "width": 160,
       "label": "Render Texture",
@@ -101,34 +101,6 @@
       }
     },
     {
-      "id": "SetTransform_8",
-      "type": "SetTransform",
-      "position": {
-        "x": -1060,
-        "y": 260
-      },
-      "width": 160,
-      "label": "Set Transform",
-      "params": {
-        "mode": "Components",
-        "translate": {
-          "x": 540,
-          "y": 1200,
-          "z": 0
-        },
-        "scale": {
-          "x": 1,
-          "y": 1,
-          "z": 1
-        },
-        "rotate": {
-          "x": 0,
-          "y": 0,
-          "z": 0
-        }
-      }
-    },
-    {
       "id": "Downsample_10",
       "type": "Downsample",
       "position": {
@@ -150,13 +122,26 @@
       "type": "Kernel",
       "position": {
         "x": -860,
-        "y": 440
+        "y": 420
       },
       "width": 160,
       "label": "Mip1",
       "params": {
         "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n",
+        "manualKernelWidth": 3,
+        "manualKernelHeight": 3,
+        "manualKernelValues": [
+          0,
+          0.25,
+          0,
+          0.25,
+          0,
+          0.25,
+          0,
+          0.25,
+          0
+        ]
       }
     },
     {
@@ -313,6 +298,34 @@
         "preset": "CrossBox",
         "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
+    },
+    {
+      "id": "SetTransform_22",
+      "type": "SetTransform",
+      "position": {
+        "x": -1060,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "translate": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
     }
   ],
   "connections": [
@@ -347,39 +360,6 @@
       "to": {
         "nodeId": "RenderPass_4",
         "portId": "material"
-      }
-    },
-    {
-      "id": "edge_6",
-      "from": {
-        "nodeId": "GLTFGeometry_2",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "SetTransform_8",
-        "portId": "geometry"
-      }
-    },
-    {
-      "id": "edge_7",
-      "from": {
-        "nodeId": "SetTransform_8",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "RenderPass_4",
-        "portId": "geometry"
-      }
-    },
-    {
-      "id": "edge_8",
-      "from": {
-        "nodeId": "RenderPass_4",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Downsample_10",
-        "portId": "source"
       }
     },
     {
@@ -504,14 +484,47 @@
       }
     },
     {
-      "id": "edge_22",
+      "id": "edge_23",
       "from": {
         "nodeId": "RenderPass_4",
         "portId": "pass"
       },
       "to": {
+        "nodeId": "Downsample_10",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_24",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
         "nodeId": "Composite_5",
         "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_25",
+      "from": {
+        "nodeId": "GLTFGeometry_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
       }
     }
   ],
