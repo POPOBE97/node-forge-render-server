@@ -43,8 +43,8 @@ fn render_pass_scheme_exposes_msaa_input_and_default() {
     );
     assert_eq!(
         render_pass.default_params.get("msaaSampleCount"),
-        Some(&json!(0)),
-        "RenderPass.defaultParams.msaaSampleCount must be 0"
+        Some(&json!(1)),
+        "RenderPass.defaultParams.msaaSampleCount must be 1"
     );
 }
 
@@ -75,7 +75,7 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
 
     assert_eq!(
         scene.nodes[0].params.get("msaaSampleCount"),
-        Some(&json!(0)),
+        Some(&json!(1)),
         "RenderPass.msaaSampleCount default must be merged from schema"
     );
 }
@@ -83,7 +83,7 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
 #[test]
 fn render_pass_msaa_validation_accepts_allowed_values() {
     let scheme = load_default_scheme().expect("load default scheme");
-    for value in [0, 2, 4, 8] {
+    for value in [1, 2, 4, 8] {
         let scene = make_render_pass_scene(json!(value));
         validate_scene_against(&scene, &scheme)
             .unwrap_or_else(|e| panic!("value {value} should validate, got error: {e:#}"));
@@ -93,9 +93,9 @@ fn render_pass_msaa_validation_accepts_allowed_values() {
 #[test]
 fn render_pass_msaa_validation_rejects_invalid_values() {
     let scheme = load_default_scheme().expect("load default scheme");
-    let scene = make_render_pass_scene(json!(3));
-    let err = validate_scene_against(&scene, &scheme).expect_err("value 3 should fail");
+    let scene = make_render_pass_scene(json!(0));
+    let err = validate_scene_against(&scene, &scheme).expect_err("value 0 should fail");
     let msg = format!("{err:#}");
     assert!(msg.contains("RenderPass.msaaSampleCount"));
-    assert!(msg.contains("must be one of 0,2,4,8"));
+    assert!(msg.contains("must be one of 1,2,4,8"));
 }

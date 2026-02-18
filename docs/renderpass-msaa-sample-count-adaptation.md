@@ -6,7 +6,7 @@ This document describes the render-server changes required to support the inline
 
 Accepted values:
 
-- `0`: disabled (`0x` in editor), effective sample count = `1`
+- `1`: no multisampling (`1x`)
 - `2`: MSAA 2x
 - `4`: MSAA 4x
 - `8`: MSAA 8x
@@ -15,13 +15,13 @@ Accepted values:
 
 ### Node schema
 
-- `RenderPass.inputs` includes `msaaSampleCount: int` with default `0`
-- `RenderPass.defaultParams.msaaSampleCount = 0`
+- `RenderPass.inputs` includes `msaaSampleCount: int` with default `1`
+- `RenderPass.defaultParams.msaaSampleCount = 1`
 - Canonical schema path is `assets/node-scheme.json`
 
 ### Validation
 
-- `RenderPass.params.msaaSampleCount` must be one of `{0,2,4,8}`
+- `RenderPass.params.msaaSampleCount` must be one of `{1,2,4,8}`
 - Any other value fails scene validation with a clear error including node id
 
 ### Runtime behavior
@@ -29,16 +29,17 @@ Accepted values:
 For each `RenderPass`:
 
 1. Resolve `msaaSampleCount` from connected input first, then params/default.
-2. Validate the requested value is in `{0,2,4,8}`.
-3. Map `0 -> 1` effective sample count.
+2. Validate the requested value is in `{1,2,4,8}`.
+3. If requested sample count is unsupported for the format/device, downgrade in
+   descending order: `8 -> 4 -> 2 -> 1`.
 4. Build supported sample counts from
    `TextureFormat::guaranteed_format_features(device.features())`.
 5. If `device.features()` includes
    `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES` and adapter is available, refine
    support with
    `adapter.get_texture_format_features(format).flags.supported_sample_counts()`.
-6. If unsupported (or adapter unavailable), fall back to `1x` and log a warning
-   with node id, texture format, requested count, and supported counts.
+6. Log a warning with node id, texture format, requested count, supported
+   counts, and the downgraded effective count.
 
 `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES` is requested at device creation when
 the adapter reports support, so `2x` can be used where available.
@@ -86,5 +87,5 @@ cargo test
 
 ## Defaults and Assumptions
 
-- Unsupported requested MSAA falls back to `1x` with a warning.
+- Unsupported requested MSAA downgrades `8 -> 4 -> 2 -> 1` with a warning.
 - No depth-attachment MSAA behavior is introduced in this change.

@@ -302,11 +302,11 @@ fn validate_render_pass_msaa_sample_count(node: &Node) -> std::result::Result<()
         ));
     };
 
-    if matches!(v, 0 | 2 | 4 | 8) {
+    if matches!(v, 1 | 2 | 4 | 8) {
         Ok(())
     } else {
         Err(format!(
-            "invalid RenderPass.msaaSampleCount for '{}': must be one of 0,2,4,8, got {}",
+            "invalid RenderPass.msaaSampleCount for '{}': must be one of 1,2,4,8, got {}",
             node.id, v
         ))
     }
