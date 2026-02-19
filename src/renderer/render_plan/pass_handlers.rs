@@ -12,6 +12,7 @@ pub trait PassPlanner {
 pub struct RenderPassPlanner;
 pub struct GaussianBlurPassPlanner;
 pub struct DownsamplePassPlanner;
+pub struct UpsamplePassPlanner;
 
 impl PassPlanner for RenderPassPlanner {
     fn node_type(&self) -> &'static str {
@@ -36,6 +37,16 @@ impl PassPlanner for GaussianBlurPassPlanner {
 impl PassPlanner for DownsamplePassPlanner {
     fn node_type(&self) -> &'static str {
         "Downsample"
+    }
+
+    fn plan(&self, _prepared: &PreparedScene, _resources: &mut ResourcePlans) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl PassPlanner for UpsamplePassPlanner {
+    fn node_type(&self) -> &'static str {
+        "Upsample"
     }
 
     fn plan(&self, _prepared: &PreparedScene, _resources: &mut ResourcePlans) -> Result<()> {

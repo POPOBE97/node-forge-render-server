@@ -69,6 +69,12 @@ fn deps_for_pass_node(
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
             Ok(vec![source_conn.from.node_id.clone()])
         }
+        "Upsample" => {
+            // Upsample depends on the upstream pass provided on its `source` input.
+            let source_conn = incoming_connection(scene, pass_node_id, "source")
+                .ok_or_else(|| anyhow!("Upsample.source missing for {pass_node_id}"))?;
+            Ok(vec![source_conn.from.node_id.clone()])
+        }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
         "GradientBlur" => {
             // GradientBlur reads "source" input (not "pass").
@@ -164,4 +170,81 @@ pub(crate) fn compute_pass_render_order(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use anyhow::Result;
+
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+
+    use super::compute_pass_render_order;
+
+    fn node(id: &str, node_type: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn upsample_depends_on_source_pass_in_render_order() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "upsample-pass-order".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("source_comp", "Composite"),
+                node("upsample", "Upsample"),
+                node("out_comp", "Composite"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_source".to_string(),
+                    from: Endpoint {
+                        node_id: "source_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "upsample".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "upsample".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
+        assert_eq!(order, vec!["source_comp", "upsample", "out_comp"]);
+        Ok(())
+    }
 }

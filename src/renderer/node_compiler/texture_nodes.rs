@@ -235,7 +235,12 @@ where
     // Validate that upstream is a pass-producing node.
     if !matches!(
         upstream_node.node_type.as_str(),
-        "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
+        "RenderPass"
+            | "GuassianBlurPass"
+            | "Downsample"
+            | "Upsample"
+            | "GradientBlur"
+            | "Composite"
     ) {
         bail!(
             "PassTexture.pass must be connected to a pass node, got {}",

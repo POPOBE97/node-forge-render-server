@@ -192,10 +192,9 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.trim().is_empty())
                 {
-                    merged.params.insert(
-                        "label".to_string(),
-                        Value::String(prev_label.to_string()),
-                    );
+                    merged
+                        .params
+                        .insert("label".to_string(), Value::String(prev_label.to_string()));
                 }
             }
         }
@@ -340,6 +339,7 @@ fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
         (node_type, port_id),
         ("Rect2DGeometry", "size")
             | ("Downsample", "targetSize")
+            | ("Upsample", "targetSize")
             | ("RenderTexture", "width")
             | ("RenderTexture", "height")
     )
@@ -777,10 +777,7 @@ fn handle_text_message(
                 .and_then(|v| v.get("updated"))
                 .and_then(|v| v.as_array())
             {
-                dsl::materialize_node_labels_from_raw_nodes(
-                    &mut delta.nodes.updated,
-                    raw_updated,
-                );
+                dsl::materialize_node_labels_from_raw_nodes(&mut delta.nodes.updated, raw_updated);
             }
 
             let mut scene: Option<SceneDSL> = None;

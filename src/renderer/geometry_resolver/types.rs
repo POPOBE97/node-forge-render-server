@@ -6,6 +6,7 @@ pub const DRAW_PASS_NODE_TYPES: &[&str] = &[
     "RenderPass",
     "GuassianBlurPass",
     "Downsample",
+    "Upsample",
     "GradientBlur",
 ];
 

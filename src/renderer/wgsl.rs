@@ -594,7 +594,12 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
         matches!(
             node.node_type.as_str(),
-            "RenderPass" | "GuassianBlurPass" | "Downsample" | "GradientBlur" | "Composite"
+            "RenderPass"
+                | "GuassianBlurPass"
+                | "Downsample"
+                | "Upsample"
+                | "GradientBlur"
+                | "Composite"
         )
     });
 
@@ -1253,6 +1258,11 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
                 out.push((pass_id, bundle));
             }
+            "Upsample" => {
+                let pass_id = format!("sys.upsample.{layer_id}.pass");
+                let bundle = build_upsample_bilinear_bundle();
+                out.push((pass_id, bundle));
+            }
             "GuassianBlurPass" => {
                 // SceneDSL `radius` is authored as an analytic 1D cutoff radius in full-res pixels,
                 // not as Gaussian sigma.
@@ -1368,7 +1378,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 out.push((format!("sys.gb.{layer_id}.final.pass"), composite_bundle));
             }
             other => bail!(
-                "Composite layer must be RenderPass, Downsample, or GuassianBlurPass, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, Downsample, Upsample, or GuassianBlurPass, got {other} for {layer_id}"
             ),
         }
     }
