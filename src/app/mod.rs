@@ -577,8 +577,11 @@ impl eframe::App for App {
 
         // Rebuild resource snapshot when needed (pipeline changed or first frame).
         if self.resource_snapshot_generation != self.pipeline_rebuild_count {
-            let snap =
-                ui::resource_tree::ResourceSnapshot::capture(&self.shader_space, &self.passes);
+            let snap = ui::resource_tree::ResourceSnapshot::capture(
+                &self.shader_space,
+                &self.passes,
+                Some(self.output_texture_name.as_str()),
+            );
             self.resource_tree_nodes = snap.to_tree();
             self.resource_snapshot = Some(snap);
             self.resource_snapshot_generation = self.pipeline_rebuild_count;

@@ -3,8 +3,10 @@
 //! Reads live data from `ShaderSpace` and produces a lightweight
 //! `ResourceSnapshot` that the UI can display without holding GPU pool locks.
 //!
-//! The tree is a **true render-graph dependency tree** — a pass B lists pass A
-//! as a child only when B samples a texture that A renders to.
+//! The tree is a **target-centric render-graph tree**:
+//! - top-level nodes are render targets (textures)
+//! - children are passes that write to that target (in execution order)
+//! - each writer lists sampled-texture ancestry as texture -> producing-pass chains.
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,6 +22,8 @@ use crate::renderer::PassBindings;
 #[derive(Clone, Debug)]
 pub struct PassInfo {
     pub name: String,
+    /// Monotonic insertion order from ShaderSpace pass registry.
+    pub order_index: usize,
     pub target_texture: Option<String>,
     /// Target texture dimensions (if known).
     pub target_size: Option<(u32, u32)>,
@@ -56,6 +60,7 @@ pub struct ResourceSnapshot {
     pub passes: Vec<PassInfo>,
     pub buffers: Vec<BufferNodeInfo>,
     pub samplers: Vec<SamplerNodeInfo>,
+    pub final_output_texture: Option<String>,
 }
 
 impl ResourceSnapshot {
@@ -63,13 +68,18 @@ impl ResourceSnapshot {
     ///
     /// This locks `buffers` once, iterates all pools, and returns owned data
     /// so the UI can render without holding any locks.
-    pub fn capture(ss: &ShaderSpace, _pass_bindings: &[PassBindings]) -> Self {
+    pub fn capture(
+        ss: &ShaderSpace,
+        _pass_bindings: &[PassBindings],
+        final_output_texture: Option<&str>,
+    ) -> Self {
         // --- Passes ---
         let mut passes: Vec<PassInfo> = ss
             .passes
             .inner
             .iter()
-            .map(|(name, pass)| {
+            .enumerate()
+            .map(|(order_index, (name, pass))| {
                 let is_compute =
                     matches!(pass.pipeline, rust_wgpu_fiber::pass::Pipeline::Compute(_));
 
@@ -108,6 +118,7 @@ impl ResourceSnapshot {
 
                 PassInfo {
                     name: name.as_str().to_string(),
+                    order_index,
                     target_texture,
                     target_size,
                     target_format,
@@ -172,8 +183,6 @@ impl ResourceSnapshot {
             }
         }
 
-        passes.sort_by(|a, b| a.name.cmp(&b.name));
-
         // --- Buffers ---
         let mut buffers: Vec<BufferNodeInfo> = Vec::new();
         if let Ok(bufs) = ss.buffers.lock() {
@@ -215,6 +224,7 @@ impl ResourceSnapshot {
             passes,
             buffers,
             samplers,
+            final_output_texture: final_output_texture.map(ToOwned::to_owned),
         }
     }
 }
@@ -242,7 +252,9 @@ pub enum NodeKind {
     Pass {
         target_texture: Option<String>,
     },
-    Texture,
+    Texture {
+        texture_name: String,
+    },
     Buffer,
     Sampler,
 }
@@ -263,20 +275,21 @@ impl ResourceSnapshot {
     ///
     /// Structure:
     ///   Dependencies (root folder)
-    ///     ├── passC  →  512×512 RGBA8     (root pass, renders to final output)
-    ///     │   ├── passA  →  256×256 RGBA8  (passC samples passA's target)
-    ///     │   └── passB  →  256×256 RGBA8  (passC samples passB's target)
-    ///     │       └── passA  →  …          (passB also samples passA's target)
+    ///     ├── <target texture>
+    ///     │   ├── <writer pass #1>
+    ///     │   │   └── <sampled texture>
+    ///     │   │       └── <producing pass>
+    ///     │   ├── <writer pass #2>
     ///   Buffers (folder)
     ///   Samplers (folder)
     pub fn to_tree(&self) -> Vec<FileTreeNode> {
         let mut roots = Vec::new();
 
         // ── Dependency graph ──
-        let dep_children = build_dependency_tree(&self.passes);
+        let dep_children = build_dependency_tree(&self.passes, self.final_output_texture.as_deref());
         roots.push(FileTreeNode {
             id: "section.deps".into(),
-            label: format!("Dependencies ({})", self.passes.len()),
+            label: format!("Dependencies ({})", dep_children.len()),
             icon: TreeIcon::FolderClosed,
             kind: NodeKind::Folder,
             detail: None,
@@ -335,114 +348,119 @@ impl ResourceSnapshot {
 // Dependency graph builder
 // ---------------------------------------------------------------------------
 
-/// Build a true render-graph dependency tree from pass info.
+/// Build a target-centric dependency tree from pass info.
 ///
-/// A dependency edge exists between pass B → pass A when B samples a texture
-/// that is pass A's `color_attachment`.  Passes with no downstream consumers
-/// are tree roots (i.e. they appear at the top level).
-fn build_dependency_tree(passes: &[PassInfo]) -> Vec<FileTreeNode> {
-    // Map: texture_name → pass that renders to it.
-    let texture_to_pass: HashMap<&str, &PassInfo> = passes
-        .iter()
-        .filter_map(|p| p.target_texture.as_deref().map(|t| (t, p)))
-        .collect();
-
-    // Map: pass_name → PassInfo for quick lookup.
-    let pass_by_name: HashMap<&str, &PassInfo> =
-        passes.iter().map(|p| (p.name.as_str(), p)).collect();
-
-    // For each pass, find its upstream dependencies (passes whose targets it samples).
-    let mut deps: HashMap<&str, Vec<&str>> = HashMap::new();
-    // Track which passes are depended on (i.e. are NOT roots).
-    let mut has_parent: HashSet<&str> = HashSet::new();
-
+/// A writer pass is grouped under the texture it writes to. For each sampled
+/// texture used by that pass, we attach a texture child and (when resolvable)
+/// the pass that produced that sampled texture earlier in execution order.
+fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>) -> Vec<FileTreeNode> {
+    // Map: texture_name -> all pass writers for that target, in execution order.
+    let mut writers_by_target: HashMap<&str, Vec<&PassInfo>> = HashMap::new();
     for pass in passes {
-        let mut upstream: Vec<&str> = Vec::new();
-        for sampled_tex in &pass.sampled_textures {
-            if let Some(producing_pass) = texture_to_pass.get(sampled_tex.as_str()) {
-                if producing_pass.name != pass.name {
-                    upstream.push(producing_pass.name.as_str());
-                    has_parent.insert(producing_pass.name.as_str());
-                }
-            }
+        if let Some(target) = pass.target_texture.as_deref() {
+            writers_by_target.entry(target).or_default().push(pass);
         }
-        upstream.sort();
-        upstream.dedup();
-        deps.insert(pass.name.as_str(), upstream);
     }
 
-    // Root passes: those not depended on by any other pass.
-    let mut root_names: Vec<&str> = passes
-        .iter()
-        .map(|p| p.name.as_str())
-        .filter(|n| !has_parent.contains(n))
-        .collect();
-    root_names.sort();
+    let Some(root_target) = final_output_texture else {
+        return Vec::new();
+    };
 
-    // Build tree nodes recursively (with visited set to avoid infinite loops in cycles).
-    fn build_node(
+    let mut root_writers = writers_by_target
+        .remove(root_target)
+        .unwrap_or_default();
+    root_writers.sort_by_key(|p| p.order_index);
+
+    fn pass_label(pass: &PassInfo) -> String {
+        let base = pass_basename(&pass.name);
+        if !pass.is_compute && pass.instance_count > 1 {
+            format!("{} (×{})", base, pass.instance_count)
+        } else {
+            base
+        }
+    }
+
+    /// Return all passes that write to `target`, sorted by execution order.
+    fn producing_passes_for_texture<'a>(target: &str, passes: &'a [PassInfo]) -> Vec<&'a PassInfo> {
+        let mut writers: Vec<&PassInfo> = passes
+            .iter()
+            .filter(|p| p.target_texture.as_deref() == Some(target))
+            .collect();
+        writers.sort_by_key(|p| p.order_index);
+        writers
+    }
+
+    fn build_pass_node(
         pass: &PassInfo,
-        deps: &HashMap<&str, Vec<&str>>,
-        pass_by_name: &HashMap<&str, &PassInfo>,
+        passes: &[PassInfo],
         visited: &mut HashSet<String>,
     ) -> FileTreeNode {
-        let mut children = Vec::new();
-        if let Some(upstream_names) = deps.get(pass.name.as_str()) {
-            for &up_name in upstream_names {
-                if visited.contains(up_name) {
-                    // Cycle — show as leaf with indicator.
-                    children.push(FileTreeNode {
-                        id: format!("pass.{}.cycle", up_name),
-                        label: format!("{} ↻", pass_basename(up_name)),
+        let mut texture_children: Vec<FileTreeNode> = Vec::new();
+
+        for sampled_tex in &pass.sampled_textures {
+            let producers = producing_passes_for_texture(sampled_tex.as_str(), passes);
+            let mut sampled_children: Vec<FileTreeNode> = Vec::new();
+
+            for producer in &producers {
+                if visited.contains(&producer.name) {
+                    sampled_children.push(FileTreeNode {
+                        id: format!("pass.{}.cycle", producer.name),
+                        label: format!("{} ↻", pass_basename(&producer.name)),
                         icon: TreeIcon::Pass,
                         kind: NodeKind::Pass {
-                            target_texture: pass_by_name
-                                .get(up_name)
-                                .and_then(|p| p.target_texture.clone()),
+                            target_texture: producer.target_texture.clone(),
                         },
                         detail: None,
                         children: vec![],
                     });
-                    continue;
-                }
-                if let Some(up_pass) = pass_by_name.get(up_name) {
-                    visited.insert(up_name.to_string());
-                    children.push(build_node(up_pass, deps, pass_by_name, visited));
-                    visited.remove(up_name);
+                } else {
+                    visited.insert(producer.name.clone());
+                    sampled_children.push(build_pass_node(producer, passes, visited));
+                    visited.remove(&producer.name);
                 }
             }
-        }
 
-        let label = {
-            let base = pass_basename(&pass.name);
-            if !pass.is_compute && pass.instance_count > 1 {
-                format!("{} (×{})", base, pass.instance_count)
-            } else {
-                base
-            }
-        };
+            texture_children.push(FileTreeNode {
+                id: format!("texdep.{}.{}", pass.name, sampled_tex),
+                label: truncate_name(sampled_tex, 40),
+                icon: TreeIcon::Texture,
+                kind: NodeKind::Texture {
+                    texture_name: sampled_tex.clone(),
+                },
+                detail: None,
+                children: sampled_children,
+            });
+        }
 
         FileTreeNode {
             id: format!("pass.{}", pass.name),
-            label,
+            label: pass_label(pass),
             icon: TreeIcon::Pass,
             kind: NodeKind::Pass {
                 target_texture: pass.target_texture.clone(),
             },
             detail: None,
-            children,
+            children: texture_children,
         }
     }
 
-    let mut result = Vec::new();
-    for &root_name in &root_names {
-        if let Some(pass) = pass_by_name.get(root_name) {
-            let mut visited = HashSet::new();
-            visited.insert(root_name.to_string());
-            result.push(build_node(pass, &deps, &pass_by_name, &mut visited));
-        }
+    let mut writer_nodes: Vec<FileTreeNode> = Vec::new();
+    for writer in root_writers {
+        let mut visited = HashSet::new();
+        visited.insert(writer.name.clone());
+        writer_nodes.push(build_pass_node(writer, passes, &mut visited));
     }
-    result
+
+    vec![FileTreeNode {
+        id: format!("target.{root_target}"),
+        label: truncate_name(root_target, 48),
+        icon: TreeIcon::Texture,
+        kind: NodeKind::Texture {
+            texture_name: root_target.to_string(),
+        },
+        detail: None,
+        children: writer_nodes,
+    }]
 }
 
 // ---------------------------------------------------------------------------
