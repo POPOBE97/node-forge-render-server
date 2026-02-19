@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-18T19:37:02.987Z",
-    "modified": "2026-02-18T19:37:02.987Z"
+    "created": "2026-02-18T19:47:42.939Z",
+    "modified": "2026-02-18T19:47:42.939Z"
   },
   "nodes": [
     {
@@ -121,7 +121,7 @@
       "type": "Attribute",
       "position": {
         "x": -300,
-        "y": 620
+        "y": 560
       },
       "width": 160,
       "label": "Attribute",
@@ -229,20 +229,6 @@
         "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
-    },
-    {
-      "id": "Vector2Input_24",
-      "type": "Vector2Input",
-      "position": {
-        "x": -300,
-        "y": 520
-      },
-      "width": 160,
-      "label": "Vector2 Input",
-      "params": {
-        "x": 100,
-        "y": 100
-      }
     }
   ],
   "connections": [
@@ -343,17 +329,6 @@
       "to": {
         "nodeId": "GuassianBlurPass_20",
         "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_43",
-      "from": {
-        "nodeId": "Vector2Input_24",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "node_3",
-        "portId": "position"
       }
     }
   ],

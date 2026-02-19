@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-18T18:45:53.686Z",
-    "modified": "2026-02-18T18:45:53.686Z"
+    "created": "2026-02-18T20:53:24.181Z",
+    "modified": "2026-02-18T20:53:24.181Z"
   },
   "nodes": [
     {
@@ -178,7 +178,7 @@
         "y": -860
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "Mip0",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -543,7 +543,7 @@
         "y": -460
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip1",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -624,7 +624,7 @@
         "y": 0
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip2",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -705,7 +705,7 @@
         "y": 520
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip3",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -786,7 +786,7 @@
         "y": 1040
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip4",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -867,7 +867,7 @@
         "y": 1560
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip5",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -948,7 +948,7 @@
         "y": 2080
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip6",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -1029,7 +1029,7 @@
         "y": 2600
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "mip7",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",

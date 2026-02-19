@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-18T16:55:56.466Z",
-    "modified": "2026-02-18T16:55:56.466Z"
+    "created": "2026-02-19T07:04:32.573Z",
+    "modified": "2026-02-19T07:04:32.573Z"
   },
   "nodes": [
     {
@@ -42,7 +42,7 @@
         "y": 260
       },
       "width": 160,
-      "label": "Render Pass",
+      "label": "Mip0",
       "params": {
         "name": "Render Pass",
         "blend_preset": "premul_alpha",
@@ -51,7 +51,7 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 4
+        "msaaSampleCount": 2
       }
     },
     {
@@ -63,7 +63,14 @@
       },
       "width": 160,
       "label": "Composite",
-      "params": {},
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      },
       "inputs": [],
       "inputBindings": []
     },
@@ -128,7 +135,7 @@
       "type": "Kernel",
       "position": {
         "x": -860,
-        "y": 420
+        "y": 440
       },
       "width": 160,
       "label": "Mip1",
@@ -421,17 +428,6 @@
       }
     },
     {
-      "id": "edge_13",
-      "from": {
-        "nodeId": "Downsample_10",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Downsample_12",
-        "portId": "sampling"
-      }
-    },
-    {
       "id": "edge_14",
       "from": {
         "nodeId": "Kernel_15",
@@ -440,17 +436,6 @@
       "to": {
         "nodeId": "Downsample_14",
         "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_15",
-      "from": {
-        "nodeId": "Downsample_12",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Downsample_14",
-        "portId": "sampling"
       }
     },
     {
@@ -465,17 +450,6 @@
       }
     },
     {
-      "id": "edge_17",
-      "from": {
-        "nodeId": "Downsample_14",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Downsample_16",
-        "portId": "sampling"
-      }
-    },
-    {
       "id": "edge_18",
       "from": {
         "nodeId": "Kernel_19",
@@ -484,17 +458,6 @@
       "to": {
         "nodeId": "Downsample_18",
         "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_19",
-      "from": {
-        "nodeId": "Downsample_16",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Downsample_18",
-        "portId": "sampling"
       }
     },
     {
@@ -509,17 +472,6 @@
       }
     },
     {
-      "id": "edge_21",
-      "from": {
-        "nodeId": "Downsample_18",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Downsample_20",
-        "portId": "sampling"
-      }
-    },
-    {
       "id": "edge_23",
       "from": {
         "nodeId": "RenderPass_4",
@@ -528,17 +480,6 @@
       "to": {
         "nodeId": "Downsample_10",
         "portId": "source"
-      }
-    },
-    {
-      "id": "edge_24",
-      "from": {
-        "nodeId": "Downsample_10",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
       }
     },
     {
@@ -561,6 +502,72 @@
       "to": {
         "nodeId": "RenderPass_4",
         "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_27",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_28",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_12",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "Downsample_12",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_14",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_30",
+      "from": {
+        "nodeId": "Downsample_14",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_16",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_31",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_32",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "source"
       }
     }
   ],
