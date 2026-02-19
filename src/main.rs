@@ -61,7 +61,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --output <abs/path/to/output.png>, --outputdir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --output <abs/path/to/output>, --outputdir <dir>)"
                 ));
             }
         }
@@ -140,7 +140,7 @@ fn run_headless_json_render_once(
         out
     } else {
         let rt = dsl::file_render_target(&scene)?
-            .ok_or_else(|| anyhow!("--dsl-json headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+            .ok_or_else(|| anyhow!("--dsl-json headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path>)"))?;
 
         if let Some(out) = output {
             validate_absolute_output_path(&out)?;
@@ -158,7 +158,7 @@ fn run_headless_json_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    renderer::render_scene_to_png_headless(&scene, &out_path, Some(&store))?;
+    renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
     println!("[headless] saved: {}", out_path.display());
     Ok(())
 }
@@ -178,7 +178,7 @@ fn run_headless_nforge_render_once(
         out
     } else {
         let rt = dsl::file_render_target(&scene)?
-            .ok_or_else(|| anyhow!("--nforge headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+            .ok_or_else(|| anyhow!("--nforge headless render requires RenderTarget=File (or pass --render-to-file --output <abs/path>)"))?;
 
         if let Some(out) = output {
             validate_absolute_output_path(&out)?;
@@ -196,7 +196,7 @@ fn run_headless_nforge_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    renderer::render_scene_to_png_headless(&scene, &out_path, Some(&store))?;
+    renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
     println!("[headless] saved: {}", out_path.display());
     Ok(())
 }
@@ -245,7 +245,7 @@ fn run_headless_ws_render_once(
                     out
                 } else {
                     let rt = dsl::file_render_target(&scene)?
-                        .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File (or pass --render-to-file --output <abs/path.png>)"))?;
+                        .ok_or_else(|| anyhow!("--headless mode requires RenderTarget=File (or pass --render-to-file --output <abs/path>)"))?;
 
                     if let Some(out) = output.clone() {
                         validate_absolute_output_path(&out)?;
@@ -257,7 +257,7 @@ fn run_headless_ws_render_once(
 
                 ensure_parent_dir_exists(&out_path)?;
 
-                let result = renderer::render_scene_to_png_headless(&scene, &out_path, None);
+                let result = renderer::render_scene_to_file_headless(&scene, &out_path, None);
                 match result {
                     Ok(()) => {
                         let msg = node_forge_render_server::protocol::WSMessage {
