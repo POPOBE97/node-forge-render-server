@@ -14,7 +14,7 @@ fn instanced_math_closure_builds_and_reports_instance_count() {
         .build(&scene)
         .expect("build shader space");
 
-    let snapshot = ResourceSnapshot::capture(&build.shader_space, &build.pass_bindings);
+    let snapshot = ResourceSnapshot::capture(&build.shader_space, &build.pass_bindings, None);
 
     // Pass names are ResourceNames; for a RenderPass node this is typically `<id>.pass`.
     let pass = snapshot
