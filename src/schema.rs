@@ -46,6 +46,8 @@ struct GeneratedNodeDef {
     #[serde(rename = "type")]
     pub node_type: String,
     #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
     pub inputs: Vec<GeneratedPort>,
@@ -64,6 +66,8 @@ struct GeneratedPort {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeTypeScheme {
+    #[serde(default)]
+    pub label: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
@@ -202,6 +206,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
                 nodes.insert(
                     n.node_type,
                     NodeTypeScheme {
+                        label: n.label,
                         category: n.category,
                         inputs,
                         outputs,

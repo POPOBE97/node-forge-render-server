@@ -196,13 +196,57 @@ pub fn load_scene_from_path(path: impl AsRef<std::path::Path>) -> Result<SceneDS
     let path = path.as_ref();
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read DSL json at {}", path.display()))?;
+    let raw_scene: serde_json::Value =
+        serde_json::from_str(&text).context("failed to parse DSL json")?;
     let mut scene: SceneDSL = serde_json::from_str(&text).context("failed to parse DSL json")?;
+
+    materialize_scene_node_labels_from_raw_json(&mut scene, &raw_scene);
 
     // Normalize params with defaults from the bundled node scheme.
     // This keeps older/hand-written DSL compatible when nodes omit parameters.
     normalize_scene_defaults(&mut scene)?;
 
     Ok(scene)
+}
+
+pub fn materialize_scene_node_labels_from_raw_json(
+    scene: &mut SceneDSL,
+    raw_scene: &serde_json::Value,
+) {
+    let Some(raw_nodes) = raw_scene.get("nodes").and_then(|v| v.as_array()) else {
+        return;
+    };
+
+    materialize_node_labels_from_raw_nodes(&mut scene.nodes, raw_nodes);
+}
+
+pub fn materialize_node_labels_from_raw_nodes(
+    nodes: &mut [Node],
+    raw_nodes: &[serde_json::Value],
+) {
+    let mut label_by_id: HashMap<&str, String> = HashMap::new();
+    for raw_node in raw_nodes {
+        let Some(node_id) = raw_node.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(label) = raw_node.get("label").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let label = label.trim();
+        if label.is_empty() {
+            continue;
+        }
+        label_by_id.insert(node_id, label.to_string());
+    }
+
+    for node in nodes {
+        if let Some(label) = label_by_id.get(node.id.as_str()) {
+            node.params.insert(
+                "label".to_string(),
+                serde_json::Value::String(label.clone()),
+            );
+        }
+    }
 }
 
 pub fn normalize_scene_defaults(scene: &mut SceneDSL) -> Result<()> {
@@ -214,8 +258,38 @@ pub fn normalize_scene_defaults(scene: &mut SceneDSL) -> Result<()> {
 fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) {
     fn apply_one(node: &mut Node, scheme: &schema::NodeScheme) {
         let Some(node_scheme) = scheme.nodes.get(&node.node_type) else {
+            let has_label = node
+                .params
+                .get("label")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if !has_label {
+                node.params.insert(
+                    "label".to_string(),
+                    serde_json::Value::String(node.node_type.clone()),
+                );
+            }
             return;
         };
+
+        let has_label = node
+            .params
+            .get("label")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        if !has_label {
+            let fallback = node_scheme
+                .label
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(node.node_type.as_str())
+                .to_string();
+            node.params.insert(
+                "label".to_string(),
+                serde_json::Value::String(fallback),
+            );
+        }
+
         if node_scheme.default_params.is_empty() {
             return;
         }
@@ -318,6 +392,20 @@ pub fn parse_f32(params: &HashMap<String, serde_json::Value>, key: &str) -> Opti
 
 pub fn parse_str<'a>(params: &'a HashMap<String, serde_json::Value>, key: &str) -> Option<&'a str> {
     params.get(key).and_then(|v| v.as_str())
+}
+
+pub fn node_display_label(node: &Node) -> String {
+    node.params
+        .get("label")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| node.node_type.clone())
+}
+
+pub fn node_display_label_with_id(node: &Node) -> String {
+    format!("{} ({})", node_display_label(node), node.id)
 }
 
 pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Result<TextureFormat> {

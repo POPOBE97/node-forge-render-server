@@ -178,7 +178,28 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
         cache.nodes_by_id.insert(node.id.clone(), node.clone());
     }
     for node in &delta.nodes.updated {
-        cache.nodes_by_id.insert(node.id.clone(), node.clone());
+        let mut merged = node.clone();
+        let has_label = merged
+            .params
+            .get("label")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty());
+        if !has_label {
+            if let Some(prev) = cache.nodes_by_id.get(&merged.id) {
+                if let Some(prev_label) = prev
+                    .params
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    merged.params.insert(
+                        "label".to_string(),
+                        Value::String(prev_label.to_string()),
+                    );
+                }
+            }
+        }
+        cache.nodes_by_id.insert(merged.id.clone(), merged);
     }
 
     for conn in &delta.connections.added {
@@ -659,7 +680,7 @@ fn handle_text_message(
                 *guard = None;
             }
 
-            let mut scene: SceneDSL = match serde_json::from_value(payload) {
+            let mut scene: SceneDSL = match serde_json::from_value(payload.clone()) {
                 Ok(s) => s,
                 Err(e) => {
                     let message = format!("invalid SceneDSL: {e}");
@@ -675,6 +696,8 @@ fn handle_text_message(
                     return Ok(());
                 }
             };
+
+            dsl::materialize_scene_node_labels_from_raw_json(&mut scene, &payload);
 
             // Keep client payload compact: fill in missing params from the bundled scheme.
             if let Err(e) = dsl::normalize_scene_defaults(&mut scene) {
@@ -732,7 +755,7 @@ fn handle_text_message(
                 }
             };
 
-            let delta: SceneDelta = match serde_json::from_value(payload) {
+            let mut delta: SceneDelta = match serde_json::from_value(payload.clone()) {
                 Ok(d) => d,
                 Err(e) => {
                     let message = format!("invalid SceneDelta: {e}");
@@ -741,6 +764,24 @@ fn handle_text_message(
                     return Ok(());
                 }
             };
+
+            if let Some(raw_added) = payload
+                .get("nodes")
+                .and_then(|v| v.get("added"))
+                .and_then(|v| v.as_array())
+            {
+                dsl::materialize_node_labels_from_raw_nodes(&mut delta.nodes.added, raw_added);
+            }
+            if let Some(raw_updated) = payload
+                .get("nodes")
+                .and_then(|v| v.get("updated"))
+                .and_then(|v| v.as_array())
+            {
+                dsl::materialize_node_labels_from_raw_nodes(
+                    &mut delta.nodes.updated,
+                    raw_updated,
+                );
+            }
 
             let mut scene: Option<SceneDSL> = None;
             if let Ok(mut guard) = scene_cache.lock() {
