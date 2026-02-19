@@ -313,7 +313,7 @@ pub fn apply_scene_update(
                 )
                 .with_adapter(render_state.adapter.clone())
                 .with_options(renderer::ShaderSpaceBuildOptions {
-                    presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
+                    presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
                 })
                 .with_asset_store(app.asset_store.clone())

@@ -495,6 +495,8 @@ fn main() -> Result<()> {
                 }),
                 ..Default::default()
             }),
+            // Use Rgba16Float surface for HDR-native preview (macOS EDR).
+            preferred_surface_format: Some(wgpu::TextureFormat::Rgba16Float),
             ..Default::default()
         },
         ..Default::default()
@@ -524,7 +526,7 @@ fn main() -> Result<()> {
                 )
                 .with_adapter(render_state.adapter.clone())
                 .with_options(renderer::ShaderSpaceBuildOptions {
-                    presentation_mode: renderer::ShaderSpacePresentationMode::UiSdrDisplayEncode,
+                    presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
                 })
                 .build(&scene)
