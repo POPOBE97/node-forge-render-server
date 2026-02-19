@@ -12,6 +12,11 @@ use super::{assembler, error_space};
 pub enum ShaderSpacePresentationMode {
     SceneLinear,
     UiSdrDisplayEncode,
+    /// HDR-native UI mode: the wgpu surface is `Rgba16Float` (macOS EDR).
+    /// No display-encode pass is created; the scene output texture is
+    /// registered directly with egui.  Values > 1.0 are preserved and
+    /// shown as EDR brightness on HDR-capable displays.
+    UiHdrNative,
 }
 
 impl Default for ShaderSpacePresentationMode {
@@ -70,8 +75,16 @@ impl ShaderSpaceBuilder {
     }
 
     pub fn build(self, scene: &SceneDSL) -> Result<ShaderSpaceBuildResult> {
-        let enable_display_encode =
-            self.options.presentation_mode == ShaderSpacePresentationMode::UiSdrDisplayEncode;
+        let presentation_mode = self.options.presentation_mode;
+        // UiHdrNative does NOT need a display-encode pass.  The forked
+        // egui-wgpu shader now expects linear texels (sRGB textures are
+        // hardware-decoded, Rgba16Float textures are already linear).
+        // Only UiSdrDisplayEncode still creates a gamma-encode presentation
+        // pass for backward compat with the stock egui gamma-framebuffer path.
+        let enable_display_encode = matches!(
+            presentation_mode,
+            ShaderSpacePresentationMode::UiSdrDisplayEncode
+        );
         let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature) =
             assembler::build_shader_space_from_scene_internal(
                 scene,
@@ -81,13 +94,19 @@ impl ShaderSpaceBuilder {
                 enable_display_encode,
                 self.options.debug_dump_wgsl_dir.clone(),
                 self.asset_store.as_ref(),
+                presentation_mode,
             )?;
 
         let present_output_texture = if enable_display_encode {
-            let maybe_display: ResourceName =
+            // Try HDR gamma-encoded presentation texture first, then SDR sRGB.
+            let hdr_name: ResourceName =
+                format!("{}.present.hdr.gamma", scene_output_texture.as_str()).into();
+            let sdr_name: ResourceName =
                 format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
-            if shader_space.textures.get(maybe_display.as_str()).is_some() {
-                maybe_display
+            if shader_space.textures.get(hdr_name.as_str()).is_some() {
+                hdr_name
+            } else if shader_space.textures.get(sdr_name.as_str()).is_some() {
+                sdr_name
             } else {
                 scene_output_texture.clone()
             }

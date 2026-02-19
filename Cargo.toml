@@ -24,4 +24,7 @@ rfd = "0.15"
 gltf = "1"
 tobj = "4"
 
+[patch.crates-io]
+egui-wgpu = { path = "3rd/egui-wgpu" }
+
 [dev-dependencies]

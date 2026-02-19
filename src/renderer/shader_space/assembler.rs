@@ -941,9 +941,17 @@ fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
     crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var)
 }
 
+fn build_hdr_gamma_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
+    crate::renderer::wgsl_templates::build_hdr_gamma_encode_wgsl(tex_var, samp_var)
+}
+
 // UI presentation helper: encode linear output to SDR sRGB for egui-wgpu.
 // We use dot-separated segments (no `__`) so the names read well and extend naturally to HDR.
 const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
+
+// HDR presentation: unclamped gamma-encode into Rgba16Float so egui's linear_from_gamma_rgb
+// can round-trip it back to linear on the Rgba16Float surface. Values > 1.0 survive.
+const UI_PRESENT_HDR_GAMMA_SUFFIX: &str = ".present.hdr.gamma";
 
 fn sanitize_resource_segment(value: &str) -> String {
     let mut out = String::new();
@@ -1086,6 +1094,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     enable_display_encode: bool,
     debug_dump_wgsl_dir: Option<PathBuf>,
     asset_store: Option<&crate::asset_store::AssetStore>,
+    presentation_mode: super::api::ShaderSpacePresentationMode,
 ) -> Result<(
     ShaderSpace,
     [u32; 2],
@@ -1260,11 +1269,38 @@ pub(crate) fn build_shader_space_from_scene_internal(
         other => other,
     };
 
-    // If the output target is sRGB, create an extra linear UNORM texture that contains
-    // *sRGB-encoded bytes* for UI presentation (egui/eframe commonly presents into a linear
-    // swapchain format).
+    // Create a presentation texture for the final display-encode pass.
+    //
+    // The egui-wgpu Rgba16Float surface uses fs_main_linear_framebuffer which
+    // applies linear_from_gamma_rgb to every sampled texel.  To get a correct
+    // round-trip we gamma-encode the scene output:
+    //
+    //  • Rgba8UnormSrgb / Bgra8UnormSrgb:
+    //    Hardware sRGB decode happens on sample (→ linear), so the scene output
+    //    is already linear.  We write clamped sRGB bytes into a Rgba8Unorm
+    //    presentation texture (.present.sdr.srgb).  egui samples the raw bytes
+    //    (gamma-encoded), linearises → back to correct linear on the Rgba16Float
+    //    surface.
+    //
+    //  • Rgba16Float (UiHdrNative):
+    //    Scene output is linear with values potentially > 1.0.  We write
+    //    unclamped gamma-encoded values into a Rgba16Float presentation texture
+    //    (.present.hdr.gamma).  egui linearises → original linear, EDR shows >1.
+    //
+    //  • Rgba8Unorm / Bgra8Unorm:
+    //    No presentation pass.  These formats store raw linear values with no
+    //    hardware sRGB decode.  The user deliberately chose "Unorm" to avoid
+    //    sRGB conversion — applying sRGB gamma-encode here would make them
+    //    indistinguishable from sRGB targets on screen.  Without a presentation
+    //    pass, egui's linearisation will darken them slightly (interpreting
+    //    linear as gamma), but this preserves the format distinction and matches
+    //    the old Bgra8Unorm-surface behaviour where fs_main_gamma_framebuffer
+    //    displayed them as-is.
+    let is_hdr_native =
+        presentation_mode == super::api::ShaderSpacePresentationMode::UiHdrNative;
     let display_texture_name: Option<ResourceName> = if enable_display_encode {
         match target_format {
+            // sRGB targets → clamped SDR encode.
             TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb => {
                 let name: ResourceName = format!(
                     "{}{}",
@@ -1280,6 +1316,23 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 });
                 Some(name)
             }
+            // HDR target on HDR surface → unclamped gamma encode.
+            TextureFormat::Rgba16Float if is_hdr_native => {
+                let name: ResourceName = format!(
+                    "{}{}",
+                    target_texture_name.as_str(),
+                    UI_PRESENT_HDR_GAMMA_SUFFIX
+                )
+                .into();
+                textures.push(TextureDecl {
+                    name: name.clone(),
+                    size: [tgt_w_u, tgt_h_u],
+                    format: TextureFormat::Rgba16Float,
+                    sample_count: 1,
+                });
+                Some(name)
+            }
+            // Rgba8Unorm, Bgra8Unorm, and any other format: no presentation pass.
             _ => None,
         }
     } else {
@@ -4281,19 +4334,35 @@ pub(crate) fn build_shader_space_from_scene_internal(
         }
     }
 
-    // Final display encode pass (sRGB output -> linear texture with sRGB bytes).
+    // Final display encode pass: gamma-encode linear scene output so egui's
+    // linear_from_gamma_rgb round-trips correctly on the Rgba16Float surface.
     if enable_display_encode {
         if let Some(display_tex) = display_texture_name.clone() {
+            // Only Rgba16Float targets under UiHdrNative get the unclamped HDR encode.
+            // Everything else (sRGB targets, 8-bit unorm targets) uses the clamped SDR path.
+            let (suffix, shader_wgsl) =
+                if is_hdr_native && target_format == TextureFormat::Rgba16Float {
+                    (
+                        UI_PRESENT_HDR_GAMMA_SUFFIX,
+                        build_hdr_gamma_encode_wgsl("src_tex", "src_samp"),
+                    )
+                } else {
+                    (
+                        UI_PRESENT_SDR_SRGB_SUFFIX,
+                        build_srgb_display_encode_wgsl("src_tex", "src_samp"),
+                    )
+                };
+
             let pass_name: ResourceName = format!(
                 "{}{}.pass",
                 target_texture_name.as_str(),
-                UI_PRESENT_SDR_SRGB_SUFFIX
+                suffix
             )
             .into();
             let geo: ResourceName = format!(
                 "{}{}.geo",
                 target_texture_name.as_str(),
-                UI_PRESENT_SDR_SRGB_SUFFIX
+                suffix
             )
             .into();
             geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
@@ -4301,7 +4370,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
             let params_name: ResourceName = format!(
                 "params.{}{}",
                 target_texture_name.as_str(),
-                UI_PRESENT_SDR_SRGB_SUFFIX
+                suffix
             )
             .into();
             let params = Params {
@@ -4315,7 +4384,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 color: [0.0, 0.0, 0.0, 0.0],
             };
 
-            let shader_wgsl = build_srgb_display_encode_wgsl("src_tex", "src_samp");
             render_pass_specs.push(RenderPassSpec {
                 pass_id: pass_name.as_str().to_string(),
                 name: pass_name.clone(),
