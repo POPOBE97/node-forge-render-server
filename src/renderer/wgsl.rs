@@ -1112,8 +1112,15 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
 
     let mut baked_data_parse = prepared.baked_data_parse.clone();
 
+    let composite_layers_in_draw_order = prepared.composite_layers_in_draw_order.clone();
+    let sampled_pass_ids = crate::renderer::render_plan::sampled_pass_node_ids_from_roots(
+        &prepared.scene,
+        nodes_by_id,
+        &composite_layers_in_draw_order,
+    )?;
+
     let mut out: Vec<(String, WgslShaderBundle)> = Vec::new();
-    for layer_id in prepared.composite_layers_in_draw_order {
+    for layer_id in composite_layers_in_draw_order {
         let node = find_node(nodes_by_id, &layer_id)?;
         match node.node_type.as_str() {
             "RenderPass" => {
@@ -1277,10 +1284,22 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 let sigma = radius_px / 3.525_494;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
-                let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let tap_count = num.clamp(1, 8);
+                let extend_enabled = node
+                    .params
+                    .get("extend")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let is_sampled_output = sampled_pass_ids.contains(&layer_id);
+                let skip_factor1_downsample = downsample_factor == 1;
+                let skip_factor1_upsample =
+                    downsample_factor == 1 && !extend_enabled && is_sampled_output;
 
                 let downsample_steps: Vec<u32> = if downsample_factor == 16 {
                     vec![8, 2]
+                } else if skip_factor1_downsample {
+                    Vec::new()
                 } else {
                     vec![downsample_factor]
                 };
@@ -1297,16 +1316,18 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
 
                 out.push((
                     format!("sys.blur.{layer_id}.h.ds{downsample_factor}.pass"),
-                    build_horizontal_blur_bundle(kernel, offset),
+                    build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count),
                 ));
                 out.push((
                     format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass"),
-                    build_vertical_blur_bundle(kernel, offset),
+                    build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count),
                 ));
-                out.push((
-                    format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"),
-                    build_upsample_bilinear_bundle(),
-                ));
+                if !skip_factor1_upsample {
+                    out.push((
+                        format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass"),
+                        build_upsample_bilinear_bundle(),
+                    ));
+                }
             }
             "GradientBlur" => {
                 use crate::renderer::wgsl_gradient_blur::*;
@@ -1537,6 +1558,16 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
 
 /// Build a horizontal Gaussian blur shader bundle.
 pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
+    build_horizontal_blur_bundle_with_tap_count(kernel, offset, 8)
+}
+
+/// Build a horizontal Gaussian blur shader bundle with a compile-time tap count [1..8].
+pub fn build_horizontal_blur_bundle_with_tap_count(
+    kernel: [f32; 8],
+    offset: [f32; 8],
+    tap_count: u32,
+) -> WgslShaderBundle {
+    let tap_count = tap_count.clamp(1, 8);
     let kernel_wgsl = array8_f32_wgsl(kernel);
     let offset_wgsl = array8_f32_wgsl(offset);
     let body = format!(
@@ -1545,8 +1576,9 @@ pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslS
  let xy = in.uv * original;
  let k = {kernel_wgsl};
  let o = {offset_wgsl};
+ let tap_count: u32 = {tap_count}u;
  var color = vec4f(0.0);
- for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {{
      let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
      let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
      color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
@@ -1560,6 +1592,16 @@ pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslS
 
 /// Build a vertical Gaussian blur shader bundle.
 pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
+    build_vertical_blur_bundle_with_tap_count(kernel, offset, 8)
+}
+
+/// Build a vertical Gaussian blur shader bundle with a compile-time tap count [1..8].
+pub fn build_vertical_blur_bundle_with_tap_count(
+    kernel: [f32; 8],
+    offset: [f32; 8],
+    tap_count: u32,
+) -> WgslShaderBundle {
+    let tap_count = tap_count.clamp(1, 8);
     let kernel_wgsl = array8_f32_wgsl(kernel);
     let offset_wgsl = array8_f32_wgsl(offset);
     let body = format!(
@@ -1568,8 +1610,9 @@ pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslSha
  let xy = in.uv * original;
  let k = {kernel_wgsl};
  let o = {offset_wgsl};
+ let tap_count: u32 = {tap_count}u;
  var color = vec4f(0.0);
- for (var i: u32 = 0u; i < 8u; i = i + 1u) {{
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {{
      let uv_pos = (xy + vec2f(0.0, o[i])) / original;
      let uv_neg = (xy - vec2f(0.0, o[i])) / original;
      color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
@@ -1609,3 +1652,53 @@ fn fs_main() -> @location(0) vec4f {
     return vec4f(1.0, 0.0, 1.0, 1.0);
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
+        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count,
+    };
+
+    #[test]
+    fn blur_bundle_with_tap_count_emits_bound_and_loop_symbol() {
+        let kernel = [0.0; 8];
+        let offset = [0.0; 8];
+        let h = build_horizontal_blur_bundle_with_tap_count(kernel, offset, 3);
+        let v = build_vertical_blur_bundle_with_tap_count(kernel, offset, 5);
+
+        assert!(
+            h.module.contains("let tap_count: u32 = 3u;"),
+            "horizontal module should encode requested tap count"
+        );
+        assert!(
+            h.module.contains("i < tap_count"),
+            "horizontal module should loop by tap_count"
+        );
+        assert!(
+            v.module.contains("let tap_count: u32 = 5u;"),
+            "vertical module should encode requested tap count"
+        );
+        assert!(
+            v.module.contains("i < tap_count"),
+            "vertical module should loop by tap_count"
+        );
+    }
+
+    #[test]
+    fn blur_bundle_wrapper_keeps_legacy_8_tap_behavior() {
+        let kernel = [0.0; 8];
+        let offset = [0.0; 8];
+        let h = build_horizontal_blur_bundle(kernel, offset);
+        let v = build_vertical_blur_bundle(kernel, offset);
+
+        assert!(
+            h.module.contains("let tap_count: u32 = 8u;"),
+            "horizontal wrapper should keep legacy 8 taps"
+        );
+        assert!(
+            v.module.contains("let tap_count: u32 = 8u;"),
+            "vertical wrapper should keep legacy 8 taps"
+        );
+    }
+}

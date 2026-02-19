@@ -59,10 +59,10 @@ use crate::{
             ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
             build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
             build_downsample_pass_wgsl_bundle, build_dynamic_rect_compose_bundle,
-            build_fullscreen_textured_bundle, build_horizontal_blur_bundle, build_pass_wgsl_bundle,
-            build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
-            build_vertical_blur_bundle, clamp_min_1, gaussian_kernel_8,
-            gaussian_mip_level_and_sigma_p,
+            build_fullscreen_textured_bundle, build_horizontal_blur_bundle_with_tap_count,
+            build_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
+            build_upsample_bilinear_bundle, build_vertical_blur_bundle_with_tap_count, clamp_min_1,
+            gaussian_kernel_8, gaussian_mip_level_and_sigma_p,
         },
     },
 };
@@ -823,6 +823,26 @@ fn gaussian_blur_extend_upsample_geo_size(
     [scaled_w.max(1.0).round(), scaled_h.max(1.0).round()]
 }
 
+fn blur_downsample_steps_for_factor(downsample_factor: u32) -> Result<Vec<u32>> {
+    match downsample_factor {
+        1 | 2 | 4 | 8 => Ok(vec![downsample_factor]),
+        16 => Ok(vec![8, 2]),
+        other => bail!("GuassianBlurPass: unsupported downsample factor {other}"),
+    }
+}
+
+fn should_skip_blur_downsample_pass(downsample_factor: u32) -> bool {
+    downsample_factor == 1
+}
+
+fn should_skip_blur_upsample_pass(
+    downsample_factor: u32,
+    extend_enabled: bool,
+    is_sampled_output: bool,
+) -> bool {
+    downsample_factor == 1 && !extend_enabled && is_sampled_output
+}
+
 pub(crate) fn build_shader_space_from_scene_internal(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
@@ -900,8 +920,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
     // Pass nodes sampled by reachable downstream pass nodes must have dedicated
     // intermediate outputs. Restrict to currently reachable pass roots to avoid
     // dead branches forcing sampled-output paths.
-    let sampled_pass_ids =
-        sampled_pass_node_ids_from_roots(&prepared.scene, nodes_by_id, composite_layers_in_order)?;
+    let sampled_pass_ids = crate::renderer::render_plan::sampled_pass_node_ids_from_roots(
+        &prepared.scene,
+        nodes_by_id,
+        composite_layers_in_order,
+    )?;
 
     for id in order {
         let node = match nodes_by_id.get(id) {
@@ -2109,12 +2132,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let sigma = radius_px / 3.525_494;
                 let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
                 let downsample_factor: u32 = 1 << mip_level;
-                let (kernel, offset, _num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let tap_count = num.clamp(1, 8);
+                let is_sampled_output = sampled_pass_ids.contains(layer_id);
+                let skip_factor1_downsample = should_skip_blur_downsample_pass(downsample_factor);
+                let skip_factor1_upsample = should_skip_blur_upsample_pass(
+                    downsample_factor,
+                    extend_enabled,
+                    is_sampled_output,
+                );
+                let emit_upsample_pass = !skip_factor1_upsample;
 
-                let downsample_steps: Vec<u32> = if downsample_factor == 16 {
-                    vec![8, 2]
+                let downsample_steps: Vec<u32> = if skip_factor1_downsample {
+                    Vec::new()
                 } else {
-                    vec![downsample_factor]
+                    blur_downsample_steps_for_factor(downsample_factor)?
                 };
 
                 // Allocate textures (and matching fullscreen geometry) for each downsample step.
@@ -2171,24 +2203,34 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
                 // Otherwise, render to the final Composite.target texture.
-                let output_tex: ResourceName = if sampled_pass_ids.contains(layer_id) {
-                    let out_tex: ResourceName = format!("sys.blur.{layer_id}.out").into();
-                    textures.push(TextureDecl {
-                        name: out_tex.clone(),
-                        size: [blur_w, blur_h],
-                        format: sampled_pass_format,
-                        sample_count: 1,
-                    });
-                    out_tex
+                let output_tex: ResourceName = if is_sampled_output {
+                    if emit_upsample_pass {
+                        let out_tex: ResourceName = format!("sys.blur.{layer_id}.out").into();
+                        textures.push(TextureDecl {
+                            name: out_tex.clone(),
+                            size: [blur_w, blur_h],
+                            format: sampled_pass_format,
+                            sample_count: 1,
+                        });
+                        out_tex
+                    } else {
+                        // Factor=1 sampled blur can directly publish v_tex.
+                        v_tex.clone()
+                    }
                 } else {
                     target_texture_name.clone()
                 };
-                let upsample_geo_size: [f32; 2] = if extend_pad_px > 0
-                    && output_tex == target_texture_name
-                {
-                    gaussian_blur_extend_upsample_geo_size(src_content_resolution, [blur_w, blur_h])
+                let upsample_geo_size: Option<[f32; 2]> = if emit_upsample_pass {
+                    Some(if extend_pad_px > 0 && output_tex == target_texture_name {
+                        gaussian_blur_extend_upsample_geo_size(
+                            src_content_resolution,
+                            [blur_w, blur_h],
+                        )
+                    } else {
+                        [blur_w as f32, blur_h as f32]
+                    })
                 } else {
-                    [blur_w as f32, blur_h as f32]
+                    None
                 };
 
                 let pass_blend_state =
@@ -2211,11 +2253,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     geo_ds.clone(),
                     make_fullscreen_geometry(ds_w as f32, ds_h as f32),
                 ));
-                let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
-                geometry_buffers.push((
-                    geo_out.clone(),
-                    make_fullscreen_geometry(upsample_geo_size[0], upsample_geo_size[1]),
-                ));
+                let geo_out: Option<ResourceName> =
+                    if let Some(upsample_geo_size) = upsample_geo_size {
+                        let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
+                        geometry_buffers.push((
+                            geo_out.clone(),
+                            make_fullscreen_geometry(upsample_geo_size[0], upsample_geo_size[1]),
+                        ));
+                        Some(geo_out)
+                    } else {
+                        None
+                    };
 
                 // Downsample chain
                 let mut prev_tex: Option<ResourceName> = None;
@@ -2284,13 +2332,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     prev_tex = Some(tex.clone());
                 }
 
-                let ds_src_tex: ResourceName = prev_tex
-                    .ok_or_else(|| anyhow!("GuassianBlurPass: missing downsample output"))?;
+                let (ds_src_tex, ds_src_image_node_id): (ResourceName, Option<String>) =
+                    if let Some(prev_tex) = prev_tex {
+                        (prev_tex, None)
+                    } else {
+                        (
+                            initial_blur_source_texture.clone(),
+                            initial_blur_source_image_node_id.clone(),
+                        )
+                    };
 
                 // 2) Horizontal blur: ds_src_tex -> h_tex
                 let params_h: ResourceName =
                     format!("params.sys.blur.{layer_id}.h.ds{downsample_factor}").into();
-                let bundle_h = build_horizontal_blur_bundle(kernel, offset);
+                let bundle_h =
+                    build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
                 let params_h_val = Params {
                     target_size: [ds_w as f32, ds_h as f32],
                     geo_size: [ds_w as f32, ds_h as f32],
@@ -2320,7 +2376,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     shader_wgsl: bundle_h.module,
                     texture_bindings: vec![PassTextureBinding {
                         texture: ds_src_tex.clone(),
-                        image_node_id: None,
+                        image_node_id: ds_src_image_node_id,
                     }],
                     sampler_kinds: vec![SamplerKind::LinearMirror],
                     blend_state: BlendState::REPLACE,
@@ -2332,7 +2388,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // 3) Vertical blur: h_tex -> v_tex (still downsampled resolution)
                 let params_v: ResourceName =
                     format!("params.sys.blur.{layer_id}.v.ds{downsample_factor}").into();
-                let bundle_v = build_vertical_blur_bundle(kernel, offset);
+                let bundle_v = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
                 let pass_name_v: ResourceName =
                     format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass").into();
                 let params_v_val = Params {
@@ -2372,59 +2428,67 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 composite_passes.push(pass_name_v);
 
                 // 4) Upsample bilinear back to output: v_tex -> output_tex
-                let params_u: ResourceName =
-                    format!("params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}")
-                        .into();
-                let bundle_u = build_upsample_bilinear_bundle();
-                let upsample_target_size: [f32; 2] = if output_tex == target_texture_name {
-                    [tgt_w, tgt_h]
-                } else {
-                    [blur_w as f32, blur_h as f32]
-                };
-                let upsample_center: [f32; 2] = if output_tex == target_texture_name {
-                    blur_output_center
-                        .unwrap_or([upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5])
-                } else {
-                    [upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5]
-                };
-                let params_u_val = Params {
-                    target_size: upsample_target_size,
-                    geo_size: upsample_geo_size,
-                    center: upsample_center,
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
-                let pass_name_u: ResourceName =
-                    format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
-                        .into();
-                render_pass_specs.push(RenderPassSpec {
-                    pass_id: pass_name_u.as_str().to_string(),
-                    name: pass_name_u.clone(),
-                    geometry_buffer: geo_out.clone(),
-                    instance_buffer: None,
-                    normals_buffer: None,
-                    target_texture: output_tex.clone(),
-                    resolve_target: None,
-                    params_buffer: params_u.clone(),
-                    baked_data_parse_buffer: None,
-                    params: params_u_val,
-                    graph_binding: None,
-                    graph_values: None,
-                    shader_wgsl: bundle_u.module,
-                    texture_bindings: vec![PassTextureBinding {
-                        texture: v_tex.clone(),
-                        image_node_id: None,
-                    }],
-                    sampler_kinds: vec![SamplerKind::LinearMirror],
-                    blend_state: blur_output_blend_state,
-                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-                    sample_count: 1,
-                });
+                if emit_upsample_pass {
+                    let upsample_geo_size = upsample_geo_size
+                        .ok_or_else(|| anyhow!("GuassianBlurPass: missing upsample geo size"))?;
+                    let geo_out = geo_out
+                        .clone()
+                        .ok_or_else(|| anyhow!("GuassianBlurPass: missing upsample geometry"))?;
+                    let params_u: ResourceName = format!(
+                        "params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}"
+                    )
+                    .into();
+                    let bundle_u = build_upsample_bilinear_bundle();
+                    let upsample_target_size: [f32; 2] = if output_tex == target_texture_name {
+                        [tgt_w, tgt_h]
+                    } else {
+                        [blur_w as f32, blur_h as f32]
+                    };
+                    let upsample_center: [f32; 2] = if output_tex == target_texture_name {
+                        blur_output_center
+                            .unwrap_or([upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5])
+                    } else {
+                        [upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5]
+                    };
+                    let params_u_val = Params {
+                        target_size: upsample_target_size,
+                        geo_size: upsample_geo_size,
+                        center: upsample_center,
+                        geo_translate: [0.0, 0.0],
+                        geo_scale: [1.0, 1.0],
+                        time: 0.0,
+                        _pad0: 0.0,
+                        color: [0.0, 0.0, 0.0, 0.0],
+                    };
+                    let pass_name_u: ResourceName =
+                        format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
+                            .into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: pass_name_u.as_str().to_string(),
+                        name: pass_name_u.clone(),
+                        geometry_buffer: geo_out,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: output_tex.clone(),
+                        resolve_target: None,
+                        params_buffer: params_u.clone(),
+                        baked_data_parse_buffer: None,
+                        params: params_u_val,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: bundle_u.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: v_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        blend_state: blur_output_blend_state,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
 
-                composite_passes.push(pass_name_u);
+                    composite_passes.push(pass_name_u);
+                }
 
                 // Register this GuassianBlurPass output for potential downstream chaining.
                 let blur_output_tex = output_tex.clone();
@@ -2432,7 +2496,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     node_id: layer_id.clone(),
                     texture_name: blur_output_tex.clone(),
                     resolution: [blur_w, blur_h],
-                    format: if sampled_pass_ids.contains(layer_id) {
+                    format: if is_sampled_output {
                         sampled_pass_format
                     } else {
                         target_format
@@ -4814,6 +4878,30 @@ mod tests {
         let geo_size = gaussian_blur_extend_upsample_geo_size([200, 120], [240, 160]);
         assert!((geo_size[0] - 240.0).abs() < 1e-6);
         assert!((geo_size[1] - 160.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blur_downsample_steps_for_factor_matches_expected_chain() {
+        assert_eq!(blur_downsample_steps_for_factor(1).unwrap(), vec![1]);
+        assert_eq!(blur_downsample_steps_for_factor(2).unwrap(), vec![2]);
+        assert_eq!(blur_downsample_steps_for_factor(4).unwrap(), vec![4]);
+        assert_eq!(blur_downsample_steps_for_factor(8).unwrap(), vec![8]);
+        assert_eq!(blur_downsample_steps_for_factor(16).unwrap(), vec![8, 2]);
+    }
+
+    #[test]
+    fn blur_factor1_downsample_elision_only_triggers_for_factor1() {
+        assert!(should_skip_blur_downsample_pass(1));
+        assert!(!should_skip_blur_downsample_pass(2));
+        assert!(!should_skip_blur_downsample_pass(4));
+    }
+
+    #[test]
+    fn blur_factor1_upsample_elision_requires_sampled_and_non_extend() {
+        assert!(should_skip_blur_upsample_pass(1, false, true));
+        assert!(!should_skip_blur_upsample_pass(1, true, true));
+        assert!(!should_skip_blur_upsample_pass(1, false, false));
+        assert!(!should_skip_blur_upsample_pass(2, false, true));
     }
 
     #[test]
