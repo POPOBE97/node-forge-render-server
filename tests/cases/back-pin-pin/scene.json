@@ -2,15 +2,15 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-19T07:04:32.573Z",
-    "modified": "2026-02-19T07:04:32.573Z"
+    "created": "2026-02-19T07:52:09.255Z",
+    "modified": "2026-02-19T07:52:09.255Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": -420,
+        "x": -180,
         "y": 620
       },
       "width": 160,
@@ -58,7 +58,7 @@
       "id": "Composite_5",
       "type": "Composite",
       "position": {
-        "x": -600,
+        "x": -360,
         "y": 620
       },
       "width": 160,
@@ -78,7 +78,7 @@
       "id": "RenderTexture_6",
       "type": "RenderTexture",
       "position": {
-        "x": -600,
+        "x": -360,
         "y": 480
       },
       "width": 160,
@@ -369,6 +369,27 @@
           "z": 1
         }
       }
+    },
+    {
+      "id": "GuassianBlurPass_23",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -620,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 5,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
     }
   ],
   "connections": [
@@ -381,17 +402,6 @@
       "to": {
         "nodeId": "Screen_1",
         "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_4",
-      "from": {
-        "nodeId": "RenderTexture_6",
-        "portId": "texture"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "target"
       }
     },
     {
@@ -505,17 +515,6 @@
       }
     },
     {
-      "id": "edge_27",
-      "from": {
-        "nodeId": "Downsample_10",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
-      }
-    },
-    {
       "id": "edge_28",
       "from": {
         "nodeId": "Downsample_10",
@@ -568,6 +567,28 @@
       "to": {
         "nodeId": "Downsample_20",
         "portId": "source"
+      }
+    },
+    {
+      "id": "edge_33",
+      "from": {
+        "nodeId": "Downsample_20",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_23",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_34",
+      "from": {
+        "nodeId": "GuassianBlurPass_23",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
       }
     }
   ],

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use node_forge_render_server::{
     dsl::{Metadata, Node, SceneDSL, normalize_scene_defaults},
-    schema::load_default_scheme,
+    schema::{PortTypeSpec, load_default_scheme},
 };
 use serde_json::json;
 
@@ -36,6 +36,7 @@ fn pass_nodes_expose_premul_blend_defaults_in_scheme() {
         "GuassianBlurPass",
         "GradientBlur",
         "Downsample",
+        "Upsample",
         "Composite",
     ] {
         let node_scheme = scheme
@@ -66,6 +67,7 @@ fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
             node("gb", "GuassianBlurPass"),
             node("grb", "GradientBlur"),
             node("ds", "Downsample"),
+            node("us", "Upsample"),
             node("comp", "Composite"),
         ],
         connections: Vec::new(),
@@ -86,5 +88,54 @@ fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
                 key
             );
         }
+    }
+}
+
+#[test]
+fn upsample_schema_ports_and_defaults_match_contract() {
+    let scheme = load_default_scheme().expect("load default scheme");
+    let node_scheme = scheme
+        .nodes
+        .get("Upsample")
+        .expect("missing Upsample in scheme");
+
+    let assert_input_type = |port_id: &str, expected: &str| match node_scheme.inputs.get(port_id) {
+        Some(PortTypeSpec::One(actual)) => {
+            assert_eq!(actual, expected, "Upsample input {port_id} type mismatch")
+        }
+        _ => panic!("Upsample input {port_id} missing or not a singular type"),
+    };
+
+    let assert_output_type = |port_id: &str, expected: &str| match node_scheme.outputs.get(port_id)
+    {
+        Some(PortTypeSpec::One(actual)) => {
+            assert_eq!(actual, expected, "Upsample output {port_id} type mismatch")
+        }
+        _ => panic!("Upsample output {port_id} missing or not a singular type"),
+    };
+
+    assert_input_type("targetSize", "vector2");
+    assert_input_type("source", "pass");
+    assert_input_type("address_mode", "any");
+    assert_input_type("filter", "any");
+    assert_input_type("blend_preset", "any");
+    assert_output_type("output", "pass");
+
+    let expected_defaults = [
+        ("address_mode", json!("clamp-to-edge")),
+        ("filter", json!("linear")),
+        ("blend_preset", json!("premul_alpha")),
+        ("blendfunc", json!("add")),
+        ("src_factor", json!("one")),
+        ("dst_factor", json!("one-minus-src-alpha")),
+        ("src_alpha_factor", json!("one")),
+        ("dst_alpha_factor", json!("one-minus-src-alpha")),
+    ];
+    for (key, value) in expected_defaults {
+        assert_eq!(
+            node_scheme.default_params.get(key),
+            Some(&value),
+            "Upsample.defaultParams.{key} mismatch"
+        );
     }
 }
