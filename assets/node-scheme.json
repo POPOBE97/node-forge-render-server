@@ -70,6 +70,7 @@
     "TextureInput",
     "TimeInput",
     "TransformGeometry",
+    "Upsample",
     "Vector2Input",
     "Vector3Input",
     "VectorMath"
@@ -683,6 +684,59 @@
         }
       ],
       "defaultParams": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "type": "Upsample",
+      "label": "Upsample",
+      "category": "Filter",
+      "description": "Upsample a pass to a target size",
+      "inputs": [
+        {
+          "id": "targetSize",
+          "name": "Target Size",
+          "type": "vector2"
+        },
+        {
+          "id": "source",
+          "name": "Source",
+          "type": "pass"
+        },
+        {
+          "id": "address_mode",
+          "name": "Address Mode",
+          "type": "any",
+          "default": "clamp-to-edge"
+        },
+        {
+          "id": "filter",
+          "name": "Filter",
+          "type": "any",
+          "default": "linear"
+        },
+        {
+          "id": "blend_preset",
+          "name": "Blend Preset",
+          "type": "any",
+          "default": "premul_alpha"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
