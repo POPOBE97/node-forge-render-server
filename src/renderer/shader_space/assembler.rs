@@ -702,6 +702,89 @@ fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
 // We use dot-separated segments (no `__`) so the names read well and extend naturally to HDR.
 const UI_PRESENT_SDR_SRGB_SUFFIX: &str = ".present.sdr.srgb";
 
+fn sanitize_resource_segment(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_was_dot = false;
+    for ch in value.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            ch.to_ascii_lowercase()
+        } else {
+            '.'
+        };
+        if mapped == '.' {
+            if !last_was_dot && !out.is_empty() {
+                out.push('.');
+            }
+            last_was_dot = true;
+        } else {
+            out.push(mapped);
+            last_was_dot = false;
+        }
+    }
+    while out.ends_with('.') {
+        out.pop();
+    }
+    out
+}
+
+fn stable_short_id_suffix(node_id: &str, max_len: usize) -> String {
+    if max_len == 0 {
+        return String::new();
+    }
+    let sanitized = sanitize_resource_segment(node_id);
+    let compact: String = sanitized.chars().filter(|c| *c != '.').collect();
+    if compact.is_empty() {
+        return String::new();
+    }
+    let keep = compact.len().min(max_len);
+    compact[compact.len() - keep..].to_string()
+}
+
+fn readable_pass_name_for_node(node: &crate::dsl::Node) -> ResourceName {
+    let id = node.id.as_str();
+    let (id_base, budget_base_len) = if let Some(base) = id.strip_suffix(".pass") {
+        (base, base.len())
+    } else {
+        (id, id.len())
+    };
+
+    let label_hint = ["label", "name", "title", "headerLabel"]
+        .iter()
+        .find_map(|k| node.params.get(*k).and_then(|v| v.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(sanitize_resource_segment)
+        .filter(|s| !s.is_empty());
+
+    let base = if let Some(label_hint) = label_hint {
+        if budget_base_len >= 6 {
+            let suffix = stable_short_id_suffix(id_base, 6);
+            if suffix.is_empty() {
+                id_base.to_string()
+            } else {
+                let reserved = suffix.len() + 1;
+                if reserved >= budget_base_len {
+                    id_base.to_string()
+                } else {
+                    let hint_budget = budget_base_len - reserved;
+                    let hint: String = label_hint.chars().take(hint_budget).collect();
+                    if hint.is_empty() {
+                        id_base.to_string()
+                    } else {
+                        format!("{hint}.{suffix}")
+                    }
+                }
+            }
+        } else {
+            id_base.to_string()
+        }
+    } else {
+        id_base.to_string()
+    };
+
+    format!("{base}.pass").into()
+}
+
 fn sampled_render_pass_output_size(
     _has_processing_consumer: bool,
     _is_downsample_source: bool,
@@ -978,10 +1061,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
             "RenderPass" => {
-                let pass_name = ids
-                    .get(layer_id)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("missing name for node: {layer_id}"))?;
+                let pass_name = readable_pass_name_for_node(layer_node);
 
                 let requested_msaa = cpu_num_u32_floor(
                     &prepared.scene,
@@ -1012,6 +1092,22 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             .get(&conn.to.node_id)
                             .is_some_and(|n| is_draw_pass_node_type(&n.node_type))
                 });
+                let has_extend_blur_consumer = prepared.scene.connections.iter().any(|conn| {
+                    if conn.from.node_id != *layer_id || conn.from.port_id != "pass" {
+                        return false;
+                    }
+                    let Some(dst_node) = nodes_by_id.get(&conn.to.node_id) else {
+                        return false;
+                    };
+                    if dst_node.node_type != "GuassianBlurPass" {
+                        return false;
+                    }
+                    dst_node
+                        .params
+                        .get("extend")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                });
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
                 let is_blur_source = gaussian_source_pass_ids.contains(layer_id)
                     || gradient_source_pass_ids.contains(layer_id);
@@ -1026,8 +1122,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
                         .with_context(|| {
                             format!(
-                                "invalid blend params for {} node '{layer_id}'",
-                                layer_node.node_type
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
 
@@ -1232,10 +1328,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 // apply scene placement at compose time. This preserves size/position when blitting.
                 let use_fullscreen_for_downsample_source =
                     is_downsample_source && rect_dyn_2.is_some();
+                let use_fullscreen_for_extend_blur_source =
+                    is_sampled_output && has_extend_blur_consumer;
                 let use_fullscreen_for_local_blit =
                     is_sampled_output && !has_processing_consumer && has_composition_consumer;
                 let use_fullscreen_main_pass =
-                    use_fullscreen_for_downsample_source || use_fullscreen_for_local_blit;
+                    use_fullscreen_for_downsample_source
+                        || use_fullscreen_for_extend_blur_source
+                        || use_fullscreen_for_local_blit;
 
                 let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
                     if use_fullscreen_main_pass {
@@ -1453,7 +1553,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 };
 
                 render_pass_specs.push(RenderPassSpec {
-                    pass_id: layer_id.clone(),
+                    pass_id: pass_name.as_str().to_string(),
                     name: pass_name.clone(),
                     geometry_buffer: main_pass_geometry_buffer.clone(),
                     instance_buffer,
@@ -2078,8 +2178,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
                         .with_context(|| {
                             format!(
-                                "invalid blend params for {} node '{layer_id}'",
-                                layer_node.node_type
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
                 let blur_output_blend_state: BlendState = if output_tex == target_texture_name {
@@ -2900,8 +3000,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
                         .with_context(|| {
                             format!(
-                                "invalid blend params for {} node '{layer_id}'",
-                                layer_node.node_type
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
                 let final_blend_state: BlendState = if output_tex == target_texture_name {
@@ -3018,8 +3118,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
                         .with_context(|| {
                             format!(
-                                "invalid blend params for {} node '{layer_id}'",
-                                layer_node.node_type
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
 
@@ -3367,8 +3467,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
                         .with_context(|| {
                             format!(
-                                "invalid blend params for {} node '{layer_id}'",
-                                layer_node.node_type
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
                 pass_output_registry.register(PassOutputSpec {
