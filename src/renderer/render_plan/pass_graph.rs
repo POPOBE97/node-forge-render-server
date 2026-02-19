@@ -172,15 +172,51 @@ pub(crate) fn compute_pass_render_order(
     Ok(out)
 }
 
+pub(crate) fn sampled_pass_node_ids_from_roots(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    roots_in_draw_order: &[String],
+) -> Result<HashSet<String>> {
+    let reachable = compute_pass_render_order(scene, nodes_by_id, roots_in_draw_order)?;
+    let reachable_set: HashSet<String> = reachable.iter().cloned().collect();
+
+    let mut out: HashSet<String> = HashSet::new();
+    for node_id in reachable {
+        let Some(node) = nodes_by_id.get(&node_id) else {
+            continue;
+        };
+        if !is_pass_like_node_type(&node.node_type) {
+            continue;
+        }
+
+        // Composite being reachable should not by itself force its input layers
+        // to be treated as sampled outputs. We only mark passes sampled when a
+        // non-Composite pass node actually samples them as textures.
+        if node.node_type == "Composite" {
+            continue;
+        }
+
+        let deps = deps_for_pass_node(scene, nodes_by_id, node_id.as_str())?;
+        for dep in deps {
+            if reachable_set.contains(&dep) {
+                out.insert(dep);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use anyhow::Result;
+    use serde_json::json;
 
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
 
-    use super::compute_pass_render_order;
+    use super::{compute_pass_render_order, sampled_pass_node_ids_from_roots};
 
     fn node(id: &str, node_type: &str) -> Node {
         Node {
@@ -245,6 +281,178 @@ mod tests {
 
         let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
         assert_eq!(order, vec!["source_comp", "upsample", "out_comp"]);
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_pass_ids_from_roots_marks_reachable_processing_dependencies() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "sampled-from-roots-live".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("out", "Composite"),
+                Node {
+                    id: "rt".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(100)),
+                        ("height".to_string(), json!(100)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: vec![],
+                    outputs: vec![],
+                },
+                node("p_live", "RenderPass"),
+                node("ds_live", "Downsample"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_target".to_string(),
+                    from: Endpoint {
+                        node_id: "rt".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_source".to_string(),
+                    from: Endpoint {
+                        node_id: "p_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ds_live".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "ds_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(HashMap::from([(
+                String::from("composite"),
+                String::from("out"),
+            )])),
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let roots = vec![String::from("ds_live")];
+        let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &roots)?;
+        assert!(
+            sampled.contains("p_live"),
+            "expected p_live sampled by ds_live, got: {sampled:?}"
+        );
+        assert!(
+            !sampled.contains("ds_live"),
+            "ds_live should not be considered sampled here, got: {sampled:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_pass_ids_from_roots_ignores_dead_branch_sampling() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "sampled-from-roots-dead".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("out", "Composite"),
+                Node {
+                    id: "rt".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(100)),
+                        ("height".to_string(), json!(100)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: vec![],
+                    outputs: vec![],
+                },
+                node("p_live", "RenderPass"),
+                node("ds_dead", "Downsample"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_target".to_string(),
+                    from: Endpoint {
+                        node_id: "rt".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "p_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_dead_source".to_string(),
+                    from: Endpoint {
+                        node_id: "p_live".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ds_dead".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(HashMap::from([(
+                String::from("composite"),
+                String::from("out"),
+            )])),
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let roots = vec![String::from("p_live")];
+        let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &roots)?;
+        assert!(
+            !sampled.contains("p_live"),
+            "dead branch should not force p_live sampled, got: {sampled:?}"
+        );
         Ok(())
     }
 }
