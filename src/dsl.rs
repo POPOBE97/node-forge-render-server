@@ -418,6 +418,7 @@ pub fn parse_texture_format(params: &HashMap<String, serde_json::Value>) -> Resu
     match fmt.as_str() {
         "rgba8unorm" => Ok(TextureFormat::Rgba8Unorm),
         "rgba8unormsrgb" => Ok(TextureFormat::Rgba8UnormSrgb),
+        "rgba16float" => Ok(TextureFormat::Rgba16Float),
         "bgra8unorm" => Ok(TextureFormat::Bgra8Unorm),
         "bgra8unormsrgb" => Ok(TextureFormat::Bgra8UnormSrgb),
         _ => bail!("unsupported RenderTexture.format: {}", fmt_raw),
@@ -804,4 +805,47 @@ This node contains user-provided source code; render-time evaluation must be san
     visiting.remove(&key);
     cache.insert(key, computed);
     Ok(computed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_texture_format_accepts_rgba16float_variants() {
+        let mut params = HashMap::new();
+
+        params.insert("format".to_string(), json!("rgba16float"));
+        assert_eq!(
+            parse_texture_format(&params).unwrap(),
+            TextureFormat::Rgba16Float
+        );
+
+        params.insert("format".to_string(), json!("RGBA16FLOAT"));
+        assert_eq!(
+            parse_texture_format(&params).unwrap(),
+            TextureFormat::Rgba16Float
+        );
+
+        params.insert("format".to_string(), json!("rgba16-float"));
+        assert_eq!(
+            parse_texture_format(&params).unwrap(),
+            TextureFormat::Rgba16Float
+        );
+
+        params.insert("format".to_string(), json!("rgba16_float"));
+        assert_eq!(
+            parse_texture_format(&params).unwrap(),
+            TextureFormat::Rgba16Float
+        );
+    }
+
+    #[test]
+    fn parse_texture_format_rejects_unsupported_format() {
+        let params = HashMap::from([("format".to_string(), json!("rgb16float"))]);
+        let err = parse_texture_format(&params).unwrap_err().to_string();
+        assert!(err.contains("unsupported RenderTexture.format"));
+        assert!(err.contains("rgb16float"));
+    }
 }
