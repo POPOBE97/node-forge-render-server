@@ -818,14 +818,10 @@ fn show_resource_tree_section(
 
         if let Some(clicked) = tree_response.clicked {
             match &clicked.kind {
-                NodeKind::Pass {
-                    target_texture: Some(tex_name),
-                } => {
-                    *sidebar_action = Some(SidebarAction::PreviewTexture(tex_name.clone()));
+                NodeKind::Texture { texture_name } => {
+                    *sidebar_action = Some(SidebarAction::PreviewTexture(texture_name.clone()));
                 }
-                _ => {
-                    *sidebar_action = Some(SidebarAction::ClearPreview);
-                }
+                _ => {}
             }
         }
     });

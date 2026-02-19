@@ -17,7 +17,6 @@ const INDENT_PX: f32 = 16.0;
 const LEFT_PAD: f32 = 4.0;
 const CHEVRON_SIZE: f32 = 8.0;
 const ICON_SIZE: f32 = 14.0;
-const GAP_CHEVRON_ICON: f32 = 4.0;
 const GAP_ICON_LABEL: f32 = 6.0;
 const GAP_LABEL_DETAIL: f32 = 6.0;
 const HOVER_RADIUS: u8 = design_tokens::BORDER_RADIUS_SMALL as u8;
@@ -201,12 +200,7 @@ pub fn show_file_tree(
         && let Some(entry) = visible_entries
             .iter()
             .find(|entry| &entry.node.id == hover_id)
-        && matches!(
-            entry.node.kind,
-            NodeKind::Pass {
-                target_texture: Some(_)
-            }
-        )
+        && matches!(entry.node.kind, NodeKind::Texture { .. })
     {
         state.selected_id = Some(entry.node.id.clone());
         response.clicked = Some(entry.node.clone());
@@ -245,13 +239,11 @@ fn draw_node(
     let row_id = node_path.with("row");
     let row_response = ui.interact(row_rect, row_id, egui::Sense::click());
 
-    if let NodeKind::Pass {
-        target_texture: Some(tex_name),
-    } = &node.kind
+    if let NodeKind::Texture { texture_name } = &node.kind
     {
         row_response.context_menu(|ui| {
             if ui.button("复制材质名").clicked() {
-                response.copied_texture_name = Some(tex_name.clone());
+                response.copied_texture_name = Some(texture_name.clone());
                 ui.close();
             }
         });
@@ -260,27 +252,27 @@ fn draw_node(
     let hovered = row_response.hovered() || state.keyboard_hover_id.as_deref() == Some(&node.id);
     let is_selected = state.selected_id.as_deref() == Some(&node.id);
 
-    let chevron_x = row_rect.min.x + indent;
-    let chevron_rect = Rect::from_min_max(
-        Pos2::new(chevron_x - 2.0, row_rect.min.y),
-        Pos2::new(chevron_x + CHEVRON_SIZE + 2.0, row_rect.max.y),
+    let icon_x = row_rect.min.x + indent;
+    let icon_rect = Rect::from_min_max(
+        Pos2::new(icon_x - 2.0, row_rect.min.y),
+        Pos2::new(icon_x + ICON_SIZE + 2.0, row_rect.max.y),
     );
-    let chevron_hovered = is_folder
+    let icon_hovered = is_folder
         && row_response
             .hover_pos()
-            .is_some_and(|pos| chevron_rect.contains(pos));
-    if chevron_hovered {
+            .is_some_and(|pos| icon_rect.contains(pos));
+    if icon_hovered {
         ui.output_mut(|o| {
             o.cursor_icon = egui::CursorIcon::PointingHand;
         });
     }
-    let chevron_clicked = is_folder
+    let icon_clicked = is_folder
         && row_response.clicked()
         && row_response
             .interact_pointer_pos()
-            .is_some_and(|pos| chevron_rect.contains(pos));
+            .is_some_and(|pos| icon_rect.contains(pos));
 
-    if row_response.clicked() && !chevron_clicked {
+    if row_response.clicked() && !icon_clicked {
         state.selected_id = Some(node.id.clone());
         state.keyboard_hover_id = Some(node.id.clone());
         response.clicked = Some(node.clone());
@@ -319,7 +311,7 @@ fn draw_node(
     }
 
     // --- Cursor X ---
-    let mut cx = chevron_x;
+    let mut cx = icon_x;
     let cy = row_rect.center().y;
 
     // --- Chevron (folders only) ---
@@ -335,20 +327,14 @@ fn draw_node(
             collapse_default_open,
         );
 
-        if chevron_clicked {
+        if icon_clicked {
             collapsing_state.toggle(ui);
         }
 
         let openness = collapsing_state.openness(ui.ctx());
         collapsing_state.store(ui.ctx());
-
-        // Draw chevron triangle.
-        draw_chevron(&painter, cx, cy, openness);
-        cx += CHEVRON_SIZE + GAP_CHEVRON_ICON;
         Some(openness)
     } else {
-        // Align with nodes that have chevrons.
-        cx += CHEVRON_SIZE + GAP_CHEVRON_ICON;
         None
     };
 
@@ -371,7 +357,16 @@ fn draw_node(
         }
         _ => node.icon,
     };
-    draw_icon(&painter, cx, cy, resolved_icon);
+    if is_folder && icon_hovered {
+        draw_chevron(
+            &painter,
+            cx + (ICON_SIZE - CHEVRON_SIZE) * 0.5,
+            cy,
+            openness.unwrap_or(0.0),
+        );
+    } else {
+        draw_icon(&painter, cx, cy, resolved_icon);
+    }
     cx += ICON_SIZE + GAP_ICON_LABEL;
 
     // --- Label ---
