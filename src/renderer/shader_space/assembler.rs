@@ -702,6 +702,241 @@ fn select_effective_msaa_sample_count(
     Ok(effective)
 }
 
+#[derive(Clone, Debug)]
+struct TextureCapabilityRequirement {
+    name: ResourceName,
+    format: TextureFormat,
+    usage: TextureUsages,
+    sample_count: u32,
+    sampled_by_passes: Vec<String>,
+    blend_target_passes: Vec<String>,
+}
+
+fn effective_texture_format_features(
+    format: TextureFormat,
+    device_features: wgpu::Features,
+    adapter: Option<&wgpu::Adapter>,
+) -> wgpu::TextureFormatFeatures {
+    if device_features.contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
+        if let Some(adapter) = adapter {
+            return adapter.get_texture_format_features(format);
+        }
+    }
+    format.guaranteed_format_features(device_features)
+}
+
+fn image_texture_wgpu_format(image: &DynamicImage, srgb: bool) -> Result<TextureFormat> {
+    let base_format = match image.color() {
+        image::ColorType::L8 => TextureFormat::R8Unorm,
+        image::ColorType::La8 => TextureFormat::Rg8Unorm,
+        image::ColorType::Rgb8 => TextureFormat::Rgba8Unorm,
+        image::ColorType::Rgba8 => TextureFormat::Rgba8Unorm,
+
+        image::ColorType::L16 => TextureFormat::R16Unorm,
+        image::ColorType::La16 => TextureFormat::Rg16Unorm,
+        image::ColorType::Rgb16 => TextureFormat::Rgba16Unorm,
+        image::ColorType::Rgba16 => TextureFormat::Rgba16Unorm,
+
+        image::ColorType::Rgb32F => TextureFormat::Rgba32Float,
+        image::ColorType::Rgba32F => TextureFormat::Rgba32Float,
+        other => bail!("unsupported image color type for GPU texture format: {other:?}"),
+    };
+
+    Ok(if srgb {
+        base_format.add_srgb_suffix()
+    } else {
+        base_format
+    })
+}
+
+fn blend_state_requires_blendable(blend_state: BlendState) -> bool {
+    format!("{blend_state:?}") != format!("{:?}", BlendState::REPLACE)
+}
+
+fn collect_texture_capability_requirements(
+    texture_specs: &[FiberTextureSpec],
+    render_pass_specs: &[RenderPassSpec],
+    prepass_texture_samples: &[(String, ResourceName)],
+) -> Result<Vec<TextureCapabilityRequirement>> {
+    let mut requirements_by_name: HashMap<ResourceName, TextureCapabilityRequirement> =
+        HashMap::new();
+
+    for spec in texture_specs {
+        let (name, format, usage, sample_count) = match spec {
+            FiberTextureSpec::Texture {
+                name,
+                format,
+                usage,
+                sample_count,
+                ..
+            } => (name.clone(), *format, *usage, (*sample_count).max(1)),
+            FiberTextureSpec::Image {
+                name,
+                image,
+                usage,
+                srgb,
+            } => (
+                name.clone(),
+                image_texture_wgpu_format(image.as_ref(), *srgb)?,
+                *usage,
+                1,
+            ),
+        };
+
+        if let Some(existing) = requirements_by_name.get_mut(&name) {
+            if existing.format != format || existing.sample_count != sample_count {
+                bail!(
+                    "texture '{}' has conflicting declarations: first format={:?} sample_count={}, later format={:?} sample_count={}",
+                    name,
+                    existing.format,
+                    existing.sample_count,
+                    format,
+                    sample_count
+                );
+            }
+            existing.usage |= usage;
+        } else {
+            requirements_by_name.insert(
+                name.clone(),
+                TextureCapabilityRequirement {
+                    name,
+                    format,
+                    usage,
+                    sample_count,
+                    sampled_by_passes: Vec::new(),
+                    blend_target_passes: Vec::new(),
+                },
+            );
+        }
+    }
+
+    for pass in render_pass_specs {
+        for binding in &pass.texture_bindings {
+            let req =
+                requirements_by_name
+                    .get_mut(&binding.texture)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "internal texture capability validation error: pass '{}' samples undeclared texture '{}'",
+                            pass.pass_id,
+                            binding.texture
+                        )
+                    })?;
+            req.sampled_by_passes.push(pass.pass_id.clone());
+        }
+
+        if blend_state_requires_blendable(pass.blend_state) {
+            let req = requirements_by_name
+                .get_mut(&pass.target_texture)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "internal texture capability validation error: pass '{}' targets undeclared texture '{}'",
+                        pass.pass_id,
+                        pass.target_texture
+                    )
+                })?;
+            req.blend_target_passes.push(pass.pass_id.clone());
+        }
+    }
+
+    for (pass_id, texture_name) in prepass_texture_samples {
+        let req = requirements_by_name
+            .get_mut(texture_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "internal texture capability validation error: pass '{}' samples undeclared texture '{}'",
+                    pass_id,
+                    texture_name
+                )
+            })?;
+        req.sampled_by_passes.push(pass_id.clone());
+    }
+
+    let mut requirements: Vec<TextureCapabilityRequirement> =
+        requirements_by_name.into_values().collect();
+    requirements.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+    for req in &mut requirements {
+        req.sampled_by_passes.sort();
+        req.sampled_by_passes.dedup();
+        req.blend_target_passes.sort();
+        req.blend_target_passes.dedup();
+    }
+
+    Ok(requirements)
+}
+
+fn validate_texture_capability_requirements_with_resolver<F>(
+    requirements: &[TextureCapabilityRequirement],
+    mut features_for_format: F,
+) -> Result<()>
+where
+    F: FnMut(TextureFormat) -> wgpu::TextureFormatFeatures,
+{
+    for req in requirements {
+        let format_features = features_for_format(req.format);
+        let missing_allowed_usages = req.usage - format_features.allowed_usages;
+        if !missing_allowed_usages.is_empty() {
+            bail!(
+                "texture capability validation failed for '{}': format {:?} missing required usages {:?} (allowed {:?})",
+                req.name,
+                req.format,
+                missing_allowed_usages,
+                format_features.allowed_usages
+            );
+        }
+
+        if !format_features
+            .flags
+            .sample_count_supported(req.sample_count)
+        {
+            bail!(
+                "texture capability validation failed for '{}': format {:?} does not support sample_count={} (supported {:?})",
+                req.name,
+                req.format,
+                req.sample_count,
+                format_features.flags.supported_sample_counts()
+            );
+        }
+
+        if !req.sampled_by_passes.is_empty()
+            && !format_features
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::FILTERABLE)
+        {
+            bail!(
+                "texture capability validation failed for '{}': format {:?} is sampled by {:?} but FILTERABLE is not supported",
+                req.name,
+                req.format,
+                req.sampled_by_passes
+            );
+        }
+
+        if !req.blend_target_passes.is_empty()
+            && !format_features
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
+        {
+            bail!(
+                "texture capability validation failed for '{}': format {:?} is a blend target in {:?} but BLENDABLE is not supported",
+                req.name,
+                req.format,
+                req.blend_target_passes
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_texture_capability_requirements(
+    requirements: &[TextureCapabilityRequirement],
+    device_features: wgpu::Features,
+    adapter: Option<&wgpu::Adapter>,
+) -> Result<()> {
+    validate_texture_capability_requirements_with_resolver(requirements, |format| {
+        effective_texture_format_features(format, device_features, adapter)
+    })
+}
+
 fn build_srgb_display_encode_wgsl(tex_var: &str, samp_var: &str) -> String {
     crate::renderer::wgsl_templates::build_srgb_display_encode_wgsl(tex_var, samp_var)
 }
@@ -4236,6 +4471,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut image_prepasses: Vec<ImagePrepass> = Vec::new();
     let mut prepass_buffer_specs: Vec<BufferSpec> = Vec::new();
     let mut prepass_names: Vec<ResourceName> = Vec::new();
+    let mut prepass_texture_samples: Vec<(String, ResourceName)> = Vec::new();
 
     // ImageTexture resources (sampled textures) referenced by any reachable RenderPass.
     fn load_image_from_path(
@@ -4444,6 +4680,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let tex_var = MaterialCompileContext::tex_var_name(src_name.as_str());
                 let samp_var = MaterialCompileContext::sampler_var_name(src_name.as_str());
                 let shader_wgsl = build_image_premultiply_wgsl(&tex_var, &samp_var);
+                let prepass_src_name = src_name.clone();
 
                 prepass_names.push(pass_name.clone());
                 image_prepasses.push(ImagePrepass {
@@ -4455,6 +4692,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     dst_texture: name,
                     shader_wgsl,
                 });
+                prepass_texture_samples.push((
+                    format!("sys.image.{node_id}.premultiply.pass"),
+                    prepass_src_name,
+                ));
             } else {
                 texture_specs.push(FiberTextureSpec::Image {
                     name,
@@ -4469,6 +4710,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
     if !prepass_buffer_specs.is_empty() {
         shader_space.declare_buffers(prepass_buffer_specs);
     }
+
+    let texture_capability_requirements = collect_texture_capability_requirements(
+        &texture_specs,
+        &render_pass_specs,
+        &prepass_texture_samples,
+    )?;
+    validate_texture_capability_requirements(
+        &texture_capability_requirements,
+        shader_space.device.features(),
+        adapter,
+    )?;
 
     shader_space.declare_textures(texture_specs);
 
@@ -4968,6 +5220,88 @@ mod tests {
         )
         .expect("msaa selection");
         assert_eq!(got, 4);
+    }
+
+    fn make_format_features(
+        allowed_usages: TextureUsages,
+        flags: wgpu::TextureFormatFeatureFlags,
+    ) -> wgpu::TextureFormatFeatures {
+        wgpu::TextureFormatFeatures {
+            allowed_usages,
+            flags,
+        }
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_required_usage_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            sample_count: 1,
+            sampled_by_passes: Vec::new(),
+            blend_target_passes: Vec::new(),
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::RENDER_ATTACHMENT,
+                wgpu::TextureFormatFeatureFlags::empty(),
+            )
+        })
+        .expect_err("missing usage should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("missing required usages"));
+        assert!(msg.contains("rt"));
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_filterable_flag_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+            sample_count: 1,
+            sampled_by_passes: vec!["pass_a".to_string()],
+            blend_target_passes: Vec::new(),
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+                wgpu::TextureFormatFeatureFlags::empty(),
+            )
+        })
+        .expect_err("missing filterable should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("FILTERABLE"));
+        assert!(msg.contains("pass_a"));
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_blendable_flag_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            sample_count: 1,
+            sampled_by_passes: Vec::new(),
+            blend_target_passes: vec!["pass_b".to_string()],
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::RENDER_ATTACHMENT,
+                wgpu::TextureFormatFeatureFlags::FILTERABLE,
+            )
+        })
+        .expect_err("missing blendable should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("BLENDABLE"));
+        assert!(msg.contains("pass_b"));
     }
 
     #[test]
