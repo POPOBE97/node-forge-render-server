@@ -2,16 +2,16 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-19T07:52:09.255Z",
-    "modified": "2026-02-19T07:52:09.255Z"
+    "created": "2026-02-19T13:23:17.461Z",
+    "modified": "2026-02-19T13:23:17.461Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": -180,
-        "y": 620
+        "x": 260,
+        "y": 400
       },
       "width": 160,
       "label": "Screen",
@@ -51,15 +51,15 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 2
+        "msaaSampleCount": 4
       }
     },
     {
       "id": "Composite_5",
       "type": "Composite",
       "position": {
-        "x": -360,
-        "y": 620
+        "x": 80,
+        "y": 400
       },
       "width": 160,
       "label": "Composite",
@@ -78,15 +78,15 @@
       "id": "RenderTexture_6",
       "type": "RenderTexture",
       "position": {
-        "x": -360,
-        "y": 480
+        "x": 80,
+        "y": 260
       },
       "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
         "height": 2400,
-        "format": "rgba8unorm-srgb"
+        "format": "rgba8unorm"
       }
     },
     {
@@ -127,7 +127,7 @@
           "x": 540,
           "y": 1200
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -177,7 +177,7 @@
           "x": 270,
           "y": 600
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -214,7 +214,7 @@
           "x": 135,
           "y": 300
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -248,10 +248,10 @@
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
         "targetSize": {
-          "x": 135,
-          "y": 300
+          "x": 67,
+          "y": 150
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -285,10 +285,10 @@
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
         "targetSize": {
-          "x": 67,
-          "y": 150
+          "x": 33,
+          "y": 75
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -322,10 +322,10 @@
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
         "targetSize": {
-          "x": 67,
-          "y": 150
+          "x": 16,
+          "y": 37
         },
-        "sampling": "Mirror"
+        "sampling": "Clamp"
       }
     },
     {
@@ -364,9 +364,9 @@
           "z": 0
         },
         "scale": {
-          "x": 1,
-          "y": 1,
-          "z": 1
+          "x": 0.8,
+          "y": 0.8,
+          "z": 0.8
         }
       }
     },
@@ -374,14 +374,14 @@
       "id": "GuassianBlurPass_23",
       "type": "GuassianBlurPass",
       "position": {
-        "x": -620,
+        "x": -400,
         "y": 2720
       },
       "width": 160,
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",
-        "radius": 5,
+        "radius": 3,
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
@@ -390,6 +390,591 @@
         "dst_alpha_factor": "one-minus-src-alpha",
         "extend": false
       }
+    },
+    {
+      "id": "Upsample_24",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 33,
+          "y": 75
+        }
+      }
+    },
+    {
+      "id": "GuassianBlurPass_27",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
+    },
+    {
+      "id": "Upsample_28",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 67,
+          "y": 150
+        }
+      }
+    },
+    {
+      "id": "MathClosure_29",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_16",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_28",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MathClosure_30",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_18",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_24",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_31",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
+    },
+    {
+      "id": "Upsample_32",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 135,
+          "y": 300
+        }
+      }
+    },
+    {
+      "id": "MathClosure_33",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_14",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_32",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_34",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
+    },
+    {
+      "id": "Upsample_35",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 270,
+          "y": 600
+        }
+      }
+    },
+    {
+      "id": "MathClosure_36",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_12",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_35",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_37",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
+    },
+    {
+      "id": "Upsample_38",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 540,
+          "y": 1200
+        }
+      }
+    },
+    {
+      "id": "MathClosure_39",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_10",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_38",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_40",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false
+      }
+    },
+    {
+      "id": "Upsample_41",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 1080,
+          "y": 2400
+        }
+      }
+    },
+    {
+      "id": "MathClosure_42",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);\n"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_41",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
     }
   ],
   "connections": [
@@ -570,24 +1155,288 @@
       }
     },
     {
-      "id": "edge_33",
+      "id": "edge_36",
+      "from": {
+        "nodeId": "GuassianBlurPass_23",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_24",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "RenderTexture_6",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_48",
+      "from": {
+        "nodeId": "GuassianBlurPass_27",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_28",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_50",
+      "from": {
+        "nodeId": "Upsample_24",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_30",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_51",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_30",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_52",
+      "from": {
+        "nodeId": "MathClosure_30",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_27",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_53",
+      "from": {
+        "nodeId": "GuassianBlurPass_31",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_32",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_54",
+      "from": {
+        "nodeId": "MathClosure_29",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_31",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_55",
+      "from": {
+        "nodeId": "Upsample_28",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_29",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_56",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_29",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_58",
+      "from": {
+        "nodeId": "GuassianBlurPass_34",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_35",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_59",
+      "from": {
+        "nodeId": "MathClosure_33",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_34",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "Downsample_14",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_33",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_61",
+      "from": {
+        "nodeId": "Upsample_32",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_33",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "GuassianBlurPass_37",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_38",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "MathClosure_36",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_37",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_65",
+      "from": {
+        "nodeId": "Upsample_35",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_36",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_66",
+      "from": {
+        "nodeId": "Downsample_12",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_36",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_68",
+      "from": {
+        "nodeId": "GuassianBlurPass_40",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_41",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "MathClosure_39",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_40",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_70",
+      "from": {
+        "nodeId": "Upsample_38",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_39",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_71",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_39",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_73",
+      "from": {
+        "nodeId": "Upsample_41",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_42",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_74",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "MathClosure_42",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_75",
+      "from": {
+        "nodeId": "MathClosure_42",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_76",
       "from": {
         "nodeId": "Downsample_20",
         "portId": "output"
       },
       "to": {
         "nodeId": "GuassianBlurPass_23",
-        "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_34",
-      "from": {
-        "nodeId": "GuassianBlurPass_23",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_5",
         "portId": "pass"
       }
     }
