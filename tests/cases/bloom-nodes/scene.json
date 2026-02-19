@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-19T13:23:34.100Z",
-    "modified": "2026-02-19T13:23:34.100Z"
+    "created": "2026-02-19T17:25:36.875Z",
+    "modified": "2026-02-19T17:25:36.875Z"
   },
   "nodes": [
     {
@@ -86,7 +86,7 @@
       "params": {
         "width": 1080,
         "height": 2400,
-        "format": "rgba8unorm"
+        "format": "rgba16float"
       }
     },
     {
@@ -470,7 +470,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
       },
       "inputs": [
         {
@@ -526,7 +526,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
       },
       "inputs": [
         {
@@ -627,7 +627,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
       },
       "inputs": [
         {
@@ -728,7 +728,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
       },
       "inputs": [
         {
@@ -829,7 +829,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
       },
       "inputs": [
         {
@@ -930,7 +930,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = clamp(c_l0 + c_l1, 0.0, 1.0);\n"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;\n"
       },
       "inputs": [
         {

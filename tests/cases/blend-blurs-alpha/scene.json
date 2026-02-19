@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-18T19:47:42.939Z",
-    "modified": "2026-02-18T19:47:42.939Z"
+    "created": "2026-02-19T19:38:12.176Z",
+    "modified": "2026-02-19T19:38:12.176Z"
   },
   "nodes": [
     {
@@ -155,7 +155,7 @@
         "magFilter": "linear",
         "minFilter": "linear",
         "mipmapFilter": "linear",
-        "encoderSpace": "linear",
+        "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
     },
