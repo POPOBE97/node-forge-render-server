@@ -19,6 +19,7 @@ const CHEVRON_SIZE: f32 = 8.0;
 const ICON_SIZE: f32 = 14.0;
 const GAP_ICON_LABEL: f32 = 6.0;
 const GAP_LABEL_DETAIL: f32 = 6.0;
+const ROW_RIGHT_PADDING: f32 = 4.0;
 const HOVER_RADIUS: u8 = design_tokens::BORDER_RADIUS_SMALL as u8;
 
 // Colours
@@ -231,16 +232,37 @@ fn draw_node(
     // Use path_hash (accumulated from ancestors) to disambiguate duplicate nodes.
     let node_path = path_hash.with(&node.id);
 
+    let label_role = if is_folder {
+        TextRole::ActiveItemTitle
+    } else {
+        TextRole::InactiveItemTitle
+    };
+    let label_style = design_tokens::text_style(label_role);
+    let label_font = design_tokens::font_id(label_style.size, label_style.weight);
+    let label_galley =
+        ui.painter()
+            .layout_no_wrap(node.label.clone(), label_font, label_style.color);
+    let detail_galley = node.detail.as_ref().map(|detail| {
+        let detail_style = design_tokens::text_style(TextRole::ValueLabel);
+        let detail_font = design_tokens::font_id(detail_style.size, detail_style.weight);
+        ui.painter()
+            .layout_no_wrap(detail.clone(), detail_font, detail_style.color)
+    });
+    let content_width = row_content_width(
+        depth,
+        label_galley.size().x,
+        detail_galley.as_ref().map(|galley| galley.size().x),
+    );
+
     // --- Allocate row ---
-    let available_width = ui.available_width();
-    let row_rect = ui.allocate_space(Vec2::new(available_width, ROW_HEIGHT)).1;
+    let row_width = ui.available_width().max(content_width);
+    let row_rect = ui.allocate_space(Vec2::new(row_width, ROW_HEIGHT)).1;
 
     // --- Interaction ---
     let row_id = node_path.with("row");
     let row_response = ui.interact(row_rect, row_id, egui::Sense::click());
 
-    if let NodeKind::Texture { texture_name } = &node.kind
-    {
+    if let NodeKind::Texture { texture_name } = &node.kind {
         row_response.context_menu(|ui| {
             if ui.button("复制材质名").clicked() {
                 response.copied_texture_name = Some(texture_name.clone());
@@ -370,38 +392,13 @@ fn draw_node(
     cx += ICON_SIZE + GAP_ICON_LABEL;
 
     // --- Label ---
-    let label_role = if is_folder {
-        TextRole::ActiveItemTitle
-    } else {
-        TextRole::InactiveItemTitle
-    };
-    let label_style = design_tokens::text_style(label_role);
-    let label_color = label_style.color;
-    let label_font = design_tokens::font_id(label_style.size, label_style.weight);
-
-    // If the node has detail text, use no-wrap for the label and show detail after.
-    // Otherwise let the label fill remaining space, truncating from the front with "…".
-    let max_label_width = row_rect.max.x - cx - 4.0; // 4px right margin
-    if node.detail.is_some() {
-        let label_galley =
-            painter.layout_no_wrap(node.label.clone(), label_font.clone(), label_color);
-        let label_pos = Pos2::new(cx, cy - label_galley.size().y * 0.5);
-        painter.galley(label_pos, label_galley.clone(), Color32::PLACEHOLDER);
-        cx += label_galley.size().x + GAP_LABEL_DETAIL;
-    } else {
-        let display_label =
-            truncate_label_front(ui, &node.label, &label_font, max_label_width.max(20.0));
-        let label_galley = painter.layout_no_wrap(display_label, label_font, label_color);
-        let label_pos = Pos2::new(cx, cy - label_galley.size().y * 0.5);
-        painter.galley(label_pos, label_galley.clone(), Color32::PLACEHOLDER);
-        cx += label_galley.size().x + GAP_LABEL_DETAIL;
-    }
+    let label_pos = Pos2::new(cx, cy - label_galley.size().y * 0.5);
+    painter.galley(label_pos, label_galley.clone(), Color32::PLACEHOLDER);
+    cx += label_galley.size().x;
 
     // --- Detail text ---
-    if let Some(detail) = &node.detail {
-        let detail_style = design_tokens::text_style(TextRole::ValueLabel);
-        let detail_font = design_tokens::font_id(detail_style.size, detail_style.weight);
-        let detail_galley = painter.layout_no_wrap(detail.clone(), detail_font, detail_style.color);
+    if let Some(detail_galley) = detail_galley {
+        cx += GAP_LABEL_DETAIL;
         let detail_pos = Pos2::new(cx, cy - detail_galley.size().y * 0.5);
         painter.galley(detail_pos, detail_galley, Color32::PLACEHOLDER);
     }
@@ -457,44 +454,16 @@ fn draw_node(
 }
 
 // ---------------------------------------------------------------------------
-// Label truncation (front)
+// Row layout helpers
 // ---------------------------------------------------------------------------
 
-/// Truncate `text` from the front so it fits within `max_width` pixels,
-/// prefixing with "…" when characters are removed.
-fn truncate_label_front(ui: &egui::Ui, text: &str, font: &egui::FontId, max_width: f32) -> String {
-    let painter = ui.painter();
-    let measure = |s: String| -> f32 {
-        painter
-            .layout_no_wrap(s, font.clone(), Color32::PLACEHOLDER)
-            .size()
-            .x
-    };
-
-    let full_width = measure(text.to_string());
-    if full_width <= max_width {
-        return text.to_string();
+fn row_content_width(depth: usize, label_width: f32, detail_width: Option<f32>) -> f32 {
+    let indent = LEFT_PAD + depth as f32 * INDENT_PX;
+    let mut width = indent + ICON_SIZE + GAP_ICON_LABEL + label_width + ROW_RIGHT_PADDING;
+    if let Some(detail_width) = detail_width {
+        width += GAP_LABEL_DETAIL + detail_width;
     }
-
-    // Binary search for how many chars to skip from the front.
-    let chars: Vec<char> = text.chars().collect();
-    let mut lo = 1usize;
-    let mut hi = chars.len();
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        let candidate: String = std::iter::once('…')
-            .chain(chars[mid..].iter().copied())
-            .collect();
-        let w = measure(candidate);
-        if w > max_width {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    std::iter::once('…')
-        .chain(chars[lo..].iter().copied())
-        .collect()
+    width
 }
 
 // ---------------------------------------------------------------------------
@@ -616,5 +585,26 @@ fn draw_folder_icon(painter: &egui::Painter, rect: Rect, open: bool) {
             egui::CornerRadius::same(1),
             Color32::from_rgba_premultiplied(0, 0, 0, 40),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GAP_LABEL_DETAIL, INDENT_PX, row_content_width};
+
+    #[test]
+    fn row_content_width_increases_with_depth() {
+        let shallow = row_content_width(0, 120.0, None);
+        let deep = row_content_width(3, 120.0, None);
+        assert!(deep > shallow);
+        assert!((deep - shallow - (3.0 * INDENT_PX)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn row_content_width_includes_detail_segment() {
+        let without_detail = row_content_width(2, 120.0, None);
+        let with_detail = row_content_width(2, 120.0, Some(72.0));
+        assert!(with_detail > without_detail);
+        assert!((with_detail - without_detail - (GAP_LABEL_DETAIL + 72.0)).abs() < 1e-6);
     }
 }

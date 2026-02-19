@@ -809,8 +809,13 @@ fn show_resource_tree_section(
     sidebar_action: &mut Option<SidebarAction>,
 ) {
     two_column_section::section(ui, "Resource Tree", |ui| {
-        let tree_response =
-            super::file_tree_widget::show_file_tree(ui, tree_nodes, file_tree_state);
+        let tree_response = egui::ScrollArea::horizontal()
+            .id_salt("ui.debug_sidebar.resource_tree.scroll_x")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                super::file_tree_widget::show_file_tree(ui, tree_nodes, file_tree_state)
+            })
+            .inner;
 
         if let Some(texture_name) = tree_response.copied_texture_name.as_ref() {
             ui.ctx().copy_text(texture_name.clone());

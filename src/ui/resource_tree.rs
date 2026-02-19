@@ -286,7 +286,8 @@ impl ResourceSnapshot {
         let mut roots = Vec::new();
 
         // ── Dependency graph ──
-        let dep_children = build_dependency_tree(&self.passes, self.final_output_texture.as_deref());
+        let dep_children =
+            build_dependency_tree(&self.passes, self.final_output_texture.as_deref());
         roots.push(FileTreeNode {
             id: "section.deps".into(),
             label: format!("Dependencies ({})", dep_children.len()),
@@ -302,7 +303,7 @@ impl ResourceSnapshot {
             .iter()
             .map(|b| FileTreeNode {
                 id: format!("buf.{}", b.name),
-                label: truncate_name(&b.name, 32),
+                label: b.name.clone(),
                 icon: TreeIcon::Buffer,
                 kind: NodeKind::Buffer,
                 detail: Some(format!("{} {}", format_bytes(b.size), b.usage_label)),
@@ -324,7 +325,7 @@ impl ResourceSnapshot {
             .iter()
             .map(|s| FileTreeNode {
                 id: format!("sam.{}", s.name),
-                label: truncate_name(&s.name, 32),
+                label: s.name.clone(),
                 icon: TreeIcon::Sampler,
                 kind: NodeKind::Sampler,
                 detail: None,
@@ -353,7 +354,10 @@ impl ResourceSnapshot {
 /// A writer pass is grouped under the texture it writes to. For each sampled
 /// texture used by that pass, we attach a texture child and (when resolvable)
 /// the pass that produced that sampled texture earlier in execution order.
-fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>) -> Vec<FileTreeNode> {
+fn build_dependency_tree(
+    passes: &[PassInfo],
+    final_output_texture: Option<&str>,
+) -> Vec<FileTreeNode> {
     // Map: texture_name -> all pass writers for that target, in execution order.
     let mut writers_by_target: HashMap<&str, Vec<&PassInfo>> = HashMap::new();
     for pass in passes {
@@ -366,9 +370,7 @@ fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>
         return Vec::new();
     };
 
-    let mut root_writers = writers_by_target
-        .remove(root_target)
-        .unwrap_or_default();
+    let mut root_writers = writers_by_target.remove(root_target).unwrap_or_default();
     root_writers.sort_by_key(|p| p.order_index);
 
     fn pass_label(pass: &PassInfo) -> String {
@@ -422,7 +424,7 @@ fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>
 
             texture_children.push(FileTreeNode {
                 id: format!("texdep.{}.{}", pass.name, sampled_tex),
-                label: truncate_name(sampled_tex, 40),
+                label: sampled_tex.clone(),
                 icon: TreeIcon::Texture,
                 kind: NodeKind::Texture {
                     texture_name: sampled_tex.clone(),
@@ -453,7 +455,7 @@ fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>
 
     vec![FileTreeNode {
         id: format!("target.{root_target}"),
-        label: truncate_name(root_target, 48),
+        label: root_target.to_string(),
         icon: TreeIcon::Texture,
         kind: NodeKind::Texture {
             texture_name: root_target.to_string(),
@@ -466,14 +468,6 @@ fn build_dependency_tree(passes: &[PassInfo], final_output_texture: Option<&str>
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn truncate_name(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("…{}", &s[s.len() - (max - 1)..])
-    }
-}
 
 /// Extract a short display name for a pass by stripping the common `.pass`
 /// suffix and any `sys.` prefix, keeping only the distinctive segments.
@@ -517,5 +511,76 @@ fn format_buffer_usage(usage: wgpu::BufferUsages) -> String {
         "–".into()
     } else {
         parts.join("|")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo};
+
+    #[test]
+    fn long_root_target_label_is_preserved() {
+        let root_target = "sys.this.is.a.very.long.root.target.texture.name.present.sdr.srgb";
+        let snapshot = ResourceSnapshot {
+            passes: vec![],
+            buffers: vec![],
+            samplers: vec![],
+            final_output_texture: Some(root_target.to_string()),
+        };
+
+        let tree = snapshot.to_tree();
+        assert_eq!(tree[0].children[0].label, root_target);
+    }
+
+    #[test]
+    fn long_sampled_texture_label_is_preserved() {
+        let root_target = "sys.final.output.present.sdr.srgb";
+        let sampled_texture =
+            "sys.really.long.sampled.texture.name.with.multiple.segments.for.debugging";
+        let snapshot = ResourceSnapshot {
+            passes: vec![PassInfo {
+                name: "sys.compose.pass".to_string(),
+                order_index: 0,
+                target_texture: Some(root_target.to_string()),
+                target_size: None,
+                target_format: None,
+                is_compute: false,
+                sampled_textures: vec![sampled_texture.to_string()],
+                instance_count: 1,
+                vertex_count: 3,
+                workgroup_count: 0,
+            }],
+            buffers: vec![],
+            samplers: vec![],
+            final_output_texture: Some(root_target.to_string()),
+        };
+
+        let tree = snapshot.to_tree();
+        assert_eq!(
+            tree[0].children[0].children[0].children[0].label,
+            sampled_texture
+        );
+    }
+
+    #[test]
+    fn long_buffer_and_sampler_labels_are_preserved() {
+        let buffer_name = "sys.very.long.params.buffer.name.for.resource.tree.debugging";
+        let sampler_name = "sys.very.long.sampler.name.for.resource.tree.debugging";
+        let snapshot = ResourceSnapshot {
+            passes: vec![],
+            buffers: vec![BufferNodeInfo {
+                name: buffer_name.to_string(),
+                size: 256,
+                usage_label: "uni".to_string(),
+            }],
+            samplers: vec![SamplerNodeInfo {
+                name: sampler_name.to_string(),
+            }],
+            final_output_texture: None,
+        };
+
+        let tree = snapshot.to_tree();
+        assert_eq!(tree[1].children[0].label, buffer_name);
+        assert_eq!(tree[2].children[0].label, sampler_name);
     }
 }
