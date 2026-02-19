@@ -24,6 +24,7 @@ fn sidebar_max_width(ctx: &egui::Context) -> f32 {
 pub const SIDEBAR_ANIM_SECS: f64 = 0.25;
 
 const SIDEBAR_RESIZE_HANDLE_W: f32 = 8.0;
+const SIDEBAR_RESIZE_CONTENT_GUTTER_W: f32 = SIDEBAR_RESIZE_HANDLE_W + 1.0;
 const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 const ANALYSIS_PANEL_ASPECT: f32 = 400.0 / 768.0;
 const SIDEBAR_GRID_COLUMNS: usize = 4;
@@ -437,7 +438,12 @@ pub fn show_in_rect(
         ui.painter()
             .rect_filled(clip_rect, egui::CornerRadius::ZERO, sidebar_bg);
 
-        let content_rect = ui.available_rect_before_wrap();
+        let mut content_rect = ui.available_rect_before_wrap();
+        if can_resize {
+            // Keep the scroll area and its scrollbar out of the resize handle strip.
+            content_rect.max.x = (content_rect.max.x - SIDEBAR_RESIZE_CONTENT_GUTTER_W)
+                .max(content_rect.min.x);
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
             ui.set_clip_rect(content_rect);
             if ui_sidebar_factor > 0.01 {

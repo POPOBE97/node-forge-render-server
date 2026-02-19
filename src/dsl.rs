@@ -220,10 +220,7 @@ pub fn materialize_scene_node_labels_from_raw_json(
     materialize_node_labels_from_raw_nodes(&mut scene.nodes, raw_nodes);
 }
 
-pub fn materialize_node_labels_from_raw_nodes(
-    nodes: &mut [Node],
-    raw_nodes: &[serde_json::Value],
-) {
+pub fn materialize_node_labels_from_raw_nodes(nodes: &mut [Node], raw_nodes: &[serde_json::Value]) {
     let mut label_by_id: HashMap<&str, String> = HashMap::new();
     for raw_node in raw_nodes {
         let Some(node_id) = raw_node.get("id").and_then(|v| v.as_str()) else {
@@ -284,10 +281,8 @@ fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) 
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or(node.node_type.as_str())
                 .to_string();
-            node.params.insert(
-                "label".to_string(),
-                serde_json::Value::String(fallback),
-            );
+            node.params
+                .insert("label".to_string(), serde_json::Value::String(fallback));
         }
 
         if node_scheme.default_params.is_empty() {
