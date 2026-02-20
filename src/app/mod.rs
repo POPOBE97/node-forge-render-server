@@ -34,8 +34,15 @@ fn diff_request_key(
     reference_size: [u32; 2],
     reference_offset: [i32; 2],
     metric_mode: DiffMetricMode,
+    clamp_output: bool,
 ) -> u64 {
-    hash_key(&(source_key, reference_size, reference_offset, metric_mode))
+    hash_key(&(
+        source_key,
+        reference_size,
+        reference_offset,
+        metric_mode,
+        clamp_output,
+    ))
 }
 
 fn diff_stats_request_key(diff_key: u64) -> u64 {
@@ -178,6 +185,8 @@ impl eframe::App for App {
         }
 
         self.shader_space.render();
+        self.render_texture_fps_tracker
+            .record_render_update(frame_time);
 
         texture_bridge::ensure_output_texture_registered(self, render_state, &mut renderer_guard);
 
@@ -251,6 +260,7 @@ impl eframe::App for App {
                     reference.size,
                     reference_offset,
                     self.diff_metric_mode,
+                    self.hdr_preview_clamp_enabled,
                 );
                 let stats_key = diff_stats_request_key(request_key);
                 let should_update_diff = matches!(reference_mode, RefImageMode::Diff)
@@ -270,6 +280,7 @@ impl eframe::App for App {
                         reference.size,
                         reference_offset,
                         self.diff_metric_mode,
+                        self.hdr_preview_clamp_enabled,
                         true,
                     );
                     did_update_diff_output = true;
@@ -849,11 +860,13 @@ mod tests {
     #[test]
     fn diff_request_key_changes_with_offset_and_metric() {
         let source_key = hash_key(&("output", [320_u32, 180_u32]));
-        let key_1 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE);
-        let key_2 = diff_request_key(source_key, [64, 64], [1, 0], DiffMetricMode::AE);
-        let key_3 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::SE);
+        let key_1 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE, false);
+        let key_2 = diff_request_key(source_key, [64, 64], [1, 0], DiffMetricMode::AE, false);
+        let key_3 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::SE, false);
+        let key_4 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE, true);
         assert_ne!(key_1, key_2);
         assert_ne!(key_1, key_3);
+        assert_ne!(key_1, key_4);
     }
 
     #[test]

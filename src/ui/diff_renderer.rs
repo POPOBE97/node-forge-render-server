@@ -20,9 +20,10 @@ struct DiffParams {
     ref_size: vec2<u32>,
     offset_px: vec2<i32>,
     mode: u32,
+    clamp_output: u32,
     groups_x: u32,
     groups_y: u32,
-    _padding: u32,
+    _padding: vec2<u32>,
 };
 
 @group(0) @binding(0)
@@ -132,6 +133,9 @@ fn main(
             let render_rgb = textureLoad(render_tex, src, 0).rgb;
             let ref_rgb = textureLoad(ref_tex, dst, 0).rgb;
             diff_rgb = metric_diff(render_rgb, ref_rgb, params.mode);
+        }
+        if (params.clamp_output != 0u) {
+            diff_rgb = clamp(diff_rgb, vec3<f32>(0.0), vec3<f32>(1.0));
         }
         textureStore(display_out_tex, dst, vec4<f32>(diff_rgb, 1.0));
     }
@@ -247,9 +251,10 @@ struct DiffParams {
     ref_size: [u32; 2],
     offset_px: [i32; 2],
     mode: u32,
+    clamp_output: u32,
     groups_x: u32,
     groups_y: u32,
-    _padding: u32,
+    _padding: [u32; 2],
 }
 
 #[repr(C)]
@@ -668,6 +673,7 @@ impl DiffRenderer {
         ref_size: [u32; 2],
         offset_px: [i32; 2],
         metric_mode: DiffMetricMode,
+        clamp_output: bool,
         collect_stats: bool,
     ) -> Option<DiffStats> {
         let next_analysis_size = [render_size[0].max(1), render_size[1].max(1)];
@@ -696,9 +702,10 @@ impl DiffRenderer {
             ref_size,
             offset_px,
             mode: metric_mode.shader_code(),
+            clamp_output: u32::from(clamp_output),
             groups_x: group_x,
             groups_y: group_y,
-            _padding: 0,
+            _padding: [0, 0],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
         queue.write_buffer(&self.histogram_buffer, 0, &self.histogram_clear_bytes);
