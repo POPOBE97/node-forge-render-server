@@ -283,7 +283,7 @@ fn diff_metric_options() -> [RadioButtonOption<'static, DiffMetricMode>; 5] {
     [
         RadioButtonOption {
             value: DiffMetricMode::E,
-            label: "E(signed)",
+            label: "E",
         },
         RadioButtonOption {
             value: DiffMetricMode::AE,
