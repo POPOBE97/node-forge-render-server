@@ -24,8 +24,8 @@ use super::{
     layout_math::{clamp_zoom, lerp},
     texture_bridge,
     types::{
-        App, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS, UiWindowMode,
-        ViewportOperationIndicator, ViewportOperationIndicatorVisual,
+        App, DiffMetricMode, RefImageMode, RefImageSource, RefImageState, SIDEBAR_ANIM_SECS,
+        UiWindowMode, ViewportOperationIndicator, ViewportOperationIndicatorVisual,
     },
     window_mode::WindowModeFrame,
 };
@@ -48,6 +48,13 @@ const PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM: f32 =
     (PIXEL_OVERLAY_REFERENCE_ZOOM - PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM * 2.0) / 4.0;
 const PIXEL_OVERLAY_BASE_FONT_SIZE_AT_MAX_ZOOM: f32 =
     PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM / 1.5;
+
+fn is_hdr_clamp_effective(
+    hdr_preview_clamp_enabled: bool,
+    texture_format: Option<wgpu::TextureFormat>,
+) -> bool {
+    hdr_preview_clamp_enabled && matches!(texture_format, Some(wgpu::TextureFormat::Rgba16Float))
+}
 
 fn pixel_overlay_text_color() -> Color32 {
     Color32::from_rgba_unmultiplied(245, 245, 245, 242)
@@ -81,6 +88,28 @@ struct PixelOverlayCache {
     height: u32,
     format: wgpu::TextureFormat,
     readback: PixelOverlayReadback,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ValueSamplingReference<'a> {
+    mode: RefImageMode,
+    offset_px: [i32; 2],
+    size: [u32; 2],
+    opacity: f32,
+    rgba_bytes: &'a [u8],
+}
+
+fn value_sampling_reference_from_state(reference: &RefImageState) -> ValueSamplingReference<'_> {
+    ValueSamplingReference {
+        mode: reference.mode,
+        offset_px: [
+            reference.offset.x.round() as i32,
+            reference.offset.y.round() as i32,
+        ],
+        size: reference.size,
+        opacity: reference.opacity,
+        rgba_bytes: reference.rgba_bytes.as_slice(),
+    }
 }
 
 fn pixel_overlay_cache_id() -> egui::Id {
@@ -184,8 +213,8 @@ fn clear_pixel_overlay_cache(ctx: &egui::Context) {
 }
 
 fn format_overlay_channel(label: char, value: f32) -> String {
-    let normalized = if value.abs() < 0.0005 { 0.0 } else { value };
-    format!("{label}: {normalized:.3}")
+    let normalized = if value.abs() < 0.0000005 { 0.0 } else { value };
+    format!("{normalized:.6}")
 }
 
 fn rgba8_to_rgba_f32(rgba: [u8; 4]) -> [f32; 4] {
@@ -249,6 +278,127 @@ fn sample_overlay_pixel(cache: &PixelOverlayCache, x: u32, y: u32) -> Option<[f3
     }
 }
 
+fn sample_reference_pixel_rgba(
+    reference: ValueSamplingReference<'_>,
+    x: u32,
+    y: u32,
+) -> Option<[f32; 4]> {
+    let rx = x as i32 - reference.offset_px[0];
+    let ry = y as i32 - reference.offset_px[1];
+    if rx < 0 || ry < 0 {
+        return None;
+    }
+
+    sample_rgba8_pixel(
+        reference.rgba_bytes,
+        reference.size[0],
+        reference.size[1],
+        rx as u32,
+        ry as u32,
+    )
+}
+
+fn compose_reference_over_base(
+    base_rgba: [f32; 4],
+    reference_rgba: [f32; 4],
+    reference_opacity: f32,
+) -> [f32; 4] {
+    let src_a = (reference_rgba[3] * reference_opacity.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+    if src_a <= 0.0 {
+        return base_rgba;
+    }
+
+    let dst_a = base_rgba[3].clamp(0.0, 1.0);
+    let inv_src_a = 1.0 - src_a;
+    let out_a = src_a + dst_a * inv_src_a;
+
+    // Match egui's source-over blend in premultiplied space.
+    let out_r = reference_rgba[0] * src_a + base_rgba[0] * inv_src_a;
+    let out_g = reference_rgba[1] * src_a + base_rgba[1] * inv_src_a;
+    let out_b = reference_rgba[2] * src_a + base_rgba[2] * inv_src_a;
+
+    [out_r, out_g, out_b, out_a]
+}
+
+fn compute_diff_metric_rgb(
+    render_rgb: [f32; 3],
+    reference_rgb: [f32; 3],
+    metric_mode: DiffMetricMode,
+) -> [f32; 3] {
+    let delta = [
+        render_rgb[0] - reference_rgb[0],
+        render_rgb[1] - reference_rgb[1],
+        render_rgb[2] - reference_rgb[2],
+    ];
+    let eps = 1e-5_f32;
+    let out = match metric_mode {
+        DiffMetricMode::E => [
+            delta[0] * 0.5 + 0.5,
+            delta[1] * 0.5 + 0.5,
+            delta[2] * 0.5 + 0.5,
+        ],
+        DiffMetricMode::AE => [delta[0].abs(), delta[1].abs(), delta[2].abs()],
+        DiffMetricMode::SE => [
+            delta[0] * delta[0],
+            delta[1] * delta[1],
+            delta[2] * delta[2],
+        ],
+        DiffMetricMode::RAE => [
+            delta[0].abs() / reference_rgb[0].abs().max(eps),
+            delta[1].abs() / reference_rgb[1].abs().max(eps),
+            delta[2].abs() / reference_rgb[2].abs().max(eps),
+        ],
+        DiffMetricMode::RSE => [
+            (delta[0] * delta[0]) / (reference_rgb[0] * reference_rgb[0]).max(eps),
+            (delta[1] * delta[1]) / (reference_rgb[1] * reference_rgb[1]).max(eps),
+            (delta[2] * delta[2]) / (reference_rgb[2] * reference_rgb[2]).max(eps),
+        ],
+    };
+
+    [
+        out[0].clamp(0.0, 1.0),
+        out[1].clamp(0.0, 1.0),
+        out[2].clamp(0.0, 1.0),
+    ]
+}
+
+fn sample_value_pixel(
+    base_cache: &PixelOverlayCache,
+    x: u32,
+    y: u32,
+    reference: Option<ValueSamplingReference<'_>>,
+    diff_metric_mode: DiffMetricMode,
+    diff_output_active: bool,
+) -> Option<[f32; 4]> {
+    let base_rgba = sample_overlay_pixel(base_cache, x, y)?;
+    let Some(reference) = reference else {
+        return Some(base_rgba);
+    };
+    let Some(reference_rgba) = sample_reference_pixel_rgba(reference, x, y) else {
+        return Some(base_rgba);
+    };
+
+    match reference.mode {
+        RefImageMode::Overlay => Some(compose_reference_over_base(
+            base_rgba,
+            reference_rgba,
+            reference.opacity,
+        )),
+        RefImageMode::Diff => {
+            if diff_output_active {
+                let diff_rgb = compute_diff_metric_rgb(
+                    [base_rgba[0], base_rgba[1], base_rgba[2]],
+                    [reference_rgba[0], reference_rgba[1], reference_rgba[2]],
+                    diff_metric_mode,
+                );
+                Some([diff_rgb[0], diff_rgb[1], diff_rgb[2], 1.0])
+            } else {
+                Some(reference_rgba)
+            }
+        }
+    }
+}
+
 fn draw_pixel_overlay(
     ui: &egui::Ui,
     image_rect: Rect,
@@ -256,6 +406,9 @@ fn draw_pixel_overlay(
     zoom: f32,
     resolution: [u32; 2],
     cache: Option<&PixelOverlayCache>,
+    reference: Option<ValueSamplingReference<'_>>,
+    diff_metric_mode: DiffMetricMode,
+    diff_output_active: bool,
 ) {
     if zoom < PIXEL_OVERLAY_MIN_ZOOM {
         return;
@@ -331,7 +484,14 @@ fn draw_pixel_overlay(
     let font = egui::FontId::new(font_size, egui::FontFamily::Name("geist_mono".into()));
     for y in y_start..y_end {
         for x in x_start..x_end {
-            let Some(rgba) = sample_overlay_pixel(cache, x as u32, y as u32) else {
+            let Some(rgba) = sample_value_pixel(
+                cache,
+                x as u32,
+                y as u32,
+                reference,
+                diff_metric_mode,
+                diff_output_active,
+            ) else {
                 continue;
             };
             let lines = [
@@ -850,6 +1010,10 @@ pub fn show_canvas_panel(
         requested_toggle_canvas_only = true;
     }
 
+    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::S)) {
+        app.hdr_preview_clamp_enabled = !app.hdr_preview_clamp_enabled;
+    }
+
     if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
         app.time_updates_enabled = !app.time_updates_enabled;
         if app.scene_uses_time {
@@ -913,20 +1077,19 @@ pub fn show_canvas_panel(
 
     let avail_rect = ui.available_rect_before_wrap();
 
-    // Use preview texture resolution when previewing.
-    let effective_resolution = if using_preview {
-        if let Some(ref pn) = app.preview_texture_name {
-            if let Some(info) = app.shader_space.texture_info(pn.as_str()) {
-                [info.size.width, info.size.height]
-            } else {
-                app.resolution
-            }
-        } else {
-            app.resolution
-        }
+    let display_texture_name = if using_preview {
+        app.preview_texture_name
+            .as_ref()
+            .map(|name| name.as_str().to_string())
+            .unwrap_or_else(|| app.output_texture_name.as_str().to_string())
     } else {
-        app.resolution
+        app.output_texture_name.as_str().to_string()
     };
+    let effective_resolution = app
+        .shader_space
+        .texture_info(display_texture_name.as_str())
+        .map(|info| [info.size.width, info.size.height])
+        .unwrap_or(app.resolution);
     let image_size = egui::vec2(
         effective_resolution[0] as f32,
         effective_resolution[1] as f32,
@@ -1043,20 +1206,12 @@ pub fn show_canvas_panel(
         );
     }
 
-    let active_texture_name = if using_preview {
-        app.preview_texture_name
-            .as_ref()
-            .map(|n| n.as_str().to_string())
-            .unwrap_or_else(|| app.output_texture_name.as_str().to_string())
-    } else {
-        app.output_texture_name.as_str().to_string()
-    };
     response.context_menu(|ui| {
         if ui.button("复制材质").clicked() {
-            if let Some(info) = app.shader_space.texture_info(active_texture_name.as_str())
+            if let Some(info) = app.shader_space.texture_info(display_texture_name.as_str())
                 && let Ok(image) = app
                     .shader_space
-                    .read_texture_rgba8(active_texture_name.as_str())
+                    .read_texture_rgba8(display_texture_name.as_str())
             {
                 let width = info.size.width as usize;
                 let height = info.size.height as usize;
@@ -1331,11 +1486,68 @@ pub fn show_canvas_panel(
     let uv0_max = (animated_canvas_rect.max - image_rect.min) / image_rect_size;
     let computed_uv = Rect::from_min_max(pos2(uv0_min.x, uv0_min.y), pos2(uv0_max.x, uv0_max.y));
 
-    let display_attachment = if using_preview {
+    let display_texture_format = app
+        .shader_space
+        .texture_info(display_texture_name.as_str())
+        .map(|info| info.format);
+    let hdr_clamp_effective =
+        is_hdr_clamp_effective(app.hdr_preview_clamp_enabled, display_texture_format);
+
+    let mut display_attachment = if using_preview {
         app.preview_color_attachment.or(app.color_attachment)
     } else {
         app.color_attachment
     };
+
+    if hdr_clamp_effective {
+        let hdr_clamp_source = app
+            .shader_space
+            .textures
+            .get(display_texture_name.as_str())
+            .and_then(|texture| {
+                texture.wgpu_texture_view.as_ref().map(|view| {
+                    (
+                        view.clone(),
+                        [
+                            texture.wgpu_texture_desc.size.width,
+                            texture.wgpu_texture_desc.size.height,
+                        ],
+                    )
+                })
+            });
+
+        if let Some((source_view, source_size)) = hdr_clamp_source {
+            let clamp_renderer = app.hdr_clamp_renderer.get_or_insert_with(|| {
+                crate::ui::hdr_clamp::HdrClampRenderer::new(&render_state.device, source_size)
+            });
+            clamp_renderer.update(
+                &render_state.device,
+                &render_state.queue,
+                &source_view,
+                source_size,
+            );
+
+            let sampler = texture_bridge::canvas_sampler_descriptor(app.texture_filter);
+            if let Some(id) = app.hdr_clamp_texture_id {
+                renderer.update_egui_texture_from_wgpu_texture_with_sampler_options(
+                    &render_state.device,
+                    clamp_renderer.output_view(),
+                    sampler,
+                    id,
+                );
+            } else {
+                app.hdr_clamp_texture_id =
+                    Some(renderer.register_native_texture_with_sampler_options(
+                        &render_state.device,
+                        clamp_renderer.output_view(),
+                        sampler,
+                    ));
+            }
+            if let Some(id) = app.hdr_clamp_texture_id {
+                display_attachment = Some(id);
+            }
+        }
+    }
 
     if let Some(tex_id) = display_attachment {
         ui.painter().add(
@@ -1384,13 +1596,15 @@ pub fn show_canvas_panel(
         );
     }
 
+    let diff_output_active = app.diff_texture_id.is_some();
+    let mut value_sample_cache: Option<Arc<PixelOverlayCache>> = None;
     if app.zoom >= PIXEL_OVERLAY_MIN_ZOOM {
-        let pixel_overlay_cache =
-            if let Some(info) = app.shader_space.texture_info(active_texture_name.as_str()) {
+        value_sample_cache =
+            if let Some(info) = app.shader_space.texture_info(display_texture_name.as_str()) {
                 Some(get_or_refresh_pixel_overlay_cache(
                     app,
                     ctx,
-                    active_texture_name.as_str(),
+                    display_texture_name.as_str(),
                     info.size.width,
                     info.size.height,
                     info.format,
@@ -1404,7 +1618,12 @@ pub fn show_canvas_panel(
             animated_canvas_rect,
             app.zoom,
             effective_resolution,
-            pixel_overlay_cache.as_deref(),
+            value_sample_cache.as_deref(),
+            app.ref_image
+                .as_ref()
+                .map(value_sampling_reference_from_state),
+            app.diff_metric_mode,
+            diff_output_active,
         );
     }
 
@@ -1413,25 +1632,24 @@ pub fn show_canvas_panel(
             icon: "N",
             tooltip: "Viewport sampling: Nearest (press P to toggle Linear)",
             kind: ViewportIndicatorKind::Text,
+            strikethrough: false,
         },
         wgpu::FilterMode::Linear => ViewportIndicator {
             icon: "L",
             tooltip: "Viewport sampling: Linear (press P to toggle Nearest)",
             kind: ViewportIndicatorKind::Text,
+            strikethrough: false,
         },
     };
-    let indicator_texture_name = if using_preview {
-        app.preview_texture_name
-            .as_ref()
-            .map(|name| name.as_str())
-            .unwrap_or(app.output_texture_name.as_str())
+    let current_view_is_hdr = matches!(
+        display_texture_format,
+        Some(wgpu::TextureFormat::Rgba16Float)
+    );
+    let hdr_indicator_tooltip = if hdr_clamp_effective {
+        "Current view format: Rgba16Float (HDR) • Clamp to 1.0 ON (press S to toggle)"
     } else {
-        app.output_texture_name.as_str()
+        "Current view format: Rgba16Float (HDR) • Clamp to 1.0 OFF (press S to toggle)"
     };
-    let current_view_is_hdr = app
-        .shader_space
-        .texture_info(indicator_texture_name)
-        .is_some_and(|info| matches!(info.format, wgpu::TextureFormat::Rgba16Float));
     let operation_visual = match app.viewport_operation_indicator {
         ViewportOperationIndicator::InProgress { .. } => {
             Some(ViewportOperationIndicatorVisual::InProgress)
@@ -1453,16 +1671,19 @@ pub fn show_canvas_panel(
                 icon: "",
                 tooltip: "正在复制材质到剪贴板...",
                 kind: ViewportIndicatorKind::Spinner,
+                strikethrough: false,
             },
             ViewportOperationIndicatorVisual::Success => ViewportIndicator {
                 icon: "✓",
                 tooltip: "复制完成",
                 kind: ViewportIndicatorKind::Success,
+                strikethrough: false,
             },
             ViewportOperationIndicatorVisual::Failure => ViewportIndicator {
                 icon: "✕",
                 tooltip: "复制失败",
                 kind: ViewportIndicatorKind::Failure,
+                strikethrough: false,
             },
         };
         app.viewport_indicator_manager
@@ -1491,8 +1712,9 @@ pub fn show_canvas_panel(
                 current_view_is_hdr,
                 ViewportIndicator {
                     icon: "HDR",
-                    tooltip: "Current view format: Rgba16Float (HDR)",
+                    tooltip: hdr_indicator_tooltip,
                     kind: ViewportIndicatorKind::Hdr,
+                    strikethrough: hdr_clamp_effective,
                 },
             )
         });
@@ -1517,6 +1739,7 @@ pub fn show_canvas_panel(
                     icon: "PAUSE",
                     tooltip: "Time 更新已暂停（Space 恢复）",
                     kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
                 },
             )
         });
@@ -1533,6 +1756,7 @@ pub fn show_canvas_panel(
                     icon: "C",
                     tooltip: "Clipping overlay 已开启",
                     kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
                 },
             )
         });
@@ -1673,26 +1897,35 @@ pub fn show_canvas_panel(
                 let local = (pointer_pos - animated_canvas_rect.min) / animated_canvas_rect.size();
                 let uv_x = computed_uv.min.x + local.x * computed_uv.width();
                 let uv_y = computed_uv.min.y + local.y * computed_uv.height();
-                let x = (uv_x * app.resolution[0] as f32).floor() as u32;
-                let y = (uv_y * app.resolution[1] as f32).floor() as u32;
-                if x < app.resolution[0] && y < app.resolution[1] {
-                    if let Ok(image) = app
-                        .shader_space
-                        .read_texture_rgba8(app.output_texture_name.as_str())
+                let x = (uv_x * effective_resolution[0] as f32).floor() as u32;
+                let y = (uv_y * effective_resolution[1] as f32).floor() as u32;
+                if x < effective_resolution[0] && y < effective_resolution[1] {
+                    if value_sample_cache.is_none()
+                        && let Some(info) =
+                            app.shader_space.texture_info(display_texture_name.as_str())
                     {
-                        let idx = ((y * app.resolution[0] + x) * 4) as usize;
-                        if idx + 3 < image.bytes.len() {
-                            app.last_sampled = Some(super::types::SampledPixel {
-                                x,
-                                y,
-                                rgba: [
-                                    image.bytes[idx],
-                                    image.bytes[idx + 1],
-                                    image.bytes[idx + 2],
-                                    image.bytes[idx + 3],
-                                ],
-                            });
-                        }
+                        value_sample_cache = Some(get_or_refresh_pixel_overlay_cache(
+                            app,
+                            ctx,
+                            display_texture_name.as_str(),
+                            info.size.width,
+                            info.size.height,
+                            info.format,
+                        ));
+                    }
+                    if let Some(cache) = value_sample_cache.as_deref()
+                        && let Some(rgba) = sample_value_pixel(
+                            cache,
+                            x,
+                            y,
+                            app.ref_image
+                                .as_ref()
+                                .map(value_sampling_reference_from_state),
+                            app.diff_metric_mode,
+                            diff_output_active,
+                        )
+                    {
+                        app.last_sampled = Some(super::types::SampledPixel { x, y, rgba });
                     }
                 }
             }
@@ -1707,8 +1940,38 @@ pub fn show_canvas_panel(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_overlay_channel, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
+        DiffMetricMode, PixelOverlayCache, PixelOverlayReadback, RefImageMode,
+        ValueSamplingReference, compute_diff_metric_rgb, format_overlay_channel,
+        is_hdr_clamp_effective, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
+        sample_value_pixel,
     };
+    use rust_wgpu_fiber::eframe::wgpu;
+
+    fn assert_rgba_approx_eq(actual: [f32; 4], expected: [f32; 4]) {
+        for (a, e) in actual.into_iter().zip(expected) {
+            assert!((a - e).abs() <= 1e-4, "actual={a} expected={e}");
+        }
+    }
+
+    fn make_rgba8_cache(width: u32, height: u32, bytes: Vec<u8>) -> PixelOverlayCache {
+        PixelOverlayCache {
+            texture_name: "test".to_string(),
+            width,
+            height,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            readback: PixelOverlayReadback::Rgba8(bytes),
+        }
+    }
+
+    fn make_rgba16f_cache(width: u32, height: u32, channels: Vec<f32>) -> PixelOverlayCache {
+        PixelOverlayCache {
+            texture_name: "test".to_string(),
+            width,
+            height,
+            format: wgpu::TextureFormat::Rgba16Float,
+            readback: PixelOverlayReadback::Rgba16f(channels),
+        }
+    }
 
     #[test]
     fn format_overlay_channel_uses_fixed_three_decimals() {
@@ -1749,5 +2012,157 @@ mod tests {
             Some([1.25, 1.5, 1.75, 2.0])
         );
         assert_eq!(sample_rgba16f_pixel(&channels, 2, 1, 2, 0), None);
+    }
+
+    #[test]
+    fn hdr_clamp_effective_requires_toggle_and_hdr_format() {
+        assert!(is_hdr_clamp_effective(
+            true,
+            Some(wgpu::TextureFormat::Rgba16Float)
+        ));
+        assert!(!is_hdr_clamp_effective(
+            false,
+            Some(wgpu::TextureFormat::Rgba16Float)
+        ));
+        assert!(!is_hdr_clamp_effective(
+            true,
+            Some(wgpu::TextureFormat::Rgba8Unorm)
+        ));
+        assert!(!is_hdr_clamp_effective(true, None));
+    }
+
+    #[test]
+    fn overlay_mode_composites_reference_over_base() {
+        let base_cache = make_rgba8_cache(1, 1, vec![128, 64, 32, 255]);
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Overlay,
+            offset_px: [0, 0],
+            size: [1, 1],
+            opacity: 0.5,
+            rgba_bytes: &[255, 0, 0, 128],
+        };
+
+        let sampled =
+            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
+                .expect("sampled");
+
+        let ref_a = (128.0 / 255.0) * 0.5;
+        let inv_ref_a = 1.0 - ref_a;
+        let expected = [
+            1.0 * ref_a + (128.0 / 255.0) * inv_ref_a,
+            (64.0 / 255.0) * inv_ref_a,
+            (32.0 / 255.0) * inv_ref_a,
+            ref_a + 1.0 * inv_ref_a,
+        ];
+        assert_rgba_approx_eq(sampled, expected);
+    }
+
+    #[test]
+    fn overlay_mode_outside_reference_uses_base() {
+        let base_cache = make_rgba8_cache(1, 1, vec![20, 40, 60, 80]);
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Overlay,
+            offset_px: [1, 1],
+            size: [1, 1],
+            opacity: 1.0,
+            rgba_bytes: &[255, 0, 0, 255],
+        };
+
+        let sampled =
+            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
+                .expect("sampled");
+        assert_rgba_approx_eq(
+            sampled,
+            [20.0 / 255.0, 40.0 / 255.0, 60.0 / 255.0, 80.0 / 255.0],
+        );
+    }
+
+    #[test]
+    fn diff_mode_inside_reference_uses_metric() {
+        let base_cache = make_rgba8_cache(1, 1, vec![255, 0, 127, 255]);
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Diff,
+            offset_px: [0, 0],
+            size: [1, 1],
+            opacity: 0.2,
+            rgba_bytes: &[0, 255, 0, 255],
+        };
+
+        let sampled =
+            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
+                .expect("sampled");
+
+        assert_rgba_approx_eq(sampled, [1.0, 1.0, 127.0 / 255.0, 1.0]);
+    }
+
+    #[test]
+    fn diff_mode_outside_reference_uses_base() {
+        let base_cache = make_rgba8_cache(1, 1, vec![20, 40, 60, 80]);
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Diff,
+            offset_px: [1, 0],
+            size: [1, 1],
+            opacity: 0.8,
+            rgba_bytes: &[255, 255, 255, 255],
+        };
+
+        let sampled =
+            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::SE, true)
+                .expect("sampled");
+
+        assert_rgba_approx_eq(
+            sampled,
+            [20.0 / 255.0, 40.0 / 255.0, 60.0 / 255.0, 80.0 / 255.0],
+        );
+    }
+
+    #[test]
+    fn diff_mode_without_diff_output_falls_back_to_reference() {
+        let base_cache = make_rgba8_cache(1, 1, vec![0, 0, 0, 255]);
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Diff,
+            offset_px: [0, 0],
+            size: [1, 1],
+            opacity: 0.5,
+            rgba_bytes: &[10, 20, 30, 40],
+        };
+
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            false,
+        )
+        .expect("sampled");
+
+        assert_rgba_approx_eq(
+            sampled,
+            [10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0],
+        );
+    }
+
+    #[test]
+    fn value_sampling_ignores_ui_overlay_flags() {
+        let base_cache = make_rgba16f_cache(1, 1, vec![2.0, 0.5, 1.2, 1.0]);
+        let sampled = sample_value_pixel(&base_cache, 0, 0, None, DiffMetricMode::AE, false)
+            .expect("sampled");
+        assert_rgba_approx_eq(sampled, [2.0, 0.5, 1.2, 1.0]);
+    }
+
+    #[test]
+    fn compute_diff_metric_rgb_matches_expected_formulae() {
+        let render = [0.75, 0.2, 0.1];
+        let reference = [0.25, 0.1, 0.4];
+        assert_rgba_approx_eq(
+            [
+                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[0],
+                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[1],
+                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[2],
+                1.0,
+            ],
+            [0.75, 0.55, 0.35, 1.0],
+        );
     }
 }

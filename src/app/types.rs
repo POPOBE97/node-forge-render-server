@@ -136,7 +136,7 @@ pub enum UiWindowMode {
 pub struct SampledPixel {
     pub x: u32,
     pub y: u32,
-    pub rgba: [u8; 4],
+    pub rgba: [f32; 4],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -229,6 +229,9 @@ pub struct App {
     pub vectorscope_texture_id: Option<egui::TextureId>,
     pub clipping_renderer: Option<crate::ui::clipping_map::ClippingMapRenderer>,
     pub clipping_texture_id: Option<egui::TextureId>,
+    pub hdr_preview_clamp_enabled: bool,
+    pub hdr_clamp_renderer: Option<crate::ui::hdr_clamp::HdrClampRenderer>,
+    pub hdr_clamp_texture_id: Option<egui::TextureId>,
     pub analysis_tab: AnalysisTab,
     pub clip_enabled: bool,
     pub clipping_settings: ClippingSettings,
@@ -376,6 +379,9 @@ impl App {
             vectorscope_texture_id: None,
             clipping_renderer: None,
             clipping_texture_id: None,
+            hdr_preview_clamp_enabled: false,
+            hdr_clamp_renderer: None,
+            hdr_clamp_texture_id: None,
             analysis_tab: AnalysisTab::Histogram,
             clip_enabled: false,
             clipping_settings: ClippingSettings::default(),

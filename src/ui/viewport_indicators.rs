@@ -21,6 +21,7 @@ pub struct ViewportIndicator<'a> {
     pub icon: &'a str,
     pub tooltip: &'a str,
     pub kind: ViewportIndicatorKind,
+    pub strikethrough: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,7 @@ pub enum ViewportIndicatorContent {
         icon: String,
         tooltip: String,
         kind: ViewportIndicatorKind,
+        strikethrough: bool,
     },
     TextBadge {
         text: String,
@@ -66,6 +68,7 @@ impl ViewportIndicatorEntry {
                 icon: indicator.icon.to_string(),
                 tooltip: indicator.tooltip.to_string(),
                 kind: indicator.kind,
+                strikethrough: indicator.strikethrough,
             },
             allow_overflow_collapse: false,
         }
@@ -163,11 +166,13 @@ impl ViewportIndicatorManager {
                     icon,
                     tooltip,
                     kind,
+                    strikethrough,
                 } => {
                     let indicator = ViewportIndicator {
                         icon,
                         tooltip,
                         kind: *kind,
+                        strikethrough: *strikethrough,
                     };
                     draw_viewport_indicator_at(ui, rect, &indicator, now, anim_t, entry.interaction)
                 }
@@ -262,7 +267,7 @@ pub fn draw_viewport_indicator_at(
             draw_spinner(ui, rect, now as f32, alpha);
         }
         ViewportIndicatorKind::Hdr => {
-            draw_overbright_white_text(ui, rect, indicator.icon, alpha);
+            draw_overbright_white_text(ui, rect, indicator.icon, alpha, indicator.strikethrough);
         }
         _ => {
             ui.painter().text(
@@ -416,12 +421,21 @@ fn draw_spinner(ui: &egui::Ui, rect: Rect, now: f32, alpha: f32) {
     }
 }
 
-fn draw_overbright_white_text(ui: &egui::Ui, rect: Rect, text: &str, alpha: f32) {
+fn draw_overbright_white_text(
+    ui: &egui::Ui,
+    rect: Rect,
+    text: &str,
+    alpha: f32,
+    strikethrough: bool,
+) {
     let alpha = alpha.clamp(0.0, 1.0);
     if alpha <= 0.001 {
         return;
     }
-    let font = egui::FontId::new(11.0, crate::ui::typography::mi_sans_family_for_weight(600.0));
+    let font = egui::FontId::new(
+        11.0,
+        crate::ui::typography::mi_sans_family_for_weight(600.0),
+    );
     let center = rect.center();
     ui.painter().text(
         center,
@@ -438,17 +452,22 @@ fn draw_overbright_white_text(ui: &egui::Ui, rect: Rect, text: &str, alpha: f32)
         font,
         additive_white(alpha),
     );
+
+    if strikethrough {
+        let y = center.y;
+        let x0 = rect.left() + 3.0;
+        let x1 = rect.right() - 3.0;
+        ui.painter().line_segment(
+            [pos2(x0, y), pos2(x1, y)],
+            egui::Stroke::new(1.4, with_alpha(Color32::WHITE, alpha)),
+        );
+    }
 }
 
 fn additive_white(strength: f32) -> Color32 {
     let strength = strength.clamp(0.0, 1.0);
     let v = (255.0 * strength).round() as u8;
-    Color32::from_rgba_premultiplied(
-        v,
-        v,
-        v,
-        0,
-    )
+    Color32::from_rgba_premultiplied(v, v, v, 0)
 }
 
 fn with_alpha(color: Color32, alpha: f32) -> Color32 {
