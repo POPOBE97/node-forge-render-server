@@ -331,12 +331,8 @@ fn compute_diff_metric_rgb(
         render_rgb[2] - reference_rgb[2],
     ];
     let eps = 1e-5_f32;
-    let out = match metric_mode {
-        DiffMetricMode::E => [
-            delta[0] * 0.5 + 0.5,
-            delta[1] * 0.5 + 0.5,
-            delta[2] * 0.5 + 0.5,
-        ],
+    match metric_mode {
+        DiffMetricMode::E => delta,
         DiffMetricMode::AE => [delta[0].abs(), delta[1].abs(), delta[2].abs()],
         DiffMetricMode::SE => [
             delta[0] * delta[0],
@@ -353,13 +349,19 @@ fn compute_diff_metric_rgb(
             (delta[1] * delta[1]) / (reference_rgb[1] * reference_rgb[1]).max(eps),
             (delta[2] * delta[2]) / (reference_rgb[2] * reference_rgb[2]).max(eps),
         ],
-    };
+    }
+}
 
-    [
-        out[0].clamp(0.0, 1.0),
-        out[1].clamp(0.0, 1.0),
-        out[2].clamp(0.0, 1.0),
-    ]
+fn format_diff_stat_value(value: f32) -> String {
+    if !value.is_finite() {
+        return format!("{value}");
+    }
+    let abs = value.abs();
+    if abs >= 1.0e-3 && abs < 1.0e4 {
+        format!("{value:.4}")
+    } else {
+        format!("{value:.3e}")
+    }
 }
 
 fn sample_value_pixel(
@@ -638,6 +640,7 @@ fn load_reference_image_from_path(
         wgpu_texture,
         wgpu_texture_view,
         size: [width, height],
+        texture_format: wgpu::TextureFormat::Rgba8Unorm,
         offset: egui::Vec2::ZERO,
         mode: RefImageMode::Overlay,
         opacity: 0.5,
@@ -717,6 +720,7 @@ fn load_reference_image_from_bytes(
         wgpu_texture,
         wgpu_texture_view,
         size: [width, height],
+        texture_format: wgpu::TextureFormat::Rgba8Unorm,
         offset: egui::Vec2::ZERO,
         mode: RefImageMode::Overlay,
         opacity: 0.5,
@@ -1774,8 +1778,14 @@ pub fn show_canvas_panel(
                         Some(RefImageMode::Diff)
                     ),
                     format!(
-                        "min {:.4}  max {:.4}  avg {:.4}",
-                        stats.min, stats.max, stats.avg
+                        "min {}  max {}  avg {}  rms {}  p95|Y| {}  n {}  nonfinite {}",
+                        format_diff_stat_value(stats.min),
+                        format_diff_stat_value(stats.max),
+                        format_diff_stat_value(stats.avg),
+                        format_diff_stat_value(stats.rms),
+                        format_diff_stat_value(stats.p95_abs),
+                        stats.sample_count,
+                        stats.non_finite_count
                     ),
                     "Diff 统计",
                 )
@@ -2162,7 +2172,7 @@ mod tests {
                 compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[2],
                 1.0,
             ],
-            [0.75, 0.55, 0.35, 1.0],
+            [0.5, 0.1, -0.3, 1.0],
         );
     }
 }

@@ -2,15 +2,26 @@ use rust_wgpu_fiber::eframe::wgpu;
 
 use crate::app::{DiffMetricMode, DiffStats};
 
-const STATS_WORD_COUNT: usize = 5;
-const STATS_BYTE_SIZE: u64 = (STATS_WORD_COUNT * std::mem::size_of::<u32>()) as u64;
+const WORKGROUP_SIZE_X: u32 = 16;
+const WORKGROUP_SIZE_Y: u32 = 16;
+const HIST_BIN_COUNT: usize = 512;
+const HIST_UNDERFLOW_BIN: usize = 0;
+const HIST_ZERO_BIN: usize = 1;
+const HIST_INTERIOR_START_BIN: usize = 2;
+const HIST_OVERFLOW_BIN: usize = HIST_BIN_COUNT - 1;
+const HIST_INTERIOR_BIN_COUNT: usize = HIST_BIN_COUNT - 3;
+const HIST_LOG2_MIN: f32 = -24.0;
+const HIST_LOG2_MAX: f32 = 24.0;
+const HISTOGRAM_BYTE_SIZE: u64 = (HIST_BIN_COUNT * std::mem::size_of::<u32>()) as u64;
 
-const DIFF_COMPUTE_SHADER_SRC: &str = r#"
+const DIFF_COMPUTE_SHADER_TEMPLATE: &str = r#"
 struct DiffParams {
     render_size: vec2<u32>,
     ref_size: vec2<u32>,
     offset_px: vec2<i32>,
     mode: u32,
+    groups_x: u32,
+    groups_y: u32,
     _padding: u32,
 };
 
@@ -21,16 +32,38 @@ var render_tex: texture_2d<f32>;
 var ref_tex: texture_2d<f32>;
 
 @group(0) @binding(2)
-var display_out_tex: texture_storage_2d<rgba8unorm, write>;
+var display_out_tex: texture_storage_2d<__STORAGE_FORMAT__, write>;
 
 @group(0) @binding(3)
-var analysis_out_tex: texture_storage_2d<rgba8unorm, write>;
+var analysis_out_tex: texture_storage_2d<__STORAGE_FORMAT__, write>;
 
 @group(0) @binding(4)
 var<uniform> params: DiffParams;
 
 @group(0) @binding(5)
-var<storage, read_write> stats: array<atomic<u32>, 5>;
+var<storage, read_write> partial_stats: array<vec4<f32>>;
+
+@group(0) @binding(6)
+var<storage, read_write> partial_counts: array<vec4<u32>>;
+
+@group(0) @binding(7)
+var<storage, read_write> histogram: array<atomic<u32>, 512>;
+
+var<workgroup> wg_min: array<f32, 256>;
+var<workgroup> wg_max: array<f32, 256>;
+var<workgroup> wg_sum: array<f32, 256>;
+var<workgroup> wg_sum_sq: array<f32, 256>;
+var<workgroup> wg_count: array<u32, 256>;
+var<workgroup> wg_non_finite: array<u32, 256>;
+
+fn finite_f32(v: f32) -> bool {
+    // NaN fails v == v; +/-inf fails abs(v) <= max_f32.
+    return (v == v) && (abs(v) <= 3.4028235e38);
+}
+
+fn finite_vec3(v: vec3<f32>) -> bool {
+    return finite_f32(v.x) && finite_f32(v.y) && finite_f32(v.z);
+}
 
 fn metric_diff(render_rgb: vec3<f32>, ref_rgb: vec3<f32>, mode: u32) -> vec3<f32> {
     let delta = render_rgb - ref_rgb;
@@ -38,7 +71,7 @@ fn metric_diff(render_rgb: vec3<f32>, ref_rgb: vec3<f32>, mode: u32) -> vec3<f32
     var diff_rgb = vec3<f32>(0.0, 0.0, 0.0);
 
     if (mode == 0u) {
-        diff_rgb = delta * 0.5 + vec3<f32>(0.5, 0.5, 0.5);
+        diff_rgb = delta;
     } else if (mode == 1u) {
         diff_rgb = abs(delta);
     } else if (mode == 2u) {
@@ -49,16 +82,42 @@ fn metric_diff(render_rgb: vec3<f32>, ref_rgb: vec3<f32>, mode: u32) -> vec3<f32
         diff_rgb = (delta * delta) / max(ref_rgb * ref_rgb, eps);
     }
 
-    return clamp(diff_rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    return diff_rgb;
+}
+
+fn histogram_bin(v: f32) -> u32 {
+    if (v == 0.0) {
+        return 1u;
+    }
+
+    let log_v = log2(v);
+    if (log_v < -24.0) {
+        return 0u;
+    }
+    if (log_v >= 24.0) {
+        return 511u;
+    }
+
+    let t = (log_v - (-24.0)) / (24.0 - (-24.0));
+    let idx = u32(floor(t * 509.0));
+    return 2u + min(idx, 508u);
 }
 
 @compute @workgroup_size(16, 16, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>
+) {
+    let lane = lid.y * 16u + lid.x;
     let in_render = gid.x < params.render_size.x && gid.y < params.render_size.y;
     let in_ref = gid.x < params.ref_size.x && gid.y < params.ref_size.y;
-    if (!in_render && !in_ref) {
-        return;
-    }
+    var lane_min = 1e30;
+    var lane_max = -1e30;
+    var lane_sum = 0.0;
+    var lane_sum_sq = 0.0;
+    var lane_count = 0u;
+    var lane_non_finite = 0u;
 
     if (in_ref) {
         let dst = vec2<i32>(vec2<u32>(gid.xy));
@@ -93,19 +152,93 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         let stats_rgb = metric_diff(render_rgb, ref_rgb, params.mode);
         textureStore(analysis_out_tex, render_xy, vec4<f32>(stats_rgb, 1.0));
-        let scalar = clamp((stats_rgb.r + stats_rgb.g + stats_rgb.b) / 3.0, 0.0, 1.0);
-        let q = u32(round(scalar * 255.0));
 
-        atomicMin(&stats[0], q);
-        atomicMax(&stats[1], q);
-        atomicAdd(&stats[2], q);
-        atomicAdd(&stats[3], 1u);
+        let y = dot(stats_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        if (finite_vec3(stats_rgb) && finite_f32(y)) {
+            lane_min = y;
+            lane_max = y;
+            lane_sum = y;
+            lane_sum_sq = y * y;
+            lane_count = 1u;
+            let bin = histogram_bin(abs(y));
+            atomicAdd(&histogram[bin], 1u);
+        } else {
+            lane_non_finite = 1u;
+        }
+    }
 
-        let h = ((gid.x * 73856093u) ^ (gid.y * 19349663u) ^ (q * 83492791u));
-        atomicXor(&stats[4], h);
+    wg_min[lane] = lane_min;
+    wg_max[lane] = lane_max;
+    wg_sum[lane] = lane_sum;
+    wg_sum_sq[lane] = lane_sum_sq;
+    wg_count[lane] = lane_count;
+    wg_non_finite[lane] = lane_non_finite;
+    workgroupBarrier();
+
+    var stride = 128u;
+    loop {
+        if (stride == 0u) {
+            break;
+        }
+
+        if (lane < stride) {
+            let rhs = lane + stride;
+            wg_min[lane] = min(wg_min[lane], wg_min[rhs]);
+            wg_max[lane] = max(wg_max[lane], wg_max[rhs]);
+            wg_sum[lane] = wg_sum[lane] + wg_sum[rhs];
+            wg_sum_sq[lane] = wg_sum_sq[lane] + wg_sum_sq[rhs];
+            wg_count[lane] = wg_count[lane] + wg_count[rhs];
+            wg_non_finite[lane] = wg_non_finite[lane] + wg_non_finite[rhs];
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+
+    if (lane == 0u) {
+        let group_idx = wid.y * params.groups_x + wid.x;
+        partial_stats[group_idx] = vec4<f32>(
+            wg_min[0],
+            wg_max[0],
+            wg_sum[0],
+            wg_sum_sq[0]
+        );
+        partial_counts[group_idx] = vec4<u32>(
+            wg_count[0],
+            wg_non_finite[0],
+            0u,
+            0u
+        );
     }
 }
 "#;
+
+fn diff_storage_texture_format_token(output_format: wgpu::TextureFormat) -> &'static str {
+    match output_format {
+        wgpu::TextureFormat::Rgba8Unorm => "rgba8unorm",
+        wgpu::TextureFormat::Rgba16Float => "rgba16float",
+        _ => panic!("unsupported diff output storage texture format: {output_format:?}"),
+    }
+}
+
+fn diff_compute_shader_source(output_format: wgpu::TextureFormat) -> String {
+    DIFF_COMPUTE_SHADER_TEMPLATE.replace(
+        "__STORAGE_FORMAT__",
+        diff_storage_texture_format_token(output_format),
+    )
+}
+
+pub fn select_diff_output_format(
+    render_format: wgpu::TextureFormat,
+    ref_format: wgpu::TextureFormat,
+) -> wgpu::TextureFormat {
+    if matches!(render_format, wgpu::TextureFormat::Rgba16Float)
+        || matches!(ref_format, wgpu::TextureFormat::Rgba16Float)
+    {
+        wgpu::TextureFormat::Rgba16Float
+    } else {
+        wgpu::TextureFormat::Rgba8Unorm
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -114,22 +247,48 @@ struct DiffParams {
     ref_size: [u32; 2],
     offset_px: [i32; 2],
     mode: u32,
+    groups_x: u32,
+    groups_y: u32,
     _padding: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug, Default)]
+struct PartialStats {
+    min: f32,
+    max: f32,
+    sum: f32,
+    sum_sq: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug, Default)]
+struct PartialCounts {
+    count: u32,
+    non_finite_count: u32,
+    _pad0: u32,
+    _pad1: u32,
 }
 
 pub struct DiffRenderer {
     output_texture: wgpu::Texture,
     output_texture_view: wgpu::TextureView,
     output_size: [u32; 2],
+    output_format: wgpu::TextureFormat,
     analysis_texture: wgpu::Texture,
     analysis_texture_view: wgpu::TextureView,
     analysis_size: [u32; 2],
     compute_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     params_buffer: wgpu::Buffer,
-    stats_buffer: wgpu::Buffer,
-    stats_readback_buffer: wgpu::Buffer,
-    stats_clear_bytes: [u8; STATS_BYTE_SIZE as usize],
+    partial_stats_buffer: wgpu::Buffer,
+    partial_counts_buffer: wgpu::Buffer,
+    histogram_buffer: wgpu::Buffer,
+    partial_stats_readback_buffer: wgpu::Buffer,
+    partial_counts_readback_buffer: wgpu::Buffer,
+    histogram_readback_buffer: wgpu::Buffer,
+    histogram_clear_bytes: Vec<u8>,
+    max_stats_groups: u32,
 }
 
 impl DiffRenderer {
@@ -137,6 +296,7 @@ impl DiffRenderer {
         device: &wgpu::Device,
         label: &'static str,
         size: [u32; 2],
+        format: wgpu::TextureFormat,
     ) -> (wgpu::Texture, wgpu::TextureView) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
@@ -148,7 +308,7 @@ impl DiffRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
@@ -156,10 +316,149 @@ impl DiffRenderer {
         (texture, view)
     }
 
-    pub fn new(device: &wgpu::Device, output_size: [u32; 2]) -> Self {
+    fn partial_stats_byte_size(groups: u32) -> u64 {
+        (groups.max(1) as u64) * std::mem::size_of::<PartialStats>() as u64
+    }
+
+    fn partial_counts_byte_size(groups: u32) -> u64 {
+        (groups.max(1) as u64) * std::mem::size_of::<PartialCounts>() as u64
+    }
+
+    fn create_partial_stats_buffer(
+        device: &wgpu::Device,
+        groups: u32,
+        label: &'static str,
+        usage: wgpu::BufferUsages,
+    ) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: Self::partial_stats_byte_size(groups),
+            usage,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn create_partial_counts_buffer(
+        device: &wgpu::Device,
+        groups: u32,
+        label: &'static str,
+        usage: wgpu::BufferUsages,
+    ) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: Self::partial_counts_byte_size(groups),
+            usage,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn ensure_stats_capacity(&mut self, device: &wgpu::Device, groups: u32) {
+        let groups = groups.max(1);
+        if groups <= self.max_stats_groups {
+            return;
+        }
+
+        self.partial_stats_buffer = Self::create_partial_stats_buffer(
+            device,
+            groups,
+            "sys.diff.stats.partial",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
+        self.partial_counts_buffer = Self::create_partial_counts_buffer(
+            device,
+            groups,
+            "sys.diff.stats.counts",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
+        self.partial_stats_readback_buffer = Self::create_partial_stats_buffer(
+            device,
+            groups,
+            "sys.diff.stats.partial.readback",
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
+        self.partial_counts_readback_buffer = Self::create_partial_counts_buffer(
+            device,
+            groups,
+            "sys.diff.stats.counts.readback",
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
+        self.max_stats_groups = groups;
+    }
+
+    fn map_readback_buffer(
+        device: &wgpu::Device,
+        buffer: &wgpu::Buffer,
+        size: u64,
+    ) -> Option<Vec<u8>> {
+        let slice = buffer.slice(0..size);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+
+        let mut mapped_ok = false;
+        for _ in 0..200 {
+            let _ = device.poll(wgpu::PollType::Poll);
+            if let Ok(result) = rx.try_recv() {
+                mapped_ok = result.is_ok();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        if !mapped_ok {
+            buffer.unmap();
+            return None;
+        }
+
+        let mapped = slice.get_mapped_range();
+        let bytes = mapped.to_vec();
+        drop(mapped);
+        buffer.unmap();
+        Some(bytes)
+    }
+
+    fn decode_histogram_bin_center(bin: usize) -> f32 {
+        if bin <= HIST_UNDERFLOW_BIN {
+            return 2.0_f32.powf(HIST_LOG2_MIN);
+        }
+        if bin == HIST_ZERO_BIN {
+            return 0.0;
+        }
+        if bin >= HIST_OVERFLOW_BIN {
+            return 2.0_f32.powf(HIST_LOG2_MAX);
+        }
+
+        let step = (HIST_LOG2_MAX - HIST_LOG2_MIN) / HIST_INTERIOR_BIN_COUNT as f32;
+        let idx = (bin - HIST_INTERIOR_START_BIN) as f32;
+        let center = HIST_LOG2_MIN + (idx + 0.5) * step;
+        2.0_f32.powf(center)
+    }
+
+    fn p95_abs_from_histogram(histogram: &[u32], sample_count: u64) -> f32 {
+        if sample_count == 0 {
+            return 0.0;
+        }
+        let target = (sample_count as f64 * 0.95).ceil() as u64;
+        let mut cumulative = 0u64;
+        for (bin, count) in histogram.iter().enumerate() {
+            cumulative += *count as u64;
+            if cumulative >= target {
+                return Self::decode_histogram_bin_center(bin);
+            }
+        }
+        Self::decode_histogram_bin_center(HIST_OVERFLOW_BIN)
+    }
+
+    pub fn new(
+        device: &wgpu::Device,
+        output_size: [u32; 2],
+        output_format: wgpu::TextureFormat,
+    ) -> Self {
+        let shader_source = diff_compute_shader_source(output_format);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sys.diff.compute"),
-            source: wgpu::ShaderSource::Wgsl(DIFF_COMPUTE_SHADER_SRC.into()),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -190,7 +489,7 @@ impl DiffRenderer {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        format: output_format,
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -200,7 +499,7 @@ impl DiffRenderer {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        format: output_format,
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -217,6 +516,26 @@ impl DiffRenderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -244,10 +563,10 @@ impl DiffRenderer {
         });
 
         let (output_texture, output_texture_view) =
-            Self::create_storage_texture(device, "sys.diff.output", output_size);
+            Self::create_storage_texture(device, "sys.diff.output", output_size, output_format);
         let analysis_size = [1, 1];
         let (analysis_texture, analysis_texture_view) =
-            Self::create_storage_texture(device, "sys.diff.analysis", analysis_size);
+            Self::create_storage_texture(device, "sys.diff.analysis", analysis_size, output_format);
 
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sys.diff.params"),
@@ -256,48 +575,75 @@ impl DiffRenderer {
             mapped_at_creation: false,
         });
 
-        let stats_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("sys.diff.stats"),
-            size: STATS_BYTE_SIZE,
+        let initial_groups = 1;
+        let partial_stats_buffer = Self::create_partial_stats_buffer(
+            device,
+            initial_groups,
+            "sys.diff.stats.partial",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
+        let partial_counts_buffer = Self::create_partial_counts_buffer(
+            device,
+            initial_groups,
+            "sys.diff.stats.counts",
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        );
+        let histogram_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sys.diff.stats.histogram"),
+            size: HISTOGRAM_BYTE_SIZE,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let stats_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("sys.diff.stats.readback"),
-            size: STATS_BYTE_SIZE,
+        let partial_stats_readback_buffer = Self::create_partial_stats_buffer(
+            device,
+            initial_groups,
+            "sys.diff.stats.partial.readback",
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
+        let partial_counts_readback_buffer = Self::create_partial_counts_buffer(
+            device,
+            initial_groups,
+            "sys.diff.stats.counts.readback",
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
+        let histogram_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sys.diff.stats.histogram.readback"),
+            size: HISTOGRAM_BYTE_SIZE,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        let mut stats_clear_words = [0u32; STATS_WORD_COUNT];
-        stats_clear_words[0] = u32::MAX;
-        stats_clear_words[1] = 0;
-        stats_clear_words[2] = 0;
-        stats_clear_words[3] = 0;
-        stats_clear_words[4] = 0;
-        let stats_clear_bytes = bytemuck::cast(stats_clear_words);
 
         Self {
             output_texture,
             output_texture_view,
             output_size,
+            output_format,
             analysis_texture,
             analysis_texture_view,
             analysis_size,
             compute_pipeline,
             bind_group_layout,
             params_buffer,
-            stats_buffer,
-            stats_readback_buffer,
-            stats_clear_bytes,
+            partial_stats_buffer,
+            partial_counts_buffer,
+            histogram_buffer,
+            partial_stats_readback_buffer,
+            partial_counts_readback_buffer,
+            histogram_readback_buffer,
+            histogram_clear_bytes: vec![0_u8; HISTOGRAM_BYTE_SIZE as usize],
+            max_stats_groups: initial_groups,
         }
     }
 
     pub fn output_size(&self) -> [u32; 2] {
         self.output_size
+    }
+
+    pub fn output_format(&self) -> wgpu::TextureFormat {
+        self.output_format
     }
 
     pub fn output_view(&self) -> &wgpu::TextureView {
@@ -326,22 +672,36 @@ impl DiffRenderer {
     ) -> Option<DiffStats> {
         let next_analysis_size = [render_size[0].max(1), render_size[1].max(1)];
         if self.analysis_size != next_analysis_size {
-            let (analysis_texture, analysis_texture_view) =
-                Self::create_storage_texture(device, "sys.diff.analysis", next_analysis_size);
+            let (analysis_texture, analysis_texture_view) = Self::create_storage_texture(
+                device,
+                "sys.diff.analysis",
+                next_analysis_size,
+                self.output_format,
+            );
             self.analysis_texture = analysis_texture;
             self.analysis_texture_view = analysis_texture_view;
             self.analysis_size = next_analysis_size;
         }
+
+        let dispatch_width = render_size[0].max(ref_size[0]).max(1);
+        let dispatch_height = render_size[1].max(ref_size[1]).max(1);
+        let group_x = dispatch_width.div_ceil(WORKGROUP_SIZE_X);
+        let group_y = dispatch_height.div_ceil(WORKGROUP_SIZE_Y);
+        let group_count = (group_x * group_y).max(1);
+
+        self.ensure_stats_capacity(device, group_count);
 
         let params = DiffParams {
             render_size,
             ref_size,
             offset_px,
             mode: metric_mode.shader_code(),
+            groups_x: group_x,
+            groups_y: group_y,
             _padding: 0,
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
-        queue.write_buffer(&self.stats_buffer, 0, &self.stats_clear_bytes);
+        queue.write_buffer(&self.histogram_buffer, 0, &self.histogram_clear_bytes);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sys.diff.compute.bg"),
@@ -374,7 +734,23 @@ impl DiffRenderer {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.stats_buffer,
+                        buffer: &self.partial_stats_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.partial_counts_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.histogram_buffer,
                         offset: 0,
                         size: None,
                     }),
@@ -392,20 +768,32 @@ impl DiffRenderer {
             });
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            let dispatch_width = render_size[0].max(ref_size[0]).max(1);
-            let dispatch_height = render_size[1].max(ref_size[1]).max(1);
-            let group_x = dispatch_width.div_ceil(16);
-            let group_y = dispatch_height.div_ceil(16);
             cpass.dispatch_workgroups(group_x, group_y, 1);
         }
 
         if collect_stats {
+            let partial_stats_bytes = Self::partial_stats_byte_size(group_count);
+            let partial_counts_bytes = Self::partial_counts_byte_size(group_count);
             encoder.copy_buffer_to_buffer(
-                &self.stats_buffer,
+                &self.partial_stats_buffer,
                 0,
-                &self.stats_readback_buffer,
+                &self.partial_stats_readback_buffer,
                 0,
-                STATS_BYTE_SIZE,
+                partial_stats_bytes,
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.partial_counts_buffer,
+                0,
+                &self.partial_counts_readback_buffer,
+                0,
+                partial_counts_bytes,
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.histogram_buffer,
+                0,
+                &self.histogram_readback_buffer,
+                0,
+                HISTOGRAM_BYTE_SIZE,
             );
         }
 
@@ -415,50 +803,83 @@ impl DiffRenderer {
             return None;
         }
 
-        let slice = self.stats_readback_buffer.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        let mut mapped_ok = false;
-        for _ in 0..200 {
-            let _ = device.poll(wgpu::PollType::Poll);
-            if let Ok(result) = rx.try_recv() {
-                mapped_ok = result.is_ok();
-                break;
+        let partial_stats_bytes = Self::partial_stats_byte_size(group_count);
+        let partial_counts_bytes = Self::partial_counts_byte_size(group_count);
+
+        let partial_stats_bytes = Self::map_readback_buffer(
+            device,
+            &self.partial_stats_readback_buffer,
+            partial_stats_bytes,
+        )?;
+        let partial_counts_bytes = Self::map_readback_buffer(
+            device,
+            &self.partial_counts_readback_buffer,
+            partial_counts_bytes,
+        )?;
+        let histogram_bytes = Self::map_readback_buffer(
+            device,
+            &self.histogram_readback_buffer,
+            HISTOGRAM_BYTE_SIZE,
+        )?;
+
+        let partial_stats: &[PartialStats] = bytemuck::cast_slice(&partial_stats_bytes);
+        let partial_counts: &[PartialCounts] = bytemuck::cast_slice(&partial_counts_bytes);
+        let histogram: &[u32] = bytemuck::cast_slice(&histogram_bytes);
+
+        let mut min_v = f32::INFINITY;
+        let mut max_v = f32::NEG_INFINITY;
+        let mut sum_v = 0.0_f64;
+        let mut sum_sq_v = 0.0_f64;
+        let mut sample_count = 0_u64;
+        let mut non_finite_count = 0_u64;
+
+        for (stats, counts) in partial_stats.iter().zip(partial_counts.iter()) {
+            non_finite_count += counts.non_finite_count as u64;
+            if counts.count == 0 {
+                continue;
             }
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            sample_count += counts.count as u64;
+            min_v = min_v.min(stats.min);
+            max_v = max_v.max(stats.max);
+            sum_v += stats.sum as f64;
+            sum_sq_v += stats.sum_sq as f64;
         }
 
-        if !mapped_ok {
-            self.stats_readback_buffer.unmap();
+        if sample_count == 0 && non_finite_count == 0 {
             return None;
         }
 
-        let mapped = slice.get_mapped_range();
-        let words: &[u32] = bytemuck::cast_slice(&mapped);
-        let min_q = words.first().copied().unwrap_or(0).min(255);
-        let max_q = words.get(1).copied().unwrap_or(0).min(255);
-        let sum_q = words.get(2).copied().unwrap_or(0);
-        let count = words.get(3).copied().unwrap_or(0);
-        drop(mapped);
-        self.stats_readback_buffer.unmap();
-
-        if count == 0 {
-            return None;
-        }
+        let avg = if sample_count == 0 {
+            f32::NAN
+        } else {
+            (sum_v / sample_count as f64) as f32
+        };
+        let rms = if sample_count == 0 {
+            f32::NAN
+        } else {
+            (sum_sq_v / sample_count as f64).sqrt() as f32
+        };
 
         Some(DiffStats {
-            min: min_q as f32 / 255.0,
-            max: max_q as f32 / 255.0,
-            avg: (sum_q as f32 / count as f32) / 255.0,
+            min: if sample_count == 0 { f32::NAN } else { min_v },
+            max: if sample_count == 0 { f32::NAN } else { max_v },
+            avg,
+            rms,
+            p95_abs: Self::p95_abs_from_histogram(histogram, sample_count),
+            sample_count,
+            non_finite_count,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        DiffRenderer, HIST_BIN_COUNT, HIST_INTERIOR_START_BIN, HIST_OVERFLOW_BIN, HIST_ZERO_BIN,
+        select_diff_output_format,
+    };
     use crate::app::DiffMetricMode;
+    use rust_wgpu_fiber::eframe::wgpu;
 
     fn map_ref_xy(
         render_xy: [i32; 2],
@@ -484,11 +905,7 @@ mod tests {
         ];
         let eps = 1e-5_f32;
         let out = match mode {
-            DiffMetricMode::E => [
-                delta[0] * 0.5 + 0.5,
-                delta[1] * 0.5 + 0.5,
-                delta[2] * 0.5 + 0.5,
-            ],
+            DiffMetricMode::E => delta,
             DiffMetricMode::AE => [delta[0].abs(), delta[1].abs(), delta[2].abs()],
             DiffMetricMode::SE => [
                 delta[0] * delta[0],
@@ -506,11 +923,7 @@ mod tests {
                 (delta[2] * delta[2]) / (ref_rgb[2] * ref_rgb[2]).max(eps),
             ],
         };
-        [
-            out[0].clamp(0.0, 1.0),
-            out[1].clamp(0.0, 1.0),
-            out[2].clamp(0.0, 1.0),
-        ]
+        out
     }
 
     #[test]
@@ -525,5 +938,68 @@ mod tests {
         let fallback_ref = [0.0, 0.0, 0.0];
         let diff = cpu_metric_diff(render_rgb, fallback_ref, DiffMetricMode::AE);
         assert_eq!(diff, render_rgb);
+    }
+
+    #[test]
+    fn signed_e_mode_uses_raw_delta() {
+        let render_rgb = [0.75, 0.2, 0.1];
+        let ref_rgb = [0.25, 0.1, 0.4];
+        let diff = cpu_metric_diff(render_rgb, ref_rgb, DiffMetricMode::E);
+        assert_eq!(diff, [0.5, 0.1, -0.3]);
+    }
+
+    #[test]
+    fn p95_abs_from_histogram_uses_target_cdf_bin() {
+        let mut histogram = [0u32; HIST_BIN_COUNT];
+        histogram[HIST_ZERO_BIN] = 90;
+        let chosen_bin = HIST_INTERIOR_START_BIN + 10;
+        histogram[chosen_bin] = 10;
+
+        let p95 = DiffRenderer::p95_abs_from_histogram(&histogram, 100);
+        let expected = DiffRenderer::decode_histogram_bin_center(chosen_bin);
+        assert!((p95 - expected).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn histogram_bin_decode_is_monotonic_across_positive_bins() {
+        let mut prev = DiffRenderer::decode_histogram_bin_center(HIST_INTERIOR_START_BIN);
+        for bin in (HIST_INTERIOR_START_BIN + 1)..=HIST_OVERFLOW_BIN {
+            let current = DiffRenderer::decode_histogram_bin_center(bin);
+            assert!(current >= prev, "bin {bin} produced non-monotonic decode");
+            prev = current;
+        }
+    }
+
+    #[test]
+    fn select_diff_output_format_promotes_when_render_operand_is_rgba16float() {
+        assert_eq!(
+            select_diff_output_format(
+                wgpu::TextureFormat::Rgba16Float,
+                wgpu::TextureFormat::Rgba8Unorm
+            ),
+            wgpu::TextureFormat::Rgba16Float
+        );
+    }
+
+    #[test]
+    fn select_diff_output_format_promotes_when_reference_operand_is_rgba16float() {
+        assert_eq!(
+            select_diff_output_format(
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba16Float
+            ),
+            wgpu::TextureFormat::Rgba16Float
+        );
+    }
+
+    #[test]
+    fn select_diff_output_format_keeps_rgba8unorm_for_non_hdr_operands() {
+        assert_eq!(
+            select_diff_output_format(
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba8Unorm
+            ),
+            wgpu::TextureFormat::Rgba8Unorm
+        );
     }
 }

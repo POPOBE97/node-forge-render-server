@@ -45,7 +45,7 @@ pub enum DiffMetricMode {
 impl DiffMetricMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::E => "E",
+            Self::E => "E (signed)",
             Self::AE => "AE",
             Self::SE => "SE",
             Self::RAE => "RAE",
@@ -102,12 +102,17 @@ pub struct DiffStats {
     pub min: f32,
     pub max: f32,
     pub avg: f32,
+    pub rms: f32,
+    pub p95_abs: f32,
+    pub sample_count: u64,
+    pub non_finite_count: u64,
 }
 
 pub struct AnalysisSourceDomain<'a> {
     pub texture_name: &'a str,
     pub view: &'a wgpu::TextureView,
     pub size: [u32; 2],
+    pub format: wgpu::TextureFormat,
 }
 
 pub struct RefImageState {
@@ -117,6 +122,7 @@ pub struct RefImageState {
     pub wgpu_texture: wgpu::Texture,
     pub wgpu_texture_view: wgpu::TextureView,
     pub size: [u32; 2],
+    pub texture_format: wgpu::TextureFormat,
     pub offset: egui::Vec2,
     pub mode: RefImageMode,
     pub opacity: f32,

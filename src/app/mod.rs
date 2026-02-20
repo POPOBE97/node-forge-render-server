@@ -26,7 +26,7 @@ fn hash_key<T: Hash + ?Sized>(value: &T) -> u64 {
 }
 
 fn analysis_source_request_key(source: &AnalysisSourceDomain<'_>) -> u64 {
-    hash_key(&(source.texture_name, source.size))
+    hash_key(&(source.texture_name, source.size, source.format))
 }
 
 fn diff_request_key(
@@ -210,6 +210,7 @@ impl eframe::App for App {
                         texture.wgpu_texture_desc.size.width,
                         texture.wgpu_texture_desc.size.height,
                     ],
+                    format: texture.wgpu_texture_desc.format,
                 })
         });
         let render_source_key = render_source.as_ref().map(analysis_source_request_key);
@@ -227,15 +228,20 @@ impl eframe::App for App {
                 reference.offset.y.round() as i32,
             ];
             let ref_size = reference.size;
+            let diff_output_format = ui::diff_renderer::select_diff_output_format(
+                source.format,
+                reference.texture_format,
+            );
             let needs_recreate = self
                 .diff_renderer
                 .as_ref()
-                .map(|r| r.output_size() != ref_size)
+                .map(|r| r.output_size() != ref_size || r.output_format() != diff_output_format)
                 .unwrap_or(true);
             if needs_recreate {
                 self.diff_renderer = Some(ui::diff_renderer::DiffRenderer::new(
                     &render_state.device,
                     ref_size,
+                    diff_output_format,
                 ));
             }
 
@@ -313,6 +319,7 @@ impl eframe::App for App {
                 texture_name: "sys.diff.analysis",
                 view: diff_renderer.analysis_output_view(),
                 size: diff_renderer.analysis_output_size(),
+                format: diff_renderer.output_format(),
             });
             self.analysis_source_is_diff = true;
         } else {
@@ -818,8 +825,16 @@ mod tests {
 
     #[test]
     fn request_keys_change_with_source_domain() {
-        let source_a = hash_key(&("output", [128_u32, 128_u32]));
-        let source_b = hash_key(&("output", [256_u32, 128_u32]));
+        let source_a = hash_key(&(
+            "output",
+            [128_u32, 128_u32],
+            super::wgpu::TextureFormat::Rgba8Unorm,
+        ));
+        let source_b = hash_key(&(
+            "output",
+            [128_u32, 128_u32],
+            super::wgpu::TextureFormat::Rgba16Float,
+        ));
         assert_ne!(
             histogram_request_key(source_a),
             histogram_request_key(source_b)
