@@ -33,6 +33,7 @@ use super::{
 const ANIM_KEY_PAN_ZOOM_FACTOR: &str = "ui.canvas.pan_zoom.factor";
 const VIEWPORT_OPERATION_TIMEOUT_SECS: f64 = 5.0;
 const ORDER_OPERATION: i32 = 0;
+const ORDER_RENDER_FPS: i32 = 1;
 const ORDER_PAUSE: i32 = 10;
 const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
@@ -212,9 +213,22 @@ fn clear_pixel_overlay_cache(ctx: &egui::Context) {
     ctx.memory_mut(|mem| mem.data.remove::<Arc<PixelOverlayCache>>(cache_id));
 }
 
-fn format_overlay_channel(label: char, value: f32) -> String {
+fn format_overlay_channel(_label: char, value: f32) -> String {
     let normalized = if value.abs() < 0.0000005 { 0.0 } else { value };
-    format!("{normalized:.6}")
+    if !normalized.is_finite() {
+        return format!("{normalized}");
+    }
+
+    let abs = normalized.abs();
+    let integer_digits = if abs < 1.0 {
+        1usize
+    } else {
+        abs.log10().floor() as usize + 1
+    };
+    let sign_chars = usize::from(normalized.is_sign_negative());
+    let precision = 7usize.saturating_sub(sign_chars + integer_digits);
+
+    format!("{normalized:.precision$}")
 }
 
 fn rgba8_to_rgba_f32(rgba: [u8; 4]) -> [f32; 4] {
@@ -1710,6 +1724,19 @@ pub fn show_canvas_panel(
         .register(ViewportIndicatorEntry {
             interaction: ViewportIndicatorInteraction::HoverOnly,
             callback_id: None,
+            ..ViewportIndicatorEntry::text_badge_right_aligned_mono(
+                "render_fps",
+                ORDER_RENDER_FPS,
+                true,
+                format!("{} FPS", app.render_texture_fps_tracker.fps()),
+                "Render texture updates per second (counts shader_space.render only; excludes diff/clipping/analysis)",
+            )
+        });
+
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
             ..ViewportIndicatorEntry::compact(
                 "preview_hdr",
                 ORDER_HDR,
@@ -1950,10 +1977,10 @@ pub fn show_canvas_panel(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffMetricMode, PixelOverlayCache, PixelOverlayReadback, RefImageMode,
-        ValueSamplingReference, compute_diff_metric_rgb, format_overlay_channel,
-        is_hdr_clamp_effective, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
-        sample_value_pixel,
+        DiffMetricMode, ORDER_OPERATION, ORDER_PAUSE, ORDER_RENDER_FPS, PixelOverlayCache,
+        PixelOverlayReadback, RefImageMode, ValueSamplingReference, compute_diff_metric_rgb,
+        format_overlay_channel, is_hdr_clamp_effective, rgba8_to_rgba_f32, sample_rgba8_pixel,
+        sample_rgba16f_pixel, sample_value_pixel,
     };
     use rust_wgpu_fiber::eframe::wgpu;
 
@@ -1984,9 +2011,22 @@ mod tests {
     }
 
     #[test]
-    fn format_overlay_channel_uses_fixed_three_decimals() {
-        assert_eq!(format_overlay_channel('r', 0.0006), "r: 0.001");
-        assert_eq!(format_overlay_channel('a', 1.0), "a: 1.000");
+    fn render_fps_indicator_order_sits_between_operation_and_pause() {
+        assert!(ORDER_OPERATION < ORDER_RENDER_FPS);
+        assert!(ORDER_RENDER_FPS < ORDER_PAUSE);
+    }
+
+    #[test]
+    fn format_overlay_channel_adapts_to_eight_chars() {
+        assert_eq!(format_overlay_channel('a', 1.0), "1.000000");
+        assert_eq!(format_overlay_channel('a', 10.0), "10.00000");
+        assert_eq!(format_overlay_channel('a', 100.0), "100.0000");
+        assert_eq!(format_overlay_channel('a', 1000.0), "1000.000");
+        assert_eq!(format_overlay_channel('a', 10000.0), "10000.00");
+        assert_eq!(format_overlay_channel('a', 100000.0), "100000.0");
+        assert_eq!(format_overlay_channel('a', 10000000.0), "10000000");
+        assert_eq!(format_overlay_channel('a', -1.0), "-1.00000");
+        assert_eq!(format_overlay_channel('a', -1000.0), "-1000.00");
     }
 
     #[test]

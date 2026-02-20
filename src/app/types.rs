@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     sync::mpsc,
     sync::{Arc, Mutex},
     time::Instant,
@@ -160,6 +161,34 @@ pub enum ViewportOperationIndicatorVisual {
     Failure,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct RenderTextureFpsTracker {
+    render_update_timestamps: VecDeque<f64>,
+}
+
+impl RenderTextureFpsTracker {
+    const WINDOW_SECS: f64 = 1.0;
+
+    pub fn record_render_update(&mut self, now_secs: f64) {
+        self.render_update_timestamps.push_back(now_secs);
+        self.prune_stale(now_secs);
+    }
+
+    pub fn fps(&self) -> u32 {
+        self.render_update_timestamps.len() as u32
+    }
+
+    fn prune_stale(&mut self, now_secs: f64) {
+        while let Some(oldest) = self.render_update_timestamps.front().copied() {
+            if now_secs - oldest > Self::WINDOW_SECS {
+                let _ = self.render_update_timestamps.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 pub const CANVAS_RADIUS: f32 = 16.0;
 pub const OUTER_MARGIN: f32 = 4.0;
 pub const SIDEBAR_ANIM_SECS: f64 = crate::ui::debug_sidebar::SIDEBAR_ANIM_SECS;
@@ -196,6 +225,7 @@ pub struct App {
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub pipeline_rebuild_count: u64,
     pub uniform_only_update_count: u64,
+    pub render_texture_fps_tracker: RenderTextureFpsTracker,
 
     pub zoom: f32,
     pub zoom_initialized: bool,
@@ -351,6 +381,7 @@ impl App {
             last_pipeline_signature: init.last_pipeline_signature,
             pipeline_rebuild_count: 0,
             uniform_only_update_count: 0,
+            render_texture_fps_tracker: RenderTextureFpsTracker::default(),
             zoom: 1.0,
             zoom_initialized: false,
             min_zoom: None,
@@ -429,7 +460,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{AnalysisTab, ClippingSettings};
+    use super::{AnalysisTab, ClippingSettings, RenderTextureFpsTracker};
 
     #[test]
     fn analysis_tab_only_contains_infographics_labels() {
@@ -443,5 +474,35 @@ mod tests {
         let settings = ClippingSettings::default();
         assert!((0.0..=0.25).contains(&settings.shadow_threshold));
         assert!((0.75..=1.0).contains(&settings.highlight_threshold));
+    }
+
+    #[test]
+    fn render_texture_fps_counts_updates_within_last_second() {
+        let mut tracker = RenderTextureFpsTracker::default();
+        tracker.record_render_update(0.0);
+        tracker.record_render_update(0.2);
+        tracker.record_render_update(0.9);
+        assert_eq!(tracker.fps(), 3);
+    }
+
+    #[test]
+    fn render_texture_fps_prunes_updates_older_than_window() {
+        let mut tracker = RenderTextureFpsTracker::default();
+        tracker.record_render_update(0.0);
+        tracker.record_render_update(0.3);
+        tracker.record_render_update(0.6);
+        tracker.record_render_update(1.61);
+        assert_eq!(tracker.fps(), 1);
+    }
+
+    #[test]
+    fn render_texture_fps_keeps_exactly_one_second_boundary() {
+        let mut tracker = RenderTextureFpsTracker::default();
+        tracker.record_render_update(0.0);
+        tracker.record_render_update(1.0);
+        assert_eq!(tracker.fps(), 2);
+
+        tracker.record_render_update(1.000_001);
+        assert_eq!(tracker.fps(), 2);
     }
 }
