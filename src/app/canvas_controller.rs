@@ -50,6 +50,10 @@ const PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM: f32 =
 const PIXEL_OVERLAY_BASE_FONT_SIZE_AT_MAX_ZOOM: f32 =
     PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM / 1.5;
 
+pub(super) fn is_pan_zoom_animating(app: &App) -> bool {
+    app.animations.is_active(ANIM_KEY_PAN_ZOOM_FACTOR)
+}
+
 fn is_hdr_clamp_effective(
     hdr_preview_clamp_enabled: bool,
     texture_format: Option<wgpu::TextureFormat>,
@@ -1186,7 +1190,7 @@ pub fn show_canvas_panel(
         }
     }
 
-    let pan_zoom_animating = app.animations.is_active(ANIM_KEY_PAN_ZOOM_FACTOR);
+    let pan_zoom_animating = is_pan_zoom_animating(app);
     let pan_zoom_enabled = !pan_zoom_animating;
     let effective_min_zoom = if pan_zoom_animating { 0.01 } else { min_zoom };
 
@@ -1728,8 +1732,8 @@ pub fn show_canvas_panel(
                 "render_fps",
                 ORDER_RENDER_FPS,
                 true,
-                format!("{} FPS", app.render_texture_fps_tracker.fps()),
-                "Render texture updates per second (counts shader_space.render only; excludes diff/clipping/analysis)",
+                format!("{} FPS", app.render_texture_fps_tracker.fps_at(now)),
+                "Scene redraws per second (counts scene redraws only; excludes reference-image/diff/clipping/analysis-only updates)",
             )
         });
 

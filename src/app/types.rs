@@ -7,9 +7,9 @@ use std::{
 
 use crossbeam_channel::Receiver;
 use rust_wgpu_fiber::{
-    ResourceName,
     eframe::{egui, wgpu},
     shader_space::ShaderSpace,
+    ResourceName,
 };
 
 use crate::{renderer, ws};
@@ -163,25 +163,26 @@ pub enum ViewportOperationIndicatorVisual {
 
 #[derive(Clone, Debug, Default)]
 pub struct RenderTextureFpsTracker {
-    render_update_timestamps: VecDeque<f64>,
+    scene_redraw_timestamps: VecDeque<f64>,
 }
 
 impl RenderTextureFpsTracker {
     const WINDOW_SECS: f64 = 1.0;
 
-    pub fn record_render_update(&mut self, now_secs: f64) {
-        self.render_update_timestamps.push_back(now_secs);
+    pub fn record_scene_redraw(&mut self, now_secs: f64) {
+        self.scene_redraw_timestamps.push_back(now_secs);
         self.prune_stale(now_secs);
     }
 
-    pub fn fps(&self) -> u32 {
-        self.render_update_timestamps.len() as u32
+    pub fn fps_at(&mut self, now_secs: f64) -> u32 {
+        self.prune_stale(now_secs);
+        self.scene_redraw_timestamps.len() as u32
     }
 
     fn prune_stale(&mut self, now_secs: f64) {
-        while let Some(oldest) = self.render_update_timestamps.front().copied() {
+        while let Some(oldest) = self.scene_redraw_timestamps.front().copied() {
             if now_secs - oldest > Self::WINDOW_SECS {
-                let _ = self.render_update_timestamps.pop_front();
+                let _ = self.scene_redraw_timestamps.pop_front();
             } else {
                 break;
             }
@@ -288,6 +289,7 @@ pub struct App {
     pub last_vectorscope_request_key: Option<u64>,
     pub last_clipping_request_key: Option<u64>,
     pub scene_uses_time: bool,
+    pub scene_redraw_pending: bool,
     pub scene_reference_image_path: Option<String>,
     pub scene_reference_image_data_url: Option<String>,
     pub scene_reference_image_asset_id: Option<String>,
@@ -439,6 +441,7 @@ impl App {
             last_vectorscope_request_key: None,
             last_clipping_request_key: None,
             scene_uses_time: initial_scene_uses_time,
+            scene_redraw_pending: true,
             scene_reference_image_path: initial_scene_reference_image_path,
             scene_reference_image_data_url: initial_scene_reference_image_data_url,
             scene_reference_image_asset_id: initial_scene_reference_image_asset_id,
@@ -460,7 +463,10 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::{AnalysisTab, ClippingSettings, RenderTextureFpsTracker};
+    use crate::dsl::{Metadata, Node, SceneDSL};
 
     #[test]
     fn analysis_tab_only_contains_infographics_labels() {
@@ -477,32 +483,80 @@ mod tests {
     }
 
     #[test]
-    fn render_texture_fps_counts_updates_within_last_second() {
+    fn render_texture_fps_counts_scene_redraws_within_last_second() {
         let mut tracker = RenderTextureFpsTracker::default();
-        tracker.record_render_update(0.0);
-        tracker.record_render_update(0.2);
-        tracker.record_render_update(0.9);
-        assert_eq!(tracker.fps(), 3);
+        tracker.record_scene_redraw(0.0);
+        tracker.record_scene_redraw(0.2);
+        tracker.record_scene_redraw(0.9);
+        assert_eq!(tracker.fps_at(0.9), 3);
     }
 
     #[test]
-    fn render_texture_fps_prunes_updates_older_than_window() {
+    fn render_texture_fps_prunes_scene_redraws_older_than_window() {
         let mut tracker = RenderTextureFpsTracker::default();
-        tracker.record_render_update(0.0);
-        tracker.record_render_update(0.3);
-        tracker.record_render_update(0.6);
-        tracker.record_render_update(1.61);
-        assert_eq!(tracker.fps(), 1);
+        tracker.record_scene_redraw(0.0);
+        tracker.record_scene_redraw(0.3);
+        tracker.record_scene_redraw(0.6);
+        tracker.record_scene_redraw(1.61);
+        assert_eq!(tracker.fps_at(1.61), 1);
+    }
+
+    #[test]
+    fn render_texture_fps_decays_without_new_scene_redraws() {
+        let mut tracker = RenderTextureFpsTracker::default();
+        tracker.record_scene_redraw(0.0);
+        tracker.record_scene_redraw(0.2);
+        assert_eq!(tracker.fps_at(0.2), 2);
+        assert_eq!(tracker.fps_at(1.25), 0);
     }
 
     #[test]
     fn render_texture_fps_keeps_exactly_one_second_boundary() {
         let mut tracker = RenderTextureFpsTracker::default();
-        tracker.record_render_update(0.0);
-        tracker.record_render_update(1.0);
-        assert_eq!(tracker.fps(), 2);
+        tracker.record_scene_redraw(0.0);
+        tracker.record_scene_redraw(1.0);
+        assert_eq!(tracker.fps_at(1.0), 2);
 
-        tracker.record_render_update(1.000_001);
-        assert_eq!(tracker.fps(), 2);
+        tracker.record_scene_redraw(1.000_001);
+        assert_eq!(tracker.fps_at(1.000_001), 2);
+    }
+
+    fn scene_with_node_types(node_types: &[&str]) -> SceneDSL {
+        SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: node_types
+                .iter()
+                .enumerate()
+                .map(|(idx, node_type)| Node {
+                    id: format!("node_{idx}"),
+                    node_type: (*node_type).to_string(),
+                    params: HashMap::new(),
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                })
+                .collect(),
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn scene_uses_time_returns_true_for_time_input_node() {
+        let scene = scene_with_node_types(&["TimeInput"]);
+        assert!(super::scene_uses_time(&scene));
+    }
+
+    #[test]
+    fn scene_uses_time_returns_false_when_time_nodes_absent() {
+        let scene = scene_with_node_types(&["FloatInput", "ColorInput"]);
+        assert!(!super::scene_uses_time(&scene));
     }
 }

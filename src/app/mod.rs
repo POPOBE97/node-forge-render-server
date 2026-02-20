@@ -13,6 +13,7 @@ pub use types::{
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    time::Duration,
 };
 
 use rust_wgpu_fiber::eframe::{self, egui, wgpu};
@@ -114,6 +115,15 @@ fn apply_clipping_highlight_threshold_change(
     }
 }
 
+fn should_request_immediate_repaint(
+    time_driven_scene: bool,
+    sidebar_animating: bool,
+    pan_zoom_animating: bool,
+    operation_indicator_visible: bool,
+) -> bool {
+    time_driven_scene || sidebar_animating || pan_zoom_animating || operation_indicator_visible
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let frame_time = ctx.input(|i| i.time);
@@ -129,6 +139,7 @@ impl eframe::App for App {
         let mut did_rebuild_shader_space = false;
         if let Some(update) = scene_runtime::drain_latest_scene_update(self) {
             let apply_result = scene_runtime::apply_scene_update(self, ctx, render_state, update);
+            self.scene_redraw_pending = true;
             self.diff_dirty = true;
             self.analysis_dirty = true;
             self.clipping_dirty = true;
@@ -165,28 +176,34 @@ impl eframe::App for App {
         if self.time_updates_enabled {
             self.time_value_secs += delta_t;
         }
-        let t = self.time_value_secs;
-        for pass in &mut self.passes {
-            let mut p = pass.base_params;
-            p.time = t;
-            let _ = renderer::update_pass_params(&self.shader_space, pass, &p);
-        }
+        let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
+        let should_redraw_scene = self.scene_redraw_pending || time_driven_scene;
 
-        if self.scene_uses_time && self.time_updates_enabled {
-            if matches!(
-                self.ref_image.as_ref().map(|r| r.mode),
-                Some(RefImageMode::Diff)
-            ) {
-                self.diff_dirty = true;
+        if should_redraw_scene {
+            let t = self.time_value_secs;
+            for pass in &mut self.passes {
+                let mut p = pass.base_params;
+                p.time = t;
+                let _ = renderer::update_pass_params(&self.shader_space, pass, &p);
             }
-            self.analysis_dirty = true;
-            self.clipping_dirty = true;
-            self.pixel_overlay_dirty = true;
-        }
 
-        self.shader_space.render();
-        self.render_texture_fps_tracker
-            .record_render_update(frame_time);
+            if time_driven_scene {
+                if matches!(
+                    self.ref_image.as_ref().map(|r| r.mode),
+                    Some(RefImageMode::Diff)
+                ) {
+                    self.diff_dirty = true;
+                }
+                self.analysis_dirty = true;
+                self.clipping_dirty = true;
+                self.pixel_overlay_dirty = true;
+            }
+
+            self.shader_space.render();
+            self.scene_redraw_pending = false;
+            self.render_texture_fps_tracker
+                .record_scene_redraw(frame_time);
+        }
 
         texture_bridge::ensure_output_texture_registered(self, render_state, &mut renderer_guard);
 
@@ -775,7 +792,28 @@ impl eframe::App for App {
             "Node Forge Render Server".to_string()
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
-        ctx.request_repaint();
+
+        let sidebar_animating = self
+            .animations
+            .is_active(window_mode::ANIM_KEY_SIDEBAR_FACTOR);
+        let pan_zoom_animating = canvas_controller::is_pan_zoom_animating(self);
+        let operation_indicator_visible = !matches!(
+            self.viewport_operation_indicator,
+            types::ViewportOperationIndicator::Hidden
+        );
+
+        let time_driven_scene_for_schedule = self.scene_uses_time && self.time_updates_enabled;
+
+        if should_request_immediate_repaint(
+            time_driven_scene_for_schedule,
+            sidebar_animating,
+            pan_zoom_animating,
+            operation_indicator_visible,
+        ) {
+            ctx.request_repaint();
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
     }
 }
 
@@ -785,7 +823,8 @@ mod tests {
         AnalysisTab, ClippingSettings, DiffMetricMode, apply_analysis_tab_change,
         apply_clip_enabled_change, apply_clipping_highlight_threshold_change,
         apply_clipping_shadow_threshold_change, clipping_request_key, diff_request_key, hash_key,
-        histogram_request_key, parade_request_key, vectorscope_request_key,
+        histogram_request_key, parade_request_key, should_request_immediate_repaint,
+        vectorscope_request_key,
     };
 
     #[test]
@@ -885,5 +924,36 @@ mod tests {
         );
         assert_ne!(base, toggled);
         assert_ne!(base, changed_threshold);
+    }
+
+    #[test]
+    fn repaint_policy_requests_immediate_for_time_driven_scene() {
+        assert!(should_request_immediate_repaint(
+            true, false, false, false
+        ));
+    }
+
+    #[test]
+    fn repaint_policy_requests_immediate_for_any_active_animation() {
+        assert!(should_request_immediate_repaint(
+            false, true, false, false
+        ));
+        assert!(should_request_immediate_repaint(
+            false, false, true, false
+        ));
+    }
+
+    #[test]
+    fn repaint_policy_requests_immediate_when_operation_indicator_visible() {
+        assert!(should_request_immediate_repaint(
+            false, false, false, true
+        ));
+    }
+
+    #[test]
+    fn repaint_policy_uses_idle_poll_when_all_triggers_are_inactive() {
+        assert!(!should_request_immediate_repaint(
+            false, false, false, false
+        ));
     }
 }
