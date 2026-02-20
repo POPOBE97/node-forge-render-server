@@ -125,6 +125,7 @@ impl eframe::App for App {
             self.diff_dirty = true;
             self.analysis_dirty = true;
             self.clipping_dirty = true;
+            self.pixel_overlay_dirty = true;
             if apply_result.did_rebuild_shader_space {
                 let filter = apply_result
                     .texture_filter_override
@@ -173,6 +174,7 @@ impl eframe::App for App {
             }
             self.analysis_dirty = true;
             self.clipping_dirty = true;
+            self.pixel_overlay_dirty = true;
         }
 
         self.shader_space.render();
@@ -628,6 +630,7 @@ impl eframe::App for App {
                 self.diff_dirty = true;
                 self.analysis_dirty = true;
                 self.clipping_dirty = true;
+                self.pixel_overlay_dirty = true;
             }
             Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
                 // Only clear the name; the canvas controller will stop using the
@@ -638,6 +641,7 @@ impl eframe::App for App {
                 self.diff_dirty = true;
                 self.analysis_dirty = true;
                 self.clipping_dirty = true;
+                self.pixel_overlay_dirty = true;
             }
             Some(ui::debug_sidebar::SidebarAction::SetReferenceOpacity(opacity)) => {
                 if let Some(reference) = self.ref_image.as_mut() {

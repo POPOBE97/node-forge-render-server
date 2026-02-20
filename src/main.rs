@@ -339,6 +339,13 @@ fn configure_egui_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
     fonts.font_data.insert(
+        "GeistMono-Regular".to_string(),
+        egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/GeistMono/GeistMono-Regular.ttf"
+        ))
+        .into(),
+    );
+    fonts.font_data.insert(
         "MiSans-Thin".to_string(),
         egui::FontData::from_static(include_bytes!("../assets/fonts/MiSans/MiSans-Thin.ttf"))
             .into(),
@@ -420,6 +427,10 @@ fn configure_egui_fonts(ctx: &egui::Context) {
             vec![family.to_string()],
         );
     }
+    fonts.families.insert(
+        egui::FontFamily::Name("geist_mono".into()),
+        vec!["GeistMono-Regular".to_string()],
+    );
 
     ctx.set_fonts(fonts);
 }

@@ -203,6 +203,8 @@ pub struct App {
     pub canvas_center_prev: Option<egui::Pos2>,
     pub last_sampled: Option<SampledPixel>,
     pub texture_filter: wgpu::FilterMode,
+    pub pixel_overlay_dirty: bool,
+    pub pixel_overlay_last_request_key: Option<u64>,
 
     pub follow_scene_resolution_for_window: bool,
 
@@ -352,6 +354,8 @@ impl App {
             canvas_center_prev: None,
             last_sampled: None,
             texture_filter: wgpu::FilterMode::Nearest,
+            pixel_overlay_dirty: true,
+            pixel_overlay_last_request_key: None,
             follow_scene_resolution_for_window: init.follow_scene_resolution_for_window,
             window_mode: UiWindowMode::Sidebar,
             prev_window_mode: UiWindowMode::Sidebar,

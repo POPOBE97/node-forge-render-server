@@ -1,4 +1,10 @@
-use std::{borrow::Cow, path::Path, sync::mpsc};
+use std::{
+    borrow::Cow,
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    path::Path,
+    sync::{Arc, mpsc},
+};
 
 use rust_wgpu_fiber::eframe::{
     egui::{self, Color32, Rect, pos2},
@@ -32,6 +38,331 @@ const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
 const ORDER_CLIPPING: i32 = 30;
 const ORDER_STATS: i32 = 40;
+const PIXEL_OVERLAY_MIN_ZOOM: f32 = 48.0;
+const PIXEL_OVERLAY_CACHE_ID: &str = "ui.canvas.pixel_overlay_cache";
+const PIXEL_OVERLAY_REFERENCE_ZOOM: f32 = 100.0;
+const PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM: f32 = 10.0;
+const PIXEL_OVERLAY_BASE_PADDING_X_AT_MAX_ZOOM: f32 = 18.0;
+const PIXEL_OVERLAY_BASE_SHADOW_OFFSET_AT_MAX_ZOOM: f32 = 1.0;
+const PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM: f32 =
+    (PIXEL_OVERLAY_REFERENCE_ZOOM - PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM * 2.0) / 4.0;
+const PIXEL_OVERLAY_BASE_FONT_SIZE_AT_MAX_ZOOM: f32 =
+    PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM / 1.5;
+
+fn pixel_overlay_text_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(245, 245, 245, 242)
+}
+
+fn pixel_overlay_shadow_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(0, 0, 0, 214)
+}
+
+fn pixel_overlay_channel_color(channel: char) -> Color32 {
+    match channel {
+        'r' => Color32::from_rgba_unmultiplied(255, 0, 0, 242),
+        'g' => Color32::from_rgba_unmultiplied(0, 255, 0, 242),
+        'b' => Color32::from_rgba_unmultiplied(0, 120, 255, 242),
+        _ => pixel_overlay_text_color(),
+    }
+}
+
+#[derive(Clone, Debug)]
+enum PixelOverlayReadback {
+    Rgba8(Vec<u8>),
+    Rgba16f(Vec<f32>),
+    Unavailable,
+    UnsupportedFormat,
+}
+
+#[derive(Clone, Debug)]
+struct PixelOverlayCache {
+    texture_name: String,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    readback: PixelOverlayReadback,
+}
+
+fn pixel_overlay_cache_id() -> egui::Id {
+    egui::Id::new(PIXEL_OVERLAY_CACHE_ID)
+}
+
+fn should_refresh_pixel_overlay_cache(
+    cache: &PixelOverlayCache,
+    texture_name: &str,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> bool {
+    cache.texture_name != texture_name
+        || cache.width != width
+        || cache.height != height
+        || cache.format != format
+}
+
+fn read_pixel_overlay_cache(
+    app: &App,
+    texture_name: &str,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> Arc<PixelOverlayCache> {
+    let readback = match format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => app
+            .shader_space
+            .read_texture_rgba8(texture_name)
+            .map(|image| PixelOverlayReadback::Rgba8(image.bytes))
+            .unwrap_or(PixelOverlayReadback::Unavailable),
+        wgpu::TextureFormat::Rgba16Float => app
+            .shader_space
+            .read_texture_rgba16f(texture_name)
+            .map(|image| PixelOverlayReadback::Rgba16f(image.channels))
+            .unwrap_or(PixelOverlayReadback::Unavailable),
+        _ => PixelOverlayReadback::UnsupportedFormat,
+    };
+
+    Arc::new(PixelOverlayCache {
+        texture_name: texture_name.to_string(),
+        width,
+        height,
+        format,
+        readback,
+    })
+}
+
+fn hash_key<T: Hash + ?Sized>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn pixel_overlay_request_key(
+    texture_name: &str,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> u64 {
+    hash_key(&(texture_name, width, height, format))
+}
+
+fn get_or_refresh_pixel_overlay_cache(
+    app: &mut App,
+    ctx: &egui::Context,
+    texture_name: &str,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> Arc<PixelOverlayCache> {
+    let request_key = pixel_overlay_request_key(texture_name, width, height, format);
+    let request_key_changed = app.pixel_overlay_last_request_key != Some(request_key);
+    let cache_id = pixel_overlay_cache_id();
+    let cached = ctx.memory(|mem| mem.data.get_temp::<Arc<PixelOverlayCache>>(cache_id));
+    let should_refresh = app.pixel_overlay_dirty
+        || request_key_changed
+        || cached.as_ref().is_none_or(|existing| {
+            should_refresh_pixel_overlay_cache(existing, texture_name, width, height, format)
+        });
+
+    if !should_refresh && let Some(existing) = cached {
+        return existing;
+    }
+
+    let updated = read_pixel_overlay_cache(app, texture_name, width, height, format);
+    app.pixel_overlay_last_request_key = Some(request_key);
+    app.pixel_overlay_dirty = false;
+    ctx.memory_mut(|mem| mem.data.insert_temp(cache_id, updated.clone()));
+    updated
+}
+
+fn mark_pixel_overlay_dirty(app: &mut App) {
+    app.pixel_overlay_dirty = true;
+}
+
+fn clear_pixel_overlay_cache(ctx: &egui::Context) {
+    let cache_id = pixel_overlay_cache_id();
+    ctx.memory_mut(|mem| mem.data.remove::<Arc<PixelOverlayCache>>(cache_id));
+}
+
+fn format_overlay_channel(label: char, value: f32) -> String {
+    let normalized = if value.abs() < 0.0005 { 0.0 } else { value };
+    format!("{label}: {normalized:.3}")
+}
+
+fn rgba8_to_rgba_f32(rgba: [u8; 4]) -> [f32; 4] {
+    [
+        rgba[0] as f32 / 255.0,
+        rgba[1] as f32 / 255.0,
+        rgba[2] as f32 / 255.0,
+        rgba[3] as f32 / 255.0,
+    ]
+}
+
+fn sample_rgba8_pixel(bytes: &[u8], width: u32, height: u32, x: u32, y: u32) -> Option<[f32; 4]> {
+    if x >= width || y >= height {
+        return None;
+    }
+    let pixel_index = y.checked_mul(width)?.checked_add(x)?;
+    let idx = (pixel_index as usize).checked_mul(4)?;
+    if idx + 3 >= bytes.len() {
+        return None;
+    }
+    Some(rgba8_to_rgba_f32([
+        bytes[idx],
+        bytes[idx + 1],
+        bytes[idx + 2],
+        bytes[idx + 3],
+    ]))
+}
+
+fn sample_rgba16f_pixel(
+    channels: &[f32],
+    width: u32,
+    height: u32,
+    x: u32,
+    y: u32,
+) -> Option<[f32; 4]> {
+    if x >= width || y >= height {
+        return None;
+    }
+    let pixel_index = y.checked_mul(width)?.checked_add(x)?;
+    let idx = (pixel_index as usize).checked_mul(4)?;
+    if idx + 3 >= channels.len() {
+        return None;
+    }
+    Some([
+        channels[idx],
+        channels[idx + 1],
+        channels[idx + 2],
+        channels[idx + 3],
+    ])
+}
+
+fn sample_overlay_pixel(cache: &PixelOverlayCache, x: u32, y: u32) -> Option<[f32; 4]> {
+    match &cache.readback {
+        PixelOverlayReadback::Rgba8(bytes) => {
+            sample_rgba8_pixel(bytes.as_slice(), cache.width, cache.height, x, y)
+        }
+        PixelOverlayReadback::Rgba16f(channels) => {
+            sample_rgba16f_pixel(channels.as_slice(), cache.width, cache.height, x, y)
+        }
+        PixelOverlayReadback::Unavailable | PixelOverlayReadback::UnsupportedFormat => None,
+    }
+}
+
+fn draw_pixel_overlay(
+    ui: &egui::Ui,
+    image_rect: Rect,
+    canvas_rect: Rect,
+    zoom: f32,
+    resolution: [u32; 2],
+    cache: Option<&PixelOverlayCache>,
+) {
+    if zoom < PIXEL_OVERLAY_MIN_ZOOM {
+        return;
+    }
+    let [width, height] = resolution;
+    if width == 0 || height == 0 {
+        return;
+    }
+
+    let visible_image_rect = image_rect.intersect(canvas_rect);
+    if !visible_image_rect.is_positive() {
+        return;
+    }
+
+    let pixel_size = zoom.max(0.000_1);
+    let x_start = (((visible_image_rect.min.x - image_rect.min.x) / pixel_size)
+        .floor()
+        .max(0.0) as i32)
+        .min(width as i32);
+    let x_end = (((visible_image_rect.max.x - image_rect.min.x) / pixel_size)
+        .ceil()
+        .max(0.0) as i32)
+        .min(width as i32);
+    let y_start = (((visible_image_rect.min.y - image_rect.min.y) / pixel_size)
+        .floor()
+        .max(0.0) as i32)
+        .min(height as i32);
+    let y_end = (((visible_image_rect.max.y - image_rect.min.y) / pixel_size)
+        .ceil()
+        .max(0.0) as i32)
+        .min(height as i32);
+
+    if x_start > x_end || y_start > y_end {
+        return;
+    }
+
+    let painter = ui.painter().with_clip_rect(visible_image_rect);
+    let grid_stroke = egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 58));
+    for x in x_start..=x_end {
+        let sx = image_rect.min.x + x as f32 * pixel_size;
+        painter.line_segment(
+            [
+                pos2(sx, visible_image_rect.min.y),
+                pos2(sx, visible_image_rect.max.y),
+            ],
+            grid_stroke,
+        );
+    }
+    for y in y_start..=y_end {
+        let sy = image_rect.min.y + y as f32 * pixel_size;
+        painter.line_segment(
+            [
+                pos2(visible_image_rect.min.x, sy),
+                pos2(visible_image_rect.max.x, sy),
+            ],
+            grid_stroke,
+        );
+    }
+
+    let Some(cache) = cache else {
+        return;
+    };
+
+    let overlay_scale = pixel_size / PIXEL_OVERLAY_REFERENCE_ZOOM;
+    let text_padding_y = PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM * overlay_scale;
+    let text_padding_x = PIXEL_OVERLAY_BASE_PADDING_X_AT_MAX_ZOOM * overlay_scale;
+    let line_height = PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM * overlay_scale;
+    if line_height <= 0.0 {
+        return;
+    }
+    let font_size = (PIXEL_OVERLAY_BASE_FONT_SIZE_AT_MAX_ZOOM * overlay_scale).max(1.0);
+    let shadow_offset = PIXEL_OVERLAY_BASE_SHADOW_OFFSET_AT_MAX_ZOOM * overlay_scale;
+    let font = egui::FontId::new(font_size, egui::FontFamily::Name("geist_mono".into()));
+    for y in y_start..y_end {
+        for x in x_start..x_end {
+            let Some(rgba) = sample_overlay_pixel(cache, x as u32, y as u32) else {
+                continue;
+            };
+            let lines = [
+                ('r', format_overlay_channel('r', rgba[0])),
+                ('g', format_overlay_channel('g', rgba[1])),
+                ('b', format_overlay_channel('b', rgba[2])),
+                ('a', format_overlay_channel('a', rgba[3])),
+            ];
+
+            let x0 = image_rect.min.x + x as f32 * pixel_size + text_padding_x;
+            let y0 = image_rect.min.y + y as f32 * pixel_size + text_padding_y;
+            for (idx, (channel, line)) in lines.iter().enumerate() {
+                let text_pos = pos2(x0, y0 + idx as f32 * line_height);
+                painter.text(
+                    pos2(text_pos.x + shadow_offset, text_pos.y + shadow_offset),
+                    egui::Align2::LEFT_TOP,
+                    line,
+                    font.clone(),
+                    pixel_overlay_shadow_color(),
+                );
+                painter.text(
+                    text_pos,
+                    egui::Align2::LEFT_TOP,
+                    line,
+                    font.clone(),
+                    pixel_overlay_channel_color(*channel),
+                );
+            }
+        }
+    }
+}
 
 fn with_alpha(color: Color32, alpha: f32) -> Color32 {
     let a = ((color.a() as f32) * alpha.clamp(0.0, 1.0)).round() as u8;
@@ -530,6 +861,7 @@ pub fn show_canvas_panel(
             }
             app.analysis_dirty = true;
             app.clipping_dirty = true;
+            mark_pixel_overlay_dirty(app);
         }
     }
 
@@ -537,6 +869,8 @@ pub fn show_canvas_panel(
 
     if app.preview_texture_name.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.preview_texture_name = None;
+        mark_pixel_overlay_dirty(app);
+        clear_pixel_overlay_cache(ctx);
         app.file_tree_state.selected_id = None;
         if let Some(id) = app.preview_color_attachment.take() {
             renderer.free_texture(&id);
@@ -562,6 +896,8 @@ pub fn show_canvas_panel(
         } else {
             // Texture gone — clear preview.
             app.preview_texture_name = None;
+            mark_pixel_overlay_dirty(app);
+            clear_pixel_overlay_cache(ctx);
             if let Some(id) = app.preview_color_attachment.take() {
                 renderer.free_texture(&id);
             }
@@ -1048,6 +1384,30 @@ pub fn show_canvas_panel(
         );
     }
 
+    if app.zoom >= PIXEL_OVERLAY_MIN_ZOOM {
+        let pixel_overlay_cache =
+            if let Some(info) = app.shader_space.texture_info(active_texture_name.as_str()) {
+                Some(get_or_refresh_pixel_overlay_cache(
+                    app,
+                    ctx,
+                    active_texture_name.as_str(),
+                    info.size.width,
+                    info.size.height,
+                    info.format,
+                ))
+            } else {
+                None
+            };
+        draw_pixel_overlay(
+            ui,
+            image_rect,
+            animated_canvas_rect,
+            app.zoom,
+            effective_resolution,
+            pixel_overlay_cache.as_deref(),
+        );
+    }
+
     let sampling_indicator = match app.texture_filter {
         wgpu::FilterMode::Nearest => ViewportIndicator {
             icon: "N",
@@ -1342,4 +1702,52 @@ pub fn show_canvas_panel(
     app.canvas_center_prev = Some(animated_canvas_rect.center());
 
     requested_toggle_canvas_only
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        format_overlay_channel, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
+    };
+
+    #[test]
+    fn format_overlay_channel_uses_fixed_three_decimals() {
+        assert_eq!(format_overlay_channel('r', 0.0006), "r: 0.001");
+        assert_eq!(format_overlay_channel('a', 1.0), "a: 1.000");
+    }
+
+    #[test]
+    fn rgba8_to_rgba_f32_converts_edge_values() {
+        assert_eq!(
+            rgba8_to_rgba_f32([0, 255, 128, 255]),
+            [0.0, 1.0, 128.0 / 255.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn sample_rgba8_pixel_checks_bounds() {
+        let bytes = vec![
+            255, 0, 0, 255, // (0,0)
+            0, 255, 0, 255, // (1,0)
+        ];
+        assert_eq!(
+            sample_rgba8_pixel(&bytes, 2, 1, 0, 0),
+            Some([1.0, 0.0, 0.0, 1.0])
+        );
+        assert_eq!(sample_rgba8_pixel(&bytes, 2, 1, 2, 0), None);
+        assert_eq!(sample_rgba8_pixel(&bytes, 2, 1, 1, 1), None);
+    }
+
+    #[test]
+    fn sample_rgba16f_pixel_checks_bounds() {
+        let channels = vec![
+            0.25, 0.5, 0.75, 1.0, // (0,0)
+            1.25, 1.5, 1.75, 2.0, // (1,0)
+        ];
+        assert_eq!(
+            sample_rgba16f_pixel(&channels, 2, 1, 1, 0),
+            Some([1.25, 1.5, 1.75, 2.0])
+        );
+        assert_eq!(sample_rgba16f_pixel(&channels, 2, 1, 2, 0), None);
+    }
 }
