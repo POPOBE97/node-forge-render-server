@@ -28,6 +28,7 @@ const ANIM_KEY_PAN_ZOOM_FACTOR: &str = "ui.canvas.pan_zoom.factor";
 const VIEWPORT_OPERATION_TIMEOUT_SECS: f64 = 5.0;
 const ORDER_OPERATION: i32 = 0;
 const ORDER_PAUSE: i32 = 10;
+const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
 const ORDER_CLIPPING: i32 = 30;
 const ORDER_STATS: i32 = 40;
@@ -1059,6 +1060,18 @@ pub fn show_canvas_panel(
             kind: ViewportIndicatorKind::Text,
         },
     };
+    let indicator_texture_name = if using_preview {
+        app.preview_texture_name
+            .as_ref()
+            .map(|name| name.as_str())
+            .unwrap_or(app.output_texture_name.as_str())
+    } else {
+        app.output_texture_name.as_str()
+    };
+    let current_view_is_hdr = app
+        .shader_space
+        .texture_info(indicator_texture_name)
+        .is_some_and(|info| matches!(info.format, wgpu::TextureFormat::Rgba16Float));
     let operation_visual = match app.viewport_operation_indicator {
         ViewportOperationIndicator::InProgress { .. } => {
             Some(ViewportOperationIndicatorVisual::InProgress)
@@ -1107,6 +1120,22 @@ pub fn show_canvas_panel(
                 )
             });
     }
+
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "preview_hdr",
+                ORDER_HDR,
+                current_view_is_hdr,
+                ViewportIndicator {
+                    icon: "HDR",
+                    tooltip: "Current view format: Rgba16Float (HDR)",
+                    kind: ViewportIndicatorKind::Hdr,
+                },
+            )
+        });
 
     app.viewport_indicator_manager
         .register(ViewportIndicatorEntry {

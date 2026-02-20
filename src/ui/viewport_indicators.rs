@@ -8,6 +8,7 @@ pub enum ViewportIndicatorKind {
     Spinner,
     Success,
     Failure,
+    Hdr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,6 +237,11 @@ pub fn draw_viewport_indicator_at(
             design_tokens::indicator_failure_border(),
             design_tokens::indicator_failure_fg(),
         ),
+        ViewportIndicatorKind::Hdr => (
+            design_tokens::indicator_neutral_bg(),
+            design_tokens::indicator_neutral_border(),
+            Color32::WHITE,
+        ),
         _ => (
             design_tokens::indicator_neutral_bg(),
             design_tokens::indicator_neutral_border(),
@@ -254,6 +260,9 @@ pub fn draw_viewport_indicator_at(
     match indicator.kind {
         ViewportIndicatorKind::Spinner => {
             draw_spinner(ui, rect, now as f32, alpha);
+        }
+        ViewportIndicatorKind::Hdr => {
+            draw_overbright_white_text(ui, rect, indicator.icon, alpha);
         }
         _ => {
             ui.painter().text(
@@ -352,7 +361,17 @@ fn draw_text_badge_at(
 impl ViewportIndicatorEntry {
     fn width(&self, ui: &egui::Ui) -> f32 {
         match &self.content {
-            ViewportIndicatorContent::Compact { .. } => VIEWPORT_INDICATOR_ITEM_SIZE,
+            ViewportIndicatorContent::Compact { icon, .. } => {
+                let galley = ui.painter().layout_no_wrap(
+                    icon.clone(),
+                    egui::FontId::new(
+                        11.0,
+                        crate::ui::typography::mi_sans_family_for_weight(600.0),
+                    ),
+                    Color32::WHITE,
+                );
+                (galley.size().x + 10.0).max(VIEWPORT_INDICATOR_ITEM_SIZE)
+            }
             ViewportIndicatorContent::TextBadge { text, .. } => {
                 let galley = ui.painter().layout_no_wrap(
                     text.clone(),
@@ -395,6 +414,41 @@ fn draw_spinner(ui: &egui::Ui, rect: Rect, now: f32, alpha: f32) {
             ),
         );
     }
+}
+
+fn draw_overbright_white_text(ui: &egui::Ui, rect: Rect, text: &str, alpha: f32) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    if alpha <= 0.001 {
+        return;
+    }
+    let font = egui::FontId::new(11.0, crate::ui::typography::mi_sans_family_for_weight(600.0));
+    let center = rect.center();
+    ui.painter().text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        text,
+        font.clone(),
+        with_alpha(Color32::WHITE, alpha),
+    );
+    // Add one additive white pass so HDR surfaces can display >1.0 intensity.
+    ui.painter().text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        text,
+        font,
+        additive_white(alpha),
+    );
+}
+
+fn additive_white(strength: f32) -> Color32 {
+    let strength = strength.clamp(0.0, 1.0);
+    let v = (255.0 * strength).round() as u8;
+    Color32::from_rgba_premultiplied(
+        v,
+        v,
+        v,
+        0,
+    )
 }
 
 fn with_alpha(color: Color32, alpha: f32) -> Color32 {
