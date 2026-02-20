@@ -35,6 +35,9 @@ pub enum ViewportIndicatorContent {
     TextBadge {
         text: String,
         tooltip: String,
+        reserved_width_text: Option<String>,
+        right_aligned: bool,
+        mono: bool,
     },
 }
 
@@ -91,6 +94,60 @@ impl ViewportIndicatorEntry {
             content: ViewportIndicatorContent::TextBadge {
                 text: text.into(),
                 tooltip: tooltip.into(),
+                reserved_width_text: None,
+                right_aligned: false,
+                mono: false,
+            },
+            allow_overflow_collapse: false,
+        }
+    }
+
+    pub fn text_badge_with_reserved_width(
+        key: impl Into<String>,
+        order: i32,
+        visible: bool,
+        text: impl Into<String>,
+        tooltip: impl Into<String>,
+        reserved_width_text: impl Into<String>,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            order,
+            visible,
+            animated: true,
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            content: ViewportIndicatorContent::TextBadge {
+                text: text.into(),
+                tooltip: tooltip.into(),
+                reserved_width_text: Some(reserved_width_text.into()),
+                right_aligned: false,
+                mono: false,
+            },
+            allow_overflow_collapse: false,
+        }
+    }
+
+    pub fn text_badge_right_aligned_mono(
+        key: impl Into<String>,
+        order: i32,
+        visible: bool,
+        text: impl Into<String>,
+        tooltip: impl Into<String>,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            order,
+            visible,
+            animated: true,
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            content: ViewportIndicatorContent::TextBadge {
+                text: text.into(),
+                tooltip: tooltip.into(),
+                reserved_width_text: None,
+                right_aligned: true,
+                mono: true,
             },
             allow_overflow_collapse: false,
         }
@@ -176,9 +233,22 @@ impl ViewportIndicatorManager {
                     };
                     draw_viewport_indicator_at(ui, rect, &indicator, now, anim_t, entry.interaction)
                 }
-                ViewportIndicatorContent::TextBadge { text, tooltip } => {
-                    draw_text_badge_at(ui, rect, text, tooltip, anim_t, entry.interaction)
-                }
+                ViewportIndicatorContent::TextBadge {
+                    text,
+                    tooltip,
+                    right_aligned,
+                    mono,
+                    ..
+                } => draw_text_badge_at(
+                    ui,
+                    rect,
+                    text,
+                    tooltip,
+                    anim_t,
+                    entry.interaction,
+                    *right_aligned,
+                    *mono,
+                ),
             };
 
             if response.clicked()
@@ -323,6 +393,8 @@ fn draw_text_badge_at(
     tooltip: &str,
     alpha: f32,
     interaction: ViewportIndicatorInteraction,
+    right_aligned: bool,
+    mono: bool,
 ) -> egui::Response {
     let alpha = alpha.clamp(0.0, 1.0);
     let response = ui.allocate_rect(
@@ -349,14 +421,25 @@ fn draw_text_badge_at(
         egui::StrokeKind::Outside,
     );
 
-    ui.painter().text(
-        pos2(rect.min.x + 7.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        text,
+    let font = if mono {
+        egui::FontId::new(11.0, egui::FontFamily::Name("geist_mono".into()))
+    } else {
         egui::FontId::new(
             10.0,
             crate::ui::typography::mi_sans_family_for_weight(500.0),
-        ),
+        )
+    };
+
+    let (text_pos, text_align) = if right_aligned {
+        (pos2(rect.max.x - 7.0, rect.center().y), egui::Align2::RIGHT_CENTER)
+    } else {
+        (pos2(rect.min.x + 7.0, rect.center().y), egui::Align2::LEFT_CENTER)
+    };
+    ui.painter().text(
+        text_pos,
+        text_align,
+        text,
+        font,
         with_alpha(Color32::from_rgba_unmultiplied(220, 220, 220, 220), alpha),
     );
 
@@ -377,19 +460,37 @@ impl ViewportIndicatorEntry {
                 );
                 (galley.size().x + 10.0).max(VIEWPORT_INDICATOR_ITEM_SIZE)
             }
-            ViewportIndicatorContent::TextBadge { text, .. } => {
-                let galley = ui.painter().layout_no_wrap(
-                    text.clone(),
-                    egui::FontId::new(
-                        10.0,
-                        crate::ui::typography::mi_sans_family_for_weight(500.0),
-                    ),
-                    Color32::WHITE,
-                );
-                galley.size().x + 14.0
+            ViewportIndicatorContent::TextBadge {
+                text,
+                reserved_width_text,
+                mono,
+                ..
+            } => {
+                let mut width = measure_text_badge_width(ui, text, *mono);
+                if let Some(reserved) = reserved_width_text {
+                    width = width.max(measure_text_badge_width(ui, reserved, *mono));
+                }
+                width
             }
         }
     }
+}
+
+fn measure_text_badge_width(ui: &egui::Ui, text: &str, mono: bool) -> f32 {
+    let font = if mono {
+        egui::FontId::new(11.0, egui::FontFamily::Name("geist_mono".into()))
+    } else {
+        egui::FontId::new(
+            10.0,
+            crate::ui::typography::mi_sans_family_for_weight(500.0),
+        )
+    };
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        font,
+        Color32::WHITE,
+    );
+    galley.size().x + 14.0
 }
 
 fn draw_spinner(ui: &egui::Ui, rect: Rect, now: f32, alpha: f32) {
