@@ -61,11 +61,9 @@ fn mc_MathClosure_42_(uv: vec2<f32>) -> vec4<f32> {
     c_l1_ = _e11;
     let _e13: vec4<f32> = c_l0_;
     let _e14: vec4<f32> = c_l1_;
-    let _e18: vec4<f32> = c_l0_;
-    let _e19: vec4<f32> = c_l1_;
-    output = clamp((_e18 + _e19), vec4(0f), vec4(1f));
-    let _e26: vec4<f32> = output;
-    return _e26;
+    output = (_e13 + _e14);
+    let _e16: vec4<f32> = output;
+    return _e16;
 }
 
 fn sample_pass_RenderPass_4_(uv_in: vec2f) -> vec4f {
