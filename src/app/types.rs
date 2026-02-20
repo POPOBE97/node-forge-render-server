@@ -311,7 +311,7 @@ pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
     scene
         .nodes
         .iter()
-        .any(|node| node.node_type.as_str() == "TimeInput")
+        .any(|node| matches!(node.node_type.as_str(), "TimeInput" | "Time"))
 }
 
 pub(super) fn scene_reference_image_path(scene: &crate::dsl::SceneDSL) -> Option<String> {
@@ -551,6 +551,12 @@ mod tests {
     #[test]
     fn scene_uses_time_returns_true_for_time_input_node() {
         let scene = scene_with_node_types(&["TimeInput"]);
+        assert!(super::scene_uses_time(&scene));
+    }
+
+    #[test]
+    fn scene_uses_time_returns_true_for_time_node() {
+        let scene = scene_with_node_types(&["Time"]);
         assert!(super::scene_uses_time(&scene));
     }
 
