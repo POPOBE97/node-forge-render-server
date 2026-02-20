@@ -745,7 +745,7 @@ impl eframe::App for App {
 
         let title = if let Some(sampled) = self.last_sampled {
             format!(
-                "Node Forge Render Server - x={} y={} rgba=({}, {}, {}, {})",
+                "Node Forge Render Server - x={} y={} rgba=({:.3}, {:.3}, {:.3}, {:.3})",
                 sampled.x,
                 sampled.y,
                 sampled.rgba[0],

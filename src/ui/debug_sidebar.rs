@@ -441,8 +441,8 @@ pub fn show_in_rect(
         let mut content_rect = ui.available_rect_before_wrap();
         if can_resize {
             // Keep the scroll area and its scrollbar out of the resize handle strip.
-            content_rect.max.x = (content_rect.max.x - SIDEBAR_RESIZE_CONTENT_GUTTER_W)
-                .max(content_rect.min.x);
+            content_rect.max.x =
+                (content_rect.max.x - SIDEBAR_RESIZE_CONTENT_GUTTER_W).max(content_rect.min.x);
         }
         ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
             ui.set_clip_rect(content_rect);

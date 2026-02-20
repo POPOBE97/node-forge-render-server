@@ -1296,8 +1296,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     //    linear as gamma), but this preserves the format distinction and matches
     //    the old Bgra8Unorm-surface behaviour where fs_main_gamma_framebuffer
     //    displayed them as-is.
-    let is_hdr_native =
-        presentation_mode == super::api::ShaderSpacePresentationMode::UiHdrNative;
+    let is_hdr_native = presentation_mode == super::api::ShaderSpacePresentationMode::UiHdrNative;
     let display_texture_name: Option<ResourceName> = if enable_display_encode {
         match target_format {
             // sRGB targets → clamped SDR encode.
@@ -4353,26 +4352,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     )
                 };
 
-            let pass_name: ResourceName = format!(
-                "{}{}.pass",
-                target_texture_name.as_str(),
-                suffix
-            )
-            .into();
-            let geo: ResourceName = format!(
-                "{}{}.geo",
-                target_texture_name.as_str(),
-                suffix
-            )
-            .into();
+            let pass_name: ResourceName =
+                format!("{}{}.pass", target_texture_name.as_str(), suffix).into();
+            let geo: ResourceName =
+                format!("{}{}.geo", target_texture_name.as_str(), suffix).into();
             geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
 
-            let params_name: ResourceName = format!(
-                "params.{}{}",
-                target_texture_name.as_str(),
-                suffix
-            )
-            .into();
+            let params_name: ResourceName =
+                format!("params.{}{}", target_texture_name.as_str(), suffix).into();
             let params = Params {
                 target_size: [tgt_w, tgt_h],
                 geo_size: [tgt_w, tgt_h],
