@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-22T07:27:51.989Z",
-    "modified": "2026-01-22T07:27:51.989Z"
+    "created": "2026-02-20T15:52:06.902Z",
+    "modified": "2026-02-20T15:52:06.902Z"
   },
   "nodes": [
     {
@@ -32,6 +32,12 @@
       "params": {
         "mode": "standard",
         "radius": 20,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "extend": false
       }
     },
@@ -45,6 +51,12 @@
       "width": 160,
       "label": "Composite",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "alpha": 1
       }
     },
@@ -53,7 +65,7 @@
       "type": "RenderTexture",
       "position": {
         "x": -120,
-        "y": 200
+        "y": 240
       },
       "width": 160,
       "label": "Render Texture",
@@ -73,11 +85,31 @@
       "width": 192,
       "label": "Image Texture",
       "params": {
+        "assetId": "eea2468df096",
         "interpolation": "linear",
         "extension": "repeat",
-        "encoderSpace": "linear",
-        "alphaMode": "straight",
-        "assetId": "eea2468df096"
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
+    },
+    {
+      "id": "ReferenceImage_8",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 60,
+        "y": 300
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "2eb6e901cbfe",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
       }
     }
   ],
@@ -136,6 +168,13 @@
       "originalName": "baseline-test.png",
       "mimeType": "image/png",
       "size": 284985
+    },
+    "2eb6e901cbfe": {
+      "path": "assets/2eb6e901cbfe.png",
+      "originalName": "baseline.png",
+      "mimeType": "image/png",
+      "size": 1491036
     }
-  }
+  },
+  "groups": []
 }
