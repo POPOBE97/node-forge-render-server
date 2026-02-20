@@ -44,8 +44,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
  let xy = in.uv * original;
  let k = array<f32, 8>(0.14004074, 0.158633992, 0.1072497, 0.057974186, 0.025054639, 0.008656153, 0.002390596, 0);
  let o = array<f32, 8>(0.660334766, 2.464608431, 4.436532497, 6.408857822, 8.381749153, 10.355356216, 12.329815865, 0);
+ let tap_count: u32 = 7u;
  var color = vec4f(0.0);
- for (var i: u32 = 0u; i < 8u; i = i + 1u) {
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
      let uv_pos = (xy + vec2f(0.0, o[i])) / original;
      let uv_neg = (xy - vec2f(0.0, o[i])) / original;
      color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
