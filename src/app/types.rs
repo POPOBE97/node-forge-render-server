@@ -7,9 +7,9 @@ use std::{
 
 use crossbeam_channel::Receiver;
 use rust_wgpu_fiber::{
+    ResourceName,
     eframe::{egui, wgpu},
     shader_space::ShaderSpace,
-    ResourceName,
 };
 
 use crate::{renderer, ws};

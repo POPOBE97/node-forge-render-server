@@ -431,9 +431,15 @@ fn draw_text_badge_at(
     };
 
     let (text_pos, text_align) = if right_aligned {
-        (pos2(rect.max.x - 7.0, rect.center().y), egui::Align2::RIGHT_CENTER)
+        (
+            pos2(rect.max.x - 7.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+        )
     } else {
-        (pos2(rect.min.x + 7.0, rect.center().y), egui::Align2::LEFT_CENTER)
+        (
+            pos2(rect.min.x + 7.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+        )
     };
     ui.painter().text(
         text_pos,
@@ -485,11 +491,9 @@ fn measure_text_badge_width(ui: &egui::Ui, text: &str, mono: bool) -> f32 {
             crate::ui::typography::mi_sans_family_for_weight(500.0),
         )
     };
-    let galley = ui.painter().layout_no_wrap(
-        text.to_owned(),
-        font,
-        Color32::WHITE,
-    );
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, Color32::WHITE);
     galley.size().x + 14.0
 }
 
