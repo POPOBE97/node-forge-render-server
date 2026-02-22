@@ -5785,7 +5785,7 @@ pub(crate) fn build_error_shader_space_internal(
     }]);
 
     let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
-        label: Some("node-forge-error-purple"),
+        label: Some("node-forge-error-fallback"),
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(ERROR_SHADER_WGSL)),
     };
 

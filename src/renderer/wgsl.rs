@@ -1633,32 +1633,133 @@ pub fn build_upsample_bilinear_bundle() -> WgslShaderBundle {
     build_fullscreen_textured_bundle(body)
 }
 
-/// Build an error shader (purple screen) WGSL source.
+/// Build an error fallback shader WGSL source.
 pub const ERROR_SHADER_WGSL: &str = r#"
 struct VSOut {
     @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
 };
+
+const ERROR_TEXT_WIDTH: i32 = 118;
+const ERROR_TEXT_HEIGHT: i32 = 17;
+const ERROR_TEXT_PIXELS: array<u32, 401> = array<u32, 401>(
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21476, 0, 0,
+    0, 0, 11534336, 415, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32326784, 417727, 32800768,
+    14, 0, 0, 0, 0, 7324672, 0, 0, 0, 0, 0, 33554415, 33554431, 24, 0, 0, 0, 0, 0, 0, 31752192,
+    18300606, 23547, 327136, 0, 0, 0, 0, 0, 2007, 0, 0, 0, 0, 33193984, 19483220, 379474, 0, 0,
+    0, 0, 0, 0, 0, 195457, 24150016, 22020415, 127, 0, 0, 0, 0, 28180480, 0, 0, 0, 0, 0, 64320,
+    0, 0, 0, 0, 0, 0, 0, 0, 32669696, 23, 199680, 5139456, 4979636, 13631488, 15597529, 1048576,
+    15630192, 21476, 33444000, 2651, 24279712, 319, 31522816, 25, 0, 8122368, 32934874, 588361,
+    33478912, 2619, 24279712, 319, 1965152, 0, 2097152, 14315326, 25588, 14417472, 556748,
+    20962304, 33190347, 31784974, 32026040, 26214457, 2474747, 0, 654592, 0, 2097152, 10938079,
+    21659200, 32964779, 33106361, 26214424, 2474747, 0, 4648947, 0, 32481280, 27262984, 21004350,
+    20, 13632348, 575, 294887, 19397, 11515904, 12580896, 0, 13631488, 447, 0, 31431680, 24117253,
+    607, 57318, 11520000, 12580896, 0, 15728640, 17694717, 4, 18413, 2056192, 0, 29230080, 4154368,
+    30408704, 31031423, 3247204, 5257195, 799, 0, 33541120, 33554431, 2015, 17389, 3076096,
+    33193984, 6, 5260265, 799, 0, 8388608, 14679954, 33128448, 6, 2097981, 33553200, 4217855, 767,
+    914432, 33554337, 33554431, 14658571, 0, 0, 18402297, 16303665, 33128448, 4194310, 703, 28577,
+    32800768, 14658577, 0, 0, 0, 229290, 63264, 21991424, 20965440, 33003721, 17803280, 3145728,
+    32670431, 9741621, 74025, 8177, 0, 28247040, 0, 0, 63264, 15705088, 32669696, 20, 490880,
+    8177, 0, 0, 15728640, 31490559, 24, 15743978, 543, 359936, 13294, 17803264, 556256, 0, 32210944,
+    1, 0, 22502, 0, 31490048, 24, 9199, 621824, 19922944, 32211199, 1, 19465216, 0, 15711232,
+    621760, 33030144, 7328776, 26214400, 32997567, 11, 6302709, 607, 3104, 27520, 0, 32899072, 15,
+    0, 621760, 33193984, 6291459, 639, 1994784, 27520, 0, 360192, 4194304, 11540475, 415, 130752,
+    8180, 981472, 589184, 33530880, 29262853, 17825794, 32637118, 20, 0, 327232, 0, 11534336, 415,
+    28512, 30278656, 16777217, 32637375, 20, 6291456, 17359869, 16775889, 7324672, 28311552,
+    32800795, 18523449, 3221466, 20333533, 63354, 14482880, 622316, 490784, 0, 25165824, 19483295,
+    15288914, 7324672, 31522816, 22, 13401504, 687755, 490784, 0, 18972672, 28278746, 243, 2007,
+    752736, 33402880, 31916475, 25395389, 29479871, 24, 27229996, 15728652, 287, 0, 33551392,
+    33554431, 22527, 2007, 556288, 0, 26180394, 15728652, 287, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+);
 
 @vertex
 fn vs_main(@location(0) position: vec3f) -> VSOut {
     var out: VSOut;
     out.position = vec4f(position, 1.0);
+    out.uv = position.xy * 0.5 + vec2f(0.5, 0.5);
     return out;
 }
 
+fn hash12(p: vec2f) -> f32 {
+    let h = dot(p, vec2f(127.1, 311.7));
+    return fract(sin(h) * 43758.5453123);
+}
+
+fn sample_error_text(uv: vec2f) -> f32 {
+    let pixel_scale = vec2f(4.0/1080.0, 4.0/2400.0);
+    let text_size = vec2f(f32(ERROR_TEXT_WIDTH), f32(ERROR_TEXT_HEIGHT));
+    let text_size_uv = text_size * pixel_scale;
+    let text_min = vec2f(0.5, 0.5) - text_size_uv * 0.5;
+    let local = vec2f(
+        (uv.x - text_min.x) / pixel_scale.x,
+        (text_min.y + text_size_uv.y - uv.y) / pixel_scale.y,
+    );
+    let px = i32(floor(local.x));
+    let py = i32(floor(local.y));
+
+    if (px < 0 || py < 0 || px >= ERROR_TEXT_WIDTH || py >= ERROR_TEXT_HEIGHT) {
+        return 0.0;
+    }
+
+    let ind = px + py * ERROR_TEXT_WIDTH;
+    let word_index = u32(ind / 5);
+    let shift = u32((ind % 5) * 5);
+    let sample = (ERROR_TEXT_PIXELS[word_index] >> shift) & 31u;
+    return f32(sample) / 31.0;
+}
+
 @fragment
-fn fs_main() -> @location(0) vec4f {
-    // Purple error screen.
-    return vec4f(1.0, 0.0, 1.0, 1.0);
+fn fs_main(in: VSOut) -> @location(0) vec4f {
+    let uv = in.uv;
+
+    // Graphite base gradient (top slightly brighter than bottom).
+    var color = mix(vec3f(0.08, 0.09, 0.10), vec3f(0.14, 0.15, 0.16), uv.y);
+
+    // Soft vignette for focus toward center.
+    let centered = uv - vec2f(0.5, 0.5);
+    let radius = length(centered * vec2f(1.1, 0.95));
+    let vignette = 1.0 - smoothstep(0.30, 0.78, radius);
+    color = color * (0.72 + 0.28 * vignette);
+
+    // Subtle diagonal warning-band texture.
+    let diag = uv.x * 1.15 + uv.y * 1.85;
+    let band_phase = fract(diag * 14.0);
+    let band = smoothstep(0.40, 0.50, band_phase) * (1.0 - smoothstep(0.50, 0.60, band_phase));
+
+    // Warm danger accent concentrated around center.
+    let center_mask = 1.0;// - smoothstep(0.05, 0.24, abs(uv.y - 0.5));
+    color = color + vec3f(0.30, 0.12, 0.08) * center_mask * (0.35 + 0.65 * band);
+
+    // Thin center signal line to improve readability at a glance.
+    // let center_line = 1.0 - smoothstep(0.0, 0.012, abs(uv.y - 0.5));
+    // color = color + vec3f(0.66, 0.26, 0.16) * center_line * 0.22;
+
+    // Tiny static grain to reduce gradient banding.
+    let grain = (hash12(uv * vec2f(1024.0, 1024.0)) - 0.5) * 0.016;
+    color = color + vec3f(grain);
+
+    // Overlay packed-pixel error text.
+    let text = sample_error_text(uv);
+    let text_alpha = text; // smoothstep(0.04, 0.12, text);
+    // let text_color = vec3f(0.92, 0.15, 0.10);
+    let text_color = vec3f(1.0, 0.0, 0.0);
+    let text_glow = vec3f(0.45, 0.11, 0.07);
+    color = mix(color, text_color, text_alpha);
+    color = color + text_glow * text_alpha * 0.20;
+
+    return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 "#;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
-        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count,
+        ERROR_SHADER_WGSL, build_horizontal_blur_bundle,
+        build_horizontal_blur_bundle_with_tap_count, build_vertical_blur_bundle,
+        build_vertical_blur_bundle_with_tap_count,
     };
+    use crate::renderer::validation::validate_wgsl;
 
     #[test]
     fn blur_bundle_with_tap_count_emits_bound_and_loop_symbol() {
@@ -1699,6 +1800,18 @@ mod tests {
         assert!(
             v.module.contains("let tap_count: u32 = 8u;"),
             "vertical wrapper should keep legacy 8 taps"
+        );
+    }
+
+    #[test]
+    fn error_shader_validates_and_is_not_legacy_magenta() {
+        if let Err(e) = validate_wgsl(ERROR_SHADER_WGSL) {
+            panic!("error shader WGSL must validate: {e:#}");
+        }
+
+        assert!(
+            !ERROR_SHADER_WGSL.contains("vec4f(1.0, 0.0, 1.0, 1.0)"),
+            "error shader must not use legacy magenta output"
         );
     }
 }

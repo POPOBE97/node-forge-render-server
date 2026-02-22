@@ -466,7 +466,7 @@ fn main() -> Result<()> {
         Ok(s) => Some(s),
         Err(e) => {
             eprintln!(
-                "[startup] failed to load/parse default scene; showing purple error screen: {e:#}"
+                "[startup] failed to load/parse default scene; showing error fallback screen: {e:#}"
             );
             None
         }
@@ -552,7 +552,7 @@ fn main() -> Result<()> {
                     ),
                     Err(e) => {
                         eprintln!(
-                            "[startup] scene build failed; showing purple error screen: {e:#}"
+                            "[startup] scene build failed; showing error fallback screen: {e:#}"
                         );
                         let result = renderer::ShaderSpaceBuilder::new(
                             Arc::new(render_state.device.clone()),
