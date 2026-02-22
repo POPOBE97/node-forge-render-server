@@ -928,26 +928,18 @@ mod tests {
 
     #[test]
     fn repaint_policy_requests_immediate_for_time_driven_scene() {
-        assert!(should_request_immediate_repaint(
-            true, false, false, false
-        ));
+        assert!(should_request_immediate_repaint(true, false, false, false));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_for_any_active_animation() {
-        assert!(should_request_immediate_repaint(
-            false, true, false, false
-        ));
-        assert!(should_request_immediate_repaint(
-            false, false, true, false
-        ));
+        assert!(should_request_immediate_repaint(false, true, false, false));
+        assert!(should_request_immediate_repaint(false, false, true, false));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_when_operation_indicator_visible() {
-        assert!(should_request_immediate_repaint(
-            false, false, false, true
-        ));
+        assert!(should_request_immediate_repaint(false, false, false, true));
     }
 
     #[test]

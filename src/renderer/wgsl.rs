@@ -992,15 +992,15 @@ var<uniform> params: Params;
             );
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
+            vertex_entry.push_str(" var p_local = p_rect_local_px;\n");
 
             if let Some(expr) = vertex_translate_expr.as_deref() {
                 vertex_entry.push_str(" let delta_t = ");
                 vertex_entry.push_str(expr);
                 vertex_entry.push_str(";\n");
-                vertex_entry.push_str(" let p_local = p_rect_local_px + delta_t;\n\n");
-            } else {
-                vertex_entry.push_str(" let p_local = p_rect_local_px;\n\n");
+                vertex_entry.push_str(" p_local = p_local + delta_t;\n");
             }
+            vertex_entry.push_str("\n");
         } else {
             // has_dynamic_geo_size: use dynamic size for geo_size_px (GeoFragcoord/GeoSize)
             // but keep fullscreen vertex positioning via params.center.
@@ -1016,16 +1016,15 @@ var<uniform> params: Params;
             vertex_entry.push_str(
                 " out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n",
             );
+            vertex_entry.push_str(" var p_local = position;\n");
 
             if let Some(expr) = vertex_translate_expr.as_deref() {
                 vertex_entry.push_str(" let delta_t = ");
                 vertex_entry.push_str(expr);
                 vertex_entry.push_str(";\n");
-                vertex_entry.push_str(" let p_local = position + delta_t;\n\n");
-            } else {
-                // Keep vertex output identical for non-instanced passes.
-                vertex_entry.push_str(" let p_local = position;\n\n");
+                vertex_entry.push_str(" p_local = p_local + delta_t;\n");
             }
+            vertex_entry.push_str("\n");
         }
     }
 
