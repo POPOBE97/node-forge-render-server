@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-17T13:15:56.084Z",
-    "modified": "2026-02-17T13:15:56.084Z"
+    "created": "2026-02-20T19:56:36.314Z",
+    "modified": "2026-02-20T19:56:36.314Z"
   },
   "nodes": [
     {
@@ -30,6 +30,12 @@
       "width": 160,
       "label": "Composite",
       "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "alpha": 1
       }
     },
@@ -66,7 +72,7 @@
         "magFilter": "linear",
         "minFilter": "linear",
         "mipmapFilter": "linear",
-        "encoderSpace": "linear",
+        "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
     },
@@ -86,7 +92,8 @@
         "src_factor": "src-alpha",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1
       }
     },
     {
@@ -123,6 +130,12 @@
       "params": {
         "mode": "standard",
         "radius": 5,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "extend": false
       }
     }
