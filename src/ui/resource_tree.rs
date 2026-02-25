@@ -284,13 +284,14 @@ impl ResourceSnapshot {
     ///   Samplers (folder)
     pub fn to_tree(&self) -> Vec<FileTreeNode> {
         let mut roots = Vec::new();
+        let total_draw_calls = self.passes.iter().filter(|pass| !pass.is_compute).count();
 
         // ── Dependency graph ──
         let dep_children =
             build_dependency_tree(&self.passes, self.final_output_texture.as_deref());
         roots.push(FileTreeNode {
             id: "section.deps".into(),
-            label: format!("Dependencies ({})", dep_children.len()),
+            label: format!("Pass Dependencies ({total_draw_calls} DCs)"),
             icon: TreeIcon::FolderClosed,
             kind: NodeKind::Folder,
             detail: None,
@@ -582,5 +583,56 @@ mod tests {
         let tree = snapshot.to_tree();
         assert_eq!(tree[1].children[0].label, buffer_name);
         assert_eq!(tree[2].children[0].label, sampler_name);
+    }
+
+    #[test]
+    fn pass_dependencies_label_uses_total_draw_calls() {
+        let root_target = "sys.final.output.present.sdr.srgb";
+        let snapshot = ResourceSnapshot {
+            passes: vec![
+                PassInfo {
+                    name: "sys.compose.pass".to_string(),
+                    order_index: 0,
+                    target_texture: Some(root_target.to_string()),
+                    target_size: None,
+                    target_format: None,
+                    is_compute: false,
+                    sampled_textures: vec![],
+                    instance_count: 1,
+                    vertex_count: 3,
+                    workgroup_count: 0,
+                },
+                PassInfo {
+                    name: "sys.grade.pass".to_string(),
+                    order_index: 1,
+                    target_texture: Some(root_target.to_string()),
+                    target_size: None,
+                    target_format: None,
+                    is_compute: false,
+                    sampled_textures: vec![],
+                    instance_count: 1,
+                    vertex_count: 3,
+                    workgroup_count: 0,
+                },
+                PassInfo {
+                    name: "sys.compute.prepass".to_string(),
+                    order_index: 2,
+                    target_texture: None,
+                    target_size: None,
+                    target_format: None,
+                    is_compute: true,
+                    sampled_textures: vec![],
+                    instance_count: 0,
+                    vertex_count: 0,
+                    workgroup_count: 1,
+                },
+            ],
+            buffers: vec![],
+            samplers: vec![],
+            final_output_texture: Some(root_target.to_string()),
+        };
+
+        let tree = snapshot.to_tree();
+        assert_eq!(tree[0].label, "Pass Dependencies (2 DCs)");
     }
 }
