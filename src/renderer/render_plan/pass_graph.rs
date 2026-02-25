@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    dsl::{SceneDSL, incoming_connection},
+    dsl::{incoming_connection, SceneDSL},
     renderer::{
         geometry_resolver::is_pass_like_node_type,
         scene_prep::composite_layers_in_draw_order,
@@ -214,7 +214,7 @@ mod tests {
     use anyhow::Result;
     use serde_json::json;
 
-    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
 
     use super::{compute_pass_render_order, sampled_pass_node_ids_from_roots};
 
@@ -369,6 +369,113 @@ mod tests {
             !sampled.contains("ds_live"),
             "ds_live should not be considered sampled here, got: {sampled:?}"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_pass_ids_from_roots_tracks_blur_non_pass_source_transitive_deps() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "sampled-from-roots-blur-mathclosure".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("blur", "GuassianBlurPass"),
+                node("p0", "RenderPass"),
+                node("p1", "RenderPass"),
+                Node {
+                    id: "mc".to_string(),
+                    node_type: "MathClosure".to_string(),
+                    params: HashMap::from([(
+                        "source".to_string(),
+                        json!(
+                            "vec4 c0 = samplePass(l0, vUv);\nvec4 c1 = samplePass(l1, vUv);\noutput = c0 + c1;"
+                        ),
+                    )]),
+                    inputs: vec![
+                        NodePort {
+                            id: "dynamic_l0".to_string(),
+                            name: Some("l0".to_string()),
+                            port_type: Some("pass".to_string()),
+                        },
+                        NodePort {
+                            id: "dynamic_l1".to_string(),
+                            name: Some("l1".to_string()),
+                            port_type: Some("pass".to_string()),
+                        },
+                    ],
+                    input_bindings: vec![],
+                    outputs: vec![NodePort {
+                        id: "output".to_string(),
+                        name: Some("output".to_string()),
+                        port_type: Some("color".to_string()),
+                    }],
+                },
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_p0".to_string(),
+                    from: Endpoint {
+                        node_id: "p0".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "mc".to_string(),
+                        port_id: "dynamic_l0".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_p1".to_string(),
+                    from: Endpoint {
+                        node_id: "p1".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "mc".to_string(),
+                        port_id: "dynamic_l1".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_blur".to_string(),
+                    from: Endpoint {
+                        node_id: "mc".to_string(),
+                        port_id: "output".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "blur".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let roots = vec![String::from("blur")];
+        let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &roots)?;
+        assert!(
+            sampled.contains("p0"),
+            "expected p0 sampled by blur->MathClosure(samplePass), got: {sampled:?}"
+        );
+        assert!(
+            sampled.contains("p1"),
+            "expected p1 sampled by blur->MathClosure(samplePass), got: {sampled:?}"
+        );
+        assert!(
+            !sampled.contains("blur"),
+            "blur itself should not be marked sampled here, got: {sampled:?}"
+        );
+
         Ok(())
     }
 

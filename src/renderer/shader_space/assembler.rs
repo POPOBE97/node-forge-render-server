@@ -19,22 +19,22 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
-    ResourceName,
     eframe::wgpu::{
-        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
+        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
     },
     pool::{
         buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
+    ResourceName,
 };
 
 use crate::{
-    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
+    dsl::{find_node, incoming_connection, parse_str, parse_texture_format, SceneDSL},
     renderer::{
         geometry_resolver::{
             is_draw_pass_node_type, is_pass_like_node_type, resolve_scene_draw_contexts,
@@ -56,13 +56,13 @@ use crate::{
             coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_floor, cpu_num_u32_min_1,
         },
         wgsl::{
-            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
-            build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
-            build_downsample_pass_wgsl_bundle, build_dynamic_rect_compose_bundle,
-            build_fullscreen_textured_bundle, build_horizontal_blur_bundle_with_tap_count,
-            build_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
-            build_upsample_bilinear_bundle, build_vertical_blur_bundle_with_tap_count, clamp_min_1,
-            gaussian_kernel_8, gaussian_mip_level_and_sigma_p,
+            build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
+            build_downsample_bundle, build_downsample_pass_wgsl_bundle,
+            build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
+            build_horizontal_blur_bundle_with_tap_count, build_pass_wgsl_bundle,
+            build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
+            build_vertical_blur_bundle_with_tap_count, clamp_min_1, gaussian_kernel_8,
+            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
         },
     },
 };
@@ -373,6 +373,43 @@ Ensure the upstream pass is rendered earlier in Composite draw order."
         });
     }
     Ok(out)
+}
+
+fn infer_uniform_resolution_from_pass_deps(
+    blur_node_id: &str,
+    pass_node_ids: &[String],
+    pass_output_registry: &PassOutputRegistry,
+) -> Result<Option<[u32; 2]>> {
+    if pass_node_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut resolved: Vec<(String, [u32; 2])> = Vec::with_capacity(pass_node_ids.len());
+    for upstream_pass_id in pass_node_ids {
+        let Some(spec) = pass_output_registry.get(upstream_pass_id) else {
+            bail!(
+                "GuassianBlurPass {blur_node_id} non-pass source depends on upstream pass \
+{upstream_pass_id}, but its output is not registered yet. Ensure upstream dependencies \
+render earlier in Composite draw order."
+            );
+        };
+        resolved.push((upstream_pass_id.clone(), spec.resolution));
+    }
+
+    let first_resolution = resolved[0].1;
+    if resolved.iter().all(|(_, res)| *res == first_resolution) {
+        return Ok(Some(first_resolution));
+    }
+
+    let details = resolved
+        .iter()
+        .map(|(node_id, [w, h])| format!("{node_id}={w}x{h}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    bail!(
+        "GuassianBlurPass {blur_node_id} non-pass source samples pass textures with mismatched \
+resolutions: {details}"
+    );
 }
 
 fn deps_for_pass_node(
@@ -2124,8 +2161,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
             }
             "GuassianBlurPass" => {
                 // GuassianBlurPass takes its source from `pass` input.
-                // Scene prep may auto-wrap compatible non-pass sources into a fullscreen RenderPass.
-                // We first sample that source pass into an intermediate texture, then apply the blur chain.
+                // Source can be either a pass node output or a non-pass expression (for example
+                // MathClosure with samplePass). We first sample that source into an intermediate
+                // texture, then apply the blur chain.
 
                 // Determine the base resolution for this blur pass.
                 // Blur operates in input source texture space by default.
@@ -2213,6 +2251,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 &prepared.scene,
                                 &src_conn.from.node_id,
                             ));
+                        }
+                    } else {
+                        // Non-pass source path (for example MathClosure with samplePass):
+                        // infer blur source resolution from its transitive pass dependencies.
+                        let src_bundle =
+                            build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+                        if let Some(inferred_resolution) = infer_uniform_resolution_from_pass_deps(
+                            layer_id,
+                            &src_bundle.pass_textures,
+                            &pass_output_registry,
+                        )? {
+                            base_resolution = inferred_resolution;
                         }
                     }
 
@@ -5109,6 +5159,109 @@ mod tests {
     }
 
     #[test]
+    fn infer_blur_source_resolution_from_uniform_pass_deps() {
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "p0".to_string(),
+            texture_name: "tex.p0".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+        reg.register(PassOutputSpec {
+            node_id: "p1".to_string(),
+            texture_name: "tex.p1".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let got = infer_uniform_resolution_from_pass_deps(
+            "blur_1",
+            &["p0".to_string(), "p1".to_string()],
+            &reg,
+        )
+        .expect("resolution inference should succeed");
+        assert_eq!(got, Some([33, 75]));
+    }
+
+    #[test]
+    fn infer_blur_source_resolution_errors_on_mixed_sizes() {
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "p0".to_string(),
+            texture_name: "tex.p0".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+        reg.register(PassOutputSpec {
+            node_id: "p1".to_string(),
+            texture_name: "tex.p1".into(),
+            resolution: [67, 150],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let err = infer_uniform_resolution_from_pass_deps(
+            "blur_1",
+            &["p0".to_string(), "p1".to_string()],
+            &reg,
+        )
+        .expect_err("mismatched sizes must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("GuassianBlurPass blur_1"));
+        assert!(msg.contains("p0=33x75"));
+        assert!(msg.contains("p1=67x150"));
+    }
+
+    #[test]
+    fn infer_blur_source_resolution_returns_none_without_pass_deps() {
+        let reg = PassOutputRegistry::new();
+        let got = infer_uniform_resolution_from_pass_deps("blur_1", &[], &reg)
+            .expect("empty deps should not fail");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn back_pin_pin_blur_27_infers_33x75_from_mathclosure_pass_deps() -> Result<()> {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let scene_path = manifest_dir.join("tests/cases/back-pin-pin/scene.json");
+        let scene = crate::dsl::load_scene_from_path(scene_path)?;
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let bundle = build_blur_image_wgsl_bundle(&scene, &nodes_by_id, "GuassianBlurPass_27")?;
+        assert_eq!(
+            bundle.pass_textures,
+            vec!["Downsample_18".to_string(), "Upsample_24".to_string()]
+        );
+
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "Downsample_18".to_string(),
+            texture_name: "sys.downsample.Downsample_18.out".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+        reg.register(PassOutputSpec {
+            node_id: "Upsample_24".to_string(),
+            texture_name: "sys.upsample.Upsample_24.out".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let inferred = infer_uniform_resolution_from_pass_deps(
+            "GuassianBlurPass_27",
+            &bundle.pass_textures,
+            &reg,
+        )?;
+        assert_eq!(inferred, Some([33, 75]));
+
+        Ok(())
+    }
+
+    #[test]
     fn render_pass_blend_state_from_explicit_params() {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blendfunc".to_string(), json!("add"));
@@ -5361,7 +5514,7 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
 

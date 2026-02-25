@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    dsl::{Node, SceneDSL, find_node, incoming_connection},
+    dsl::{find_node, incoming_connection, Node, SceneDSL},
     renderer::{
         graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
@@ -566,9 +566,10 @@ pub(crate) fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKin
 
 /// Build a WGSL shader bundle for the `pass` input of a GuassianBlurPass.
 ///
-/// The node scheme models GuassianBlurPass's source as a `pass`-typed input. During scene prep,
-/// non-pass inputs can be auto-wrapped into a synthesized fullscreen RenderPass.
-/// This shader bundle samples the upstream pass texture into a fullscreen render target.
+/// The node scheme models GuassianBlurPass's source as a `pass`-typed input.
+/// Source can be a pass node output or a non-pass expression (for example
+/// MathClosure that samples pass textures via samplePass).
+/// This shader bundle samples the resolved source into a fullscreen render target.
 pub fn build_blur_image_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -1754,9 +1755,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 #[cfg(test)]
 mod tests {
     use super::{
-        ERROR_SHADER_WGSL, build_horizontal_blur_bundle,
-        build_horizontal_blur_bundle_with_tap_count, build_vertical_blur_bundle,
-        build_vertical_blur_bundle_with_tap_count,
+        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
+        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count, ERROR_SHADER_WGSL,
     };
     use crate::renderer::validation::validate_wgsl;
 
