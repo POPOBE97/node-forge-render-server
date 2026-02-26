@@ -21,6 +21,9 @@ use crate::{
             TypedExpr, ValueType, WgslShaderBundle,
         },
         utils::{cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils, to_vec4_color},
+        wgsl_bloom::{
+            BLOOM_MAX_MIPS, build_bloom_additive_combine_bundle, build_bloom_extract_bundle,
+        },
     },
 };
 
@@ -589,6 +592,7 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
         matches!(
             node.node_type.as_str(),
             "RenderPass"
+                | "BloomNode"
                 | "GuassianBlurPass"
                 | "Downsample"
                 | "Upsample"
@@ -1389,8 +1393,91 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 )?;
                 out.push((format!("sys.gb.{layer_id}.final.pass"), composite_bundle));
             }
+            "BloomNode" => {
+                let parse_num = |key: &str, fallback: f32| {
+                    node.params
+                        .get(key)
+                        .and_then(|v| {
+                            v.as_f64()
+                                .map(|x| x as f32)
+                                .or_else(|| v.as_i64().map(|x| x as f32))
+                                .or_else(|| v.as_u64().map(|x| x as f32))
+                        })
+                        .unwrap_or(fallback)
+                };
+                let threshold = parse_num("threshold", 0.5).clamp(0.0, 1.0);
+                let smoothness = parse_num("smoothness", 0.5).clamp(0.0, 1.0);
+                let strength = parse_num("strength", 1.0).clamp(0.0, 1.0);
+                let saturation = parse_num("saturation", 1.0).clamp(0.0, 1.0);
+                let size = parse_num("size", 0.5).clamp(0.0, 1.0);
+                let smooth_width_px = (1.0 - smoothness) * 40.0;
+                let radius_px = size * 6.0;
+                let sigma = radius_px / 3.525_494;
+                let (_mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+                let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let tap_count = num.clamp(1, 8);
+
+                let tint = node
+                    .params
+                    .get("tint")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        [
+                            arr.first().and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
+                            arr.get(1).and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
+                            arr.get(2).and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
+                            arr.get(3).and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
+                        ]
+                    })
+                    .unwrap_or([1.0, 1.0, 1.0, 1.0]);
+
+                out.push((
+                    format!("sys.bloom.{layer_id}.extract.pass"),
+                    build_bloom_extract_bundle(
+                        threshold,
+                        smooth_width_px,
+                        strength,
+                        saturation,
+                        tint,
+                    ),
+                ));
+
+                for level in 1..=BLOOM_MAX_MIPS {
+                    out.push((
+                        format!("sys.bloom.{layer_id}.mip{level}.down.pass"),
+                        build_downsample_bundle(2)?,
+                    ));
+                }
+
+                for level in (1..=BLOOM_MAX_MIPS).rev() {
+                    out.push((
+                        format!("sys.bloom.{layer_id}.lvl{level}.h.pass"),
+                        build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count),
+                    ));
+                    out.push((
+                        format!("sys.bloom.{layer_id}.lvl{level}.v.pass"),
+                        build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count),
+                    ));
+                    out.push((
+                        format!("sys.bloom.{layer_id}.lvl{level}.up.pass"),
+                        build_upsample_bilinear_bundle(),
+                    ));
+                    if level > 1 {
+                        out.push((
+                            format!("sys.bloom.{layer_id}.lvl{level}.add.pass"),
+                            build_bloom_additive_combine_bundle(),
+                        ));
+                    }
+                }
+                out.push((
+                    format!("sys.bloom.{layer_id}.out.pass"),
+                    build_fullscreen_textured_bundle(
+                        "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                    ),
+                ));
+            }
             other => bail!(
-                "Composite layer must be RenderPass, Downsample, Upsample, or GuassianBlurPass, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, or GradientBlur, got {other} for {layer_id}"
             ),
         }
     }

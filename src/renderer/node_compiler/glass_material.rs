@@ -178,6 +178,7 @@ fn resolve_pass_binding(
     if !matches!(
         upstream.node_type.as_str(),
         "RenderPass"
+            | "BloomNode"
             | "GuassianBlurPass"
             | "Downsample"
             | "Upsample"

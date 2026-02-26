@@ -18,6 +18,7 @@ use crate::dsl::SceneDSL;
 /// Pass node types that produce render passes and can be deduplicated.
 const PASS_NODE_TYPES: &[&str] = &[
     "RenderPass",
+    "BloomNode",
     "Downsample",
     "Upsample",
     "GuassianBlurPass",

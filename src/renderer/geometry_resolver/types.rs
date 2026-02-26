@@ -4,6 +4,7 @@ use rust_wgpu_fiber::ResourceName;
 
 pub const DRAW_PASS_NODE_TYPES: &[&str] = &[
     "RenderPass",
+    "BloomNode",
     "GuassianBlurPass",
     "Downsample",
     "Upsample",

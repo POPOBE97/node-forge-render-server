@@ -472,6 +472,7 @@ where
             if !matches!(
                 upstream_node.node_type.as_str(),
                 "RenderPass"
+                    | "BloomNode"
                     | "GuassianBlurPass"
                     | "Downsample"
                     | "Upsample"
