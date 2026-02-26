@@ -1503,6 +1503,19 @@ pub fn show_canvas_panel(
             &texture_name,
             app.texture_filter,
         );
+
+        if let Some(diff_renderer) = app.diff_renderer.as_ref()
+            && let Some(diff_texture_id) = app.diff_texture_id
+        {
+            let mut sampler = texture_bridge::diff_sampler_descriptor(app.texture_filter);
+            sampler.label = Some("sys.diff.sampler");
+            renderer.update_egui_texture_from_wgpu_texture_with_sampler_options(
+                &render_state.device,
+                diff_renderer.output_view(),
+                sampler,
+                diff_texture_id,
+            );
+        }
     }
 
     if ctx.input(|i| i.key_pressed(KEY_TOGGLE_REFERENCE_ALPHA)) {

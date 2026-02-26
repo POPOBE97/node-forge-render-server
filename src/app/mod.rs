@@ -341,15 +341,8 @@ impl eframe::App for App {
                 }
 
                 if did_update_diff_output {
-                    let sampler = wgpu::SamplerDescriptor {
-                        label: Some("sys.diff.sampler"),
-                        address_mode_u: wgpu::AddressMode::ClampToEdge,
-                        address_mode_v: wgpu::AddressMode::ClampToEdge,
-                        address_mode_w: wgpu::AddressMode::ClampToEdge,
-                        mag_filter: wgpu::FilterMode::Nearest,
-                        min_filter: wgpu::FilterMode::Nearest,
-                        ..Default::default()
-                    };
+                    let mut sampler = texture_bridge::diff_sampler_descriptor(self.texture_filter);
+                    sampler.label = Some("sys.diff.sampler");
 
                     if let Some(id) = self.diff_texture_id {
                         renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(

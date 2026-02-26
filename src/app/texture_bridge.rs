@@ -18,6 +18,18 @@ pub fn canvas_sampler_descriptor(filter: wgpu::FilterMode) -> wgpu::SamplerDescr
     }
 }
 
+pub fn diff_sampler_descriptor(filter: wgpu::FilterMode) -> wgpu::SamplerDescriptor<'static> {
+    wgpu::SamplerDescriptor {
+        address_mode_u: wgpu::AddressMode::ClampToBorder,
+        address_mode_v: wgpu::AddressMode::ClampToBorder,
+        address_mode_w: wgpu::AddressMode::ClampToBorder,
+        border_color: Some(wgpu::SamplerBorderColor::TransparentBlack),
+        mag_filter: filter,
+        min_filter: filter,
+        ..Default::default()
+    }
+}
+
 pub fn sync_output_texture(
     app: &mut App,
     render_state: &egui_wgpu::RenderState,
@@ -88,5 +100,35 @@ pub fn sync_preview_texture(
             view,
             canvas_sampler_descriptor(filter),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{canvas_sampler_descriptor, diff_sampler_descriptor};
+    use rust_wgpu_fiber::eframe::wgpu;
+
+    #[test]
+    fn canvas_sampler_uses_transparent_border() {
+        let sampler = canvas_sampler_descriptor(wgpu::FilterMode::Linear);
+        assert_eq!(sampler.address_mode_u, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(sampler.address_mode_v, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(sampler.address_mode_w, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(
+            sampler.border_color,
+            Some(wgpu::SamplerBorderColor::TransparentBlack)
+        );
+    }
+
+    #[test]
+    fn diff_sampler_uses_transparent_border() {
+        let sampler = diff_sampler_descriptor(wgpu::FilterMode::Linear);
+        assert_eq!(sampler.address_mode_u, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(sampler.address_mode_v, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(sampler.address_mode_w, wgpu::AddressMode::ClampToBorder);
+        assert_eq!(
+            sampler.border_color,
+            Some(wgpu::SamplerBorderColor::TransparentBlack)
+        );
     }
 }
