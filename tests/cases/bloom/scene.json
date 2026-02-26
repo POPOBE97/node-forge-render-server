@@ -1,0 +1,1837 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-02-26T09:33:36.900Z",
+    "modified": "2026-02-26T09:33:36.900Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "position": {
+        "x": 260,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "GLTFGeometry_2",
+      "type": "GLTFGeometry",
+      "position": {
+        "x": -1280,
+        "y": 260
+      },
+      "width": 192,
+      "label": "GTLF/OBJ Geometry",
+      "params": {
+        "assetId": "3b37d2ec3249",
+        "path": "/Users/ruiyao/Downloads/card-edge-mesh.obj"
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": -860,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Mip0",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 4,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Composite_5",
+      "type": "Composite",
+      "position": {
+        "x": 80,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "inputs": [],
+      "inputBindings": []
+    },
+    {
+      "id": "RenderTexture_6",
+      "type": "RenderTexture",
+      "position": {
+        "x": 80,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba16float"
+      }
+    },
+    {
+      "id": "ColorInput_7",
+      "type": "ColorInput",
+      "position": {
+        "x": -1060,
+        "y": 640
+      },
+      "width": 160,
+      "label": "Color Input",
+      "params": {
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Downsample_10",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 540,
+          "y": 1200
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_11",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 440
+      },
+      "width": 160,
+      "label": "Mip1",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n",
+        "manualKernelWidth": 3,
+        "manualKernelHeight": 3,
+        "manualKernelValues": [
+          0,
+          0.25,
+          0,
+          0.25,
+          0,
+          0.25,
+          0,
+          0.25,
+          0
+        ]
+      }
+    },
+    {
+      "id": "Downsample_12",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 270,
+          "y": 600
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_13",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 860
+      },
+      "width": 160,
+      "label": "Mip2",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_14",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 135,
+          "y": 300
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_15",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 1280
+      },
+      "width": 160,
+      "label": "Mip3",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_16",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 67,
+          "y": 150
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_17",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 1700
+      },
+      "width": 160,
+      "label": "Mip4",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_18",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 33,
+          "y": 75
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_19",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 2120
+      },
+      "width": 160,
+      "label": "Mip5",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "Downsample_20",
+      "type": "Downsample",
+      "position": {
+        "x": -860,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 16,
+          "y": 37
+        },
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Kernel_21",
+      "type": "Kernel",
+      "position": {
+        "x": -860,
+        "y": 2540
+      },
+      "width": 160,
+      "label": "Mip6",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
+      "id": "SetTransform_22",
+      "type": "SetTransform",
+      "position": {
+        "x": -1060,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "translate": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 0.8,
+          "y": 0.8,
+          "z": 0.8
+        }
+      }
+    },
+    {
+      "id": "GuassianBlurPass_23",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_24",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 2720
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 33,
+          "y": 75
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "GuassianBlurPass_27",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_28",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 67,
+          "y": 150
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "MathClosure_29",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_16",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_28",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MathClosure_30",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 2300
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_18",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_24",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_31",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_32",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1880
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 135,
+          "y": 300
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "MathClosure_33",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_14",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_32",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_34",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_35",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1460
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 270,
+          "y": 600
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "MathClosure_36",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_12",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_35",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_37",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_38",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 1040
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 540,
+          "y": 1200
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "MathClosure_39",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Downsample_10",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_38",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GuassianBlurPass_40",
+      "type": "GuassianBlurPass",
+      "position": {
+        "x": -400,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Gaussian Blur Pass",
+      "params": {
+        "mode": "standard",
+        "radius": 3,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Upsample_41",
+      "type": "Upsample",
+      "position": {
+        "x": -220,
+        "y": 620
+      },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "targetSize": {
+          "x": 1080,
+          "y": 2400
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "MathClosure_42",
+      "type": "MathClosure",
+      "position": {
+        "x": -620,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;\n"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1771504274786_1",
+          "name": "l0",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1771504277344_2",
+          "name": "l1",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1771504274786_1",
+          "label": "l0",
+          "variableName": "l0",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1771504277344_2",
+          "label": "l1",
+          "variableName": "l1",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "Upsample_41",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ReferenceImage_43",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 80,
+        "y": 600
+      },
+      "width": 192,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "681a91c88147",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "ColorInput_7",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "Kernel_13",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_12",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "Kernel_15",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_14",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_16",
+      "from": {
+        "nodeId": "Kernel_17",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_16",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_18",
+      "from": {
+        "nodeId": "Kernel_19",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_20",
+      "from": {
+        "nodeId": "Kernel_21",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_23",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Downsample_10",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_25",
+      "from": {
+        "nodeId": "GLTFGeometry_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_28",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_12",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "Downsample_12",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_14",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_30",
+      "from": {
+        "nodeId": "Downsample_14",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_16",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_31",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_32",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_36",
+      "from": {
+        "nodeId": "GuassianBlurPass_23",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_24",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "RenderTexture_6",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_48",
+      "from": {
+        "nodeId": "GuassianBlurPass_27",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_28",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_50",
+      "from": {
+        "nodeId": "Upsample_24",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_30",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_51",
+      "from": {
+        "nodeId": "Downsample_18",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_30",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_52",
+      "from": {
+        "nodeId": "MathClosure_30",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_27",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_53",
+      "from": {
+        "nodeId": "GuassianBlurPass_31",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_32",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_54",
+      "from": {
+        "nodeId": "MathClosure_29",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_31",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_55",
+      "from": {
+        "nodeId": "Upsample_28",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_29",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_56",
+      "from": {
+        "nodeId": "Downsample_16",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_29",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_58",
+      "from": {
+        "nodeId": "GuassianBlurPass_34",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_35",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_59",
+      "from": {
+        "nodeId": "MathClosure_33",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_34",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_60",
+      "from": {
+        "nodeId": "Downsample_14",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_33",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_61",
+      "from": {
+        "nodeId": "Upsample_32",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_33",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_63",
+      "from": {
+        "nodeId": "GuassianBlurPass_37",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_38",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_64",
+      "from": {
+        "nodeId": "MathClosure_36",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_37",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_65",
+      "from": {
+        "nodeId": "Upsample_35",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_36",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_66",
+      "from": {
+        "nodeId": "Downsample_12",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_36",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_68",
+      "from": {
+        "nodeId": "GuassianBlurPass_40",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Upsample_41",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_69",
+      "from": {
+        "nodeId": "MathClosure_39",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_40",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_70",
+      "from": {
+        "nodeId": "Upsample_38",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_39",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_71",
+      "from": {
+        "nodeId": "Downsample_10",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_39",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_73",
+      "from": {
+        "nodeId": "Upsample_41",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_42",
+        "portId": "dynamic_1771504277344_2"
+      }
+    },
+    {
+      "id": "edge_74",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "MathClosure_42",
+        "portId": "dynamic_1771504274786_1"
+      }
+    },
+    {
+      "id": "edge_75",
+      "from": {
+        "nodeId": "MathClosure_42",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_76",
+      "from": {
+        "nodeId": "Downsample_20",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GuassianBlurPass_23",
+        "portId": "pass"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_5"
+  },
+  "assets": {
+    "3b37d2ec3249": {
+      "path": "assets/3b37d2ec3249.glb",
+      "originalName": "rings.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 65920
+    },
+    "681a91c88147": {
+      "path": "assets/681a91c88147.bin",
+      "originalName": "bloom-nodes.exr",
+      "mimeType": "image/x-exr",
+      "size": 20946388
+    }
+  },
+  "groups": []
+}
