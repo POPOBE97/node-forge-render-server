@@ -235,9 +235,16 @@ pub fn select_diff_output_format(
     render_format: wgpu::TextureFormat,
     ref_format: wgpu::TextureFormat,
 ) -> wgpu::TextureFormat {
-    if matches!(render_format, wgpu::TextureFormat::Rgba16Float)
-        || matches!(ref_format, wgpu::TextureFormat::Rgba16Float)
-    {
+    let needs_high_precision = |format: wgpu::TextureFormat| {
+        matches!(
+            format,
+            wgpu::TextureFormat::Rgba16Unorm
+                | wgpu::TextureFormat::Rgba16Float
+                | wgpu::TextureFormat::Rgba32Float
+        )
+    };
+
+    if needs_high_precision(render_format) || needs_high_precision(ref_format) {
         wgpu::TextureFormat::Rgba16Float
     } else {
         wgpu::TextureFormat::Rgba8Unorm
@@ -994,6 +1001,28 @@ mod tests {
             select_diff_output_format(
                 wgpu::TextureFormat::Rgba8Unorm,
                 wgpu::TextureFormat::Rgba16Float
+            ),
+            wgpu::TextureFormat::Rgba16Float
+        );
+    }
+
+    #[test]
+    fn select_diff_output_format_promotes_when_reference_operand_is_rgba16unorm() {
+        assert_eq!(
+            select_diff_output_format(
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba16Unorm
+            ),
+            wgpu::TextureFormat::Rgba16Float
+        );
+    }
+
+    #[test]
+    fn select_diff_output_format_promotes_when_reference_operand_is_rgba32float() {
+        assert_eq!(
+            select_diff_output_format(
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba32Float
             ),
             wgpu::TextureFormat::Rgba16Float
         );

@@ -12,7 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam-channel = "0.5"
 tungstenite = "0.21"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "exr"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # Used for WGSL validation at runtime and in tests
 naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }

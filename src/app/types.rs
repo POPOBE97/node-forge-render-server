@@ -116,9 +116,16 @@ pub struct AnalysisSourceDomain<'a> {
     pub format: wgpu::TextureFormat,
 }
 
+#[derive(Clone, Debug)]
+pub enum RefImagePixelData {
+    Rgba8(Vec<u8>),
+    Rgba16Unorm(Vec<u16>),
+    Rgba32f(Vec<f32>),
+}
+
 pub struct RefImageState {
     pub name: String,
-    pub rgba_bytes: Vec<u8>,
+    pub pixel_data: RefImagePixelData,
     pub texture: egui::TextureHandle,
     pub wgpu_texture: wgpu::Texture,
     pub wgpu_texture_view: wgpu::TextureView,
