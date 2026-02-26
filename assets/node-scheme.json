@@ -451,7 +451,14 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {}
+      "defaultParams": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "type": "CheckerTexture",

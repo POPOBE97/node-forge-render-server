@@ -110,18 +110,41 @@ fn deps_for_pass_node(
     }
 }
 
-fn visit_pass_node(
+fn emit_non_root_with_deps(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     pass_node_id: &str,
+    current_root_id: &str,
+    current_root_index: usize,
+    root_index_by_id: &HashMap<String, usize>,
     deps_cache: &mut HashMap<String, Vec<String>>,
     visiting: &mut HashSet<String>,
-    visited: &mut HashSet<String>,
+    emitted: &mut HashSet<String>,
     out: &mut Vec<String>,
 ) -> Result<()> {
-    if visited.contains(pass_node_id) {
+    if emitted.contains(pass_node_id) {
         return Ok(());
     }
+
+    if let Some(dep_root_index) = root_index_by_id.get(pass_node_id).copied() {
+        if dep_root_index > current_root_index {
+            bail!(
+                "Composite strict draw order violation: layer '{current_root_id}' depends on later layer '{pass_node_id}'. Reorder Composite inputs so dependencies appear earlier."
+            );
+        }
+        if dep_root_index == current_root_index {
+            bail!(
+                "cycle detected in pass dependencies: layer '{current_root_id}' depends on itself"
+            );
+        }
+        if !emitted.contains(pass_node_id) {
+            bail!(
+                "internal ordering error: earlier root dependency '{pass_node_id}' for '{current_root_id}' was not emitted"
+            );
+        }
+        return Ok(());
+    }
+
     if !visiting.insert(pass_node_id.to_string()) {
         bail!("cycle detected in pass dependencies at: {pass_node_id}");
     }
@@ -135,19 +158,22 @@ fn visit_pass_node(
     };
 
     for dep in deps {
-        visit_pass_node(
+        emit_non_root_with_deps(
             scene,
             nodes_by_id,
             dep.as_str(),
+            current_root_id,
+            current_root_index,
+            root_index_by_id,
             deps_cache,
             visiting,
-            visited,
+            emitted,
             out,
         )?;
     }
 
     visiting.remove(pass_node_id);
-    visited.insert(pass_node_id.to_string());
+    emitted.insert(pass_node_id.to_string());
     out.push(pass_node_id.to_string());
     Ok(())
 }
@@ -157,21 +183,46 @@ pub(crate) fn compute_pass_render_order(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     roots_in_draw_order: &[String],
 ) -> Result<Vec<String>> {
+    let mut root_index_by_id: HashMap<String, usize> = HashMap::new();
+    for (index, root) in roots_in_draw_order.iter().enumerate() {
+        root_index_by_id.entry(root.clone()).or_insert(index);
+    }
+
     let mut deps_cache: HashMap<String, Vec<String>> = HashMap::new();
     let mut visiting: HashSet<String> = HashSet::new();
-    let mut visited: HashSet<String> = HashSet::new();
+    let mut emitted: HashSet<String> = HashSet::new();
     let mut out: Vec<String> = Vec::new();
 
-    for root in roots_in_draw_order {
-        visit_pass_node(
-            scene,
-            nodes_by_id,
-            root.as_str(),
-            &mut deps_cache,
-            &mut visiting,
-            &mut visited,
-            &mut out,
-        )?;
+    for (root_index, root) in roots_in_draw_order.iter().enumerate() {
+        if emitted.contains(root) {
+            continue;
+        }
+
+        let deps = if let Some(existing) = deps_cache.get(root) {
+            existing.clone()
+        } else {
+            let deps = deps_for_pass_node(scene, nodes_by_id, root.as_str())?;
+            deps_cache.insert(root.clone(), deps.clone());
+            deps
+        };
+
+        for dep in deps {
+            emit_non_root_with_deps(
+                scene,
+                nodes_by_id,
+                dep.as_str(),
+                root.as_str(),
+                root_index,
+                &root_index_by_id,
+                &mut deps_cache,
+                &mut visiting,
+                &mut emitted,
+                &mut out,
+            )?;
+        }
+
+        emitted.insert(root.clone());
+        out.push(root.clone());
     }
 
     Ok(out)
@@ -621,5 +672,109 @@ mod tests {
             "dead branch should not force p_live sampled, got: {sampled:?}"
         );
         Ok(())
+    }
+
+    #[test]
+    fn strict_root_order_keeps_non_root_dependencies_before_each_root() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "strict-root-order".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("shared", "Composite"),
+                node("first", "Composite"),
+                node("second", "Composite"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "shared".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "first".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "shared".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "second".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(
+            &scene,
+            &nodes_by_id,
+            &[String::from("first"), String::from("second")],
+        )?;
+        assert_eq!(order, vec!["shared", "first", "second"]);
+        Ok(())
+    }
+
+    #[test]
+    fn strict_root_order_rejects_forward_dependency_on_later_root() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "strict-root-forward-dep".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![node("first", "Composite"), node("later", "Composite")],
+            connections: vec![Connection {
+                id: "c1".to_string(),
+                from: Endpoint {
+                    node_id: "later".to_string(),
+                    port_id: "pass".to_string(),
+                },
+                to: Endpoint {
+                    node_id: "first".to_string(),
+                    port_id: "pass".to_string(),
+                },
+            }],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let err = compute_pass_render_order(
+            &scene,
+            &nodes_by_id,
+            &[String::from("first"), String::from("later")],
+        )
+        .expect_err("forward dependency should fail under strict root order");
+        assert!(
+            format!("{err:#}").contains("depends on later layer"),
+            "unexpected error: {err:#}"
+        );
     }
 }

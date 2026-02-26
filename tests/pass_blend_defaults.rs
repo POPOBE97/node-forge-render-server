@@ -32,6 +32,7 @@ fn node(id: &str, node_type: &str) -> Node {
 fn pass_nodes_expose_premul_blend_defaults_in_scheme() {
     let scheme = load_default_scheme().expect("load default scheme");
     for node_type in [
+        "BloomNode",
         "RenderPass",
         "GuassianBlurPass",
         "GradientBlur",
@@ -63,6 +64,7 @@ fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
             modified: None,
         },
         nodes: vec![
+            node("bloom", "BloomNode"),
             node("rp", "RenderPass"),
             node("gb", "GuassianBlurPass"),
             node("grb", "GradientBlur"),
