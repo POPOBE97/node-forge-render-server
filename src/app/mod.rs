@@ -33,6 +33,8 @@ fn diff_request_key(
     source_key: u64,
     reference_size: [u32; 2],
     reference_offset: [i32; 2],
+    reference_mode: RefImageMode,
+    reference_opacity_bits: u32,
     metric_mode: DiffMetricMode,
     clamp_output: bool,
 ) -> u64 {
@@ -40,6 +42,8 @@ fn diff_request_key(
         source_key,
         reference_size,
         reference_offset,
+        reference_mode,
+        reference_opacity_bits,
         metric_mode,
         clamp_output,
     ))
@@ -213,10 +217,7 @@ impl eframe::App for App {
             }
 
             if time_driven_scene {
-                if matches!(
-                    self.ref_image.as_ref().map(|r| r.mode),
-                    Some(RefImageMode::Diff)
-                ) {
+                if self.ref_image.is_some() {
                     self.diff_dirty = true;
                 }
                 self.analysis_dirty = true;
@@ -250,7 +251,7 @@ impl eframe::App for App {
                 )
             };
 
-        let render_source = display_texture.and_then(|texture| {
+        let display_source = display_texture.and_then(|texture| {
             texture
                 .wgpu_texture_view
                 .as_ref()
@@ -264,14 +265,14 @@ impl eframe::App for App {
                     format: texture.wgpu_texture_desc.format,
                 })
         });
-        let render_source_key = render_source.as_ref().map(analysis_source_request_key);
+        let compare_source_key = display_source.as_ref().map(analysis_source_request_key);
 
         let mut computed_diff_stats = None;
         let mut did_update_diff_output = false;
 
         if let Some(reference) = self.ref_image.as_ref()
-            && let Some(source) = render_source.as_ref()
-            && let Some(source_key) = render_source_key
+            && let Some(source) = display_source.as_ref()
+            && let Some(source_key) = compare_source_key
         {
             let reference_mode = reference.mode;
             let reference_offset = [
@@ -301,16 +302,19 @@ impl eframe::App for App {
                     source_key,
                     reference.size,
                     reference_offset,
+                    reference_mode,
+                    reference.opacity.to_bits(),
                     self.diff_metric_mode,
                     self.hdr_preview_clamp_enabled,
                 );
                 let stats_key = diff_stats_request_key(request_key);
-                let should_update_diff = matches!(reference_mode, RefImageMode::Diff)
-                    && (self.diff_dirty
-                        || needs_recreate
-                        || self.diff_texture_id.is_none()
-                        || self.last_diff_request_key != Some(request_key)
-                        || self.last_diff_stats_request_key != Some(stats_key));
+                let collect_stats = matches!(reference_mode, RefImageMode::Diff);
+                let should_update_diff = self.diff_dirty
+                    || should_redraw_scene
+                    || needs_recreate
+                    || self.diff_texture_id.is_none()
+                    || self.last_diff_request_key != Some(request_key)
+                    || (collect_stats && self.last_diff_stats_request_key != Some(stats_key));
 
                 if should_update_diff {
                     let diff_stats = diff_renderer.update(
@@ -321,14 +325,20 @@ impl eframe::App for App {
                         &reference.wgpu_texture_view,
                         reference.size,
                         reference_offset,
+                        reference_mode,
+                        reference.opacity,
                         self.diff_metric_mode,
                         self.hdr_preview_clamp_enabled,
-                        true,
+                        collect_stats,
                     );
                     did_update_diff_output = true;
                     self.last_diff_request_key = Some(request_key);
-                    self.last_diff_stats_request_key = Some(stats_key);
-                    computed_diff_stats = diff_stats;
+                    if collect_stats {
+                        self.last_diff_stats_request_key = Some(stats_key);
+                        computed_diff_stats = diff_stats;
+                    } else {
+                        self.last_diff_stats_request_key = None;
+                    }
                 }
 
                 if did_update_diff_output {
@@ -362,7 +372,7 @@ impl eframe::App for App {
             }
         }
 
-        let mut analysis_source = render_source;
+        let mut analysis_source = display_source;
         if matches!(
             self.ref_image.as_ref().map(|r| r.mode),
             Some(RefImageMode::Diff)
@@ -844,7 +854,7 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::{
-        AnalysisTab, ClippingSettings, DiffMetricMode, apply_analysis_tab_change,
+        AnalysisTab, ClippingSettings, DiffMetricMode, RefImageMode, apply_analysis_tab_change,
         apply_clip_enabled_change, apply_clipping_highlight_threshold_change,
         apply_clipping_shadow_threshold_change, clipping_request_key, diff_request_key, hash_key,
         histogram_request_key, parade_request_key, should_request_immediate_repaint,
@@ -923,13 +933,65 @@ mod tests {
     #[test]
     fn diff_request_key_changes_with_offset_and_metric() {
         let source_key = hash_key(&("output", [320_u32, 180_u32]));
-        let key_1 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE, false);
-        let key_2 = diff_request_key(source_key, [64, 64], [1, 0], DiffMetricMode::AE, false);
-        let key_3 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::SE, false);
-        let key_4 = diff_request_key(source_key, [64, 64], [0, 0], DiffMetricMode::AE, true);
+        let key_1 = diff_request_key(
+            source_key,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Diff,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
+        let key_2 = diff_request_key(
+            source_key,
+            [64, 64],
+            [1, 0],
+            RefImageMode::Diff,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
+        let key_3 = diff_request_key(
+            source_key,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Diff,
+            0.5f32.to_bits(),
+            DiffMetricMode::SE,
+            false,
+        );
+        let key_4 = diff_request_key(
+            source_key,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Diff,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            true,
+        );
+        let key_5 = diff_request_key(
+            source_key,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Overlay,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
+        let key_6 = diff_request_key(
+            source_key,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Diff,
+            0.25f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
         assert_ne!(key_1, key_2);
         assert_ne!(key_1, key_3);
         assert_ne!(key_1, key_4);
+        assert_ne!(key_1, key_5);
+        assert_ne!(key_1, key_6);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use rust_wgpu_fiber::eframe::wgpu;
 
-use crate::app::{DiffMetricMode, DiffStats};
+use crate::app::{DiffMetricMode, DiffStats, RefImageMode};
 
 const WORKGROUP_SIZE_X: u32 = 16;
 const WORKGROUP_SIZE_Y: u32 = 16;
@@ -19,11 +19,13 @@ struct DiffParams {
     render_size: vec2<u32>,
     ref_size: vec2<u32>,
     offset_px: vec2<i32>,
-    mode: u32,
+    compare_mode: u32,
+    metric_mode: u32,
     clamp_output: u32,
     groups_x: u32,
     groups_y: u32,
-    _padding: vec2<u32>,
+    overlay_opacity: f32,
+    _padding: vec4<u32>,
 };
 
 @group(0) @binding(0)
@@ -62,28 +64,40 @@ fn finite_f32(v: f32) -> bool {
     return (v == v) && (abs(v) <= 3.4028235e38);
 }
 
-fn finite_vec3(v: vec3<f32>) -> bool {
-    return finite_f32(v.x) && finite_f32(v.y) && finite_f32(v.z);
+fn finite_vec4(v: vec4<f32>) -> bool {
+    return finite_f32(v.x) && finite_f32(v.y) && finite_f32(v.z) && finite_f32(v.w);
 }
 
-fn metric_diff(render_rgb: vec3<f32>, ref_rgb: vec3<f32>, mode: u32) -> vec3<f32> {
-    let delta = render_rgb - ref_rgb;
-    let eps = vec3<f32>(1e-5, 1e-5, 1e-5);
-    var diff_rgb = vec3<f32>(0.0, 0.0, 0.0);
+fn metric_diff_rgba(render_rgba: vec4<f32>, ref_rgba: vec4<f32>, mode: u32) -> vec4<f32> {
+    let delta = render_rgba - ref_rgba;
+    let eps = vec4<f32>(1e-5, 1e-5, 1e-5, 1e-5);
+    var diff_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
     if (mode == 0u) {
-        diff_rgb = delta;
+        diff_rgba = delta;
     } else if (mode == 1u) {
-        diff_rgb = abs(delta);
+        diff_rgba = abs(delta);
     } else if (mode == 2u) {
-        diff_rgb = delta * delta;
+        diff_rgba = delta * delta;
     } else if (mode == 3u) {
-        diff_rgb = abs(delta) / max(abs(ref_rgb), eps);
+        diff_rgba = abs(delta) / max(abs(ref_rgba), eps);
     } else {
-        diff_rgb = (delta * delta) / max(ref_rgb * ref_rgb, eps);
+        diff_rgba = (delta * delta) / max(ref_rgba * ref_rgba, eps);
     }
 
-    return diff_rgb;
+    return diff_rgba;
+}
+
+fn compose_overlay(render_rgba: vec4<f32>, ref_rgba: vec4<f32>, opacity: f32) -> vec4<f32> {
+    let op = clamp(opacity, 0.0, 1.0);
+    let src = ref_rgba * vec4<f32>(op, op, op, op);
+    return src + render_rgba * (1.0 - src.a);
+}
+
+// Uniform scalar used for summary stats/histogram:
+// average of RGBA channels (equal weighting).
+fn metric_scalar(metric_rgba: vec4<f32>) -> f32 {
+    return (metric_rgba.x + metric_rgba.y + metric_rgba.z + metric_rgba.w) * 0.25;
 }
 
 fn histogram_bin(v: f32) -> u32 {
@@ -124,47 +138,59 @@ fn main(
         let dst = vec2<i32>(vec2<u32>(gid.xy));
         let src = dst + params.offset_px;
 
-        var diff_rgb = vec3<f32>(0.0, 0.0, 0.0);
+        var render_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
         if (
             src.x >= 0 && src.y >= 0 &&
             src.x < i32(params.render_size.x) &&
             src.y < i32(params.render_size.y)
         ) {
-            let render_rgb = textureLoad(render_tex, src, 0).rgb;
-            let ref_rgb = textureLoad(ref_tex, dst, 0).rgb;
-            diff_rgb = metric_diff(render_rgb, ref_rgb, params.mode);
+            render_rgba = textureLoad(render_tex, src, 0);
         }
+        let ref_rgba = textureLoad(ref_tex, dst, 0);
+        var out_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        if (params.compare_mode == 0u) {
+            out_rgba = compose_overlay(render_rgba, ref_rgba, params.overlay_opacity);
+        } else {
+            out_rgba = metric_diff_rgba(render_rgba, ref_rgba, params.metric_mode);
+        }
+
         if (params.clamp_output != 0u) {
-            diff_rgb = clamp(diff_rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+            out_rgba = clamp(out_rgba, vec4<f32>(0.0), vec4<f32>(1.0));
         }
-        textureStore(display_out_tex, dst, vec4<f32>(diff_rgb, 1.0));
+        out_rgba.a = 1.0;
+        textureStore(display_out_tex, dst, out_rgba);
     }
 
     if (in_render) {
         let render_xy = vec2<i32>(vec2<u32>(gid.xy));
-        let render_rgb = textureLoad(render_tex, render_xy, 0).rgb;
+        let render_rgba = textureLoad(render_tex, render_xy, 0);
         let ref_xy = render_xy - params.offset_px;
 
-        var ref_rgb = vec3<f32>(0.0, 0.0, 0.0);
+        var ref_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
         if (
             ref_xy.x >= 0 && ref_xy.y >= 0 &&
             ref_xy.x < i32(params.ref_size.x) &&
             ref_xy.y < i32(params.ref_size.y)
         ) {
-            ref_rgb = textureLoad(ref_tex, ref_xy, 0).rgb;
+            ref_rgba = textureLoad(ref_tex, ref_xy, 0);
         }
 
-        let stats_rgb = metric_diff(render_rgb, ref_rgb, params.mode);
-        textureStore(analysis_out_tex, render_xy, vec4<f32>(stats_rgb, 1.0));
+        var stats_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        if (params.compare_mode == 0u) {
+            stats_rgba = compose_overlay(render_rgba, ref_rgba, params.overlay_opacity);
+        } else {
+            stats_rgba = metric_diff_rgba(render_rgba, ref_rgba, params.metric_mode);
+        }
+        textureStore(analysis_out_tex, render_xy, stats_rgba);
 
-        let y = dot(stats_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-        if (finite_vec3(stats_rgb) && finite_f32(y)) {
-            lane_min = y;
-            lane_max = y;
-            lane_sum = y;
-            lane_sum_sq = y * y;
+        let s = metric_scalar(stats_rgba);
+        if (finite_vec4(stats_rgba) && finite_f32(s)) {
+            lane_min = s;
+            lane_max = s;
+            lane_sum = s;
+            lane_sum_sq = s * s;
             lane_count = 1u;
-            let bin = histogram_bin(abs(y));
+            let bin = histogram_bin(abs(s));
             atomicAdd(&histogram[bin], 1u);
         } else {
             lane_non_finite = 1u;
@@ -257,11 +283,13 @@ struct DiffParams {
     render_size: [u32; 2],
     ref_size: [u32; 2],
     offset_px: [i32; 2],
-    mode: u32,
+    compare_mode: u32,
+    metric_mode: u32,
     clamp_output: u32,
     groups_x: u32,
     groups_y: u32,
-    _padding: [u32; 2],
+    overlay_opacity: f32,
+    _padding: [u32; 4],
 }
 
 #[repr(C)]
@@ -304,6 +332,13 @@ pub struct DiffRenderer {
 }
 
 impl DiffRenderer {
+    fn compare_mode_code(mode: RefImageMode) -> u32 {
+        match mode {
+            RefImageMode::Overlay => 0,
+            RefImageMode::Diff => 1,
+        }
+    }
+
     fn create_storage_texture(
         device: &wgpu::Device,
         label: &'static str,
@@ -679,6 +714,8 @@ impl DiffRenderer {
         ref_view: &wgpu::TextureView,
         ref_size: [u32; 2],
         offset_px: [i32; 2],
+        compare_mode: RefImageMode,
+        overlay_opacity: f32,
         metric_mode: DiffMetricMode,
         clamp_output: bool,
         collect_stats: bool,
@@ -708,11 +745,13 @@ impl DiffRenderer {
             render_size,
             ref_size,
             offset_px,
-            mode: metric_mode.shader_code(),
+            compare_mode: Self::compare_mode_code(compare_mode),
+            metric_mode: metric_mode.shader_code(),
             clamp_output: u32::from(clamp_output),
             groups_x: group_x,
             groups_y: group_y,
-            _padding: [0, 0],
+            overlay_opacity: overlay_opacity.clamp(0.0, 1.0),
+            _padding: [0, 0, 0, 0],
         };
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
         queue.write_buffer(&self.histogram_buffer, 0, &self.histogram_clear_bytes);
@@ -911,33 +950,49 @@ mod tests {
         Some([rx as u32, ry as u32])
     }
 
-    fn cpu_metric_diff(render_rgb: [f32; 3], ref_rgb: [f32; 3], mode: DiffMetricMode) -> [f32; 3] {
+    fn cpu_metric_diff_rgba(
+        render_rgba: [f32; 4],
+        ref_rgba: [f32; 4],
+        mode: DiffMetricMode,
+    ) -> [f32; 4] {
         let delta = [
-            render_rgb[0] - ref_rgb[0],
-            render_rgb[1] - ref_rgb[1],
-            render_rgb[2] - ref_rgb[2],
+            render_rgba[0] - ref_rgba[0],
+            render_rgba[1] - ref_rgba[1],
+            render_rgba[2] - ref_rgba[2],
+            render_rgba[3] - ref_rgba[3],
         ];
         let eps = 1e-5_f32;
-        let out = match mode {
+        match mode {
             DiffMetricMode::E => delta,
-            DiffMetricMode::AE => [delta[0].abs(), delta[1].abs(), delta[2].abs()],
+            DiffMetricMode::AE => [
+                delta[0].abs(),
+                delta[1].abs(),
+                delta[2].abs(),
+                delta[3].abs(),
+            ],
             DiffMetricMode::SE => [
                 delta[0] * delta[0],
                 delta[1] * delta[1],
                 delta[2] * delta[2],
+                delta[3] * delta[3],
             ],
             DiffMetricMode::RAE => [
-                delta[0].abs() / ref_rgb[0].abs().max(eps),
-                delta[1].abs() / ref_rgb[1].abs().max(eps),
-                delta[2].abs() / ref_rgb[2].abs().max(eps),
+                delta[0].abs() / ref_rgba[0].abs().max(eps),
+                delta[1].abs() / ref_rgba[1].abs().max(eps),
+                delta[2].abs() / ref_rgba[2].abs().max(eps),
+                delta[3].abs() / ref_rgba[3].abs().max(eps),
             ],
             DiffMetricMode::RSE => [
-                (delta[0] * delta[0]) / (ref_rgb[0] * ref_rgb[0]).max(eps),
-                (delta[1] * delta[1]) / (ref_rgb[1] * ref_rgb[1]).max(eps),
-                (delta[2] * delta[2]) / (ref_rgb[2] * ref_rgb[2]).max(eps),
+                (delta[0] * delta[0]) / (ref_rgba[0] * ref_rgba[0]).max(eps),
+                (delta[1] * delta[1]) / (ref_rgba[1] * ref_rgba[1]).max(eps),
+                (delta[2] * delta[2]) / (ref_rgba[2] * ref_rgba[2]).max(eps),
+                (delta[3] * delta[3]) / (ref_rgba[3] * ref_rgba[3]).max(eps),
             ],
-        };
-        out
+        }
+    }
+
+    fn cpu_metric_scalar_rgba(metric_rgba: [f32; 4]) -> f32 {
+        (metric_rgba[0] + metric_rgba[1] + metric_rgba[2] + metric_rgba[3]) * 0.25
     }
 
     #[test]
@@ -948,18 +1003,24 @@ mod tests {
 
     #[test]
     fn stats_fallback_to_zero_reference_when_out_of_bounds() {
-        let render_rgb = [0.2, 0.6, 1.0];
-        let fallback_ref = [0.0, 0.0, 0.0];
-        let diff = cpu_metric_diff(render_rgb, fallback_ref, DiffMetricMode::AE);
-        assert_eq!(diff, render_rgb);
+        let render_rgba = [0.2, 0.6, 1.0, 0.8];
+        let fallback_ref = [0.0, 0.0, 0.0, 0.0];
+        let diff = cpu_metric_diff_rgba(render_rgba, fallback_ref, DiffMetricMode::AE);
+        assert_eq!(diff, render_rgba);
     }
 
     #[test]
-    fn signed_e_mode_uses_raw_delta() {
-        let render_rgb = [0.75, 0.2, 0.1];
-        let ref_rgb = [0.25, 0.1, 0.4];
-        let diff = cpu_metric_diff(render_rgb, ref_rgb, DiffMetricMode::E);
-        assert_eq!(diff, [0.5, 0.1, -0.3]);
+    fn signed_e_mode_uses_raw_delta_for_all_rgba_channels() {
+        let render_rgba = [0.75, 0.2, 0.1, 0.9];
+        let ref_rgba = [0.25, 0.1, 0.4, 0.25];
+        let diff = cpu_metric_diff_rgba(render_rgba, ref_rgba, DiffMetricMode::E);
+        assert_eq!(diff, [0.5, 0.1, -0.3, 0.65]);
+    }
+
+    #[test]
+    fn stats_scalar_uses_uniform_rgba_channel_weighting() {
+        let metric = [1.0, 3.0, 5.0, 7.0];
+        assert_eq!(cpu_metric_scalar_rgba(metric), 4.0);
     }
 
     #[test]

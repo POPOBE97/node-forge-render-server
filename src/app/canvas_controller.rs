@@ -24,8 +24,8 @@ use super::{
     layout_math::{clamp_zoom, lerp},
     texture_bridge,
     types::{
-        App, DiffMetricMode, RefImageMode, RefImagePixelData, RefImageSource, RefImageState,
-        SIDEBAR_ANIM_SECS, UiWindowMode, ViewportOperationIndicator,
+        App, DiffMetricMode, RefImageAlphaMode, RefImageMode, RefImageSource, RefImageState,
+        RefImageTransferMode, SIDEBAR_ANIM_SECS, UiWindowMode, ViewportOperationIndicator,
         ViewportOperationIndicatorVisual,
     },
     window_mode::WindowModeFrame,
@@ -38,8 +38,11 @@ const ORDER_RENDER_FPS: i32 = 1;
 const ORDER_PAUSE: i32 = 10;
 const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
+const ORDER_REF_ALPHA: i32 = 21;
 const ORDER_CLIPPING: i32 = 30;
 const ORDER_STATS: i32 = 40;
+const KEY_TOGGLE_SAMPLING: egui::Key = egui::Key::N;
+const KEY_TOGGLE_REFERENCE_ALPHA: egui::Key = egui::Key::P;
 const PIXEL_OVERLAY_MIN_ZOOM: f32 = 48.0;
 const PIXEL_OVERLAY_CACHE_ID: &str = "ui.canvas.pixel_overlay_cache";
 const PIXEL_OVERLAY_REFERENCE_ZOOM: f32 = 100.0;
@@ -97,32 +100,15 @@ struct PixelOverlayCache {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum ValueSamplingPixelData<'a> {
-    Rgba8(&'a [u8]),
-    Rgba16Unorm(&'a [u16]),
-    Rgba32f(&'a [f32]),
-}
-
-#[derive(Clone, Copy, Debug)]
 struct ValueSamplingReference<'a> {
     mode: RefImageMode,
     offset_px: [i32; 2],
     size: [u32; 2],
     opacity: f32,
-    pixel_data: ValueSamplingPixelData<'a>,
+    linear_premul_rgba: &'a [f32],
 }
 
 fn value_sampling_reference_from_state(reference: &RefImageState) -> ValueSamplingReference<'_> {
-    let pixel_data = match &reference.pixel_data {
-        RefImagePixelData::Rgba8(bytes) => ValueSamplingPixelData::Rgba8(bytes.as_slice()),
-        RefImagePixelData::Rgba16Unorm(channels) => {
-            ValueSamplingPixelData::Rgba16Unorm(channels.as_slice())
-        }
-        RefImagePixelData::Rgba32f(channels) => {
-            ValueSamplingPixelData::Rgba32f(channels.as_slice())
-        }
-    };
-
     ValueSamplingReference {
         mode: reference.mode,
         offset_px: [
@@ -131,7 +117,7 @@ fn value_sampling_reference_from_state(reference: &RefImageState) -> ValueSampli
         ],
         size: reference.size,
         opacity: reference.opacity,
-        pixel_data,
+        linear_premul_rgba: reference.linear_premul_rgba.as_slice(),
     }
 }
 
@@ -279,6 +265,7 @@ fn sample_rgba8_pixel(bytes: &[u8], width: u32, height: u32, x: u32, y: u32) -> 
     ]))
 }
 
+#[cfg(test)]
 fn rgba16unorm_to_rgba_f32(rgba: [u16; 4]) -> [f32; 4] {
     [
         rgba[0] as f32 / 65535.0,
@@ -288,6 +275,7 @@ fn rgba16unorm_to_rgba_f32(rgba: [u16; 4]) -> [f32; 4] {
     ]
 }
 
+#[cfg(test)]
 fn sample_rgba16unorm_pixel(
     channels: &[u16],
     width: u32,
@@ -356,30 +344,13 @@ fn sample_reference_pixel_rgba(
     if rx < 0 || ry < 0 {
         return None;
     }
-
-    match reference.pixel_data {
-        ValueSamplingPixelData::Rgba8(bytes) => sample_rgba8_pixel(
-            bytes,
-            reference.size[0],
-            reference.size[1],
-            rx as u32,
-            ry as u32,
-        ),
-        ValueSamplingPixelData::Rgba16Unorm(channels) => sample_rgba16unorm_pixel(
-            channels,
-            reference.size[0],
-            reference.size[1],
-            rx as u32,
-            ry as u32,
-        ),
-        ValueSamplingPixelData::Rgba32f(channels) => sample_rgba16f_pixel(
-            channels,
-            reference.size[0],
-            reference.size[1],
-            rx as u32,
-            ry as u32,
-        ),
-    }
+    sample_rgba16f_pixel(
+        reference.linear_premul_rgba,
+        reference.size[0],
+        reference.size[1],
+        rx as u32,
+        ry as u32,
+    )
 }
 
 fn compose_reference_over_base(
@@ -387,51 +358,64 @@ fn compose_reference_over_base(
     reference_rgba: [f32; 4],
     reference_opacity: f32,
 ) -> [f32; 4] {
-    let src_a = (reference_rgba[3] * reference_opacity.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+    let opacity = reference_opacity.clamp(0.0, 1.0);
+    let src_rgba = [
+        reference_rgba[0] * opacity,
+        reference_rgba[1] * opacity,
+        reference_rgba[2] * opacity,
+        reference_rgba[3] * opacity,
+    ];
+    let src_a = src_rgba[3];
     if src_a <= 0.0 {
         return base_rgba;
     }
 
-    let dst_a = base_rgba[3].clamp(0.0, 1.0);
     let inv_src_a = 1.0 - src_a;
-    let out_a = src_a + dst_a * inv_src_a;
-
-    // Match egui's source-over blend in premultiplied space.
-    let out_r = reference_rgba[0] * src_a + base_rgba[0] * inv_src_a;
-    let out_g = reference_rgba[1] * src_a + base_rgba[1] * inv_src_a;
-    let out_b = reference_rgba[2] * src_a + base_rgba[2] * inv_src_a;
+    let out_a = src_rgba[3] + base_rgba[3] * inv_src_a;
+    let out_r = src_rgba[0] + base_rgba[0] * inv_src_a;
+    let out_g = src_rgba[1] + base_rgba[1] * inv_src_a;
+    let out_b = src_rgba[2] + base_rgba[2] * inv_src_a;
 
     [out_r, out_g, out_b, out_a]
 }
 
-fn compute_diff_metric_rgb(
-    render_rgb: [f32; 3],
-    reference_rgb: [f32; 3],
+fn compute_diff_metric_rgba(
+    render_rgba: [f32; 4],
+    reference_rgba: [f32; 4],
     metric_mode: DiffMetricMode,
-) -> [f32; 3] {
+) -> [f32; 4] {
     let delta = [
-        render_rgb[0] - reference_rgb[0],
-        render_rgb[1] - reference_rgb[1],
-        render_rgb[2] - reference_rgb[2],
+        render_rgba[0] - reference_rgba[0],
+        render_rgba[1] - reference_rgba[1],
+        render_rgba[2] - reference_rgba[2],
+        render_rgba[3] - reference_rgba[3],
     ];
     let eps = 1e-5_f32;
     match metric_mode {
         DiffMetricMode::E => delta,
-        DiffMetricMode::AE => [delta[0].abs(), delta[1].abs(), delta[2].abs()],
+        DiffMetricMode::AE => [
+            delta[0].abs(),
+            delta[1].abs(),
+            delta[2].abs(),
+            delta[3].abs(),
+        ],
         DiffMetricMode::SE => [
             delta[0] * delta[0],
             delta[1] * delta[1],
             delta[2] * delta[2],
+            delta[3] * delta[3],
         ],
         DiffMetricMode::RAE => [
-            delta[0].abs() / reference_rgb[0].abs().max(eps),
-            delta[1].abs() / reference_rgb[1].abs().max(eps),
-            delta[2].abs() / reference_rgb[2].abs().max(eps),
+            delta[0].abs() / reference_rgba[0].abs().max(eps),
+            delta[1].abs() / reference_rgba[1].abs().max(eps),
+            delta[2].abs() / reference_rgba[2].abs().max(eps),
+            delta[3].abs() / reference_rgba[3].abs().max(eps),
         ],
         DiffMetricMode::RSE => [
-            (delta[0] * delta[0]) / (reference_rgb[0] * reference_rgb[0]).max(eps),
-            (delta[1] * delta[1]) / (reference_rgb[1] * reference_rgb[1]).max(eps),
-            (delta[2] * delta[2]) / (reference_rgb[2] * reference_rgb[2]).max(eps),
+            (delta[0] * delta[0]) / (reference_rgba[0] * reference_rgba[0]).max(eps),
+            (delta[1] * delta[1]) / (reference_rgba[1] * reference_rgba[1]).max(eps),
+            (delta[2] * delta[2]) / (reference_rgba[2] * reference_rgba[2]).max(eps),
+            (delta[3] * delta[3]) / (reference_rgba[3] * reference_rgba[3]).max(eps),
         ],
     }
 }
@@ -455,6 +439,7 @@ fn sample_value_pixel(
     reference: Option<ValueSamplingReference<'_>>,
     diff_metric_mode: DiffMetricMode,
     diff_output_active: bool,
+    clamp_output: bool,
 ) -> Option<[f32; 4]> {
     let base_rgba = sample_overlay_pixel(base_cache, x, y)?;
     let Some(reference) = reference else {
@@ -465,19 +450,21 @@ fn sample_value_pixel(
     };
 
     match reference.mode {
-        RefImageMode::Overlay => Some(compose_reference_over_base(
-            base_rgba,
-            reference_rgba,
-            reference.opacity,
-        )),
+        RefImageMode::Overlay => {
+            let mut out = compose_reference_over_base(base_rgba, reference_rgba, reference.opacity);
+            if diff_output_active && clamp_output {
+                out = out.map(|v| v.clamp(0.0, 1.0));
+            }
+            Some(out)
+        }
         RefImageMode::Diff => {
             if diff_output_active {
-                let diff_rgb = compute_diff_metric_rgb(
-                    [base_rgba[0], base_rgba[1], base_rgba[2]],
-                    [reference_rgba[0], reference_rgba[1], reference_rgba[2]],
-                    diff_metric_mode,
-                );
-                Some([diff_rgb[0], diff_rgb[1], diff_rgb[2], 1.0])
+                let mut out = compute_diff_metric_rgba(base_rgba, reference_rgba, diff_metric_mode);
+                if clamp_output {
+                    out = out.map(|v| v.clamp(0.0, 1.0));
+                }
+                out[3] = 1.0;
+                Some(out)
             } else {
                 Some(reference_rgba)
             }
@@ -495,6 +482,7 @@ fn draw_pixel_overlay(
     reference: Option<ValueSamplingReference<'_>>,
     diff_metric_mode: DiffMetricMode,
     diff_output_active: bool,
+    clamp_output: bool,
 ) {
     if zoom < PIXEL_OVERLAY_MIN_ZOOM {
         return;
@@ -577,6 +565,7 @@ fn draw_pixel_overlay(
                 reference,
                 diff_metric_mode,
                 diff_output_active,
+                clamp_output,
             ) else {
                 continue;
             };
@@ -656,62 +645,159 @@ struct DecodedReferenceImage {
     width: u32,
     height: u32,
     preview_rgba8: Vec<u8>,
-    pixel_data: RefImagePixelData,
+    transfer_mode: RefImageTransferMode,
+    high_precision_source: bool,
+    source_linear_rgba: Vec<f32>,
+    linear_premul_rgba: Vec<f32>,
 }
 
-fn decode_reference_image(decoded: image::DynamicImage) -> DecodedReferenceImage {
+fn srgb_to_linear_channel(x: f32) -> f32 {
+    if x <= 0.04045 {
+        x / 12.92
+    } else {
+        ((x + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn apply_reference_alpha_mode_to_linear_rgba(
+    source_linear_rgba: &[f32],
+    alpha_mode: RefImageAlphaMode,
+) -> Vec<f32> {
+    let mut linear_premul_rgba = source_linear_rgba.to_vec();
+    if matches!(alpha_mode, RefImageAlphaMode::Straight) {
+        for rgba in linear_premul_rgba.chunks_exact_mut(4) {
+            rgba[0] *= rgba[3];
+            rgba[1] *= rgba[3];
+            rgba[2] *= rgba[3];
+        }
+    }
+    linear_premul_rgba
+}
+
+fn decode_reference_image(
+    decoded: image::DynamicImage,
+    alpha_mode: RefImageAlphaMode,
+) -> DecodedReferenceImage {
     let color_type = decoded.color();
     let preview_rgba8 = decoded.to_rgba8();
     let width = preview_rgba8.width();
     let height = preview_rgba8.height();
     let preview_rgba8 = preview_rgba8.into_raw();
+    let mut source_linear_rgba = decoded.to_rgba32f().into_raw();
 
-    let pixel_data = match color_type {
-        image::ColorType::L16
-        | image::ColorType::La16
-        | image::ColorType::Rgb16
-        | image::ColorType::Rgba16 => {
-            RefImagePixelData::Rgba16Unorm(decoded.to_rgba16().into_raw())
-        }
-        image::ColorType::Rgb32F | image::ColorType::Rgba32F => {
-            RefImagePixelData::Rgba32f(decoded.to_rgba32f().into_raw())
-        }
-        _ => RefImagePixelData::Rgba8(preview_rgba8.clone()),
+    let transfer_mode = match color_type {
+        image::ColorType::Rgb32F | image::ColorType::Rgba32F => RefImageTransferMode::Linear,
+        _ => RefImageTransferMode::Srgb,
     };
+    let high_precision_source = matches!(
+        color_type,
+        image::ColorType::L16
+            | image::ColorType::La16
+            | image::ColorType::Rgb16
+            | image::ColorType::Rgba16
+            | image::ColorType::Rgb32F
+            | image::ColorType::Rgba32F
+    );
+
+    for rgba in source_linear_rgba.chunks_exact_mut(4) {
+        if matches!(transfer_mode, RefImageTransferMode::Srgb) {
+            rgba[0] = srgb_to_linear_channel(rgba[0].clamp(0.0, 1.0));
+            rgba[1] = srgb_to_linear_channel(rgba[1].clamp(0.0, 1.0));
+            rgba[2] = srgb_to_linear_channel(rgba[2].clamp(0.0, 1.0));
+        }
+    }
+    let linear_premul_rgba =
+        apply_reference_alpha_mode_to_linear_rgba(source_linear_rgba.as_slice(), alpha_mode);
 
     DecodedReferenceImage {
         width,
         height,
         preview_rgba8,
-        pixel_data,
+        transfer_mode,
+        high_precision_source,
+        source_linear_rgba,
+        linear_premul_rgba,
     }
 }
 
-fn reference_texture_format(pixel_data: &RefImagePixelData) -> wgpu::TextureFormat {
-    match pixel_data {
-        RefImagePixelData::Rgba8(_) => wgpu::TextureFormat::Rgba8Unorm,
-        RefImagePixelData::Rgba16Unorm(_) => wgpu::TextureFormat::Rgba16Unorm,
-        RefImagePixelData::Rgba32f(_) => wgpu::TextureFormat::Rgba32Float,
+fn reference_texture_format(decoded: &DecodedReferenceImage) -> wgpu::TextureFormat {
+    if decoded.high_precision_source {
+        wgpu::TextureFormat::Rgba16Float
+    } else {
+        wgpu::TextureFormat::Rgba8Unorm
     }
 }
 
-fn reference_upload_bytes(pixel_data: &RefImagePixelData) -> &[u8] {
-    match pixel_data {
-        RefImagePixelData::Rgba8(bytes) => bytes.as_slice(),
-        RefImagePixelData::Rgba16Unorm(channels) => bytemuck::cast_slice(channels.as_slice()),
-        RefImagePixelData::Rgba32f(channels) => bytemuck::cast_slice(channels.as_slice()),
-    }
-}
-
-fn reference_bytes_per_row(pixel_data: &RefImagePixelData, width: u32) -> anyhow::Result<u32> {
-    let bytes_per_pixel = match pixel_data {
-        RefImagePixelData::Rgba8(_) => 4,
-        RefImagePixelData::Rgba16Unorm(_) => 8,
-        RefImagePixelData::Rgba32f(_) => 16,
-    };
+fn reference_upload_bytes_per_row(width: u32, bytes_per_pixel: u32) -> anyhow::Result<u32> {
     width
         .checked_mul(bytes_per_pixel)
         .ok_or_else(|| anyhow::anyhow!("reference image row stride overflow"))
+}
+
+fn upload_reference_linear_premul_rgba(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    size: [u32; 2],
+    linear_premul_rgba: &[f32],
+    texture_format: wgpu::TextureFormat,
+) -> anyhow::Result<()> {
+    let [width, height] = size;
+    match texture_format {
+        wgpu::TextureFormat::Rgba16Float => {
+            let bytes_per_row = reference_upload_bytes_per_row(width, 8)?;
+            let rgba16f: Vec<u16> = linear_premul_rgba
+                .iter()
+                .map(|v| half::f16::from_f32(*v).to_bits())
+                .collect();
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(rgba16f.as_slice()),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        wgpu::TextureFormat::Rgba8Unorm => {
+            let bytes_per_row = reference_upload_bytes_per_row(width, 4)?;
+            let rgba8: Vec<u8> = linear_premul_rgba
+                .iter()
+                .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+                .collect();
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                rgba8.as_slice(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        other => anyhow::bail!("unsupported reference texture format for upload: {other:?}"),
+    }
+    Ok(())
 }
 
 fn load_reference_image_from_decoded(
@@ -722,10 +808,10 @@ fn load_reference_image_from_decoded(
     decoded: image::DynamicImage,
     name: String,
     source: RefImageSource,
+    alpha_mode: RefImageAlphaMode,
 ) -> anyhow::Result<()> {
-    let decoded = decode_reference_image(decoded);
-    let texture_format = reference_texture_format(&decoded.pixel_data);
-    let bytes_per_row = reference_bytes_per_row(&decoded.pixel_data, decoded.width)?;
+    let decoded = decode_reference_image(decoded, alpha_mode);
+    let texture_format = reference_texture_format(&decoded);
 
     let color_image = egui::ColorImage::from_rgba_unmultiplied(
         [decoded.width as usize, decoded.height as usize],
@@ -754,37 +840,28 @@ fn load_reference_image_from_decoded(
             view_formats: &[],
         });
 
-    app.shader_space.queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &wgpu_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        reference_upload_bytes(&decoded.pixel_data),
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(bytes_per_row),
-            rows_per_image: Some(decoded.height),
-        },
-        wgpu::Extent3d {
-            width: decoded.width,
-            height: decoded.height,
-            depth_or_array_layers: 1,
-        },
-    );
+    upload_reference_linear_premul_rgba(
+        app.shader_space.queue.as_ref(),
+        &wgpu_texture,
+        [decoded.width, decoded.height],
+        decoded.linear_premul_rgba.as_slice(),
+        texture_format,
+    )?;
 
     let wgpu_texture_view = wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     clear_reference(app, renderer);
     app.ref_image = Some(RefImageState {
         name,
-        pixel_data: decoded.pixel_data,
+        source_linear_rgba: decoded.source_linear_rgba,
+        linear_premul_rgba: decoded.linear_premul_rgba,
         texture,
         wgpu_texture,
         wgpu_texture_view,
         size: [decoded.width, decoded.height],
         texture_format,
+        alpha_mode,
+        transfer_mode: decoded.transfer_mode,
         offset: egui::Vec2::ZERO,
         mode: RefImageMode::Overlay,
         opacity: 0.5,
@@ -805,6 +882,7 @@ fn load_reference_image_from_path(
     renderer: &mut egui_wgpu::Renderer,
     path: &Path,
     source: RefImageSource,
+    alpha_mode: RefImageAlphaMode,
 ) -> anyhow::Result<()> {
     if !is_supported_reference_image(path) {
         anyhow::bail!("unsupported reference image extension: {}", path.display());
@@ -816,7 +894,16 @@ fn load_reference_image_from_path(
         .and_then(|name| name.to_str())
         .unwrap_or("reference")
         .to_string();
-    load_reference_image_from_decoded(app, ctx, render_state, renderer, decoded, name, source)
+    load_reference_image_from_decoded(
+        app,
+        ctx,
+        render_state,
+        renderer,
+        decoded,
+        name,
+        source,
+        alpha_mode,
+    )
 }
 
 pub(super) fn sync_reference_image_from_scene(
@@ -825,6 +912,7 @@ pub(super) fn sync_reference_image_from_scene(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
 ) {
+    let desired_alpha_mode = app.reference_alpha_mode;
     let desired_asset_id = app.scene_reference_image_asset_id.clone();
     let desired_data_url = app.scene_reference_image_data_url.clone();
     let desired_path = app.scene_reference_image_path.clone();
@@ -832,8 +920,9 @@ pub(super) fn sync_reference_image_from_scene(
     // Prefer assetId → asset_store lookup.
     if let Some(asset_id) = desired_asset_id {
         let already_loaded = matches!(
-            app.ref_image.as_ref().map(|r| &r.source),
-            Some(RefImageSource::SceneNodeAssetId(v)) if v == &asset_id
+            app.ref_image.as_ref(),
+            Some(r) if matches!(&r.source, RefImageSource::SceneNodeAssetId(v) if v == &asset_id)
+                && r.alpha_mode == desired_alpha_mode
         );
         if already_loaded {
             return;
@@ -854,6 +943,7 @@ pub(super) fn sync_reference_image_from_scene(
                     decoded,
                     format!("ReferenceImage(assetId:{asset_id})"),
                     RefImageSource::SceneNodeAssetId(asset_id.clone()),
+                    desired_alpha_mode,
                 ) {
                     eprintln!("[reference-image] failed to load asset '{asset_id}': {e:#}");
                 }
@@ -870,8 +960,9 @@ pub(super) fn sync_reference_image_from_scene(
 
     if let Some(data_url) = desired_data_url {
         let already_loaded = matches!(
-            app.ref_image.as_ref().map(|r| &r.source),
-            Some(RefImageSource::SceneNodeDataUrl(v)) if v == &data_url
+            app.ref_image.as_ref(),
+            Some(r) if matches!(&r.source, RefImageSource::SceneNodeDataUrl(v) if v == &data_url)
+                && r.alpha_mode == desired_alpha_mode
         );
         if already_loaded {
             return;
@@ -892,6 +983,7 @@ pub(super) fn sync_reference_image_from_scene(
                     decoded,
                     "ReferenceImage(dataUrl)".to_string(),
                     RefImageSource::SceneNodeDataUrl(data_url),
+                    desired_alpha_mode,
                 ) {
                     eprintln!("[reference-image] failed to load ReferenceImage.dataUrl: {e:#}");
                 }
@@ -906,8 +998,9 @@ pub(super) fn sync_reference_image_from_scene(
     match desired_path {
         Some(path) => {
             let already_loaded = matches!(
-                app.ref_image.as_ref().map(|r| &r.source),
-                Some(RefImageSource::SceneNodePath(p)) if p == &path
+                app.ref_image.as_ref(),
+                Some(r) if matches!(&r.source, RefImageSource::SceneNodePath(p) if p == &path)
+                    && r.alpha_mode == desired_alpha_mode
             );
             if already_loaded {
                 return;
@@ -928,6 +1021,7 @@ pub(super) fn sync_reference_image_from_scene(
                 renderer,
                 &resolved_path,
                 RefImageSource::SceneNodePath(path.clone()),
+                desired_alpha_mode,
             ) {
                 eprintln!(
                     "[reference-image] failed to load ReferenceImage.path='{}' (resolved '{}'): {e:#}",
@@ -964,6 +1058,31 @@ pub(super) fn clear_reference(app: &mut App, renderer: &mut egui_wgpu::Renderer)
     }
 }
 
+fn set_reference_alpha_mode(
+    queue: &wgpu::Queue,
+    reference: &mut RefImageState,
+    alpha_mode: RefImageAlphaMode,
+) -> anyhow::Result<bool> {
+    if reference.alpha_mode == alpha_mode {
+        return Ok(false);
+    }
+
+    let linear_premul_rgba = apply_reference_alpha_mode_to_linear_rgba(
+        reference.source_linear_rgba.as_slice(),
+        alpha_mode,
+    );
+    upload_reference_linear_premul_rgba(
+        queue,
+        &reference.wgpu_texture,
+        reference.size,
+        linear_premul_rgba.as_slice(),
+        reference.texture_format,
+    )?;
+    reference.linear_premul_rgba = linear_premul_rgba;
+    reference.alpha_mode = alpha_mode;
+    Ok(true)
+}
+
 pub(super) fn pick_reference_image_from_dialog(
     app: &mut App,
     ctx: &egui::Context,
@@ -986,6 +1105,7 @@ pub(super) fn pick_reference_image_from_dialog(
         renderer,
         &path,
         RefImageSource::Manual,
+        app.reference_alpha_mode,
     )?;
     app.last_auto_reference_attempt = None;
     Ok(true)
@@ -1013,6 +1133,7 @@ fn maybe_handle_reference_drop(
             renderer,
             &path,
             RefImageSource::Manual,
+            app.reference_alpha_mode,
         )
         .is_ok()
         {
@@ -1282,7 +1403,7 @@ pub fn show_canvas_panel(
         ui.painter().text(
             animated_canvas_rect.center(),
             egui::Align2::CENTER_CENTER,
-            "Drop PNG / JPEG as Reference",
+            "Drop PNG / JPEG / EXR as Reference",
             egui::FontId::new(13.0, egui::FontFamily::Proportional),
             Color32::from_rgba_unmultiplied(214, 228, 255, 240),
         );
@@ -1350,7 +1471,7 @@ pub fn show_canvas_panel(
         app.pending_view_reset = false;
     }
 
-    if ctx.input(|i| i.key_pressed(egui::Key::P)) {
+    if ctx.input(|i| i.key_pressed(KEY_TOGGLE_SAMPLING)) {
         app.texture_filter = match app.texture_filter {
             wgpu::FilterMode::Nearest => wgpu::FilterMode::Linear,
             wgpu::FilterMode::Linear => wgpu::FilterMode::Nearest,
@@ -1372,6 +1493,33 @@ pub fn show_canvas_panel(
             &texture_name,
             app.texture_filter,
         );
+    }
+
+    if ctx.input(|i| i.key_pressed(KEY_TOGGLE_REFERENCE_ALPHA)) {
+        app.reference_alpha_mode = match app.reference_alpha_mode {
+            RefImageAlphaMode::Premultiplied => RefImageAlphaMode::Straight,
+            RefImageAlphaMode::Straight => RefImageAlphaMode::Premultiplied,
+        };
+
+        let mut changed = false;
+        if let Some(reference) = app.ref_image.as_mut() {
+            match set_reference_alpha_mode(
+                app.shader_space.queue.as_ref(),
+                reference,
+                app.reference_alpha_mode,
+            ) {
+                Ok(did_change) => changed = did_change,
+                Err(e) => {
+                    eprintln!("[reference-image] failed to switch alpha mode: {e:#}");
+                }
+            }
+        }
+        if changed {
+            app.diff_dirty = true;
+            app.analysis_dirty = true;
+            app.clipping_dirty = true;
+            mark_pixel_overlay_dirty(app);
+        }
     }
 
     if ctx.input(|i| i.key_pressed(egui::Key::C)) {
@@ -1650,13 +1798,15 @@ pub fn show_canvas_panel(
             let reference_uv =
                 Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
 
-            let texture_id = if matches!(reference.mode, RefImageMode::Diff) {
+            let using_compare_output = app.diff_texture_id.is_some();
+            let texture_id = if using_compare_output {
                 app.diff_texture_id.unwrap_or(reference.texture.id())
             } else {
                 reference.texture.id()
             };
-
-            let tint = if matches!(reference.mode, RefImageMode::Overlay) {
+            let tint = if using_compare_output {
+                Color32::WHITE
+            } else if matches!(reference.mode, RefImageMode::Overlay) {
                 Color32::from_rgba_unmultiplied(255, 255, 255, (reference.opacity * 255.0) as u8)
             } else {
                 Color32::WHITE
@@ -1679,21 +1829,24 @@ pub fn show_canvas_panel(
     }
 
     let diff_output_active = app.diff_texture_id.is_some();
+    let value_sampling_texture_name = display_texture_name.clone();
     let mut value_sample_cache: Option<Arc<PixelOverlayCache>> = None;
     if app.zoom >= PIXEL_OVERLAY_MIN_ZOOM {
-        value_sample_cache =
-            if let Some(info) = app.shader_space.texture_info(display_texture_name.as_str()) {
-                Some(get_or_refresh_pixel_overlay_cache(
-                    app,
-                    ctx,
-                    display_texture_name.as_str(),
-                    info.size.width,
-                    info.size.height,
-                    info.format,
-                ))
-            } else {
-                None
-            };
+        value_sample_cache = if let Some(info) = app
+            .shader_space
+            .texture_info(value_sampling_texture_name.as_str())
+        {
+            Some(get_or_refresh_pixel_overlay_cache(
+                app,
+                ctx,
+                value_sampling_texture_name.as_str(),
+                info.size.width,
+                info.size.height,
+                info.format,
+            ))
+        } else {
+            None
+        };
         draw_pixel_overlay(
             ui,
             image_rect,
@@ -1706,22 +1859,33 @@ pub fn show_canvas_panel(
                 .map(value_sampling_reference_from_state),
             app.diff_metric_mode,
             diff_output_active,
+            app.hdr_preview_clamp_enabled,
         );
     }
 
     let sampling_indicator = match app.texture_filter {
         wgpu::FilterMode::Nearest => ViewportIndicator {
             icon: "N",
-            tooltip: "Viewport sampling: Nearest (press P to toggle Linear)",
+            tooltip: "Viewport sampling: Nearest (press N to toggle Linear)",
             kind: ViewportIndicatorKind::Text,
             strikethrough: false,
         },
         wgpu::FilterMode::Linear => ViewportIndicator {
             icon: "L",
-            tooltip: "Viewport sampling: Linear (press P to toggle Nearest)",
+            tooltip: "Viewport sampling: Linear (press N to toggle Nearest)",
             kind: ViewportIndicatorKind::Text,
             strikethrough: false,
         },
+    };
+    let reference_alpha_indicator = ViewportIndicator {
+        icon: app
+            .ref_image
+            .as_ref()
+            .map(|reference| reference.alpha_mode.short_label())
+            .unwrap_or(app.reference_alpha_mode.short_label()),
+        tooltip: "Reference alpha mode: PRE (premultiplied) / STR (straight). Press P to toggle.",
+        kind: ViewportIndicatorKind::Text,
+        strikethrough: false,
     };
     let current_view_is_hdr = matches!(
         display_texture_format,
@@ -1824,6 +1988,19 @@ pub fn show_canvas_panel(
 
     app.viewport_indicator_manager
         .register(ViewportIndicatorEntry {
+            animated: false,
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "ref_alpha_mode",
+                ORDER_REF_ALPHA,
+                app.ref_image.is_some(),
+                reference_alpha_indicator,
+            )
+        });
+
+    app.viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
             interaction: ViewportIndicatorInteraction::HoverOnly,
             callback_id: None,
             ..ViewportIndicatorEntry::compact(
@@ -1869,7 +2046,7 @@ pub fn show_canvas_panel(
                         Some(RefImageMode::Diff)
                     ),
                     format!(
-                        "min {}  max {}  avg {}  rms {}  p95|Y| {}  n {}  nonfinite {}",
+                        "min {}  max {}  avg {}  rms {}  p95|S| {}  n {}  nonfinite {}",
                         format_diff_stat_value(stats.min),
                         format_diff_stat_value(stats.max),
                         format_diff_stat_value(stats.avg),
@@ -1911,8 +2088,12 @@ pub fn show_canvas_panel(
                 RefImageMode::Diff => "Abs Diff",
             };
             let badge_text = format!(
-                "Ref • {} • {}×{} • α {:.2}",
-                mode, reference.size[0], reference.size[1], reference.opacity,
+                "Ref • {} • {} • {}×{} • α {:.2}",
+                mode,
+                reference.alpha_mode.short_label(),
+                reference.size[0],
+                reference.size[1],
+                reference.opacity,
             );
             let badge_galley = ui.painter().layout_no_wrap(
                 badge_text,
@@ -2002,13 +2183,14 @@ pub fn show_canvas_panel(
                 let y = (uv_y * effective_resolution[1] as f32).floor() as u32;
                 if x < effective_resolution[0] && y < effective_resolution[1] {
                     if value_sample_cache.is_none()
-                        && let Some(info) =
-                            app.shader_space.texture_info(display_texture_name.as_str())
+                        && let Some(info) = app
+                            .shader_space
+                            .texture_info(value_sampling_texture_name.as_str())
                     {
                         value_sample_cache = Some(get_or_refresh_pixel_overlay_cache(
                             app,
                             ctx,
-                            display_texture_name.as_str(),
+                            value_sampling_texture_name.as_str(),
                             info.size.width,
                             info.size.height,
                             info.format,
@@ -2024,6 +2206,7 @@ pub fn show_canvas_panel(
                                 .map(value_sampling_reference_from_state),
                             app.diff_metric_mode,
                             diff_output_active,
+                            app.hdr_preview_clamp_enabled,
                         )
                     {
                         app.last_sampled = Some(super::types::SampledPixel { x, y, rgba });
@@ -2041,13 +2224,16 @@ pub fn show_canvas_panel(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffMetricMode, ORDER_OPERATION, ORDER_PAUSE, ORDER_RENDER_FPS, PixelOverlayCache,
-        PixelOverlayReadback, RefImageMode, ValueSamplingPixelData, ValueSamplingReference,
-        compute_diff_metric_rgb, format_overlay_channel, is_hdr_clamp_effective,
-        is_supported_reference_image, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
+        DiffMetricMode, KEY_TOGGLE_REFERENCE_ALPHA, KEY_TOGGLE_SAMPLING, ORDER_OPERATION,
+        ORDER_PAUSE, ORDER_RENDER_FPS, PixelOverlayCache, PixelOverlayReadback, RefImageAlphaMode,
+        RefImageMode, ValueSamplingReference, apply_reference_alpha_mode_to_linear_rgba,
+        compose_reference_over_base, compute_diff_metric_rgba, decode_reference_image,
+        format_overlay_channel, is_hdr_clamp_effective, is_supported_reference_image,
+        reference_texture_format, rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel,
         sample_rgba16unorm_pixel, sample_value_pixel,
     };
-    use rust_wgpu_fiber::eframe::wgpu;
+    use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
+    use rust_wgpu_fiber::eframe::{egui, wgpu};
     use std::path::Path;
 
     fn assert_rgba_approx_eq(actual: [f32; 4], expected: [f32; 4]) {
@@ -2080,6 +2266,12 @@ mod tests {
     fn render_fps_indicator_order_sits_between_operation_and_pause() {
         assert!(ORDER_OPERATION < ORDER_RENDER_FPS);
         assert!(ORDER_RENDER_FPS < ORDER_PAUSE);
+    }
+
+    #[test]
+    fn keybindings_use_n_for_sampling_and_p_for_reference_alpha_mode() {
+        assert_eq!(KEY_TOGGLE_SAMPLING, egui::Key::N);
+        assert_eq!(KEY_TOGGLE_REFERENCE_ALPHA, egui::Key::P);
     }
 
     #[test]
@@ -2170,25 +2362,34 @@ mod tests {
     #[test]
     fn overlay_mode_composites_reference_over_base() {
         let base_cache = make_rgba8_cache(1, 1, vec![128, 64, 32, 255]);
+        let reference_pixels = [1.0, 0.0, 0.0, 128.0 / 255.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Overlay,
             offset_px: [0, 0],
             size: [1, 1],
             opacity: 0.5,
-            pixel_data: ValueSamplingPixelData::Rgba8(&[255, 0, 0, 128]),
+            linear_premul_rgba: &reference_pixels,
         };
 
-        let sampled =
-            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
-                .expect("sampled");
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            true,
+            false,
+        )
+        .expect("sampled");
 
-        let ref_a = (128.0 / 255.0) * 0.5;
-        let inv_ref_a = 1.0 - ref_a;
+        let src_r = 1.0 * 0.5;
+        let src_a = (128.0 / 255.0) * 0.5;
+        let inv_src_a = 1.0 - src_a;
         let expected = [
-            1.0 * ref_a + (128.0 / 255.0) * inv_ref_a,
-            (64.0 / 255.0) * inv_ref_a,
-            (32.0 / 255.0) * inv_ref_a,
-            ref_a + 1.0 * inv_ref_a,
+            src_r + (128.0 / 255.0) * inv_src_a,
+            (64.0 / 255.0) * inv_src_a,
+            (32.0 / 255.0) * inv_src_a,
+            src_a + 1.0 * inv_src_a,
         ];
         assert_rgba_approx_eq(sampled, expected);
     }
@@ -2196,17 +2397,25 @@ mod tests {
     #[test]
     fn overlay_mode_outside_reference_uses_base() {
         let base_cache = make_rgba8_cache(1, 1, vec![20, 40, 60, 80]);
+        let reference_pixels = [1.0, 0.0, 0.0, 1.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Overlay,
             offset_px: [1, 1],
             size: [1, 1],
             opacity: 1.0,
-            pixel_data: ValueSamplingPixelData::Rgba8(&[255, 0, 0, 255]),
+            linear_premul_rgba: &reference_pixels,
         };
 
-        let sampled =
-            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
-                .expect("sampled");
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            true,
+            false,
+        )
+        .expect("sampled");
         assert_rgba_approx_eq(
             sampled,
             [20.0 / 255.0, 40.0 / 255.0, 60.0 / 255.0, 80.0 / 255.0],
@@ -2216,17 +2425,25 @@ mod tests {
     #[test]
     fn diff_mode_inside_reference_uses_metric() {
         let base_cache = make_rgba8_cache(1, 1, vec![255, 0, 127, 255]);
+        let reference_pixels = [0.0, 1.0, 0.0, 0.5];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Diff,
             offset_px: [0, 0],
             size: [1, 1],
             opacity: 0.2,
-            pixel_data: ValueSamplingPixelData::Rgba8(&[0, 255, 0, 255]),
+            linear_premul_rgba: &reference_pixels,
         };
 
-        let sampled =
-            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
-                .expect("sampled");
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            true,
+            false,
+        )
+        .expect("sampled");
 
         assert_rgba_approx_eq(sampled, [1.0, 1.0, 127.0 / 255.0, 1.0]);
     }
@@ -2234,17 +2451,25 @@ mod tests {
     #[test]
     fn diff_mode_outside_reference_uses_base() {
         let base_cache = make_rgba8_cache(1, 1, vec![20, 40, 60, 80]);
+        let reference_pixels = [1.0, 1.0, 1.0, 1.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Diff,
             offset_px: [1, 0],
             size: [1, 1],
             opacity: 0.8,
-            pixel_data: ValueSamplingPixelData::Rgba8(&[255, 255, 255, 255]),
+            linear_premul_rgba: &reference_pixels,
         };
 
-        let sampled =
-            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::SE, true)
-                .expect("sampled");
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::SE,
+            true,
+            false,
+        )
+        .expect("sampled");
 
         assert_rgba_approx_eq(
             sampled,
@@ -2255,12 +2480,13 @@ mod tests {
     #[test]
     fn diff_mode_without_diff_output_falls_back_to_reference() {
         let base_cache = make_rgba8_cache(1, 1, vec![0, 0, 0, 255]);
+        let reference_pixels = [10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Diff,
             offset_px: [0, 0],
             size: [1, 1],
             opacity: 0.5,
-            pixel_data: ValueSamplingPixelData::Rgba8(&[10, 20, 30, 40]),
+            linear_premul_rgba: &reference_pixels,
         };
 
         let sampled = sample_value_pixel(
@@ -2269,6 +2495,7 @@ mod tests {
             0,
             Some(reference),
             DiffMetricMode::AE,
+            false,
             false,
         )
         .expect("sampled");
@@ -2282,7 +2509,7 @@ mod tests {
     #[test]
     fn value_sampling_ignores_ui_overlay_flags() {
         let base_cache = make_rgba16f_cache(1, 1, vec![2.0, 0.5, 1.2, 1.0]);
-        let sampled = sample_value_pixel(&base_cache, 0, 0, None, DiffMetricMode::AE, false)
+        let sampled = sample_value_pixel(&base_cache, 0, 0, None, DiffMetricMode::AE, false, false)
             .expect("sampled");
         assert_rgba_approx_eq(sampled, [2.0, 0.5, 1.2, 1.0]);
     }
@@ -2290,29 +2517,38 @@ mod tests {
     #[test]
     fn value_sampling_supports_u16_reference_pixels() {
         let base_cache = make_rgba8_cache(1, 1, vec![255, 0, 0, 255]);
+        let reference_pixels = [32768.0 / 65535.0, 0.0, 0.0, 1.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Diff,
             offset_px: [0, 0],
             size: [1, 1],
             opacity: 1.0,
-            pixel_data: ValueSamplingPixelData::Rgba16Unorm(&[32768, 0, 0, 65535]),
+            linear_premul_rgba: &reference_pixels,
         };
 
-        let sampled =
-            sample_value_pixel(&base_cache, 0, 0, Some(reference), DiffMetricMode::AE, true)
-                .expect("sampled");
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            true,
+            false,
+        )
+        .expect("sampled");
         assert_rgba_approx_eq(sampled, [1.0 - (32768.0 / 65535.0), 0.0, 0.0, 1.0]);
     }
 
     #[test]
     fn value_sampling_supports_float_reference_pixels() {
         let base_cache = make_rgba8_cache(1, 1, vec![0, 0, 0, 255]);
+        let reference_pixels = [1.25, 0.5, 0.25, 1.0];
         let reference = ValueSamplingReference {
             mode: RefImageMode::Diff,
             offset_px: [0, 0],
             size: [1, 1],
             opacity: 1.0,
-            pixel_data: ValueSamplingPixelData::Rgba32f(&[1.25, 0.5, 0.25, 1.0]),
+            linear_premul_rgba: &reference_pixels,
         };
 
         let sampled = sample_value_pixel(
@@ -2322,23 +2558,80 @@ mod tests {
             Some(reference),
             DiffMetricMode::AE,
             false,
+            false,
         )
         .expect("sampled");
         assert_rgba_approx_eq(sampled, [1.25, 0.5, 0.25, 1.0]);
     }
 
     #[test]
-    fn compute_diff_metric_rgb_matches_expected_formulae() {
-        let render = [0.75, 0.2, 0.1];
-        let reference = [0.25, 0.1, 0.4];
+    fn compute_diff_metric_rgba_matches_expected_formulae() {
+        let render = [0.75, 0.2, 0.1, 0.8];
+        let reference = [0.25, 0.1, 0.4, 0.25];
         assert_rgba_approx_eq(
-            [
-                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[0],
-                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[1],
-                compute_diff_metric_rgb(render, reference, DiffMetricMode::E)[2],
-                1.0,
-            ],
-            [0.5, 0.1, -0.3, 1.0],
+            compute_diff_metric_rgba(render, reference, DiffMetricMode::E),
+            [0.5, 0.1, -0.3, 0.55],
+        );
+    }
+
+    #[test]
+    fn overlay_composition_does_not_clamp_hdr_alpha_above_one() {
+        let out = compose_reference_over_base([0.0, 0.0, 0.0, 0.0], [2.0, 2.0, 2.0, 1.5], 1.0);
+        assert_rgba_approx_eq(out, [2.0, 2.0, 2.0, 1.5]);
+    }
+
+    #[test]
+    fn alpha_mode_conversion_differs_between_premultiplied_and_straight() {
+        let source_linear_rgba = [1.0, 1.0, 1.0, 0.5];
+        assert_eq!(
+            apply_reference_alpha_mode_to_linear_rgba(
+                &source_linear_rgba,
+                RefImageAlphaMode::Premultiplied
+            ),
+            vec![1.0, 1.0, 1.0, 0.5]
+        );
+        assert_eq!(
+            apply_reference_alpha_mode_to_linear_rgba(
+                &source_linear_rgba,
+                RefImageAlphaMode::Straight
+            ),
+            vec![0.5, 0.5, 0.5, 0.5]
+        );
+    }
+
+    #[test]
+    fn sdr_decode_applies_srgb_to_linear() {
+        let mut image = RgbaImage::new(1, 1);
+        image.put_pixel(0, 0, image::Rgba([128, 128, 128, 255]));
+        let decoded = decode_reference_image(
+            DynamicImage::ImageRgba8(image),
+            RefImageAlphaMode::Premultiplied,
+        );
+        let expected = 0.215_860_53_f32;
+        assert_eq!(decoded.transfer_mode, super::RefImageTransferMode::Srgb);
+        assert!(!decoded.high_precision_source);
+        assert_eq!(
+            reference_texture_format(&decoded),
+            wgpu::TextureFormat::Rgba8Unorm
+        );
+        assert!((decoded.linear_premul_rgba[0] - expected).abs() < 1e-4);
+        assert!((decoded.linear_premul_rgba[1] - expected).abs() < 1e-4);
+        assert!((decoded.linear_premul_rgba[2] - expected).abs() < 1e-4);
+        assert!((decoded.linear_premul_rgba[3] - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn u16_decode_uses_high_precision_reference_texture_format() {
+        let mut image: ImageBuffer<Rgba<u16>, Vec<u16>> = ImageBuffer::new(1, 1);
+        image.put_pixel(0, 0, Rgba([65535, 32768, 0, 65535]));
+        let decoded = decode_reference_image(
+            DynamicImage::ImageRgba16(image),
+            RefImageAlphaMode::Premultiplied,
+        );
+        assert!(decoded.high_precision_source);
+        assert_eq!(
+            reference_texture_format(&decoded),
+            wgpu::TextureFormat::Rgba16Float
         );
     }
 }

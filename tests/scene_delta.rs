@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use node_forge_render_server::{
-    dsl::{Connection, Endpoint, Metadata, Node, SceneDSL},
+    dsl::{AssetEntry, Connection, Endpoint, Metadata, Node, SceneDSL},
     ws::{
         SceneCache, SceneDelta, SceneDeltaConnections, SceneDeltaNodes, apply_scene_delta,
         apply_scene_update, materialize_scene_dsl, prune_invalid_connections,
@@ -46,6 +46,15 @@ fn base_scene() -> SceneDSL {
         outputs: Some(HashMap::from([(String::from("main"), String::from("b"))])),
         groups: Vec::new(),
         assets: Default::default(),
+    }
+}
+
+fn asset_entry(path: &str, name: &str, mime: &str, size: u64) -> AssetEntry {
+    AssetEntry {
+        path: path.to_string(),
+        original_name: name.to_string(),
+        mime_type: mime.to_string(),
+        size: Some(size),
     }
 }
 
@@ -101,7 +110,8 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
         },
         outputs: None,
         groups: None,
-        assets: None,
+        assets_added: None,
+        assets_removed: None,
     };
 
     apply_scene_delta(&mut cache, &delta);
@@ -115,6 +125,78 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
 
     // outputs stays unchanged when delta.outputs missing
     assert_eq!(cache.outputs.get("main").map(String::as_str), Some("b"));
+}
+
+#[test]
+fn scene_delta_applies_asset_manifest_add_update_and_remove() {
+    let mut scene = base_scene();
+    scene.assets.insert(
+        "asset-a".to_string(),
+        asset_entry("assets/asset-a.png", "asset-a.png", "image/png", 12),
+    );
+    let mut cache = SceneCache::from_scene_update(&scene);
+
+    let delta_add_update = SceneDelta {
+        version: "1.0".to_string(),
+        nodes: SceneDeltaNodes {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        connections: SceneDeltaConnections {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        outputs: None,
+        groups: None,
+        assets_added: Some(HashMap::from([
+            (
+                "asset-a".to_string(),
+                asset_entry("assets/asset-a.v2.png", "asset-a.v2.png", "image/png", 24),
+            ),
+            (
+                "asset-b".to_string(),
+                asset_entry(
+                    "assets/asset-b.glb",
+                    "asset-b.glb",
+                    "model/gltf-binary",
+                    100,
+                ),
+            ),
+        ])),
+        assets_removed: None,
+    };
+
+    apply_scene_delta(&mut cache, &delta_add_update);
+    assert_eq!(cache.assets.len(), 2);
+    assert_eq!(
+        cache.assets.get("asset-a").map(|v| v.path.as_str()),
+        Some("assets/asset-a.v2.png")
+    );
+    assert!(cache.assets.contains_key("asset-b"));
+
+    let delta_remove = SceneDelta {
+        version: "1.0".to_string(),
+        nodes: SceneDeltaNodes {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        connections: SceneDeltaConnections {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        outputs: None,
+        groups: None,
+        assets_added: None,
+        assets_removed: Some(vec!["asset-a".to_string()]),
+    };
+
+    apply_scene_delta(&mut cache, &delta_remove);
+    assert!(!cache.assets.contains_key("asset-a"));
+    assert!(cache.assets.contains_key("asset-b"));
 }
 
 #[test]

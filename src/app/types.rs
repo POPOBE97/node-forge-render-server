@@ -18,7 +18,7 @@ use crate::ui::animation_manager::AnimationManager;
 use crate::ui::file_tree_widget::FileTreeState;
 use crate::ui::resource_tree::{FileTreeNode, ResourceSnapshot};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum RefImageMode {
     #[default]
     Overlay,
@@ -31,6 +31,29 @@ pub enum RefImageSource {
     SceneNodePath(String),
     SceneNodeDataUrl(String),
     SceneNodeAssetId(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RefImageAlphaMode {
+    #[default]
+    Premultiplied,
+    Straight,
+}
+
+impl RefImageAlphaMode {
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Premultiplied => "PRE",
+            Self::Straight => "STR",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RefImageTransferMode {
+    #[default]
+    Srgb,
+    Linear,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -116,21 +139,17 @@ pub struct AnalysisSourceDomain<'a> {
     pub format: wgpu::TextureFormat,
 }
 
-#[derive(Clone, Debug)]
-pub enum RefImagePixelData {
-    Rgba8(Vec<u8>),
-    Rgba16Unorm(Vec<u16>),
-    Rgba32f(Vec<f32>),
-}
-
 pub struct RefImageState {
     pub name: String,
-    pub pixel_data: RefImagePixelData,
+    pub source_linear_rgba: Vec<f32>,
+    pub linear_premul_rgba: Vec<f32>,
     pub texture: egui::TextureHandle,
     pub wgpu_texture: wgpu::Texture,
     pub wgpu_texture_view: wgpu::TextureView,
     pub size: [u32; 2],
     pub texture_format: wgpu::TextureFormat,
+    pub alpha_mode: RefImageAlphaMode,
+    pub transfer_mode: RefImageTransferMode,
     pub offset: egui::Vec2,
     pub mode: RefImageMode,
     pub opacity: f32,
@@ -206,6 +225,7 @@ pub struct AppInit {
     pub resolution: [u32; 2],
     pub window_resolution: [u32; 2],
     pub output_texture_name: ResourceName,
+    pub scene_output_texture_name: ResourceName,
     pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
     pub scene_rx: Receiver<ws::SceneUpdate>,
@@ -223,6 +243,7 @@ pub struct App {
     pub resolution: [u32; 2],
     pub window_resolution: [u32; 2],
     pub output_texture_name: ResourceName,
+    pub scene_output_texture_name: ResourceName,
     pub color_attachment: Option<egui::TextureId>,
     pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
@@ -303,6 +324,8 @@ pub struct App {
     pub scene_reference_image_path: Option<String>,
     pub scene_reference_image_data_url: Option<String>,
     pub scene_reference_image_asset_id: Option<String>,
+    pub scene_reference_image_alpha_mode: Option<RefImageAlphaMode>,
+    pub reference_alpha_mode: RefImageAlphaMode,
     pub asset_store: crate::asset_store::AssetStore,
     pub last_auto_reference_attempt: Option<String>,
     pub time_updates_enabled: bool,
@@ -363,6 +386,30 @@ pub(super) fn scene_reference_image_asset_id(scene: &crate::dsl::SceneDSL) -> Op
         .filter(|id| !id.is_empty())
         .map(ToOwned::to_owned)
 }
+
+pub(super) fn scene_reference_image_alpha_mode(
+    scene: &crate::dsl::SceneDSL,
+) -> Option<RefImageAlphaMode> {
+    let mode = scene
+        .nodes
+        .iter()
+        .find(|node| node.node_type.as_str() == "ReferenceImage")
+        .and_then(|node| {
+            node.params
+                .get("alphaMode")
+                .or_else(|| node.params.get("alpha_mode"))
+        })
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|mode| !mode.is_empty())?
+        .to_ascii_lowercase();
+
+    match mode.as_str() {
+        "premultiplied" | "premul" | "pre" => Some(RefImageAlphaMode::Premultiplied),
+        "straight" | "str" => Some(RefImageAlphaMode::Straight),
+        _ => None,
+    }
+}
 impl App {
     pub fn from_init(init: AppInit) -> Self {
         let initial_scene_uses_time = init.uniform_scene.as_ref().is_some_and(scene_uses_time);
@@ -378,11 +425,16 @@ impl App {
             .uniform_scene
             .as_ref()
             .and_then(scene_reference_image_asset_id);
+        let initial_scene_reference_image_alpha_mode = init
+            .uniform_scene
+            .as_ref()
+            .and_then(scene_reference_image_alpha_mode);
         Self {
             shader_space: init.shader_space,
             resolution: init.resolution,
             window_resolution: init.window_resolution,
             output_texture_name: init.output_texture_name,
+            scene_output_texture_name: init.scene_output_texture_name,
             color_attachment: None,
             start: init.start,
             passes: init.passes,
@@ -457,6 +509,8 @@ impl App {
             scene_reference_image_path: initial_scene_reference_image_path,
             scene_reference_image_data_url: initial_scene_reference_image_data_url,
             scene_reference_image_asset_id: initial_scene_reference_image_asset_id,
+            scene_reference_image_alpha_mode: initial_scene_reference_image_alpha_mode,
+            reference_alpha_mode: initial_scene_reference_image_alpha_mode.unwrap_or_default(),
             asset_store: init.asset_store,
             last_auto_reference_attempt: None,
             time_updates_enabled: true,
@@ -576,5 +630,37 @@ mod tests {
     fn scene_uses_time_returns_false_when_time_nodes_absent() {
         let scene = scene_with_node_types(&["FloatInput", "ColorInput"]);
         assert!(!super::scene_uses_time(&scene));
+    }
+
+    #[test]
+    fn scene_reference_alpha_mode_accepts_supported_values_case_insensitively() {
+        let mut scene = scene_with_node_types(&["ReferenceImage"]);
+        scene.nodes[0]
+            .params
+            .insert("alphaMode".to_string(), serde_json::json!("PrEmUlTiPlIeD"));
+        assert_eq!(
+            super::scene_reference_image_alpha_mode(&scene),
+            Some(super::RefImageAlphaMode::Premultiplied)
+        );
+
+        scene.nodes[0]
+            .params
+            .insert("alphaMode".to_string(), serde_json::json!("straight"));
+        assert_eq!(
+            super::scene_reference_image_alpha_mode(&scene),
+            Some(super::RefImageAlphaMode::Straight)
+        );
+    }
+
+    #[test]
+    fn scene_reference_alpha_mode_returns_none_for_missing_or_invalid_value() {
+        let scene = scene_with_node_types(&["ReferenceImage"]);
+        assert_eq!(super::scene_reference_image_alpha_mode(&scene), None);
+
+        let mut scene = scene_with_node_types(&["ReferenceImage"]);
+        scene.nodes[0]
+            .params
+            .insert("alphaMode".to_string(), serde_json::json!("unknown"));
+        assert_eq!(super::scene_reference_image_alpha_mode(&scene), None);
     }
 }
