@@ -2,16 +2,16 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-22T13:06:22.389Z",
-    "modified": "2026-02-22T13:06:22.389Z"
+    "created": "2026-02-26T03:35:57.817Z",
+    "modified": "2026-02-26T03:35:57.817Z"
   },
   "nodes": [
     {
       "id": "Screen_1",
       "type": "Screen",
       "position": {
-        "x": 260,
-        "y": 400
+        "x": 240,
+        "y": -220
       },
       "width": 160,
       "label": "Screen",
@@ -24,7 +24,7 @@
       "id": "GLTFGeometry_2",
       "type": "GLTFGeometry",
       "position": {
-        "x": -1280,
+        "x": -1640,
         "y": 260
       },
       "width": 192,
@@ -58,8 +58,8 @@
       "id": "Composite_5",
       "type": "Composite",
       "position": {
-        "x": 80,
-        "y": 400
+        "x": 60,
+        "y": -220
       },
       "width": 160,
       "label": "Composite",
@@ -69,7 +69,25 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       },
       "inputs": [],
       "inputBindings": []
@@ -78,8 +96,8 @@
       "id": "RenderTexture_6",
       "type": "RenderTexture",
       "position": {
-        "x": 80,
-        "y": 260
+        "x": 60,
+        "y": -360
       },
       "width": 160,
       "label": "Render Texture",
@@ -93,8 +111,8 @@
       "id": "ColorInput_7",
       "type": "ColorInput",
       "position": {
-        "x": -1060,
-        "y": 640
+        "x": -1420,
+        "y": 560
       },
       "width": 160,
       "label": "Color Input",
@@ -127,7 +145,25 @@
           "x": 540,
           "y": 1200
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -177,7 +213,25 @@
           "x": 270,
           "y": 600
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -214,7 +268,25 @@
           "x": 135,
           "y": 300
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -251,7 +323,25 @@
           "x": 67,
           "y": 150
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -288,7 +378,25 @@
           "x": 33,
           "y": 75
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -325,7 +433,25 @@
           "x": 16,
           "y": 37
         },
-        "sampling": "Clamp"
+        "sampling": "Clamp",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -346,7 +472,7 @@
       "id": "SetTransform_22",
       "type": "SetTransform",
       "position": {
-        "x": -1060,
+        "x": -1420,
         "y": 260
       },
       "width": 160,
@@ -388,7 +514,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -412,7 +556,25 @@
         "targetSize": {
           "x": 33,
           "y": 75
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -433,7 +595,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -457,7 +637,25 @@
         "targetSize": {
           "x": 67,
           "y": 150
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -590,7 +788,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -614,7 +830,25 @@
         "targetSize": {
           "x": 135,
           "y": 300
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -691,7 +925,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -715,7 +967,25 @@
         "targetSize": {
           "x": 270,
           "y": 600
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -792,7 +1062,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -816,7 +1104,25 @@
         "targetSize": {
           "x": 540,
           "y": 1200
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -893,7 +1199,25 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -917,7 +1241,25 @@
         "targetSize": {
           "x": 1080,
           "y": 2400
-        }
+        },
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -930,7 +1272,7 @@
       "width": 160,
       "label": "Math Closure",
       "params": {
-        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\noutput = c_l0 + c_l1;"
+        "source": "vec4 c_l0 = samplePass(l0, vUv);\nvec4 c_l1 = samplePass(l1, vUv);\n\nvec4 bloom = c_l0 + c_l1;\n\noutput = bloom * intelli * 1.5;"
       },
       "inputs": [
         {
@@ -942,6 +1284,11 @@
           "id": "dynamic_1771504277344_2",
           "name": "l1",
           "type": "pass"
+        },
+        {
+          "id": "dynamic_1772076181087_3",
+          "name": "intelli",
+          "type": "color"
         }
       ],
       "outputs": [
@@ -973,34 +1320,232 @@
             "outputPortId": "output",
             "outputLabel": "Output"
           }
+        },
+        {
+          "portId": "dynamic_1772076181087_3",
+          "label": "intelli",
+          "variableName": "intelli",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ImageTexture_50",
+            "outputPortId": "color",
+            "outputLabel": "Color"
+          }
         }
       ]
     },
     {
-      "id": "Vector3Input_43",
-      "type": "Vector3Input",
+      "id": "MathClosure_43",
+      "type": "MathClosure",
       "position": {
-        "x": -1320,
-        "y": 380
+        "x": -1640,
+        "y": 360
       },
-      "width": 160,
-      "label": "Vector3 Input",
+      "width": 203,
+      "label": "Math Closure",
       "params": {
-        "x": 0,
-        "y": 0,
-        "z": 0
-      }
+        "source": "output = vec3(\n  0.0,\n  fract(t/5.0) * 180.0,\n  0.0\n);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1772071983449_1",
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1772071983449_1",
+          "label": "t",
+          "variableName": "t",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "TimeInput_44",
+            "outputPortId": "time",
+            "outputLabel": "Time"
+          }
+        }
+      ]
     },
     {
       "id": "TimeInput_44",
       "type": "TimeInput",
       "position": {
-        "x": -1500,
-        "y": 440
+        "x": -1820,
+        "y": 360
       },
       "width": 160,
       "label": "Time Input",
       "params": {}
+    },
+    {
+      "id": "PerspectiveCamera_45",
+      "type": "PerspectiveCamera",
+      "position": {
+        "x": -1220,
+        "y": 260
+      },
+      "width": 160,
+      "label": "Perspective Camera",
+      "params": {
+        "position": {
+          "x": 540,
+          "y": 1200,
+          "z": 1200
+        },
+        "target": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "fovY": 90,
+        "aspect": 0.45,
+        "near": 0.1,
+        "far": 5000
+      }
+    },
+    {
+      "id": "ImageTexture_46",
+      "type": "ImageTexture",
+      "position": {
+        "x": -620,
+        "y": -360
+      },
+      "width": 160,
+      "label": "Image Texture",
+      "params": {
+        "assetId": "31207536d3bc",
+        "interpolation": "linear",
+        "extension": "repeat",
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "premultiplied"
+      }
+    },
+    {
+      "id": "ColorMix_47",
+      "type": "ColorMix",
+      "position": {
+        "x": -360,
+        "y": -360
+      },
+      "width": 160,
+      "label": "Blend Color",
+      "params": {
+        "mode": "normal"
+      }
+    },
+    {
+      "id": "ColorInput_48",
+      "type": "ColorInput",
+      "position": {
+        "x": -620,
+        "y": -80
+      },
+      "width": 160,
+      "label": "Color Input",
+      "params": {
+        "value": [
+          0,
+          0,
+          0,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "ImageTexture_50",
+      "type": "ImageTexture",
+      "position": {
+        "x": -860,
+        "y": 360
+      },
+      "width": 160,
+      "label": "Image Texture",
+      "params": {
+        "assetId": "6f0eab81da37",
+        "interpolation": "linear",
+        "extension": "repeat",
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
+    },
+    {
+      "id": "MathClosure_51",
+      "type": "MathClosure",
+      "position": {
+        "x": -180,
+        "y": -360
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = x + y;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1772076464701_1",
+          "name": "x",
+          "type": "color"
+        },
+        {
+          "id": "dynamic_1772076466967_2",
+          "name": "y",
+          "type": "vector4"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1772076464701_1",
+          "label": "x",
+          "variableName": "x",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ColorMix_47",
+            "outputPortId": "color",
+            "outputLabel": "Color"
+          }
+        },
+        {
+          "portId": "dynamic_1772076466967_2",
+          "label": "y",
+          "variableName": "y",
+          "type": "vector4",
+          "sourceBinding": {
+            "nodeId": "MathClosure_42",
+            "outputPortId": "output",
+            "outputLabel": "Output"
+          }
+        }
+      ]
     }
   ],
   "connections": [
@@ -1445,17 +1990,6 @@
       }
     },
     {
-      "id": "edge_75",
-      "from": {
-        "nodeId": "MathClosure_42",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
-      }
-    },
-    {
       "id": "edge_76",
       "from": {
         "nodeId": "Downsample_20",
@@ -1473,19 +2007,96 @@
         "portId": "time"
       },
       "to": {
-        "nodeId": "Vector3Input_43",
-        "portId": "y"
+        "nodeId": "MathClosure_43",
+        "portId": "dynamic_1772071983449_1"
       }
     },
     {
       "id": "edge_78",
       "from": {
-        "nodeId": "Vector3Input_43",
-        "portId": "vector"
+        "nodeId": "MathClosure_43",
+        "portId": "output"
       },
       "to": {
         "nodeId": "SetTransform_22",
         "portId": "rotate"
+      }
+    },
+    {
+      "id": "edge_79",
+      "from": {
+        "nodeId": "PerspectiveCamera_45",
+        "portId": "camera"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "camera"
+      }
+    },
+    {
+      "id": "edge_83",
+      "from": {
+        "nodeId": "ImageTexture_46",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ColorMix_47",
+        "portId": "color0"
+      }
+    },
+    {
+      "id": "edge_85",
+      "from": {
+        "nodeId": "ColorInput_48",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ColorMix_47",
+        "portId": "color1"
+      }
+    },
+    {
+      "id": "edge_89",
+      "from": {
+        "nodeId": "ImageTexture_50",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "MathClosure_42",
+        "portId": "dynamic_1772076181087_3"
+      }
+    },
+    {
+      "id": "edge_90",
+      "from": {
+        "nodeId": "ColorMix_47",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "MathClosure_51",
+        "portId": "dynamic_1772076464701_1"
+      }
+    },
+    {
+      "id": "edge_91",
+      "from": {
+        "nodeId": "MathClosure_42",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "MathClosure_51",
+        "portId": "dynamic_1772076466967_2"
+      }
+    },
+    {
+      "id": "edge_92",
+      "from": {
+        "nodeId": "MathClosure_51",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
       }
     }
   ],
@@ -1498,6 +2109,18 @@
       "originalName": "rings.glb",
       "mimeType": "model/gltf-binary",
       "size": 65920
+    },
+    "31207536d3bc": {
+      "path": "assets/31207536d3bc.jpg",
+      "originalName": "background-blurred.jpg",
+      "mimeType": "image/jpeg",
+      "size": 414863
+    },
+    "6f0eab81da37": {
+      "path": "assets/6f0eab81da37.png",
+      "originalName": "512_512.png",
+      "mimeType": "image/png",
+      "size": 4641
     }
   },
   "groups": []
