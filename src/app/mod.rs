@@ -279,7 +279,6 @@ impl eframe::App for App {
                 reference.offset.x.round() as i32,
                 reference.offset.y.round() as i32,
             ];
-            let ref_size = reference.size;
             let diff_output_format = ui::diff_renderer::select_diff_output_format(
                 source.format,
                 reference.texture_format,
@@ -287,12 +286,12 @@ impl eframe::App for App {
             let needs_recreate = self
                 .diff_renderer
                 .as_ref()
-                .map(|r| r.output_size() != ref_size || r.output_format() != diff_output_format)
+                .map(|r| r.output_size() != source.size || r.output_format() != diff_output_format)
                 .unwrap_or(true);
             if needs_recreate {
                 self.diff_renderer = Some(ui::diff_renderer::DiffRenderer::new(
                     &render_state.device,
-                    ref_size,
+                    source.size,
                     diff_output_format,
                 ));
             }
@@ -992,6 +991,39 @@ mod tests {
         assert_ne!(key_1, key_4);
         assert_ne!(key_1, key_5);
         assert_ne!(key_1, key_6);
+    }
+
+    #[test]
+    fn diff_request_key_changes_with_source_domain() {
+        let source_a = hash_key(&(
+            "output",
+            [320_u32, 180_u32],
+            super::wgpu::TextureFormat::Rgba8Unorm,
+        ));
+        let source_b = hash_key(&(
+            "output",
+            [640_u32, 360_u32],
+            super::wgpu::TextureFormat::Rgba16Float,
+        ));
+        let key_a = diff_request_key(
+            source_a,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Overlay,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
+        let key_b = diff_request_key(
+            source_b,
+            [64, 64],
+            [0, 0],
+            RefImageMode::Overlay,
+            0.5f32.to_bits(),
+            DiffMetricMode::AE,
+            false,
+        );
+        assert_ne!(key_a, key_b);
     }
 
     #[test]

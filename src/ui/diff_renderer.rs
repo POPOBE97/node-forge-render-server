@@ -126,7 +126,6 @@ fn main(
 ) {
     let lane = lid.y * 16u + lid.x;
     let in_render = gid.x < params.render_size.x && gid.y < params.render_size.y;
-    let in_ref = gid.x < params.ref_size.x && gid.y < params.ref_size.y;
     var lane_min = 1e30;
     var lane_max = -1e30;
     var lane_sum = 0.0;
@@ -134,66 +133,58 @@ fn main(
     var lane_count = 0u;
     var lane_non_finite = 0u;
 
-    if (in_ref) {
-        let dst = vec2<i32>(vec2<u32>(gid.xy));
-        let src = dst + params.offset_px;
-
-        var render_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        if (
-            src.x >= 0 && src.y >= 0 &&
-            src.x < i32(params.render_size.x) &&
-            src.y < i32(params.render_size.y)
-        ) {
-            render_rgba = textureLoad(render_tex, src, 0);
-        }
-        let ref_rgba = textureLoad(ref_tex, dst, 0);
-        var out_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        if (params.compare_mode == 0u) {
-            out_rgba = compose_overlay(render_rgba, ref_rgba, params.overlay_opacity);
-        } else {
-            out_rgba = metric_diff_rgba(render_rgba, ref_rgba, params.metric_mode);
-        }
-
-        if (params.clamp_output != 0u) {
-            out_rgba = clamp(out_rgba, vec4<f32>(0.0), vec4<f32>(1.0));
-        }
-        out_rgba.a = 1.0;
-        textureStore(display_out_tex, dst, out_rgba);
-    }
-
     if (in_render) {
         let render_xy = vec2<i32>(vec2<u32>(gid.xy));
         let render_rgba = textureLoad(render_tex, render_xy, 0);
         let ref_xy = render_xy - params.offset_px;
 
-        var ref_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        if (
+        let has_ref = (
             ref_xy.x >= 0 && ref_xy.y >= 0 &&
             ref_xy.x < i32(params.ref_size.x) &&
             ref_xy.y < i32(params.ref_size.y)
-        ) {
-            ref_rgba = textureLoad(ref_tex, ref_xy, 0);
+        );
+
+        var display_rgba = render_rgba;
+        var analysis_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        if (has_ref) {
+            let ref_rgba = textureLoad(ref_tex, ref_xy, 0);
+            if (params.compare_mode == 0u) {
+                let overlay_rgba = compose_overlay(render_rgba, ref_rgba, params.overlay_opacity);
+                display_rgba = overlay_rgba;
+                analysis_rgba = overlay_rgba;
+            } else {
+                let metric_rgba = metric_diff_rgba(render_rgba, ref_rgba, params.metric_mode);
+                display_rgba = metric_rgba;
+                analysis_rgba = metric_rgba;
+            }
         }
 
-        var stats_rgba = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        if (params.compare_mode == 0u) {
-            stats_rgba = compose_overlay(render_rgba, ref_rgba, params.overlay_opacity);
-        } else {
-            stats_rgba = metric_diff_rgba(render_rgba, ref_rgba, params.metric_mode);
+        if (params.compare_mode == 1u) {
+            // Diff visualization is always opaque for readability.
+            display_rgba.a = 1.0;
         }
-        textureStore(analysis_out_tex, render_xy, stats_rgba);
 
-        let s = metric_scalar(stats_rgba);
-        if (finite_vec4(stats_rgba) && finite_f32(s)) {
-            lane_min = s;
-            lane_max = s;
-            lane_sum = s;
-            lane_sum_sq = s * s;
-            lane_count = 1u;
-            let bin = histogram_bin(abs(s));
-            atomicAdd(&histogram[bin], 1u);
-        } else {
-            lane_non_finite = 1u;
+        if (params.clamp_output != 0u) {
+            display_rgba = clamp(display_rgba, vec4<f32>(0.0), vec4<f32>(1.0));
+            analysis_rgba = clamp(analysis_rgba, vec4<f32>(0.0), vec4<f32>(1.0));
+        }
+
+        textureStore(display_out_tex, render_xy, display_rgba);
+        textureStore(analysis_out_tex, render_xy, analysis_rgba);
+
+        if (params.compare_mode == 1u && has_ref) {
+            let s = metric_scalar(analysis_rgba);
+            if (finite_vec4(analysis_rgba) && finite_f32(s)) {
+                lane_min = s;
+                lane_max = s;
+                lane_sum = s;
+                lane_sum_sq = s * s;
+                lane_count = 1u;
+                let bin = histogram_bin(abs(s));
+                atomicAdd(&histogram[bin], 1u);
+            } else {
+                lane_non_finite = 1u;
+            }
         }
     }
 
@@ -720,6 +711,19 @@ impl DiffRenderer {
         clamp_output: bool,
         collect_stats: bool,
     ) -> Option<DiffStats> {
+        let next_output_size = [render_size[0].max(1), render_size[1].max(1)];
+        if self.output_size != next_output_size {
+            let (output_texture, output_texture_view) = Self::create_storage_texture(
+                device,
+                "sys.diff.output",
+                next_output_size,
+                self.output_format,
+            );
+            self.output_texture = output_texture;
+            self.output_texture_view = output_texture_view;
+            self.output_size = next_output_size;
+        }
+
         let next_analysis_size = [render_size[0].max(1), render_size[1].max(1)];
         if self.analysis_size != next_analysis_size {
             let (analysis_texture, analysis_texture_view) = Self::create_storage_texture(
@@ -733,8 +737,8 @@ impl DiffRenderer {
             self.analysis_size = next_analysis_size;
         }
 
-        let dispatch_width = render_size[0].max(ref_size[0]).max(1);
-        let dispatch_height = render_size[1].max(ref_size[1]).max(1);
+        let dispatch_width = render_size[0].max(1);
+        let dispatch_height = render_size[1].max(1);
         let group_x = dispatch_width.div_ceil(WORKGROUP_SIZE_X);
         let group_y = dispatch_height.div_ceil(WORKGROUP_SIZE_Y);
         let group_count = (group_x * group_y).max(1);
@@ -931,7 +935,7 @@ mod tests {
         DiffRenderer, HIST_BIN_COUNT, HIST_INTERIOR_START_BIN, HIST_OVERFLOW_BIN, HIST_ZERO_BIN,
         select_diff_output_format,
     };
-    use crate::app::DiffMetricMode;
+    use crate::app::{DiffMetricMode, RefImageMode};
     use rust_wgpu_fiber::eframe::wgpu;
 
     fn map_ref_xy(
@@ -995,6 +999,63 @@ mod tests {
         (metric_rgba[0] + metric_rgba[1] + metric_rgba[2] + metric_rgba[3]) * 0.25
     }
 
+    fn cpu_compose_overlay(render_rgba: [f32; 4], ref_rgba: [f32; 4], opacity: f32) -> [f32; 4] {
+        let op = opacity.clamp(0.0, 1.0);
+        let src = [
+            ref_rgba[0] * op,
+            ref_rgba[1] * op,
+            ref_rgba[2] * op,
+            ref_rgba[3] * op,
+        ];
+        let inv_src_a = 1.0 - src[3];
+        [
+            src[0] + render_rgba[0] * inv_src_a,
+            src[1] + render_rgba[1] * inv_src_a,
+            src[2] + render_rgba[2] * inv_src_a,
+            src[3] + render_rgba[3] * inv_src_a,
+        ]
+    }
+
+    fn cpu_display_compare_rgba(
+        render_rgba: [f32; 4],
+        ref_rgba: Option<[f32; 4]>,
+        mode: RefImageMode,
+        overlay_opacity: f32,
+        metric_mode: DiffMetricMode,
+        clamp_output: bool,
+    ) -> [f32; 4] {
+        let mut out = match (mode, ref_rgba) {
+            (_, None) => render_rgba,
+            (RefImageMode::Overlay, Some(reference)) => {
+                cpu_compose_overlay(render_rgba, reference, overlay_opacity)
+            }
+            (RefImageMode::Diff, Some(reference)) => {
+                cpu_metric_diff_rgba(render_rgba, reference, metric_mode)
+            }
+        };
+        if matches!(mode, RefImageMode::Diff) {
+            out[3] = 1.0;
+        }
+        if clamp_output {
+            out = out.map(|v| v.clamp(0.0, 1.0));
+        }
+        out
+    }
+
+    fn cpu_overlap_scalar_for_diff(
+        render_rgba: [f32; 4],
+        ref_rgba: Option<[f32; 4]>,
+        metric_mode: DiffMetricMode,
+        clamp_output: bool,
+    ) -> Option<f32> {
+        let reference = ref_rgba?;
+        let mut metric = cpu_metric_diff_rgba(render_rgba, reference, metric_mode);
+        if clamp_output {
+            metric = metric.map(|v| v.clamp(0.0, 1.0));
+        }
+        Some(cpu_metric_scalar_rgba(metric))
+    }
+
     #[test]
     fn stats_reference_mapping_uses_render_minus_offset() {
         assert_eq!(map_ref_xy([5, 7], [2, 3], [16, 16]), Some([3, 4]));
@@ -1002,11 +1063,60 @@ mod tests {
     }
 
     #[test]
-    fn stats_fallback_to_zero_reference_when_out_of_bounds() {
+    fn overlay_display_outside_reference_uses_render_pixel() {
+        let render_rgba = [0.2, 0.6, 1.0, 0.35];
+        let out = cpu_display_compare_rgba(
+            render_rgba,
+            None,
+            RefImageMode::Overlay,
+            0.75,
+            DiffMetricMode::AE,
+            false,
+        );
+        assert_eq!(out, render_rgba);
+    }
+
+    #[test]
+    fn diff_display_outside_reference_uses_render_rgb_and_forces_opaque_alpha() {
+        let render_rgba = [0.2, 0.6, 1.0, 0.35];
+        let out = cpu_display_compare_rgba(
+            render_rgba,
+            None,
+            RefImageMode::Diff,
+            1.0,
+            DiffMetricMode::AE,
+            false,
+        );
+        assert_eq!(out, [0.2, 0.6, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn diff_display_inside_reference_uses_metric_rgb_and_forces_opaque_alpha() {
+        let render_rgba = [0.75, 0.2, 0.1, 0.9];
+        let ref_rgba = [0.25, 0.1, 0.4, 0.25];
+        let out = cpu_display_compare_rgba(
+            render_rgba,
+            Some(ref_rgba),
+            RefImageMode::Diff,
+            1.0,
+            DiffMetricMode::E,
+            false,
+        );
+        assert_eq!(out, [0.5, 0.1, -0.3, 1.0]);
+    }
+
+    #[test]
+    fn overlap_only_stats_skip_non_overlap_pixels() {
         let render_rgba = [0.2, 0.6, 1.0, 0.8];
-        let fallback_ref = [0.0, 0.0, 0.0, 0.0];
-        let diff = cpu_metric_diff_rgba(render_rgba, fallback_ref, DiffMetricMode::AE);
-        assert_eq!(diff, render_rgba);
+        let overlap = cpu_overlap_scalar_for_diff(
+            render_rgba,
+            Some([0.1, 0.2, 0.3, 0.4]),
+            DiffMetricMode::AE,
+            false,
+        );
+        let non_overlap = cpu_overlap_scalar_for_diff(render_rgba, None, DiffMetricMode::AE, false);
+        assert!(overlap.is_some());
+        assert!(non_overlap.is_none());
     }
 
     #[test]

@@ -1716,20 +1716,31 @@ pub fn show_canvas_panel(
     let uv0_max = (animated_canvas_rect.max - image_rect.min) / image_rect_size;
     let computed_uv = Rect::from_min_max(pos2(uv0_min.x, uv0_min.y), pos2(uv0_max.x, uv0_max.y));
 
-    let display_texture_format = app
-        .shader_space
-        .texture_info(display_texture_name.as_str())
-        .map(|info| info.format);
+    let compare_output_active = app.diff_texture_id.is_some();
+    let display_texture_format = if compare_output_active {
+        app.diff_renderer
+            .as_ref()
+            .map(|renderer| renderer.output_format())
+    } else {
+        None
+    }
+    .or_else(|| {
+        app.shader_space
+            .texture_info(display_texture_name.as_str())
+            .map(|info| info.format)
+    });
     let hdr_clamp_effective =
         is_hdr_clamp_effective(app.hdr_preview_clamp_enabled, display_texture_format);
 
-    let mut display_attachment = if using_preview {
+    let mut display_attachment = if compare_output_active {
+        app.diff_texture_id
+    } else if using_preview {
         app.preview_color_attachment.or(app.color_attachment)
     } else {
         app.color_attachment
     };
 
-    if hdr_clamp_effective {
+    if hdr_clamp_effective && !compare_output_active {
         let hdr_clamp_source = app
             .shader_space
             .textures
@@ -1786,7 +1797,7 @@ pub fn show_canvas_panel(
         );
     }
 
-    if let Some(reference) = app.ref_image.as_ref() {
+    if !compare_output_active && let Some(reference) = app.ref_image.as_ref() {
         let reference_size = egui::vec2(reference.size[0] as f32, reference.size[1] as f32);
         let reference_min = image_rect.min + reference.offset * app.zoom;
         let reference_rect = Rect::from_min_size(reference_min, reference_size * app.zoom);
@@ -1798,15 +1809,7 @@ pub fn show_canvas_panel(
             let reference_uv =
                 Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
 
-            let using_compare_output = app.diff_texture_id.is_some();
-            let texture_id = if using_compare_output {
-                app.diff_texture_id.unwrap_or(reference.texture.id())
-            } else {
-                reference.texture.id()
-            };
-            let tint = if using_compare_output {
-                Color32::WHITE
-            } else if matches!(reference.mode, RefImageMode::Overlay) {
+            let tint = if matches!(reference.mode, RefImageMode::Overlay) {
                 Color32::from_rgba_unmultiplied(255, 255, 255, (reference.opacity * 255.0) as u8)
             } else {
                 Color32::WHITE
@@ -1814,7 +1817,7 @@ pub fn show_canvas_panel(
 
             ui.painter().add(
                 egui::epaint::RectShape::filled(visible_rect, rounding, tint)
-                    .with_texture(texture_id, reference_uv),
+                    .with_texture(reference.texture.id(), reference_uv),
             );
         }
     }
@@ -1828,7 +1831,7 @@ pub fn show_canvas_panel(
         );
     }
 
-    let diff_output_active = app.diff_texture_id.is_some();
+    let diff_output_active = compare_output_active;
     let value_sampling_texture_name = display_texture_name.clone();
     let mut value_sample_cache: Option<Arc<PixelOverlayCache>> = None;
     if app.zoom >= PIXEL_OVERLAY_MIN_ZOOM {
@@ -2392,6 +2395,35 @@ mod tests {
             src_a + 1.0 * inv_src_a,
         ];
         assert_rgba_approx_eq(sampled, expected);
+    }
+
+    #[test]
+    fn overlay_mode_transparent_reference_pixel_preserves_base() {
+        let base_cache = make_rgba8_cache(1, 1, vec![51, 102, 153, 128]);
+        let reference_pixels = [0.0, 0.0, 0.0, 0.0];
+        let reference = ValueSamplingReference {
+            mode: RefImageMode::Overlay,
+            offset_px: [0, 0],
+            size: [1, 1],
+            opacity: 1.0,
+            linear_premul_rgba: &reference_pixels,
+        };
+
+        let sampled = sample_value_pixel(
+            &base_cache,
+            0,
+            0,
+            Some(reference),
+            DiffMetricMode::AE,
+            true,
+            false,
+        )
+        .expect("sampled");
+
+        assert_rgba_approx_eq(
+            sampled,
+            [51.0 / 255.0, 102.0 / 255.0, 153.0 / 255.0, 128.0 / 255.0],
+        );
     }
 
     #[test]
