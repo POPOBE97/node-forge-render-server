@@ -89,9 +89,8 @@ fn metric_diff_rgba(render_rgba: vec4<f32>, ref_rgba: vec4<f32>, mode: u32) -> v
 }
 
 fn compose_overlay(render_rgba: vec4<f32>, ref_rgba: vec4<f32>, opacity: f32) -> vec4<f32> {
-    let op = clamp(opacity, 0.0, 1.0);
-    let src = ref_rgba * vec4<f32>(op, op, op, op);
-    return src + render_rgba * (1.0 - src.a);
+    let mix = clamp(opacity, 0.0, 1.0);
+    return ref_rgba * mix + render_rgba * (1.0 - mix);
 }
 
 // Uniform scalar used for summary stats/histogram:
@@ -1000,19 +999,12 @@ mod tests {
     }
 
     fn cpu_compose_overlay(render_rgba: [f32; 4], ref_rgba: [f32; 4], opacity: f32) -> [f32; 4] {
-        let op = opacity.clamp(0.0, 1.0);
-        let src = [
-            ref_rgba[0] * op,
-            ref_rgba[1] * op,
-            ref_rgba[2] * op,
-            ref_rgba[3] * op,
-        ];
-        let inv_src_a = 1.0 - src[3];
+        let mix = opacity.clamp(0.0, 1.0);
         [
-            src[0] + render_rgba[0] * inv_src_a,
-            src[1] + render_rgba[1] * inv_src_a,
-            src[2] + render_rgba[2] * inv_src_a,
-            src[3] + render_rgba[3] * inv_src_a,
+            ref_rgba[0] * mix + render_rgba[0] * (1.0 - mix),
+            ref_rgba[1] * mix + render_rgba[1] * (1.0 - mix),
+            ref_rgba[2] * mix + render_rgba[2] * (1.0 - mix),
+            ref_rgba[3] * mix + render_rgba[3] * (1.0 - mix),
         ]
     }
 

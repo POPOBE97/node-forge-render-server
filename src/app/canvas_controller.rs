@@ -927,11 +927,18 @@ pub(super) fn sync_reference_image_from_scene(
         if already_loaded {
             return;
         }
-        let attempt_key = format!("assetid:{}", asset_id);
+        let asset_present = app.asset_store.contains(&asset_id);
+        // Include current presence state in the dedup key so we retry once the
+        // async asset upload completes (missing -> present transition).
+        let attempt_key = format!("assetid:{asset_id}:present:{asset_present}");
         if app.last_auto_reference_attempt.as_deref() == Some(attempt_key.as_str()) {
             return;
         }
         app.last_auto_reference_attempt = Some(attempt_key);
+
+        if !asset_present {
+            return;
+        }
 
         match app.asset_store.load_image(&asset_id) {
             Ok(Some(decoded)) => {
@@ -949,6 +956,9 @@ pub(super) fn sync_reference_image_from_scene(
                 }
             }
             Ok(None) => {
+                // Asset presence was observed above; if it disappears/races,
+                // clear dedup state so next frame can retry.
+                app.last_auto_reference_attempt = None;
                 eprintln!("[reference-image] asset '{asset_id}' not found in asset store");
             }
             Err(e) => {
