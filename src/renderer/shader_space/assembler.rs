@@ -68,6 +68,9 @@ use crate::{
             build_upsample_bilinear_bundle, build_vertical_blur_bundle_with_tap_count, clamp_min_1,
             gaussian_kernel_8, gaussian_mip_level_and_sigma_p,
         },
+        wgsl_bloom::{
+            BLOOM_MAX_MIPS, build_bloom_additive_combine_bundle, build_bloom_extract_bundle,
+        },
     },
 };
 
@@ -485,6 +488,11 @@ fn deps_for_pass_node(
         "GuassianBlurPass" => {
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
             Ok(bundle.pass_textures)
+        }
+        "BloomNode" => {
+            let source_conn = incoming_connection(scene, pass_node_id, "pass")
+                .ok_or_else(|| anyhow!("BloomNode.pass missing for {pass_node_id}"))?;
+            Ok(vec![source_conn.from.node_id.clone()])
         }
         "Downsample" => {
             // Downsample depends on the upstream pass provided on its `source` input.
@@ -1172,6 +1180,76 @@ fn should_skip_blur_upsample_pass(
     downsample_factor == 1 && !extend_enabled && is_sampled_output
 }
 
+fn bloom_downsample_level_count(mut size: [u32; 2]) -> u32 {
+    let mut levels = 0u32;
+    while levels < BLOOM_MAX_MIPS && size[0] > 2 && size[1] > 2 {
+        size = [clamp_min_1(size[0] / 2), clamp_min_1(size[1] / 2)];
+        levels += 1;
+    }
+    levels
+}
+
+fn parse_tint_from_node_or_default(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    bloom_node: &crate::dsl::Node,
+) -> Result<[f32; 4]> {
+    fn json_num(v: &serde_json::Value) -> Option<f32> {
+        v.as_f64()
+            .map(|x| x as f32)
+            .or_else(|| v.as_i64().map(|x| x as f32))
+            .or_else(|| v.as_u64().map(|x| x as f32))
+    }
+
+    fn parse_color(v: &serde_json::Value) -> Option<[f32; 4]> {
+        if let Some(arr) = v.as_array() {
+            let r = arr.first().and_then(json_num)?;
+            let g = arr.get(1).and_then(json_num)?;
+            let b = arr.get(2).and_then(json_num)?;
+            let a = arr.get(3).and_then(json_num).unwrap_or(1.0);
+            return Some([r, g, b, a]);
+        }
+        if let Some(obj) = v.as_object() {
+            let r = obj.get("r").and_then(json_num).or_else(|| obj.get("x").and_then(json_num))?;
+            let g = obj.get("g").and_then(json_num).or_else(|| obj.get("y").and_then(json_num))?;
+            let b = obj.get("b").and_then(json_num).or_else(|| obj.get("z").and_then(json_num))?;
+            let a = obj
+                .get("a")
+                .and_then(json_num)
+                .or_else(|| obj.get("w").and_then(json_num))
+                .unwrap_or(1.0);
+            return Some([r, g, b, a]);
+        }
+        None
+    }
+
+    if let Some(conn) = incoming_connection(scene, &bloom_node.id, "tint") {
+        let Some(src_node) = nodes_by_id.get(&conn.from.node_id) else {
+            bail!("BloomNode {}.tint upstream node missing", bloom_node.id);
+        };
+        if src_node.node_type == "ColorInput" {
+            if let Some(v) = src_node.params.get("value").and_then(parse_color) {
+                return Ok(v.map(|c| c.clamp(0.0, 1.0)));
+            }
+            bail!(
+                "BloomNode {}.tint expected ColorInput.value as vec3/vec4",
+                bloom_node.id
+            );
+        }
+        bail!(
+            "BloomNode {}.tint expects color-compatible input, got {}",
+            bloom_node.id,
+            src_node.node_type
+        );
+    }
+
+    if let Some(v) = bloom_node.params.get("tint").and_then(parse_color) {
+        return Ok(v.map(|c| c.clamp(0.0, 1.0)));
+    }
+
+    Ok([1.0, 1.0, 1.0, 1.0])
+}
+
 pub(crate) fn build_shader_space_from_scene_internal(
     scene: &SceneDSL,
     device: Arc<wgpu::Device>,
@@ -1436,6 +1514,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
     let mut upsample_source_pass_ids: HashSet<String> = HashSet::new();
     let mut gaussian_source_pass_ids: HashSet<String> = HashSet::new();
+    let mut bloom_source_pass_ids: HashSet<String> = HashSet::new();
     let mut gradient_source_pass_ids: HashSet<String> = HashSet::new();
     for (node_id, node) in nodes_by_id {
         if node.node_type == "Downsample" {
@@ -1453,6 +1532,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
         if node.node_type == "GuassianBlurPass" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
                 gaussian_source_pass_ids.insert(conn.from.node_id.clone());
+            }
+            continue;
+        }
+        if node.node_type == "BloomNode" {
+            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
+                let src_is_pass_like = nodes_by_id
+                    .get(&conn.from.node_id)
+                    .is_some_and(|n| is_pass_like_node_type(&n.node_type));
+                if src_is_pass_like {
+                    bloom_source_pass_ids.insert(conn.from.node_id.clone());
+                }
             }
             continue;
         }
@@ -1522,6 +1612,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let is_downsample_source = downsample_source_pass_ids.contains(layer_id);
                 let is_upsample_source = upsample_source_pass_ids.contains(layer_id);
                 let is_blur_source = gaussian_source_pass_ids.contains(layer_id)
+                    || bloom_source_pass_ids.contains(layer_id)
                     || gradient_source_pass_ids.contains(layer_id);
                 let pass_coord_size = draw_coord_size_by_pass
                     .get(layer_id)
@@ -2212,6 +2303,564 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     node_id: layer_id.clone(),
                     texture_name: pass_output_texture,
                     resolution: [pass_target_w_u, pass_target_h_u],
+                    format: if is_sampled_output {
+                        sampled_pass_format
+                    } else {
+                        target_format
+                    },
+                });
+            }
+            "BloomNode" => {
+                let src_conn = incoming_connection(&prepared.scene, layer_id, "pass")
+                    .ok_or_else(|| anyhow!("BloomNode.pass missing for {layer_id}"))?;
+                let src_spec = pass_output_registry.get(&src_conn.from.node_id).ok_or_else(|| {
+                    anyhow!(
+                        "BloomNode.pass references upstream pass {}, but its output is not registered yet",
+                        src_conn.from.node_id
+                    )
+                })?;
+
+                let base_resolution = src_spec.resolution;
+                let base_w = base_resolution[0].max(1) as f32;
+                let base_h = base_resolution[1].max(1) as f32;
+
+                let threshold =
+                    cpu_num_f32(&prepared.scene, nodes_by_id, layer_node, "threshold", 0.5)?
+                        .clamp(0.0, 1.0);
+                let smoothness =
+                    cpu_num_f32(&prepared.scene, nodes_by_id, layer_node, "smoothness", 0.5)?
+                        .clamp(0.0, 1.0);
+                let strength =
+                    cpu_num_f32(&prepared.scene, nodes_by_id, layer_node, "strength", 1.0)?
+                        .clamp(0.0, 1.0);
+                let saturation =
+                    cpu_num_f32(&prepared.scene, nodes_by_id, layer_node, "saturation", 1.0)?
+                        .clamp(0.0, 1.0);
+                let size = cpu_num_f32(&prepared.scene, nodes_by_id, layer_node, "size", 0.5)?
+                    .clamp(0.0, 1.0);
+                let smooth_width_px = (1.0 - smoothness) * 40.0;
+                let radius_px = size * 6.0;
+                let tint = parse_tint_from_node_or_default(&prepared.scene, nodes_by_id, layer_node)?;
+
+                let sigma = radius_px / 3.525_494;
+                let (_mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+                let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
+                let tap_count = num.clamp(1, 8);
+
+                let is_sampled_output = sampled_pass_ids.contains(layer_id);
+                let pass_blend_state =
+                    crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
+                        .with_context(|| {
+                            format!(
+                                "invalid blend params for {}",
+                                crate::dsl::node_display_label_with_id(layer_node)
+                            )
+                        })?;
+
+                let output_tex: ResourceName = if is_sampled_output {
+                    let out: ResourceName = format!("sys.bloom.{layer_id}.out").into();
+                    textures.push(TextureDecl {
+                        name: out.clone(),
+                        size: base_resolution,
+                        format: sampled_pass_format,
+                        sample_count: 1,
+                    });
+                    out
+                } else {
+                    target_texture_name.clone()
+                };
+
+                let output_blend = if output_tex == target_texture_name {
+                    pass_blend_state
+                } else {
+                    BlendState::REPLACE
+                };
+
+                let mip_levels = bloom_downsample_level_count(base_resolution);
+
+                let mip0_tex: ResourceName = format!("sys.bloom.{layer_id}.mip0").into();
+                textures.push(TextureDecl {
+                    name: mip0_tex.clone(),
+                    size: base_resolution,
+                    format: sampled_pass_format,
+                    sample_count: 1,
+                });
+                let mip0_geo: ResourceName = format!("sys.bloom.{layer_id}.mip0.geo").into();
+                geometry_buffers.push((mip0_geo.clone(), make_fullscreen_geometry(base_w, base_h)));
+                let mip0_params: ResourceName = format!("params.sys.bloom.{layer_id}.mip0").into();
+                let mut bloom_chain_first_camera_consumed = false;
+                let mip0_params_val = make_params(
+                    [base_w, base_h],
+                    [base_w, base_h],
+                    [base_w * 0.5, base_h * 0.5],
+                    resolve_chain_camera_for_first_pass(
+                        &mut bloom_chain_first_camera_consumed,
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [base_w, base_h],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
+
+                let extract_bundle = build_bloom_extract_bundle(
+                    threshold,
+                    smooth_width_px,
+                    strength,
+                    saturation,
+                    tint,
+                );
+                let extract_pass_name: ResourceName = format!("sys.bloom.{layer_id}.extract.pass").into();
+                render_pass_specs.push(RenderPassSpec {
+                    pass_id: extract_pass_name.as_str().to_string(),
+                    name: extract_pass_name.clone(),
+                    geometry_buffer: mip0_geo,
+                    instance_buffer: None,
+                    normals_buffer: None,
+                    target_texture: mip0_tex.clone(),
+                    resolve_target: None,
+                    params_buffer: mip0_params,
+                    baked_data_parse_buffer: None,
+                    params: mip0_params_val,
+                    graph_binding: None,
+                    graph_values: None,
+                    shader_wgsl: extract_bundle.module,
+                    texture_bindings: vec![PassTextureBinding {
+                        texture: src_spec.texture_name.clone(),
+                        image_node_id: None,
+                    }],
+                    sampler_kinds: vec![sampler_kind_for_pass_texture(
+                        &prepared.scene,
+                        &src_conn.from.node_id,
+                    )],
+                    blend_state: BlendState::REPLACE,
+                    color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                    sample_count: 1,
+                });
+                composite_passes.push(extract_pass_name);
+
+                let mut mip_textures: Vec<ResourceName> = vec![mip0_tex.clone()];
+                let mut mip_sizes: Vec<[u32; 2]> = vec![base_resolution];
+
+                let mut prev_tex = mip0_tex.clone();
+                let mut cur_size = base_resolution;
+                for level in 1..=mip_levels {
+                    cur_size = [clamp_min_1(cur_size[0] / 2), clamp_min_1(cur_size[1] / 2)];
+                    let mip_tex: ResourceName = format!("sys.bloom.{layer_id}.mip{level}").into();
+                    textures.push(TextureDecl {
+                        name: mip_tex.clone(),
+                        size: cur_size,
+                        format: sampled_pass_format,
+                        sample_count: 1,
+                    });
+                    let mip_geo: ResourceName = format!("sys.bloom.{layer_id}.mip{level}.geo").into();
+                    let mip_w = cur_size[0] as f32;
+                    let mip_h = cur_size[1] as f32;
+                    geometry_buffers.push((mip_geo.clone(), make_fullscreen_geometry(mip_w, mip_h)));
+                    let mip_params: ResourceName = format!("params.sys.bloom.{layer_id}.mip{level}").into();
+                    let mip_params_val = make_params(
+                        [mip_w, mip_h],
+                        [mip_w, mip_h],
+                        [mip_w * 0.5, mip_h * 0.5],
+                        resolve_effective_camera_for_pass_node(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [mip_w, mip_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
+
+                    let ds_bundle = build_downsample_bundle(2)?;
+                    let ds_pass_name: ResourceName =
+                        format!("sys.bloom.{layer_id}.mip{level}.down.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: ds_pass_name.as_str().to_string(),
+                        name: ds_pass_name.clone(),
+                        geometry_buffer: mip_geo,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: mip_tex.clone(),
+                        resolve_target: None,
+                        params_buffer: mip_params,
+                        baked_data_parse_buffer: None,
+                        params: mip_params_val,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: ds_bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: prev_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    composite_passes.push(ds_pass_name);
+                    prev_tex = mip_tex.clone();
+                    mip_textures.push(mip_tex);
+                    mip_sizes.push(cur_size);
+                }
+
+                let bloom_output_tex: ResourceName = if mip_levels == 0 {
+                    let h_tex: ResourceName = format!("sys.bloom.{layer_id}.mip0.h").into();
+                    let v_tex: ResourceName = format!("sys.bloom.{layer_id}.mip0.v").into();
+                    textures.push(TextureDecl {
+                        name: h_tex.clone(),
+                        size: base_resolution,
+                        format: sampled_pass_format,
+                        sample_count: 1,
+                    });
+                    textures.push(TextureDecl {
+                        name: v_tex.clone(),
+                        size: base_resolution,
+                        format: sampled_pass_format,
+                        sample_count: 1,
+                    });
+                    let geo: ResourceName = format!("sys.bloom.{layer_id}.mip0.blur.geo").into();
+                    geometry_buffers.push((geo.clone(), make_fullscreen_geometry(base_w, base_h)));
+
+                    let params_h: ResourceName = format!("params.sys.bloom.{layer_id}.mip0.h").into();
+                    let params_v: ResourceName = format!("params.sys.bloom.{layer_id}.mip0.v").into();
+                    let params_blur = make_params(
+                        [base_w, base_h],
+                        [base_w, base_h],
+                        [base_w * 0.5, base_h * 0.5],
+                        resolve_effective_camera_for_pass_node(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [base_w, base_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
+
+                    let h_bundle = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+                    let v_bundle = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
+                    let h_pass_name: ResourceName = format!("sys.bloom.{layer_id}.mip0.h.pass").into();
+                    let v_pass_name: ResourceName = format!("sys.bloom.{layer_id}.mip0.v.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: h_pass_name.as_str().to_string(),
+                        name: h_pass_name.clone(),
+                        geometry_buffer: geo.clone(),
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: h_tex.clone(),
+                        resolve_target: None,
+                        params_buffer: params_h,
+                        baked_data_parse_buffer: None,
+                        params: params_blur,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: h_bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: mip0_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: v_pass_name.as_str().to_string(),
+                        name: v_pass_name.clone(),
+                        geometry_buffer: geo,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: v_tex.clone(),
+                        resolve_target: None,
+                        params_buffer: params_v,
+                        baked_data_parse_buffer: None,
+                        params: params_blur,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: v_bundle.module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: h_tex,
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        blend_state: BlendState::REPLACE,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    composite_passes.push(h_pass_name);
+                    composite_passes.push(v_pass_name);
+                    v_tex
+                } else {
+                    let add_bundle = build_bloom_additive_combine_bundle();
+                    let mut current_tex = mip_textures[mip_levels as usize].clone();
+
+                    for level in (1..=mip_levels).rev() {
+                        let src_size = mip_sizes[level as usize];
+                        let dst_size = mip_sizes[(level - 1) as usize];
+
+                        let h_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.h").into();
+                        let v_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.v").into();
+                        textures.push(TextureDecl {
+                            name: h_tex.clone(),
+                            size: src_size,
+                            format: sampled_pass_format,
+                            sample_count: 1,
+                        });
+                        textures.push(TextureDecl {
+                            name: v_tex.clone(),
+                            size: src_size,
+                            format: sampled_pass_format,
+                            sample_count: 1,
+                        });
+
+                        let src_w = src_size[0] as f32;
+                        let src_h = src_size[1] as f32;
+                        let geo_blur: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.blur.geo").into();
+                        geometry_buffers.push((geo_blur.clone(), make_fullscreen_geometry(src_w, src_h)));
+
+                        let params_blur_name: ResourceName = format!("params.sys.bloom.{layer_id}.lvl{level}.blur").into();
+                        let params_blur = make_params(
+                            [src_w, src_h],
+                            [src_w, src_h],
+                            [src_w * 0.5, src_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [src_w, src_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
+
+                        let h_bundle = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+                        let v_bundle = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
+                        let h_pass_name: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.h.pass").into();
+                        let v_pass_name: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.v.pass").into();
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: h_pass_name.as_str().to_string(),
+                            name: h_pass_name.clone(),
+                            geometry_buffer: geo_blur.clone(),
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: h_tex.clone(),
+                            resolve_target: None,
+                            params_buffer: params_blur_name.clone(),
+                            baked_data_parse_buffer: None,
+                            params: params_blur,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: h_bundle.module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: current_tex.clone(),
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::LinearMirror],
+                            blend_state: BlendState::REPLACE,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: v_pass_name.as_str().to_string(),
+                            name: v_pass_name.clone(),
+                            geometry_buffer: geo_blur,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: v_tex.clone(),
+                            resolve_target: None,
+                            params_buffer: params_blur_name,
+                            baked_data_parse_buffer: None,
+                            params: params_blur,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: v_bundle.module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: h_tex,
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::LinearMirror],
+                            blend_state: BlendState::REPLACE,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(h_pass_name);
+                        composite_passes.push(v_pass_name);
+
+                        let dst_w = dst_size[0] as f32;
+                        let dst_h = dst_size[1] as f32;
+                        let up_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up").into();
+                        textures.push(TextureDecl {
+                            name: up_tex.clone(),
+                            size: dst_size,
+                            format: sampled_pass_format,
+                            sample_count: 1,
+                        });
+                        let up_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up.geo").into();
+                        geometry_buffers.push((up_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
+                        let up_params_name: ResourceName = format!("params.sys.bloom.{layer_id}.lvl{level}.up").into();
+                        let up_params = make_params(
+                            [dst_w, dst_h],
+                            [dst_w, dst_h],
+                            [dst_w * 0.5, dst_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [dst_w, dst_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
+                        let up_bundle = build_upsample_bilinear_bundle();
+                        let up_pass_name: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up.pass").into();
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: up_pass_name.as_str().to_string(),
+                            name: up_pass_name.clone(),
+                            geometry_buffer: up_geo,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: up_tex.clone(),
+                            resolve_target: None,
+                            params_buffer: up_params_name,
+                            baked_data_parse_buffer: None,
+                            params: up_params,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: up_bundle.module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: v_tex,
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::LinearMirror],
+                            blend_state: BlendState::REPLACE,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(up_pass_name);
+
+                        if level == 1 {
+                            current_tex = up_tex;
+                            continue;
+                        }
+
+                        let add_tex: ResourceName =
+                            format!("sys.bloom.{layer_id}.lvl{level}.add").into();
+                        textures.push(TextureDecl {
+                            name: add_tex.clone(),
+                            size: dst_size,
+                            format: sampled_pass_format,
+                            sample_count: 1,
+                        });
+                        let add_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.add.geo").into();
+                        geometry_buffers.push((add_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
+                        let add_params_name: ResourceName =
+                            format!("params.sys.bloom.{layer_id}.lvl{level}.add").into();
+                        let add_params = make_params(
+                            [dst_w, dst_h],
+                            [dst_w, dst_h],
+                            [dst_w * 0.5, dst_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [dst_w, dst_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
+                        let add_pass_name: ResourceName =
+                            format!("sys.bloom.{layer_id}.lvl{level}.add.pass").into();
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: add_pass_name.as_str().to_string(),
+                            name: add_pass_name.clone(),
+                            geometry_buffer: add_geo,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: add_tex.clone(),
+                            resolve_target: None,
+                            params_buffer: add_params_name,
+                            baked_data_parse_buffer: None,
+                            params: add_params,
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: add_bundle.module.clone(),
+                            texture_bindings: vec![
+                                PassTextureBinding {
+                                    texture: up_tex,
+                                    image_node_id: None,
+                                },
+                                PassTextureBinding {
+                                    texture: mip_textures[(level - 1) as usize].clone(),
+                                    image_node_id: None,
+                                },
+                            ],
+                            sampler_kinds: vec![SamplerKind::LinearClamp, SamplerKind::LinearClamp],
+                            blend_state: BlendState::REPLACE,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(add_pass_name);
+                        current_tex = add_tex;
+                    }
+                    current_tex
+                };
+
+                if bloom_output_tex != output_tex {
+                    let out_w = base_resolution[0] as f32;
+                    let out_h = base_resolution[1] as f32;
+                    let geo_out: ResourceName = format!("sys.bloom.{layer_id}.out.geo").into();
+                    geometry_buffers.push((geo_out.clone(), make_fullscreen_geometry(out_w, out_h)));
+                    let params_out: ResourceName = format!("params.sys.bloom.{layer_id}.out").into();
+                    let params_out_val = make_params(
+                        if output_tex == target_texture_name {
+                            [tgt_w, tgt_h]
+                        } else {
+                            [out_w, out_h]
+                        },
+                        [out_w, out_h],
+                        [out_w * 0.5, out_h * 0.5],
+                        resolve_effective_camera_for_pass_node(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            if output_tex == target_texture_name {
+                                [tgt_w, tgt_h]
+                            } else {
+                                [out_w, out_h]
+                            },
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
+                    let copy_pass_name: ResourceName = format!("sys.bloom.{layer_id}.out.pass").into();
+                    render_pass_specs.push(RenderPassSpec {
+                        pass_id: copy_pass_name.as_str().to_string(),
+                        name: copy_pass_name.clone(),
+                        geometry_buffer: geo_out,
+                        instance_buffer: None,
+                        normals_buffer: None,
+                        target_texture: output_tex.clone(),
+                        resolve_target: None,
+                        params_buffer: params_out,
+                        baked_data_parse_buffer: None,
+                        params: params_out_val,
+                        graph_binding: None,
+                        graph_values: None,
+                        shader_wgsl: build_fullscreen_textured_bundle(
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                        )
+                        .module,
+                        texture_bindings: vec![PassTextureBinding {
+                            texture: bloom_output_tex.clone(),
+                            image_node_id: None,
+                        }],
+                        sampler_kinds: vec![SamplerKind::LinearClamp],
+                        blend_state: output_blend,
+                        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                        sample_count: 1,
+                    });
+                    composite_passes.push(copy_pass_name);
+                }
+
+                pass_output_registry.register(PassOutputSpec {
+                    node_id: layer_id.clone(),
+                    texture_name: output_tex.clone(),
+                    resolution: base_resolution,
                     format: if is_sampled_output {
                         sampled_pass_format
                     } else {

@@ -68,6 +68,7 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
         matches!(
             node.node_type.as_str(),
             "RenderPass"
+                | "BloomNode"
                 | "GuassianBlurPass"
                 | "Downsample"
                 | "Upsample"
@@ -242,6 +243,7 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
     if matches!(
         mask_upstream.node_type.as_str(),
         "RenderPass"
+            | "BloomNode"
             | "GuassianBlurPass"
             | "Downsample"
             | "Upsample"
