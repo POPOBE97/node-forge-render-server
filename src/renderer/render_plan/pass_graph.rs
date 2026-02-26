@@ -63,6 +63,11 @@ fn deps_for_pass_node(
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
             Ok(bundle.pass_textures)
         }
+        "BloomNode" => {
+            let source_conn = incoming_connection(scene, pass_node_id, "pass")
+                .ok_or_else(|| anyhow!("BloomNode.pass missing for {pass_node_id}"))?;
+            Ok(vec![source_conn.from.node_id.clone()])
+        }
         "Downsample" => {
             // Downsample depends on the upstream pass provided on its `source` input.
             let source_conn = incoming_connection(scene, pass_node_id, "source")
@@ -281,6 +286,61 @@ mod tests {
 
         let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
         assert_eq!(order, vec!["source_comp", "upsample", "out_comp"]);
+        Ok(())
+    }
+
+    #[test]
+    fn bloom_depends_on_pass_input_in_render_order() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "bloom-pass-order".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("source_comp", "Composite"),
+                node("bloom", "BloomNode"),
+                node("out_comp", "Composite"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_source".to_string(),
+                    from: Endpoint {
+                        node_id: "source_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "bloom".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "bloom".to_string(),
+                        port_id: "glare".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
+        assert_eq!(order, vec!["source_comp", "bloom", "out_comp"]);
         Ok(())
     }
 
