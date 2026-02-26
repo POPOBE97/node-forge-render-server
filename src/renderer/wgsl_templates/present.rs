@@ -20,6 +20,7 @@ struct Params {{\n\
     _pad0: f32,\n\
 \n\
     color: vec4f,\n\
+    camera: mat4x4f,\n\
 }};\n\
 \n\
 @group(0) @binding(0)\n\
@@ -74,8 +75,7 @@ fn vs_main(\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
-    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);\n\
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);\n\
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
     return out;\n\
 }}\n\
@@ -109,6 +109,7 @@ struct Params {{\n\
     _pad0: f32,\n\
 \n\
     color: vec4f,\n\
+    camera: mat4x4f,\n\
 }};\n\
 \n\
 @group(0) @binding(0)\n\
@@ -160,8 +161,7 @@ fn vs_main(\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n\
-    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);\n\
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);\n\
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n\
     return out;\n\
 }}\n\

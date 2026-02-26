@@ -271,6 +271,10 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
         if let Err(msg) = validate_render_pass_msaa_sample_count(n) {
             errors.push(msg);
         }
+
+        if let Err(msg) = validate_camera_and_mat4_params(n) {
+            errors.push(msg);
+        }
     }
 
     for c in &scene.connections {
@@ -314,6 +318,242 @@ fn validate_render_pass_msaa_sample_count(node: &Node) -> std::result::Result<()
             "invalid RenderPass.msaaSampleCount for '{}': must be one of 1,2,4,8, got {}",
             node.id, v
         ))
+    }
+}
+
+fn json_number_f64(value: &serde_json::Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|v| v as f64))
+        .or_else(|| value.as_u64().map(|v| v as f64))
+}
+
+fn validate_mat4_row_major_value(
+    value: &serde_json::Value,
+    label: &str,
+) -> std::result::Result<(), String> {
+    let arr = value
+        .as_array()
+        .ok_or_else(|| format!("{label}: expected array for mat4"))?;
+    if arr.len() != 16 {
+        return Err(format!(
+            "{label}: expected mat4 array length 16, got {}",
+            arr.len()
+        ));
+    }
+    for (idx, item) in arr.iter().enumerate() {
+        let Some(n) = json_number_f64(item) else {
+            return Err(format!("{label}: mat4[{idx}] is not a number"));
+        };
+        if !n.is_finite() {
+            return Err(format!("{label}: mat4[{idx}] must be finite, got {n}"));
+        }
+    }
+    Ok(())
+}
+
+fn parse_vec3_if_present(node: &Node, key: &str) -> std::result::Result<Option<[f64; 3]>, String> {
+    let Some(value) = node.params.get(key) else {
+        return Ok(None);
+    };
+
+    if let Some(obj) = value.as_object() {
+        let x = obj.get("x").and_then(json_number_f64).unwrap_or(0.0);
+        let y = obj.get("y").and_then(json_number_f64).unwrap_or(0.0);
+        let z = obj.get("z").and_then(json_number_f64).unwrap_or(0.0);
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+            return Err(format!(
+                "{}.{} must contain finite numbers, got [{x}, {y}, {z}]",
+                node.id, key
+            ));
+        }
+        return Ok(Some([x, y, z]));
+    }
+
+    if let Some(arr) = value.as_array() {
+        if arr.len() < 3 {
+            return Err(format!(
+                "{}.{} must be vec3 object {{x,y,z}} or array [x,y,z]",
+                node.id, key
+            ));
+        }
+        let x = arr
+            .first()
+            .and_then(json_number_f64)
+            .ok_or_else(|| format!("{}.{}[0] must be numeric", node.id, key))?;
+        let y = arr
+            .get(1)
+            .and_then(json_number_f64)
+            .ok_or_else(|| format!("{}.{}[1] must be numeric", node.id, key))?;
+        let z = arr
+            .get(2)
+            .and_then(json_number_f64)
+            .ok_or_else(|| format!("{}.{}[2] must be numeric", node.id, key))?;
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+            return Err(format!(
+                "{}.{} must contain finite numbers, got [{x}, {y}, {z}]",
+                node.id, key
+            ));
+        }
+        return Ok(Some([x, y, z]));
+    }
+
+    Err(format!(
+        "{}.{} must be vec3 object {{x,y,z}} or array [x,y,z]",
+        node.id, key
+    ))
+}
+
+fn parse_scalar_if_present(node: &Node, key: &str) -> std::result::Result<Option<f64>, String> {
+    let Some(value) = node.params.get(key) else {
+        return Ok(None);
+    };
+    let Some(num) = json_number_f64(value) else {
+        return Err(format!(
+            "{}.{} must be numeric, got {}",
+            node.id, key, value
+        ));
+    };
+    if !num.is_finite() {
+        return Err(format!("{}.{} must be finite, got {num}", node.id, key));
+    }
+    Ok(Some(num))
+}
+
+fn vec3_sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn vec3_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn vec3_len(v: [f64; 3]) -> f64 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+fn validate_camera_node_geometry(node: &Node) -> std::result::Result<(), String> {
+    let Some(position) = parse_vec3_if_present(node, "position")? else {
+        return Ok(());
+    };
+    let target = parse_vec3_if_present(node, "target")?.unwrap_or([0.0, 0.0, 0.0]);
+    let up = parse_vec3_if_present(node, "up")?.unwrap_or([0.0, 1.0, 0.0]);
+
+    let forward = vec3_sub(target, position);
+    if vec3_len(forward) <= 1e-9 {
+        return Err(format!(
+            "{} camera params invalid: position and target must not coincide",
+            node.id
+        ));
+    }
+    if vec3_len(up) <= 1e-9 {
+        return Err(format!(
+            "{} camera params invalid: up vector must be non-degenerate",
+            node.id
+        ));
+    }
+    if vec3_len(vec3_cross(forward, up)) <= 1e-9 {
+        return Err(format!(
+            "{} camera params invalid: direction and up vectors are degenerate",
+            node.id
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_camera_and_mat4_params(node: &Node) -> std::result::Result<(), String> {
+    match node.node_type.as_str() {
+        "RenderPass" | "GuassianBlurPass" | "GradientBlur" | "Downsample" | "Upsample"
+        | "Composite" => {
+            if let Some(value) = node.params.get("camera") {
+                validate_mat4_row_major_value(value, &format!("{}.camera", node.id))?;
+            }
+            Ok(())
+        }
+        "SetTransform" | "TransformGeometry" => {
+            if let Some(value) = node.params.get("matrix") {
+                validate_mat4_row_major_value(value, &format!("{}.matrix", node.id))?;
+            }
+            Ok(())
+        }
+        "PerspectiveCamera" => {
+            validate_camera_node_geometry(node)?;
+            if let Some(fovy) = parse_scalar_if_present(node, "fovY")? {
+                if !(fovy > 0.0 && fovy < 180.0) {
+                    return Err(format!(
+                        "{}.fovY must be > 0 and < 180 degrees, got {}",
+                        node.id, fovy
+                    ));
+                }
+            }
+            if let Some(aspect) = parse_scalar_if_present(node, "aspect")? {
+                if !(aspect > 0.0) {
+                    return Err(format!("{}.aspect must be > 0, got {}", node.id, aspect));
+                }
+            }
+            let near = parse_scalar_if_present(node, "near")?;
+            let far = parse_scalar_if_present(node, "far")?;
+            if let Some(near) = near {
+                if !(near > 0.0) {
+                    return Err(format!("{}.near must be > 0, got {}", node.id, near));
+                }
+            }
+            if let (Some(near), Some(far)) = (near, far) {
+                if !(far > near) {
+                    return Err(format!(
+                        "{}.far must be > near (near={}, far={})",
+                        node.id, near, far
+                    ));
+                }
+            }
+            Ok(())
+        }
+        "OrthographicCamera" => {
+            validate_camera_node_geometry(node)?;
+            let left = parse_scalar_if_present(node, "left")?;
+            let right = parse_scalar_if_present(node, "right")?;
+            let bottom = parse_scalar_if_present(node, "bottom")?;
+            let top = parse_scalar_if_present(node, "top")?;
+            let near = parse_scalar_if_present(node, "near")?;
+            let far = parse_scalar_if_present(node, "far")?;
+
+            if let Some(near) = near {
+                if !(near > 0.0) {
+                    return Err(format!("{}.near must be > 0, got {}", node.id, near));
+                }
+            }
+            if let (Some(near), Some(far)) = (near, far) {
+                if !(far > near) {
+                    return Err(format!(
+                        "{}.far must be > near (near={}, far={})",
+                        node.id, near, far
+                    ));
+                }
+            }
+            if let (Some(left), Some(right)) = (left, right) {
+                if (left - right).abs() <= f64::EPSILON {
+                    return Err(format!(
+                        "{} invalid ortho bounds: left must not equal right ({})",
+                        node.id, left
+                    ));
+                }
+            }
+            if let (Some(bottom), Some(top)) = (bottom, top) {
+                if (bottom - top).abs() <= f64::EPSILON {
+                    return Err(format!(
+                        "{} invalid ortho bounds: bottom must not equal top ({})",
+                        node.id, bottom
+                    ));
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 

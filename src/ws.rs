@@ -338,8 +338,16 @@ fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
     matches!(
         (node_type, port_id),
         ("Rect2DGeometry", "size")
+            | ("RenderPass", "camera")
+            | ("GuassianBlurPass", "camera")
+            | ("GradientBlur", "camera")
             | ("Downsample", "targetSize")
+            | ("Downsample", "camera")
+            | ("Upsample", "camera")
             | ("Upsample", "targetSize")
+            | ("Composite", "camera")
+            | ("SetTransform", "matrix")
+            | ("TransformGeometry", "matrix")
             | ("RenderTexture", "width")
             | ("RenderTexture", "height")
     )
@@ -423,6 +431,8 @@ impl WsHub {
     }
 }
 
+pub type UiWakeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+
 pub fn spawn_ws_server(
     addr: &str,
     scene_tx: Sender<SceneUpdate>,
@@ -430,6 +440,7 @@ pub fn spawn_ws_server(
     hub: WsHub,
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     asset_store: AssetStore,
+    ui_wake: Option<UiWakeCallback>,
 ) -> Result<thread::JoinHandle<()>> {
     let scene_cache = Arc::new(Mutex::new(None::<SceneCache>));
     let addr_str = addr.to_string();
@@ -450,6 +461,7 @@ pub fn spawn_ws_server(
             last_good,
             scene_cache,
             asset_store,
+            ui_wake,
         ) {
             report_internal_error(&hub, None, "WS_SERVER_FAILED", &format!("{e:#}"));
         }
@@ -481,6 +493,7 @@ fn run_ws_server(
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
     asset_store: AssetStore,
+    ui_wake: Option<UiWakeCallback>,
 ) -> Result<()> {
     // Treat server lifecycle logs as editor-facing diagnostics.
     let startup = WSMessage::<Value> {
@@ -510,6 +523,7 @@ fn run_ws_server(
         let last_good = last_good.clone();
         let scene_cache = scene_cache.clone();
         let asset_store = asset_store.clone();
+        let ui_wake = ui_wake.clone();
 
         thread::spawn(move || {
             if let Err(e) = handle_client(
@@ -520,6 +534,7 @@ fn run_ws_server(
                 last_good,
                 scene_cache,
                 asset_store,
+                ui_wake,
             ) {
                 report_internal_error(&hub, None, "WS_CLIENT_ENDED", &format!("{e:#}"));
             }
@@ -537,6 +552,7 @@ fn handle_client(
     last_good: Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: Arc<Mutex<Option<SceneCache>>>,
     asset_store: AssetStore,
+    ui_wake: Option<UiWakeCallback>,
 ) -> Result<()> {
     // Handshake is easier with a blocking socket, switch to non-blocking afterwards.
     let mut ws = accept(stream).context("websocket handshake failed")?;
@@ -564,6 +580,7 @@ fn handle_client(
                     &last_good,
                     &scene_cache,
                     &asset_store,
+                    ui_wake.as_ref(),
                 ) {
                     report_internal_error(
                         &hub,
@@ -580,6 +597,7 @@ fn handle_client(
                     &scene_cache,
                     &scene_tx,
                     &scene_drop_rx,
+                    ui_wake.as_ref(),
                 );
             }
             Ok(Message::Ping(payload)) => {
@@ -609,6 +627,7 @@ fn handle_text_message(
     last_good: &Arc<Mutex<Option<SceneDSL>>>,
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
     asset_store: &AssetStore,
+    ui_wake: Option<&UiWakeCallback>,
 ) -> Result<()> {
     let msg: WSMessage<Value> = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -622,6 +641,7 @@ fn handle_text_message(
                     message,
                     request_id: None,
                 },
+                ui_wake,
             );
             return Ok(());
         }
@@ -670,6 +690,7 @@ fn handle_text_message(
                             message,
                             request_id: msg.request_id,
                         },
+                        ui_wake,
                     );
                     return Ok(());
                 }
@@ -692,6 +713,7 @@ fn handle_text_message(
                             message,
                             request_id: msg.request_id,
                         },
+                        ui_wake,
                     );
                     return Ok(());
                 }
@@ -710,6 +732,7 @@ fn handle_text_message(
                         message,
                         request_id: msg.request_id,
                     },
+                    ui_wake,
                 );
                 return Ok(());
             }
@@ -743,6 +766,7 @@ fn handle_text_message(
                     request_id: msg.request_id,
                     source: ParsedSceneSource::SceneUpdate,
                 },
+                ui_wake,
             );
         }
         "scene_delta" => {
@@ -853,6 +877,7 @@ fn handle_text_message(
                             updated_nodes: delta.nodes.updated.clone(),
                             request_id: msg.request_id,
                         },
+                        ui_wake,
                     );
                     return Ok(());
                 }
@@ -879,6 +904,7 @@ fn handle_text_message(
                         request_id: msg.request_id,
                         source: ParsedSceneSource::SceneDelta,
                     },
+                    ui_wake,
                 );
             }
         }
@@ -945,6 +971,7 @@ fn handle_binary_asset_upload(
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
     scene_tx: &Sender<SceneUpdate>,
     scene_drop_rx: &Receiver<SceneUpdate>,
+    ui_wake: Option<&UiWakeCallback>,
 ) {
     if data.len() < 4 {
         return;
@@ -1093,6 +1120,7 @@ fn handle_binary_asset_upload(
                         request_id: None,
                         source: ParsedSceneSource::SceneUpdate,
                     },
+                    ui_wake,
                 );
             }
         }
@@ -1146,26 +1174,35 @@ fn send_scene_update(
     scene_tx: &Sender<SceneUpdate>,
     scene_drop_rx: &Receiver<SceneUpdate>,
     update: SceneUpdate,
+    ui_wake: Option<&UiWakeCallback>,
 ) {
     // Debounce policy: keep the latest *scene* update.
     // But never drop ParseError updates, otherwise we can mask the reason we
     // requested a resync and make debugging much harder.
-    if scene_tx.try_send(update.clone()).is_err() {
+    let queued = if scene_tx.try_send(update.clone()).is_err() {
         match update {
             SceneUpdate::Parsed { .. } => {
                 while scene_drop_rx.try_recv().is_ok() {}
-                let _ = scene_tx.try_send(update);
+                scene_tx.try_send(update).is_ok()
             }
             SceneUpdate::UniformDelta { .. } => {
                 // Uniform-only updates are cheap and high-frequency.
                 // If the channel is full, prefer keeping the in-flight message
                 // (often a full Parsed scene) and drop this delta.
+                false
             }
             SceneUpdate::ParseError { .. } => {
                 // Channel is full; keep the existing message rather than
                 // replacing it. A future update will replace it naturally.
+                false
             }
         }
+    } else {
+        true
+    };
+
+    if queued && let Some(wake) = ui_wake {
+        wake();
     }
 }
 
@@ -1405,6 +1442,119 @@ mod tests {
             nodes: SceneDeltaNodes {
                 added: Vec::new(),
                 updated: vec![node("v2", "Vector2Input", json!({"x": 54.0, "y": 120.0}))],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            assets: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_rejects_camera_chain_change() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("v3", "Vector3Input", json!({"x": 0.0, "y": 0.0, "z": 10.0})),
+                node(
+                    "cam",
+                    "PerspectiveCamera",
+                    json!({
+                        "target": {"x": 0.0, "y": 0.0, "z": 0.0},
+                        "up": {"x": 0.0, "y": 1.0, "z": 0.0},
+                        "fovY": 60.0,
+                        "aspect": 1.0,
+                        "near": 0.1,
+                        "far": 100.0
+                    }),
+                ),
+                node("rect", "Rect2DGeometry", json!({})),
+                node("pass", "RenderPass", json!({})),
+                node("comp", "Composite", json!({})),
+                node("rt", "RenderTexture", json!({"width": 400, "height": 400})),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "v3".to_string(),
+                        port_id: "vector".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "cam".to_string(),
+                        port_id: "position".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c3".to_string(),
+                    from: Endpoint {
+                        node_id: "cam".to_string(),
+                        port_id: "camera".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "camera".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c4".to_string(),
+                    from: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c5".to_string(),
+                    from: Endpoint {
+                        node_id: "rt".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(std::collections::HashMap::new()),
+            groups: Vec::new(),
+            assets: Default::default(),
+        };
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "v3",
+                    "Vector3Input",
+                    json!({"x": 5.0, "y": 0.0, "z": 10.0}),
+                )],
                 removed: Vec::new(),
             },
             connections: SceneDeltaConnections {

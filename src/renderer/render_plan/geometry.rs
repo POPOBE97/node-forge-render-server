@@ -8,11 +8,15 @@ use crate::{
     asset_store::AssetStore,
     dsl::{SceneDSL, find_node, incoming_connection},
     renderer::{
+        camera::resolve_mat4_output_column_major,
         graph_uniforms::graph_field_name,
         node_compiler::compile_vertex_expr,
         node_compiler::geometry_nodes::load_geometry_from_asset,
         types::{BakedValue, GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType},
-        utils::{coerce_to_type, cpu_num_f32, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils},
+        utils::{
+            IDENTITY_MAT4, coerce_to_type, cpu_num_f32, cpu_num_u32_min_1,
+            fmt_f32 as fmt_f32_utils, parse_strict_mat4_param_column_major,
+        },
     },
 };
 
@@ -376,23 +380,8 @@ fn resolve_rect2d_geometry_metrics(
     ))
 }
 
-fn parse_inline_mat4(node: &crate::dsl::Node, key: &str) -> Option<[f32; 16]> {
-    let Some(v) = node.params.get(key) else {
-        return None;
-    };
-
-    if let Some(arr) = v.as_array() {
-        if arr.len() == 16 {
-            let mut m = [0.0f32; 16];
-            for (i, x) in arr.iter().enumerate() {
-                m[i] = x.as_f64().unwrap_or(0.0) as f32;
-            }
-            return Some(m);
-        }
-    }
-
-    // Allow object form: { m00:..., m01:..., ... } is not supported (yet).
-    None
+fn parse_inline_mat4_column_major(node: &crate::dsl::Node, key: &str) -> Result<Option<[f32; 16]>> {
+    parse_strict_mat4_param_column_major(&node.params, key, &format!("{}.{}", node.id, key))
 }
 
 fn compute_trs_matrix(node: &crate::dsl::Node) -> [f32; 16] {
@@ -404,8 +393,8 @@ fn compute_trs_matrix(node: &crate::dsl::Node) -> [f32; 16] {
 }
 
 fn compute_set_transform_matrix(
-    _scene: &SceneDSL,
-    _nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
     node: &crate::dsl::Node,
 ) -> Result<[f32; 16]> {
     let mode = node
@@ -416,14 +405,25 @@ fn compute_set_transform_matrix(
 
     match mode {
         "Matrix" => {
-            if let Some(m) = parse_inline_mat4(node, "matrix") {
+            if let Some(conn) = incoming_connection(scene, &node.id, "matrix") {
+                resolve_mat4_output_column_major(
+                    scene,
+                    nodes_by_id,
+                    &conn.from.node_id,
+                    &conn.from.port_id,
+                )
+                .map_err(|e| {
+                    anyhow!(
+                        "SetTransform {}.matrix failed to resolve connected mat4 from {}.{}: {e:#}",
+                        node.id,
+                        conn.from.node_id,
+                        conn.from.port_id
+                    )
+                })
+            } else if let Some(m) = parse_inline_mat4_column_major(node, "matrix")? {
                 Ok(m)
             } else {
-                // The scheme says matrix:any (usually connected). For now we only accept inline arrays.
-                // If users want dynamic matrices, they'll need a dedicated CPU-side feature.
-                Ok([
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                ])
+                Ok(IDENTITY_MAT4)
             }
         }
         _ => Ok(compute_trs_matrix(node)),
@@ -1271,9 +1271,25 @@ pub(crate) fn resolve_geometry_for_render_pass(
             let mut base_m = upstream_base_m;
             let mut instance_mats = upstream_instance_mats;
             let inline_local_m = if is_matrix_mode {
-                parse_inline_mat4(geometry_node, "matrix").unwrap_or([
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                ])
+                if let Some(conn) = incoming_connection(scene, &geometry_node.id, "matrix") {
+                    resolve_mat4_output_column_major(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                    )
+                    .map_err(|e| {
+                        anyhow!(
+                            "TransformGeometry {}.matrix failed to resolve connected mat4 from {}.{}: {e:#}",
+                            geometry_node.id,
+                            conn.from.node_id,
+                            conn.from.port_id
+                        )
+                    })?
+                } else {
+                    parse_inline_mat4_column_major(geometry_node, "matrix")?
+                        .unwrap_or(IDENTITY_MAT4)
+                }
             } else {
                 compute_trs_matrix(geometry_node)
             };
@@ -1522,6 +1538,16 @@ mod tests {
         ]
     }
 
+    fn col_major_to_row_major(m: [f32; 16]) -> [f32; 16] {
+        let mut out = [0.0f32; 16];
+        for row in 0..4 {
+            for col in 0..4 {
+                out[row * 4 + col] = m[col * 4 + row];
+            }
+        }
+        out
+    }
+
     #[test]
     fn rect2d_inline_size_and_position_are_used_when_unconnected() {
         let nodes = vec![node(
@@ -1650,7 +1676,7 @@ mod tests {
             "scale": {"x": 2.0, "y": 3.0, "z": 1.0}
         });
         let comp_node = node("xf_comp", "TransformGeometry", comp_params.clone());
-        let matrix = compute_trs_matrix(&comp_node);
+        let matrix = col_major_to_row_major(compute_trs_matrix(&comp_node));
 
         let nodes = vec![
             node("rect", "Rect2DGeometry", json!({})),
@@ -1720,6 +1746,57 @@ mod tests {
         approx_eq(out[0], 10.0);
         approx_eq(out[1], 20.0);
         approx_eq(out[2], 28.0);
+    }
+
+    #[test]
+    fn set_transform_matrix_mode_accepts_connected_perspective_camera() {
+        let nodes = vec![
+            node("rect", "Rect2DGeometry", json!({})),
+            node(
+                "cam",
+                "PerspectiveCamera",
+                json!({
+                    "position": {"x": 0.0, "y": 0.0, "z": 10.0},
+                    "target": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "up": {"x": 0.0, "y": 1.0, "z": 0.0},
+                    "fovY": 60.0,
+                    "aspect": 1.0,
+                    "near": 0.1,
+                    "far": 100.0
+                }),
+            ),
+            node("set", "SetTransform", json!({"mode": "Matrix"})),
+        ];
+
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "rect", "geometry", "set", "geometry"),
+                conn("c2", "cam", "camera", "set", "matrix"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (_buf, _w, _h, _x, _y, _inst, base_m, _mats, _translate, ..) =
+            resolve_geometry_for_render_pass(
+                &scene,
+                &nodes_by_id,
+                &ids,
+                "set",
+                [400.0, 400.0],
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_ne!(
+            base_m,
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0
+            ]
+        );
     }
 
     #[test]

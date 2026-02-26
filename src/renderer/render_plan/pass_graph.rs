@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{incoming_connection, SceneDSL},
+    dsl::{SceneDSL, incoming_connection},
     renderer::{
         geometry_resolver::is_pass_like_node_type,
         scene_prep::composite_layers_in_draw_order,

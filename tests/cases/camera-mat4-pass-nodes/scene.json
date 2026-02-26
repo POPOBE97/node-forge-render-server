@@ -1,0 +1,218 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "camera-mat4-pass-nodes",
+    "created": "2026-02-25T00:00:00.000Z",
+    "modified": "2026-02-25T00:00:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "position": { "x": 980, "y": 180 },
+      "width": 160,
+      "label": "Screen",
+      "params": { "width": 320, "height": 240 }
+    },
+    {
+      "id": "RenderTexture_1",
+      "type": "RenderTexture",
+      "position": { "x": 780, "y": 320 },
+      "width": 160,
+      "label": "Render Texture",
+      "params": { "width": 320, "height": 240, "format": "rgba8unorm" }
+    },
+    {
+      "id": "Composite_1",
+      "type": "Composite",
+      "position": { "x": 780, "y": 180 },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "alpha": 1,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Upsample_1",
+      "type": "Upsample",
+      "position": { "x": 580, "y": 180 },
+      "width": 160,
+      "label": "Upsample",
+      "params": {
+        "targetSize": { "x": 320, "y": 240 },
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Downsample_1",
+      "type": "Downsample",
+      "position": { "x": 380, "y": 180 },
+      "width": 160,
+      "label": "Downsample",
+      "params": {
+        "sampling": "Clamp",
+        "targetSize": { "x": 160, "y": 120 },
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "RenderPass_1",
+      "type": "RenderPass",
+      "position": { "x": 180, "y": 180 },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_1",
+      "type": "Rect2DGeometry",
+      "position": { "x": -220, "y": 180 },
+      "width": 160,
+      "label": "Rect 2D",
+      "params": {
+        "radius": 0,
+        "smooth": 1,
+        "size": { "x": 180, "y": 120 },
+        "position": { "x": 160, "y": 120 }
+      }
+    },
+    {
+      "id": "Attribute_1",
+      "type": "Attribute",
+      "position": { "x": -20, "y": 180 },
+      "width": 160,
+      "label": "Attribute",
+      "params": { "name": "uv", "glslType": "vec2" },
+      "outputs": [
+        { "id": "value", "name": "Value", "type": "vector2" }
+      ]
+    },
+    {
+      "id": "PerspectiveCamera_1",
+      "type": "PerspectiveCamera",
+      "position": { "x": -40, "y": -40 },
+      "width": 180,
+      "label": "Perspective Camera",
+      "params": {
+        "position": { "x": 160, "y": 120, "z": 420 },
+        "target": { "x": 160, "y": 120, "z": 0 },
+        "up": { "x": 0, "y": 1, "z": 0 },
+        "fovY": 55,
+        "aspect": 1.333333,
+        "near": 1,
+        "far": 2000
+      }
+    },
+    {
+      "id": "OrthographicCamera_1",
+      "type": "OrthographicCamera",
+      "position": { "x": 240, "y": -40 },
+      "width": 200,
+      "label": "Orthographic Camera",
+      "params": {
+        "position": { "x": 0, "y": 0, "z": 1 },
+        "target": { "x": 0, "y": 0, "z": 0 },
+        "up": { "x": 0, "y": 1, "z": 0 },
+        "left": 0,
+        "right": 320,
+        "bottom": 0,
+        "top": 240,
+        "near": 0.1,
+        "far": 1000
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_1",
+      "from": { "nodeId": "Rect2DGeometry_1", "portId": "geometry" },
+      "to": { "nodeId": "RenderPass_1", "portId": "geometry" }
+    },
+    {
+      "id": "edge_2",
+      "from": { "nodeId": "Rect2DGeometry_1", "portId": "geometry" },
+      "to": { "nodeId": "Attribute_1", "portId": "geometry" }
+    },
+    {
+      "id": "edge_3",
+      "from": { "nodeId": "Attribute_1", "portId": "value" },
+      "to": { "nodeId": "RenderPass_1", "portId": "material" }
+    },
+    {
+      "id": "edge_4",
+      "from": { "nodeId": "PerspectiveCamera_1", "portId": "camera" },
+      "to": { "nodeId": "RenderPass_1", "portId": "camera" }
+    },
+    {
+      "id": "edge_5",
+      "from": { "nodeId": "RenderPass_1", "portId": "pass" },
+      "to": { "nodeId": "Downsample_1", "portId": "source" }
+    },
+    {
+      "id": "edge_6",
+      "from": { "nodeId": "OrthographicCamera_1", "portId": "camera" },
+      "to": { "nodeId": "Downsample_1", "portId": "camera" }
+    },
+    {
+      "id": "edge_7",
+      "from": { "nodeId": "Downsample_1", "portId": "output" },
+      "to": { "nodeId": "Upsample_1", "portId": "source" }
+    },
+    {
+      "id": "edge_8",
+      "from": { "nodeId": "OrthographicCamera_1", "portId": "camera" },
+      "to": { "nodeId": "Upsample_1", "portId": "camera" }
+    },
+    {
+      "id": "edge_9",
+      "from": { "nodeId": "Upsample_1", "portId": "output" },
+      "to": { "nodeId": "Composite_1", "portId": "pass" }
+    },
+    {
+      "id": "edge_10",
+      "from": { "nodeId": "OrthographicCamera_1", "portId": "camera" },
+      "to": { "nodeId": "Composite_1", "portId": "camera" }
+    },
+    {
+      "id": "edge_11",
+      "from": { "nodeId": "RenderTexture_1", "portId": "texture" },
+      "to": { "nodeId": "Composite_1", "portId": "target" }
+    },
+    {
+      "id": "edge_12",
+      "from": { "nodeId": "Composite_1", "portId": "pass" },
+      "to": { "nodeId": "Screen_1", "portId": "pass" }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_1"
+  },
+  "assets": {},
+  "groups": []
+}

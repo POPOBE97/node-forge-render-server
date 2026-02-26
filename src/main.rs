@@ -18,6 +18,53 @@ struct Cli {
     render_to_file: bool,
 }
 
+#[cfg(all(target_os = "macos", debug_assertions))]
+fn spawn_metal_capture_state_watcher(
+    egui_ctx: egui::Context,
+) -> Option<crossbeam_channel::Receiver<bool>> {
+    use std::{thread, time::Duration};
+
+    let (tx, rx) = crossbeam_channel::bounded::<bool>(4);
+    thread::spawn(move || {
+        let mut last_state = metal::CaptureManager::shared().is_capturing();
+        if last_state {
+            if tx.send(true).is_err() {
+                return;
+            }
+            eprintln!("[capture] metal capture active at startup; enabling continuous redraw");
+            egui_ctx.request_repaint();
+        }
+
+        loop {
+            thread::sleep(Duration::from_millis(16));
+            let current_state = metal::CaptureManager::shared().is_capturing();
+            if current_state == last_state {
+                continue;
+            }
+
+            last_state = current_state;
+            if tx.send(current_state).is_err() {
+                break;
+            }
+
+            if current_state {
+                eprintln!("[capture] metal capture started");
+            } else {
+                eprintln!("[capture] metal capture stopped");
+            }
+            egui_ctx.request_repaint();
+        }
+    });
+    Some(rx)
+}
+
+#[cfg(not(all(target_os = "macos", debug_assertions)))]
+fn spawn_metal_capture_state_watcher(
+    _egui_ctx: egui::Context,
+) -> Option<crossbeam_channel::Receiver<bool>> {
+    None
+}
+
 fn parse_cli(args: &[String]) -> Result<Cli> {
     let mut cli = Cli::default();
     let mut i = 0;
@@ -223,6 +270,7 @@ fn run_headless_ws_render_once(
         hub.clone(),
         last_good,
         asset_store.clone(),
+        None,
     )?;
 
     // Wait for a renderable SceneDSL update, render, reply, then exit.
@@ -595,6 +643,8 @@ fn main() -> Result<()> {
             let last_good = Arc::new(Mutex::new(last_good_initial));
             let hub = ws::WsHub::default();
             let asset_store = asset_store::AssetStore::new();
+            let ui_repaint_ctx = cc.egui_ctx.clone();
+            let ui_wake: ws::UiWakeCallback = Arc::new(move || ui_repaint_ctx.request_repaint());
             if let Err(e) = ws::spawn_ws_server(
                 "0.0.0.0:8080",
                 scene_tx,
@@ -602,9 +652,11 @@ fn main() -> Result<()> {
                 hub.clone(),
                 last_good.clone(),
                 asset_store.clone(),
+                Some(ui_wake),
             ) {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
+            let capture_state_rx = spawn_metal_capture_state_watcher(cc.egui_ctx.clone());
 
             Ok(Box::new(app::App::from_init(app::AppInit {
                 shader_space,
@@ -615,6 +667,7 @@ fn main() -> Result<()> {
                 start: Instant::now(),
                 passes,
                 scene_rx: app_scene_rx,
+                capture_state_rx,
                 ws_hub: hub,
                 last_good,
                 uniform_scene: None,

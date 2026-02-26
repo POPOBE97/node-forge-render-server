@@ -116,6 +116,7 @@ fn upsample_schema_ports_and_defaults_match_contract() {
 
     assert_input_type("targetSize", "vector2");
     assert_input_type("source", "pass");
+    assert_input_type("camera", "mat4");
     assert_input_type("address_mode", "any");
     assert_input_type("filter", "any");
     assert_input_type("blend_preset", "any");

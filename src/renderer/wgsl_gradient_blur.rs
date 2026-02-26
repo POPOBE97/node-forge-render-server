@@ -451,6 +451,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 @group(0) @binding(0)
@@ -479,8 +480,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
     return out;
 }

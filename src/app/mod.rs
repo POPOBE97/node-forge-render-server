@@ -13,7 +13,6 @@ pub use types::{
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    time::Duration,
 };
 
 use rust_wgpu_fiber::eframe::{self, egui, wgpu};
@@ -120,8 +119,13 @@ fn should_request_immediate_repaint(
     sidebar_animating: bool,
     pan_zoom_animating: bool,
     operation_indicator_visible: bool,
+    capture_redraw_active: bool,
 ) -> bool {
-    time_driven_scene || sidebar_animating || pan_zoom_animating || operation_indicator_visible
+    time_driven_scene
+        || sidebar_animating
+        || pan_zoom_animating
+        || operation_indicator_visible
+        || capture_redraw_active
 }
 
 impl eframe::App for App {
@@ -135,6 +139,26 @@ impl eframe::App for App {
 
         let render_state = frame.wgpu_render_state().unwrap();
         let mut renderer_guard = frame.wgpu_render_state().unwrap().renderer.as_ref().write();
+
+        let mut latest_capture_state = None;
+        if let Some(capture_state_rx) = self.capture_state_rx.as_ref() {
+            while let Ok(capture_active) = capture_state_rx.try_recv() {
+                latest_capture_state = Some(capture_active);
+            }
+        }
+        if let Some(capture_active) = latest_capture_state {
+            if self.capture_redraw_active != capture_active {
+                if capture_active {
+                    eprintln!("[capture] enabling continuous redraw for active capture session");
+                } else {
+                    eprintln!("[capture] disabling continuous redraw after capture session");
+                }
+            }
+            self.capture_redraw_active = capture_active;
+            if capture_active {
+                self.scene_redraw_pending = true;
+            }
+        }
 
         let mut did_rebuild_shader_space = false;
         if let Some(update) = scene_runtime::drain_latest_scene_update(self) {
@@ -177,7 +201,8 @@ impl eframe::App for App {
             self.time_value_secs += delta_t;
         }
         let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
-        let should_redraw_scene = self.scene_redraw_pending || time_driven_scene;
+        let should_redraw_scene =
+            self.scene_redraw_pending || time_driven_scene || self.capture_redraw_active;
 
         if should_redraw_scene {
             let t = self.time_value_secs;
@@ -809,10 +834,9 @@ impl eframe::App for App {
             sidebar_animating,
             pan_zoom_animating,
             operation_indicator_visible,
+            self.capture_redraw_active,
         ) {
             ctx.request_repaint();
-        } else {
-            ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
 }
@@ -928,24 +952,39 @@ mod tests {
 
     #[test]
     fn repaint_policy_requests_immediate_for_time_driven_scene() {
-        assert!(should_request_immediate_repaint(true, false, false, false));
+        assert!(should_request_immediate_repaint(
+            true, false, false, false, false
+        ));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_for_any_active_animation() {
-        assert!(should_request_immediate_repaint(false, true, false, false));
-        assert!(should_request_immediate_repaint(false, false, true, false));
+        assert!(should_request_immediate_repaint(
+            false, true, false, false, false
+        ));
+        assert!(should_request_immediate_repaint(
+            false, false, true, false, false
+        ));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_when_operation_indicator_visible() {
-        assert!(should_request_immediate_repaint(false, false, false, true));
+        assert!(should_request_immediate_repaint(
+            false, false, false, true, false
+        ));
     }
 
     #[test]
-    fn repaint_policy_uses_idle_poll_when_all_triggers_are_inactive() {
+    fn repaint_policy_requests_immediate_when_capture_redraw_active() {
+        assert!(should_request_immediate_repaint(
+            false, false, false, false, true
+        ));
+    }
+
+    #[test]
+    fn repaint_policy_skips_immediate_when_capture_inactive_and_other_triggers_inactive() {
         assert!(!should_request_immediate_repaint(
-            false, false, false, false
+            false, false, false, false, false
         ));
     }
 }

@@ -8,6 +8,70 @@ use super::types::{TypedExpr, ValueType};
 
 use crate::dsl::{self, Node, SceneDSL};
 
+pub const IDENTITY_MAT4: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+
+/// Convert a row-major mat4 into column-major layout for WGSL upload.
+pub fn mat4_row_major_to_column_major(row_major: [f32; 16]) -> [f32; 16] {
+    let mut out = [0.0f32; 16];
+    for row in 0..4 {
+        for col in 0..4 {
+            out[col * 4 + row] = row_major[row * 4 + col];
+        }
+    }
+    out
+}
+
+/// Parse a strict row-major mat4 JSON value: `[16 finite numbers]`.
+pub fn parse_strict_mat4_row_major_value(
+    value: &serde_json::Value,
+    context: &str,
+) -> Result<[f32; 16]> {
+    let arr = value
+        .as_array()
+        .ok_or_else(|| anyhow!("{context}: expected array for mat4"))?;
+    if arr.len() != 16 {
+        bail!(
+            "{context}: expected mat4 array length 16, got {}",
+            arr.len()
+        );
+    }
+
+    let mut out = [0.0f32; 16];
+    for (idx, element) in arr.iter().enumerate() {
+        let Some(num) = element
+            .as_f64()
+            .or_else(|| element.as_i64().map(|v| v as f64))
+            .or_else(|| element.as_u64().map(|v| v as f64))
+        else {
+            bail!("{context}: mat4[{idx}] is not a number");
+        };
+        if !num.is_finite() {
+            bail!("{context}: mat4[{idx}] must be finite, got {num}");
+        }
+        out[idx] = num as f32;
+    }
+    Ok(out)
+}
+
+/// Parse `params[key]` as strict row-major mat4 and convert to column-major.
+pub fn parse_strict_mat4_param_column_major(
+    params: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+    context: &str,
+) -> Result<Option<[f32; 16]>> {
+    let Some(value) = params.get(key) else {
+        return Ok(None);
+    };
+    let row_major = parse_strict_mat4_row_major_value(value, context)?;
+    Ok(Some(mat4_row_major_to_column_major(row_major)))
+}
+
+pub fn mat4_is_identity(mat: &[f32; 16]) -> bool {
+    *mat == IDENTITY_MAT4
+}
+
 /// Resolve a numeric input used by the renderer on CPU.
 ///
 /// Contract (important for future node additions):
@@ -410,6 +474,58 @@ mod type_coercion_tests {
 
         let down3 = coerce_to_type(v4in, ValueType::Vec3).unwrap();
         assert_eq!(down3.expr, "vec3f((v4).xyz)");
+    }
+}
+
+#[cfg(test)]
+mod mat4_contract_tests {
+    use serde_json::json;
+
+    use super::{
+        IDENTITY_MAT4, mat4_is_identity, mat4_row_major_to_column_major,
+        parse_strict_mat4_row_major_value,
+    };
+
+    #[test]
+    fn mat4_row_major_to_column_major_maps_indices() {
+        let row = [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+        ];
+        let col = mat4_row_major_to_column_major(row);
+        assert_eq!(
+            col,
+            [
+                1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0, 15.0, 4.0, 8.0, 12.0,
+                16.0
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_strict_mat4_requires_array_len_16() {
+        let err = parse_strict_mat4_row_major_value(&json!([1, 2, 3]), "ctx")
+            .expect_err("short array should fail");
+        assert!(format!("{err:#}").contains("length 16"));
+    }
+
+    #[test]
+    fn parse_strict_mat4_rejects_non_finite() {
+        let err = parse_strict_mat4_row_major_value(
+            &json!([
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, "NaN", 0.0, 0.0, 0.0, 0.0, 1.0
+            ]),
+            "ctx",
+        )
+        .expect_err("non-number should fail");
+        assert!(format!("{err:#}").contains("not a number"));
+    }
+
+    #[test]
+    fn mat4_identity_check_matches_contract() {
+        assert!(mat4_is_identity(&IDENTITY_MAT4));
+        let mut m = IDENTITY_MAT4;
+        m[12] = 1.0;
+        assert!(!mat4_is_identity(&m));
     }
 }
 

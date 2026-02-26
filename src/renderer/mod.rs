@@ -16,6 +16,7 @@
 //! - `build_all_pass_wgsl_bundles_from_scene`: Generate WGSL for all passes
 //! - `ShaderSpaceBuilder`: Build ShaderSpace resources from a scene
 
+pub mod camera;
 pub mod geometry_resolver;
 pub mod glsl_snippet;
 pub mod graph_uniforms;

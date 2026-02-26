@@ -53,6 +53,8 @@
     "MixShader",
     "NoiseTexture",
     "Normalize",
+    "OrthographicCamera",
+    "PerspectiveCamera",
     "PBRMaterial",
     "PassTexture",
     "PrincipledBSDF",
@@ -85,6 +87,7 @@
     "geometry",
     "int",
     "kernel",
+    "mat4",
     "material",
     "pass",
     "renderTexture",
@@ -212,6 +215,7 @@
       "material",
       "shader",
       "geometry",
+      "mat4",
       "pass",
       "kernel",
       "any"
@@ -314,6 +318,9 @@
     ],
     "kernel": [
       "kernel"
+    ],
+    "mat4": [
+      "mat4"
     ]
   },
   "nodes": [
@@ -534,6 +541,11 @@
           "type": "renderTexture"
         },
         {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
+        },
+        {
           "id": "alpha",
           "name": "Alpha",
           "type": "float"
@@ -674,6 +686,11 @@
           "id": "source",
           "name": "Source",
           "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
         }
       ],
       "outputs": [
@@ -707,6 +724,11 @@
           "id": "source",
           "name": "Source",
           "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
         },
         {
           "id": "address_mode",
@@ -1297,6 +1319,11 @@
           "id": "mask",
           "name": "Mask",
           "type": "material"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
         }
       ],
       "outputs": [
@@ -1376,6 +1403,11 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
         },
         {
           "id": "radius",
@@ -1936,6 +1968,160 @@
       "defaultParams": {}
     },
     {
+      "type": "OrthographicCamera",
+      "label": "Orthographic Camera",
+      "category": "PipelineControl",
+      "description": "Build an orthographic camera matrix from position/target/up and frustum bounds",
+      "inputs": [
+        {
+          "id": "position",
+          "name": "Position",
+          "type": "vector3"
+        },
+        {
+          "id": "target",
+          "name": "Target",
+          "type": "vector3"
+        },
+        {
+          "id": "up",
+          "name": "Up",
+          "type": "vector3"
+        },
+        {
+          "id": "left",
+          "name": "Left",
+          "type": "float"
+        },
+        {
+          "id": "right",
+          "name": "Right",
+          "type": "float"
+        },
+        {
+          "id": "bottom",
+          "name": "Bottom",
+          "type": "float"
+        },
+        {
+          "id": "top",
+          "name": "Top",
+          "type": "float"
+        },
+        {
+          "id": "near",
+          "name": "Near",
+          "type": "float"
+        },
+        {
+          "id": "far",
+          "name": "Far",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "defaultParams": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "target": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "left": -1,
+        "right": 1,
+        "bottom": -1,
+        "top": 1,
+        "near": 0.1,
+        "far": 10000
+      }
+    },
+    {
+      "type": "PerspectiveCamera",
+      "label": "Perspective Camera",
+      "category": "PipelineControl",
+      "description": "Build a perspective camera matrix from position/target/up and lens parameters",
+      "inputs": [
+        {
+          "id": "position",
+          "name": "Position",
+          "type": "vector3"
+        },
+        {
+          "id": "target",
+          "name": "Target",
+          "type": "vector3"
+        },
+        {
+          "id": "up",
+          "name": "Up",
+          "type": "vector3"
+        },
+        {
+          "id": "fovY",
+          "name": "Fov Y",
+          "type": "float"
+        },
+        {
+          "id": "aspect",
+          "name": "Aspect",
+          "type": "float"
+        },
+        {
+          "id": "near",
+          "name": "Near",
+          "type": "float"
+        },
+        {
+          "id": "far",
+          "name": "Far",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "defaultParams": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 1000
+        },
+        "target": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "fovY": 60,
+        "aspect": 1,
+        "near": 0.1,
+        "far": 10000
+      }
+    },
+    {
       "type": "PassTexture",
       "label": "Pass Texture",
       "category": "Texture",
@@ -2328,6 +2514,11 @@
           "type": "material"
         },
         {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
+        },
+        {
           "id": "msaaSampleCount",
           "name": "MSAA",
           "type": "int",
@@ -2531,7 +2722,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "any"
+          "type": "mat4"
         },
         {
           "id": "translate",
@@ -2645,7 +2836,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "any"
+          "type": "mat4"
         },
         {
           "id": "translate",

@@ -19,23 +19,27 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use image::DynamicImage;
 use rust_wgpu_fiber::{
+    ResourceName,
     eframe::wgpu::{
-        self, vertex_attr_array, BlendState, Color, ShaderStages, TextureFormat, TextureUsages,
+        self, BlendState, Color, ShaderStages, TextureFormat, TextureUsages, vertex_attr_array,
     },
     pool::{
         buffer_pool::BufferSpec, sampler_pool::SamplerSpec,
         texture_pool::TextureSpec as FiberTextureSpec,
     },
     shader_space::{ShaderSpace, ShaderSpaceResult},
-    ResourceName,
 };
 
 use crate::{
-    dsl::{find_node, incoming_connection, parse_str, parse_texture_format, SceneDSL},
+    dsl::{SceneDSL, find_node, incoming_connection, parse_str, parse_texture_format},
     renderer::{
+        camera::{
+            legacy_projection_camera_matrix, pass_node_uses_custom_camera,
+            resolve_effective_camera_for_pass_node,
+        },
         geometry_resolver::{
             is_draw_pass_node_type, is_pass_like_node_type, resolve_scene_draw_contexts,
         },
@@ -56,13 +60,13 @@ use crate::{
             coerce_to_type, cpu_num_f32, cpu_num_f32_min_0, cpu_num_u32_floor, cpu_num_u32_min_1,
         },
         wgsl::{
-            build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
-            build_downsample_bundle, build_downsample_pass_wgsl_bundle,
-            build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
-            build_horizontal_blur_bundle_with_tap_count, build_pass_wgsl_bundle,
-            build_pass_wgsl_bundle_with_graph_binding, build_upsample_bilinear_bundle,
-            build_vertical_blur_bundle_with_tap_count, clamp_min_1, gaussian_kernel_8,
-            gaussian_mip_level_and_sigma_p, ERROR_SHADER_WGSL,
+            ERROR_SHADER_WGSL, build_blur_image_wgsl_bundle,
+            build_blur_image_wgsl_bundle_with_graph_binding, build_downsample_bundle,
+            build_downsample_pass_wgsl_bundle, build_dynamic_rect_compose_bundle,
+            build_fullscreen_textured_bundle, build_horizontal_blur_bundle_with_tap_count,
+            build_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
+            build_upsample_bilinear_bundle, build_vertical_blur_bundle_with_tap_count, clamp_min_1,
+            gaussian_kernel_8, gaussian_mip_level_and_sigma_p,
         },
     },
 };
@@ -295,6 +299,47 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
 const IDENTITY_MAT4: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
+
+fn make_params(
+    target_size: [f32; 2],
+    geo_size: [f32; 2],
+    center: [f32; 2],
+    camera: [f32; 16],
+    color: [f32; 4],
+) -> Params {
+    Params {
+        target_size,
+        geo_size,
+        center,
+        geo_translate: [0.0, 0.0],
+        geo_scale: [1.0, 1.0],
+        time: 0.0,
+        _pad0: 0.0,
+        color,
+        camera,
+    }
+}
+
+// Processing chains (blur/mipmap/gradient internal passes) should run in fullscreen
+// texture space to avoid accumulating user-camera transforms across steps.
+fn fullscreen_processing_camera(target_size: [f32; 2]) -> [f32; 16] {
+    legacy_projection_camera_matrix(target_size)
+}
+
+fn resolve_chain_camera_for_first_pass(
+    first_camera_consumed: &mut bool,
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    layer_node: &crate::dsl::Node,
+    target_size: [f32; 2],
+) -> Result<[f32; 16]> {
+    if !*first_camera_consumed {
+        *first_camera_consumed = true;
+        resolve_effective_camera_for_pass_node(scene, nodes_by_id, layer_node, target_size)
+    } else {
+        Ok(fullscreen_processing_camera(target_size))
+    }
+}
 
 fn sampled_pass_node_ids(
     scene: &SceneDSL,
@@ -1074,15 +1119,19 @@ fn readable_pass_name_for_node(node: &crate::dsl::Node) -> ResourceName {
 }
 
 fn sampled_render_pass_output_size(
-    _has_processing_consumer: bool,
-    _is_downsample_source: bool,
-    _coord_size_u: [u32; 2],
+    has_processing_consumer: bool,
+    is_downsample_source: bool,
+    coord_size_u: [u32; 2],
     geo_size: [f32; 2],
 ) -> [u32; 2] {
-    [
-        geo_size[0].max(1.0).round() as u32,
-        geo_size[1].max(1.0).round() as u32,
-    ]
+    if has_processing_consumer && !is_downsample_source {
+        coord_size_u
+    } else {
+        [
+            geo_size[0].max(1.0).round() as u32,
+            geo_size[1].max(1.0).round() as u32,
+        ]
+    }
 }
 
 fn gaussian_blur_extend_upsample_geo_size(
@@ -1700,6 +1749,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     || use_fullscreen_for_upsample_source
                     || use_fullscreen_for_extend_blur_source
                     || use_fullscreen_for_local_blit;
+                let pass_camera = resolve_effective_camera_for_pass_node(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    [pass_target_w, pass_target_h],
+                )?;
 
                 let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
                     if use_fullscreen_main_pass {
@@ -1712,17 +1767,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         ));
                         (
                             fs_geo,
-                            Params {
-                                target_size: [pass_target_w, pass_target_h],
-                                geo_size: [pass_target_w, pass_target_h],
-                                // Center the fullscreen geometry in the intermediate texture.
-                                center: [pass_target_w * 0.5, pass_target_h * 0.5],
-                                geo_translate: [0.0, 0.0],
-                                geo_scale: [1.0, 1.0],
-                                time: 0.0,
-                                _pad0: 0.0,
-                                color: [0.9, 0.2, 0.2, 1.0],
-                            },
+                            make_params(
+                                [pass_target_w, pass_target_h],
+                                [pass_target_w, pass_target_h],
+                                [pass_target_w * 0.5, pass_target_h * 0.5],
+                                pass_camera,
+                                [0.9, 0.2, 0.2, 1.0],
+                            ),
                             // Keep rect_dyn_2 so shader can access dynamic size for GeoFragcoord/GeoSize.
                             // Vertex positioning is controlled by fullscreen_vertex_positioning flag.
                             rect_dyn_2.clone(),
@@ -1749,16 +1800,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         };
                         (
                             resolved_geometry_buffer,
-                            Params {
-                                target_size: [pass_target_w, pass_target_h],
-                                geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                center: [geo_x, geo_y],
-                                geo_translate: [0.0, 0.0],
-                                geo_scale: [1.0, 1.0],
-                                time: 0.0,
-                                _pad0: 0.0,
-                                color: [0.9, 0.2, 0.2, 1.0],
-                            },
+                            make_params(
+                                [pass_target_w, pass_target_h],
+                                [geo_w.max(1.0), geo_h.max(1.0)],
+                                [geo_x, geo_y],
+                                pass_camera,
+                                [0.9, 0.2, 0.2, 1.0],
+                            ),
                             rect_dyn_2.clone(),
                         )
                     };
@@ -1969,6 +2017,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             compose_graph_binding,
                             compose_graph_values,
                         ) = if pass_target_w_u == comp_tgt_w_u && pass_target_h_u == comp_tgt_h_u {
+                            let compose_camera = resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_tgt_w, comp_tgt_h],
+                            )?;
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -1980,21 +2034,24 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 "return textureSample(src_tex, src_samp, in.uv);".to_string();
                             (
                                 compose_geo,
-                                Params {
-                                    target_size: [comp_tgt_w, comp_tgt_h],
-                                    geo_size: [comp_tgt_w, comp_tgt_h],
-                                    center: [comp_tgt_w * 0.5, comp_tgt_h * 0.5],
-                                    geo_translate: [0.0, 0.0],
-                                    geo_scale: [1.0, 1.0],
-                                    time: 0.0,
-                                    _pad0: 0.0,
-                                    color: [0.0, 0.0, 0.0, 0.0],
-                                },
+                                make_params(
+                                    [comp_tgt_w, comp_tgt_h],
+                                    [comp_tgt_w, comp_tgt_h],
+                                    [comp_tgt_w * 0.5, comp_tgt_h * 0.5],
+                                    compose_camera,
+                                    [0.0, 0.0, 0.0, 0.0],
+                                ),
                                 build_fullscreen_textured_bundle(fragment_body),
                                 None,
                                 None,
                             )
                         } else if use_fullscreen_main_pass && rect_dyn_2.is_some() {
+                            let compose_camera = resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_tgt_w, comp_tgt_h],
+                            )?;
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -2053,21 +2110,24 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                             (
                                 compose_geo,
-                                Params {
-                                    target_size: [comp_tgt_w, comp_tgt_h],
-                                    geo_size: [pass_target_w, pass_target_h],
-                                    center: [geo_x, geo_y],
-                                    geo_translate: [0.0, 0.0],
-                                    geo_scale: [1.0, 1.0],
-                                    time: 0.0,
-                                    _pad0: 0.0,
-                                    color: [0.0, 0.0, 0.0, 0.0],
-                                },
+                                make_params(
+                                    [comp_tgt_w, comp_tgt_h],
+                                    [pass_target_w, pass_target_h],
+                                    [geo_x, geo_y],
+                                    compose_camera,
+                                    [0.0, 0.0, 0.0, 0.0],
+                                ),
                                 bundle,
                                 graph_binding.clone(),
                                 graph_values.clone(),
                             )
                         } else if use_fullscreen_for_local_blit {
+                            let compose_camera = resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_tgt_w, comp_tgt_h],
+                            )?;
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -2085,35 +2145,35 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 "return textureSample(src_tex, src_samp, in.uv);".to_string();
                             (
                                 compose_geo,
-                                Params {
-                                    target_size: [comp_tgt_w, comp_tgt_h],
-                                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                    center: [geo_x, geo_y],
-                                    geo_translate: [0.0, 0.0],
-                                    geo_scale: [1.0, 1.0],
-                                    time: 0.0,
-                                    _pad0: 0.0,
-                                    color: [0.0, 0.0, 0.0, 0.0],
-                                },
+                                make_params(
+                                    [comp_tgt_w, comp_tgt_h],
+                                    [geo_w.max(1.0), geo_h.max(1.0)],
+                                    [geo_x, geo_y],
+                                    compose_camera,
+                                    [0.0, 0.0, 0.0, 0.0],
+                                ),
                                 build_fullscreen_textured_bundle(fragment_body),
                                 None,
                                 None,
                             )
                         } else {
+                            let compose_camera = resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_tgt_w, comp_tgt_h],
+                            )?;
                             let fragment_body =
                                 "return textureSample(src_tex, src_samp, in.uv);".to_string();
                             (
                                 main_pass_geometry_buffer.clone(),
-                                Params {
-                                    target_size: [comp_tgt_w, comp_tgt_h],
-                                    geo_size: [geo_w.max(1.0), geo_h.max(1.0)],
-                                    center: [geo_x, geo_y],
-                                    geo_translate: [0.0, 0.0],
-                                    geo_scale: [1.0, 1.0],
-                                    time: 0.0,
-                                    _pad0: 0.0,
-                                    color: [0.0, 0.0, 0.0, 0.0],
-                                },
+                                make_params(
+                                    [comp_tgt_w, comp_tgt_h],
+                                    [geo_w.max(1.0), geo_h.max(1.0)],
+                                    [geo_x, geo_y],
+                                    compose_camera,
+                                    [0.0, 0.0, 0.0, 0.0],
+                                ),
                                 build_fullscreen_textured_bundle(fragment_body),
                                 None,
                                 None,
@@ -2183,6 +2243,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     0
                 };
                 let can_direct_bypass = extend_pad_px == 0;
+                let mut blur_chain_first_camera_consumed = false;
 
                 // Optimization: skip the intermediate `sys.blur.<id>.src` pass when we can
                 // directly consume an existing texture resource as the blur source.
@@ -2305,6 +2366,22 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let src_h = src_resolution[1] as f32;
                 let src_content_w = src_content_resolution[0] as f32;
                 let src_content_h = src_content_resolution[1] as f32;
+
+                // Keep camera semantics stable across bypass/elision: if this pass has a custom
+                // camera in source-space coordinates, force the canonical source pass so camera
+                // is applied exactly once before processing-chain fullscreen passes.
+                let force_source_pass_for_custom_camera = pass_node_uses_custom_camera(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    [src_w, src_h],
+                )?;
+                if force_source_pass_for_custom_camera {
+                    initial_blur_source_texture = None;
+                    initial_blur_source_image_node_id = None;
+                    initial_blur_source_sampler_kind = None;
+                }
+
                 let initial_blur_source_texture: ResourceName = if let Some(existing_tex) =
                     initial_blur_source_texture
                 {
@@ -2339,17 +2416,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     ));
 
                     let params_src: ResourceName = format!("params.sys.blur.{layer_id}.src").into();
-                    let params_src_val = Params {
-                        target_size: [src_w, src_h],
-                        geo_size: [src_geo_w, src_geo_h],
-                        // Center source content in the padded texture (or fullscreen if no extend).
-                        center: [src_w * 0.5, src_h * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let params_src_val = make_params(
+                        [src_w, src_h],
+                        [src_geo_w, src_geo_h],
+                        [src_w * 0.5, src_h * 0.5],
+                        resolve_chain_camera_for_first_pass(
+                            &mut blur_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [src_w, src_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     // Build WGSL for sampling the `pass` input source.
                     let mut src_bundle =
@@ -2615,16 +2694,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         SamplerKind::LinearMirror
                     };
 
-                    let params_val = Params {
-                        target_size: [*step_w as f32, *step_h as f32],
-                        geo_size: [*step_w as f32, *step_h as f32],
-                        center: [*step_w as f32 * 0.5, *step_h as f32 * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let step_w_f = *step_w as f32;
+                    let step_h_f = *step_h as f32;
+                    let params_val = make_params(
+                        [step_w_f, step_h_f],
+                        [step_w_f, step_h_f],
+                        [step_w_f * 0.5, step_h_f * 0.5],
+                        resolve_chain_camera_for_first_pass(
+                            &mut blur_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [step_w_f, step_h_f],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     let (src_tex, src_image_node_id) = match &prev_tex {
                         None => (
@@ -2684,16 +2768,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     format!("params.sys.blur.{layer_id}.h.ds{downsample_factor}").into();
                 let bundle_h =
                     build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
-                let params_h_val = Params {
-                    target_size: [ds_w as f32, ds_h as f32],
-                    geo_size: [ds_w as f32, ds_h as f32],
-                    center: [ds_w as f32 * 0.5, ds_h as f32 * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let ds_w_f = ds_w as f32;
+                let ds_h_f = ds_h as f32;
+                let params_h_val = make_params(
+                    [ds_w_f, ds_h_f],
+                    [ds_w_f, ds_h_f],
+                    [ds_w_f * 0.5, ds_h_f * 0.5],
+                    resolve_chain_camera_for_first_pass(
+                        &mut blur_chain_first_camera_consumed,
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [ds_w_f, ds_h_f],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 let pass_name_h: ResourceName =
                     format!("sys.blur.{layer_id}.h.ds{downsample_factor}.pass").into();
@@ -2728,16 +2817,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let bundle_v = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
                 let pass_name_v: ResourceName =
                     format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass").into();
-                let params_v_val = Params {
-                    target_size: [ds_w as f32, ds_h as f32],
-                    geo_size: [ds_w as f32, ds_h as f32],
-                    center: [ds_w as f32 * 0.5, ds_h as f32 * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let params_v_val = make_params(
+                    [ds_w_f, ds_h_f],
+                    [ds_w_f, ds_h_f],
+                    [ds_w_f * 0.5, ds_h_f * 0.5],
+                    resolve_chain_camera_for_first_pass(
+                        &mut blur_chain_first_camera_consumed,
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [ds_w_f, ds_h_f],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
                 render_pass_specs.push(RenderPassSpec {
                     pass_id: pass_name_v.as_str().to_string(),
                     name: pass_name_v.clone(),
@@ -2787,16 +2879,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     } else {
                         [upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5]
                     };
-                    let params_u_val = Params {
-                        target_size: upsample_target_size,
-                        geo_size: upsample_geo_size,
-                        center: upsample_center,
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let params_u_val = make_params(
+                        upsample_target_size,
+                        upsample_geo_size,
+                        upsample_center,
+                        resolve_chain_camera_for_first_pass(
+                            &mut blur_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            upsample_target_size,
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
                     let pass_name_u: ResourceName =
                         format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
                             .into();
@@ -2864,16 +2959,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         format!("sys.blur.{layer_id}.to.{composition_id}.compose.pass").into();
                     let compose_params_name: ResourceName =
                         format!("params.sys.blur.{layer_id}.to.{composition_id}.compose").into();
-                    let compose_params = Params {
-                        target_size: [comp_w, comp_h],
-                        geo_size: [blur_w as f32, blur_h as f32],
-                        center: blur_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let compose_params = make_params(
+                        [comp_w, comp_h],
+                        [blur_w as f32, blur_h as f32],
+                        blur_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
+                        resolve_chain_camera_for_first_pass(
+                            &mut blur_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [comp_w, comp_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     render_pass_specs.push(RenderPassSpec {
                         pass_id: compose_pass_name.as_str().to_string(),
@@ -2980,22 +3078,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 let pad_offset_y = (pad_h - src_h) * 0.5;
 
                 let is_sampled_output = sampled_pass_ids.contains(layer_id);
+                let mut gradient_chain_first_camera_consumed = false;
 
                 // ---------- source pass ----------
                 // Attempt direct bypass (ImageTexture or upstream pass output).
                 let mut initial_source_texture: Option<ResourceName> = None;
                 let mut initial_source_image_node_id: Option<String> = None;
-                let mut initial_source_sampler_kind: Option<SamplerKind> = None;
 
                 if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
                     // (A) upstream pass output bypass
                     if let Some(spec) = pass_output_registry.get(&src_conn.from.node_id) {
                         if spec.format == sampled_pass_format {
                             initial_source_texture = Some(spec.texture_name.clone());
-                            initial_source_sampler_kind = Some(sampler_kind_for_pass_texture(
-                                &prepared.scene,
-                                &src_conn.from.node_id,
-                            ));
                         }
                     }
                     // (B) direct ImageTexture bypass
@@ -3014,12 +3108,24 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                     initial_source_texture = Some(tex);
                                     initial_source_image_node_id =
                                         Some(src_conn.from.node_id.clone());
-                                    initial_source_sampler_kind =
-                                        Some(sampler_kind_from_node_params(&src_node.params));
                                 }
                             }
                         }
                     }
+                }
+
+                // Keep camera semantics stable across bypass/elision: if this pass has a custom
+                // camera in source-space coordinates, force the canonical source pass so camera
+                // is applied exactly once before processing-chain fullscreen passes.
+                let force_source_pass_for_custom_camera = pass_node_uses_custom_camera(
+                    &prepared.scene,
+                    nodes_by_id,
+                    layer_node,
+                    [src_w, src_h],
+                )?;
+                if force_source_pass_for_custom_camera {
+                    initial_source_texture = None;
+                    initial_source_image_node_id = None;
                 }
 
                 let source_texture: ResourceName = if let Some(existing_tex) =
@@ -3041,16 +3147,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         .push((geo_src.clone(), make_fullscreen_geometry(src_w, src_h)));
 
                     let params_src: ResourceName = format!("params.sys.gb.{layer_id}.src").into();
-                    let params_src_val = Params {
-                        target_size: [src_w, src_h],
-                        geo_size: [src_w, src_h],
-                        center: [src_w * 0.5, src_h * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let params_src_val = make_params(
+                        [src_w, src_h],
+                        [src_w, src_h],
+                        [src_w * 0.5, src_h * 0.5],
+                        resolve_chain_camera_for_first_pass(
+                            &mut gradient_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [src_w, src_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     let mut src_bundle = build_gradient_blur_source_wgsl_bundle(
                         &prepared.scene,
@@ -3157,16 +3266,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 geometry_buffers.push((pad_geo.clone(), make_fullscreen_geometry(pad_w, pad_h)));
 
                 let params_pad: ResourceName = format!("params.sys.gb.{layer_id}.pad").into();
-                let params_pad_val = Params {
-                    target_size: [pad_w, pad_h],
-                    geo_size: [pad_w, pad_h],
-                    center: [pad_w * 0.5, pad_h * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let params_pad_val = make_params(
+                    [pad_w, pad_h],
+                    [pad_w, pad_h],
+                    [pad_w * 0.5, pad_h * 0.5],
+                    resolve_chain_camera_for_first_pass(
+                        &mut gradient_chain_first_camera_consumed,
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [pad_w, pad_h],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 let pad_bundle = build_gradient_blur_pad_wgsl_bundle(src_w, src_h, pad_w, pad_h);
 
@@ -3232,16 +3344,21 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                     let params_mip: ResourceName =
                         format!("params.sys.gb.{layer_id}.mip{i}").into();
-                    let params_mip_val = Params {
-                        target_size: [cur_mip_w as f32, cur_mip_h as f32],
-                        geo_size: [cur_mip_w as f32, cur_mip_h as f32],
-                        center: [cur_mip_w as f32 * 0.5, cur_mip_h as f32 * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let cur_mip_w_f = cur_mip_w as f32;
+                    let cur_mip_h_f = cur_mip_h as f32;
+                    let params_mip_val = make_params(
+                        [cur_mip_w_f, cur_mip_h_f],
+                        [cur_mip_w_f, cur_mip_h_f],
+                        [cur_mip_w_f * 0.5, cur_mip_h_f * 0.5],
+                        resolve_chain_camera_for_first_pass(
+                            &mut gradient_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [cur_mip_w_f, cur_mip_h_f],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     let ds_bundle = crate::renderer::wgsl::build_downsample_pass_wgsl_bundle(
                         &gradient_blur_cross_kernel(),
@@ -3318,16 +3435,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 } else {
                     [src_w * 0.5, src_h * 0.5]
                 };
-                let params_final_val = Params {
-                    target_size: final_target_size,
-                    geo_size: [src_w, src_h],
-                    center: final_center,
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let params_final_val = make_params(
+                    final_target_size,
+                    [src_w, src_h],
+                    final_center,
+                    resolve_chain_camera_for_first_pass(
+                        &mut gradient_chain_first_camera_consumed,
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        final_target_size,
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 let mut composite_bundle = build_gradient_blur_composite_wgsl_bundle(
                     &prepared.scene,
@@ -3486,16 +3606,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         format!("sys.gb.{layer_id}.to.{composition_id}.compose.pass").into();
                     let compose_params_name: ResourceName =
                         format!("params.sys.gb.{layer_id}.to.{composition_id}.compose").into();
-                    let compose_params = Params {
-                        target_size: [comp_w, comp_h],
-                        geo_size: [src_w, src_h],
-                        center: gb_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let compose_params = make_params(
+                        [comp_w, comp_h],
+                        [src_w, src_h],
+                        gb_output_center.unwrap_or([comp_w * 0.5, comp_h * 0.5]),
+                        resolve_chain_camera_for_first_pass(
+                            &mut gradient_chain_first_camera_consumed,
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [comp_w, comp_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     render_pass_specs.push(RenderPassSpec {
                         pass_id: compose_pass_name.as_str().to_string(),
@@ -3695,16 +3818,20 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 // Params for Downsample pass.
                 let params_name: ResourceName = format!("params.sys.downsample.{layer_id}").into();
-                let params_val = Params {
-                    target_size: [out_w as f32, out_h as f32],
-                    geo_size: [out_w as f32, out_h as f32],
-                    center: [out_w as f32 * 0.5, out_h as f32 * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let out_w_f = out_w as f32;
+                let out_h_f = out_h as f32;
+                let params_val = make_params(
+                    [out_w_f, out_h_f],
+                    [out_w_f, out_h_f],
+                    [out_w_f * 0.5, out_h_f * 0.5],
+                    resolve_effective_camera_for_pass_node(
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [out_w_f, out_h_f],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 // Sampling mode -> sampler kind.
                 let sampling = parse_str(&layer_node.params, "sampling").unwrap_or("Mirror");
@@ -3760,16 +3887,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                     let upsample_params_name: ResourceName =
                         format!("params.sys.downsample.{layer_id}.upsample").into();
-                    let upsample_params_val = Params {
-                        target_size: [tgt_w, tgt_h],
-                        geo_size: [tgt_w, tgt_h],
-                        center: [tgt_w * 0.5, tgt_h * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let upsample_params_val = make_params(
+                        [tgt_w, tgt_h],
+                        [tgt_w, tgt_h],
+                        [tgt_w * 0.5, tgt_h * 0.5],
+                        resolve_effective_camera_for_pass_node(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [tgt_w, tgt_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
 
                     let upsample_bundle = build_upsample_bilinear_bundle();
 
@@ -3845,16 +3974,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         let compose_params_name: ResourceName =
                             format!("params.sys.downsample.{layer_id}.to.{composition_id}.compose")
                                 .into();
-                        let compose_params = Params {
-                            target_size: [comp_w, comp_h],
-                            geo_size: [comp_w, comp_h],
-                            center: [comp_w * 0.5, comp_h * 0.5],
-                            geo_translate: [0.0, 0.0],
-                            geo_scale: [1.0, 1.0],
-                            time: 0.0,
-                            _pad0: 0.0,
-                            color: [0.0, 0.0, 0.0, 0.0],
-                        };
+                        let compose_params = make_params(
+                            [comp_w, comp_h],
+                            [comp_w, comp_h],
+                            [comp_w * 0.5, comp_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_w, comp_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
 
                         render_pass_specs.push(RenderPassSpec {
                             pass_id: compose_pass_name.as_str().to_string(),
@@ -4072,16 +4203,20 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 ));
 
                 let params_name: ResourceName = format!("params.sys.upsample.{layer_id}").into();
-                let params_val = Params {
-                    target_size: [out_w as f32, out_h as f32],
-                    geo_size: [out_w as f32, out_h as f32],
-                    center: [out_w as f32 * 0.5, out_h as f32 * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let out_w_f = out_w as f32;
+                let out_h_f = out_h as f32;
+                let params_val = make_params(
+                    [out_w_f, out_h_f],
+                    [out_w_f, out_h_f],
+                    [out_w_f * 0.5, out_h_f * 0.5],
+                    resolve_effective_camera_for_pass_node(
+                        &prepared.scene,
+                        nodes_by_id,
+                        layer_node,
+                        [out_w_f, out_h_f],
+                    )?,
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 let address_mode = parse_str(&layer_node.params, "address_mode")
                     .unwrap_or("clamp-to-edge")
@@ -4152,16 +4287,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                     let fit_params_name: ResourceName =
                         format!("params.sys.upsample.{layer_id}.fit").into();
-                    let fit_params = Params {
-                        target_size: [tgt_w, tgt_h],
-                        geo_size: [tgt_w, tgt_h],
-                        center: [tgt_w * 0.5, tgt_h * 0.5],
-                        geo_translate: [0.0, 0.0],
-                        geo_scale: [1.0, 1.0],
-                        time: 0.0,
-                        _pad0: 0.0,
-                        color: [0.0, 0.0, 0.0, 0.0],
-                    };
+                    let fit_params = make_params(
+                        [tgt_w, tgt_h],
+                        [tgt_w, tgt_h],
+                        [tgt_w * 0.5, tgt_h * 0.5],
+                        resolve_effective_camera_for_pass_node(
+                            &prepared.scene,
+                            nodes_by_id,
+                            layer_node,
+                            [tgt_w, tgt_h],
+                        )?,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
                     let fit_bundle = build_upsample_bilinear_bundle();
 
                     render_pass_specs.push(RenderPassSpec {
@@ -4235,16 +4372,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         let compose_params_name: ResourceName =
                             format!("params.sys.upsample.{layer_id}.to.{composition_id}.compose")
                                 .into();
-                        let compose_params = Params {
-                            target_size: [comp_w, comp_h],
-                            geo_size: [comp_w, comp_h],
-                            center: [comp_w * 0.5, comp_h * 0.5],
-                            geo_translate: [0.0, 0.0],
-                            geo_scale: [1.0, 1.0],
-                            time: 0.0,
-                            _pad0: 0.0,
-                            color: [0.0, 0.0, 0.0, 0.0],
-                        };
+                        let compose_params = make_params(
+                            [comp_w, comp_h],
+                            [comp_w, comp_h],
+                            [comp_w * 0.5, comp_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [comp_w, comp_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
 
                         render_pass_specs.push(RenderPassSpec {
                             pass_id: compose_pass_name.as_str().to_string(),
@@ -4330,16 +4469,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         let params_name: ResourceName =
                             format!("params.sys.comp.{layer_id}.to.{downstream_comp_id}.compose")
                                 .into();
-                        let params = Params {
-                            target_size: [dst_w, dst_h],
-                            geo_size: [dst_w, dst_h],
-                            center: [dst_w * 0.5, dst_h * 0.5],
-                            geo_translate: [0.0, 0.0],
-                            geo_scale: [1.0, 1.0],
-                            time: 0.0,
-                            _pad0: 0.0,
-                            color: [0.0, 0.0, 0.0, 0.0],
-                        };
+                        let params = make_params(
+                            [dst_w, dst_h],
+                            [dst_w, dst_h],
+                            [dst_w * 0.5, dst_h * 0.5],
+                            resolve_effective_camera_for_pass_node(
+                                &prepared.scene,
+                                nodes_by_id,
+                                layer_node,
+                                [dst_w, dst_h],
+                            )?,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
                         render_pass_specs.push(RenderPassSpec {
                             pass_id: pass_name.as_str().to_string(),
                             name: pass_name.clone(),
@@ -4410,16 +4551,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
             let params_name: ResourceName =
                 format!("params.{}{}", target_texture_name.as_str(), suffix).into();
-            let params = Params {
-                target_size: [tgt_w, tgt_h],
-                geo_size: [tgt_w, tgt_h],
-                center: [tgt_w * 0.5, tgt_h * 0.5],
-                geo_translate: [0.0, 0.0],
-                geo_scale: [1.0, 1.0],
-                time: 0.0,
-                _pad0: 0.0,
-                color: [0.0, 0.0, 0.0, 0.0],
-            };
+            let params = make_params(
+                [tgt_w, tgt_h],
+                [tgt_w, tgt_h],
+                [tgt_w * 0.5, tgt_h * 0.5],
+                legacy_projection_camera_matrix([tgt_w, tgt_h]),
+                [0.0, 0.0, 0.0, 0.0],
+            );
 
             render_pass_specs.push(RenderPassSpec {
                 pass_id: pass_name.as_str().to_string(),
@@ -4769,16 +4907,13 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
-                let params = Params {
-                    target_size: [w, h],
-                    geo_size: [w, h],
-                    center: [w * 0.5, h * 0.5],
-                    geo_translate: [0.0, 0.0],
-                    geo_scale: [1.0, 1.0],
-                    time: 0.0,
-                    _pad0: 0.0,
-                    color: [0.0, 0.0, 0.0, 0.0],
-                };
+                let params = make_params(
+                    [w, h],
+                    [w, h],
+                    [w * 0.5, h * 0.5],
+                    legacy_projection_camera_matrix([w, h]),
+                    [0.0, 0.0, 0.0, 0.0],
+                );
 
                 let pass_name: ResourceName =
                     format!("sys.image.{node_id}.premultiply.pass").into();
@@ -5514,7 +5649,7 @@ mod tests {
 
     #[test]
     fn data_url_decodes_png_bytes() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};
 

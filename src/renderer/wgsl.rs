@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{find_node, incoming_connection, Node, SceneDSL},
+    dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
@@ -216,6 +216,7 @@ struct Params {{
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 }};
 
 
@@ -267,10 +268,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
     // Convert to target pixel coordinates with bottom-left origin.
     let p_px = rect_center_px + p_local.xy;
 
-    // Convert pixels to clip space assuming bottom-left origin.
-    // (0,0) => (-1,-1), (target_size) => (1,1)
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);
 
     // Pixel-centered like GLSL gl_FragCoord.xy.
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -329,6 +327,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 
@@ -392,10 +391,7 @@ var src_samp: sampler;
 
 
 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+     out.position = params.camera * vec4f(p_px, position.z, 1.0);
 
      // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -427,10 +423,7 @@ var src_samp: sampler;
 
 
 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+     out.position = params.camera * vec4f(p_px, position.z, 1.0);
 
       // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -645,6 +638,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 @group(0) @binding(0)
@@ -678,8 +672,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
-    let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-    out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);
     out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
     return out;
 }
@@ -829,6 +822,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 @group(0) @binding(0)
@@ -1040,10 +1034,7 @@ var<uniform> params: Params;
         vertex_entry.push_str(" let p_px = params.center + p_local.xy;\n\n");
     }
 
-    vertex_entry.push_str(" // Convert pixels to clip space assuming bottom-left origin.\n");
-    vertex_entry.push_str(" // (0,0) => (-1,-1), (target_size) => (1,1)\n");
-    vertex_entry.push_str(" let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);\n");
-    vertex_entry.push_str(" out.position = vec4f(ndc, p_local.z / params.target_size.x, 1.0);\n\n");
+    vertex_entry.push_str(" out.position = params.camera * vec4f(p_px, p_local.z, 1.0);\n\n");
 
     vertex_entry.push_str(" // Pixel-centered like GLSL gl_FragCoord.xy.\n");
     vertex_entry.push_str(" out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n");
@@ -1755,8 +1746,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
-        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count, ERROR_SHADER_WGSL,
+        ERROR_SHADER_WGSL, build_horizontal_blur_bundle,
+        build_horizontal_blur_bundle_with_tap_count, build_vertical_blur_bundle,
+        build_vertical_blur_bundle_with_tap_count,
     };
     use crate::renderer::validation::validate_wgsl;
 

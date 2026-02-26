@@ -443,6 +443,9 @@ pub struct Params {
 
     // 16-byte aligned.
     pub color: [f32; 4],
+
+    // Column-major mat4 camera transform used by all pass-style vertex shaders.
+    pub camera: [f32; 16],
 }
 
 /// Bindings for a render pass (uniform buffer and parameters).

@@ -2911,6 +2911,7 @@ dependencies = [
  "deno_core",
  "gltf",
  "image",
+ "metal",
  "naga 0.20.0",
  "rfd",
  "rust-wgpu-fiber",

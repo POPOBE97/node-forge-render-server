@@ -524,6 +524,9 @@ mod tests {
                 time: 0.0,
                 _pad0: 0.0,
                 color: [1.0, 1.0, 1.0, 1.0],
+                camera: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
             },
             graph_binding: Some(GraphBinding {
                 buffer_name: ResourceName::from("params.passA.graph"),
@@ -581,6 +584,9 @@ mod tests {
                 time: 0.0,
                 _pad0: 0.0,
                 color: [1.0, 1.0, 1.0, 1.0],
+                camera: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
             },
             graph_binding: Some(GraphBinding {
                 buffer_name: ResourceName::from("params.passA.graph"),
