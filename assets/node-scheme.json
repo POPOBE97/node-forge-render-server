@@ -8,6 +8,7 @@
   "nodeTypes": [
     "Attribute",
     "BoolInput",
+    "BloomNode",
     "CheckerTexture",
     "ColorInput",
     "ColorMix",
@@ -364,6 +365,93 @@
       "defaultParams": {
         "value": false
       }
+    },
+    {
+      "type": "BloomNode",
+      "label": "Bloom",
+      "category": "Filter",
+      "description": "Apply bloom/glare post-processing to a source pass",
+      "inputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "threshold",
+          "name": "Threshold",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "smoothness",
+          "name": "Smoothness",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "strength",
+          "name": "Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "saturation",
+          "name": "Saturation",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "tint",
+          "name": "Tint",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "size",
+          "name": "Size",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "glare",
+          "name": "Glare",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "CheckerTexture",

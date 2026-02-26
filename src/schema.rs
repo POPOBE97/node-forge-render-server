@@ -62,6 +62,8 @@ struct GeneratedPort {
     pub id: String,
     #[serde(rename = "type")]
     pub port_type: PortTypeSpec,
+    #[serde(default)]
+    pub default: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,6 +78,8 @@ pub struct NodeTypeScheme {
     pub outputs: HashMap<String, PortTypeSpec>,
     #[serde(default)]
     pub default_params: HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub input_defaults: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub params: HashMap<String, ParamScheme>,
 }
@@ -199,8 +203,14 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
         RawNodeScheme::Generated(s) => {
             let mut nodes: HashMap<String, NodeTypeScheme> = HashMap::new();
             for n in s.nodes {
-                let inputs: HashMap<String, PortTypeSpec> =
-                    n.inputs.into_iter().map(|p| (p.id, p.port_type)).collect();
+                let mut inputs: HashMap<String, PortTypeSpec> = HashMap::new();
+                let mut input_defaults: HashMap<String, serde_json::Value> = HashMap::new();
+                for p in n.inputs {
+                    if let Some(default) = p.default {
+                        input_defaults.insert(p.id.clone(), default);
+                    }
+                    inputs.insert(p.id, p.port_type);
+                }
                 let outputs: HashMap<String, PortTypeSpec> =
                     n.outputs.into_iter().map(|p| (p.id, p.port_type)).collect();
                 nodes.insert(
@@ -211,6 +221,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
                         inputs,
                         outputs,
                         default_params: n.default_params,
+                        input_defaults,
                         params: HashMap::new(),
                     },
                 );
@@ -221,6 +232,17 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
             }
         }
     })
+}
+
+pub fn input_port_default_value<'a>(
+    scheme: &'a NodeScheme,
+    node_type: &str,
+    port_id: &str,
+) -> Option<&'a serde_json::Value> {
+    scheme
+        .nodes
+        .get(node_type)
+        .and_then(|node_scheme| node_scheme.input_defaults.get(port_id))
 }
 
 pub fn validate_scene(scene: &SceneDSL) -> Result<()> {

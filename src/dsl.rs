@@ -285,11 +285,12 @@ fn apply_node_default_params(scene: &mut SceneDSL, scheme: &schema::NodeScheme) 
                 .insert("label".to_string(), serde_json::Value::String(fallback));
         }
 
-        if node_scheme.default_params.is_empty() {
+        if node_scheme.default_params.is_empty() && node_scheme.input_defaults.is_empty() {
             return;
         }
 
-        let mut merged = node_scheme.default_params.clone();
+        let mut merged = node_scheme.input_defaults.clone();
+        merged.extend(node_scheme.default_params.clone());
         for (k, v) in std::mem::take(&mut node.params) {
             merged.insert(k, v);
         }
@@ -494,6 +495,7 @@ fn f64_to_u32_floor(v: f64) -> Option<u32> {
 /// DSL semantics:
 /// - If there is an incoming connection to this input port, the connected upstream output wins.
 /// - Otherwise, fallback to `node.params[port_id]` (inline input / default params).
+/// - If still missing, fallback to bundled node-scheme input-port default value.
 ///
 /// This is intentionally minimal: it only implements the node subset needed for
 /// CPU-side parameter resolution (e.g. RenderTexture.width/height).
@@ -671,7 +673,21 @@ fn resolve_input_f64_inner(
     }
 
     let node = find_node(nodes_by_id, node_id)?;
-    Ok(parse_f64(&node.params, port_id))
+    if let Some(v) = parse_f64(&node.params, port_id) {
+        return Ok(Some(v));
+    }
+
+    let fallback = schema::load_default_scheme()
+        .ok()
+        .and_then(|scheme| {
+            schema::input_port_default_value(&scheme, &node.node_type, port_id).cloned()
+        })
+        .and_then(|v| {
+            v.as_f64()
+                .or_else(|| v.as_i64().map(|x| x as f64))
+                .or_else(|| v.as_u64().map(|x| x as f64))
+        });
+    Ok(fallback)
 }
 
 fn resolve_output_f64_inner(
