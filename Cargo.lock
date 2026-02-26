@@ -2910,6 +2910,7 @@ dependencies = [
  "crossbeam-channel",
  "deno_core",
  "gltf",
+ "half",
  "image",
  "metal",
  "naga 0.20.0",

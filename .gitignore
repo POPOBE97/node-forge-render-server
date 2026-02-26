@@ -27,3 +27,4 @@ tests/**/out/
 
 # 3rd
 /3rd/rust-wgpu-fiber
+.gitnexus
