@@ -1276,7 +1276,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let order = &prepared.topo_order;
 
     let resolved_contexts =
-        resolve_scene_draw_contexts(&prepared.scene, nodes_by_id, ids, resolution)?;
+        resolve_scene_draw_contexts(&prepared.scene, nodes_by_id, ids, resolution, asset_store)?;
     let composition_contexts = resolved_contexts.composition_contexts.clone();
     let composition_consumers_by_source = resolved_contexts.composition_consumers_by_source;
     let mut draw_coord_size_by_pass: HashMap<String, [f32; 2]> = HashMap::new();

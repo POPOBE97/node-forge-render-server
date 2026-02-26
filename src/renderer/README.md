@@ -71,7 +71,7 @@ Render-plan helpers used by WGSL generation and ShaderSpace assembly:
 
 ### geometry_resolver/
 Canonical coordination and geometry context inference:
-- `resolve_scene_draw_contexts()` - Single entrypoint for draw-pass context resolution
+- `resolve_scene_draw_contexts(..., asset_store)` - Single entrypoint for draw-pass context resolution
 - Node role classification: `DrawPass`, `CompositionRoute`, `Other`
 - Resolved geometry placement is preserved across both processing and composition edges
 - Composition contexts and consumer mappings used by assembler

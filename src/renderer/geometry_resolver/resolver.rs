@@ -4,6 +4,7 @@ use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::ResourceName;
 
 use crate::{
+    asset_store::AssetStore,
     dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
         geometry_resolver::types::{
@@ -150,6 +151,7 @@ fn resolve_draw_geometry(
     ids: &HashMap<String, ResourceName>,
     pass_node_id: &str,
     coord_size_px: [f32; 2],
+    asset_store: Option<&AssetStore>,
 ) -> Result<ResolvedGeometry> {
     let pass_node = find_node(nodes_by_id, pass_node_id)?;
     if pass_node.node_type != "RenderPass" {
@@ -175,7 +177,7 @@ fn resolve_draw_geometry(
         &geometry_node_id,
         coord_size_px,
         None,
-        None,
+        asset_store,
     )?;
 
     Ok(ResolvedGeometry {
@@ -191,6 +193,7 @@ pub fn resolve_scene_draw_contexts(
     nodes_by_id: &HashMap<String, Node>,
     ids: &HashMap<String, ResourceName>,
     default_resolution: [u32; 2],
+    asset_store: Option<&AssetStore>,
 ) -> Result<ResolvedSceneContexts> {
     let mut out = ResolvedSceneContexts::default();
     let mut composition_layers_by_id: HashMap<String, Vec<String>> = HashMap::new();
@@ -285,6 +288,7 @@ pub fn resolve_scene_draw_contexts(
             ids,
             &conn.from.node_id,
             coord_domain.size_px,
+            asset_store,
         )?;
         out.draw_contexts.push(ResolvedDrawContext {
             pass_node_id: conn.from.node_id.clone(),
@@ -412,7 +416,7 @@ mod tests {
             nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let resolved =
-            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080]).unwrap();
+            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
         let rp_to_ds = resolved
             .draw_contexts
             .iter()
@@ -451,7 +455,7 @@ mod tests {
             nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let resolved =
-            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080]).unwrap();
+            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
         let rp_ctx = resolved
             .draw_contexts
             .iter()
@@ -491,7 +495,7 @@ mod tests {
             nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let resolved =
-            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080]).unwrap();
+            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
         let rp_to_ds = resolved
             .draw_contexts
             .iter()
@@ -523,7 +527,7 @@ mod tests {
             nodes.into_iter().map(|n| (n.id.clone(), n)).collect();
 
         let resolved =
-            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080]).unwrap();
+            resolve_scene_draw_contexts(&scene, &nodes_by_id, &ids, [1920, 1080], None).unwrap();
         assert!(
             resolved
                 .draw_contexts
