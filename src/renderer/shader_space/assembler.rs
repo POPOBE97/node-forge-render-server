@@ -5298,12 +5298,28 @@ pub(crate) fn build_shader_space_from_scene_internal(
         }
     }
 
-    // Clear each render texture only on its first write per frame.
-    // If multiple RenderPass nodes target the same RenderTexture, subsequent passes should Load so
+    // Clear each render texture only on its first write in actual execution order.
+    // If multiple passes target the same texture, subsequent passes must Load so
     // alpha blending can accumulate.
+    //
+    // Important: execution order is driven by `composite_passes` (including warmup/deferred
+    // rewrites), not by `render_pass_specs` insertion order.
     {
+        let pass_order: HashMap<ResourceName, usize> = composite_passes
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.clone(), idx))
+            .collect();
+
+        let mut spec_indices_by_exec_order: Vec<usize> = (0..render_pass_specs.len()).collect();
+        spec_indices_by_exec_order.sort_by_key(|idx| {
+            let name = &render_pass_specs[*idx].name;
+            pass_order.get(name).copied().unwrap_or(usize::MAX)
+        });
+
         let mut seen_targets: HashSet<ResourceName> = HashSet::new();
-        for spec in &mut render_pass_specs {
+        for idx in spec_indices_by_exec_order {
+            let spec = &mut render_pass_specs[idx];
             if seen_targets.insert(spec.target_texture.clone()) {
                 spec.color_load_op = wgpu::LoadOp::Clear(Color::TRANSPARENT);
             } else {
