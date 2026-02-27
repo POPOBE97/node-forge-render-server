@@ -31,50 +31,49 @@ var<uniform> params: Params;
   };
 
 
+struct GraphInputs {
+    // Node: ColorInput_7
+    node_ColorInput_7_fa5c7029: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
-@group(1) @binding(0)
-var pass_tex_RenderPass_4: texture_2d<f32>;
-
-@group(1) @binding(1)
-var pass_samp_RenderPass_4: sampler;
-
-@group(1) @binding(2)
-var pass_tex_Upsample_41: texture_2d<f32>;
-
-@group(1) @binding(3)
-var pass_samp_Upsample_41: sampler;
-
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_42_(uv: vec2<f32>) -> vec4<f32> {
+fn mc_MathClosure_45_(uv: vec2<f32>, t: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
-    var output: vec4<f32> = vec4(0f);
-    var c_l0_: vec4<f32>;
-    var c_l1_: vec4<f32>;
+    var t_1: f32;
+    var output: vec3<f32> = vec3(0f);
 
     uv_1 = uv;
-    let _e6: vec2<f32> = uv_1;
-    let _e7: vec4<f32> = sample_pass_RenderPass_4_(_e6);
-    c_l0_ = _e7;
-    let _e10: vec2<f32> = uv_1;
-    let _e11: vec4<f32> = sample_pass_Upsample_41_(_e10);
-    c_l1_ = _e11;
-    let _e13: vec4<f32> = c_l0_;
-    let _e14: vec4<f32> = c_l1_;
-    output = (_e13 + _e14);
-    let _e16: vec4<f32> = output;
-    return _e16;
+    t_1 = t;
+    let _e8: f32 = t_1;
+    let _e11: f32 = t_1;
+    output = vec3<f32>(0f, (fract((_e11 / 5f)) * 180f), 0f);
+    let _e19: vec3<f32> = output;
+    return _e19;
 }
 
-fn sample_pass_RenderPass_4_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_RenderPass_4, pass_samp_RenderPass_4, uv_in);
-}
 
-fn sample_pass_Upsample_41_(uv_in: vec2f) -> vec4f {
-    return textureSample(pass_tex_Upsample_41, pass_samp_Upsample_41, uv_in);
-}
+fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
+    let rad = r_deg * 0.017453292519943295;
 
+    let cx = cos(rad.x);
+    let sx = sin(rad.x);
+    let cy = cos(rad.y);
+    let sy = sin(rad.y);
+    let cz = cos(rad.z);
+    let sz = sin(rad.z);
+
+    let p0 = p * s;
+    let p1 = vec3f(p0.x, p0.y * cx - p0.z * sx, p0.y * sx + p0.z * cx);
+    let p2 = vec3f(p1.x * cy + p1.z * sy, p1.y, -p1.x * sy + p1.z * cy);
+    let p3 = vec3f(p2.x * cz - p2.y * sz, p2.x * sz + p2.y * cz, p2.z);
+    return p3 + t;
+}
 
  @vertex
  fn vs_main(
@@ -83,6 +82,13 @@ fn sample_pass_Upsample_41_(uv_in: vec2f) -> vec4f {
  ) -> VSOut {
  var out: VSOut;
 
+    var mc_MathClosure_45_out: vec3f;
+    {
+        let t = params.time;
+        var output: vec3f;
+        output = mc_MathClosure_45_(uv, t);
+        mc_MathClosure_45_out = output;
+    }
  let _unused_geo_size = params.geo_size;
  let _unused_geo_translate = params.geo_translate;
  let _unused_geo_scale = params.geo_scale;
@@ -95,6 +101,8 @@ fn sample_pass_Upsample_41_(uv_in: vec2f) -> vec4f {
  out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
 
  var p_local = position;
+ let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540, 1200, 0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0, 0, 0)) + (mc_MathClosure_45_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
+ p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

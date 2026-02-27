@@ -2571,7 +2571,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         [0.0, 0.0, 0.0, 0.0],
                     );
 
-                    let ds_bundle = build_downsample_bundle(2)?;
+                    let bloom_crossbox_kernel = Kernel2D {
+                        width: 3,
+                        height: 3,
+                        values: vec![0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0],
+                    };
+                    let ds_bundle = build_downsample_pass_wgsl_bundle(&bloom_crossbox_kernel)?;
                     let ds_pass_name: ResourceName =
                         format!("sys.bloom.{layer_id}.mip{level}.down.pass").into();
                     render_pass_specs.push(RenderPassSpec {
@@ -2592,7 +2597,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             texture: prev_tex.clone(),
                             image_node_id: None,
                         }],
-                        sampler_kinds: vec![SamplerKind::LinearMirror],
+                        sampler_kinds: vec![SamplerKind::LinearClamp],
                         blend_state: BlendState::REPLACE,
                         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                         sample_count: 1,
@@ -2828,7 +2833,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 texture: v_tex,
                                 image_node_id: None,
                             }],
-                            sampler_kinds: vec![SamplerKind::LinearMirror],
+                            sampler_kinds: vec![SamplerKind::LinearClamp],
                             blend_state: BlendState::REPLACE,
                             color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                             sample_count: 1,
