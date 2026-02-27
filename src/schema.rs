@@ -290,7 +290,7 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
             }
         }
 
-        if let Err(msg) = validate_render_pass_msaa_sample_count(n) {
+        if let Err(msg) = validate_render_pass_params(n) {
             errors.push(msg);
         }
 
@@ -314,32 +314,89 @@ pub fn validate_scene_against(scene: &SceneDSL, scheme: &NodeScheme) -> Result<(
     }
 }
 
-fn validate_render_pass_msaa_sample_count(node: &Node) -> std::result::Result<(), String> {
+fn validate_render_pass_params(node: &Node) -> std::result::Result<(), String> {
     if node.node_type != "RenderPass" {
         return Ok(());
     }
 
-    let Some(value) = node.params.get("msaaSampleCount") else {
-        return Ok(());
-    };
+    if let Some(value) = node.params.get("msaaSampleCount") {
+        let Some(v) = value
+            .as_i64()
+            .or_else(|| value.as_u64().and_then(|x| i64::try_from(x).ok()))
+        else {
+            return Err(format!(
+                "invalid RenderPass.msaaSampleCount for '{}': expected integer, got {}",
+                node.id, value
+            ));
+        };
 
-    let Some(v) = value
-        .as_i64()
-        .or_else(|| value.as_u64().and_then(|x| i64::try_from(x).ok()))
-    else {
-        return Err(format!(
-            "invalid RenderPass.msaaSampleCount for '{}': expected integer, got {}",
-            node.id, value
-        ));
-    };
+        if !matches!(v, 1 | 2 | 4 | 8) {
+            return Err(format!(
+                "invalid RenderPass.msaaSampleCount for '{}': must be one of 1,2,4,8, got {}",
+                node.id, v
+            ));
+        }
+    }
 
-    if matches!(v, 1 | 2 | 4 | 8) {
-        Ok(())
-    } else {
-        Err(format!(
-            "invalid RenderPass.msaaSampleCount for '{}': must be one of 1,2,4,8, got {}",
-            node.id, v
+    if let Some(value) = node.params.get("culling") {
+        let Some(culling) = value.as_str() else {
+            return Err(format!(
+                "invalid RenderPass.culling for '{}': expected string, got {}",
+                node.id, value
+            ));
+        };
+        if !matches!(culling, "none" | "front" | "back") {
+            return Err(format!(
+                "invalid RenderPass.culling for '{}': must be one of none,front,back, got {}",
+                node.id, culling
+            ));
+        }
+    }
+
+    if let Some(value) = node.params.get("depthTest") {
+        if !value.is_boolean() {
+            return Err(format!(
+                "invalid RenderPass.depthTest for '{}': expected boolean, got {}",
+                node.id, value
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn render_pass_depth_test_enabled(node: &Node, scheme: &NodeScheme) -> bool {
+    if node.node_type != "RenderPass" {
+        return false;
+    }
+
+    if let Some(enabled) = node.params.get("depthTest").and_then(|v| v.as_bool()) {
+        return enabled;
+    }
+
+    scheme
+        .nodes
+        .get("RenderPass")
+        .and_then(|s| s.default_params.get("depthTest"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+fn validate_render_pass_depth_connection(
+    c: &Connection,
+    from_node: &Node,
+    scheme: &NodeScheme,
+) -> Option<String> {
+    if from_node.node_type == "RenderPass"
+        && c.from.port_id == "depth"
+        && !render_pass_depth_test_enabled(from_node, scheme)
+    {
+        Some(format!(
+            "connection '{}' references '{}.depth' but RenderPass.depthTest is false; enable depthTest=true to use depth output",
+            c.id, from_node.id
         ))
+    } else {
+        None
     }
 }
 
@@ -653,6 +710,11 @@ fn validate_connection(
     let Some(to_scheme) = scheme.nodes.get(&to_node.node_type) else {
         return;
     };
+
+    if let Some(msg) = validate_render_pass_depth_connection(c, from_node, scheme) {
+        errors.push(msg);
+        return;
+    }
 
     let from_ty: Cow<'_, PortTypeSpec> = if from_node.node_type == "MathMultiply" {
         // MathMultiply output is instance-defined: editor now exports inferred output type in
