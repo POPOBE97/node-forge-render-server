@@ -114,7 +114,6 @@ fn emit_non_root_with_deps(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     pass_node_id: &str,
-    current_root_id: &str,
     current_root_index: usize,
     root_index_by_id: &HashMap<String, usize>,
     deps_cache: &mut HashMap<String, Vec<String>>,
@@ -128,18 +127,16 @@ fn emit_non_root_with_deps(
 
     if let Some(dep_root_index) = root_index_by_id.get(pass_node_id).copied() {
         if dep_root_index > current_root_index {
-            bail!(
-                "Composite strict draw order violation: layer '{current_root_id}' depends on later layer '{pass_node_id}'. Reorder Composite inputs so dependencies appear earlier."
-            );
+            // Keep root draw order strict. Forward root dependencies are handled by
+            // precompute/warmup scheduling in assembler.
+            return Ok(());
         }
         if dep_root_index == current_root_index {
-            bail!(
-                "cycle detected in pass dependencies: layer '{current_root_id}' depends on itself"
-            );
+            bail!("cycle detected in pass dependencies at root layer: {pass_node_id}");
         }
         if !emitted.contains(pass_node_id) {
             bail!(
-                "internal ordering error: earlier root dependency '{pass_node_id}' for '{current_root_id}' was not emitted"
+                "internal ordering error: earlier root dependency '{pass_node_id}' was not emitted"
             );
         }
         return Ok(());
@@ -162,7 +159,6 @@ fn emit_non_root_with_deps(
             scene,
             nodes_by_id,
             dep.as_str(),
-            current_root_id,
             current_root_index,
             root_index_by_id,
             deps_cache,
@@ -211,7 +207,6 @@ pub(crate) fn compute_pass_render_order(
                 scene,
                 nodes_by_id,
                 dep.as_str(),
-                root.as_str(),
                 root_index,
                 &root_index_by_id,
                 &mut deps_cache,
@@ -226,6 +221,86 @@ pub(crate) fn compute_pass_render_order(
     }
 
     Ok(out)
+}
+
+fn collect_root_dependencies_recursive(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node_id: &str,
+    root_index_by_id: &HashMap<String, usize>,
+    deps_cache: &mut HashMap<String, Vec<String>>,
+    visiting: &mut HashSet<String>,
+    out_root_deps: &mut HashSet<String>,
+) -> Result<()> {
+    if !visiting.insert(node_id.to_string()) {
+        bail!("cycle detected in pass dependencies at: {node_id}");
+    }
+
+    let deps = if let Some(existing) = deps_cache.get(node_id) {
+        existing.clone()
+    } else {
+        let deps = deps_for_pass_node(scene, nodes_by_id, node_id)?;
+        deps_cache.insert(node_id.to_string(), deps.clone());
+        deps
+    };
+
+    for dep in deps {
+        if root_index_by_id.contains_key(&dep) {
+            out_root_deps.insert(dep);
+            continue;
+        }
+        collect_root_dependencies_recursive(
+            scene,
+            nodes_by_id,
+            dep.as_str(),
+            root_index_by_id,
+            deps_cache,
+            visiting,
+            out_root_deps,
+        )?;
+    }
+
+    visiting.remove(node_id);
+    Ok(())
+}
+
+pub(crate) fn forward_root_dependencies_from_roots(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    roots_in_draw_order: &[String],
+) -> Result<HashSet<String>> {
+    let mut root_index_by_id: HashMap<String, usize> = HashMap::new();
+    for (index, root) in roots_in_draw_order.iter().enumerate() {
+        root_index_by_id.entry(root.clone()).or_insert(index);
+    }
+
+    let mut deps_cache: HashMap<String, Vec<String>> = HashMap::new();
+    let mut forward_roots: HashSet<String> = HashSet::new();
+
+    for (root_index, root) in roots_in_draw_order.iter().enumerate() {
+        let mut root_deps: HashSet<String> = HashSet::new();
+        let mut visiting: HashSet<String> = HashSet::new();
+        collect_root_dependencies_recursive(
+            scene,
+            nodes_by_id,
+            root.as_str(),
+            &root_index_by_id,
+            &mut deps_cache,
+            &mut visiting,
+            &mut root_deps,
+        )?;
+
+        for dep_root in root_deps {
+            if root_index_by_id
+                .get(&dep_root)
+                .is_some_and(|dep_index| *dep_index > root_index)
+            {
+                forward_roots.insert(dep_root);
+            }
+        }
+    }
+
+    Ok(forward_roots)
 }
 
 pub(crate) fn sampled_pass_node_ids_from_roots(
@@ -272,7 +347,10 @@ mod tests {
 
     use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
 
-    use super::{compute_pass_render_order, sampled_pass_node_ids_from_roots};
+    use super::{
+        compute_pass_render_order, forward_root_dependencies_from_roots,
+        sampled_pass_node_ids_from_roots,
+    };
 
     fn node(id: &str, node_type: &str) -> Node {
         Node {
@@ -734,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_root_order_rejects_forward_dependency_on_later_root() {
+    fn forward_root_dependency_is_collected_for_warmup() -> Result<()> {
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: Metadata {
@@ -766,15 +844,22 @@ mod tests {
             .map(|n| (n.id.clone(), n))
             .collect();
 
-        let err = compute_pass_render_order(
+        let order = compute_pass_render_order(
             &scene,
             &nodes_by_id,
             &[String::from("first"), String::from("later")],
-        )
-        .expect_err("forward dependency should fail under strict root order");
+        )?;
+        assert_eq!(order, vec!["first", "later"]);
+
+        let warmups = forward_root_dependencies_from_roots(
+            &scene,
+            &nodes_by_id,
+            &[String::from("first"), String::from("later")],
+        )?;
         assert!(
-            format!("{err:#}").contains("depends on later layer"),
-            "unexpected error: {err:#}"
+            warmups.contains("later"),
+            "later should be marked for warmup, got: {warmups:?}"
         );
+        Ok(())
     }
 }

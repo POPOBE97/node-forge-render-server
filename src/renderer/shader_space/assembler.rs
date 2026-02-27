@@ -1328,7 +1328,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     // Pass nodes sampled by reachable downstream pass nodes must have dedicated
     // intermediate outputs. Restrict to currently reachable pass roots to avoid
     // dead branches forcing sampled-output paths.
-    let sampled_pass_ids = crate::renderer::render_plan::sampled_pass_node_ids_from_roots(
+    let mut sampled_pass_ids = crate::renderer::render_plan::sampled_pass_node_ids_from_roots(
         &prepared.scene,
         nodes_by_id,
         composite_layers_in_order,
@@ -1509,6 +1509,30 @@ pub(crate) fn build_shader_space_from_scene_internal(
         nodes_by_id,
         composite_layers_in_order,
     )?;
+    let warmup_root_ids = crate::renderer::render_plan::forward_root_dependencies_from_roots(
+        &prepared.scene,
+        nodes_by_id,
+        composite_layers_in_order,
+    )?;
+    sampled_pass_ids.extend(warmup_root_ids.iter().cloned());
+
+    let warmup_items: Vec<(String, bool)> = composite_layers_in_order
+        .iter()
+        .filter(|id| warmup_root_ids.contains(*id))
+        .cloned()
+        .map(|id| (id, true))
+        .collect();
+    let normal_items: Vec<(String, bool)> = pass_nodes_in_order
+        .iter()
+        .cloned()
+        .map(|id| (id, false))
+        .collect();
+    let mut execution_items: Vec<(String, bool)> =
+        Vec::with_capacity(warmup_items.len() + normal_items.len());
+    execution_items.extend(warmup_items);
+    execution_items.extend(normal_items);
+    let mut deferred_target_compose_passes_by_layer: HashMap<String, Vec<ResourceName>> =
+        HashMap::new();
 
     // Pass nodes used as resample/filter sources keep special dynamic-geometry fullscreen handling.
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
@@ -1558,7 +1582,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
         }
     }
 
-    for layer_id in &pass_nodes_in_order {
+    for (layer_id, is_warmup_pass) in &execution_items {
+        let layer_id = layer_id;
+        if !*is_warmup_pass && warmup_root_ids.contains(layer_id) {
+            if let Some(deferred_passes) = deferred_target_compose_passes_by_layer.get(layer_id) {
+                composite_passes.extend(deferred_passes.iter().cloned());
+                continue;
+            }
+        }
+
+        let branch_spec_start = render_pass_specs.len();
+        let branch_composite_start = composite_passes.len();
         let layer_node = find_node(&nodes_by_id, layer_id)?;
         match layer_node.node_type.as_str() {
             "RenderPass" => {
@@ -5169,6 +5203,33 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     "Composite layer must be a pass node (RenderPass/GuassianBlurPass/Downsample/Upsample/GradientBlur/Composite), got {other} for {layer_id}. \
                      To enable chain support for new pass types, update is_pass_node() and add handling here."
                 )
+            }
+        }
+
+        if *is_warmup_pass {
+            let target_writer_names: HashSet<ResourceName> = render_pass_specs[branch_spec_start..]
+                .iter()
+                .filter(|spec| spec.target_texture == target_texture_name)
+                .map(|spec| spec.name.clone())
+                .collect();
+            if !target_writer_names.is_empty() {
+                let prefix: Vec<ResourceName> = composite_passes[..branch_composite_start].to_vec();
+                let mut deferred: Vec<ResourceName> = Vec::new();
+                let mut suffix: Vec<ResourceName> = Vec::new();
+                for name in composite_passes[branch_composite_start..].iter().cloned() {
+                    if target_writer_names.contains(&name) {
+                        deferred.push(name);
+                    } else {
+                        suffix.push(name);
+                    }
+                }
+                if !deferred.is_empty() {
+                    deferred_target_compose_passes_by_layer
+                        .entry(layer_id.clone())
+                        .or_default()
+                        .extend(deferred);
+                }
+                composite_passes = prefix.into_iter().chain(suffix.into_iter()).collect();
             }
         }
     }
