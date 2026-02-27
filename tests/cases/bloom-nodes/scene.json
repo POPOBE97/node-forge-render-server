@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-27T08:11:05.651Z",
-    "modified": "2026-02-27T08:11:05.651Z"
+    "created": "2026-02-27T08:36:23.468Z",
+    "modified": "2026-02-27T08:36:23.468Z"
   },
   "nodes": [
     {
@@ -190,8 +190,8 @@
       "id": "Kernel_11",
       "type": "Kernel",
       "position": {
-        "x": -860,
-        "y": 440
+        "x": -1300,
+        "y": 640
       },
       "width": 160,
       "label": "Mip1",
@@ -255,20 +255,6 @@
       }
     },
     {
-      "id": "Kernel_13",
-      "type": "Kernel",
-      "position": {
-        "x": -860,
-        "y": 860
-      },
-      "width": 160,
-      "label": "Mip2",
-      "params": {
-        "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
-      }
-    },
-    {
       "id": "Downsample_14",
       "type": "Downsample",
       "position": {
@@ -307,20 +293,6 @@
           0,
           1
         ]
-      }
-    },
-    {
-      "id": "Kernel_15",
-      "type": "Kernel",
-      "position": {
-        "x": -860,
-        "y": 1280
-      },
-      "width": 160,
-      "label": "Mip3",
-      "params": {
-        "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
     },
     {
@@ -365,20 +337,6 @@
       }
     },
     {
-      "id": "Kernel_17",
-      "type": "Kernel",
-      "position": {
-        "x": -860,
-        "y": 1700
-      },
-      "width": 160,
-      "label": "Mip4",
-      "params": {
-        "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
-      }
-    },
-    {
       "id": "Downsample_18",
       "type": "Downsample",
       "position": {
@@ -420,20 +378,6 @@
       }
     },
     {
-      "id": "Kernel_19",
-      "type": "Kernel",
-      "position": {
-        "x": -860,
-        "y": 2120
-      },
-      "width": 160,
-      "label": "Mip5",
-      "params": {
-        "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
-      }
-    },
-    {
       "id": "Downsample_20",
       "type": "Downsample",
       "position": {
@@ -472,20 +416,6 @@
           0,
           1
         ]
-      }
-    },
-    {
-      "id": "Kernel_21",
-      "type": "Kernel",
-      "position": {
-        "x": -860,
-        "y": 2540
-      },
-      "width": 160,
-      "label": "Mip6",
-      "params": {
-        "preset": "CrossBox",
-        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
       }
     },
     {
@@ -1471,61 +1401,6 @@
       }
     },
     {
-      "id": "edge_12",
-      "from": {
-        "nodeId": "Kernel_13",
-        "portId": "kernel"
-      },
-      "to": {
-        "nodeId": "Downsample_12",
-        "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_14",
-      "from": {
-        "nodeId": "Kernel_15",
-        "portId": "kernel"
-      },
-      "to": {
-        "nodeId": "Downsample_14",
-        "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_16",
-      "from": {
-        "nodeId": "Kernel_17",
-        "portId": "kernel"
-      },
-      "to": {
-        "nodeId": "Downsample_16",
-        "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_18",
-      "from": {
-        "nodeId": "Kernel_19",
-        "portId": "kernel"
-      },
-      "to": {
-        "nodeId": "Downsample_18",
-        "portId": "kernel"
-      }
-    },
-    {
-      "id": "edge_20",
-      "from": {
-        "nodeId": "Kernel_21",
-        "portId": "kernel"
-      },
-      "to": {
-        "nodeId": "Downsample_20",
-        "portId": "kernel"
-      }
-    },
-    {
       "id": "edge_23",
       "from": {
         "nodeId": "RenderPass_4",
@@ -1930,6 +1805,61 @@
       "to": {
         "nodeId": "RenderPass_4",
         "portId": "camera"
+      }
+    },
+    {
+      "id": "edge_80",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_12",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_81",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_14",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_82",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_16",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_83",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_18",
+        "portId": "kernel"
+      }
+    },
+    {
+      "id": "edge_84",
+      "from": {
+        "nodeId": "Kernel_11",
+        "portId": "kernel"
+      },
+      "to": {
+        "nodeId": "Downsample_20",
+        "portId": "kernel"
       }
     }
   ],
