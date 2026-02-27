@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-26T17:32:34.515Z",
-    "modified": "2026-02-26T17:32:34.515Z"
+    "created": "2026-02-27T08:12:00.665Z",
+    "modified": "2026-02-27T08:12:00.665Z"
   },
   "nodes": [
     {
@@ -24,7 +24,7 @@
       "id": "GLTFGeometry_2",
       "type": "GLTFGeometry",
       "position": {
-        "x": -840,
+        "x": -660,
         "y": 280
       },
       "width": 192,
@@ -38,20 +38,22 @@
       "id": "RenderPass_4",
       "type": "RenderPass",
       "position": {
-        "x": -420,
+        "x": -240,
         "y": 280
       },
       "width": 160,
       "label": "Mip0",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "add",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
-        "dst_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
         "msaaSampleCount": 4,
+        "culling": "back",
+        "depthTest": false,
         "camera": [
           1,
           0,
@@ -147,8 +149,8 @@
       "id": "ColorInput_7",
       "type": "ColorInput",
       "position": {
-        "x": -620,
-        "y": 660
+        "x": -440,
+        "y": 580
       },
       "width": 160,
       "label": "Color Input",
@@ -165,7 +167,7 @@
       "id": "SetTransform_22",
       "type": "SetTransform",
       "position": {
-        "x": -620,
+        "x": -440,
         "y": 280
       },
       "width": 160,
@@ -196,19 +198,19 @@
         "x": 220,
         "y": 480
       },
-      "width": 192,
+      "width": 160,
       "label": "Reference Image",
       "params": {
         "assetId": "681a91c88147",
         "encoderSpace": "srgb",
-        "alphaMode": "straight"
+        "alphaMode": "premultiplied"
       }
     },
     {
       "id": "BloomNode_44",
       "type": "BloomNode",
       "position": {
-        "x": -180,
+        "x": 0,
         "y": 280
       },
       "width": 160,
@@ -225,6 +227,88 @@
           1
         ],
         "size": 0.55
+      }
+    },
+    {
+      "id": "MathClosure_45",
+      "type": "MathClosure",
+      "position": {
+        "x": -660,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = vec3(\n  0.0,\n  fract(t / 5.0) * 180.0,\n  0.0\n);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1772173204036_1",
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1772173204036_1",
+          "label": "t",
+          "variableName": "t",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "TimeInput_46",
+            "outputPortId": "time",
+            "outputLabel": "Time"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TimeInput_46",
+      "type": "TimeInput",
+      "position": {
+        "x": -840,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Time Input",
+      "params": {}
+    },
+    {
+      "id": "PerspectiveCamera_47",
+      "type": "PerspectiveCamera",
+      "position": {
+        "x": -440,
+        "y": -180
+      },
+      "width": 160,
+      "label": "Perspective Camera",
+      "params": {
+        "position": {
+          "x": 540,
+          "y": 1200,
+          "z": 1200
+        },
+        "target": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "fovY": 120,
+        "aspect": 0.45,
+        "near": 0.1,
+        "far": 4000
       }
     }
   ],
@@ -296,7 +380,40 @@
       }
     },
     {
-      "id": "edge_78",
+      "id": "edge_81",
+      "from": {
+        "nodeId": "TimeInput_46",
+        "portId": "time"
+      },
+      "to": {
+        "nodeId": "MathClosure_45",
+        "portId": "dynamic_1772173204036_1"
+      }
+    },
+    {
+      "id": "edge_82",
+      "from": {
+        "nodeId": "MathClosure_45",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "rotate"
+      }
+    },
+    {
+      "id": "edge_83",
+      "from": {
+        "nodeId": "PerspectiveCamera_47",
+        "portId": "camera"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "camera"
+      }
+    },
+    {
+      "id": "edge_85",
       "from": {
         "nodeId": "BloomNode_44",
         "portId": "glare"
@@ -307,7 +424,7 @@
       }
     },
     {
-      "id": "edge_79",
+      "id": "edge_86",
       "from": {
         "nodeId": "RenderPass_4",
         "portId": "pass"
