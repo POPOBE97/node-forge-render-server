@@ -722,6 +722,9 @@ struct TextureDecl {
     size: [u32; 2],
     format: TextureFormat,
     sample_count: u32,
+    /// When true, include `TEXTURE_BINDING` even for multi-sampled textures
+    /// (e.g. depth attachments read by a depth-resolve pass via `textureLoad`).
+    needs_sampling: bool,
 }
 
 #[derive(Clone)]
@@ -744,6 +747,77 @@ struct RenderPassSpec {
     blend_state: BlendState,
     color_load_op: wgpu::LoadOp<Color>,
     sample_count: u32,
+}
+
+/// Depth-resolve pass: reads a Depth32Float attachment and writes a regular
+/// colour texture so that downstream consumers can sample it via texture_2d<f32>.
+#[derive(Clone)]
+struct DepthResolvePass {
+    pass_name: ResourceName,
+    geometry_buffer: ResourceName,
+    params_buffer: ResourceName,
+    params: Params,
+    depth_texture: ResourceName,
+    dst_texture: ResourceName,
+    shader_wgsl: String,
+    is_multisampled: bool,
+}
+
+fn build_depth_resolve_wgsl(multisampled: bool) -> String {
+    let depth_tex_type = if multisampled {
+        "texture_depth_multisampled_2d"
+    } else {
+        "texture_depth_2d"
+    };
+    // For both types textureLoad takes (tex, coord, sample_or_level) where the
+    // third argument is a sample index (multisampled) or mip level (non-ms).
+    let load_arg = "0";
+    format!(
+        r#"struct Params {{
+    target_size: vec2f,
+    geo_size: vec2f,
+    center: vec2f,
+    geo_translate: vec2f,
+    geo_scale: vec2f,
+    time: f32,
+    _pad0: f32,
+    color: vec4f,
+    camera: mat4x4f,
+}};
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+struct VSOut {{
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+    @location(1) frag_coord_gl: vec2f,
+    @location(2) local_px: vec3f,
+    @location(3) geo_size_px: vec2f,
+}};
+
+@group(1) @binding(0)
+var depth_tex: {depth_tex_type};
+
+@vertex
+fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
+    var out: VSOut;
+    out.uv = uv;
+    out.geo_size_px = params.geo_size;
+    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+    let p_px = params.center + position.xy;
+    out.position = params.camera * vec4f(p_px, position.z, 1.0);
+    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
+    return out;
+}}
+
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4f {{
+    let coord = vec2<i32>(in.position.xy);
+    let d = textureLoad(depth_tex, coord, {load_arg});
+    return vec4f(d, d, d, 1.0);
+}}"#
+    )
 }
 
 fn parse_render_pass_cull_mode(params: &HashMap<String, serde_json::Value>) -> Result<Option<wgpu::Face>> {
@@ -1313,6 +1387,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
     let mut pass_cull_mode_by_name: HashMap<ResourceName, Option<wgpu::Face>> = HashMap::new();
     let mut pass_depth_attachment_by_name: HashMap<ResourceName, ResourceName> = HashMap::new();
+    let mut depth_resolve_passes: Vec<DepthResolvePass> = Vec::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
     // Output target texture is always Composite.target.
@@ -1429,6 +1504,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: [w, h],
                     format,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
             }
             _ => {}
@@ -1496,6 +1572,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: [tgt_w_u, tgt_h_u],
                     format: TextureFormat::Rgba8Unorm,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
                 Some(name)
             }
@@ -1512,6 +1589,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: [tgt_w_u, tgt_h_u],
                     format: TextureFormat::Rgba16Float,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
                 Some(name)
             }
@@ -1758,6 +1836,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: [w_u, h_u],
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     (w_u, h_u, out_tex)
                 } else {
@@ -1782,6 +1861,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: [pass_target_w_u, pass_target_h_u],
                         format: pass_output_format,
                         sample_count: msaa_sample_count,
+                        needs_sampling: false,
                     });
                     (msaa_tex, Some(pass_output_texture.clone()))
                 } else {
@@ -1794,6 +1874,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: [pass_target_w_u, pass_target_h_u],
                         format: TextureFormat::Depth32Float,
                         sample_count: msaa_sample_count,
+                        needs_sampling: true,
                     });
                     Some(depth_tex)
                 } else {
@@ -2164,13 +2245,166 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 }
                 composite_passes.push(pass_name);
 
+                // Build depth-resolve pass BEFORE compose passes so that it
+                // executes first and the resolved texture is ready to sample.
+                let resolved_depth_tex: Option<ResourceName> = if depth_test_enabled {
+                    let depth_tex = depth_stencil_attachment.clone().unwrap();
+                    let is_multisampled_depth = msaa_sample_count > 1;
+
+                    let resolved: ResourceName =
+                        format!("sys.pass.{layer_id}.depth.resolved").into();
+                    textures.push(TextureDecl {
+                        name: resolved.clone(),
+                        size: [pass_target_w_u, pass_target_h_u],
+                        format: sampled_pass_format,
+                        sample_count: 1,
+                        needs_sampling: false,
+                    });
+
+                    let depth_resolve_geo: ResourceName =
+                        format!("sys.pass.{layer_id}.depth.resolve.geo").into();
+                    let depth_resolve_params_name: ResourceName =
+                        format!("params.sys.pass.{layer_id}.depth.resolve").into();
+                    let depth_resolve_camera = legacy_projection_camera_matrix([
+                        pass_target_w_u as f32,
+                        pass_target_h_u as f32,
+                    ]);
+                    let depth_resolve_params = make_params(
+                        [pass_target_w_u as f32, pass_target_h_u as f32],
+                        [pass_target_w_u as f32, pass_target_h_u as f32],
+                        [pass_target_w_u as f32 * 0.5, pass_target_h_u as f32 * 0.5],
+                        depth_resolve_camera,
+                        [0.0, 0.0, 0.0, 0.0],
+                    );
+
+                    let depth_resolve_pass_name: ResourceName =
+                        format!("sys.pass.{layer_id}.depth.resolve.pass").into();
+                    let depth_resolve_wgsl = build_depth_resolve_wgsl(is_multisampled_depth);
+
+                    depth_resolve_passes.push(DepthResolvePass {
+                        pass_name: depth_resolve_pass_name.clone(),
+                        geometry_buffer: depth_resolve_geo,
+                        params_buffer: depth_resolve_params_name,
+                        params: depth_resolve_params,
+                        depth_texture: depth_tex,
+                        dst_texture: resolved.clone(),
+                        shader_wgsl: depth_resolve_wgsl,
+                        is_multisampled: is_multisampled_depth,
+                    });
+
+                    composite_passes.push(depth_resolve_pass_name);
+
+                    pass_output_registry.register_for_port(
+                        PassOutputSpec {
+                            node_id: layer_id.clone(),
+                            texture_name: resolved.clone(),
+                            resolution: [pass_target_w_u, pass_target_h_u],
+                            format: sampled_pass_format,
+                        },
+                        "depth",
+                    );
+
+                    Some(resolved)
+                } else {
+                    None
+                };
+
+                // Unconditionally create compose passes for depth-port consumers,
+                // because the depth-resolve texture is always an intermediate
+                // that must be blitted — regardless of `is_sampled_output`.
+                if let Some(ref resolved) = resolved_depth_tex {
+                    for composition_id in &composition_consumers {
+                        // Only handle depth-port connections here.
+                        let is_depth_connection = prepared
+                            .scene
+                            .connections
+                            .iter()
+                            .any(|c| {
+                                c.from.node_id == *layer_id
+                                    && c.from.port_id == "depth"
+                                    && c.to.node_id == *composition_id
+                            });
+                        if !is_depth_connection {
+                            continue;
+                        }
+                        let Some(comp_ctx) = composition_contexts.get(composition_id) else {
+                            continue;
+                        };
+                        let comp_tgt_w = comp_ctx.target_size_px[0];
+                        let comp_tgt_h = comp_ctx.target_size_px[1];
+
+                        let compose_pass_name: ResourceName =
+                            format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.pass")
+                                .into();
+                        let compose_params_name: ResourceName =
+                            format!("params.sys.pass.{layer_id}.depth.to.{composition_id}.compose")
+                                .into();
+                        let compose_camera =
+                            legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
+                        let compose_geo: ResourceName =
+                            format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.geo")
+                                .into();
+                        geometry_buffers.push((
+                            compose_geo.clone(),
+                            make_fullscreen_geometry(comp_tgt_w, comp_tgt_h),
+                        ));
+                        let compose_bundle = build_fullscreen_textured_bundle(
+                            "return textureSample(src_tex, src_samp, in.uv);".to_string(),
+                        );
+                        render_pass_specs.push(RenderPassSpec {
+                            pass_id: compose_pass_name.as_str().to_string(),
+                            name: compose_pass_name.clone(),
+                            geometry_buffer: compose_geo,
+                            instance_buffer: None,
+                            normals_buffer: None,
+                            target_texture: comp_ctx.target_texture_name.clone(),
+                            resolve_target: None,
+                            params_buffer: compose_params_name,
+                            baked_data_parse_buffer: None,
+                            params: make_params(
+                                [comp_tgt_w, comp_tgt_h],
+                                [comp_tgt_w, comp_tgt_h],
+                                [comp_tgt_w * 0.5, comp_tgt_h * 0.5],
+                                compose_camera,
+                                [0.0, 0.0, 0.0, 0.0],
+                            ),
+                            graph_binding: None,
+                            graph_values: None,
+                            shader_wgsl: compose_bundle.module,
+                            texture_bindings: vec![PassTextureBinding {
+                                texture: resolved.clone(),
+                                image_node_id: None,
+                            }],
+                            sampler_kinds: vec![SamplerKind::NearestClamp],
+                            blend_state,
+                            color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                            sample_count: 1,
+                        });
+                        composite_passes.push(compose_pass_name);
+                    }
+                }
+
                 // If a pass is sampled (so it renders to sys.pass.<id>.out) and consumed by one
                 // or more Composition nodes, synthesize compose passes per Composition consumer.
                 if is_sampled_output && has_composition_consumer {
-                    for composition_id in composition_consumers {
-                        let Some(comp_ctx) = composition_contexts.get(&composition_id) else {
+                    for composition_id in &composition_consumers {
+                        let Some(comp_ctx) = composition_contexts.get(composition_id) else {
                             continue;
                         };
+
+                        // Skip depth-port connections — already handled above.
+                        let is_depth_connection = prepared
+                            .scene
+                            .connections
+                            .iter()
+                            .any(|c| {
+                                c.from.node_id == *layer_id
+                                    && c.from.port_id == "depth"
+                                    && c.to.node_id == *composition_id
+                            });
+                        if is_depth_connection {
+                            continue;
+                        }
                         let comp_tgt_w = comp_ctx.target_size_px[0];
                         let comp_tgt_h = comp_ctx.target_size_px[1];
                         let comp_tgt_w_u = comp_tgt_w.max(1.0).round() as u32;
@@ -2383,21 +2617,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         target_format
                     },
                 });
-                if depth_test_enabled {
-                    pass_output_registry.register_for_port(
-                        PassOutputSpec {
-                            node_id: layer_id.clone(),
-                            texture_name: pass_render_target_texture,
-                            resolution: [pass_target_w_u, pass_target_h_u],
-                            format: if is_sampled_output {
-                                sampled_pass_format
-                            } else {
-                                target_format
-                            },
-                        },
-                        "depth",
-                    );
-                }
             }
             "BloomNode" => {
                 let src_conn = incoming_connection(&prepared.scene, layer_id, "pass")
@@ -2455,6 +2674,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: base_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     out
                 } else {
@@ -2475,6 +2695,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: base_resolution,
                     format: sampled_pass_format,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
                 let mip0_geo: ResourceName = format!("sys.bloom.{layer_id}.mip0.geo").into();
                 geometry_buffers.push((mip0_geo.clone(), make_fullscreen_geometry(base_w, base_h)));
@@ -2543,6 +2764,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: cur_size,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     let mip_geo: ResourceName = format!("sys.bloom.{layer_id}.mip{level}.geo").into();
                     let mip_w = cur_size[0] as f32;
@@ -2607,12 +2829,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: base_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     textures.push(TextureDecl {
                         name: v_tex.clone(),
                         size: base_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     let geo: ResourceName = format!("sys.bloom.{layer_id}.mip0.blur.geo").into();
                     geometry_buffers.push((geo.clone(), make_fullscreen_geometry(base_w, base_h)));
@@ -2700,12 +2924,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             size: src_size,
                             format: sampled_pass_format,
                             sample_count: 1,
+                            needs_sampling: false,
                         });
                         textures.push(TextureDecl {
                             name: v_tex.clone(),
                             size: src_size,
                             format: sampled_pass_format,
                             sample_count: 1,
+                            needs_sampling: false,
                         });
 
                         let src_w = src_size[0] as f32;
@@ -2788,6 +3014,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             size: dst_size,
                             format: sampled_pass_format,
                             sample_count: 1,
+                            needs_sampling: false,
                         });
                         let up_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up.geo").into();
                         geometry_buffers.push((up_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
@@ -2843,6 +3070,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             size: dst_size,
                             format: sampled_pass_format,
                             sample_count: 1,
+                            needs_sampling: false,
                         });
                         let add_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.add.geo").into();
                         geometry_buffers.push((add_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
@@ -3141,6 +3369,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: src_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
 
                     // Build source pass geometry. In Extend mode, draw source content with its
@@ -3334,6 +3563,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: [next_w, next_h],
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     let geo: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.geo").into();
                     geometry_buffers.push((
@@ -3356,12 +3586,14 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: [ds_w, ds_h],
                     format: sampled_pass_format,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
                 textures.push(TextureDecl {
                     name: v_tex.clone(),
                     size: [ds_w, ds_h],
                     format: sampled_pass_format,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
 
                 // If this blur pass is sampled downstream (PassTexture), render into an intermediate output.
@@ -3374,6 +3606,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             size: [blur_w, blur_h],
                             format: sampled_pass_format,
                             sample_count: 1,
+                            needs_sampling: false,
                         });
                         out_tex
                     } else {
@@ -3891,6 +4124,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: gb_src_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
 
                     let geo_src: ResourceName = format!("sys.gb.{layer_id}.src.geo").into();
@@ -4011,6 +4245,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     size: [padded_w, padded_h],
                     format: sampled_pass_format,
                     sample_count: 1,
+                    needs_sampling: false,
                 });
 
                 let pad_geo: ResourceName = format!("sys.gb.{layer_id}.pad.geo").into();
@@ -4085,6 +4320,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: [cur_mip_w, cur_mip_h],
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
 
                     let mip_geo: ResourceName = format!("sys.gb.{layer_id}.mip{i}.geo").into();
@@ -4166,6 +4402,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         size: gb_src_resolution,
                         format: sampled_pass_format,
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     out
                 } else {
@@ -4554,6 +4791,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             target_format
                         },
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     tex
                 } else {
@@ -4938,6 +5176,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             target_format
                         },
                         sample_count: 1,
+                        needs_sampling: false,
                     });
                     tex
                 } else {
@@ -5475,7 +5714,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
             resolution: t.size,
             format: t.format,
             usage: if t.sample_count > 1 {
-                TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC
+                let base = TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
+                if t.needs_sampling {
+                    base | TextureUsages::TEXTURE_BINDING
+                } else {
+                    base
+                }
             } else {
                 TextureUsages::RENDER_ATTACHMENT
                     | TextureUsages::TEXTURE_BINDING
@@ -5734,6 +5978,27 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
     if !prepass_buffer_specs.is_empty() {
         shader_space.declare_buffers(prepass_buffer_specs);
+    }
+
+    // Depth-resolve pass buffers (geometry + params).
+    if !depth_resolve_passes.is_empty() {
+        let mut dr_buffer_specs: Vec<BufferSpec> = Vec::new();
+        for drp in &depth_resolve_passes {
+            dr_buffer_specs.push(BufferSpec::Init {
+                name: drp.geometry_buffer.clone(),
+                contents: make_fullscreen_geometry(
+                    drp.params.target_size[0],
+                    drp.params.target_size[1],
+                ),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+            dr_buffer_specs.push(BufferSpec::Sized {
+                name: drp.params_buffer.clone(),
+                size: core::mem::size_of::<Params>(),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        }
+        shader_space.declare_buffers(dr_buffer_specs);
     }
 
     let texture_capability_requirements = collect_texture_capability_requirements(
@@ -6016,6 +6281,38 @@ pub(crate) fn build_shader_space_from_scene_internal(
         });
     }
 
+    // Register depth-resolve passes.
+    for spec in &depth_resolve_passes {
+        let pass_name = spec.pass_name.clone();
+        let geometry_buffer = spec.geometry_buffer.clone();
+        let params_buffer = spec.params_buffer.clone();
+        let depth_texture = spec.depth_texture.clone();
+        let dst_texture = spec.dst_texture.clone();
+        let shader_wgsl = spec.shader_wgsl.clone();
+        let is_multisampled = spec.is_multisampled;
+
+        let shader_desc: wgpu::ShaderModuleDescriptor<'static> = wgpu::ShaderModuleDescriptor {
+            label: Some("node-forge-depth-resolve"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader_wgsl)),
+        };
+
+        shader_space.render_pass(pass_name, move |builder| {
+            builder
+                .shader(shader_desc)
+                .bind_uniform_buffer(0, 0, params_buffer, ShaderStages::VERTEX_FRAGMENT)
+                .bind_attribute_buffer(
+                    0,
+                    geometry_buffer,
+                    wgpu::VertexStepMode::Vertex,
+                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
+                )
+                .bind_depth_texture(1, 0, depth_texture, ShaderStages::FRAGMENT, is_multisampled)
+                .bind_color_attachment(dst_texture)
+                .blending(BlendState::REPLACE)
+                .load_op(wgpu::LoadOp::Clear(Color::TRANSPARENT))
+        });
+    }
+
     if !prepass_names.is_empty() {
         let mut ordered: Vec<ResourceName> =
             Vec::with_capacity(prepass_names.len() + composite_passes.len());
@@ -6051,6 +6348,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
     }
 
     for spec in &image_prepasses {
+        shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
+    }
+
+    for spec in &depth_resolve_passes {
         shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
     }
 
