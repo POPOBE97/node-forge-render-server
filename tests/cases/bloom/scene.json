@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-27T08:12:00.665Z",
-    "modified": "2026-02-27T08:12:00.665Z"
+    "created": "2026-02-27T10:56:35.404Z",
+    "modified": "2026-02-27T10:56:35.404Z"
   },
   "nodes": [
     {
@@ -45,15 +45,15 @@
       "label": "Mip0",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "premul_alpha",
+        "blend_preset": "add",
         "blendfunc": "add",
         "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
+        "dst_factor": "one",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
+        "dst_alpha_factor": "one",
         "msaaSampleCount": 4,
         "culling": "back",
-        "depthTest": false,
+        "depthTest": true,
         "camera": [
           1,
           0,
@@ -121,12 +121,7 @@
           "portId": "dynamic_1772124390808_1",
           "label": "pass2",
           "variableName": "pass2",
-          "type": "pass",
-          "sourceBinding": {
-            "nodeId": "RenderPass_4",
-            "outputPortId": "pass",
-            "outputLabel": "Pass"
-          }
+          "type": "pass"
         }
       ]
     },
@@ -211,7 +206,7 @@
       "type": "BloomNode",
       "position": {
         "x": 0,
-        "y": 280
+        "y": 360
       },
       "width": 160,
       "label": "Bloom",
@@ -222,8 +217,8 @@
         "saturation": 0,
         "tint": [
           1,
-          1,
-          1,
+          0,
+          0,
           1
         ],
         "size": 0.55
@@ -413,25 +408,14 @@
       }
     },
     {
-      "id": "edge_85",
-      "from": {
-        "nodeId": "BloomNode_44",
-        "portId": "glare"
-      },
-      "to": {
-        "nodeId": "Composite_5",
-        "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_86",
+      "id": "edge_84",
       "from": {
         "nodeId": "RenderPass_4",
-        "portId": "pass"
+        "portId": "depth"
       },
       "to": {
         "nodeId": "Composite_5",
-        "portId": "dynamic_1772124390808_1"
+        "portId": "pass"
       }
     }
   ],
