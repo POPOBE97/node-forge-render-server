@@ -1,0 +1,328 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-02-26T17:32:34.515Z",
+    "modified": "2026-02-26T17:32:34.515Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "position": {
+        "x": 400,
+        "y": 280
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "GLTFGeometry_2",
+      "type": "GLTFGeometry",
+      "position": {
+        "x": -840,
+        "y": 280
+      },
+      "width": 192,
+      "label": "GTLF/OBJ Geometry",
+      "params": {
+        "assetId": "3b37d2ec3249",
+        "path": "/Users/ruiyao/Downloads/card-edge-mesh.obj"
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": -420,
+        "y": 280
+      },
+      "width": 160,
+      "label": "Mip0",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "add",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one",
+        "msaaSampleCount": 4,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Composite_5",
+      "type": "Composite",
+      "position": {
+        "x": 220,
+        "y": 280
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1772124390808_1",
+          "name": "pass2",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1772124390808_1",
+          "label": "pass2",
+          "variableName": "pass2",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        }
+      ]
+    },
+    {
+      "id": "RenderTexture_6",
+      "type": "RenderTexture",
+      "position": {
+        "x": 220,
+        "y": 140
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba16float"
+      }
+    },
+    {
+      "id": "ColorInput_7",
+      "type": "ColorInput",
+      "position": {
+        "x": -620,
+        "y": 660
+      },
+      "width": 160,
+      "label": "Color Input",
+      "params": {
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "SetTransform_22",
+      "type": "SetTransform",
+      "position": {
+        "x": -620,
+        "y": 280
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "translate": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 0.8,
+          "y": 0.8,
+          "z": 0.8
+        }
+      }
+    },
+    {
+      "id": "ReferenceImage_43",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 220,
+        "y": 480
+      },
+      "width": 192,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "681a91c88147",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
+      }
+    },
+    {
+      "id": "BloomNode_44",
+      "type": "BloomNode",
+      "position": {
+        "x": -180,
+        "y": 280
+      },
+      "width": 160,
+      "label": "Bloom",
+      "params": {
+        "threshold": 0,
+        "smoothness": 0,
+        "strength": 1,
+        "saturation": 0,
+        "tint": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "size": 0.55
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "ColorInput_7",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_25",
+      "from": {
+        "nodeId": "GLTFGeometry_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "SetTransform_22",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_43",
+      "from": {
+        "nodeId": "RenderTexture_6",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_77",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "BloomNode_44",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_78",
+      "from": {
+        "nodeId": "BloomNode_44",
+        "portId": "glare"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "pass"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_5"
+  },
+  "assets": {
+    "3b37d2ec3249": {
+      "path": "assets/3b37d2ec3249.glb",
+      "originalName": "rings.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 65920
+    },
+    "681a91c88147": {
+      "path": "assets/681a91c88147.bin",
+      "originalName": "bloom-nodes.exr",
+      "mimeType": "image/x-exr",
+      "size": 20946388
+    }
+  },
+  "groups": []
+}
