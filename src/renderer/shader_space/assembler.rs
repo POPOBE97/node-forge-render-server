@@ -2191,12 +2191,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             compose_graph_binding,
                             compose_graph_values,
                         ) = if pass_target_w_u == comp_tgt_w_u && pass_target_h_u == comp_tgt_h_u {
-                            let compose_camera = resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            // Compose passes are 2D blits of already-rendered intermediates;
+                            // always use orthographic projection so the original 3D camera
+                            // (e.g. perspective) is not re-applied.
+                            let compose_camera = legacy_projection_camera_matrix(
                                 [comp_tgt_w, comp_tgt_h],
-                            )?;
+                            );
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -2220,12 +2220,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 None,
                             )
                         } else if use_fullscreen_main_pass && rect_dyn_2.is_some() {
-                            let compose_camera = resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            let compose_camera = legacy_projection_camera_matrix(
                                 [comp_tgt_w, comp_tgt_h],
-                            )?;
+                            );
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -2296,12 +2293,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 graph_values.clone(),
                             )
                         } else if use_fullscreen_for_local_blit {
-                            let compose_camera = resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            let compose_camera = legacy_projection_camera_matrix(
                                 [comp_tgt_w, comp_tgt_h],
-                            )?;
+                            );
                             let compose_geo: ResourceName =
                                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
                                     .into();
@@ -2331,12 +2325,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 None,
                             )
                         } else {
-                            let compose_camera = resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            let compose_camera = legacy_projection_camera_matrix(
                                 [comp_tgt_w, comp_tgt_h],
-                            )?;
+                            );
                             let fragment_body =
                                 "return textureSample(src_tex, src_samp, in.uv);".to_string();
                             (
@@ -4738,12 +4729,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             [comp_w, comp_h],
                             [comp_w, comp_h],
                             [comp_w * 0.5, comp_h * 0.5],
-                            resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            legacy_projection_camera_matrix(
                                 [comp_w, comp_h],
-                            )?,
+                            ),
                             [0.0, 0.0, 0.0, 0.0],
                         );
 
@@ -5136,12 +5124,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             [comp_w, comp_h],
                             [comp_w, comp_h],
                             [comp_w * 0.5, comp_h * 0.5],
-                            resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            legacy_projection_camera_matrix(
                                 [comp_w, comp_h],
-                            )?,
+                            ),
                             [0.0, 0.0, 0.0, 0.0],
                         );
 
@@ -5233,12 +5218,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                             [dst_w, dst_h],
                             [dst_w, dst_h],
                             [dst_w * 0.5, dst_h * 0.5],
-                            resolve_effective_camera_for_pass_node(
-                                &prepared.scene,
-                                nodes_by_id,
-                                layer_node,
+                            legacy_projection_camera_matrix(
                                 [dst_w, dst_h],
-                            )?,
+                            ),
                             [0.0, 0.0, 0.0, 0.0],
                         );
                         render_pass_specs.push(RenderPassSpec {
