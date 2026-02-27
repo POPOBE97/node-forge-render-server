@@ -746,6 +746,24 @@ struct RenderPassSpec {
     sample_count: u32,
 }
 
+fn parse_render_pass_cull_mode(params: &HashMap<String, serde_json::Value>) -> Result<Option<wgpu::Face>> {
+    match params.get("culling").and_then(|v| v.as_str()).unwrap_or("none") {
+        "none" => Ok(None),
+        "front" => Ok(Some(wgpu::Face::Front)),
+        "back" => Ok(Some(wgpu::Face::Back)),
+        other => bail!("RenderPass.culling must be one of none|front|back, got {other}"),
+    }
+}
+
+fn parse_render_pass_depth_test(params: &HashMap<String, serde_json::Value>) -> Result<bool> {
+    match params.get("depthTest") {
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| anyhow!("RenderPass.depthTest must be a boolean, got {v}")),
+        None => Ok(false),
+    }
+}
+
 fn validate_render_pass_msaa_request(pass_id: &str, requested: u32) -> Result<()> {
     if matches!(requested, 1 | 2 | 4 | 8) {
         Ok(())
@@ -1293,6 +1311,8 @@ pub(crate) fn build_shader_space_from_scene_internal(
         HashMap::new();
     let mut baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>> = HashMap::new();
     let mut baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String> = HashMap::new();
+    let mut pass_cull_mode_by_name: HashMap<ResourceName, Option<wgpu::Face>> = HashMap::new();
+    let mut pass_depth_attachment_by_name: HashMap<ResourceName, ResourceName> = HashMap::new();
     let mut composite_passes: Vec<ResourceName> = Vec::new();
 
     // Output target texture is always Composite.target.
@@ -1663,6 +1683,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                                 crate::dsl::node_display_label_with_id(layer_node)
                             )
                         })?;
+                let cull_mode = parse_render_pass_cull_mode(&layer_node.params).with_context(|| {
+                    format!(
+                        "invalid culling params for {}",
+                        crate::dsl::node_display_label_with_id(layer_node)
+                    )
+                })?;
+                let depth_test_enabled =
+                    parse_render_pass_depth_test(&layer_node.params).with_context(|| {
+                        format!(
+                            "invalid depth params for {}",
+                            crate::dsl::node_display_label_with_id(layer_node)
+                        )
+                    })?;
 
                 let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
                     .map(|c| c.from.node_id.clone())
@@ -1753,6 +1786,18 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     (msaa_tex, Some(pass_output_texture.clone()))
                 } else {
                     (pass_output_texture.clone(), None)
+                };
+                let depth_stencil_attachment = if depth_test_enabled {
+                    let depth_tex: ResourceName = format!("sys.pass.{layer_id}.depth").into();
+                    textures.push(TextureDecl {
+                        name: depth_tex.clone(),
+                        size: [pass_target_w_u, pass_target_h_u],
+                        format: TextureFormat::Depth32Float,
+                        sample_count: msaa_sample_count,
+                    });
+                    Some(depth_tex)
+                } else {
+                    None
                 };
                 let pass_target_w = pass_target_w_u as f32;
                 let pass_target_h = pass_target_h_u as f32;
@@ -2113,6 +2158,10 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                     sample_count: msaa_sample_count,
                 });
+                pass_cull_mode_by_name.insert(pass_name.clone(), cull_mode);
+                if let Some(depth_attachment) = depth_stencil_attachment.clone() {
+                    pass_depth_attachment_by_name.insert(pass_name.clone(), depth_attachment);
+                }
                 composite_passes.push(pass_name);
 
                 // If a pass is sampled (so it renders to sys.pass.<id>.out) and consumed by one
@@ -2343,11 +2392,28 @@ pub(crate) fn build_shader_space_from_scene_internal(
                         target_format
                     },
                 });
+                if depth_test_enabled {
+                    pass_output_registry.register_for_port(
+                        PassOutputSpec {
+                            node_id: layer_id.clone(),
+                            texture_name: pass_render_target_texture,
+                            resolution: [pass_target_w_u, pass_target_h_u],
+                            format: if is_sampled_output {
+                                sampled_pass_format
+                            } else {
+                                target_format
+                            },
+                        },
+                        "depth",
+                    );
+                }
             }
             "BloomNode" => {
                 let src_conn = incoming_connection(&prepared.scene, layer_id, "pass")
                     .ok_or_else(|| anyhow!("BloomNode.pass missing for {layer_id}"))?;
-                let src_spec = pass_output_registry.get(&src_conn.from.node_id).ok_or_else(|| {
+                let src_spec = pass_output_registry
+                    .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
+                    .ok_or_else(|| {
                     anyhow!(
                         "BloomNode.pass references upstream pass {}, but its output is not registered yet",
                         src_conn.from.node_id
@@ -2986,7 +3052,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     // When the blur input is already a pass output texture with sampled format,
                     // skip generating an extra fullscreen
                     // `sys.blur.<id>.src.pass` sampling pass.
-                    if let Some(src_spec) = pass_output_registry.get(&src_conn.from.node_id) {
+                    if let Some(src_spec) = pass_output_registry
+                        .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
+                    {
                         base_resolution = src_spec.resolution;
                         if can_direct_bypass && src_spec.format == sampled_pass_format {
                             initial_blur_source_texture = Some(src_spec.texture_name.clone());
@@ -3738,7 +3806,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     }
 
                     // (A) Upstream pass output.
-                    if let Some(src_spec) = pass_output_registry.get(&src_conn.from.node_id) {
+                    if let Some(src_spec) = pass_output_registry
+                        .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
+                    {
                         gb_src_resolution = src_spec.resolution;
                     }
                     // (B) Direct ImageTexture.
@@ -3770,7 +3840,9 @@ pub(crate) fn build_shader_space_from_scene_internal(
 
                 if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
                     // (A) upstream pass output bypass
-                    if let Some(spec) = pass_output_registry.get(&src_conn.from.node_id) {
+                    if let Some(spec) = pass_output_registry
+                        .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
+                    {
                         if spec.format == sampled_pass_format {
                             initial_source_texture = Some(spec.texture_name.clone());
                         }
@@ -5781,6 +5853,11 @@ pub(crate) fn build_shader_space_from_scene_internal(
         let shader_wgsl = spec.shader_wgsl.clone();
         let blend_state = spec.blend_state;
         let color_load_op = spec.color_load_op;
+        let cull_mode = pass_cull_mode_by_name
+            .get(&spec.name)
+            .copied()
+            .unwrap_or(None);
+        let depth_stencil_attachment = pass_depth_attachment_by_name.get(&spec.name).cloned();
         let graph_binding = spec.graph_binding.clone();
 
         let texture_names: Vec<ResourceName> = spec
@@ -5907,10 +5984,15 @@ pub(crate) fn build_shader_space_from_scene_internal(
             b = b
                 .bind_color_attachment(target_texture)
                 .sample_count(sample_count);
+            if let Some(depth_tex) = depth_stencil_attachment.clone() {
+                b = b.bind_depth_stencil_attachment(depth_tex);
+            }
             if let Some(resolve_target) = resolve_target.clone() {
                 b = b.resolve_target(resolve_target);
             }
-            b.blending(blend_state).load_op(color_load_op)
+            b.cull_mode(cull_mode)
+                .blending(blend_state)
+                .load_op(color_load_op)
         });
     }
 

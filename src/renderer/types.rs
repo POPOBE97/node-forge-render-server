@@ -147,8 +147,8 @@ pub struct PassInputSpec {
 /// Registry of pass outputs for resolving chain dependencies.
 #[derive(Default, Clone, Debug)]
 pub struct PassOutputRegistry {
-    /// Map from node_id to its output specification.
-    outputs: HashMap<String, PassOutputSpec>,
+    /// Map from (node_id, port_id) to output specification.
+    outputs: HashMap<(String, String), PassOutputSpec>,
 }
 
 impl PassOutputRegistry {
@@ -158,22 +158,38 @@ impl PassOutputRegistry {
 
     /// Register a pass output.
     pub fn register(&mut self, spec: PassOutputSpec) {
-        self.outputs.insert(spec.node_id.clone(), spec);
+        self.register_for_port(spec, "pass");
+    }
+
+    /// Register a pass output for a specific output port.
+    pub fn register_for_port(&mut self, spec: PassOutputSpec, port_id: &str) {
+        self.outputs
+            .insert((spec.node_id.clone(), port_id.to_string()), spec);
     }
 
     /// Get the output spec for a node.
     pub fn get(&self, node_id: &str) -> Option<&PassOutputSpec> {
-        self.outputs.get(node_id)
+        self.get_for_port(node_id, "pass")
+    }
+
+    /// Get the output spec for a node+port pair.
+    pub fn get_for_port(&self, node_id: &str, port_id: &str) -> Option<&PassOutputSpec> {
+        self.outputs.get(&(node_id.to_string(), port_id.to_string()))
     }
 
     /// Get the output texture name for a node.
     pub fn get_texture(&self, node_id: &str) -> Option<&ResourceName> {
-        self.outputs.get(node_id).map(|s| &s.texture_name)
+        self.get_texture_for_port(node_id, "pass")
+    }
+
+    /// Get the output texture name for a node+port pair.
+    pub fn get_texture_for_port(&self, node_id: &str, port_id: &str) -> Option<&ResourceName> {
+        self.get_for_port(node_id, port_id).map(|s| &s.texture_name)
     }
 
     /// Get the resolution for a node's output.
     pub fn get_resolution(&self, node_id: &str) -> Option<[u32; 2]> {
-        self.outputs.get(node_id).map(|s| s.resolution)
+        self.get(node_id).map(|s| s.resolution)
     }
 
     /// Resolve the effective resolution for a pass input.
