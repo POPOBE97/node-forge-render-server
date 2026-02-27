@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-02-18T20:41:21.937Z",
+  "generatedAt": "2026-02-27T06:53:19.948Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
   },
   "nodeTypes": [
     "Attribute",
-    "BoolInput",
     "BloomNode",
+    "BoolInput",
     "CheckerTexture",
     "ColorInput",
     "ColorMix",
@@ -44,6 +44,7 @@
     "Kernel",
     "Lerp",
     "Luminance",
+    "Mat4Input",
     "MaterialFromShader",
     "MaterialOutput",
     "MathAdd",
@@ -55,9 +56,9 @@
     "NoiseTexture",
     "Normalize",
     "OrthographicCamera",
-    "PerspectiveCamera",
     "PBRMaterial",
     "PassTexture",
+    "PerspectiveCamera",
     "PrincipledBSDF",
     "Rect2DGeometry",
     "ReferenceImage",
@@ -205,6 +206,7 @@
       "vector2",
       "vector3",
       "vector4",
+      "mat4",
       "color",
       "float[]",
       "vector2[]",
@@ -216,7 +218,6 @@
       "material",
       "shader",
       "geometry",
-      "mat4",
       "pass",
       "kernel",
       "any"
@@ -270,6 +271,9 @@
       "vector2",
       "vector3"
     ],
+    "mat4": [
+      "mat4"
+    ],
     "float[]": [
       "float[]"
     ],
@@ -319,9 +323,6 @@
     ],
     "kernel": [
       "kernel"
-    ],
-    "mat4": [
-      "mat4"
     ]
   },
   "nodes": [
@@ -347,23 +348,6 @@
       "defaultParams": {
         "name": "attribute",
         "glslType": "float"
-      }
-    },
-    {
-      "type": "BoolInput",
-      "label": "Bool Input",
-      "category": "Input",
-      "description": "Define a constant boolean value",
-      "inputs": [],
-      "outputs": [
-        {
-          "id": "value",
-          "name": "Value",
-          "type": "bool"
-        }
-      ],
-      "defaultParams": {
-        "value": false
       }
     },
     {
@@ -451,13 +435,23 @@
           "type": "pass"
         }
       ],
+      "defaultParams": {}
+    },
+    {
+      "type": "BoolInput",
+      "label": "Bool Input",
+      "category": "Input",
+      "description": "Define a constant boolean value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "bool"
+        }
+      ],
       "defaultParams": {
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "value": false
       }
     },
     {
@@ -631,14 +625,32 @@
           "type": "pass"
         },
         {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
           "id": "target",
           "name": "Render Target",
           "type": "renderTexture"
-        },
-        {
-          "id": "camera",
-          "name": "Camera",
-          "type": "mat4"
         },
         {
           "id": "alpha",
@@ -785,7 +797,25 @@
         {
           "id": "camera",
           "name": "Camera",
-          "type": "mat4"
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
         }
       ],
       "outputs": [
@@ -796,64 +826,6 @@
         }
       ],
       "defaultParams": {
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
-      }
-    },
-    {
-      "type": "Upsample",
-      "label": "Upsample",
-      "category": "Filter",
-      "description": "Upsample a pass to a target size",
-      "inputs": [
-        {
-          "id": "targetSize",
-          "name": "Target Size",
-          "type": "vector2"
-        },
-        {
-          "id": "source",
-          "name": "Source",
-          "type": "pass"
-        },
-        {
-          "id": "camera",
-          "name": "Camera",
-          "type": "mat4"
-        },
-        {
-          "id": "address_mode",
-          "name": "Address Mode",
-          "type": "any",
-          "default": "clamp-to-edge"
-        },
-        {
-          "id": "filter",
-          "name": "Filter",
-          "type": "any",
-          "default": "linear"
-        },
-        {
-          "id": "blend_preset",
-          "name": "Blend Preset",
-          "type": "any",
-          "default": "premul_alpha"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "pass"
-        }
-      ],
-      "defaultParams": {
-        "address_mode": "clamp-to-edge",
-        "filter": "linear",
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
@@ -1411,14 +1383,32 @@
           "type": "pass"
         },
         {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
           "id": "mask",
           "name": "Mask",
           "type": "material"
-        },
-        {
-          "id": "camera",
-          "name": "Camera",
-          "type": "mat4"
         }
       ],
       "outputs": [
@@ -1502,7 +1492,25 @@
         {
           "id": "camera",
           "name": "Camera",
-          "type": "mat4"
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
         },
         {
           "id": "radius",
@@ -1801,6 +1809,44 @@
       "defaultParams": {}
     },
     {
+      "type": "Mat4Input",
+      "label": "Mat4 Input",
+      "category": "Input",
+      "description": "Define a 4x4 matrix value",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "matrix",
+          "name": "Matrix",
+          "type": "mat4"
+        }
+      ],
+      "defaultParams": {
+        "preset": "Identity",
+        "manualMat4Width": 4,
+        "manualMat4Height": 4,
+        "value": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "source": "// Return a matrix object: { width, height, value }\n// - width/height must be 4\n// - value: number[] (row-major, length = 16)\n\nreturn {\n  width: 4,\n  height: 4,\n  value: [\n    1, 0, 0, 0,\n    0, 1, 0, 0,\n    0, 0, 1, 0,\n    0, 0, 0, 1,\n  ],\n};\n"
+      }
+    },
+    {
       "type": "MaterialFromShader",
       "label": "Material From Shader",
       "category": "Material",
@@ -2065,53 +2111,84 @@
     {
       "type": "OrthographicCamera",
       "label": "Orthographic Camera",
-      "category": "PipelineControl",
-      "description": "Build an orthographic camera matrix from position/target/up and frustum bounds",
+      "category": "Input",
+      "description": "Build an orthographic camera matrix from transform and projection controls",
       "inputs": [
         {
           "id": "position",
           "name": "Position",
-          "type": "vector3"
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 5
+          }
         },
         {
           "id": "target",
           "name": "Target",
-          "type": "vector3"
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
         },
         {
           "id": "up",
           "name": "Up",
-          "type": "vector3"
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          }
         },
         {
           "id": "left",
           "name": "Left",
-          "type": "float"
+          "type": "float",
+          "default": -1
         },
         {
           "id": "right",
           "name": "Right",
-          "type": "float"
+          "type": "float",
+          "default": 1
         },
         {
           "id": "bottom",
           "name": "Bottom",
-          "type": "float"
+          "type": "float",
+          "default": -1
         },
         {
           "id": "top",
           "name": "Top",
-          "type": "float"
+          "type": "float",
+          "default": 1
         },
         {
           "id": "near",
           "name": "Near",
-          "type": "float"
+          "type": "float",
+          "default": 0.1,
+          "range": {
+            "min": 0.0001,
+            "max": 1000,
+            "step": 0.001
+          }
         },
         {
           "id": "far",
           "name": "Far",
-          "type": "float"
+          "type": "float",
+          "default": 1000,
+          "range": {
+            "min": 0.001,
+            "max": 100000,
+            "step": 1
+          }
         }
       ],
       "outputs": [
@@ -2125,7 +2202,7 @@
         "position": {
           "x": 0,
           "y": 0,
-          "z": 1
+          "z": 5
         },
         "target": {
           "x": 0,
@@ -2142,78 +2219,7 @@
         "bottom": -1,
         "top": 1,
         "near": 0.1,
-        "far": 10000
-      }
-    },
-    {
-      "type": "PerspectiveCamera",
-      "label": "Perspective Camera",
-      "category": "PipelineControl",
-      "description": "Build a perspective camera matrix from position/target/up and lens parameters",
-      "inputs": [
-        {
-          "id": "position",
-          "name": "Position",
-          "type": "vector3"
-        },
-        {
-          "id": "target",
-          "name": "Target",
-          "type": "vector3"
-        },
-        {
-          "id": "up",
-          "name": "Up",
-          "type": "vector3"
-        },
-        {
-          "id": "fovY",
-          "name": "Fov Y",
-          "type": "float"
-        },
-        {
-          "id": "aspect",
-          "name": "Aspect",
-          "type": "float"
-        },
-        {
-          "id": "near",
-          "name": "Near",
-          "type": "float"
-        },
-        {
-          "id": "far",
-          "name": "Far",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "camera",
-          "name": "Camera",
-          "type": "mat4"
-        }
-      ],
-      "defaultParams": {
-        "position": {
-          "x": 0,
-          "y": 0,
-          "z": 1000
-        },
-        "target": {
-          "x": 0,
-          "y": 0,
-          "z": 0
-        },
-        "up": {
-          "x": 0,
-          "y": 1,
-          "z": 0
-        },
-        "fovY": 60,
-        "aspect": 1,
-        "near": 0.1,
-        "far": 10000
+        "far": 1000
       }
     },
     {
@@ -2309,6 +2315,116 @@
       ],
       "defaultParams": {
         "model": "pbr"
+      }
+    },
+    {
+      "type": "PerspectiveCamera",
+      "label": "Perspective Camera",
+      "category": "Input",
+      "description": "Build a perspective camera matrix from transform and projection controls",
+      "inputs": [
+        {
+          "id": "position",
+          "name": "Position",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 5
+          }
+        },
+        {
+          "id": "target",
+          "name": "Target",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "id": "up",
+          "name": "Up",
+          "type": "vector3",
+          "default": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          }
+        },
+        {
+          "id": "fovY",
+          "name": "FOV Y (deg)",
+          "type": "float",
+          "default": 60,
+          "range": {
+            "min": 1,
+            "max": 179,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "aspect",
+          "name": "Aspect",
+          "type": "float",
+          "default": 1.7777777778,
+          "range": {
+            "min": 0.01,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "near",
+          "name": "Near",
+          "type": "float",
+          "default": 0.1,
+          "range": {
+            "min": 0.0001,
+            "max": 1000,
+            "step": 0.001
+          }
+        },
+        {
+          "id": "far",
+          "name": "Far",
+          "type": "float",
+          "default": 1000,
+          "range": {
+            "min": 0.001,
+            "max": 100000,
+            "step": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "defaultParams": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 5
+        },
+        "target": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "fovY": 60,
+        "aspect": 1.7777777778,
+        "near": 0.1,
+        "far": 1000
       }
     },
     {
@@ -2611,7 +2727,25 @@
         {
           "id": "camera",
           "name": "Camera",
-          "type": "mat4"
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
         },
         {
           "id": "msaaSampleCount",
@@ -2625,6 +2759,11 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "depth",
+          "name": "Depth",
+          "type": "pass"
         }
       ],
       "defaultParams": {
@@ -2635,7 +2774,9 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 1
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false
       }
     },
     {
@@ -2817,7 +2958,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "mat4"
+          "type": "any"
         },
         {
           "id": "translate",
@@ -2931,7 +3072,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "mat4"
+          "type": "any"
         },
         {
           "id": "translate",
@@ -2973,6 +3114,82 @@
       ],
       "defaultParams": {
         "mode": "Components"
+      }
+    },
+    {
+      "type": "Upsample",
+      "label": "Upsample",
+      "category": "Filter",
+      "description": "Upsample a source pass to a target size using sampler filtering",
+      "inputs": [
+        {
+          "id": "source",
+          "name": "Source",
+          "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "targetSize",
+          "name": "Target Size",
+          "type": "vector2"
+        },
+        {
+          "id": "address_mode",
+          "name": "Address Mode",
+          "type": "any",
+          "default": "clamp-to-edge"
+        },
+        {
+          "id": "filter",
+          "name": "Filter",
+          "type": "any",
+          "default": "linear"
+        },
+        {
+          "id": "blend_preset",
+          "name": "Blend",
+          "type": "any",
+          "default": "premul_alpha"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "address_mode": "clamp-to-edge",
+        "filter": "linear",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
       }
     },
     {
