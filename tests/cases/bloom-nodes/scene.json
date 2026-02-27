@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-26T09:33:01.597Z",
-    "modified": "2026-02-26T09:33:01.597Z"
+    "created": "2026-02-27T08:11:05.651Z",
+    "modified": "2026-02-27T08:11:05.651Z"
   },
   "nodes": [
     {
@@ -39,19 +39,21 @@
       "type": "RenderPass",
       "position": {
         "x": -860,
-        "y": 260
+        "y": 240
       },
       "width": 160,
       "label": "Mip0",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "premul_alpha",
+        "blend_preset": "add",
         "blendfunc": "add",
         "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
+        "dst_factor": "one",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
+        "dst_alpha_factor": "one",
         "msaaSampleCount": 4,
+        "culling": "back",
+        "depthTest": false,
         "camera": [
           1,
           0,
@@ -508,9 +510,9 @@
           "z": 0
         },
         "scale": {
-          "x": 0.8,
-          "y": 0.8,
-          "z": 0.8
+          "x": 1,
+          "y": 1,
+          "z": 1
         }
       }
     },
@@ -1350,6 +1352,88 @@
         "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
+    },
+    {
+      "id": "MathClosure_44",
+      "type": "MathClosure",
+      "position": {
+        "x": -1260,
+        "y": 380
+      },
+      "width": 172,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = vec3(\n  0.0,\n  fract(t/5.0) * 180.0,\n  0.0\n);"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1772172987154_1",
+          "name": "t",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1772172987154_1",
+          "label": "t",
+          "variableName": "t",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "TimeInput_45",
+            "outputPortId": "time",
+            "outputLabel": "Time"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TimeInput_45",
+      "type": "TimeInput",
+      "position": {
+        "x": -1440,
+        "y": 380
+      },
+      "width": 160,
+      "label": "Time Input",
+      "params": {}
+    },
+    {
+      "id": "PerspectiveCamera_46",
+      "type": "PerspectiveCamera",
+      "position": {
+        "x": -1060,
+        "y": -180
+      },
+      "width": 160,
+      "label": "Perspective Camera",
+      "params": {
+        "position": {
+          "x": 540,
+          "y": 1200,
+          "z": 1200
+        },
+        "target": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "up": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "fovY": 120,
+        "aspect": 0.45,
+        "near": 0.0001,
+        "far": 4000
+      }
     }
   ],
   "connections": [
@@ -1813,6 +1897,39 @@
       "to": {
         "nodeId": "GuassianBlurPass_23",
         "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_77",
+      "from": {
+        "nodeId": "TimeInput_45",
+        "portId": "time"
+      },
+      "to": {
+        "nodeId": "MathClosure_44",
+        "portId": "dynamic_1772172987154_1"
+      }
+    },
+    {
+      "id": "edge_78",
+      "from": {
+        "nodeId": "MathClosure_44",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "rotate"
+      }
+    },
+    {
+      "id": "edge_79",
+      "from": {
+        "nodeId": "PerspectiveCamera_46",
+        "portId": "camera"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "camera"
       }
     }
   ],
