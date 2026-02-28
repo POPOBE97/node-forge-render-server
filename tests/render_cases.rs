@@ -215,6 +215,131 @@ fn load_image_from_node(
     })
 }
 
+/// Load a 32-bit float RGBA EXR image, returning (width, height, channels_f32).
+fn load_exr_f32(path: &Path) -> (u32, u32, Vec<f32>) {
+    let img = image::open(path)
+        .unwrap_or_else(|e| panic!("failed to open EXR {}: {e}", path.display()));
+    let rgba32f = img.to_rgba32f();
+    let w = rgba32f.width();
+    let h = rgba32f.height();
+    let channels: Vec<f32> = rgba32f.into_raw();
+    (w, h, channels)
+}
+
+/// Compare two EXR images channel-by-channel with a small epsilon tolerance.
+/// Panics on mismatch.
+fn compare_exr_baseline(
+    baseline_path: &Path,
+    actual_path: &Path,
+    case_name: &str,
+    label: &str,
+) {
+    if !compare_exr_baseline_soft(baseline_path, actual_path, case_name, label) {
+        panic!(
+            "case {case_name}: {label} EXR baseline mismatch\nbaseline={}\nactual={}",
+            baseline_path.display(),
+            actual_path.display(),
+        );
+    }
+}
+
+/// Compare two EXR images channel-by-channel. Returns false on mismatch (does not panic).
+fn compare_exr_baseline_soft(
+    baseline_path: &Path,
+    actual_path: &Path,
+    case_name: &str,
+    label: &str,
+) -> bool {
+    let (ew, eh, expected_ch) = load_exr_f32(baseline_path);
+    let (aw, ah, actual_ch) = load_exr_f32(actual_path);
+    if (ew, eh) != (aw, ah) {
+        eprintln!(
+            "case {case_name}: {label} EXR dimension mismatch expected={ew}x{eh} actual={aw}x{ah}"
+        );
+        return false;
+    }
+    // Allow a small epsilon for floating-point precision differences.
+    const EPS: f32 = 1.0 / 512.0;
+    let total_pixels = (ew as u64) * (eh as u64);
+    let mut mismatched: u64 = 0;
+    let mut max_delta: f32 = 0.0;
+    let mut first_mismatch: Option<(u32, u32, [f32; 4], [f32; 4])> = None;
+    for i in 0..(total_pixels as usize) {
+        let base = i * 4;
+        let mut any = false;
+        for c in 0..4 {
+            let d = (expected_ch[base + c] - actual_ch[base + c]).abs();
+            if d > EPS {
+                any = true;
+                max_delta = max_delta.max(d);
+            }
+        }
+        if any {
+            mismatched += 1;
+            if first_mismatch.is_none() {
+                let x = (i as u32) % ew;
+                let y = (i as u32) / ew;
+                let ep = [
+                    expected_ch[base],
+                    expected_ch[base + 1],
+                    expected_ch[base + 2],
+                    expected_ch[base + 3],
+                ];
+                let ap = [
+                    actual_ch[base],
+                    actual_ch[base + 1],
+                    actual_ch[base + 2],
+                    actual_ch[base + 3],
+                ];
+                first_mismatch = Some((x, y, ep, ap));
+            }
+        }
+    }
+    if mismatched > 0 {
+        if let Some((x, y, ep, ap)) = first_mismatch {
+            eprintln!(
+                "case {case_name}: {label} EXR baseline mismatch: {mismatched} pixels differ, max_delta={max_delta:.6}, first at ({x},{y}) expected={ep:?} actual={ap:?}"
+            );
+        }
+        return false;
+    }
+    true
+}
+
+/// Compare two RGBA8 images pixel-by-pixel. Panics on mismatch.
+fn compare_rgba8_baseline(
+    expected: &image::RgbaImage,
+    actual: &image::RgbaImage,
+    case_name: &str,
+    label: &str,
+    expected_path: &Path,
+    actual_path: &Path,
+) {
+    if expected.dimensions() != actual.dimensions() {
+        panic!(
+            "case {case_name}: {label} dimension mismatch expected={}x{} actual={}x{}\nbaseline={}\nactual={}",
+            expected.width(), expected.height(),
+            actual.width(), actual.height(),
+            expected_path.display(), actual_path.display(),
+        );
+    }
+    let (mismatched_pixels, max_channel_delta) = diff_stats(expected, actual);
+    if mismatched_pixels != 0 {
+        let mismatch_detail = first_pixel_mismatch(expected, actual)
+            .map(|(x, y, ep, ap)| {
+                format!(
+                    "first at ({x},{y}) expected={:?} actual={:?}",
+                    ep.0, ap.0
+                )
+            })
+            .unwrap_or_else(|| "(unknown)".to_string());
+        panic!(
+            "case {case_name}: {label} baseline mismatch: {mismatched_pixels} pixels differ, max_delta={max_channel_delta}, {mismatch_detail}\nbaseline={}\nactual={}",
+            expected_path.display(), actual_path.display(),
+        );
+    }
+}
+
 fn run_case(case: &Case) {
     let cases_root = cases_root();
     let case_dir = cases_root.join(case.name);
@@ -409,35 +534,20 @@ fn run_case(case: &Case) {
         }
     }
 
-    // NOTE: Keep the baseline image immutable.
-    // We always write headless render output to a separate file so developers can
-    // manually inspect/copy it over the baseline if they choose.
-    let out_png = out_dir.join("test-render-result.png");
+    // Detect animated scenes (TimeInput / Time nodes) early so we can
+    // adjust baseline naming: animated → baseline_0.{ext}, static → baseline.{ext}.
+    let uses_time = scene
+        .nodes
+        .iter()
+        .any(|n| matches!(n.node_type.as_str(), "TimeInput" | "Time"));
 
     // (3) Ultimate ground truth: rendered output vs baseline.
     let mut image_ok = true;
 
-    if let Some(baseline_rel) = case.baseline_png {
-        let baseline_png = case_dir.join(baseline_rel);
-        assert_ne!(
-            baseline_png,
-            out_png,
-            "case {}: refusing to write render output over baseline image: {}",
-            case.name,
-            baseline_png.display()
-        );
-    }
-    if out_png.exists() {
-        std::fs::remove_file(&out_png).unwrap_or_else(|e| {
-            panic!(
-                "case {}: failed to remove old output {}: {e}",
-                case.name,
-                out_png.display()
-            )
-        });
-    }
-
     // Render in-process so we can dump intermediate textures for all cases.
+    #[allow(unused_assignments)]
+    let mut output_is_hdr = false;
+    let out_result;
     {
         let headless =
             HeadlessRenderer::new(HeadlessRendererConfig::default()).unwrap_or_else(|e| {
@@ -465,6 +575,30 @@ fn run_case(case: &Case) {
                 });
         let shader_space = build.shader_space;
         let output_texture_name = build.scene_output_texture;
+        let pass_bindings = build.pass_bindings;
+
+        // Detect HDR output to choose EXR vs PNG for frame dumps and baselines.
+        output_is_hdr = shader_space
+            .texture_info(output_texture_name.as_str())
+            .map(|info| {
+                info.format == rust_wgpu_fiber::eframe::wgpu::TextureFormat::Rgba16Float
+            })
+            .unwrap_or(false);
+        let output_ext = if output_is_hdr { "exr" } else { "png" };
+
+        // NOTE: Keep baseline images immutable.
+        // We always write headless render output to a separate file so developers
+        // can manually inspect/copy it over the baseline if they choose.
+        out_result = out_dir.join(format!("test-render-result.{output_ext}"));
+        if out_result.exists() {
+            std::fs::remove_file(&out_result).unwrap_or_else(|e| {
+                panic!(
+                    "case {}: failed to remove old output {}: {e}",
+                    case.name,
+                    out_result.display()
+                )
+            });
+        }
 
         shader_space.render();
 
@@ -527,16 +661,29 @@ fn run_case(case: &Case) {
         // (a-?) Optional intermediate stages.
         // Always dump the final result, even if an intermediate stage fails.
         let dump_final = || {
-            shader_space
-                .save_texture_png(output_texture_name.as_str(), &out_png)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "case {}: failed to save final texture {} to {}: {e}",
-                        case.name,
-                        output_texture_name.as_str(),
-                        out_png.display()
-                    )
-                });
+            if output_is_hdr {
+                shader_space
+                    .save_texture_exr(output_texture_name.as_str(), &out_result)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "case {}: failed to save final texture {} to {}: {e}",
+                            case.name,
+                            output_texture_name.as_str(),
+                            out_result.display()
+                        )
+                    });
+            } else {
+                shader_space
+                    .save_texture_png(output_texture_name.as_str(), &out_result)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "case {}: failed to save final texture {} to {}: {e}",
+                            case.name,
+                            output_texture_name.as_str(),
+                            out_result.display()
+                        )
+                    });
+            }
         };
 
         let staged = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -630,62 +777,163 @@ fn run_case(case: &Case) {
 
         dump_final();
 
+        // (b) Multi-frame animation rendering for scenes that use time.
+        // Render 10 frames evenly spanning 10 seconds and save each frame.
+        // If a baseline_N.{ext} exists, compare against it.
+        if uses_time {
+            const ANIM_FRAME_COUNT: usize = 10;
+            const ANIM_DURATION_SECS: f32 = 10.0;
+            for frame_idx in 0..ANIM_FRAME_COUNT {
+                let t = if ANIM_FRAME_COUNT <= 1 {
+                    0.0
+                } else {
+                    ANIM_DURATION_SECS * (frame_idx as f32) / ((ANIM_FRAME_COUNT - 1) as f32)
+                };
+                // Update time uniform on every pass and re-render.
+                for pb in &pass_bindings {
+                    let mut p = pb.base_params;
+                    p.time = t;
+                    renderer::update_pass_params(&shader_space, pb, &p).unwrap_or_else(|e| {
+                        panic!(
+                            "case {}: failed to update pass params for frame {frame_idx} t={t}: {e}",
+                            case.name
+                        )
+                    });
+                }
+                shader_space.render();
+                let frame_path = out_dir.join(format!("frame_{frame_idx}.{output_ext}"));
+                if output_is_hdr {
+                    shader_space
+                        .save_texture_exr(output_texture_name.as_str(), &frame_path)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "case {}: failed to save animation frame {frame_idx} (t={t}s) to {}: {e}",
+                                case.name,
+                                frame_path.display()
+                            )
+                        });
+                } else {
+                    shader_space
+                        .save_texture_png(output_texture_name.as_str(), &frame_path)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "case {}: failed to save animation frame {frame_idx} (t={t}s) to {}: {e}",
+                                case.name,
+                                frame_path.display()
+                            )
+                        });
+                }
+
+                // Compare against per-frame baseline if it exists.
+                let baseline_frame = case_dir.join(format!("baseline_{frame_idx}.{output_ext}"));
+                if baseline_frame.exists() {
+                    if output_is_hdr {
+                        compare_exr_baseline(
+                            &baseline_frame,
+                            &frame_path,
+                            case.name,
+                            &format!("frame_{frame_idx}"),
+                        );
+                    } else {
+                        let expected = load_rgba8(&baseline_frame);
+                        let actual = load_rgba8(&frame_path);
+                        compare_rgba8_baseline(
+                            &expected,
+                            &actual,
+                            case.name,
+                            &format!("frame_{frame_idx}"),
+                            &baseline_frame,
+                            &frame_path,
+                        );
+                    }
+                }
+            }
+        }
+
         if let Err(payload) = staged {
             std::panic::resume_unwind(payload);
         }
     }
 
-    let meta = std::fs::metadata(&out_png).unwrap_or_else(|e| {
+    let meta = std::fs::metadata(&out_result).unwrap_or_else(|e| {
         panic!(
             "case {}: failed to stat output {}: {e}",
             case.name,
-            out_png.display()
+            out_result.display()
         )
     });
     assert!(
         meta.len() > 0,
-        "case {}: output png is empty: {}",
+        "case {}: output is empty: {}",
         case.name,
-        out_png.display()
+        out_result.display()
     );
 
-    let mut actual = load_rgba8(&out_png);
-
-    if let Some(baseline_rel) = case.baseline_png {
-        let baseline_png = case_dir.join(baseline_rel);
-        assert!(
-            baseline_png.exists(),
-            "case {}: missing baseline image at {}",
-            case.name,
-            baseline_png.display()
-        );
-
-        let expected = load_rgba8(&baseline_png);
-
-        if expected.dimensions() != actual.dimensions() {
-            image_ok = false;
-            eprintln!(
-                "case {}: dimension mismatch expected={}x{} actual={}x{}",
-                case.name,
-                expected.width(),
-                expected.height(),
-                actual.width(),
-                actual.height()
-            );
+    // Resolve the baseline path for the initial render:
+    //   animated scenes → baseline_0.{ext}
+    //   static  scenes → baseline.{ext}  (from case.baseline_png, typically "baseline.png")
+    let initial_baseline = if uses_time {
+        let ext = if output_is_hdr { "exr" } else { "png" };
+        let p = case_dir.join(format!("baseline_0.{ext}"));
+        if p.exists() { Some(p) } else { None }
+    } else if let Some(baseline_rel) = case.baseline_png {
+        // For static scenes, also check for the HDR variant first.
+        if output_is_hdr {
+            let exr = case_dir.join(baseline_rel).with_extension("exr");
+            if exr.exists() {
+                Some(exr)
+            } else {
+                let png = case_dir.join(baseline_rel);
+                if png.exists() { Some(png) } else { None }
+            }
+        } else {
+            let p = case_dir.join(baseline_rel);
+            if p.exists() { Some(p) } else { None }
         }
+    } else {
+        None
+    };
 
-        // (3) Compare pixel-by-pixel vs baseline
-        let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
-        if mismatched_pixels != 0 {
-            image_ok = false;
-            if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
+    if let Some(baseline_path) = initial_baseline {
+        if output_is_hdr {
+            let ok = compare_exr_baseline_soft(
+                &baseline_path,
+                &out_result,
+                case.name,
+                "initial",
+            );
+            if !ok {
+                image_ok = false;
+            }
+        } else {
+            let expected = load_rgba8(&baseline_path);
+            let actual = load_rgba8(&out_result);
+
+            if expected.dimensions() != actual.dimensions() {
+                image_ok = false;
                 eprintln!(
-                    "case {}: baseline mismatch: {} pixels differ, max_delta={}, first at ({},{}) expected={:?} actual={:?}",
-                    case.name, mismatched_pixels, max_channel_delta, x, y, ep.0, ap.0
+                    "case {}: dimension mismatch expected={}x{} actual={}x{}",
+                    case.name,
+                    expected.width(),
+                    expected.height(),
+                    actual.width(),
+                    actual.height()
                 );
+            } else {
+                let (mismatched_pixels, max_channel_delta) = diff_stats(&expected, &actual);
+                if mismatched_pixels != 0 {
+                    image_ok = false;
+                    if let Some((x, y, ep, ap)) = first_pixel_mismatch(&expected, &actual) {
+                        eprintln!(
+                            "case {}: baseline mismatch: {} pixels differ, max_delta={}, first at ({},{}) expected={:?} actual={:?}",
+                            case.name, mismatched_pixels, max_channel_delta, x, y, ep.0, ap.0
+                        );
+                    }
+                }
             }
         }
     } else if let Some(node_id) = case.expected_image_texture {
+        let mut actual = load_rgba8(&out_result);
         let node = scene
             .nodes
             .iter()
@@ -720,8 +968,6 @@ fn run_case(case: &Case) {
         if alpha_mode == "straight" {
             for p in expected.pixels_mut() {
                 let a = (p.0[3] as f32) / 255.0;
-                // Runtime prepass samples sRGB textures (auto-decodes to linear) and multiplies
-                // in linear space, then later re-encodes for sRGB output.
                 let r = srgb_u8_to_linear_f32(p.0[0]) * a;
                 let g = srgb_u8_to_linear_f32(p.0[1]) * a;
                 let b = srgb_u8_to_linear_f32(p.0[2]) * a;
@@ -731,12 +977,7 @@ fn run_case(case: &Case) {
             }
         }
 
-        // Some scenes render an ImageTexture onto a sub-rect of the target. For those cases,
-        // validate the cropped output region against the expected pixels.
         if case.name == "dyn-rect-image-texture" {
-            // This scene uses a 200x120 rect centered at (128,128).
-            // Top-left (GL-style origin bottom-left) is (28, 68) in target pixels.
-            // Our PNG output uses top-left origin, so y needs flip.
             let crop_w: u32 = 200;
             let crop_h: u32 = 120;
             let x0: u32 = 28;
@@ -744,9 +985,6 @@ fn run_case(case: &Case) {
             let y0: u32 = actual.height().saturating_sub(y0_from_bottom + crop_h);
 
             actual = crop_rgba8(&actual, x0, y0, crop_w, crop_h);
-
-            // RenderPass uses NearestClamp sampling; the rect stretches the 64x64 texture
-            // to 200x120, so resize expected to match the cropped output.
             expected = resize_nearest_rgba8(&expected, crop_w, crop_h);
         }
 
@@ -765,8 +1003,10 @@ fn run_case(case: &Case) {
         if mismatched_pixels != 0 {
             image_ok = false;
         }
-    } else {
-        // If there is no baseline/expected image, at least compare to prepared scene resolution.
+    } else if !uses_time {
+        // If there is no baseline/expected image and it's static,
+        // at least compare to prepared scene resolution.
+        let actual = load_rgba8(&out_result);
         let prepared = renderer::scene_prep::prepare_scene(&scene)
             .unwrap_or_else(|e| panic!("case {}: failed to prepare scene: {e}", case.name));
         if actual.dimensions() != (prepared.resolution[0], prepared.resolution[1]) {
@@ -812,14 +1052,14 @@ fn run_case(case: &Case) {
             panic!(
                 "case {}: WGSL golden mismatch and image mismatch\noutput={}",
                 case.name,
-                out_png.display()
+                out_result.display()
             );
         }
     } else if !image_ok {
         panic!(
             "case {}: image mismatch\noutput={}",
             case.name,
-            out_png.display()
+            out_result.display()
         );
     }
 }
