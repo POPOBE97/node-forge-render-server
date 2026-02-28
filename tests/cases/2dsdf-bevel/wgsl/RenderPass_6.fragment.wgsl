@@ -151,5 +151,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_MathClosure_63_(in.uv, n);
         mc_MathClosure_63_out = output;
     }
-    return vec4f((mc_MathClosure_63_out * smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)))));
+    let _frag_out = vec4f((mc_MathClosure_63_out * smoothstep(0.0, -2.0, sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)))));
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

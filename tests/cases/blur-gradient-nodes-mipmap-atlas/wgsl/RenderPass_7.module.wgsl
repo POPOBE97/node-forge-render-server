@@ -87,5 +87,6 @@ var img_samp_ImageTexture_24: sampler;
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(img_tex_ImageTexture_24, img_samp_ImageTexture_24, (in.uv));
+    let _frag_out = textureSample(img_tex_ImageTexture_24, img_samp_ImageTexture_24, (in.uv));
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

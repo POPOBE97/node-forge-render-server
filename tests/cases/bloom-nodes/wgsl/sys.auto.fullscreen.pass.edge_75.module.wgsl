@@ -115,5 +115,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_MathClosure_42_(in.uv);
         mc_MathClosure_42_out = output;
     }
-    return mc_MathClosure_42_out;
+    let _frag_out = mc_MathClosure_42_out;
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

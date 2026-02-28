@@ -113,5 +113,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_72_MathClosure_30_(in.uv, xy, size);
         mc_GroupInstance_72_MathClosure_30_out = output;
     }
-    return textureSample(pass_tex_Downsample_22, pass_samp_Downsample_22, vec2f((mc_GroupInstance_72_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_72_MathClosure_30_out).y));
+    let _frag_out = textureSample(pass_tex_Downsample_22, pass_samp_Downsample_22, vec2f((mc_GroupInstance_72_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_72_MathClosure_30_out).y));
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

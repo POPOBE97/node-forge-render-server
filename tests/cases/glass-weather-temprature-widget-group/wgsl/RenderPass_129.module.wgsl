@@ -722,5 +722,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_GroupInstance_132_MathClosure_111_(in.uv, t, c_ui, thumb, select(0.0, 1.0, show_thumb));
         mc_GroupInstance_132_MathClosure_111_out = output;
     }
-    return blendNormal((mc_GroupInstance_132_MathClosure_111_out), (mc_GroupInstance_132_MathClosure_96_out));
+    let _frag_out = blendNormal((mc_GroupInstance_132_MathClosure_111_out), (mc_GroupInstance_132_MathClosure_96_out));
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

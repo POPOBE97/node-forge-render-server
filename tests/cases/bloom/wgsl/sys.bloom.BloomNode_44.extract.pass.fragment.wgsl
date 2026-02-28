@@ -47,8 +47,8 @@ let mask = smoothstep(0.00000000, 0.15686275, lum);
 let extracted = src.rgb * mask * 1.00000000;
 let gray = dot(extracted, vec3f(0.2126, 0.7152, 0.0722));
 let sat_rgb = mix(vec3f(gray), extracted, 0.00000000);
-let tinted = sat_rgb * vec3f(1.00000000, 1.00000000, 1.00000000);
-let alpha = src.a * mask * 1.00000000 * 1.00000000;
+let tinted = sat_rgb * vec3f(1.00000000, 0.00000000, 0.00000000);
+let alpha = clamp(src.a * mask * 1.00000000 * 1.00000000, 0.0, 1.0);
 return vec4f(tinted, alpha);
 
 }

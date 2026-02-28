@@ -117,5 +117,6 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f((graph_inputs.node_ColorInput_7_fa5c7029).rgb * (graph_inputs.node_ColorInput_7_fa5c7029).a, (graph_inputs.node_ColorInput_7_fa5c7029).a);
+    let _frag_out = vec4f((graph_inputs.node_ColorInput_7_fa5c7029).rgb * (graph_inputs.node_ColorInput_7_fa5c7029).a, (graph_inputs.node_ColorInput_7_fa5c7029).a);
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

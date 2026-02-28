@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-27T10:56:35.404Z",
-    "modified": "2026-02-27T10:56:35.404Z"
+    "created": "2026-02-27T11:27:46.343Z",
+    "modified": "2026-02-27T11:27:46.343Z"
   },
   "nodes": [
     {
@@ -121,7 +121,12 @@
           "portId": "dynamic_1772124390808_1",
           "label": "pass2",
           "variableName": "pass2",
-          "type": "pass"
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
         }
       ]
     },
@@ -206,7 +211,7 @@
       "type": "BloomNode",
       "position": {
         "x": 0,
-        "y": 360
+        "y": 280
       },
       "width": 160,
       "label": "Bloom",
@@ -280,7 +285,7 @@
       "type": "PerspectiveCamera",
       "position": {
         "x": -440,
-        "y": -180
+        "y": -140
       },
       "width": 160,
       "label": "Perspective Camera",
@@ -302,7 +307,7 @@
         },
         "fovY": 120,
         "aspect": 0.45,
-        "near": 0.1,
+        "near": 700,
         "far": 4000
       }
     }
@@ -411,7 +416,18 @@
       "id": "edge_84",
       "from": {
         "nodeId": "RenderPass_4",
-        "portId": "depth"
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_5",
+        "portId": "dynamic_1772124390808_1"
+      }
+    },
+    {
+      "id": "edge_85",
+      "from": {
+        "nodeId": "BloomNode_44",
+        "portId": "glare"
       },
       "to": {
         "nodeId": "Composite_5",
