@@ -83,7 +83,7 @@ fn vs_main(\n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
-    return vec4f(linear_to_srgb_extended(c.xyz), c.w);\n\
+    return vec4f(linear_to_srgb_extended(c.xyz), saturate(c.w));
 }}\n"
     )
 }
@@ -169,7 +169,7 @@ fn vs_main(\n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
-    return vec4f(linear_to_srgb(c.xyz), c.w);\n\
+    return vec4f(linear_to_srgb(c.xyz), saturate(c.w));
 }}\n"
     )
 }

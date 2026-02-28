@@ -33,7 +33,7 @@ let extracted = src.rgb * mask * {strength:.8};
 let gray = dot(extracted, vec3f(0.2126, 0.7152, 0.0722));
 let sat_rgb = mix(vec3f(gray), extracted, {saturation:.8});
 let tinted = sat_rgb * vec3f({tint_r:.8}, {tint_g:.8}, {tint_b:.8});
-let alpha = src.a * mask * {strength:.8} * {tint_a:.8};
+let alpha = clamp(src.a * mask * {strength:.8} * {tint_a:.8}, 0.0, 1.0);
 return vec4f(tinted, alpha);
 "#,
         edge0 = edge0,
@@ -109,7 +109,8 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     let base = textureSample(base_tex, base_samp, in.uv);
     let add = textureSample(add_tex, add_samp, in.uv);
-    return base + add;
+    // RGB is additive (HDR glow), alpha is coverage clamped to [0,1].
+    return vec4f(base.rgb + add.rgb, clamp(base.a + add.a, 0.0, 1.0));
 }
 "#
     .to_string();

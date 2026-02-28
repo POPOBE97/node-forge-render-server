@@ -95,8 +95,9 @@ fn compose_overlay(render_rgba: vec4<f32>, ref_rgba: vec4<f32>, opacity: f32) ->
 
 // Uniform scalar used for summary stats/histogram:
 // average of RGBA channels (equal weighting).
+// Average RGB only — alpha is coverage, not luminance.
 fn metric_scalar(metric_rgba: vec4<f32>) -> f32 {
-    return (metric_rgba.x + metric_rgba.y + metric_rgba.z + metric_rgba.w) * 0.25;
+    return (metric_rgba.x + metric_rgba.y + metric_rgba.z) / 3.0;
 }
 
 fn histogram_bin(v: f32) -> u32 {
@@ -162,6 +163,10 @@ fn main(
             // Diff visualization is always opaque for readability.
             display_rgba.a = 1.0;
         }
+
+        // Alpha is always coverage [0,1] regardless of HDR clamp toggle.
+        display_rgba.a = clamp(display_rgba.a, 0.0, 1.0);
+        analysis_rgba.a = clamp(analysis_rgba.a, 0.0, 1.0);
 
         if (params.clamp_output != 0u) {
             display_rgba = clamp(display_rgba, vec4<f32>(0.0), vec4<f32>(1.0));

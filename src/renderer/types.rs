@@ -429,15 +429,15 @@ impl MaterialCompileContext {
     ///
     /// Inline statements (from MathClosure nodes) are emitted before the final return.
     pub fn build_fragment_body(&self, return_expr: &str) -> String {
-        if self.inline_stmts.is_empty() {
-            format!("return {};", return_expr)
+        // Clamp alpha to [0,1] coverage — HDR energy lives in RGB only.
+        let stmts = if self.inline_stmts.is_empty() {
+            String::new()
         } else {
-            format!(
-                "{}\n    return {};",
-                self.inline_stmts.join("\n"),
-                return_expr
-            )
-        }
+            format!("{}\n    ", self.inline_stmts.join("\n"))
+        };
+        format!(
+            "{stmts}let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
+        )
     }
 }
 

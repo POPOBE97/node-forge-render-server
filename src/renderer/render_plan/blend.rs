@@ -79,9 +79,11 @@ pub(crate) fn default_blend_state_for_preset(preset: &str) -> Result<BlendState>
                 dst_factor: wgpu::BlendFactor::One,
                 operation: wgpu::BlendOperation::Add,
             },
+            // Alpha is coverage [0,1] — use premul-style blend to prevent
+            // unbounded accumulation on HDR (Rgba16Float) targets.
             alpha: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                 operation: wgpu::BlendOperation::Add,
             },
         },

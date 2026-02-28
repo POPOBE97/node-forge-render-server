@@ -59,7 +59,8 @@ fn vs_main(\n\
 @fragment\n\
 fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
     let c = textureSample({tex_var}, {samp_var}, in.uv);\n\
-    return vec4(c.xyz * c.w, c.w);\n\
+    let a = saturate(c.w);
+    return vec4(c.xyz * a, a);
 }}\n"
     )
 }
