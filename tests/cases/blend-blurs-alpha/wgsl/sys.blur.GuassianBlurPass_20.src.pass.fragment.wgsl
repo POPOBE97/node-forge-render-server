@@ -13,6 +13,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 

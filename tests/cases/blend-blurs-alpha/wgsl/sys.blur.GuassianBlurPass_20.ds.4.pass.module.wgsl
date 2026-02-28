@@ -13,6 +13,7 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
 };
 
 
@@ -60,10 +61,7 @@ var src_samp: sampler;
 
 
 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z / params.target_size.x, 1.0);
+     out.position = params.camera * vec4f(p_px, position.z, 1.0);
 
       // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
