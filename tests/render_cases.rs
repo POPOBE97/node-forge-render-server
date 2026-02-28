@@ -25,6 +25,11 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         "2dsdf-bevel" => None,
         "glass-weather-temprature-widget" => None,
         "camera-mat4-pass-nodes" => None,
+        // HDR (Rgba16Float) scenes — output is tone-mapped to sRGB for PNG.
+        // No committed baseline yet; WGSL golden + render-success only.
+        "bloom" => None,
+        "bloom-nodes" => None,
+        "hdr-bloom-nodes" => None,
         // This case previously validated output against the ImageTexture source.
         // It now uses baseline.png to avoid duplicating GPU sampling/interpolation details in tests.
         _ => Some("baseline.png"),
