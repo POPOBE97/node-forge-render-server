@@ -76,14 +76,14 @@ impl ShaderSpaceBuilder {
 
     pub fn build(self, scene: &SceneDSL) -> Result<ShaderSpaceBuildResult> {
         let presentation_mode = self.options.presentation_mode;
-        // UiHdrNative does NOT need a display-encode pass.  The forked
-        // egui-wgpu shader now expects linear texels (sRGB textures are
-        // hardware-decoded, Rgba16Float textures are already linear).
-        // Only UiSdrDisplayEncode still creates a gamma-encode presentation
-        // pass for backward compat with the stock egui gamma-framebuffer path.
+        // Enable the display-encode pass for any mode that needs sRGB-encoded
+        // output.  UiHdrNative needs it so clipboard copy / file export get
+        // correct gamma, and UiSdrDisplayEncode needs it for the legacy path.
+        // SceneLinear (tests, raw pipeline inspection) deliberately skips it.
         let enable_display_encode = matches!(
             presentation_mode,
             ShaderSpacePresentationMode::UiSdrDisplayEncode
+                | ShaderSpacePresentationMode::UiHdrNative
         );
         let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature) =
             assembler::build_shader_space_from_scene_internal(

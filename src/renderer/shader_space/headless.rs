@@ -8,7 +8,7 @@ use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
 
-use super::api::{ShaderSpaceBuildOptions, ShaderSpaceBuilder};
+use super::api::{ShaderSpaceBuildOptions, ShaderSpacePresentationMode, ShaderSpaceBuilder};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeadlessOutputKind {
@@ -48,9 +48,15 @@ pub fn render_scene_to_file_headless(
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
+    // Use UiSdrDisplayEncode so the assembler creates a display-encode pass
+    // that bakes linear→sRGB into a presentation texture.  PNG export reads
+    // that texture for correct gamma.  EXR stays on the raw scene output.
     let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
         .with_adapter(renderer.adapter.clone())
-        .with_options(ShaderSpaceBuildOptions::default());
+        .with_options(ShaderSpaceBuildOptions {
+            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
+            ..Default::default()
+        });
     if let Some(store) = asset_store {
         builder = builder.with_asset_store(store.clone());
     }
@@ -67,10 +73,15 @@ pub fn render_scene_to_file_headless(
             )
         })?;
     match route_headless_output(output_info.format, output_path)? {
-        HeadlessOutputKind::Png => result
-            .shader_space
-            .save_texture_png(result.scene_output_texture.as_str(), output_path)
-            .map_err(|e| anyhow!("failed to save png: {e}"))?,
+        HeadlessOutputKind::Png => {
+            // Read from the display-encode presentation texture (sRGB-encoded bytes)
+            // so the PNG contains correct gamma.
+            let tex_name = result.present_output_texture.as_str();
+            result
+                .shader_space
+                .save_texture_png(tex_name, output_path)
+                .map_err(|e| anyhow!("failed to save png: {e}"))?
+        }
         HeadlessOutputKind::Exr => result
             .shader_space
             .save_texture_exr(result.scene_output_texture.as_str(), output_path)

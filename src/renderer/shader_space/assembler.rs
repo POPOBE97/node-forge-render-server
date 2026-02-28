@@ -1548,19 +1548,17 @@ pub(crate) fn build_shader_space_from_scene_internal(
     //    (.present.hdr.gamma).  egui linearises → original linear, EDR shows >1.
     //
     //  • Rgba8Unorm / Bgra8Unorm:
-    //    No presentation pass.  These formats store raw linear values with no
-    //    hardware sRGB decode.  The user deliberately chose "Unorm" to avoid
-    //    sRGB conversion — applying sRGB gamma-encode here would make them
-    //    indistinguishable from sRGB targets on screen.  Without a presentation
-    //    pass, egui's linearisation will darken them slightly (interpreting
-    //    linear as gamma), but this preserves the format distinction and matches
-    //    the old Bgra8Unorm-surface behaviour where fs_main_gamma_framebuffer
-    //    displayed them as-is.
+    //    Same as sRGB targets — scene output is linear.  We write clamped
+    //    sRGB bytes into a Rgba8Unorm presentation texture so that clipboard
+    //    copy and headless PNG export produce correct gamma-encoded output.
+    //    On screen, egui samples the gamma bytes and linearises them back,
+    //    matching what the OS compositor does with the Rgba16Float surface.
     let is_hdr_native = presentation_mode == super::api::ShaderSpacePresentationMode::UiHdrNative;
     let display_texture_name: Option<ResourceName> = if enable_display_encode {
         match target_format {
-            // sRGB targets → clamped SDR encode.
-            TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb => {
+            // sRGB / linear 8-bit targets → clamped SDR encode.
+            TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb
+            | TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm => {
                 let name: ResourceName = format!(
                     "{}{}",
                     target_texture_name.as_str(),
