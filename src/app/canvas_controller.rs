@@ -1421,10 +1421,11 @@ pub fn show_canvas_panel(
 
     response.context_menu(|ui| {
         if ui.button("复制材质").clicked() {
-            if let Some(info) = app.shader_space.texture_info(display_texture_name.as_str())
+            let export_tex = app.export_texture_name.as_str();
+            if let Some(info) = app.shader_space.texture_info(export_tex)
                 && let Ok(image) = app
                     .shader_space
-                    .read_texture_rgba8(display_texture_name.as_str())
+                    .read_texture_rgba8(export_tex)
             {
                 let width = info.size.width as usize;
                 let height = info.size.height as usize;
