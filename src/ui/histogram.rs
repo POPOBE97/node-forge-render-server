@@ -28,8 +28,12 @@ fn float_to_ordered(v: f32) -> u32 {
     return select(bits ^ 0x80000000u, ~bits, sign == 1u);
 }
 
+fn is_finite_f32(v: f32) -> bool {
+    return v == v && abs(v) <= 3.4028235e38;
+}
+
 fn update_stats(v: f32) {
-    if (!isFinite(v)) {
+    if (!is_finite_f32(v)) {
         return;
     }
 
@@ -59,10 +63,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 const HISTOGRAM_COMPUTE_SHADER_SRC: &str = r#"
 struct HistogramParams {
     mode: u32,
-    _pad0: vec3<u32>,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
     min_log: f32,
     diff_log: f32,
-    _pad1: vec2<f32>,
+    _pad3: f32,
+    _pad4: f32,
 };
 
 @group(0) @binding(0)
@@ -89,6 +96,10 @@ fn to_sdr_bin(v: f32) -> u32 {
     return u32(clamp(v * 255.0, 0.0, 255.0));
 }
 
+fn is_finite_f32(v: f32) -> bool {
+    return v == v && abs(v) <= 3.4028235e38;
+}
+
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let size = textureDimensions(source_tex);
@@ -100,13 +111,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let is_hdr = params.mode == 1u;
 
     if (is_hdr) {
-        if (isFinite(rgba.r)) {
+        if (is_finite_f32(rgba.r)) {
             atomicAdd(&histogram[to_hdr_bin(rgba.r)], 1u);
         }
-        if (isFinite(rgba.g)) {
+        if (is_finite_f32(rgba.g)) {
             atomicAdd(&histogram[256u + to_hdr_bin(rgba.g)], 1u);
         }
-        if (isFinite(rgba.b)) {
+        if (is_finite_f32(rgba.b)) {
             atomicAdd(&histogram[512u + to_hdr_bin(rgba.b)], 1u);
         }
         return;
