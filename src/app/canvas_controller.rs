@@ -1421,6 +1421,12 @@ pub fn show_canvas_panel(
 
     response.context_menu(|ui| {
         if ui.button("复制材质").clicked() {
+            // Execute the on-demand SDR encode pass (UiHdrNative only) so the
+            // export texture contains up-to-date sRGB-encoded bytes.
+            if let Some(ref pass_name) = app.export_encode_pass_name {
+                app.shader_space
+                    .render_pass_by_name(pass_name.as_str());
+            }
             let export_tex = app.export_texture_name.as_str();
             if let Some(info) = app.shader_space.texture_info(export_tex)
                 && let Ok(image) = app
