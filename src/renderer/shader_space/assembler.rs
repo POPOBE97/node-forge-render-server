@@ -660,70 +660,92 @@ pub(crate) fn build_shader_space_from_scene_internal(
         other => other,
     };
 
-    // Create a presentation texture for the final display-encode pass.
+    // Create present textures for display-encode passes.
     //
-    // The egui-wgpu Rgba16Float surface uses fs_main_linear_framebuffer which
-    // applies linear_from_gamma_rgb to every sampled texel.  To get a correct
-    // round-trip we gamma-encode the scene output:
+    // Two separate textures may be created:
     //
-    //  • Rgba8UnormSrgb / Bgra8UnormSrgb:
-    //    Hardware sRGB decode happens on sample (→ linear), so the scene output
-    //    is already linear.  We write clamped sRGB bytes into a Rgba8Unorm
-    //    presentation texture (.present.sdr.srgb).  egui samples the raw bytes
-    //    (gamma-encoded), linearises → back to correct linear on the Rgba16Float
-    //    surface.
+    //  • HDR gamma-encoded (UiHdrNative + Rgba16Float only):
+    //    Unclamped gamma-encoded values in a Rgba16Float texture for on-screen
+    //    display on the Rgba16Float surface.  Values > 1.0 survive the
+    //    egui round-trip (gamma → linear_from_gamma_rgb → original linear).
     //
-    //  • Rgba16Float (UiHdrNative):
-    //    Scene output is linear with values potentially > 1.0.  We write
-    //    unclamped gamma-encoded values into a Rgba16Float presentation texture
-    //    (.present.hdr.gamma).  egui linearises → original linear, EDR shows >1.
+    //  • SDR sRGB-encoded (for clipboard copy / headless PNG export):
+    //    Clamped sRGB bytes in a Rgba8Unorm texture.  read_texture_rgba8
+    //    returns gamma-encoded bytes suitable for PNG and clipboard.
+    //    Also used for on-screen display in UiSdrDisplayEncode mode.
     //
-    //  • Rgba8Unorm / Bgra8Unorm:
-    //    Same as sRGB targets — scene output is linear.  We write clamped
-    //    sRGB bytes into a Rgba8Unorm presentation texture so that clipboard
-    //    copy and headless PNG export produce correct gamma-encoded output.
-    //    On screen, egui samples the gamma bytes and linearises them back,
-    //    matching what the OS compositor does with the Rgba16Float surface.
+    // For UiHdrNative + 8-bit targets: on-screen uses scene_output directly
+    // (egui handles sRGB hardware decode); only the SDR export texture is
+    // created when the raw storage bytes are linear (Rgba8Unorm/Bgra8Unorm).
+    // sRGB-format targets already have gamma-encoded storage so no export
+    // pass is needed either.
     let is_hdr_native = presentation_mode == super::api::ShaderSpacePresentationMode::UiHdrNative;
-    let display_texture_name: Option<ResourceName> = if enable_display_encode {
-        match target_format {
-            // sRGB / linear 8-bit targets → clamped SDR encode.
-            TextureFormat::Rgba8UnormSrgb | TextureFormat::Bgra8UnormSrgb
-            | TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm => {
-                let name: ResourceName = format!(
-                    "{}{}",
-                    target_texture_name.as_str(),
-                    UI_PRESENT_SDR_SRGB_SUFFIX
-                )
-                .into();
-                textures.push(TextureDecl {
-                    name: name.clone(),
-                    size: [tgt_w_u, tgt_h_u],
-                    format: TextureFormat::Rgba8Unorm,
-                    sample_count: 1,
-                    needs_sampling: false,
-                });
-                Some(name)
-            }
-            // HDR target on HDR surface → unclamped gamma encode.
-            TextureFormat::Rgba16Float if is_hdr_native => {
-                let name: ResourceName = format!(
-                    "{}{}",
-                    target_texture_name.as_str(),
-                    UI_PRESENT_HDR_GAMMA_SUFFIX
-                )
-                .into();
-                textures.push(TextureDecl {
-                    name: name.clone(),
-                    size: [tgt_w_u, tgt_h_u],
-                    format: TextureFormat::Rgba16Float,
-                    sample_count: 1,
-                    needs_sampling: false,
-                });
-                Some(name)
-            }
-            // Rgba8Unorm, Bgra8Unorm, and any other format: no presentation pass.
-            _ => None,
+
+    // HDR gamma-encoded texture for on-screen display (UiHdrNative + Rgba16Float only).
+    // egui's linear_from_gamma_rgb round-trips the unclamped gamma values back to linear
+    // on the Rgba16Float surface, preserving EDR values > 1.0.
+    let hdr_gamma_texture: Option<ResourceName> =
+        if enable_display_encode && is_hdr_native && target_format == TextureFormat::Rgba16Float {
+            let name: ResourceName = format!(
+                "{}{}",
+                target_texture_name.as_str(),
+                UI_PRESENT_HDR_GAMMA_SUFFIX
+            )
+            .into();
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: TextureFormat::Rgba16Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            Some(name)
+        } else {
+            None
+        };
+
+    // SDR sRGB-encoded texture for clipboard copy and headless PNG export.
+    // Also used for on-screen display in UiSdrDisplayEncode mode.
+    //
+    // NOT created for sRGB-format targets in UiHdrNative mode because their
+    // storage bytes are already gamma-encoded — read_texture_rgba8 returns
+    // correct sRGB bytes without an extra encode pass.
+    let sdr_srgb_texture: Option<ResourceName> = if enable_display_encode {
+        let needs_sdr = if is_hdr_native {
+            // Export-only: needed when raw storage bytes are linear.
+            matches!(
+                target_format,
+                TextureFormat::Rgba8Unorm
+                    | TextureFormat::Bgra8Unorm
+                    | TextureFormat::Rgba16Float
+            )
+        } else {
+            // UiSdrDisplayEncode: always create for on-screen + export.
+            matches!(
+                target_format,
+                TextureFormat::Rgba8UnormSrgb
+                    | TextureFormat::Bgra8UnormSrgb
+                    | TextureFormat::Rgba8Unorm
+                    | TextureFormat::Bgra8Unorm
+            )
+        };
+        if needs_sdr {
+            let name: ResourceName = format!(
+                "{}{}",
+                target_texture_name.as_str(),
+                UI_PRESENT_SDR_SRGB_SUFFIX
+            )
+            .into();
+            textures.push(TextureDecl {
+                name: name.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: TextureFormat::Rgba8Unorm,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            Some(name)
+        } else {
+            None
         }
     } else {
         None
@@ -1135,25 +1157,38 @@ pub(crate) fn build_shader_space_from_scene_internal(
         }
     }
 
-    // Final display encode pass: gamma-encode linear scene output so egui's
-    // linear_from_gamma_rgb round-trips correctly on the Rgba16Float surface.
-    if enable_display_encode {
-        if let Some(display_tex) = display_texture_name.clone() {
-            // Only Rgba16Float targets under UiHdrNative get the unclamped HDR encode.
-            // Everything else (sRGB targets, 8-bit unorm targets) uses the clamped SDR path.
-            let (suffix, shader_wgsl) =
-                if is_hdr_native && target_format == TextureFormat::Rgba16Float {
-                    (
-                        UI_PRESENT_HDR_GAMMA_SUFFIX,
-                        build_hdr_gamma_encode_wgsl("src_tex", "src_samp"),
-                    )
-                } else {
-                    (
-                        UI_PRESENT_SDR_SRGB_SUFFIX,
-                        build_srgb_display_encode_wgsl("src_tex", "src_samp"),
-                    )
-                };
+    // Final display-encode passes: gamma-encode linear scene output.
+    //
+    // Up to two passes may be created:
+    //  1. SDR sRGB encode  → clamped [0,1] sRGB bytes in Rgba8Unorm
+    //     (for clipboard / headless PNG, and for on-screen in UiSdrDisplayEncode).
+    //  2. HDR gamma encode → unclamped sRGB gamma in Rgba16Float
+    //     (for on-screen in UiHdrNative, preserving EDR values > 1.0).
+    //
+    // The SDR pass runs first so both passes read the same linear source.
+    // The HDR pass (if any) runs last — it is the on-screen presentation texture.
+    {
+        let encode_passes: Vec<(&ResourceName, &str, String)> = [
+            sdr_srgb_texture.as_ref().map(|tex| {
+                (
+                    tex,
+                    UI_PRESENT_SDR_SRGB_SUFFIX,
+                    build_srgb_display_encode_wgsl("src_tex", "src_samp"),
+                )
+            }),
+            hdr_gamma_texture.as_ref().map(|tex| {
+                (
+                    tex,
+                    UI_PRESENT_HDR_GAMMA_SUFFIX,
+                    build_hdr_gamma_encode_wgsl("src_tex", "src_samp"),
+                )
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
+        for (encode_tex, suffix, shader_wgsl) in encode_passes {
             let pass_name: ResourceName =
                 format!("{}{}.pass", target_texture_name.as_str(), suffix).into();
             let geo: ResourceName =
@@ -1176,7 +1211,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 geometry_buffer: geo,
                 instance_buffer: None,
                 normals_buffer: None,
-                target_texture: display_tex.clone(),
+                target_texture: encode_tex.clone(),
                 resolve_target: None,
                 params_buffer: params_name,
                 baked_data_parse_buffer: None,
@@ -1194,7 +1229,6 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 sample_count: 1,
             });
 
-            // Make sure it runs last.
             composite_passes.push(pass_name);
         }
     }

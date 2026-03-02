@@ -74,9 +74,9 @@ pub fn render_scene_to_file_headless(
         })?;
     match route_headless_output(output_info.format, output_path)? {
         HeadlessOutputKind::Png => {
-            // Read from the display-encode presentation texture (sRGB-encoded bytes)
+            // Read from the display-encode export texture (sRGB-encoded bytes)
             // so the PNG contains correct gamma.
-            let tex_name = result.present_output_texture.as_str();
+            let tex_name = result.export_output_texture.as_str();
             result
                 .shader_space
                 .save_texture_png(tex_name, output_path)

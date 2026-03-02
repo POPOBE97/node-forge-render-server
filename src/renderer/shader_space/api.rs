@@ -35,7 +35,11 @@ pub struct ShaderSpaceBuildResult {
     pub shader_space: ShaderSpace,
     pub resolution: [u32; 2],
     pub scene_output_texture: ResourceName,
+    /// Texture for on-screen display (registered with egui).
     pub present_output_texture: ResourceName,
+    /// Texture for clipboard copy and headless PNG export.
+    /// Contains sRGB-encoded bytes suitable for `read_texture_rgba8`.
+    pub export_output_texture: ResourceName,
     pub pass_bindings: Vec<PassBindings>,
     pub pipeline_signature: [u8; 32],
 }
@@ -97,15 +101,41 @@ impl ShaderSpaceBuilder {
                 presentation_mode,
             )?;
 
-        let present_output_texture = if enable_display_encode {
-            // Try HDR gamma-encoded presentation texture first, then SDR sRGB.
-            let hdr_name: ResourceName =
-                format!("{}.present.hdr.gamma", scene_output_texture.as_str()).into();
+        // On-screen display texture.
+        // For UiHdrNative: use HDR gamma texture if available, else scene output
+        //   directly (do NOT use the SDR sRGB texture — egui treats its bytes as
+        //   linear on the Rgba16Float surface, causing double-gamma).
+        // For UiSdrDisplayEncode: use SDR sRGB texture (it's the only encode).
+        let present_output_texture = match presentation_mode {
+            ShaderSpacePresentationMode::UiHdrNative => {
+                let hdr_name: ResourceName =
+                    format!("{}.present.hdr.gamma", scene_output_texture.as_str()).into();
+                if shader_space.textures.get(hdr_name.as_str()).is_some() {
+                    hdr_name
+                } else {
+                    scene_output_texture.clone()
+                }
+            }
+            ShaderSpacePresentationMode::UiSdrDisplayEncode => {
+                let sdr_name: ResourceName =
+                    format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
+                if shader_space.textures.get(sdr_name.as_str()).is_some() {
+                    sdr_name
+                } else {
+                    scene_output_texture.clone()
+                }
+            }
+            ShaderSpacePresentationMode::SceneLinear => scene_output_texture.clone(),
+        };
+
+        // Export texture for clipboard copy / headless PNG.
+        // Prefer the SDR sRGB present texture (gamma-encoded Rgba8Unorm bytes).
+        // Falls back to scene_output when no encode pass was created (e.g.
+        // sRGB-format targets whose storage bytes are already gamma-encoded).
+        let export_output_texture = if enable_display_encode {
             let sdr_name: ResourceName =
                 format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
-            if shader_space.textures.get(hdr_name.as_str()).is_some() {
-                hdr_name
-            } else if shader_space.textures.get(sdr_name.as_str()).is_some() {
+            if shader_space.textures.get(sdr_name.as_str()).is_some() {
                 sdr_name
             } else {
                 scene_output_texture.clone()
@@ -119,6 +149,7 @@ impl ShaderSpaceBuilder {
             resolution,
             scene_output_texture,
             present_output_texture,
+            export_output_texture,
             pass_bindings,
             pipeline_signature,
         })
@@ -132,6 +163,7 @@ impl ShaderSpaceBuilder {
             shader_space,
             resolution,
             present_output_texture: scene_output_texture.clone(),
+            export_output_texture: scene_output_texture.clone(),
             scene_output_texture,
             pass_bindings,
             pipeline_signature,
