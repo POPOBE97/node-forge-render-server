@@ -341,6 +341,7 @@ pub fn apply_scene_update(
                     app.output_texture_name = result.present_output_texture;
                     app.scene_output_texture_name = result.scene_output_texture;
                     app.export_texture_name = result.export_output_texture;
+                    app.export_encode_pass_name = result.export_encode_pass_name;
                     app.last_pipeline_signature = Some(result.pipeline_signature);
                     app.uniform_scene = prepared_scene_candidate
                         .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
@@ -426,6 +427,7 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         app.output_texture_name = result.present_output_texture;
         app.scene_output_texture_name = result.scene_output_texture;
         app.export_texture_name = result.export_output_texture;
+        app.export_encode_pass_name = result.export_encode_pass_name;
         app.passes = result.pass_bindings;
         app.last_pipeline_signature = None;
     }

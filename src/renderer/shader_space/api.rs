@@ -40,6 +40,11 @@ pub struct ShaderSpaceBuildResult {
     /// Texture for clipboard copy and headless PNG export.
     /// Contains sRGB-encoded bytes suitable for `read_texture_rgba8`.
     pub export_output_texture: ResourceName,
+    /// Pass name for the on-demand SDR sRGB encode (UiHdrNative only).
+    /// When `Some`, the pass is registered but excluded from per-frame
+    /// composition — it must be executed via `render_pass_by_name` before
+    /// reading `export_output_texture`.
+    pub export_encode_pass_name: Option<ResourceName>,
     pub pass_bindings: Vec<PassBindings>,
     pub pipeline_signature: [u8; 32],
 }
@@ -89,7 +94,7 @@ impl ShaderSpaceBuilder {
             ShaderSpacePresentationMode::UiSdrDisplayEncode
                 | ShaderSpacePresentationMode::UiHdrNative
         );
-        let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature) =
+        let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature, sdr_encode_pass_name) =
             assembler::build_shader_space_from_scene_internal(
                 scene,
                 self.device,
@@ -107,15 +112,10 @@ impl ShaderSpaceBuilder {
         //   linear on the Rgba16Float surface, causing double-gamma).
         // For UiSdrDisplayEncode: use SDR sRGB texture (it's the only encode).
         let present_output_texture = match presentation_mode {
-            ShaderSpacePresentationMode::UiHdrNative => {
-                let hdr_name: ResourceName =
-                    format!("{}.present.hdr.gamma", scene_output_texture.as_str()).into();
-                if shader_space.textures.get(hdr_name.as_str()).is_some() {
-                    hdr_name
-                } else {
-                    scene_output_texture.clone()
-                }
-            }
+            // UiHdrNative: display the linear scene output directly.
+            // macOS applies sRGB on the Rgba16Float surface — no GPU
+            // gamma encode pass is needed.
+            ShaderSpacePresentationMode::UiHdrNative => scene_output_texture.clone(),
             ShaderSpacePresentationMode::UiSdrDisplayEncode => {
                 let sdr_name: ResourceName =
                     format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
@@ -150,6 +150,7 @@ impl ShaderSpaceBuilder {
             scene_output_texture,
             present_output_texture,
             export_output_texture,
+            export_encode_pass_name: sdr_encode_pass_name,
             pass_bindings,
             pipeline_signature,
         })
@@ -164,6 +165,7 @@ impl ShaderSpaceBuilder {
             resolution,
             present_output_texture: scene_output_texture.clone(),
             export_output_texture: scene_output_texture.clone(),
+            export_encode_pass_name: None,
             scene_output_texture,
             pass_bindings,
             pipeline_signature,
