@@ -227,6 +227,8 @@ pub struct AppInit {
     pub output_texture_name: ResourceName,
     pub scene_output_texture_name: ResourceName,
     pub export_texture_name: ResourceName,
+    /// On-demand SDR encode pass name (UiHdrNative only).
+    pub export_encode_pass_name: Option<ResourceName>,
     pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
     pub scene_rx: Receiver<ws::SceneUpdate>,
@@ -247,6 +249,8 @@ pub struct App {
     pub scene_output_texture_name: ResourceName,
     /// Texture for clipboard copy / file export (sRGB-encoded bytes).
     pub export_texture_name: ResourceName,
+    /// On-demand SDR encode pass name (UiHdrNative only).
+    pub export_encode_pass_name: Option<ResourceName>,
     pub color_attachment: Option<egui::TextureId>,
     pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
@@ -439,6 +443,7 @@ impl App {
             output_texture_name: init.output_texture_name,
             scene_output_texture_name: init.scene_output_texture_name,
             export_texture_name: init.export_texture_name,
+            export_encode_pass_name: init.export_encode_pass_name,
             color_attachment: None,
             start: init.start,
             passes: init.passes,
