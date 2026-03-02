@@ -10,6 +10,10 @@ const STATS_WORD_COUNT: usize = 4;
 const STATS_BYTE_COUNT: usize = STATS_WORD_COUNT * std::mem::size_of::<u32>();
 const HIST_LOG_ADDITION: f32 = 0.001;
 const HIST_LOG_DIFF_EPSILON: f32 = 1e-6;
+const NTH_NORMALIZATION_FLOOR: f32 = 0.1;
+const NTH_NORMALIZATION_HEADROOM: f32 = 1.3;
+const MAX_READBACK_POLL_ATTEMPTS: usize = 200;
+const READBACK_POLL_SLEEP_MS: u64 = 1;
 
 const STATS_COMPUTE_SHADER_SRC: &str = r#"
 @group(0) @binding(0)
@@ -242,6 +246,7 @@ fn symmetric_log_inverse(s: f32) -> f32 {
 }
 
 fn ordered_key_to_float(key: u32) -> f32 {
+    // Inverse of WGSL float_to_ordered mapping.
     let bits = if (key >> 31) != 0 {
         key ^ 0x8000_0000
     } else {
@@ -258,7 +263,8 @@ fn map_value_to_bin(v: f32, min_log: f32, diff_log: f32) -> u32 {
 
 fn hdr_normalization_index() -> usize {
     let total = HISTOGRAM_WORD_COUNT;
-    let offset = (1 + (HISTOGRAM_BINS as usize / 128)) * HISTOGRAM_CHANNELS as usize;
+    let channels_to_skip = 1 + (HISTOGRAM_BINS as usize / 128);
+    let offset = channels_to_skip * HISTOGRAM_CHANNELS as usize;
     total.saturating_sub(1 + offset)
 }
 
@@ -287,8 +293,8 @@ fn normalize_hdr_histogram(
     let mut sorted = tmp;
     sorted.sort_by(|a, b| a.total_cmp(b));
     let idx = hdr_normalization_index();
-    let norm_base = sorted[idx].max(0.1);
-    let norm = 1.0 / (norm_base * 1.3);
+    let norm_base = sorted[idx].max(NTH_NORMALIZATION_FLOOR);
+    let norm = 1.0 / (norm_base * NTH_NORMALIZATION_HEADROOM);
 
     let mut normalized = [0.0f32; HISTOGRAM_WORD_COUNT];
     for (dst, value) in normalized.iter_mut().zip(tmp.iter()) {
@@ -615,13 +621,13 @@ impl HistogramRenderer {
         });
 
         let mut mapped_ok = false;
-        for _ in 0..200 {
+        for _ in 0..MAX_READBACK_POLL_ATTEMPTS {
             let _ = device.poll(wgpu::PollType::Poll);
             if let Ok(result) = rx.try_recv() {
                 mapped_ok = result.is_ok();
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(std::time::Duration::from_millis(READBACK_POLL_SLEEP_MS));
         }
 
         if !mapped_ok {
