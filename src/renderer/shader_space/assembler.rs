@@ -488,6 +488,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
     ResourceName,
     Vec<PassBindings>,
     [u8; 32],
+    Option<ResourceName>,
 )> {
     let prepared = prepare_scene(scene)?;
     let resolution = prepared.resolution;
@@ -1167,6 +1168,12 @@ pub(crate) fn build_shader_space_from_scene_internal(
     //
     // The SDR pass runs first so both passes read the same linear source.
     // The HDR pass (if any) runs last — it is the on-screen presentation texture.
+    //
+    // In UiHdrNative mode the SDR encode pass is registered (pipeline compiled)
+    // but excluded from the per-frame composition.  It is executed on-demand
+    // only when the user copies to clipboard or exports.  This avoids the
+    // encode accidentally affecting the on-screen presentation path.
+    let mut sdr_encode_pass_name: Option<ResourceName> = None;
     {
         let encode_passes: Vec<(&ResourceName, &str, String)> = [
             sdr_srgb_texture.as_ref().map(|tex| {
@@ -1229,7 +1236,19 @@ pub(crate) fn build_shader_space_from_scene_internal(
                 sample_count: 1,
             });
 
-            composite_passes.push(pass_name);
+            // In UiHdrNative mode ALL encode passes are kept out of the
+            // per-frame composition.  The SDR pass is triggered on-demand for
+            // clipboard / export.  The HDR gamma pass is not needed because
+            // macOS already applies sRGB on the Rgba16Float surface — running
+            // an additional gamma encode would cause double-gamma.
+            if is_hdr_native {
+                if suffix == UI_PRESENT_SDR_SRGB_SUFFIX {
+                    sdr_encode_pass_name = Some(pass_name);
+                }
+                // HDR gamma pass: simply skip adding to composite_passes.
+            } else {
+                composite_passes.push(pass_name);
+            }
         }
     }
 
@@ -1942,6 +1961,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
         output_texture_name,
         pass_bindings,
         pipeline_signature,
+        sdr_encode_pass_name,
     ))
 }
 
