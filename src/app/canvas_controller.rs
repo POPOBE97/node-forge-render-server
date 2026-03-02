@@ -1574,8 +1574,7 @@ pub fn show_canvas_panel(
         }
     }
 
-    let shift_down = ctx.input(|i| i.modifiers.shift);
-    if shift_down && !app.shift_was_down {
+    if ctx.input(|i| i.key_pressed(egui::Key::D)) {
         if let Some(reference) = app.ref_image.as_mut() {
             reference.mode = match reference.mode {
                 RefImageMode::Overlay => RefImageMode::Diff,
@@ -1586,7 +1585,6 @@ pub fn show_canvas_panel(
             app.clipping_dirty = true;
         }
     }
-    app.shift_was_down = shift_down;
 
     if pan_zoom_enabled {
         // Pan with middle mouse button drag.
