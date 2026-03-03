@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-02T12:37:14.292Z",
-    "modified": "2026-03-02T12:37:14.292Z"
+    "created": "2026-03-03T13:11:34.730Z",
+    "modified": "2026-03-03T13:11:34.730Z"
   },
   "nodes": [
     {
@@ -275,7 +275,7 @@
         "y": 360
       },
       "width": 160,
-      "label": "Time Input",
+      "label": "uEdgeRotationY",
       "params": {}
     },
     {
@@ -352,7 +352,7 @@
         "y": 60
       },
       "width": 160,
-      "label": "Color Input",
+      "label": "uBgOverlay",
       "params": {
         "value": [
           0,
@@ -676,5 +676,74 @@
       "size": 4641
     }
   },
-  "groups": []
+  "groups": [],
+  "stateMachine": {
+    "id": "sm_mmamfug8_2",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_mmamj2am_3",
+        "name": "Entry",
+        "position": {
+          "x": 20,
+          "y": 180
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_mmamj2am_4",
+        "name": "Any",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_mmamj2am_5",
+        "name": "Exit",
+        "position": {
+          "x": 340,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      },
+      {
+        "id": "st_mmamj4me_7",
+        "name": "Mutation 1",
+        "position": {
+          "x": 300,
+          "y": 120
+        },
+        "parameterOverrides": {},
+        "type": "mutationNode",
+        "mutationId": "mutation_mmamj4me_6"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "tr_mmamjmr7_2",
+        "source": "st_mmamj2am_4",
+        "target": "st_mmamj4me_7",
+        "duration": 0.3,
+        "easing": "linear"
+      }
+    ],
+    "mutations": [
+      {
+        "id": "mutation_mmamj4me_6",
+        "name": "Mutation 1",
+        "inputs": [],
+        "outputs": [],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": []
+      }
+    ],
+    "initialStateId": "st_mmamj2am_3"
+  }
 }
