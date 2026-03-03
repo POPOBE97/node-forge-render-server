@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-28T08:02:54.051Z",
-    "modified": "2026-02-28T08:02:54.051Z"
+    "created": "2026-03-02T12:37:14.292Z",
+    "modified": "2026-03-02T12:37:14.292Z"
   },
   "nodes": [
     {
@@ -237,7 +237,7 @@
       "width": 203,
       "label": "Math Closure",
       "params": {
-        "source": "output = vec3(\n  0.0,\n  fract(t/5.0) * 180.0,\n  0.0\n);"
+        "source": "output = vec3(\n  0.0,\n  fract(t/10.0) * 360.0,\n  0.0\n);"
       },
       "inputs": [
         {
