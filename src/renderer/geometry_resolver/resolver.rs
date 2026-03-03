@@ -380,6 +380,7 @@ mod tests {
             outputs: None,
             groups: Vec::new(),
             assets: HashMap::new(),
+            state_machine: None,
         }
     }
 

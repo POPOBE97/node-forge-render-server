@@ -127,6 +127,7 @@ pub struct SceneCache {
     pub outputs: SceneOutputs,
     pub groups: Vec<GroupDSL>,
     pub assets: std::collections::HashMap<String, crate::dsl::AssetEntry>,
+    pub state_machine: Option<crate::state_machine::types::StateMachine>,
 }
 
 impl SceneCache {
@@ -139,6 +140,7 @@ impl SceneCache {
             outputs: scene.outputs.clone().unwrap_or_default(),
             groups: scene.groups.clone(),
             assets: scene.assets.clone(),
+            state_machine: scene.state_machine.clone(),
         };
         apply_scene_update(&mut cache, scene);
         cache
@@ -150,6 +152,7 @@ pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
     cache.metadata = scene.metadata.clone();
     cache.groups = scene.groups.clone();
     cache.assets = scene.assets.clone();
+    cache.state_machine = scene.state_machine.clone();
 
     cache.nodes_by_id.clear();
     for node in &scene.nodes {
@@ -377,6 +380,7 @@ pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
         outputs: Some(cache.outputs.clone()),
         groups: cache.groups.clone(),
         assets: cache.assets.clone(),
+        state_machine: cache.state_machine.clone(),
     }
 }
 
@@ -1755,6 +1759,7 @@ mod tests {
             outputs: Some(std::collections::HashMap::new()),
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         }
     }
 
@@ -1941,6 +1946,7 @@ mod tests {
             outputs: Some(std::collections::HashMap::new()),
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         };
         let cache = SceneCache::from_scene_update(&scene);
         let delta = SceneDelta {
@@ -2051,6 +2057,7 @@ mod tests {
             outputs: Some(std::collections::HashMap::new()),
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         };
         let cache = SceneCache::from_scene_update(&scene);
         let delta = SceneDelta {

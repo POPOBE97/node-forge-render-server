@@ -34,6 +34,8 @@ pub struct SceneDSL {
     pub groups: Vec<GroupDSL>,
     #[serde(default)]
     pub assets: HashMap<String, AssetEntry>,
+    #[serde(default, rename = "stateMachine")]
+    pub state_machine: Option<crate::state_machine::types::StateMachine>,
 }
 
 /// A reusable subgraph definition referenced by `GroupInstance` nodes.
@@ -109,6 +111,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
         outputs: scene.outputs.clone(),
         groups: scene.groups.clone(),
         assets: scene.assets.clone(),
+        state_machine: scene.state_machine.clone(),
     }
 }
 

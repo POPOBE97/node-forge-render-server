@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use node_forge_render_server::asset_store::AssetStore;
 use node_forge_render_server::renderer::validation;
+use node_forge_render_server::state_machine::evenly_spaced_samples;
 use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
@@ -217,8 +218,8 @@ fn load_image_from_node(
 
 /// Load a 32-bit float RGBA EXR image, returning (width, height, channels_f32).
 fn load_exr_f32(path: &Path) -> (u32, u32, Vec<f32>) {
-    let img = image::open(path)
-        .unwrap_or_else(|e| panic!("failed to open EXR {}: {e}", path.display()));
+    let img =
+        image::open(path).unwrap_or_else(|e| panic!("failed to open EXR {}: {e}", path.display()));
     let rgba32f = img.to_rgba32f();
     let w = rgba32f.width();
     let h = rgba32f.height();
@@ -228,12 +229,7 @@ fn load_exr_f32(path: &Path) -> (u32, u32, Vec<f32>) {
 
 /// Compare two EXR images channel-by-channel with a small epsilon tolerance.
 /// Panics on mismatch.
-fn compare_exr_baseline(
-    baseline_path: &Path,
-    actual_path: &Path,
-    case_name: &str,
-    label: &str,
-) {
+fn compare_exr_baseline(baseline_path: &Path, actual_path: &Path, case_name: &str, label: &str) {
     if !compare_exr_baseline_soft(baseline_path, actual_path, case_name, label) {
         panic!(
             "case {case_name}: {label} EXR baseline mismatch\nbaseline={}\nactual={}",
@@ -318,24 +314,25 @@ fn compare_rgba8_baseline(
     if expected.dimensions() != actual.dimensions() {
         panic!(
             "case {case_name}: {label} dimension mismatch expected={}x{} actual={}x{}\nbaseline={}\nactual={}",
-            expected.width(), expected.height(),
-            actual.width(), actual.height(),
-            expected_path.display(), actual_path.display(),
+            expected.width(),
+            expected.height(),
+            actual.width(),
+            actual.height(),
+            expected_path.display(),
+            actual_path.display(),
         );
     }
     let (mismatched_pixels, max_channel_delta) = diff_stats(expected, actual);
     if mismatched_pixels != 0 {
         let mismatch_detail = first_pixel_mismatch(expected, actual)
             .map(|(x, y, ep, ap)| {
-                format!(
-                    "first at ({x},{y}) expected={:?} actual={:?}",
-                    ep.0, ap.0
-                )
+                format!("first at ({x},{y}) expected={:?} actual={:?}", ep.0, ap.0)
             })
             .unwrap_or_else(|| "(unknown)".to_string());
         panic!(
             "case {case_name}: {label} baseline mismatch: {mismatched_pixels} pixels differ, max_delta={max_channel_delta}, {mismatch_detail}\nbaseline={}\nactual={}",
-            expected_path.display(), actual_path.display(),
+            expected_path.display(),
+            actual_path.display(),
         );
     }
 }
@@ -580,9 +577,7 @@ fn run_case(case: &Case) {
         // Detect HDR output to choose EXR vs PNG for frame dumps and baselines.
         output_is_hdr = shader_space
             .texture_info(output_texture_name.as_str())
-            .map(|info| {
-                info.format == rust_wgpu_fiber::eframe::wgpu::TextureFormat::Rgba16Float
-            })
+            .map(|info| info.format == rust_wgpu_fiber::eframe::wgpu::TextureFormat::Rgba16Float)
             .unwrap_or(false);
         let output_ext = if output_is_hdr { "exr" } else { "png" };
 
@@ -782,13 +777,13 @@ fn run_case(case: &Case) {
         // If a baseline_N.{ext} exists, compare against it.
         if uses_time {
             const ANIM_FRAME_COUNT: usize = 10;
-            const ANIM_DURATION_SECS: f32 = 10.0;
-            for frame_idx in 0..ANIM_FRAME_COUNT {
-                let t = if ANIM_FRAME_COUNT <= 1 {
-                    0.0
-                } else {
-                    ANIM_DURATION_SECS * (frame_idx as f32) / ((ANIM_FRAME_COUNT - 1) as f32)
-                };
+            let anim_samples = evenly_spaced_samples(0.0, 10.0, ANIM_FRAME_COUNT)
+                .unwrap_or_else(|e| panic!("case {}: invalid animation schedule: {e}", case.name));
+            let mut existing_baseline_indices: Vec<usize> = Vec::new();
+
+            for sample in &anim_samples {
+                let frame_idx = sample.frame_index;
+                let t = sample.time_secs as f32;
                 // Update time uniform on every pass and re-render.
                 for pb in &pass_bindings {
                     let mut p = pb.base_params;
@@ -827,6 +822,7 @@ fn run_case(case: &Case) {
                 // Compare against per-frame baseline if it exists.
                 let baseline_frame = case_dir.join(format!("baseline_{frame_idx}.{output_ext}"));
                 if baseline_frame.exists() {
+                    existing_baseline_indices.push(frame_idx);
                     if output_is_hdr {
                         compare_exr_baseline(
                             &baseline_frame,
@@ -846,6 +842,20 @@ fn run_case(case: &Case) {
                             &frame_path,
                         );
                     }
+                }
+            }
+
+            // Guardrail: if this animated case is expected to have baselines, missing
+            // animation frame baselines should fail in normal mode.
+            if case.baseline_png.is_some() && !update_goldens {
+                let missing: Vec<usize> = (0..ANIM_FRAME_COUNT)
+                    .filter(|idx| !existing_baseline_indices.contains(idx))
+                    .collect();
+                if !missing.is_empty() {
+                    panic!(
+                        "case {}: animated scene is missing per-frame baselines for indices {:?} (expected baseline_N.{})\nrun with UPDATE_GOLDENS=1 to refresh outputs, then commit baseline files",
+                        case.name, missing, output_ext
+                    );
                 }
             }
         }
@@ -896,12 +906,7 @@ fn run_case(case: &Case) {
 
     if let Some(baseline_path) = initial_baseline {
         if output_is_hdr {
-            let ok = compare_exr_baseline_soft(
-                &baseline_path,
-                &out_result,
-                case.name,
-                "initial",
-            );
+            let ok = compare_exr_baseline_soft(&baseline_path, &out_result, case.name, "initial");
             if !ok {
                 image_ok = false;
             }

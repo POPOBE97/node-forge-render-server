@@ -524,6 +524,7 @@ mod tests {
             outputs: None,
             groups: vec![],
             assets: HashMap::new(),
+            state_machine: None,
         }
     }
 

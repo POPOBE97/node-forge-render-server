@@ -358,6 +358,7 @@ pub mod test_utils {
             outputs: None,
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         }
     }
 
@@ -379,6 +380,7 @@ pub mod test_utils {
             outputs: Some(outputs),
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         }
     }
 

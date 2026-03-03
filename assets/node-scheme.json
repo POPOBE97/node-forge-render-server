@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-03-03T09:59:57.532Z",
+  "generatedAt": "2026-03-03T18:02:36.418Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -3299,5 +3299,130 @@
         "operation": "add"
       }
     }
-  ]
+  ],
+  "stateMachine": {
+    "animationNodes": [
+      {
+        "type": "animationState",
+        "label": "State",
+        "category": "States",
+        "description": "Animation state node used in the state machine panel"
+      },
+      {
+        "type": "anyState",
+        "label": "AnyState",
+        "category": "Built-ins",
+        "description": "Built-in AnyState. Source-only transition endpoint."
+      },
+      {
+        "type": "entryState",
+        "label": "Entry",
+        "category": "Built-ins",
+        "description": "Built-in entry state. Source-only transition endpoint."
+      },
+      {
+        "type": "exitState",
+        "label": "Exit",
+        "category": "Built-ins",
+        "description": "Built-in exit state. Target-only transition endpoint."
+      },
+      {
+        "type": "mutationNode",
+        "label": "Mutation",
+        "category": "States",
+        "description": "Dynamic state node backed by a mutation subgraph."
+      }
+    ],
+    "innerNodes": [
+      {
+        "type": "smLerp",
+        "label": "Lerp",
+        "category": "Math",
+        "description": "Linear interpolation between A and B by T.",
+        "inputs": [
+          {
+            "id": "a",
+            "name": "A",
+            "type": "float"
+          },
+          {
+            "id": "b",
+            "name": "B",
+            "type": "float"
+          },
+          {
+            "id": "t",
+            "name": "T",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "name": "Result",
+            "type": "float"
+          }
+        ],
+        "defaultParams": {
+          "t": 0.5
+        }
+      },
+      {
+        "type": "smMathOp",
+        "label": "Math Op",
+        "category": "Math",
+        "description": "Applies a scalar math operation.",
+        "inputs": [
+          {
+            "id": "a",
+            "name": "A",
+            "type": "float"
+          },
+          {
+            "id": "b",
+            "name": "B",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "result",
+            "name": "Result",
+            "type": "float"
+          }
+        ],
+        "defaultParams": {
+          "operation": "add"
+        }
+      },
+      {
+        "type": "smPassThrough",
+        "label": "Pass Through",
+        "category": "Core",
+        "description": "Forwards float input to output.",
+        "inputs": [
+          {
+            "id": "input",
+            "name": "Input",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "output",
+            "name": "Output",
+            "type": "float"
+          }
+        ],
+        "defaultParams": {}
+      }
+    ],
+    "transitionConditionTypes": [
+      "trigger",
+      "bool",
+      "threshold",
+      "event",
+      "compound"
+    ]
+  }
 }

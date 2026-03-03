@@ -25,6 +25,7 @@ fn file_render_target_applies_scheme_defaults() {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+            state_machine: None,
     };
 
     normalize_scene_defaults(&mut scene).unwrap();

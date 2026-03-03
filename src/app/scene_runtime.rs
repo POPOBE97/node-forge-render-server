@@ -520,6 +520,7 @@ mod tests {
             outputs: None,
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         };
 
         let schema = GraphSchema {
@@ -582,6 +583,7 @@ mod tests {
             outputs: None,
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         };
 
         let schema = GraphSchema {

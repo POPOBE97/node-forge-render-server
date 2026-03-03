@@ -34,6 +34,7 @@ fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         outputs: Some(HashMap::new()),
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     }
 }
 
