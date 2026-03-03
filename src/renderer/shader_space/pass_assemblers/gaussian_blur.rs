@@ -13,7 +13,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{incoming_connection, Node},
+    dsl::{Node, incoming_connection},
     renderer::{
         camera::pass_node_uses_custom_camera,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
@@ -29,7 +29,6 @@ use crate::{
     },
 };
 
-use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use super::super::image_utils::image_node_dimensions;
 use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
@@ -40,6 +39,7 @@ use super::super::resource_naming::{
     should_skip_blur_downsample_pass, should_skip_blur_upsample_pass,
 };
 use super::super::sampler::{sampler_kind_for_pass_texture, sampler_kind_from_node_params};
+use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 
 /// Assemble a `"GuassianBlurPass"` layer.
 pub(crate) fn assemble_gaussian_blur(
@@ -66,8 +66,7 @@ pub(crate) fn assemble_gaussian_blur(
     let mut base_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
     let mut blur_output_center: Option<[f32; 2]> = None;
 
-    let radius_px =
-        cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
+    let radius_px = cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
     let extend_enabled = layer_node
         .params
         .get("extend")
@@ -89,11 +88,9 @@ pub(crate) fn assemble_gaussian_blur(
     if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "pass") {
         if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
             if src_node.node_type == "RenderPass" {
-                if let Some(geo_conn) = incoming_connection(
-                    &prepared.scene,
-                    &src_conn.from.node_id,
-                    "geometry",
-                ) {
+                if let Some(geo_conn) =
+                    incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
+                {
                     if let Ok((
                         _,
                         src_geo_w,
@@ -110,17 +107,15 @@ pub(crate) fn assemble_gaussian_blur(
                         _,
                         _,
                         _,
-                    )) =
-                        crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                            &prepared.scene,
-                            nodes_by_id,
-                            ids,
-                            &geo_conn.from.node_id,
-                            [tgt_w, tgt_h],
-                            None,
-                            asset_store,
-                        )
-                    {
+                    )) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                        &prepared.scene,
+                        nodes_by_id,
+                        ids,
+                        &geo_conn.from.node_id,
+                        [tgt_w, tgt_h],
+                        None,
+                        asset_store,
+                    ) {
                         base_resolution = [
                             src_geo_w.max(1.0).round() as u32,
                             src_geo_h.max(1.0).round() as u32,
@@ -147,8 +142,7 @@ pub(crate) fn assemble_gaussian_blur(
         } else {
             // Non-pass source path (e.g. MathClosure with samplePass):
             // infer blur source resolution from its transitive pass dependencies.
-            let src_bundle =
-                build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+            let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
             if let Some(inferred_resolution) = infer_uniform_resolution_from_pass_deps(
                 layer_id,
                 &src_bundle.pass_textures,
@@ -163,20 +157,14 @@ pub(crate) fn assemble_gaussian_blur(
             if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
                 if src_node.node_type == "ImageTexture"
                     && src_conn.from.port_id == "color"
-                    && incoming_connection(
-                        &prepared.scene,
-                        &src_conn.from.node_id,
-                        "uv",
-                    )
-                    .is_none()
+                    && incoming_connection(&prepared.scene, &src_conn.from.node_id, "uv").is_none()
                 {
                     if let Some(dims) = image_node_dimensions(src_node, asset_store) {
                         base_resolution = dims;
                     }
                     if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
                         initial_blur_source_texture = Some(tex);
-                        initial_blur_source_image_node_id =
-                            Some(src_conn.from.node_id.clone());
+                        initial_blur_source_image_node_id = Some(src_conn.from.node_id.clone());
                         initial_blur_source_sampler_kind =
                             Some(sampler_kind_from_node_params(&src_node.params));
                     }
@@ -199,12 +187,8 @@ pub(crate) fn assemble_gaussian_blur(
     let src_content_h = src_content_resolution[1] as f32;
 
     // Keep camera semantics stable across bypass/elision.
-    let force_source_pass_for_custom_camera = pass_node_uses_custom_camera(
-        &prepared.scene,
-        nodes_by_id,
-        layer_node,
-        [src_w, src_h],
-    )?;
+    let force_source_pass_for_custom_camera =
+        pass_node_uses_custom_camera(&prepared.scene, nodes_by_id, layer_node, [src_w, src_h])?;
     if force_source_pass_for_custom_camera {
         initial_blur_source_texture = None;
         initial_blur_source_image_node_id = None;
@@ -227,8 +211,16 @@ pub(crate) fn assemble_gaussian_blur(
         });
 
         // Build source pass geometry.
-        let src_geo_w = if extend_pad_px > 0 { src_content_w } else { src_w };
-        let src_geo_h = if extend_pad_px > 0 { src_content_h } else { src_h };
+        let src_geo_w = if extend_pad_px > 0 {
+            src_content_w
+        } else {
+            src_w
+        };
+        let src_geo_h = if extend_pad_px > 0 {
+            src_content_h
+        } else {
+            src_h
+        };
 
         let geo_src: ResourceName = format!("sys.blur.{layer_id}.src.geo").into();
         bs.geometry_buffers.push((
@@ -252,8 +244,7 @@ pub(crate) fn assemble_gaussian_blur(
         );
 
         // Build WGSL for sampling the `pass` input source.
-        let mut src_bundle =
-            build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
+        let mut src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
         let mut src_graph_binding: Option<GraphBinding> = None;
         let mut src_graph_values: Option<Vec<u8>> = None;
         if let Some(schema) = src_bundle.graph_schema.clone() {
@@ -301,14 +292,11 @@ pub(crate) fn assemble_gaussian_blur(
             src_sampler_kinds.push(kind);
         }
 
-        let src_pass_bindings =
-            crate::renderer::render_plan::resolve_pass_texture_bindings(
-                &bs.pass_output_registry,
-                &src_bundle.pass_textures,
-            )?;
-        for (upstream_pass_id, binding) in
-            src_bundle.pass_textures.iter().zip(src_pass_bindings)
-        {
+        let src_pass_bindings = crate::renderer::render_plan::resolve_pass_texture_bindings(
+            &bs.pass_output_registry,
+            &src_bundle.pass_textures,
+        )?;
+        for (upstream_pass_id, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
             src_texture_bindings.push(binding);
             src_sampler_kinds.push(sampler_kind_for_pass_texture(
                 &prepared.scene,
@@ -316,8 +304,7 @@ pub(crate) fn assemble_gaussian_blur(
             ));
         }
 
-        let src_pass_name: ResourceName =
-            format!("sys.blur.{layer_id}.src.pass").into();
+        let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: src_pass_name.as_str().to_string(),
             name: src_pass_name.clone(),
@@ -366,11 +353,8 @@ pub(crate) fn assemble_gaussian_blur(
     let tap_count = num.clamp(1, 8);
     let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
     let skip_factor1_downsample = should_skip_blur_downsample_pass(downsample_factor);
-    let skip_factor1_upsample = should_skip_blur_upsample_pass(
-        downsample_factor,
-        extend_enabled,
-        is_sampled_output,
-    );
+    let skip_factor1_upsample =
+        should_skip_blur_upsample_pass(downsample_factor, extend_enabled, is_sampled_output);
     let emit_upsample_pass = !skip_factor1_upsample;
 
     let downsample_steps: Vec<u32> = if skip_factor1_downsample {
@@ -453,10 +437,7 @@ pub(crate) fn assemble_gaussian_blur(
     };
     let upsample_geo_size: Option<[f32; 2]> = if emit_upsample_pass {
         Some(if extend_pad_px > 0 && output_tex == target_texture_name {
-            gaussian_blur_extend_upsample_geo_size(
-                src_content_resolution,
-                [blur_w, blur_h],
-            )
+            gaussian_blur_extend_upsample_geo_size(src_content_resolution, [blur_w, blur_h])
         } else {
             [blur_w as f32, blur_h as f32]
         })
@@ -484,23 +465,21 @@ pub(crate) fn assemble_gaussian_blur(
         geo_ds.clone(),
         make_fullscreen_geometry(ds_w as f32, ds_h as f32),
     ));
-    let geo_out: Option<ResourceName> =
-        if let Some(upsample_geo_size) = upsample_geo_size {
-            let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
-            bs.geometry_buffers.push((
-                geo_out.clone(),
-                make_fullscreen_geometry(upsample_geo_size[0], upsample_geo_size[1]),
-            ));
-            Some(geo_out)
-        } else {
-            None
-        };
+    let geo_out: Option<ResourceName> = if let Some(upsample_geo_size) = upsample_geo_size {
+        let geo_out: ResourceName = format!("sys.blur.{layer_id}.out.geo").into();
+        bs.geometry_buffers.push((
+            geo_out.clone(),
+            make_fullscreen_geometry(upsample_geo_size[0], upsample_geo_size[1]),
+        ));
+        Some(geo_out)
+    } else {
+        None
+    };
 
     // Downsample chain
     let mut prev_tex: Option<ResourceName> = None;
     for (step, tex, step_w, step_h, step_geo) in &step_textures {
-        let params_name: ResourceName =
-            format!("params.sys.blur.{layer_id}.ds.{step}").into();
+        let params_name: ResourceName = format!("params.sys.blur.{layer_id}.ds.{step}").into();
         let bundle = build_downsample_bundle(*step)?;
 
         let sampler_kind = if prev_tex.is_none() {
@@ -533,14 +512,12 @@ pub(crate) fn assemble_gaussian_blur(
             Some(t) => (t.clone(), None),
         };
 
-        let baked_buf: ResourceName =
-            format!("sys.pass.{layer_id}.baked_data_parse").into();
+        let baked_buf: ResourceName = format!("sys.pass.{layer_id}.baked_data_parse").into();
         bs.baked_data_parse_buffer_to_pass_id
             .entry(baked_buf.clone())
             .or_insert_with(|| layer_id.to_string());
 
-        let pass_name: ResourceName =
-            format!("sys.blur.{layer_id}.ds.{step}.pass").into();
+        let pass_name: ResourceName = format!("sys.blur.{layer_id}.ds.{step}.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: pass_name.as_str().to_string(),
             name: pass_name.clone(),
@@ -581,8 +558,7 @@ pub(crate) fn assemble_gaussian_blur(
     // 2) Horizontal blur: ds_src_tex -> h_tex
     let params_h: ResourceName =
         format!("params.sys.blur.{layer_id}.h.ds{downsample_factor}").into();
-    let bundle_h =
-        build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+    let bundle_h = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
     let ds_w_f = ds_w as f32;
     let ds_h_f = ds_h as f32;
     let params_h_val = make_params(
@@ -678,10 +654,8 @@ pub(crate) fn assemble_gaussian_blur(
         let geo_out = geo_out
             .clone()
             .ok_or_else(|| anyhow!("GuassianBlurPass: missing upsample geometry"))?;
-        let params_u: ResourceName = format!(
-            "params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}"
-        )
-        .into();
+        let params_u: ResourceName =
+            format!("params.sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}").into();
         let bundle_u = build_upsample_bilinear_bundle();
         let upsample_target_size: [f32; 2] = if output_tex == target_texture_name {
             [tgt_w, tgt_h]
@@ -689,8 +663,7 @@ pub(crate) fn assemble_gaussian_blur(
             [blur_w as f32, blur_h as f32]
         };
         let upsample_center: [f32; 2] = if output_tex == target_texture_name {
-            blur_output_center
-                .unwrap_or([upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5])
+            blur_output_center.unwrap_or([upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5])
         } else {
             [upsample_geo_size[0] * 0.5, upsample_geo_size[1] * 0.5]
         };
@@ -708,8 +681,7 @@ pub(crate) fn assemble_gaussian_blur(
             [0.0, 0.0, 0.0, 0.0],
         );
         let pass_name_u: ResourceName =
-            format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass")
-                .into();
+            format!("sys.blur.{layer_id}.upsample_bilinear.ds{downsample_factor}.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: pass_name_u.as_str().to_string(),
             name: pass_name_u.clone(),

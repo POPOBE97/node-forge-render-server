@@ -13,7 +13,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{incoming_connection, parse_str, Node},
+    dsl::{Node, incoming_connection, parse_str},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
@@ -23,11 +23,10 @@ use crate::{
     },
 };
 
-use super::args::{BuilderState, SceneContext};
 use super::super::pass_spec::{
-    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
-    make_params,
+    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
+use super::args::{BuilderState, SceneContext};
 
 /// Assemble an `"Upsample"` layer.
 pub(crate) fn assemble_upsample(
@@ -75,9 +74,7 @@ pub(crate) fn assemble_upsample(
 
     fn to_positive_target_size(layer_id: &str, x: f32, y: f32) -> Result<(u32, u32)> {
         if !x.is_finite() || !y.is_finite() {
-            bail!(
-                "Upsample.targetSize must have finite components for {layer_id}, got ({x}, {y})"
-            );
+            bail!("Upsample.targetSize must have finite components for {layer_id}, got ({x}, {y})");
         }
         if x <= 0.0 || y <= 0.0 {
             bail!(
@@ -156,9 +153,10 @@ pub(crate) fn assemble_upsample(
             .strip_prefix("(graph_inputs.")
             .and_then(|x| x.strip_suffix(").xy"))
         {
-            if let Some((_node_id, node)) = nodes_by_id.iter().find(|(_, n)| {
-                n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner
-            }) {
+            if let Some((_node_id, node)) = nodes_by_id
+                .iter()
+                .find(|(_, n)| n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner)
+            {
                 let w = cpu_num_f32(scene, &nodes_by_id, node, "x", 0.0)?;
                 let h = cpu_num_f32(scene, &nodes_by_id, node, "y", 0.0)?;
                 to_positive_target_size(layer_id, w, h)?
@@ -168,9 +166,7 @@ pub(crate) fn assemble_upsample(
                     target_size_expr.expr
                 );
             }
-        } else if let Some(inner) =
-            s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')'))
-        {
+        } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
             let parts: Vec<&str> = inner.split(',').collect();
             if parts.len() == 2 {
                 let w = parts[0].parse::<f32>().map_err(|_| {
@@ -209,7 +205,11 @@ pub(crate) fn assemble_upsample(
         bs.textures.push(TextureDecl {
             name: tex.clone(),
             size: [out_w, out_h],
-            format: if is_sampled_output { bs.sampled_pass_format } else { bs.target_format },
+            format: if is_sampled_output {
+                bs.sampled_pass_format
+            } else {
+                bs.target_format
+            },
             sample_count: 1,
             needs_sampling: false,
         });
@@ -228,7 +228,12 @@ pub(crate) fn assemble_upsample(
         [out_w_f, out_h_f],
         [out_w_f, out_h_f],
         [out_w_f * 0.5, out_h_f * 0.5],
-        resolve_effective_camera_for_pass_node(scene, &nodes_by_id, layer_node, [out_w_f, out_h_f])?,
+        resolve_effective_camera_for_pass_node(
+            scene,
+            &nodes_by_id,
+            layer_node,
+            [out_w_f, out_h_f],
+        )?,
         [0.0, 0.0, 0.0, 0.0],
     );
 
@@ -294,18 +299,21 @@ pub(crate) fn assemble_upsample(
 
     // If output size differs from target and not sampled, add a fit pass.
     if !is_sampled_output && upsample_out_tex != *bs.target_texture_name {
-        let fit_pass_name: ResourceName =
-            format!("sys.upsample.{layer_id}.fit.pass").into();
+        let fit_pass_name: ResourceName = format!("sys.upsample.{layer_id}.fit.pass").into();
         let fit_geo: ResourceName = format!("sys.upsample.{layer_id}.fit.geo").into();
         bs.push_fullscreen_geometry(fit_geo.clone(), tgt_w, tgt_h);
 
-        let fit_params_name: ResourceName =
-            format!("params.sys.upsample.{layer_id}.fit").into();
+        let fit_params_name: ResourceName = format!("params.sys.upsample.{layer_id}.fit").into();
         let fit_params = make_params(
             [tgt_w, tgt_h],
             [tgt_w, tgt_h],
             [tgt_w * 0.5, tgt_h * 0.5],
-            resolve_effective_camera_for_pass_node(scene, &nodes_by_id, layer_node, [tgt_w, tgt_h])?,
+            resolve_effective_camera_for_pass_node(
+                scene,
+                &nodes_by_id,
+                layer_node,
+                [tgt_w, tgt_h],
+            )?,
             [0.0, 0.0, 0.0, 0.0],
         );
         let fit_bundle = build_upsample_bilinear_bundle();
@@ -362,8 +370,7 @@ pub(crate) fn assemble_upsample(
             if upsample_output_tex == comp_ctx.target_texture_name {
                 continue;
             }
-            if writes_scene_output_target
-                && comp_ctx.target_texture_name == *bs.target_texture_name
+            if writes_scene_output_target && comp_ctx.target_texture_name == *bs.target_texture_name
             {
                 continue;
             }

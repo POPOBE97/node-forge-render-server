@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-03T13:11:34.730Z",
-    "modified": "2026-03-03T13:11:34.730Z"
+    "created": "2026-03-03T17:14:11.542Z",
+    "modified": "2026-03-03T17:14:11.542Z"
   },
   "nodes": [
     {
@@ -260,23 +260,12 @@
           "variableName": "t",
           "type": "float",
           "sourceBinding": {
-            "nodeId": "TimeInput_44",
-            "outputPortId": "time",
-            "outputLabel": "Time"
+            "nodeId": "FloatInput_53",
+            "outputPortId": "value",
+            "outputLabel": "Value"
           }
         }
       ]
-    },
-    {
-      "id": "TimeInput_44",
-      "type": "TimeInput",
-      "position": {
-        "x": -1820,
-        "y": 360
-      },
-      "width": 160,
-      "label": "uEdgeRotationY",
-      "params": {}
     },
     {
       "id": "PerspectiveCamera_45",
@@ -462,6 +451,19 @@
           1
         ]
       }
+    },
+    {
+      "id": "FloatInput_53",
+      "type": "FloatInput",
+      "position": {
+        "x": -1840,
+        "y": 360
+      },
+      "width": 160,
+      "label": "uTime",
+      "params": {
+        "value": 0
+      }
     }
   ],
   "connections": [
@@ -529,17 +531,6 @@
       "to": {
         "nodeId": "MathClosure_42",
         "portId": "dynamic_1771504274786_1"
-      }
-    },
-    {
-      "id": "edge_77",
-      "from": {
-        "nodeId": "TimeInput_44",
-        "portId": "time"
-      },
-      "to": {
-        "nodeId": "MathClosure_43",
-        "portId": "dynamic_1772071983449_1"
       }
     },
     {
@@ -651,6 +642,17 @@
         "nodeId": "Composite_5",
         "portId": "pass"
       }
+    },
+    {
+      "id": "edge_98",
+      "from": {
+        "nodeId": "FloatInput_53",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_43",
+        "portId": "dynamic_1772071983449_1"
+      }
     }
   ],
   "outputs": {
@@ -685,8 +687,8 @@
         "id": "st_mmamj2am_3",
         "name": "Entry",
         "position": {
-          "x": 20,
-          "y": 180
+          "x": 0,
+          "y": 20
         },
         "parameterOverrides": {},
         "type": "entryState"
@@ -696,7 +698,7 @@
         "name": "Any",
         "position": {
           "x": 0,
-          "y": 0
+          "y": 120
         },
         "parameterOverrides": {},
         "type": "anyState"
@@ -705,18 +707,18 @@
         "id": "st_mmamj2am_5",
         "name": "Exit",
         "position": {
-          "x": 340,
-          "y": 0
+          "x": 520,
+          "y": 20
         },
         "parameterOverrides": {},
         "type": "exitState"
       },
       {
         "id": "st_mmamj4me_7",
-        "name": "Mutation 1",
+        "name": "Time Cycle",
         "position": {
-          "x": 300,
-          "y": 120
+          "x": 280,
+          "y": 20
         },
         "parameterOverrides": {},
         "type": "mutationNode",
@@ -725,10 +727,10 @@
     ],
     "transitions": [
       {
-        "id": "tr_mmamjmr7_2",
-        "source": "st_mmamj2am_4",
+        "id": "tr_mmaqalyp_6",
+        "source": "st_mmamj2am_3",
         "target": "st_mmamj4me_7",
-        "duration": 0.3,
+        "duration": 0,
         "easing": "linear"
       }
     ],
@@ -736,12 +738,55 @@
       {
         "id": "mutation_mmamj4me_6",
         "name": "Mutation 1",
-        "inputs": [],
-        "outputs": [],
+        "inputs": [
+          {
+            "id": "ColorInput_48:value",
+            "name": "uBgOverlay.value",
+            "type": "color"
+          },
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_53:value",
+            "name": "uTime.value",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ColorInput_48:value",
+            "name": "uBgOverlay.value",
+            "type": "color"
+          },
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_53:value",
+            "name": "uTime.value",
+            "type": "float"
+          }
+        ],
         "nodes": [],
         "connections": [],
         "inputBindings": [],
-        "outputBindings": []
+        "outputBindings": [],
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_mmamj2am_3"

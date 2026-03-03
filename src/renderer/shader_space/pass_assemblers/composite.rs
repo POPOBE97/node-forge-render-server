@@ -13,17 +13,13 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{find_node, parse_texture_format},
     renderer::{
-        camera::legacy_projection_camera_matrix,
-        types::PassOutputSpec,
+        camera::legacy_projection_camera_matrix, types::PassOutputSpec,
         wgsl::build_fullscreen_textured_bundle,
     },
 };
 
+use super::super::pass_spec::{PassTextureBinding, RenderPassSpec, SamplerKind, make_params};
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
-use super::super::pass_spec::{
-    PassTextureBinding, RenderPassSpec, SamplerKind,
-    make_params,
-};
 
 /// Assemble a `"Composite"` layer.
 ///
@@ -64,7 +60,8 @@ pub(crate) fn assemble_composite(
     });
 
     // Implicit Composition -> Composition fullscreen blit.
-    let consumers = sc.composition_consumers_by_source
+    let consumers = sc
+        .composition_consumers_by_source
         .get(layer_id)
         .cloned()
         .unwrap_or_default();
@@ -89,7 +86,8 @@ pub(crate) fn assemble_composite(
 
             let geo: ResourceName =
                 format!("sys.comp.{layer_id}.to.{downstream_comp_id}.compose.geo").into();
-            bs.geometry_buffers.push((geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
+            bs.geometry_buffers
+                .push((geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
 
             let pass_name: ResourceName =
                 format!("sys.comp.{layer_id}.to.{downstream_comp_id}.compose.pass").into();

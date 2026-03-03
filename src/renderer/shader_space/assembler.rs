@@ -76,22 +76,19 @@ use crate::{
 // Re-exports from extracted modules.
 use super::image_utils::{ensure_rgba8, image_node_dimensions, load_image_from_path};
 use super::pass_spec::{
-    DepthResolvePass, ImagePrepass, PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
-    TextureCapabilityRequirement,
-    IDENTITY_MAT4, build_depth_resolve_wgsl, make_params,
+    DepthResolvePass, IDENTITY_MAT4, ImagePrepass, PassTextureBinding, RenderPassSpec, SamplerKind,
+    TextureCapabilityRequirement, TextureDecl, build_depth_resolve_wgsl, make_params,
 };
 use super::resource_naming::{
-    UI_PRESENT_HDR_GAMMA_SUFFIX, UI_PRESENT_SDR_SRGB_SUFFIX,
-    bloom_downsample_level_count, blur_downsample_steps_for_factor,
-    build_hdr_gamma_encode_wgsl, build_srgb_display_encode_wgsl,
+    UI_PRESENT_HDR_GAMMA_SUFFIX, UI_PRESENT_SDR_SRGB_SUFFIX, bloom_downsample_level_count,
+    blur_downsample_steps_for_factor, build_hdr_gamma_encode_wgsl, build_srgb_display_encode_wgsl,
     fullscreen_processing_camera, gaussian_blur_extend_upsample_geo_size,
     infer_uniform_resolution_from_pass_deps, parse_render_pass_cull_mode,
-    parse_render_pass_depth_test, parse_tint_from_node_or_default,
-    readable_pass_name_for_node, resolve_chain_camera_for_first_pass,
-    resolve_pass_texture_bindings, sampled_render_pass_output_size,
-    sanitize_resource_segment, select_effective_msaa_sample_count,
-    should_skip_blur_downsample_pass, should_skip_blur_upsample_pass,
-    stable_short_id_suffix, validate_render_pass_msaa_request,
+    parse_render_pass_depth_test, parse_tint_from_node_or_default, readable_pass_name_for_node,
+    resolve_chain_camera_for_first_pass, resolve_pass_texture_bindings,
+    sampled_render_pass_output_size, sanitize_resource_segment, select_effective_msaa_sample_count,
+    should_skip_blur_downsample_pass, should_skip_blur_upsample_pass, stable_short_id_suffix,
+    validate_render_pass_msaa_request,
 };
 use super::sampler::{
     build_image_premultiply_wgsl, sampler_kind_for_pass_texture, sampler_kind_from_node_params,
@@ -716,9 +713,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
             // Export-only: needed when raw storage bytes are linear.
             matches!(
                 target_format,
-                TextureFormat::Rgba8Unorm
-                    | TextureFormat::Bgra8Unorm
-                    | TextureFormat::Rgba16Float
+                TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm | TextureFormat::Rgba16Float
             )
         } else {
             // UiSdrDisplayEncode: always create for on-screen + export.
@@ -919,9 +914,7 @@ pub(crate) fn build_shader_space_from_scene_internal(
                     bloom_source_pass_ids: &mut bloom_source_pass_ids,
                     gradient_source_pass_ids: &mut gradient_source_pass_ids,
                 };
-                super::pass_assemblers::bloom::assemble_bloom(
-                    &sc, &mut bs, layer_id, layer_node,
-                )?;
+                super::pass_assemblers::bloom::assemble_bloom(&sc, &mut bs, layer_id, layer_node)?;
             }
             "GuassianBlurPass" => {
                 let sc = super::pass_assemblers::args::SceneContext {
@@ -2460,6 +2453,7 @@ mod tests {
             )])),
             groups: Vec::new(),
             assets: Default::default(),
+            state_machine: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -2582,6 +2576,7 @@ mod tests {
             )])),
             groups: Vec::new(),
             assets: HashMap::new(),
+            state_machine: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -2707,6 +2702,7 @@ mod tests {
             outputs: None,
             groups: Vec::new(),
             assets: HashMap::new(),
+            state_machine: None,
         };
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes

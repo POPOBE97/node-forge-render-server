@@ -76,6 +76,7 @@ fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     };
 
     normalize_scene_defaults(&mut scene).expect("normalize scene defaults");
@@ -177,6 +178,7 @@ fn normalization_merges_input_defaults_before_default_params() {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     };
 
     normalize_scene_defaults(&mut scene).expect("normalize scene defaults");
@@ -205,6 +207,7 @@ fn resolve_input_uses_port_default_when_param_missing() {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     };
     let nodes_by_id: HashMap<String, Node> = scene
         .nodes

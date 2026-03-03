@@ -14,9 +14,7 @@ use rust_wgpu_fiber::{
 use crate::{
     dsl::{SceneDSL, incoming_connection},
     renderer::{
-        camera::legacy_projection_camera_matrix,
-        types::PassOutputRegistry,
-        wgsl::clamp_min_1,
+        camera::legacy_projection_camera_matrix, types::PassOutputRegistry, wgsl::clamp_min_1,
         wgsl_bloom::BLOOM_MAX_MIPS,
     },
 };
@@ -210,9 +208,18 @@ pub(crate) fn parse_tint_from_node_or_default(
             return Some([r, g, b, a]);
         }
         if let Some(obj) = v.as_object() {
-            let r = obj.get("r").and_then(json_num).or_else(|| obj.get("x").and_then(json_num))?;
-            let g = obj.get("g").and_then(json_num).or_else(|| obj.get("y").and_then(json_num))?;
-            let b = obj.get("b").and_then(json_num).or_else(|| obj.get("z").and_then(json_num))?;
+            let r = obj
+                .get("r")
+                .and_then(json_num)
+                .or_else(|| obj.get("x").and_then(json_num))?;
+            let g = obj
+                .get("g")
+                .and_then(json_num)
+                .or_else(|| obj.get("y").and_then(json_num))?;
+            let b = obj
+                .get("b")
+                .and_then(json_num)
+                .or_else(|| obj.get("z").and_then(json_num))?;
             let a = obj
                 .get("a")
                 .and_then(json_num)
@@ -268,7 +275,10 @@ pub(crate) fn resolve_chain_camera_for_first_pass(
     if !*first_camera_consumed {
         *first_camera_consumed = true;
         crate::renderer::camera::resolve_effective_camera_for_pass_node(
-            scene, nodes_by_id, layer_node, target_size,
+            scene,
+            nodes_by_id,
+            layer_node,
+            target_size,
         )
     } else {
         Ok(fullscreen_processing_camera(target_size))

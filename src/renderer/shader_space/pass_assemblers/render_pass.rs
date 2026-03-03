@@ -14,7 +14,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{find_node, incoming_connection, Node},
+    dsl::{Node, find_node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         geometry_resolver::is_draw_pass_node_type,
@@ -22,8 +22,8 @@ use crate::{
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         scene_prep::bake_data_parse_nodes,
         types::{
-            BakedDataParseMeta, BakedValue, GraphBinding, GraphBindingKind,
-            MaterialCompileContext, PassOutputSpec,
+            BakedDataParseMeta, BakedValue, GraphBinding, GraphBindingKind, MaterialCompileContext,
+            PassOutputSpec,
         },
         utils::{as_bytes_slice, cpu_num_u32_floor},
         wgsl::{
@@ -33,17 +33,16 @@ use crate::{
     },
 };
 
-use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use super::super::pass_spec::{
-    DepthResolvePass, PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
-    IDENTITY_MAT4, build_depth_resolve_wgsl, make_params,
+    DepthResolvePass, IDENTITY_MAT4, PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
+    build_depth_resolve_wgsl, make_params,
 };
 use super::super::resource_naming::{
-    parse_render_pass_cull_mode, parse_render_pass_depth_test,
-    readable_pass_name_for_node, sampled_render_pass_output_size,
-    select_effective_msaa_sample_count,
+    parse_render_pass_cull_mode, parse_render_pass_depth_test, readable_pass_name_for_node,
+    sampled_render_pass_output_size, select_effective_msaa_sample_count,
 };
 use super::super::sampler::{sampler_kind_for_pass_texture, sampler_kind_from_node_params};
+use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 
 /// Assemble a `"RenderPass"` layer.
 pub(crate) fn assemble_render_pass(
@@ -177,9 +176,7 @@ pub(crate) fn assemble_render_pass(
         &render_geo_node_id,
         pass_coord_size,
         Some(&MaterialCompileContext {
-            baked_data_parse: Some(std::sync::Arc::new(
-                prepared.baked_data_parse.clone(),
-            )),
+            baked_data_parse: Some(std::sync::Arc::new(prepared.baked_data_parse.clone())),
             baked_data_parse_meta: None,
             ..Default::default()
         }),
@@ -187,29 +184,26 @@ pub(crate) fn assemble_render_pass(
     )?;
 
     // Determine the single-sample output target for this pass.
-    let (pass_target_w_u, pass_target_h_u, pass_output_texture): (
-        u32,
-        u32,
-        ResourceName,
-    ) = if is_sampled_output {
-        let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
-        let [w_u, h_u] = sampled_render_pass_output_size(
-            has_processing_consumer,
-            is_downsample_source || is_upsample_source || is_blur_source,
-            [pass_coord_w_u, pass_coord_h_u],
-            [geo_w, geo_h],
-        );
-        bs.textures.push(TextureDecl {
-            name: out_tex.clone(),
-            size: [w_u, h_u],
-            format: sampled_pass_format,
-            sample_count: 1,
-            needs_sampling: false,
-        });
-        (w_u, h_u, out_tex)
-    } else {
-        (tgt_w_u, tgt_h_u, target_texture_name.clone())
-    };
+    let (pass_target_w_u, pass_target_h_u, pass_output_texture): (u32, u32, ResourceName) =
+        if is_sampled_output {
+            let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
+            let [w_u, h_u] = sampled_render_pass_output_size(
+                has_processing_consumer,
+                is_downsample_source || is_upsample_source || is_blur_source,
+                [pass_coord_w_u, pass_coord_h_u],
+                [geo_w, geo_h],
+            );
+            bs.textures.push(TextureDecl {
+                name: out_tex.clone(),
+                size: [w_u, h_u],
+                format: sampled_pass_format,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            (w_u, h_u, out_tex)
+        } else {
+            (tgt_w_u, tgt_h_u, target_texture_name.clone())
+        };
     let pass_output_format = if is_sampled_output {
         sampled_pass_format
     } else {
@@ -348,10 +342,7 @@ pub(crate) fn assemble_render_pass(
         pass_coord_size,
         Some(&MaterialCompileContext {
             baked_data_parse: Some(std::sync::Arc::new(baked.clone())),
-            baked_data_parse_meta: bs
-                .baked_data_parse_meta_by_pass
-                .get(layer_id)
-                .cloned(),
+            baked_data_parse_meta: bs.baked_data_parse_meta_by_pass.get(layer_id).cloned(),
             ..Default::default()
         }),
         asset_store,
@@ -360,11 +351,9 @@ pub(crate) fn assemble_render_pass(
     // For intermediate pass outputs that will be blitted into a final Composition target,
     // render the main pass in local texture space (fullscreen in its own output), then
     // apply scene placement at compose time.
-    let use_fullscreen_for_downsample_source =
-        is_downsample_source && rect_dyn_2.is_some();
+    let use_fullscreen_for_downsample_source = is_downsample_source && rect_dyn_2.is_some();
     let use_fullscreen_for_upsample_source = is_upsample_source && rect_dyn_2.is_some();
-    let use_fullscreen_for_extend_blur_source =
-        is_sampled_output && has_extend_blur_consumer;
+    let use_fullscreen_for_extend_blur_source = is_sampled_output && has_extend_blur_consumer;
     let use_fullscreen_for_local_blit =
         is_sampled_output && !has_processing_consumer && has_composition_consumer;
     let use_fullscreen_main_pass = use_fullscreen_for_downsample_source
@@ -380,8 +369,7 @@ pub(crate) fn assemble_render_pass(
 
     let (main_pass_geometry_buffer, main_pass_params, main_pass_rect_dyn) =
         if use_fullscreen_main_pass {
-            let fs_geo: ResourceName =
-                format!("sys.pass.{layer_id}.fullscreen.geo").into();
+            let fs_geo: ResourceName = format!("sys.pass.{layer_id}.fullscreen.geo").into();
             bs.geometry_buffers.push((
                 fs_geo.clone(),
                 make_fullscreen_geometry(pass_target_w, pass_target_h),
@@ -399,17 +387,13 @@ pub(crate) fn assemble_render_pass(
             )
         } else {
             let resolved_geometry_buffer: ResourceName = if render_geo_is_rect {
-                let geo_name: ResourceName =
-                    format!("sys.pass.{layer_id}.resolved.geo").into();
+                let geo_name: ResourceName = format!("sys.pass.{layer_id}.resolved.geo").into();
                 let geo_bytes: Arc<[u8]> = if rect_dyn_2.is_some() {
                     Arc::from(as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec())
                 } else {
                     Arc::from(
-                        as_bytes_slice(&rect2d_geometry_vertices(
-                            geo_w.max(1.0),
-                            geo_h.max(1.0),
-                        ))
-                        .to_vec(),
+                        as_bytes_slice(&rect2d_geometry_vertices(geo_w.max(1.0), geo_h.max(1.0)))
+                            .to_vec(),
                     )
                 };
                 bs.geometry_buffers.push((geo_name.clone(), geo_bytes));
@@ -435,11 +419,9 @@ pub(crate) fn assemble_render_pass(
 
     let has_non_identity_base_m = base_m_2 != IDENTITY_MAT4;
     let has_instance_mats = instance_mats_2.as_ref().is_some_and(|m| !m.is_empty());
-    let is_instanced =
-        instance_count > 1 || has_non_identity_base_m || has_instance_mats;
+    let is_instanced = instance_count > 1 || has_non_identity_base_m || has_instance_mats;
 
-    let baked_buf_name: ResourceName =
-        format!("sys.pass.{layer_id}.baked_data_parse").into();
+    let baked_buf_name: ResourceName = format!("sys.pass.{layer_id}.baked_data_parse").into();
 
     let baked_arc = std::sync::Arc::new(baked);
     let translate_expr_wgsl = translate_expr.map(|e| e.expr);
@@ -448,8 +430,7 @@ pub(crate) fn assemble_render_pass(
     let vertex_graph_input_kinds_for_bundle = vertex_graph_input_kinds.clone();
 
     let has_normals = normals_bytes.is_some();
-    let fullscreen_vertex_positioning =
-        use_fullscreen_main_pass && rect_dyn_2.is_some();
+    let fullscreen_vertex_positioning = use_fullscreen_main_pass && rect_dyn_2.is_some();
 
     let mut bundle = build_pass_wgsl_bundle_with_graph_binding(
         &prepared.scene,
@@ -499,9 +480,10 @@ pub(crate) fn assemble_render_pass(
             )?;
         }
 
-        let schema = bundle.graph_schema.clone().ok_or_else(|| {
-            anyhow!("missing graph schema after graph binding selection")
-        })?;
+        let schema = bundle
+            .graph_schema
+            .clone()
+            .ok_or_else(|| anyhow!("missing graph schema after graph binding selection"))?;
         let graph_buffer_name: ResourceName = format!("params.{layer_id}.graph").into();
         let values = pack_graph_values(&prepared.scene, &schema)?;
         graph_values = Some(values);
@@ -584,8 +566,7 @@ pub(crate) fn assemble_render_pass(
         geometry_buffer: main_pass_geometry_buffer.clone(),
         instance_buffer,
         normals_buffer: normals_bytes.as_ref().map(|_| {
-            let nb_name: ResourceName =
-                format!("{}.normals", main_pass_geometry_buffer).into();
+            let nb_name: ResourceName = format!("{}.normals", main_pass_geometry_buffer).into();
             nb_name
         }),
         target_texture: pass_render_target_texture.clone(),
@@ -602,7 +583,8 @@ pub(crate) fn assemble_render_pass(
         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
         sample_count: msaa_sample_count,
     });
-    bs.pass_cull_mode_by_name.insert(pass_name.clone(), cull_mode);
+    bs.pass_cull_mode_by_name
+        .insert(pass_name.clone(), cull_mode);
     if let Some(depth_attachment) = depth_stencil_attachment.clone() {
         bs.pass_depth_attachment_by_name
             .insert(pass_name.clone(), depth_attachment);
@@ -615,8 +597,7 @@ pub(crate) fn assemble_render_pass(
         let depth_tex = depth_stencil_attachment.clone().unwrap();
         let is_multisampled_depth = msaa_sample_count > 1;
 
-        let resolved: ResourceName =
-            format!("sys.pass.{layer_id}.depth.resolved").into();
+        let resolved: ResourceName = format!("sys.pass.{layer_id}.depth.resolved").into();
         bs.textures.push(TextureDecl {
             name: resolved.clone(),
             size: [pass_target_w_u, pass_target_h_u],
@@ -629,10 +610,8 @@ pub(crate) fn assemble_render_pass(
             format!("sys.pass.{layer_id}.depth.resolve.geo").into();
         let depth_resolve_params_name: ResourceName =
             format!("params.sys.pass.{layer_id}.depth.resolve").into();
-        let depth_resolve_camera = legacy_projection_camera_matrix([
-            pass_target_w_u as f32,
-            pass_target_h_u as f32,
-        ]);
+        let depth_resolve_camera =
+            legacy_projection_camera_matrix([pass_target_w_u as f32, pass_target_h_u as f32]);
         let depth_resolve_params = make_params(
             [pass_target_w_u as f32, pass_target_h_u as f32],
             [pass_target_w_u as f32, pass_target_h_u as f32],
@@ -676,15 +655,11 @@ pub(crate) fn assemble_render_pass(
     // Unconditionally create compose passes for depth-port consumers.
     if let Some(ref resolved) = resolved_depth_tex {
         for composition_id in &composition_consumers {
-            let is_depth_connection = prepared
-                .scene
-                .connections
-                .iter()
-                .any(|c| {
-                    c.from.node_id == *layer_id
-                        && c.from.port_id == "depth"
-                        && c.to.node_id == *composition_id
-                });
+            let is_depth_connection = prepared.scene.connections.iter().any(|c| {
+                c.from.node_id == *layer_id
+                    && c.from.port_id == "depth"
+                    && c.to.node_id == *composition_id
+            });
             if !is_depth_connection {
                 continue;
             }
@@ -695,16 +670,12 @@ pub(crate) fn assemble_render_pass(
             let comp_tgt_h = comp_ctx.target_size_px[1];
 
             let compose_pass_name: ResourceName =
-                format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.pass")
-                    .into();
+                format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.pass").into();
             let compose_params_name: ResourceName =
-                format!("params.sys.pass.{layer_id}.depth.to.{composition_id}.compose")
-                    .into();
-            let compose_camera =
-                legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
+                format!("params.sys.pass.{layer_id}.depth.to.{composition_id}.compose").into();
+            let compose_camera = legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
             let compose_geo: ResourceName =
-                format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.geo")
-                    .into();
+                format!("sys.pass.{layer_id}.depth.to.{composition_id}.compose.geo").into();
             bs.geometry_buffers.push((
                 compose_geo.clone(),
                 make_fullscreen_geometry(comp_tgt_w, comp_tgt_h),
@@ -753,15 +724,11 @@ pub(crate) fn assemble_render_pass(
             };
 
             // Skip depth-port connections — already handled above.
-            let is_depth_connection = prepared
-                .scene
-                .connections
-                .iter()
-                .any(|c| {
-                    c.from.node_id == *layer_id
-                        && c.from.port_id == "depth"
-                        && c.to.node_id == *composition_id
-                });
+            let is_depth_connection = prepared.scene.connections.iter().any(|c| {
+                c.from.node_id == *layer_id
+                    && c.from.port_id == "depth"
+                    && c.to.node_id == *composition_id
+            });
             if is_depth_connection {
                 continue;
             }
@@ -773,8 +740,7 @@ pub(crate) fn assemble_render_pass(
             let compose_pass_name: ResourceName =
                 format!("sys.pass.{layer_id}.to.{composition_id}.compose.pass").into();
             let compose_params_name: ResourceName =
-                format!("params.sys.pass.{layer_id}.to.{composition_id}.compose")
-                    .into();
+                format!("params.sys.pass.{layer_id}.to.{composition_id}.compose").into();
 
             let (
                 compose_geometry_buffer,
@@ -783,18 +749,14 @@ pub(crate) fn assemble_render_pass(
                 compose_graph_binding,
                 compose_graph_values,
             ) = if pass_target_w_u == comp_tgt_w_u && pass_target_h_u == comp_tgt_h_u {
-                let compose_camera = legacy_projection_camera_matrix(
-                    [comp_tgt_w, comp_tgt_h],
-                );
+                let compose_camera = legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
                 let compose_geo: ResourceName =
-                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
-                        .into();
+                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo").into();
                 bs.geometry_buffers.push((
                     compose_geo.clone(),
                     make_fullscreen_geometry(comp_tgt_w, comp_tgt_h),
                 ));
-                let fragment_body =
-                    "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                let fragment_body = "return textureSample(src_tex, src_samp, in.uv);".to_string();
                 (
                     compose_geo,
                     make_params(
@@ -809,22 +771,17 @@ pub(crate) fn assemble_render_pass(
                     None,
                 )
             } else if use_fullscreen_main_pass && rect_dyn_2.is_some() {
-                let compose_camera = legacy_projection_camera_matrix(
-                    [comp_tgt_w, comp_tgt_h],
-                );
+                let compose_camera = legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
                 let compose_geo: ResourceName =
-                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
-                        .into();
+                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo").into();
                 bs.geometry_buffers.push((
                     compose_geo.clone(),
-                    Arc::from(
-                        as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec(),
-                    ),
+                    Arc::from(as_bytes_slice(&rect2d_unit_geometry_vertices()).to_vec()),
                 ));
 
-                let rect_dyn = rect_dyn_2.as_ref().expect(
-                    "fullscreen-main-pass dynamic compose implies rect_dyn_2.is_some()",
-                );
+                let rect_dyn = rect_dyn_2
+                    .as_ref()
+                    .expect("fullscreen-main-pass dynamic compose implies rect_dyn_2.is_some()");
                 let position_expr = rect_dyn
                     .position_expr
                     .as_ref()
@@ -853,20 +810,17 @@ pub(crate) fn assemble_render_pass(
                         GraphBindingKind::Uniform => {
                             decl.push_str("var<uniform> graph_inputs: GraphInputs;\n")
                         }
-                        GraphBindingKind::StorageRead => decl.push_str(
-                            "var<storage, read> graph_inputs: GraphInputs;\n",
-                        ),
+                        GraphBindingKind::StorageRead => {
+                            decl.push_str("var<storage, read> graph_inputs: GraphInputs;\n")
+                        }
                     }
                     decl
                 } else {
                     String::new()
                 };
 
-                let bundle = build_dynamic_rect_compose_bundle(
-                    &graph_inputs_wgsl,
-                    position_expr,
-                    size_expr,
-                );
+                let bundle =
+                    build_dynamic_rect_compose_bundle(&graph_inputs_wgsl, position_expr, size_expr);
 
                 (
                     compose_geo,
@@ -882,24 +836,17 @@ pub(crate) fn assemble_render_pass(
                     graph_values.clone(),
                 )
             } else if use_fullscreen_for_local_blit {
-                let compose_camera = legacy_projection_camera_matrix(
-                    [comp_tgt_w, comp_tgt_h],
-                );
+                let compose_camera = legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
                 let compose_geo: ResourceName =
-                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo")
-                        .into();
+                    format!("sys.pass.{layer_id}.to.{composition_id}.compose.geo").into();
                 bs.geometry_buffers.push((
                     compose_geo.clone(),
                     Arc::from(
-                        as_bytes_slice(&rect2d_geometry_vertices(
-                            geo_w.max(1.0),
-                            geo_h.max(1.0),
-                        ))
-                        .to_vec(),
+                        as_bytes_slice(&rect2d_geometry_vertices(geo_w.max(1.0), geo_h.max(1.0)))
+                            .to_vec(),
                     ),
                 ));
-                let fragment_body =
-                    "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                let fragment_body = "return textureSample(src_tex, src_samp, in.uv);".to_string();
                 (
                     compose_geo,
                     make_params(
@@ -914,11 +861,8 @@ pub(crate) fn assemble_render_pass(
                     None,
                 )
             } else {
-                let compose_camera = legacy_projection_camera_matrix(
-                    [comp_tgt_w, comp_tgt_h],
-                );
-                let fragment_body =
-                    "return textureSample(src_tex, src_samp, in.uv);".to_string();
+                let compose_camera = legacy_projection_camera_matrix([comp_tgt_w, comp_tgt_h]);
+                let fragment_body = "return textureSample(src_tex, src_samp, in.uv);".to_string();
                 (
                     main_pass_geometry_buffer.clone(),
                     make_params(

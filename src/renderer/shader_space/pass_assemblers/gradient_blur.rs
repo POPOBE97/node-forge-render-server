@@ -13,7 +13,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{incoming_connection, Node},
+    dsl::{Node, incoming_connection},
     renderer::{
         camera::pass_node_uses_custom_camera,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
@@ -23,7 +23,6 @@ use crate::{
     },
 };
 
-use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use super::super::image_utils::image_node_dimensions;
 use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
@@ -32,6 +31,7 @@ use super::super::resource_naming::{
     resolve_chain_camera_for_first_pass, resolve_pass_texture_bindings,
 };
 use super::super::sampler::{sampler_kind_for_pass_texture, sampler_kind_from_node_params};
+use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 
 /// Assemble a `"GradientBlur"` layer.
 pub(crate) fn assemble_gradient_blur(
@@ -61,11 +61,9 @@ pub(crate) fn assemble_gradient_blur(
     if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
         if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
             if src_node.node_type == "RenderPass" {
-                if let Some(geo_conn) = incoming_connection(
-                    &prepared.scene,
-                    &src_conn.from.node_id,
-                    "geometry",
-                ) {
+                if let Some(geo_conn) =
+                    incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
+                {
                     if let Ok((
                         _,
                         src_geo_w,
@@ -82,17 +80,15 @@ pub(crate) fn assemble_gradient_blur(
                         _,
                         _,
                         _,
-                    )) =
-                        crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                            &prepared.scene,
-                            nodes_by_id,
-                            ids,
-                            &geo_conn.from.node_id,
-                            [tgt_w, tgt_h],
-                            None,
-                            asset_store,
-                        )
-                    {
+                    )) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                        &prepared.scene,
+                        nodes_by_id,
+                        ids,
+                        &geo_conn.from.node_id,
+                        [tgt_w, tgt_h],
+                        None,
+                        asset_store,
+                    ) {
                         gb_src_resolution = [
                             src_geo_w.max(1.0).round() as u32,
                             src_geo_h.max(1.0).round() as u32,
@@ -151,17 +147,11 @@ pub(crate) fn assemble_gradient_blur(
             if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
                 if src_node.node_type == "ImageTexture"
                     && src_conn.from.port_id == "color"
-                    && incoming_connection(
-                        &prepared.scene,
-                        &src_conn.from.node_id,
-                        "uv",
-                    )
-                    .is_none()
+                    && incoming_connection(&prepared.scene, &src_conn.from.node_id, "uv").is_none()
                 {
                     if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
                         initial_source_texture = Some(tex);
-                        initial_source_image_node_id =
-                            Some(src_conn.from.node_id.clone());
+                        initial_source_image_node_id = Some(src_conn.from.node_id.clone());
                     }
                 }
             }
@@ -169,20 +159,14 @@ pub(crate) fn assemble_gradient_blur(
     }
 
     // Keep camera semantics stable across bypass/elision.
-    let force_source_pass_for_custom_camera = pass_node_uses_custom_camera(
-        &prepared.scene,
-        nodes_by_id,
-        layer_node,
-        [src_w, src_h],
-    )?;
+    let force_source_pass_for_custom_camera =
+        pass_node_uses_custom_camera(&prepared.scene, nodes_by_id, layer_node, [src_w, src_h])?;
     if force_source_pass_for_custom_camera {
         initial_source_texture = None;
         initial_source_image_node_id = None;
     }
 
-    let source_texture: ResourceName = if let Some(existing_tex) =
-        initial_source_texture
-    {
+    let source_texture: ResourceName = if let Some(existing_tex) = initial_source_texture {
         existing_tex
     } else {
         // Create intermediate source texture.
@@ -214,11 +198,8 @@ pub(crate) fn assemble_gradient_blur(
             [0.0, 0.0, 0.0, 0.0],
         );
 
-        let mut src_bundle = build_gradient_blur_source_wgsl_bundle(
-            &prepared.scene,
-            nodes_by_id,
-            layer_id,
-        )?;
+        let mut src_bundle =
+            build_gradient_blur_source_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
         let mut src_graph_binding: Option<GraphBinding> = None;
         let mut src_graph_values: Option<Vec<u8>> = None;
         if let Some(schema) = src_bundle.graph_schema.clone() {
@@ -267,13 +248,9 @@ pub(crate) fn assemble_gradient_blur(
             src_sampler_kinds.push(kind);
         }
 
-        let src_pass_bindings = resolve_pass_texture_bindings(
-            &bs.pass_output_registry,
-            &src_bundle.pass_textures,
-        )?;
-        for (upstream_pass_id, binding) in
-            src_bundle.pass_textures.iter().zip(src_pass_bindings)
-        {
+        let src_pass_bindings =
+            resolve_pass_texture_bindings(&bs.pass_output_registry, &src_bundle.pass_textures)?;
+        for (upstream_pass_id, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
             src_texture_bindings.push(binding);
             src_sampler_kinds.push(sampler_kind_for_pass_texture(
                 &prepared.scene,
@@ -317,7 +294,8 @@ pub(crate) fn assemble_gradient_blur(
     });
 
     let pad_geo: ResourceName = format!("sys.gb.{layer_id}.pad.geo").into();
-    bs.geometry_buffers.push((pad_geo.clone(), make_fullscreen_geometry(pad_w, pad_h)));
+    bs.geometry_buffers
+        .push((pad_geo.clone(), make_fullscreen_geometry(pad_w, pad_h)));
 
     let params_pad: ResourceName = format!("params.sys.gb.{layer_id}.pad").into();
     let params_pad_val = make_params(
@@ -395,8 +373,7 @@ pub(crate) fn assemble_gradient_blur(
             make_fullscreen_geometry(cur_mip_w as f32, cur_mip_h as f32),
         ));
 
-        let params_mip: ResourceName =
-            format!("params.sys.gb.{layer_id}.mip{i}").into();
+        let params_mip: ResourceName = format!("params.sys.gb.{layer_id}.mip{i}").into();
         let cur_mip_w_f = cur_mip_w as f32;
         let cur_mip_h_f = cur_mip_h as f32;
         let params_mip_val = make_params(
@@ -417,8 +394,7 @@ pub(crate) fn assemble_gradient_blur(
             &gradient_blur_cross_kernel(),
         )?;
 
-        let mip_pass_name: ResourceName =
-            format!("sys.gb.{layer_id}.mip{i}.pass").into();
+        let mip_pass_name: ResourceName = format!("sys.gb.{layer_id}.mip{i}.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: mip_pass_name.as_str().to_string(),
             name: mip_pass_name.clone(),
@@ -475,7 +451,8 @@ pub(crate) fn assemble_gradient_blur(
     };
 
     let final_geo: ResourceName = format!("sys.gb.{layer_id}.final.geo").into();
-    bs.geometry_buffers.push((final_geo.clone(), make_fullscreen_geometry(src_w, src_h)));
+    bs.geometry_buffers
+        .push((final_geo.clone(), make_fullscreen_geometry(src_w, src_h)));
 
     let params_final: ResourceName = format!("params.sys.gb.{layer_id}.final").into();
     let final_target_size = if output_tex == target_texture_name {
@@ -521,16 +498,15 @@ pub(crate) fn assemble_gradient_blur(
             limits.max_storage_buffer_binding_size as u64,
         )?;
         if composite_bundle.graph_binding_kind != Some(kind) {
-            composite_bundle =
-                build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
-                    &prepared.scene,
-                    nodes_by_id,
-                    layer_id,
-                    &mip_pass_ids,
-                    [pad_w, pad_h],
-                    [pad_offset_x, pad_offset_y],
-                    Some(kind),
-                )?;
+            composite_bundle = build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
+                &prepared.scene,
+                nodes_by_id,
+                layer_id,
+                &mip_pass_ids,
+                [pad_w, pad_h],
+                [pad_offset_x, pad_offset_y],
+                Some(kind),
+            )?;
         }
         let schema = composite_bundle
             .graph_schema
@@ -566,10 +542,8 @@ pub(crate) fn assemble_gradient_blur(
     }
 
     // Pass textures (mip textures + any from mask expression).
-    let final_pass_bindings = resolve_pass_texture_bindings(
-        &bs.pass_output_registry,
-        &composite_bundle.pass_textures,
-    )?;
+    let final_pass_bindings =
+        resolve_pass_texture_bindings(&bs.pass_output_registry, &composite_bundle.pass_textures)?;
     for (upstream_pass_id, binding) in composite_bundle
         .pass_textures
         .iter()

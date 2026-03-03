@@ -26,6 +26,7 @@ fn make_render_pass_scene(msaa_sample_count: serde_json::Value) -> SceneDSL {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     }
 }
 
@@ -57,6 +58,7 @@ fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     }
 }
 
@@ -100,6 +102,7 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
+        state_machine: None,
     };
 
     normalize_scene_defaults(&mut scene).expect("normalize scene defaults");
@@ -135,7 +138,10 @@ fn render_pass_msaa_validation_rejects_invalid_values() {
 fn render_pass_culling_validation_accepts_allowed_values() {
     let scheme = load_default_scheme().expect("load default scheme");
     for value in ["none", "front", "back"] {
-        let scene = scene(vec![node("rp", "RenderPass", json!({"culling": value}))], vec![]);
+        let scene = scene(
+            vec![node("rp", "RenderPass", json!({"culling": value}))],
+            vec![],
+        );
         validate_scene_against(&scene, &scheme)
             .unwrap_or_else(|e| panic!("culling={value} should validate, got error: {e:#}"));
     }

@@ -11,7 +11,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{incoming_connection, Node},
+    dsl::{Node, incoming_connection},
     renderer::{
         camera::resolve_effective_camera_for_pass_node,
         types::{Kernel2D, PassOutputSpec},
@@ -19,21 +19,22 @@ use crate::{
         wgsl::{
             build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
             build_horizontal_blur_bundle_with_tap_count, build_upsample_bilinear_bundle,
-            build_vertical_blur_bundle_with_tap_count, clamp_min_1,
-            gaussian_kernel_8, gaussian_mip_level_and_sigma_p,
+            build_vertical_blur_bundle_with_tap_count, clamp_min_1, gaussian_kernel_8,
+            gaussian_mip_level_and_sigma_p,
         },
         wgsl_bloom::{build_bloom_additive_combine_bundle, build_bloom_extract_bundle},
     },
 };
 
-use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use super::super::pass_spec::{
-    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
-    make_params,
+    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
-use super::super::resource_naming::{bloom_downsample_level_count, parse_tint_from_node_or_default};
-use super::super::sampler::sampler_kind_for_pass_texture;
 use super::super::resource_naming::resolve_chain_camera_for_first_pass;
+use super::super::resource_naming::{
+    bloom_downsample_level_count, parse_tint_from_node_or_default,
+};
+use super::super::sampler::sampler_kind_for_pass_texture;
+use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 
 /// Assemble a `"BloomNode"` layer.
 pub(crate) fn assemble_bloom(
@@ -63,16 +64,13 @@ pub(crate) fn assemble_bloom(
     let base_w = base_resolution[0].max(1) as f32;
     let base_h = base_resolution[1].max(1) as f32;
 
-    let threshold =
-        cpu_num_f32(scene, &nodes_by_id, layer_node, "threshold", 0.5)?.clamp(0.0, 1.0);
+    let threshold = cpu_num_f32(scene, &nodes_by_id, layer_node, "threshold", 0.5)?.clamp(0.0, 1.0);
     let smoothness =
         cpu_num_f32(scene, &nodes_by_id, layer_node, "smoothness", 0.5)?.clamp(0.0, 1.0);
-    let strength =
-        cpu_num_f32(scene, &nodes_by_id, layer_node, "strength", 1.0)?.clamp(0.0, 1.0);
+    let strength = cpu_num_f32(scene, &nodes_by_id, layer_node, "strength", 1.0)?.clamp(0.0, 1.0);
     let saturation =
         cpu_num_f32(scene, &nodes_by_id, layer_node, "saturation", 1.0)?.clamp(0.0, 1.0);
-    let size =
-        cpu_num_f32(scene, &nodes_by_id, layer_node, "size", 0.5)?.clamp(0.0, 1.0);
+    let size = cpu_num_f32(scene, &nodes_by_id, layer_node, "size", 0.5)?.clamp(0.0, 1.0);
     let smooth_width_px = (1.0 - smoothness) * 40.0;
     let radius_px = size * 6.0;
     let tint = parse_tint_from_node_or_default(scene, &nodes_by_id, layer_node)?;
@@ -144,8 +142,7 @@ pub(crate) fn assemble_bloom(
 
     let extract_bundle =
         build_bloom_extract_bundle(threshold, smooth_width_px, strength, saturation, tint);
-    let extract_pass_name: ResourceName =
-        format!("sys.bloom.{layer_id}.extract.pass").into();
+    let extract_pass_name: ResourceName = format!("sys.bloom.{layer_id}.extract.pass").into();
     bs.render_pass_specs.push(RenderPassSpec {
         pass_id: extract_pass_name.as_str().to_string(),
         name: extract_pass_name.clone(),
@@ -192,13 +189,17 @@ pub(crate) fn assemble_bloom(
         let mip_h = cur_size[1] as f32;
         bs.geometry_buffers
             .push((mip_geo.clone(), make_fullscreen_geometry(mip_w, mip_h)));
-        let mip_params: ResourceName =
-            format!("params.sys.bloom.{layer_id}.mip{level}").into();
+        let mip_params: ResourceName = format!("params.sys.bloom.{layer_id}.mip{level}").into();
         let mip_params_val = make_params(
             [mip_w, mip_h],
             [mip_w, mip_h],
             [mip_w * 0.5, mip_h * 0.5],
-            resolve_effective_camera_for_pass_node(scene, &nodes_by_id, layer_node, [mip_w, mip_h])?,
+            resolve_effective_camera_for_pass_node(
+                scene,
+                &nodes_by_id,
+                layer_node,
+                [mip_w, mip_h],
+            )?,
             [0.0, 0.0, 0.0, 0.0],
         );
 
@@ -276,14 +277,10 @@ pub(crate) fn assemble_bloom(
             [0.0, 0.0, 0.0, 0.0],
         );
 
-        let h_bundle =
-            build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
-        let v_bundle =
-            build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
-        let h_pass_name: ResourceName =
-            format!("sys.bloom.{layer_id}.mip0.h.pass").into();
-        let v_pass_name: ResourceName =
-            format!("sys.bloom.{layer_id}.mip0.v.pass").into();
+        let h_bundle = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+        let v_bundle = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
+        let h_pass_name: ResourceName = format!("sys.bloom.{layer_id}.mip0.h.pass").into();
+        let v_pass_name: ResourceName = format!("sys.bloom.{layer_id}.mip0.v.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: h_pass_name.as_str().to_string(),
             name: h_pass_name.clone(),
@@ -341,10 +338,8 @@ pub(crate) fn assemble_bloom(
             let src_size = mip_sizes[level as usize];
             let dst_size = mip_sizes[(level - 1) as usize];
 
-            let h_tex: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.h").into();
-            let v_tex: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.v").into();
+            let h_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.h").into();
+            let v_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.v").into();
             bs.textures.push(TextureDecl {
                 name: h_tex.clone(),
                 size: src_size,
@@ -362,8 +357,7 @@ pub(crate) fn assemble_bloom(
 
             let src_w = src_size[0] as f32;
             let src_h = src_size[1] as f32;
-            let geo_blur: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.blur.geo").into();
+            let geo_blur: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.blur.geo").into();
             bs.geometry_buffers
                 .push((geo_blur.clone(), make_fullscreen_geometry(src_w, src_h)));
 
@@ -382,10 +376,8 @@ pub(crate) fn assemble_bloom(
                 [0.0, 0.0, 0.0, 0.0],
             );
 
-            let h_bundle =
-                build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
-            let v_bundle =
-                build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
+            let h_bundle = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+            let v_bundle = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
             let h_pass_name: ResourceName =
                 format!("sys.bloom.{layer_id}.lvl{level}.h.pass").into();
             let v_pass_name: ResourceName =
@@ -441,8 +433,7 @@ pub(crate) fn assemble_bloom(
 
             let dst_w = dst_size[0] as f32;
             let dst_h = dst_size[1] as f32;
-            let up_tex: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.up").into();
+            let up_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up").into();
             bs.textures.push(TextureDecl {
                 name: up_tex.clone(),
                 size: dst_size,
@@ -450,8 +441,7 @@ pub(crate) fn assemble_bloom(
                 sample_count: 1,
                 needs_sampling: false,
             });
-            let up_geo: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.up.geo").into();
+            let up_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.up.geo").into();
             bs.geometry_buffers
                 .push((up_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
             let up_params_name: ResourceName =
@@ -501,8 +491,7 @@ pub(crate) fn assemble_bloom(
                 continue;
             }
 
-            let add_tex: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.add").into();
+            let add_tex: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.add").into();
             bs.textures.push(TextureDecl {
                 name: add_tex.clone(),
                 size: dst_size,
@@ -510,8 +499,7 @@ pub(crate) fn assemble_bloom(
                 sample_count: 1,
                 needs_sampling: false,
             });
-            let add_geo: ResourceName =
-                format!("sys.bloom.{layer_id}.lvl{level}.add.geo").into();
+            let add_geo: ResourceName = format!("sys.bloom.{layer_id}.lvl{level}.add.geo").into();
             bs.geometry_buffers
                 .push((add_geo.clone(), make_fullscreen_geometry(dst_w, dst_h)));
             let add_params_name: ResourceName =
@@ -593,8 +581,7 @@ pub(crate) fn assemble_bloom(
             )?,
             [0.0, 0.0, 0.0, 0.0],
         );
-        let copy_pass_name: ResourceName =
-            format!("sys.bloom.{layer_id}.out.pass").into();
+        let copy_pass_name: ResourceName = format!("sys.bloom.{layer_id}.out.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
             pass_id: copy_pass_name.as_str().to_string(),
             name: copy_pass_name.clone(),

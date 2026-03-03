@@ -18,7 +18,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{SceneDSL, Node},
+    dsl::{Node, SceneDSL},
     renderer::{
         camera::legacy_projection_camera_matrix,
         geometry_resolver::types::ResolvedCompositionContext,

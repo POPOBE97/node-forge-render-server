@@ -131,8 +131,6 @@ pub(crate) fn load_image_from_data_url_checked(
 ) -> Result<Arc<DynamicImage>> {
     match load_image_from_data_url(data_url) {
         Ok(img) => Ok(ensure_rgba8(Arc::new(img))),
-        Err(e) => bail!(
-            "ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"
-        ),
+        Err(e) => bail!("ImageTexture node '{node_id}': failed to load image from dataUrl: {e}"),
     }
 }

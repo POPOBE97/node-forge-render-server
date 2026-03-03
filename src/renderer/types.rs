@@ -174,7 +174,8 @@ impl PassOutputRegistry {
 
     /// Get the output spec for a node+port pair.
     pub fn get_for_port(&self, node_id: &str, port_id: &str) -> Option<&PassOutputSpec> {
-        self.outputs.get(&(node_id.to_string(), port_id.to_string()))
+        self.outputs
+            .get(&(node_id.to_string(), port_id.to_string()))
     }
 
     /// Get the output texture name for a node.

@@ -94,17 +94,23 @@ impl ShaderSpaceBuilder {
             ShaderSpacePresentationMode::UiSdrDisplayEncode
                 | ShaderSpacePresentationMode::UiHdrNative
         );
-        let (shader_space, resolution, scene_output_texture, pass_bindings, pipeline_signature, sdr_encode_pass_name) =
-            assembler::build_shader_space_from_scene_internal(
-                scene,
-                self.device,
-                self.queue,
-                self.adapter.as_ref(),
-                enable_display_encode,
-                self.options.debug_dump_wgsl_dir.clone(),
-                self.asset_store.as_ref(),
-                presentation_mode,
-            )?;
+        let (
+            shader_space,
+            resolution,
+            scene_output_texture,
+            pass_bindings,
+            pipeline_signature,
+            sdr_encode_pass_name,
+        ) = assembler::build_shader_space_from_scene_internal(
+            scene,
+            self.device,
+            self.queue,
+            self.adapter.as_ref(),
+            enable_display_encode,
+            self.options.debug_dump_wgsl_dir.clone(),
+            self.asset_store.as_ref(),
+            presentation_mode,
+        )?;
 
         // On-screen display texture.
         // For UiHdrNative: use HDR gamma texture if available, else scene output

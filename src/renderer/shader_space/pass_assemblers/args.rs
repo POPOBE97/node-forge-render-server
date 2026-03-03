@@ -41,13 +41,19 @@ pub(crate) struct SceneContext<'a> {
 
 impl<'a> SceneContext<'a> {
     #[inline]
-    pub fn scene(&self) -> &SceneDSL { &self.prepared.scene }
+    pub fn scene(&self) -> &SceneDSL {
+        &self.prepared.scene
+    }
 
     #[inline]
-    pub fn nodes_by_id(&self) -> &HashMap<String, Node> { &self.prepared.nodes_by_id }
+    pub fn nodes_by_id(&self) -> &HashMap<String, Node> {
+        &self.prepared.nodes_by_id
+    }
 
     #[inline]
-    pub fn ids(&self) -> &HashMap<String, ResourceName> { &self.prepared.ids }
+    pub fn ids(&self) -> &HashMap<String, ResourceName> {
+        &self.prepared.ids
+    }
 }
 
 /// Mutable builder state accumulated during pass assembly.

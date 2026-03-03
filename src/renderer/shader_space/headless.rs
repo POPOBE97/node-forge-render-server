@@ -8,7 +8,7 @@ use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
 
-use super::api::{ShaderSpaceBuildOptions, ShaderSpacePresentationMode, ShaderSpaceBuilder};
+use super::api::{ShaderSpaceBuildOptions, ShaderSpaceBuilder, ShaderSpacePresentationMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeadlessOutputKind {

@@ -13,21 +13,23 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{find_node, incoming_connection, parse_str, Node},
+    dsl::{Node, find_node, incoming_connection, parse_str},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
         types::{MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_u32_min_1},
-        wgsl::{build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle, build_upsample_bilinear_bundle},
+        wgsl::{
+            build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
+            build_upsample_bilinear_bundle,
+        },
     },
 };
 
-use super::args::{BuilderState, SceneContext};
 use super::super::pass_spec::{
-    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
-    make_params,
+    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
+use super::args::{BuilderState, SceneContext};
 
 /// Assemble a `"Downsample"` layer.
 pub(crate) fn assemble_downsample(
@@ -129,9 +131,10 @@ pub(crate) fn assemble_downsample(
             .strip_prefix("(graph_inputs.")
             .and_then(|x| x.strip_suffix(").xy"))
         {
-            if let Some((_node_id, node)) = nodes_by_id.iter().find(|(_, n)| {
-                n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner
-            }) {
+            if let Some((_node_id, node)) = nodes_by_id
+                .iter()
+                .find(|(_, n)| n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner)
+            {
                 let w = cpu_num_u32_min_1(scene, &nodes_by_id, node, "x", 1)?;
                 let h = cpu_num_u32_min_1(scene, &nodes_by_id, node, "y", 1)?;
                 (w, h)
@@ -141,9 +144,7 @@ pub(crate) fn assemble_downsample(
                     target_size_expr.expr
                 );
             }
-        } else if let Some(inner) =
-            s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')'))
-        {
+        } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
             let parts: Vec<&str> = inner.split(',').collect();
             if parts.len() == 2 {
                 let w = parts[0].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
@@ -173,7 +174,11 @@ pub(crate) fn assemble_downsample(
         bs.textures.push(TextureDecl {
             name: tex.clone(),
             size: [out_w, out_h],
-            format: if is_sampled_output { bs.sampled_pass_format } else { bs.target_format },
+            format: if is_sampled_output {
+                bs.sampled_pass_format
+            } else {
+                bs.target_format
+            },
             sample_count: 1,
             needs_sampling: false,
         });
@@ -193,7 +198,12 @@ pub(crate) fn assemble_downsample(
         [out_w_f, out_h_f],
         [out_w_f, out_h_f],
         [out_w_f * 0.5, out_h_f * 0.5],
-        resolve_effective_camera_for_pass_node(scene, &nodes_by_id, layer_node, [out_w_f, out_h_f])?,
+        resolve_effective_camera_for_pass_node(
+            scene,
+            &nodes_by_id,
+            layer_node,
+            [out_w_f, out_h_f],
+        )?,
         [0.0, 0.0, 0.0, 0.0],
     );
 
@@ -242,8 +252,7 @@ pub(crate) fn assemble_downsample(
     if needs_upsample {
         let upsample_pass_name: ResourceName =
             format!("sys.downsample.{layer_id}.upsample.pass").into();
-        let upsample_geo: ResourceName =
-            format!("sys.downsample.{layer_id}.upsample.geo").into();
+        let upsample_geo: ResourceName = format!("sys.downsample.{layer_id}.upsample.geo").into();
         bs.push_fullscreen_geometry(upsample_geo.clone(), tgt_w, tgt_h);
 
         let upsample_params_name: ResourceName =
@@ -252,7 +261,12 @@ pub(crate) fn assemble_downsample(
             [tgt_w, tgt_h],
             [tgt_w, tgt_h],
             [tgt_w * 0.5, tgt_h * 0.5],
-            resolve_effective_camera_for_pass_node(scene, &nodes_by_id, layer_node, [tgt_w, tgt_h])?,
+            resolve_effective_camera_for_pass_node(
+                scene,
+                &nodes_by_id,
+                layer_node,
+                [tgt_w, tgt_h],
+            )?,
             [0.0, 0.0, 0.0, 0.0],
         );
 
@@ -311,8 +325,7 @@ pub(crate) fn assemble_downsample(
             if downsample_output_tex == comp_ctx.target_texture_name {
                 continue;
             }
-            if writes_scene_output_target
-                && comp_ctx.target_texture_name == *bs.target_texture_name
+            if writes_scene_output_target && comp_ctx.target_texture_name == *bs.target_texture_name
             {
                 continue;
             }
