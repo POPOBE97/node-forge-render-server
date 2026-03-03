@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-17T13:31:50.934Z",
-    "modified": "2026-02-17T13:31:50.934Z"
+    "created": "2026-03-02T11:47:27.271Z",
+    "modified": "2026-03-02T11:47:27.271Z"
   },
   "nodes": [
     {
@@ -38,7 +38,7 @@
         "magFilter": "linear",
         "minFilter": "linear",
         "mipmapFilter": "linear",
-        "encoderSpace": "linear",
+        "encoderSpace": "srgb",
         "alphaMode": "straight"
       }
     },
@@ -52,7 +52,31 @@
       "width": 160,
       "label": "Composite",
       "params": {
-        "alpha": 1
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "alpha": 1,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       },
       "inputs": [
         {
@@ -144,7 +168,28 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -339,7 +384,28 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -358,7 +424,28 @@
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -927,6 +1014,12 @@
     "composite": "Composite_3"
   },
   "assets": {
+    "1b93ac358949": {
+      "path": "assets/1b93ac358949.png",
+      "originalName": "紫外线.png",
+      "mimeType": "image/png",
+      "size": 8572
+    },
     "413e06c19e71": {
       "path": "assets/413e06c19e71.png",
       "originalName": "background.png",
@@ -938,12 +1031,6 @@
       "originalName": "体感.png",
       "mimeType": "image/png",
       "size": 6939
-    },
-    "1b93ac358949": {
-      "path": "assets/1b93ac358949.png",
-      "originalName": "紫外线.png",
-      "mimeType": "image/png",
-      "size": 8572
     },
     "c9f1efc02e6a": {
       "path": "assets/c9f1efc02e6a.png",
@@ -1187,7 +1274,7 @@
             "magFilter": "linear",
             "minFilter": "linear",
             "mipmapFilter": "linear",
-            "encoderSpace": "linear",
+            "encoderSpace": "srgb",
             "alphaMode": "straight"
           }
         },
@@ -1328,7 +1415,31 @@
           "params": {
             "mode": "standard",
             "radius": 100,
-            "extend": false
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "extend": false,
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
           }
         },
         {
