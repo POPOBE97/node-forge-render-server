@@ -346,6 +346,8 @@ pub struct App {
     pub viewport_operation_job_rx: Option<mpsc::Receiver<(u64, bool)>>,
     pub viewport_operation_last_visual: Option<ViewportOperationIndicatorVisual>,
     pub viewport_operation_request_id: u64,
+    pub canvas_event_focus_latched: bool,
+    pub interaction_event_seq: u64,
 }
 
 pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
@@ -533,6 +535,8 @@ impl App {
             viewport_operation_job_rx: None,
             viewport_operation_last_visual: None,
             viewport_operation_request_id: 0,
+            canvas_event_focus_latched: false,
+            interaction_event_seq: 0,
         }
     }
 }
