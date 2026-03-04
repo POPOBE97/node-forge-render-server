@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-03T17:14:11.542Z",
-    "modified": "2026-03-03T17:14:11.542Z"
+    "created": "2026-03-04T03:18:35.161Z",
+    "modified": "2026-03-04T03:18:35.161Z"
   },
   "nodes": [
     {
@@ -260,9 +260,9 @@
           "variableName": "t",
           "type": "float",
           "sourceBinding": {
-            "nodeId": "FloatInput_53",
-            "outputPortId": "value",
-            "outputLabel": "Value"
+            "nodeId": "TimeInput_44",
+            "outputPortId": "time",
+            "outputLabel": "Time"
           }
         }
       ]
@@ -456,11 +456,11 @@
       "id": "FloatInput_53",
       "type": "FloatInput",
       "position": {
-        "x": -1840,
+        "x": -1820,
         "y": 360
       },
       "width": 160,
-      "label": "uTime",
+      "label": "uEdgeModelRotationY",
       "params": {
         "value": 0
       }
@@ -687,8 +687,8 @@
         "id": "st_mmamj2am_3",
         "name": "Entry",
         "position": {
-          "x": 0,
-          "y": 20
+          "x": 60,
+          "y": 80
         },
         "parameterOverrides": {},
         "type": "entryState"
@@ -698,7 +698,7 @@
         "name": "Any",
         "position": {
           "x": 0,
-          "y": 120
+          "y": 160
         },
         "parameterOverrides": {},
         "type": "anyState"
@@ -707,18 +707,18 @@
         "id": "st_mmamj2am_5",
         "name": "Exit",
         "position": {
-          "x": 520,
-          "y": 20
+          "x": 580,
+          "y": 80
         },
         "parameterOverrides": {},
         "type": "exitState"
       },
       {
         "id": "st_mmamj4me_7",
-        "name": "Time Cycle",
+        "name": "Mutation 1",
         "position": {
-          "x": 280,
-          "y": 20
+          "x": 340,
+          "y": 80
         },
         "parameterOverrides": {},
         "type": "mutationNode",
@@ -727,10 +727,10 @@
     ],
     "transitions": [
       {
-        "id": "tr_mmaqalyp_6",
+        "id": "tr_mmamzl3p_4",
         "source": "st_mmamj2am_3",
         "target": "st_mmamj4me_7",
-        "duration": 0,
+        "duration": 0.3,
         "easing": "linear"
       }
     ],
@@ -751,7 +751,7 @@
           },
           {
             "id": "FloatInput_53:value",
-            "name": "uTime.value",
+            "name": "uEdgeModelRotationY.value",
             "type": "float"
           },
           {
@@ -778,7 +778,7 @@
           },
           {
             "id": "FloatInput_53:value",
-            "name": "uTime.value",
+            "name": "uEdgeModelRotationY.value",
             "type": "float"
           }
         ],
@@ -788,8 +788,8 @@
         "outputBindings": [],
         "passthroughBindings": [
           {
-            "fromPortId": "sceneElapsedTime",
-            "toPortId": "FloatInput_53:value"
+            "inputPortId": "sceneElapsedTime",
+            "outputPortId": "FloatInput_53:value"
           }
         ]
       }
