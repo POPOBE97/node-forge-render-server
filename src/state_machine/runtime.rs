@@ -454,7 +454,9 @@ impl StateMachineRuntime {
         for pt in &mutation.passthrough_bindings {
             if let Some(&val) = outputs.get(&pt.to_port_id) {
                 if let Some(key) = mutation::resolve_output_target(&pt.to_port_id, None) {
-                    overrides.entry(key).or_insert_with(|| serde_json::json!(val));
+                    overrides
+                        .entry(key)
+                        .or_insert_with(|| serde_json::json!(val));
                 }
             }
         }

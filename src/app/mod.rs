@@ -244,9 +244,8 @@ impl eframe::App for App {
         }
 
         let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
-        let should_redraw_scene = self.scene_redraw_pending
-            || time_driven_scene
-            || self.capture_redraw_active;
+        let should_redraw_scene =
+            self.scene_redraw_pending || time_driven_scene || self.capture_redraw_active;
 
         if should_redraw_scene {
             let t = self.time_value_secs;

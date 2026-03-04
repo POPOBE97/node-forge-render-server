@@ -108,10 +108,8 @@ pub fn evaluate_mutation(
                     if let Some(&val) =
                         port_values.get(&(conn.from.node_id.as_str(), conn.from.port_id.as_str()))
                     {
-                        port_values.insert(
-                            (conn.to.node_id.as_str(), conn.to.port_id.as_str()),
-                            val,
-                        );
+                        port_values
+                            .insert((conn.to.node_id.as_str(), conn.to.port_id.as_str()), val);
                     }
                 }
             }

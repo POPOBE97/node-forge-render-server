@@ -164,11 +164,9 @@ impl AnimationSession {
         let mut last_result = None;
 
         for _ in 0..tick_count {
-            let result = self.runtime.tick(
-                self.clock.step_secs,
-                &HashMap::new(),
-                &Vec::new(),
-            );
+            let result = self
+                .runtime
+                .tick(self.clock.step_secs, &HashMap::new(), &Vec::new());
             diagnostics.extend(result.diagnostics.iter().cloned());
             last_result = Some(result);
         }

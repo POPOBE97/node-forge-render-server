@@ -1419,8 +1419,13 @@ pub fn show_canvas_panel(
         );
     }
 
+    let context_menu_opened_this_frame = response.secondary_clicked();
+
     response.context_menu(|ui| {
-        if ui.button("复制材质").clicked() {
+        let copy_clicked = ui.button("复制材质").clicked();
+        // Ignore the opening secondary-click frame so right-clicking the canvas
+        // does not immediately trigger a synchronous GPU readback.
+        if copy_clicked && !context_menu_opened_this_frame {
             // Execute the on-demand SDR encode pass (UiHdrNative only) so the
             // export texture contains up-to-date sRGB-encoded bytes.
             if let Some(ref pass_name) = app.export_encode_pass_name {
@@ -2195,6 +2200,13 @@ pub fn show_canvas_panel(
         }
     }
 
+    let continuous_scene_redraw = (app.scene_uses_time && app.time_updates_enabled)
+        || app
+            .animation_session
+            .as_ref()
+            .is_some_and(|session| session.is_active())
+        || app.capture_redraw_active;
+
     if response.clicked_by(egui::PointerButton::Primary) {
         if let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) {
             if animated_canvas_rect.contains(pointer_pos)
@@ -2210,19 +2222,20 @@ pub fn show_canvas_panel(
                 let x = (uv_x * effective_resolution[0] as f32).floor() as u32;
                 let y = (uv_y * effective_resolution[1] as f32).floor() as u32;
                 if x < effective_resolution[0] && y < effective_resolution[1] {
-                    if value_sample_cache.is_none()
-                        && let Some(info) = app
+                    if value_sample_cache.is_none() && !continuous_scene_redraw {
+                        if let Some(info) = app
                             .shader_space
                             .texture_info(value_sampling_texture_name.as_str())
-                    {
-                        value_sample_cache = Some(get_or_refresh_pixel_overlay_cache(
-                            app,
-                            ctx,
-                            value_sampling_texture_name.as_str(),
-                            info.size.width,
-                            info.size.height,
-                            info.format,
-                        ));
+                        {
+                            value_sample_cache = Some(get_or_refresh_pixel_overlay_cache(
+                                app,
+                                ctx,
+                                value_sampling_texture_name.as_str(),
+                                info.size.width,
+                                info.size.height,
+                                info.format,
+                            ));
+                        }
                     }
                     if let Some(cache) = value_sample_cache.as_deref()
                         && let Some(rgba) = sample_value_pixel(
