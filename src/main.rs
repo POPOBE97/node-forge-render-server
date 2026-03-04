@@ -670,6 +670,16 @@ fn main() -> Result<()> {
             }
             let capture_state_rx = spawn_metal_capture_state_watcher(cc.egui_ctx.clone());
 
+            let animation_session = last_good
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().cloned())
+                .and_then(|s| {
+                    node_forge_render_server::animation::AnimationSession::from_scene(&s)
+                        .ok()
+                        .flatten()
+                });
+
             Ok(Box::new(app::App::from_init(app::AppInit {
                 shader_space,
                 resolution,
@@ -688,6 +698,7 @@ fn main() -> Result<()> {
                 uniform_scene: None,
                 last_pipeline_signature,
                 asset_store,
+                animation_session,
             })))
         }),
     )
