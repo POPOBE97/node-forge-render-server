@@ -239,6 +239,7 @@ pub struct AppInit {
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub follow_scene_resolution_for_window: bool,
     pub asset_store: crate::asset_store::AssetStore,
+    pub animation_session: Option<crate::animation::AnimationSession>,
 }
 
 pub struct App {
@@ -335,6 +336,7 @@ pub struct App {
     pub reference_alpha_mode: RefImageAlphaMode,
     pub asset_store: crate::asset_store::AssetStore,
     pub last_auto_reference_attempt: Option<String>,
+    pub animation_session: Option<crate::animation::AnimationSession>,
     pub time_updates_enabled: bool,
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
@@ -520,6 +522,7 @@ impl App {
             scene_reference_image_alpha_mode: initial_scene_reference_image_alpha_mode,
             reference_alpha_mode: initial_scene_reference_image_alpha_mode.unwrap_or_default(),
             asset_store: init.asset_store,
+            animation_session: init.animation_session,
             last_auto_reference_attempt: None,
             time_updates_enabled: true,
             time_value_secs: 0.0,

@@ -64,22 +64,40 @@ fn collect_graph_uniform_updates(
 }
 
 fn apply_graph_uniform_updates(app: &mut App, scene: &crate::dsl::SceneDSL) -> Result<usize> {
-    let updates = collect_graph_uniform_updates(scene, &app.passes)?;
+    apply_graph_uniform_updates_inner(&mut app.passes, &mut app.shader_space, scene)
+}
+
+/// Public variant that accepts split borrows so callers in `mod.rs` can avoid
+/// borrowing the entire `App` while other fields are in use.
+pub fn apply_graph_uniform_updates_parts(
+    passes: &mut Vec<renderer::PassBindings>,
+    shader_space: &mut rust_wgpu_fiber::shader_space::ShaderSpace,
+    scene: &crate::dsl::SceneDSL,
+) -> Result<usize> {
+    apply_graph_uniform_updates_inner(passes, shader_space, scene)
+}
+
+fn apply_graph_uniform_updates_inner(
+    passes: &mut Vec<renderer::PassBindings>,
+    shader_space: &mut rust_wgpu_fiber::shader_space::ShaderSpace,
+    scene: &crate::dsl::SceneDSL,
+) -> Result<usize> {
+    let updates = collect_graph_uniform_updates(scene, passes)?;
     for update in &updates {
-        let buffer_name = app.passes[update.pass_index]
+        let buffer_name = passes[update.pass_index]
             .graph_binding
             .as_ref()
             .map(|b| b.buffer_name.clone())
             .with_context(|| {
                 format!(
                     "graph binding missing while applying update for pass '{}'",
-                    app.passes[update.pass_index].pass_id
+                    passes[update.pass_index].pass_id
                 )
             })?;
-        app.shader_space
+        shader_space
             .write_buffer(buffer_name.as_str(), 0, update.bytes.as_slice())
             .with_context(|| format!("failed to write graph buffer '{}'", buffer_name.as_str()))?;
-        app.passes[update.pass_index].last_graph_hash = Some(update.hash);
+        passes[update.pass_index].last_graph_hash = Some(update.hash);
     }
     Ok(updates.len())
 }
@@ -348,6 +366,12 @@ pub fn apply_scene_update(
                     app.scene_uses_time = app.uniform_scene.as_ref().is_some_and(scene_uses_time);
                     app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
 
+                    // Rebuild animation session from the new scene.
+                    app.animation_session =
+                        crate::animation::AnimationSession::from_scene(&scene)
+                            .ok()
+                            .flatten();
+
                     if let Ok(mut g) = app.last_good.lock() {
                         *g = Some(scene);
                     }
@@ -363,6 +387,7 @@ pub fn apply_scene_update(
                     eprintln!("[error-plane] scene build failed: {message}");
                     app.scene_uses_time = scene_uses_time(&scene);
                     app.uniform_scene = None;
+                    app.animation_session = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -383,6 +408,7 @@ pub fn apply_scene_update(
                     eprintln!("{message}");
                     app.scene_uses_time = scene_uses_time(&scene);
                     app.uniform_scene = None;
+                    app.animation_session = None;
                     broadcast_error(app, request_id, "PANIC", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {

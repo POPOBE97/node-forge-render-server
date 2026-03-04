@@ -201,12 +201,56 @@ impl eframe::App for App {
         let raw_t = self.start.elapsed().as_secs_f32();
         let delta_t = (raw_t - self.time_last_raw_secs).max(0.0);
         self.time_last_raw_secs = raw_t;
-        if self.time_updates_enabled {
-            self.time_value_secs += delta_t;
-        }
+
+        // ── Animation session tick (fixed-step, deterministic) ─────────
+        let effective_dt = if self.time_updates_enabled {
+            delta_t
+        } else {
+            0.0
+        };
+        // Step the session first, collecting the result (drops borrow on
+        // self.animation_session so we can mutate other App fields freely).
+        let anim_step = self
+            .animation_session
+            .as_mut()
+            .map(|session| session.step(effective_dt as f64));
+
+        let animation_active = if let Some(step) = anim_step {
+            if step.needs_redraw {
+                // Phase 1: apply value overrides to the cached uniform scene.
+                if let Some(ref mut uniform_scene) = self.uniform_scene {
+                    crate::state_machine::apply_overrides(
+                        uniform_scene,
+                        &step.active_overrides,
+                    );
+                }
+                // Phase 2: push updated uniforms to GPU buffers (split
+                // borrows: passes + shader_space + uniform_scene).
+                if let Some(ref uniform_scene) = self.uniform_scene {
+                    let _ = scene_runtime::apply_graph_uniform_updates_parts(
+                        &mut self.passes,
+                        &mut self.shader_space,
+                        uniform_scene,
+                    );
+                }
+                self.scene_redraw_pending = true;
+            }
+            // Unified clock: fixed-step scene time drives params.time.
+            self.time_value_secs = step.scene_time_secs as f32;
+            step.active
+        } else {
+            // No animation session — advance time with wall-clock as before.
+            if self.time_updates_enabled {
+                self.time_value_secs += delta_t;
+            }
+            false
+        };
+
         let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
-        let should_redraw_scene =
-            self.scene_redraw_pending || time_driven_scene || self.capture_redraw_active;
+        let should_redraw_scene = self.scene_redraw_pending
+            || time_driven_scene
+            || animation_active
+            || self.capture_redraw_active;
 
         if should_redraw_scene {
             let t = self.time_value_secs;
@@ -830,9 +874,13 @@ impl eframe::App for App {
         );
 
         let time_driven_scene_for_schedule = self.scene_uses_time && self.time_updates_enabled;
+        let animation_session_active = self
+            .animation_session
+            .as_ref()
+            .is_some_and(|s| s.is_active());
 
         if should_request_immediate_repaint(
-            time_driven_scene_for_schedule,
+            time_driven_scene_for_schedule || animation_session_active,
             sidebar_animating,
             pan_zoom_animating,
             operation_indicator_visible,
