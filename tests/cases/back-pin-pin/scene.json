@@ -786,7 +786,12 @@
         "connections": [],
         "inputBindings": [],
         "outputBindings": [],
-        "passthroughBindings": []
+        "passthroughBindings": [
+          {
+            "fromPortId": "sceneElapsedTime",
+            "toPortId": "FloatInput_53:value"
+          }
+        ]
       }
     ],
     "initialStateId": "st_mmamj2am_3"
