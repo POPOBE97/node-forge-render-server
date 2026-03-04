@@ -42,8 +42,17 @@ fn back_pin_pin_compile_and_tick() {
 
     assert_eq!(rt.current_state_id(), "st_mmamj2am_3");
 
-    // Tick forward — back-pin-pin has an unconditional entry->mutation transition.
+    // Without mousedown event the entry→mutation transition should NOT fire.
     let result = rt.tick(0.016, &Default::default(), &vec![]);
+    assert_eq!(result.current_state_id, "st_mmamj2am_3");
+
+    // Fire mousedown — transition fires (delay + duration = 0.6s total).
+    let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
+    assert_eq!(result.current_state_id, "st_mmamj2am_3");
+    assert!(result.active_transition_id.is_some());
+
+    // Advance past delay (0.3s) + duration (0.3s) = 0.6s total.
+    let result = rt.tick(0.7, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert!(!result.finished);
 }
@@ -53,11 +62,12 @@ fn back_pin_pin_apply_overrides_no_crash() {
     let mut scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
     let mut rt = state_machine::compile_from_scene(&scene).unwrap().unwrap();
 
-    let result = rt.tick(0.016, &Default::default(), &vec![]);
+    // Fire mousedown and advance past transition to get mutation overrides.
+    rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
+    let result = rt.tick(0.7, &Default::default(), &vec![]);
     state_machine::apply_overrides(&mut scene, &result.overrides);
 
-    // Verify scene is still intact — nodes should be unchanged since
-    // there are no overrides from an empty state machine.
+    // Verify scene is still intact.
     assert!(!scene.nodes.is_empty());
 }
 
