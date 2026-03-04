@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-04T07:58:39.055Z",
-    "modified": "2026-03-04T07:58:39.055Z"
+    "created": "2026-03-04T11:05:37.000Z",
+    "modified": "2026-03-04T11:05:37.000Z"
   },
   "nodes": [
     {
@@ -734,6 +734,7 @@
           "type": "event",
           "eventName": "mousedown"
         },
+        "delay": 0.3,
         "duration": 0.3,
         "easing": "linear"
       }

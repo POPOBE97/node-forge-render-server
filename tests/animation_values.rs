@@ -1,8 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::state_machine::{
-    AnimationTraceLog, TickSchedule, generate_trace_for_scene,
+    AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, TickSchedule,
+    build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
 };
 use node_forge_render_server::{asset_store, dsl};
 
@@ -215,6 +217,87 @@ fn first_trace_mismatch(
     format!("case {case_name}: trace mismatch but no focused diff found (compare full JSON)")
 }
 
+/// Generate a trace by driving `AnimationSession` — the same code path the
+/// app uses at runtime.  This ensures the test exercises ValuePool, TaskPool,
+/// Runloop, and the full session lifecycle rather than calling
+/// `runtime.tick()` directly.
+fn generate_trace_via_session(
+    scene: &dsl::SceneDSL,
+    schedule: &TickSchedule,
+    event_schedule: &[ScheduledEvent],
+) -> AnimationTraceLog {
+    let mut session = AnimationSession::from_scene(scene)
+        .expect("from_scene failed")
+        .expect("scene has no state machine");
+
+    let sm = session.runtime().definition();
+    let tracked_key_set = tracked_override_keys(sm);
+    let tracked_keys: Vec<String> = tracked_key_set.iter().cloned().collect();
+    let initial_values = build_initial_values(scene, &tracked_keys);
+
+    // Current values accumulator — starts with scene baselines, updated by
+    // each step's active_overrides (mirrors how the app applies overrides).
+    let mut current_values = initial_values;
+
+    let samples = schedule.samples();
+    let mut frames: Vec<AnimationTraceFrame> = Vec::with_capacity(samples.len());
+
+    for sample in &samples {
+        // Fire any scheduled events for this frame.
+        for ev in event_schedule
+            .iter()
+            .filter(|e| e.frame_index == sample.frame_index)
+        {
+            session.fire_event(&ev.event_name);
+        }
+
+        // Drive the session exactly as the app does: step(dt).
+        let step = session.step(sample.dt_secs);
+
+        // Merge active overrides into current values (same as app's
+        // apply_overrides path).
+        for (key, value) in &step.active_overrides {
+            let trace_key = format!("{}:{}", key.node_id, key.param_name);
+            current_values.insert(trace_key, canonicalize_json_value(value));
+        }
+
+        // Snapshot tracked keys for this frame.
+        let mut frame_values: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        for key in &tracked_keys {
+            let value = current_values
+                .get(key)
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            frame_values.insert(key.clone(), value);
+        }
+
+        frames.push(AnimationTraceFrame {
+            frame_index: sample.frame_index,
+            time_secs: round_f64(sample.time_secs),
+            dt_secs: round_f64(sample.dt_secs),
+            current_state_id: step.current_state_id.clone(),
+            state_local_time_secs: round_f64(step.state_local_time_secs),
+            scene_time_secs: round_f64(step.scene_time_secs),
+            active_transition_id: step.active_transition_id.clone(),
+            transition_blend: step.transition_blend.map(round_f64),
+            finished: step.finished,
+            diagnostics: step.diagnostics.clone(),
+            values: frame_values,
+        });
+    }
+
+    AnimationTraceLog {
+        schema_version: 1,
+        start_secs: round_f64(schedule.start_secs),
+        end_secs: round_f64(schedule.end_secs),
+        fps: schedule.fps,
+        include_end: schedule.include_end,
+        frame_count: frames.len(),
+        tracked_keys,
+        frames,
+    }
+}
+
 #[test]
 fn animation_value_traces_match_goldens() {
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
@@ -232,8 +315,24 @@ fn animation_value_traces_match_goldens() {
 
         checked_cases += 1;
 
-        let actual = generate_trace_for_scene(&scene, &schedule)
-            .unwrap_or_else(|e| panic!("case {name}: failed to generate animation trace: {e:#}"));
+        let actual = {
+            let events_path = case_dir.join("events.json");
+            let event_schedule: Vec<ScheduledEvent> = if events_path.exists() {
+                let text = std::fs::read_to_string(&events_path).unwrap_or_else(|e| {
+                    panic!("case {name}: failed to read {}: {e}", events_path.display())
+                });
+                let es: EventSchedule = serde_json::from_str(&text).unwrap_or_else(|e| {
+                    panic!(
+                        "case {name}: failed to parse {}: {e}",
+                        events_path.display()
+                    )
+                });
+                es.events
+            } else {
+                Vec::new()
+            };
+            generate_trace_via_session(&scene, &schedule, &event_schedule)
+        };
 
         let baseline_path = case_dir.join("animation_values.json");
         if update_goldens {

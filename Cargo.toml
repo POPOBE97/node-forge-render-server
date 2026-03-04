@@ -32,3 +32,4 @@ metal = "0.32"
 egui-wgpu = { path = "3rd/egui-wgpu" }
 
 [dev-dependencies]
+proptest = "1"

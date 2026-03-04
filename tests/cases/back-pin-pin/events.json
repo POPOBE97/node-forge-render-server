@@ -1,0 +1,8 @@
+{
+  "events": [
+    {
+      "frame_index": 60,
+      "event_name": "mousedown"
+    }
+  ]
+}

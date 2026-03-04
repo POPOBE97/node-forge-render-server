@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-03-03T18:02:36.418Z",
+  "generatedAt": "2026-03-04T10:05:50.681Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -3417,11 +3417,12 @@
         "defaultParams": {}
       }
     ],
+    "transitionTriggerTypes": [
+      "event"
+    ],
     "transitionConditionTypes": [
-      "trigger",
       "bool",
       "threshold",
-      "event",
       "compound"
     ]
   }
