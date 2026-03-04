@@ -215,14 +215,13 @@ impl eframe::App for App {
             .as_mut()
             .map(|session| session.step(effective_dt as f64));
 
-        let animation_active = if let Some(step) = anim_step {
+        let mut animation_values_changed = false;
+        if let Some(step) = anim_step {
             if step.needs_redraw {
+                animation_values_changed = true;
                 // Phase 1: apply value overrides to the cached uniform scene.
                 if let Some(ref mut uniform_scene) = self.uniform_scene {
-                    crate::state_machine::apply_overrides(
-                        uniform_scene,
-                        &step.active_overrides,
-                    );
+                    crate::state_machine::apply_overrides(uniform_scene, &step.active_overrides);
                 }
                 // Phase 2: push updated uniforms to GPU buffers (split
                 // borrows: passes + shader_space + uniform_scene).
@@ -237,19 +236,16 @@ impl eframe::App for App {
             }
             // Unified clock: fixed-step scene time drives params.time.
             self.time_value_secs = step.scene_time_secs as f32;
-            step.active
         } else {
             // No animation session — advance time with wall-clock as before.
             if self.time_updates_enabled {
                 self.time_value_secs += delta_t;
             }
-            false
-        };
+        }
 
         let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
         let should_redraw_scene = self.scene_redraw_pending
             || time_driven_scene
-            || animation_active
             || self.capture_redraw_active;
 
         if should_redraw_scene {
@@ -260,7 +256,7 @@ impl eframe::App for App {
                 let _ = renderer::update_pass_params(&self.shader_space, pass, &p);
             }
 
-            if time_driven_scene {
+            if time_driven_scene || animation_values_changed {
                 if self.ref_image.is_some() {
                     self.diff_dirty = true;
                 }

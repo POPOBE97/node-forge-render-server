@@ -301,6 +301,9 @@ pub fn apply_scene_update(
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(size));
             }
 
+            let next_animation_session = crate::animation::AnimationSession::from_scene(&scene)
+                .ok()
+                .flatten();
             let mut prepared_scene_candidate: Option<crate::dsl::SceneDSL> = None;
             if let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene) {
                 prepared_scene_candidate = Some(prepared_for_fast_path.scene.clone());
@@ -317,6 +320,7 @@ pub fn apply_scene_update(
                             app.last_pipeline_signature = Some(next_pipeline_signature);
                             app.scene_uses_time = scene_uses_time(&prepared_for_fast_path.scene);
                             app.uniform_scene = prepared_scene_candidate;
+                            app.animation_session = next_animation_session.clone();
                             app.uniform_only_update_count =
                                 app.uniform_only_update_count.saturating_add(1);
                             if let Ok(mut g) = app.last_good.lock() {
@@ -366,11 +370,7 @@ pub fn apply_scene_update(
                     app.scene_uses_time = app.uniform_scene.as_ref().is_some_and(scene_uses_time);
                     app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
 
-                    // Rebuild animation session from the new scene.
-                    app.animation_session =
-                        crate::animation::AnimationSession::from_scene(&scene)
-                            .ok()
-                            .flatten();
+                    app.animation_session = next_animation_session;
 
                     if let Ok(mut g) = app.last_good.lock() {
                         *g = Some(scene);
