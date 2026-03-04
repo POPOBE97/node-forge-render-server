@@ -11,12 +11,15 @@ use rust_wgpu_fiber::eframe::{
     egui_wgpu, wgpu,
 };
 
-use crate::ui::{
-    animation_manager::{AnimationSpec, Easing},
-    design_tokens,
-    viewport_indicators::{
-        ViewportIndicator, ViewportIndicatorEntry, ViewportIndicatorInteraction,
-        ViewportIndicatorKind,
+use crate::{
+    protocol,
+    ui::{
+        animation_manager::{AnimationSpec, Easing},
+        design_tokens,
+        viewport_indicators::{
+            ViewportIndicator, ViewportIndicatorEntry, ViewportIndicatorInteraction,
+            ViewportIndicatorKind,
+        },
     },
 };
 
@@ -1163,6 +1166,7 @@ pub fn show_canvas_panel(
     now: f64,
 ) -> bool {
     let mut requested_toggle_canvas_only = false;
+    let frame_events = ctx.input(|i| i.events.clone());
 
     if let Some(rx) = app.viewport_operation_job_rx.as_ref() {
         match rx.try_recv() {
@@ -1287,6 +1291,11 @@ pub fn show_canvas_panel(
         }
         false
     };
+
+    let interaction_clean_state = super::interaction_report::is_clean_rendering_state(
+        app.preview_texture_name.is_none(),
+        app.ref_image.is_none(),
+    );
 
     let avail_rect = ui.available_rect_before_wrap();
 
@@ -2254,6 +2263,28 @@ pub fn show_canvas_panel(
                     }
                 }
             }
+        }
+    }
+
+    let pointer_hover_pos = ctx.input(|i| i.pointer.hover_pos());
+    let interaction_payloads = super::interaction_report::collect_interaction_payloads(
+        frame_events.as_slice(),
+        animated_canvas_rect,
+        pointer_hover_pos,
+        interaction_clean_state,
+        &mut app.canvas_event_focus_latched,
+    );
+    for mut payload in interaction_payloads {
+        app.interaction_event_seq = app.interaction_event_seq.saturating_add(1);
+        payload.seq = app.interaction_event_seq;
+        let message = protocol::WSMessage {
+            msg_type: "interaction_event".to_string(),
+            timestamp: protocol::now_millis(),
+            request_id: None,
+            payload: Some(payload),
+        };
+        if let Ok(text) = serde_json::to_string(&message) {
+            app.ws_hub.broadcast(text);
         }
     }
 
