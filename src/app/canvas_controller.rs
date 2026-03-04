@@ -1293,8 +1293,8 @@ pub fn show_canvas_panel(
     };
 
     let interaction_clean_state = super::interaction_report::is_clean_rendering_state(
-        app.preview_texture_name.is_none(),
-        app.ref_image.is_none(),
+        app.preview_texture_name.is_some(),
+        app.ref_image.is_some(),
     );
 
     let avail_rect = ui.available_rect_before_wrap();
