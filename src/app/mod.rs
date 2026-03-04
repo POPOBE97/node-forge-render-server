@@ -253,17 +253,20 @@ impl eframe::App for App {
         self.time_last_raw_secs = raw_t;
 
         // ── Animation session tick (fixed-step, deterministic) ─────────
-        let effective_dt = if self.time_updates_enabled {
+        let effective_dt = if self.time_updates_enabled && self.animation_playing {
             delta_t
         } else {
             0.0
         };
         // Step the session first, collecting the result (drops borrow on
         // self.animation_session so we can mutate other App fields freely).
-        let anim_step = self
-            .animation_session
-            .as_mut()
-            .map(|session| session.step(effective_dt as f64));
+        let anim_step = if self.animation_playing {
+            self.animation_session
+                .as_mut()
+                .map(|session| session.step(effective_dt as f64))
+        } else {
+            None
+        };
 
         let mut animation_values_changed = false;
         let mut animation_current_state_id: Option<String> = None;
@@ -929,10 +932,11 @@ impl eframe::App for App {
         );
 
         let time_driven_scene_for_schedule = self.scene_uses_time && self.time_updates_enabled;
-        let animation_session_active = self
-            .animation_session
-            .as_ref()
-            .is_some_and(|s| s.is_active());
+        let animation_session_active = self.animation_playing
+            && self
+                .animation_session
+                .as_ref()
+                .is_some_and(|s| s.is_active());
 
         if should_request_immediate_repaint(
             time_driven_scene_for_schedule || animation_session_active,

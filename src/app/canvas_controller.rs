@@ -2277,6 +2277,13 @@ pub fn show_canvas_panel(
     for mut payload in interaction_payloads {
         app.interaction_event_seq = app.interaction_event_seq.saturating_add(1);
         payload.seq = app.interaction_event_seq;
+
+        // Feed canvas interaction events into the animation state machine so
+        // that event-triggered transitions (e.g. mousedown) actually fire.
+        if let Some(session) = app.animation_session.as_mut() {
+            session.fire_event(&payload.event_type);
+        }
+
         let message = protocol::WSMessage {
             msg_type: "interaction_event".to_string(),
             timestamp: protocol::now_millis(),

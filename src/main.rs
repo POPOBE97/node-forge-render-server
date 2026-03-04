@@ -347,6 +347,9 @@ fn run_headless_ws_render_once(
                 // Headless one-shot render requires a full scene payload.
                 // Ignore uniform deltas and wait for Parsed / ParseError.
             }
+            ws::SceneUpdate::AnimationControl { .. } => {
+                // Animation control is irrelevant in headless mode; ignore.
+            }
             ws::SceneUpdate::ParseError {
                 message,
                 request_id,

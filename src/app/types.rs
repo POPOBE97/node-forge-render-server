@@ -337,6 +337,9 @@ pub struct App {
     pub asset_store: crate::asset_store::AssetStore,
     pub last_auto_reference_attempt: Option<String>,
     pub animation_session: Option<crate::animation::AnimationSession>,
+    /// Whether the animation state machine is actively playing.
+    /// Defaults to `false`; toggled by `animation_control` WebSocket messages.
+    pub animation_playing: bool,
     pub time_updates_enabled: bool,
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
@@ -526,6 +529,7 @@ impl App {
             reference_alpha_mode: initial_scene_reference_image_alpha_mode.unwrap_or_default(),
             asset_store: init.asset_store,
             animation_session: init.animation_session,
+            animation_playing: false,
             last_auto_reference_attempt: None,
             time_updates_enabled: true,
             time_value_secs: 0.0,

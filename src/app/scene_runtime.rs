@@ -437,6 +437,46 @@ pub fn apply_scene_update(
                 reset_viewport: false,
             }
         }
+        ws::SceneUpdate::AnimationControl { action } => {
+            match action {
+                ws::AnimationControlAction::Play => {
+                    if !app.animation_playing {
+                        app.animation_playing = true;
+                        eprintln!("[animation] play");
+                    }
+                }
+                ws::AnimationControlAction::Stop => {
+                    if app.animation_playing {
+                        app.animation_playing = false;
+                        eprintln!("[animation] stop");
+
+                        // Reset the animation session and restore base values.
+                        if let Some(session) = app.animation_session.as_mut() {
+                            let restores = session.reset();
+                            if !restores.is_empty() {
+                                if let Some(ref mut uniform_scene) = app.uniform_scene {
+                                    crate::state_machine::apply_overrides(uniform_scene, &restores);
+                                }
+                            }
+                        }
+                        if let Some(ref uniform_scene) = app.uniform_scene {
+                            let _ = apply_graph_uniform_updates_parts(
+                                &mut app.passes,
+                                &mut app.shader_space,
+                                uniform_scene,
+                            );
+                        }
+                        app.time_value_secs = 0.0;
+                        app.scene_redraw_pending = true;
+                    }
+                }
+            }
+            SceneApplyResult {
+                did_rebuild_shader_space: false,
+                texture_filter_override: None,
+                reset_viewport: false,
+            }
+        }
     }
 }
 
