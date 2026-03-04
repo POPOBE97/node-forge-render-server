@@ -15,10 +15,48 @@ use anyhow::{Result, bail};
 
 use super::types::*;
 
-/// A scalar value flowing through the mutation graph.
+// ---------------------------------------------------------------------------
+// Typed animation value (v1 — Float only, stub for future expansion)
+// ---------------------------------------------------------------------------
+
+/// A typed value flowing through the mutation graph.
 ///
-/// We use `f64` for all arithmetic — this matches the JSON number
-/// representation and avoids premature precision loss.
+/// v1 supports only `Float`.  Future expansions: `Int`, `Bool`,
+/// `Vec2`, `Vec3`, `Vec4`, `Color`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AnimValue {
+    Float(f64),
+}
+
+impl AnimValue {
+    /// Extract as `f64`, converting if possible.
+    pub fn as_f64(self) -> f64 {
+        match self {
+            AnimValue::Float(v) => v,
+        }
+    }
+
+    /// Convert to `serde_json::Value` for the override boundary.
+    pub fn to_json(self) -> serde_json::Value {
+        match self {
+            AnimValue::Float(v) => serde_json::json!(v),
+        }
+    }
+}
+
+impl Default for AnimValue {
+    fn default() -> Self {
+        AnimValue::Float(0.0)
+    }
+}
+
+impl From<f64> for AnimValue {
+    fn from(v: f64) -> Self {
+        AnimValue::Float(v)
+    }
+}
+
+/// Legacy alias kept for backward compatibility with internal callers.
 pub type MutationValue = f64;
 
 /// Input context supplied to mutation evaluation.
@@ -38,61 +76,150 @@ pub fn evaluate_mutation(
     mutation: &MutationDefinition,
     ctx: &MutationInputContext,
 ) -> Result<HashMap<String, MutationValue>> {
-    // Fast path: no inner nodes — output bindings can only reference
-    // input bindings (pass-through wiring).
-    if mutation.nodes.is_empty() && mutation.connections.is_empty() {
+    let has_inner_graph = !mutation.nodes.is_empty() || !mutation.connections.is_empty();
+    let has_passthroughs = !mutation.passthrough_bindings.is_empty();
+
+    // Fast path: nothing to evaluate.
+    if !has_inner_graph && !has_passthroughs {
         return Ok(HashMap::new());
     }
 
-    // Build node lookup.
-    let nodes_by_id: HashMap<&str, &MutationInnerNode> =
-        mutation.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let mut outputs: HashMap<String, MutationValue> = HashMap::new();
 
-    // Topological order.
-    let order = topological_sort(&mutation.nodes, &mutation.connections)?;
+    // ── Evaluate inner graph (if any) ──────────────────────────────────
+    if has_inner_graph {
+        let nodes_by_id: HashMap<&str, &MutationInnerNode> =
+            mutation.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-    // Port value store: (node_id, port_id) → value
-    let mut port_values: HashMap<(&str, &str), MutationValue> = HashMap::new();
+        let order = topological_sort(&mutation.nodes, &mutation.connections)?;
 
-    // Seed input bindings: these deliver external values into inner-node input ports.
-    for b in &mutation.input_bindings {
-        let value = resolve_input_binding_value(b, ctx);
-        port_values.insert((b.to.node_id.as_str(), b.to.port_id.as_str()), value);
-    }
+        let mut port_values: HashMap<(&str, &str), MutationValue> = HashMap::new();
 
-    // Also deliver connection-sourced values before evaluation — connections between
-    // inner nodes will be resolved during the topo-order walk, but input bindings
-    // target inner-node inputs directly.
-
-    // Evaluate in topological order.
-    for node_id in &order {
-        let node = nodes_by_id.get(node_id.as_str()).unwrap();
-
-        // Gather incoming connection values for this node's input ports.
-        for conn in &mutation.connections {
-            if conn.to.node_id == *node_id {
-                if let Some(&val) =
-                    port_values.get(&(conn.from.node_id.as_str(), conn.from.port_id.as_str()))
-                {
-                    port_values.insert((conn.to.node_id.as_str(), conn.to.port_id.as_str()), val);
-                }
-            }
+        for b in &mutation.input_bindings {
+            let value = resolve_input_binding_value(b, ctx);
+            port_values.insert((b.to.node_id.as_str(), b.to.port_id.as_str()), value);
         }
 
-        evaluate_inner_node(node, &mut port_values)?;
+        for node_id in &order {
+            let node = nodes_by_id.get(node_id.as_str()).unwrap();
+
+            for conn in &mutation.connections {
+                if conn.to.node_id == *node_id {
+                    if let Some(&val) =
+                        port_values.get(&(conn.from.node_id.as_str(), conn.from.port_id.as_str()))
+                    {
+                        port_values.insert(
+                            (conn.to.node_id.as_str(), conn.to.port_id.as_str()),
+                            val,
+                        );
+                    }
+                }
+            }
+
+            evaluate_inner_node(node, &mut port_values)?;
+        }
+
+        for b in &mutation.output_bindings {
+            let val = port_values
+                .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
+                .copied()
+                .unwrap_or(0.0);
+            outputs.insert(b.port_id.clone(), val);
+        }
     }
 
-    // Resolve output bindings.
-    let mut outputs: HashMap<String, MutationValue> = HashMap::new();
-    for b in &mutation.output_bindings {
-        let val = port_values
-            .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
-            .copied()
-            .unwrap_or(0.0);
-        outputs.insert(b.port_id.clone(), val);
+    // ── Apply passthrough bindings ─────────────────────────────────────
+    // Passthroughs map an input boundary port directly to an output port.
+    // They only write to output ports not already written by output bindings.
+    for pt in &mutation.passthrough_bindings {
+        if outputs.contains_key(&pt.to_port_id) {
+            // Output already written by an output binding — skip (validation
+            // catches duplicates as errors, but be defensive at runtime).
+            continue;
+        }
+        let value = resolve_passthrough_input_value(&pt.from_port_id, mutation, ctx);
+        outputs.insert(pt.to_port_id.clone(), value);
     }
 
     Ok(outputs)
+}
+
+/// Resolve the value for a passthrough binding's input port.
+///
+/// Checks well-known built-in references first (the input port id itself
+/// may be a well-known name like `"sceneElapsedTime"`), then falls back to
+/// matching an input port on the mutation boundary, then the values map.
+fn resolve_passthrough_input_value(
+    from_port_id: &str,
+    mutation: &MutationDefinition,
+    ctx: &MutationInputContext,
+) -> MutationValue {
+    // Check well-known built-in ids.
+    match from_port_id {
+        "sceneElapsedTime" => return ctx.scene_elapsed_time,
+        "localElapsedTime" => return ctx.local_elapsed_time,
+        _ => {}
+    }
+
+    // Check if the from_port_id matches a mutation input port and there's
+    // a corresponding input binding with a source_ref.
+    for b in &mutation.input_bindings {
+        if b.port_id == from_port_id {
+            return resolve_input_binding_value(b, ctx);
+        }
+    }
+
+    // Fall back to the values map.
+    ctx.values.get(from_port_id).copied().unwrap_or(0.0)
+}
+
+// ---------------------------------------------------------------------------
+// Unified target resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve the override target for an output port id.
+///
+/// Rules (in priority order):
+/// 1. If `target_ref` is `Some`, use it.
+/// 2. Otherwise, try to parse `port_id` itself as `"nodeId:paramName"`.
+///
+/// Returns `None` if neither produces a valid `OverrideKey`.
+pub fn resolve_output_target(port_id: &str, target_ref: Option<&str>) -> Option<OverrideKey> {
+    if let Some(tr) = target_ref {
+        return OverrideKey::parse(tr);
+    }
+    OverrideKey::parse(port_id)
+}
+
+/// Collect all override target keys that a mutation can produce.
+///
+/// This is the single source of truth for both runtime override mapping
+/// and trace tracked-key discovery.
+pub fn all_output_target_keys(mutation: &MutationDefinition) -> Vec<OverrideKey> {
+    let mut keys = Vec::new();
+    let mut seen = HashSet::new();
+
+    // From output bindings.
+    for b in &mutation.output_bindings {
+        if let Some(key) = resolve_output_target(&b.port_id, b.target_ref.as_deref()) {
+            let s = format!("{}:{}", key.node_id, key.param_name);
+            if seen.insert(s) {
+                keys.push(key);
+            }
+        }
+    }
+
+    // From passthrough bindings.
+    for pt in &mutation.passthrough_bindings {
+        if let Some(key) = resolve_output_target(&pt.to_port_id, None) {
+            let s = format!("{}:{}", key.node_id, key.param_name);
+            if seen.insert(s) {
+                keys.push(key);
+            }
+        }
+    }
+
+    keys
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +441,7 @@ mod tests {
             connections: vec![],
             input_bindings: vec![],
             output_bindings: vec![],
+            passthrough_bindings: vec![],
             viewport: None,
         }
     }
@@ -547,5 +675,164 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!((result["time_out"] - 5.5).abs() < f64::EPSILON);
+    }
+
+    // ── Passthrough binding tests ──────────────────────────────────────
+
+    #[test]
+    fn passthrough_scene_elapsed_time() {
+        let mut m = empty_mutation();
+        // Add an output port matching the passthrough target.
+        m.outputs.push(super::MutationPort {
+            id: "FloatInput_53:value".into(),
+            name: Some("uTime.value".into()),
+            port_type: Some("float".into()),
+        });
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "sceneElapsedTime".into(),
+                to_port_id: "FloatInput_53:value".into(),
+            });
+
+        let mut ctx = empty_ctx();
+        ctx.scene_elapsed_time = 3.14;
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!(
+            (result["FloatInput_53:value"] - 3.14).abs() < f64::EPSILON,
+            "passthrough should wire sceneElapsedTime → output"
+        );
+    }
+
+    #[test]
+    fn passthrough_local_elapsed_time() {
+        let mut m = empty_mutation();
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "localElapsedTime".into(),
+                to_port_id: "Foo_1:value".into(),
+            });
+
+        let mut ctx = empty_ctx();
+        ctx.local_elapsed_time = 7.77;
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!(
+            (result["Foo_1:value"] - 7.77).abs() < f64::EPSILON,
+            "passthrough should wire localElapsedTime → output"
+        );
+    }
+
+    #[test]
+    fn passthrough_from_input_binding() {
+        let mut m = empty_mutation();
+        // Add an input port with a binding that maps to an input
+        m.inputs.push(super::MutationPort {
+            id: "ColorInput_7:value".into(),
+            name: Some("Color Input.value".into()),
+            port_type: Some("float".into()),
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "ColorInput_7:value".into(),
+            to: MutationEndpoint {
+                node_id: "unused_node".into(),
+                port_id: "unused_port".into(),
+            },
+            source_ref: None,
+        });
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "ColorInput_7:value".into(),
+                to_port_id: "Out_1:value".into(),
+            });
+
+        let mut ctx = empty_ctx();
+        ctx.values.insert("ColorInput_7:value".into(), 99.0);
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!(
+            (result["Out_1:value"] - 99.0).abs() < f64::EPSILON,
+            "passthrough should resolve through input binding"
+        );
+    }
+
+    #[test]
+    fn passthrough_skipped_when_output_binding_exists() {
+        // If an output binding writes to the same port, the passthrough
+        // should be skipped (output binding wins).
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "pt".into(),
+            node_type: MutationInnerNodeType::SmPassThrough,
+            params: HashMap::new(),
+            inputs: vec![MutationPort {
+                id: "in".into(),
+                name: None,
+                port_type: None,
+            }],
+            outputs: vec![MutationPort {
+                id: "out".into(),
+                name: None,
+                port_type: None,
+            }],
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "graph_in".into(),
+            to: MutationEndpoint {
+                node_id: "pt".into(),
+                port_id: "in".into(),
+            },
+            source_ref: None,
+        });
+        // Output binding writes to "Result:value" via inner graph.
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "Result:value".into(),
+            from: MutationEndpoint {
+                node_id: "pt".into(),
+                port_id: "out".into(),
+            },
+            target_ref: None,
+        });
+        // Passthrough also targets the same port — should be skipped.
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "sceneElapsedTime".into(),
+                to_port_id: "Result:value".into(),
+            });
+
+        let mut ctx = empty_ctx();
+        ctx.values.insert("graph_in".into(), 42.0);
+        ctx.scene_elapsed_time = 999.0;
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!(
+            (result["Result:value"] - 42.0).abs() < f64::EPSILON,
+            "output binding should win over passthrough"
+        );
+    }
+
+    #[test]
+    fn all_output_target_keys_includes_passthroughs() {
+        let mut m = empty_mutation();
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "A:x".into(),
+            from: MutationEndpoint {
+                node_id: "n".into(),
+                port_id: "o".into(),
+            },
+            target_ref: None,
+        });
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "sceneElapsedTime".into(),
+                to_port_id: "B:y".into(),
+            });
+
+        let keys = all_output_target_keys(&m);
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].node_id, "A");
+        assert_eq!(keys[0].param_name, "x");
+        assert_eq!(keys[1].node_id, "B");
+        assert_eq!(keys[1].param_name, "y");
     }
 }

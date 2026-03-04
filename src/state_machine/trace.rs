@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsl::SceneDSL;
 
+use super::mutation;
 use super::runtime::TickResult;
 use super::timeline::TickSchedule;
 use super::types::{OverrideKey, StateMachine};
@@ -103,13 +104,11 @@ fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
         }
     }
 
-    for mutation in &sm.mutations {
-        for binding in &mutation.output_bindings {
-            if let Some(target_ref) = binding.target_ref.as_deref()
-                && OverrideKey::parse(target_ref).is_some()
-            {
-                keys.insert(target_ref.to_string());
-            }
+    // Unified target resolution: discovers keys from both output bindings
+    // and passthrough bindings via the single-source-of-truth resolver.
+    for m in &sm.mutations {
+        for ok in mutation::all_output_target_keys(m) {
+            keys.insert(format!("{}:{}", ok.node_id, ok.param_name));
         }
     }
 

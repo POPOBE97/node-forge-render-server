@@ -435,14 +435,26 @@ impl StateMachineRuntime {
 
         let outputs = mutation::evaluate_mutation(mutation, &ctx)?;
 
-        // Map output port ids → OverrideKeys via output_bindings.
+        // Map output port ids → OverrideKeys via unified target resolution.
         let mut overrides: HashMap<OverrideKey, serde_json::Value> = HashMap::new();
+
+        // From output bindings.
         for b in &mutation.output_bindings {
             if let Some(&val) = outputs.get(&b.port_id) {
-                if let Some(ref target_ref) = b.target_ref {
-                    if let Some(key) = OverrideKey::parse(target_ref) {
-                        overrides.insert(key, serde_json::json!(val));
-                    }
+                if let Some(key) =
+                    mutation::resolve_output_target(&b.port_id, b.target_ref.as_deref())
+                {
+                    overrides.insert(key, serde_json::json!(val));
+                }
+            }
+        }
+
+        // From passthrough bindings (evaluate_mutation already placed these
+        // in the outputs map keyed by to_port_id).
+        for pt in &mutation.passthrough_bindings {
+            if let Some(&val) = outputs.get(&pt.to_port_id) {
+                if let Some(key) = mutation::resolve_output_target(&pt.to_port_id, None) {
+                    overrides.entry(key).or_insert_with(|| serde_json::json!(val));
                 }
             }
         }

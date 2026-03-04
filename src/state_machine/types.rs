@@ -183,6 +183,8 @@ pub struct MutationDefinition {
     pub input_bindings: Vec<MutationInputBinding>,
     #[serde(default, rename = "outputBindings")]
     pub output_bindings: Vec<MutationOutputBinding>,
+    #[serde(default, rename = "passthroughBindings")]
+    pub passthrough_bindings: Vec<MutationPassthroughBinding>,
     /// Editor-only viewport metadata — ignored at runtime.
     #[serde(default)]
     pub viewport: Option<Viewport>,
@@ -256,6 +258,21 @@ pub struct MutationOutputBinding {
     /// Optional external target key (e.g. `"nodeId:paramName"`).
     #[serde(default, rename = "targetRef")]
     pub target_ref: Option<String>,
+}
+
+/// A direct boundary-to-boundary passthrough binding.
+///
+/// Maps an input port value directly to an output port without requiring
+/// inner nodes.  Typically used for wiring built-in time ports
+/// (e.g. `sceneElapsedTime`) straight to override targets.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MutationPassthroughBinding {
+    /// Input port id on the mutation boundary (source of value).
+    #[serde(rename = "fromPortId")]
+    pub from_port_id: String,
+    /// Output port id on the mutation boundary (destination).
+    #[serde(rename = "toPortId")]
+    pub to_port_id: String,
 }
 
 // ---------------------------------------------------------------------------

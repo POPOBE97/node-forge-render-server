@@ -211,6 +211,7 @@ fn validate_mutation_internals(sm: &StateMachine) -> Result<()> {
         validate_mutation_inner_node_ids(m)?;
         validate_mutation_connections(m)?;
         validate_mutation_bindings(m)?;
+        validate_mutation_output_uniqueness(m)?;
     }
     Ok(())
 }
@@ -275,6 +276,39 @@ fn validate_mutation_bindings(m: &MutationDefinition) -> Result<()> {
                 m.id,
                 b.port_id,
                 b.from.node_id
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate that no two binding types write to the same output port.
+///
+/// An output port may be written by at most one of:
+/// - An `outputBinding` (via `portId`)
+/// - A `passthroughBinding` (via `toPortId`)
+///
+/// Duplicates are validation errors.
+fn validate_mutation_output_uniqueness(m: &MutationDefinition) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::new();
+
+    for b in &m.output_bindings {
+        if !seen.insert(b.port_id.as_str()) {
+            bail!(
+                "state_machine validation: mutation '{}' has duplicate output for port '{}'",
+                m.id,
+                b.port_id
+            );
+        }
+    }
+
+    for pt in &m.passthrough_bindings {
+        if !seen.insert(pt.to_port_id.as_str()) {
+            bail!(
+                "state_machine validation: mutation '{}' has duplicate output for port '{}' (passthrough conflicts with existing binding)",
+                m.id,
+                pt.to_port_id
             );
         }
     }
@@ -439,5 +473,72 @@ mod tests {
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("at least 2"), "{err}");
+    }
+
+    #[test]
+    fn passthrough_duplicate_output_rejected() {
+        let mut sm = minimal_sm();
+        let mutation = MutationDefinition {
+            id: "m1".into(),
+            name: "M1".into(),
+            inputs: vec![],
+            outputs: vec![MutationPort {
+                id: "X:value".into(),
+                name: Some("X".into()),
+                port_type: Some("float".into()),
+            }],
+            nodes: vec![MutationInnerNode {
+                id: "n".into(),
+                node_type: MutationInnerNodeType::SmPassThrough,
+                params: Default::default(),
+                inputs: vec![MutationPort {
+                    id: "in".into(),
+                    name: None,
+                    port_type: None,
+                }],
+                outputs: vec![MutationPort {
+                    id: "o".into(),
+                    name: None,
+                    port_type: None,
+                }],
+            }],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![MutationOutputBinding {
+                port_id: "X:value".into(),
+                from: MutationEndpoint {
+                    node_id: "n".into(),
+                    port_id: "o".into(),
+                },
+                target_ref: None,
+            }],
+            passthrough_bindings: vec![MutationPassthroughBinding {
+                from_port_id: "sceneElapsedTime".into(),
+                to_port_id: "X:value".into(),
+            }],
+            viewport: None,
+        };
+        sm.states.push(AnimationState {
+            id: "s1".into(),
+            name: "S1".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::MutationNode),
+            mutation_id: Some("m1".into()),
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "t1".into(),
+            source: "entry".into(),
+            target: "s1".into(),
+            condition: None,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+        sm.mutations.push(mutation);
+        let err = validate(&sm).unwrap_err().to_string();
+        assert!(
+            err.contains("duplicate output") && err.contains("passthrough"),
+            "expected passthrough conflict error, got: {err}"
+        );
     }
 }
