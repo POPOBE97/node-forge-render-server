@@ -35,7 +35,7 @@ cargo run --release
 
 ```json
 {
-  "type": "scene_update | scene_request | ping | pong | error",
+  "type": "scene_update | scene_request | ping | pong | error | interaction_event",
   "timestamp": 0,
   "requestId": "optional",
   "payload": {}
@@ -46,6 +46,38 @@ cargo run --release
 - `scene_request`: `payload` 为空；服务端返回最近一次通过校验的 scene（`type=scene_update`）。
 - `ping`: 服务端返回 `pong`（带原 `requestId`）。
 - `error`: `payload` 为 `{ code, message }`。
+- `interaction_event`: 服务端从 Canvas 交互侧广播的输入事件报告（仅在 clean 渲染态：无 texture preview 且无 reference compare 时发送）。
+  - `payload.eventType`: `keydown | keyup | mousedown | mouseup | mousemove | wheel | touchstart | touchmove | touchend | touchcancel`
+  - `payload.seq`: 单调递增事件序号
+  - `payload.data`: 可选事件数据（按事件类型出现）
+
+`interaction_event` 示例：
+
+```json
+{
+  "type": "interaction_event",
+  "timestamp": 1730000000000,
+  "payload": {
+    "eventType": "mousedown",
+    "seq": 42,
+    "data": {
+      "position": {
+        "clientX": 512.0,
+        "clientY": 288.0,
+        "canvasX": 128.0,
+        "canvasY": 64.0
+      },
+      "button": "left",
+      "modifiers": {
+        "alt": false,
+        "ctrl": false,
+        "shift": false,
+        "meta": false
+      }
+    }
+  }
+}
+```
 
 ## 发送场景（Node 工具）
 
