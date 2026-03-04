@@ -11,6 +11,9 @@ use anyhow::Result;
 use crate::dsl::SceneDSL;
 use crate::state_machine::{self, OverrideKey, StateMachineRuntime};
 
+use super::runloop::Runloop;
+use super::task::{AnimationTask, TaskKind};
+
 // ---------------------------------------------------------------------------
 // Fixed-step clock
 // ---------------------------------------------------------------------------
@@ -99,6 +102,12 @@ pub struct AnimationStep {
     pub current_state_id: String,
     /// Active transition id after this step, when transitioning.
     pub active_transition_id: Option<String>,
+    /// Time elapsed in the current state (from last tick).
+    pub state_local_time_secs: f64,
+    /// Blend factor if a transition is in progress (0.0 → 1.0).
+    pub transition_blend: Option<f64>,
+    /// Whether the runtime has finished (reached exit state).
+    pub finished: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +125,8 @@ pub struct AnimationSession {
     runtime: StateMachineRuntime,
     /// Deterministic fixed-step clock.
     clock: FixedStepClock,
+    /// Runloop orchestrator (owns ValuePool + TaskPool).
+    runloop: Runloop,
     /// Baseline values for tracked keys (from scene at compile time).
     /// Used to restore params when the runtime stops overriding them.
     base_values: HashMap<OverrideKey, serde_json::Value>,
@@ -123,6 +134,8 @@ pub struct AnimationSession {
     active_overrides: HashMap<OverrideKey, serde_json::Value>,
     /// Previous override key set — for detecting changes/removals.
     prev_override_keys: Vec<OverrideKey>,
+    /// Queued events to fire on the next tick (e.g. "mousedown").
+    pending_events: Vec<String>,
 }
 
 impl AnimationSession {
@@ -139,12 +152,25 @@ impl AnimationSession {
         // Collect base values for all params this state machine can override.
         let base_values = collect_base_values(scene, runtime.definition());
 
+        // Initialize the Runloop with a single StateMachineDriven task and
+        // populate the ValuePool with baseline values from the scene.
+        let mut runloop = Runloop::new();
+        for (key, json_val) in &base_values {
+            let baseline = json_val.as_f64().unwrap_or(0.0);
+            runloop.value_pool.insert(key.clone(), baseline);
+        }
+        runloop
+            .task_pool
+            .add(AnimationTask::new("sm", TaskKind::StateMachineDriven));
+
         Ok(Some(Self {
             runtime,
             clock: FixedStepClock::default_60fps(),
+            runloop,
             base_values,
             active_overrides: HashMap::new(),
             prev_override_keys: Vec::new(),
+            pending_events: Vec::new(),
         }))
     }
 
@@ -162,23 +188,34 @@ impl AnimationSession {
                 diagnostics: vec![],
                 current_state_id: self.runtime.current_state_id().to_string(),
                 active_transition_id: self.runtime.active_transition_id().map(str::to_string),
+                state_local_time_secs: 0.0,
+                transition_blend: None,
+                finished: true,
             };
         }
 
         let tick_count = self.clock.advance(real_dt);
         let mut diagnostics = Vec::new();
-        let mut last_result = None;
+        let mut last_tick_result = None;
 
-        for _ in 0..tick_count {
-            let result = self
-                .runtime
-                .tick(self.clock.step_secs, &HashMap::new(), &Vec::new());
+        // Drain pending events — fire them on the first tick only (they are
+        // instantaneous triggers, not sustained state).
+        let events = std::mem::take(&mut self.pending_events);
+
+        for i in 0..tick_count {
+            let tick_events = if i == 0 { &events } else { &Vec::new() };
+            let result = self.runloop.tick(
+                &mut self.runtime,
+                self.clock.step_secs,
+                &HashMap::new(),
+                tick_events,
+            );
             diagnostics.extend(result.diagnostics.iter().cloned());
-            last_result = Some(result);
+            last_tick_result = Some(result);
         }
 
-        // Determine new active overrides.
-        let new_overrides = last_result
+        // Determine new active overrides from the last tick's flush.
+        let new_overrides = last_tick_result
             .as_ref()
             .map(|r| r.overrides.clone())
             .unwrap_or_default();
@@ -198,7 +235,10 @@ impl AnimationSession {
         self.active_overrides = new_overrides;
         self.prev_override_keys = new_keys;
 
-        let is_finished = last_result.as_ref().map(|r| r.finished).unwrap_or(false);
+        let (is_finished, state_local_time_secs, transition_blend) = last_tick_result
+            .and_then(|r| r.tick_result)
+            .map(|tr| (tr.finished, tr.state_local_time_secs, tr.transition_blend))
+            .unwrap_or((false, 0.0, None));
 
         AnimationStep {
             active_overrides: self.active_overrides.clone(),
@@ -208,6 +248,9 @@ impl AnimationSession {
             diagnostics,
             current_state_id: self.runtime.current_state_id().to_string(),
             active_transition_id: self.runtime.active_transition_id().map(str::to_string),
+            state_local_time_secs,
+            transition_blend,
+            finished: is_finished,
         }
     }
 
@@ -219,6 +262,15 @@ impl AnimationSession {
         for (key, value) in updates {
             self.base_values.insert(key.clone(), value.clone());
         }
+    }
+
+    /// Queue an event to fire on the next `step()` tick.
+    ///
+    /// Events are consumed on the first fixed-step tick of the next `step()`
+    /// call, then cleared. Use this to feed canvas interaction events
+    /// (e.g. `"mousedown"`, `"mouseup"`) into the state machine.
+    pub fn fire_event(&mut self, event_name: impl Into<String>) {
+        self.pending_events.push(event_name.into());
     }
 
     /// Get overrides that need to be restored (removed from active set).
@@ -245,6 +297,28 @@ impl AnimationSession {
     /// Current fixed-step scene time.
     pub fn scene_time(&self) -> f64 {
         self.clock.scene_time()
+    }
+
+    /// Reset the session: rewind the clock, reset the runtime to its initial
+    /// state, and clear all active overrides.  Returns the set of overrides
+    /// that should be restored to their base values.
+    pub fn reset(&mut self) -> HashMap<OverrideKey, serde_json::Value> {
+        // Collect restoration overrides for all currently active keys.
+        let mut restores = HashMap::new();
+        for key in self.active_overrides.keys() {
+            if let Some(base) = self.base_values.get(key) {
+                restores.insert(key.clone(), base.clone());
+            }
+        }
+
+        self.runtime.reset();
+        self.clock.reset();
+        self.runloop.reset();
+        self.active_overrides.clear();
+        self.prev_override_keys.clear();
+        self.pending_events.clear();
+
+        restores
     }
 
     /// Access the underlying runtime (for diagnostics/testing).

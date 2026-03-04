@@ -44,6 +44,30 @@ pub fn generate_trace_for_scene(
     scene: &SceneDSL,
     schedule: &TickSchedule,
 ) -> Result<AnimationTraceLog> {
+    generate_trace_for_scene_with_events(scene, schedule, &[])
+}
+
+/// A scheduled event to fire at a specific frame index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScheduledEvent {
+    /// Frame index at which to fire the event.
+    pub frame_index: usize,
+    /// Event name (e.g. "mousedown").
+    pub event_name: String,
+}
+
+/// Event schedule: a list of events to fire at specific frames during trace
+/// generation.  Loaded from `events.json` alongside `scene.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct EventSchedule {
+    pub events: Vec<ScheduledEvent>,
+}
+
+pub fn generate_trace_for_scene_with_events(
+    scene: &SceneDSL,
+    schedule: &TickSchedule,
+    event_schedule: &[ScheduledEvent],
+) -> Result<AnimationTraceLog> {
     let mut runtime =
         super::compile_from_scene(scene)?.ok_or_else(|| anyhow!("scene has no stateMachine"))?;
 
@@ -54,7 +78,14 @@ pub fn generate_trace_for_scene(
     let mut frames: Vec<AnimationTraceFrame> = Vec::with_capacity(schedule.frame_count());
 
     for sample in schedule.samples() {
-        let result = runtime.tick(sample.dt_secs, &HashMap::new(), &Vec::new());
+        // Collect events scheduled for this frame.
+        let events: Vec<String> = event_schedule
+            .iter()
+            .filter(|e| e.frame_index == sample.frame_index)
+            .map(|e| e.event_name.clone())
+            .collect();
+
+        let result = runtime.tick(sample.dt_secs, &HashMap::new(), &events);
         apply_overrides_to_values(&mut current_values, &result);
 
         let mut frame_values: BTreeMap<String, serde_json::Value> = BTreeMap::new();
@@ -93,7 +124,7 @@ pub fn generate_trace_for_scene(
     })
 }
 
-fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
+pub fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
 
     for state in &sm.states {
@@ -115,7 +146,7 @@ fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
     keys
 }
 
-fn build_initial_values(
+pub fn build_initial_values(
     scene: &SceneDSL,
     tracked_keys: &[String],
 ) -> BTreeMap<String, serde_json::Value> {
@@ -148,7 +179,7 @@ fn apply_overrides_to_values(
     }
 }
 
-fn round_f64(v: f64) -> f64 {
+pub fn round_f64(v: f64) -> f64 {
     let rounded = (v * ROUND_PRECISION).round() / ROUND_PRECISION;
     if rounded == -0.0 { 0.0 } else { rounded }
 }
@@ -164,7 +195,7 @@ fn round_json_number(n: &serde_json::Number) -> serde_json::Number {
     }
 }
 
-fn canonicalize_json_value(v: &serde_json::Value) -> serde_json::Value {
+pub fn canonicalize_json_value(v: &serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::Null => serde_json::Value::Null,
         serde_json::Value::Bool(b) => serde_json::Value::Bool(*b),

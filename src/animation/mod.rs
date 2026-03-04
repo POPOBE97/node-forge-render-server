@@ -16,6 +16,9 @@
 //! }
 //! ```
 
+pub mod runloop;
 pub mod session;
+pub mod task;
+pub mod value_pool;
 
 pub use session::{AnimationSession, AnimationStep, FixedStepClock};

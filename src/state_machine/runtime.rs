@@ -15,7 +15,7 @@
 //!     .reset()                   // optional — rewind to initial state
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 
@@ -58,12 +58,12 @@ struct ActiveTransition {
     transition_id: String,
     source_state_id: String,
     target_state_id: String,
+    /// Explicit delay before blend begins (seconds).
+    delay: f64,
+    /// Blend duration (seconds).
     duration: f64,
     easing: EasingKind,
     elapsed: f64,
-    /// True when this is a state-to-mutation transition
-    /// (duration acts as delay, not blend).
-    is_delay: bool,
 }
 
 /// The result of a single `tick` call.
@@ -185,7 +185,8 @@ impl StateMachineRuntime {
         // ── Advance active transition ──────────────────────────────────
         if let Some(ref mut at) = self.active_transition {
             at.elapsed += dt;
-            if at.elapsed >= at.duration {
+            let total = at.delay + at.duration;
+            if at.elapsed >= total {
                 // Transition complete — enter target state.
                 let target = at.target_state_id.clone();
                 self.active_transition = None;
@@ -196,23 +197,19 @@ impl StateMachineRuntime {
         // ── Evaluate transition candidates (only if no active transition) ──
         if self.active_transition.is_none() {
             if let Some(transition) = self.pick_transition(params, events) {
-                let target_is_mutation = self
-                    .find_state(&transition.target)
-                    .map(|s| s.resolved_type() == AnimationStateType::MutationNode)
-                    .unwrap_or(false);
-
-                if transition.duration <= 0.0 {
-                    // Instant transition.
+                let total = transition.delay + transition.duration;
+                if total <= 0.0 {
+                    // Instant transition (no delay, no blend).
                     self.enter_state(&transition.target);
                 } else {
                     self.active_transition = Some(ActiveTransition {
                         transition_id: transition.id.clone(),
                         source_state_id: self.current_state_id.clone(),
                         target_state_id: transition.target.clone(),
+                        delay: transition.delay,
                         duration: transition.duration,
                         easing: transition.easing,
                         elapsed: 0.0,
-                        is_delay: target_is_mutation,
                     });
                 }
             }
@@ -249,22 +246,69 @@ impl StateMachineRuntime {
             }
         }
 
-        // 3. If in-transition, blend source overrides with target overrides.
+        // 3. If in-transition, compute blend factor.
+        //    - During delay phase (elapsed < delay): blend = 0 (source-state output).
+        //    - During blend phase: normal eased interpolation 0→1.
         let transition_blend = if let Some(ref at) = self.active_transition {
-            if !at.is_delay {
-                let raw_t = if at.duration > 0.0 {
-                    (at.elapsed / at.duration).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                };
+            if at.elapsed < at.delay {
+                // Still in delay window — keep source-state output.
+                Some(0.0)
+            } else if at.duration > 0.0 {
+                let blend_elapsed = at.elapsed - at.delay;
+                let raw_t = (blend_elapsed / at.duration).clamp(0.0, 1.0);
                 Some(ease(at.easing, raw_t))
             } else {
-                // During delay window, keep source-state output active (blend = 0).
-                Some(0.0)
+                // No blend duration — snap to target after delay.
+                Some(1.0)
             }
         } else {
             None
         };
+
+        // 4. Blend source→target overrides when in the blend phase.
+        if let (Some(at), Some(blend)) = (&self.active_transition, transition_blend) {
+            if blend > 0.0 {
+                // Evaluate target state overrides.
+                let mut target_overrides: HashMap<OverrideKey, serde_json::Value> = HashMap::new();
+                if let Some(target_state) = self.find_state(&at.target_state_id) {
+                    for (key_str, value) in &target_state.parameter_overrides {
+                        if let Some(key) = OverrideKey::parse(key_str) {
+                            target_overrides.insert(key, value.clone());
+                        }
+                    }
+                    if target_state.resolved_type() == AnimationStateType::MutationNode {
+                        if let Some(ref mid) = target_state.mutation_id {
+                            match self.evaluate_mutation_state(mid, params) {
+                                Ok(mutation_overrides) => {
+                                    target_overrides.extend(mutation_overrides);
+                                }
+                                Err(e) => {
+                                    diagnostics.push(format!(
+                                        "mutation evaluation error (target state={}, mutation={}): {e}",
+                                        at.target_state_id, mid
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Merge: for each key present in either source or target,
+                // lerp numeric values by blend factor.
+                let all_keys: HashSet<OverrideKey> = overrides
+                    .keys()
+                    .chain(target_overrides.keys())
+                    .cloned()
+                    .collect();
+                let source_overrides = std::mem::take(&mut overrides);
+                for key in all_keys {
+                    let src = source_overrides.get(&key);
+                    let tgt = target_overrides.get(&key);
+                    let blended = blend_json_values(src, tgt, blend);
+                    overrides.insert(key, blended);
+                }
+            }
+        }
 
         // Check if current state is exit.
         if let Some(state) = self.find_state(&self.current_state_id) {
@@ -347,13 +391,20 @@ impl StateMachineRuntime {
             }
         }
 
-        // Evaluate in deterministic order (scene order preserved, then by id for tie-break).
-        // Since we already iterate in scene order (transitions vec order), we just need
-        // to find the first satisfied one.
+        // Evaluate in deterministic order (scene order preserved).
+        // For each candidate: check trigger first (every frame), then condition.
+        // Both must pass for the transition to fire.
         for t in &candidates {
-            if self.evaluate_condition(t.condition.as_ref(), params, events) {
-                return Some((*t).clone());
+            // 1. Check trigger — if trigger is None, it's always triggered.
+            if !self.evaluate_condition(t.trigger.as_ref(), params, events) {
+                continue;
             }
+            // 2. Trigger passed — now check condition guard.
+            if !self.evaluate_condition(t.condition.as_ref(), params, events) {
+                continue;
+            }
+            // Both passed — fire this transition.
+            return Some((*t).clone());
         }
 
         None
@@ -472,6 +523,41 @@ impl StateMachineRuntime {
     }
 }
 
+/// Linearly interpolate two JSON values by blend factor `t` (0→1).
+/// Falls back to the target value for non-numeric types.
+fn blend_json_values(
+    src: Option<&serde_json::Value>,
+    tgt: Option<&serde_json::Value>,
+    t: f64,
+) -> serde_json::Value {
+    let zero = serde_json::json!(0.0);
+    let s = src.unwrap_or(&zero);
+    let g = tgt.unwrap_or(&zero);
+
+    match (s, g) {
+        (serde_json::Value::Number(sn), serde_json::Value::Number(gn)) => {
+            let sv = sn.as_f64().unwrap_or(0.0);
+            let gv = gn.as_f64().unwrap_or(0.0);
+            let blended = sv + (gv - sv) * t;
+            serde_json::json!(blended)
+        }
+        (serde_json::Value::Array(sa), serde_json::Value::Array(ga)) => {
+            let len = sa.len().max(ga.len());
+            let mut out = Vec::with_capacity(len);
+            for i in 0..len {
+                let sv = sa.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let gv = ga.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                out.push(serde_json::json!(sv + (gv - sv) * t));
+            }
+            serde_json::Value::Array(out)
+        }
+        _ => {
+            // Non-numeric: snap to target when blend > 0.5.
+            if t >= 0.5 { g.clone() } else { s.clone() }
+        }
+    }
+}
+
 fn json_is_truthy(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Bool(b) => *b,
@@ -547,7 +633,9 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
@@ -577,7 +665,9 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 1.0,
             easing: EasingKind::Linear,
         });
@@ -588,7 +678,7 @@ mod tests {
         assert_eq!(r1.current_state_id, "entry");
         assert!(r1.transition_blend.is_some());
 
-        let r2 = rt.tick(0.6, &HashMap::new(), &vec![]);
+        let r2 = rt.tick(1.1, &HashMap::new(), &vec![]);
         // Transition complete.
         assert_eq!(r2.current_state_id, "s1");
         assert!(r2.transition_blend.is_none());
@@ -609,10 +699,12 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: Some(TransitionCondition::Bool {
                 param_id: "flag".into(),
                 value: Some(true),
             }),
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
@@ -645,9 +737,11 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: Some(TransitionCondition::Event {
                 event_name: "click".into(),
             }),
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
@@ -670,7 +764,9 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "exit".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
@@ -696,7 +792,9 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
@@ -708,5 +806,54 @@ mod tests {
         rt.reset();
         assert_eq!(rt.current_state_id(), "entry");
         assert!(!rt.finished);
+    }
+
+    #[test]
+    fn trigger_and_condition_both_required() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "s1".into(),
+            name: "S1".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::AnimationState),
+            mutation_id: None,
+        });
+        // Trigger: event "go", Condition: bool "ready" == true.
+        sm.transitions.push(AnimationTransition {
+            id: "t1".into(),
+            source: "entry".into(),
+            target: "s1".into(),
+            trigger: Some(TransitionCondition::Event {
+                event_name: "go".into(),
+            }),
+            condition: Some(TransitionCondition::Bool {
+                param_id: "ready".into(),
+                value: Some(true),
+            }),
+            delay: 0.0,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+
+        // Neither trigger nor condition → stays.
+        let r1 = rt.tick(0.016, &HashMap::new(), &vec![]);
+        assert_eq!(r1.current_state_id, "entry");
+
+        // Trigger fires but condition not met → stays.
+        let r2 = rt.tick(0.016, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(r2.current_state_id, "entry");
+
+        // Condition met but trigger not fired → stays.
+        let mut p = HashMap::new();
+        p.insert("ready".into(), serde_json::json!(true));
+        let r3 = rt.tick(0.016, &p, &vec![]);
+        assert_eq!(r3.current_state_id, "entry");
+
+        // Both trigger and condition → transitions.
+        let r4 = rt.tick(0.016, &p, &vec!["go".into()]);
+        assert_eq!(r4.current_state_id, "s1");
     }
 }

@@ -97,8 +97,23 @@ pub struct AnimationTransition {
     pub id: String,
     pub source: String,
     pub target: String,
+
+    /// Trigger — checked every frame.  When the trigger passes, the
+    /// `condition` (if any) is evaluated.  If both pass the transition fires.
+    ///
+    /// When `trigger` is `None` the edge is considered "always triggered"
+    /// (equivalent to an unconditional trigger gate).
+    #[serde(default)]
+    pub trigger: Option<TransitionCondition>,
+
+    /// Additional guard evaluated only after the trigger passes.
+    /// `None` means no extra guard — the trigger alone is sufficient.
     #[serde(default)]
     pub condition: Option<TransitionCondition>,
+
+    /// Delay before the transition blend begins, in seconds.  Defaults to 0.
+    #[serde(default)]
+    pub delay: f64,
     /// Transition duration in seconds.  Defaults to 0.3.
     #[serde(default = "default_duration")]
     pub duration: f64,

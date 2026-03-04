@@ -175,6 +175,9 @@ fn validate_transition_direction_constraints(sm: &StateMachine) -> Result<()> {
 
 fn validate_transition_conditions(sm: &StateMachine) -> Result<()> {
     for t in &sm.transitions {
+        if let Some(trig) = t.trigger.as_ref() {
+            validate_condition(trig, 1, &t.id)?;
+        }
         if let Some(cond) = t.condition.as_ref() {
             validate_condition(cond, 1, &t.id)?;
         }
@@ -416,7 +419,9 @@ mod tests {
             id: "t1".into(),
             source: "exit".into(),
             target: "s1".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.3,
             easing: EasingKind::Linear,
         });
@@ -439,7 +444,9 @@ mod tests {
             id: "t1".into(),
             source: "s1".into(),
             target: "entry".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.3,
             easing: EasingKind::Linear,
         });
@@ -462,12 +469,14 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: Some(TransitionCondition::Compound {
                 op: CompoundOp::And,
                 conditions: vec![TransitionCondition::Trigger {
                     param_id: "p".into(),
                 }],
             }),
+            delay: 0.0,
             duration: 0.3,
             easing: EasingKind::Linear,
         });
@@ -530,7 +539,9 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
+            trigger: None,
             condition: None,
+            delay: 0.0,
             duration: 0.0,
             easing: EasingKind::Linear,
         });
