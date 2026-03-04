@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use node_forge_render_server::{
     dsl::{AssetEntry, Connection, Endpoint, Metadata, Node, SceneDSL},
+    state_machine::types::StateMachine,
     ws::{
         SceneCache, SceneDelta, SceneDeltaConnections, SceneDeltaNodes, apply_scene_delta,
         apply_scene_update, materialize_scene_dsl, prune_invalid_connections,
@@ -59,6 +60,18 @@ fn asset_entry(path: &str, name: &str, mime: &str, size: u64) -> AssetEntry {
     }
 }
 
+fn state_machine(id: &str) -> StateMachine {
+    StateMachine {
+        id: id.to_string(),
+        name: String::new(),
+        states: Vec::new(),
+        transitions: Vec::new(),
+        mutations: Vec::new(),
+        initial_state_id: None,
+        viewport: None,
+    }
+}
+
 #[test]
 fn scene_update_replaces_cache() {
     let scene1 = base_scene();
@@ -112,6 +125,7 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
         },
         outputs: None,
         groups: None,
+        state_machine: None,
         assets_added: None,
         assets_removed: None,
     };
@@ -152,6 +166,7 @@ fn scene_delta_applies_asset_manifest_add_update_and_remove() {
         },
         outputs: None,
         groups: None,
+        state_machine: None,
         assets_added: Some(HashMap::from([
             (
                 "asset-a".to_string(),
@@ -192,6 +207,7 @@ fn scene_delta_applies_asset_manifest_add_update_and_remove() {
         },
         outputs: None,
         groups: None,
+        state_machine: None,
         assets_added: None,
         assets_removed: Some(vec!["asset-a".to_string()]),
     };
@@ -211,6 +227,67 @@ fn prune_invalid_connections_removes_dangling_edges() {
 
     assert!(cache.connections_by_id.contains_key("c1"));
     assert!(!cache.connections_by_id.contains_key("dangling"));
+}
+
+#[test]
+fn scene_delta_updates_state_machine_and_supports_clear() {
+    let mut scene = base_scene();
+    scene.state_machine = Some(state_machine("sm-base"));
+    let mut cache = SceneCache::from_scene_update(&scene);
+
+    let replace_delta = SceneDelta {
+        version: "1.0".to_string(),
+        nodes: SceneDeltaNodes {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        connections: SceneDeltaConnections {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        outputs: None,
+        groups: None,
+        state_machine: Some(Some(state_machine("sm-next"))),
+        assets_added: None,
+        assets_removed: None,
+    };
+
+    apply_scene_delta(&mut cache, &replace_delta);
+    assert_eq!(
+        cache.state_machine.as_ref().map(|sm| sm.id.as_str()),
+        Some("sm-next")
+    );
+    assert_eq!(
+        materialize_scene_dsl(&cache)
+            .state_machine
+            .as_ref()
+            .map(|sm| sm.id.as_str()),
+        Some("sm-next")
+    );
+
+    let clear_delta = SceneDelta {
+        version: "1.0".to_string(),
+        nodes: SceneDeltaNodes {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        connections: SceneDeltaConnections {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        outputs: None,
+        groups: None,
+        state_machine: Some(None),
+        assets_added: None,
+        assets_removed: None,
+    };
+
+    apply_scene_delta(&mut cache, &clear_delta);
+    assert!(cache.state_machine.is_none());
 }
 
 #[test]

@@ -91,6 +91,12 @@ pub struct SceneDelta {
     // Keep this optional for forward-compatibility if editors start sending deltas.
     #[serde(default)]
     pub groups: Option<Vec<GroupDSL>>,
+    /// Optional state-machine patch:
+    /// - `None`: field absent in delta (leave cache unchanged)
+    /// - `Some(None)`: explicit `null` (clear state machine)
+    /// - `Some(Some(sm))`: replace state machine
+    #[serde(default, rename = "stateMachine", alias = "state_machine")]
+    pub state_machine: Option<Option<crate::state_machine::types::StateMachine>>,
     /// Asset metadata added/updated by this delta (upsert semantics).
     #[serde(rename = "assetsAdded", default)]
     pub assets_added: Option<std::collections::HashMap<String, crate::dsl::AssetEntry>>,
@@ -224,6 +230,10 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
         cache.groups = groups.clone();
     }
 
+    if let Some(state_machine) = delta.state_machine.as_ref() {
+        cache.state_machine = state_machine.clone();
+    }
+
     // Merge asset metadata carried by the delta.
     if let Some(assets) = delta.assets_added.as_ref() {
         for (id, entry) in assets {
@@ -279,6 +289,7 @@ fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &SceneDelta) -> 
         || !delta.connections.removed.is_empty()
         || delta.outputs.is_some()
         || delta.groups.is_some()
+        || delta.state_machine.is_some()
         || delta.assets_added.is_some()
         || delta.assets_removed.is_some()
     {
@@ -1785,6 +1796,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -1809,6 +1821,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -1847,6 +1860,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -1875,6 +1889,32 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
+            assets_added: None,
+            assets_removed: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_rejects_state_machine_patch() {
+        let scene = base_scene();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node("FloatInput_1", "FloatInput", json!({"value": 0.75}))],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            state_machine: Some(None),
             assets_added: None,
             assets_removed: None,
         };
@@ -1963,6 +2003,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -2078,6 +2119,7 @@ mod tests {
             },
             outputs: None,
             groups: None,
+            state_machine: None,
             assets_added: None,
             assets_removed: None,
         };
