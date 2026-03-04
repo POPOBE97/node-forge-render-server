@@ -268,10 +268,10 @@ pub struct MutationOutputBinding {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationPassthroughBinding {
     /// Input port id on the mutation boundary (source of value).
-    #[serde(rename = "fromPortId")]
+    #[serde(rename = "fromPortId", alias = "inputPortId")]
     pub from_port_id: String,
     /// Output port id on the mutation boundary (destination).
-    #[serde(rename = "toPortId")]
+    #[serde(rename = "toPortId", alias = "outputPortId")]
     pub to_port_id: String,
 }
 
@@ -324,5 +324,34 @@ impl OverrideKey {
             node_id: node_id.to_string(),
             param_name: param_name.to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MutationPassthroughBinding;
+
+    #[test]
+    fn mutation_passthrough_binding_parses_legacy_port_names() {
+        let parsed: MutationPassthroughBinding = serde_json::from_value(serde_json::json!({
+            "inputPortId": "sceneElapsedTime",
+            "outputPortId": "FloatInput_53:value",
+        }))
+        .expect("legacy passthrough binding should deserialize");
+
+        assert_eq!(parsed.from_port_id, "sceneElapsedTime");
+        assert_eq!(parsed.to_port_id, "FloatInput_53:value");
+    }
+
+    #[test]
+    fn mutation_passthrough_binding_parses_canonical_port_names() {
+        let parsed: MutationPassthroughBinding = serde_json::from_value(serde_json::json!({
+            "fromPortId": "sceneElapsedTime",
+            "toPortId": "FloatInput_53:value",
+        }))
+        .expect("canonical passthrough binding should deserialize");
+
+        assert_eq!(parsed.from_port_id, "sceneElapsedTime");
+        assert_eq!(parsed.to_port_id, "FloatInput_53:value");
     }
 }
