@@ -1,4 +1,5 @@
 mod canvas_controller;
+mod interaction_report;
 mod layout_math;
 mod scene_runtime;
 mod texture_bridge;
