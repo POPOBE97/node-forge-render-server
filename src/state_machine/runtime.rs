@@ -293,6 +293,13 @@ impl StateMachineRuntime {
         &self.current_state_id
     }
 
+    /// Get the active transition id, if a transition is currently running.
+    pub fn active_transition_id(&self) -> Option<&str> {
+        self.active_transition
+            .as_ref()
+            .map(|at| at.transition_id.as_str())
+    }
+
     /// Get the definition.
     pub fn definition(&self) -> &StateMachine {
         &self.definition

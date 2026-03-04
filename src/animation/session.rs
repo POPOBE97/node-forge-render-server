@@ -95,6 +95,10 @@ pub struct AnimationStep {
     pub active: bool,
     /// Diagnostics from the runtime tick(s).
     pub diagnostics: Vec<String>,
+    /// Current active state id after this step.
+    pub current_state_id: String,
+    /// Active transition id after this step, when transitioning.
+    pub active_transition_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +160,8 @@ impl AnimationSession {
                 scene_time_secs: self.clock.scene_time(),
                 active: false,
                 diagnostics: vec![],
+                current_state_id: self.runtime.current_state_id().to_string(),
+                active_transition_id: self.runtime.active_transition_id().map(str::to_string),
             };
         }
 
@@ -200,6 +206,8 @@ impl AnimationSession {
             scene_time_secs: self.clock.scene_time(),
             active: !is_finished,
             diagnostics,
+            current_state_id: self.runtime.current_state_id().to_string(),
+            active_transition_id: self.runtime.active_transition_id().map(str::to_string),
         }
     }
 

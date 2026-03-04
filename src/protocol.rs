@@ -40,6 +40,8 @@ pub struct InteractionEventData {
     pub wheel: Option<InteractionWheelData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub touch: Option<InteractionTouchData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<InteractionStateData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -90,6 +92,14 @@ pub struct InteractionTouchData {
     pub force: Option<f32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InteractionStateData {
+    #[serde(rename = "stateId")]
+    pub state_id: String,
+    #[serde(rename = "transitionId", skip_serializing_if = "Option::is_none")]
+    pub transition_id: Option<String>,
+}
+
 pub fn now_millis() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -102,6 +112,7 @@ pub fn now_millis() -> u64 {
 mod tests {
     use super::{
         InteractionEventData, InteractionEventPayload, InteractionKeyData, InteractionPosition,
+        InteractionStateData,
     };
 
     #[test]
@@ -134,6 +145,27 @@ mod tests {
         assert!(json["data"]["button"].is_null());
         assert!(json["data"]["wheel"].is_null());
         assert!(json["data"]["touch"].is_null());
+        assert!(json["data"]["state"].is_null());
         assert!(json["data"]["key"]["physicalKey"].is_null());
+    }
+
+    #[test]
+    fn interaction_state_payload_serializes_with_state_and_transition_ids() {
+        let payload = InteractionEventPayload {
+            event_type: "stateenter".to_string(),
+            seq: 9,
+            data: Some(InteractionEventData {
+                state: Some(InteractionStateData {
+                    state_id: "idle".to_string(),
+                    transition_id: Some("to_idle".to_string()),
+                }),
+                ..InteractionEventData::default()
+            }),
+        };
+
+        let json = serde_json::to_value(payload).expect("serialize state interaction payload");
+        assert_eq!(json["eventType"], "stateenter");
+        assert_eq!(json["data"]["state"]["stateId"], "idle");
+        assert_eq!(json["data"]["state"]["transitionId"], "to_idle");
     }
 }

@@ -348,6 +348,7 @@ pub struct App {
     pub viewport_operation_request_id: u64,
     pub canvas_event_focus_latched: bool,
     pub interaction_event_seq: u64,
+    pub last_synced_animation_state_id: Option<String>,
 }
 
 pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
@@ -537,6 +538,7 @@ impl App {
             viewport_operation_request_id: 0,
             canvas_event_focus_latched: false,
             interaction_event_seq: 0,
+            last_synced_animation_state_id: None,
         }
     }
 }

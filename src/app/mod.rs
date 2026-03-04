@@ -18,7 +18,7 @@ use std::{
 
 use rust_wgpu_fiber::eframe::{self, egui, wgpu};
 
-use crate::{app::types::AnalysisSourceDomain, renderer, ui};
+use crate::{app::types::AnalysisSourceDomain, protocol, renderer, ui};
 
 fn hash_key<T: Hash + ?Sized>(value: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -133,6 +133,55 @@ fn should_request_immediate_repaint(
         || capture_redraw_active
 }
 
+fn broadcast_state_interaction_event(
+    app: &mut App,
+    event_type: &str,
+    state_id: &str,
+    transition_id: Option<&str>,
+) {
+    app.interaction_event_seq = app.interaction_event_seq.saturating_add(1);
+    let payload = protocol::InteractionEventPayload {
+        event_type: event_type.to_string(),
+        seq: app.interaction_event_seq,
+        data: Some(protocol::InteractionEventData {
+            state: Some(protocol::InteractionStateData {
+                state_id: state_id.to_string(),
+                transition_id: transition_id.map(str::to_string),
+            }),
+            ..protocol::InteractionEventData::default()
+        }),
+    };
+    let message = protocol::WSMessage {
+        msg_type: "interaction_event".to_string(),
+        timestamp: protocol::now_millis(),
+        request_id: None,
+        payload: Some(payload),
+    };
+    if let Ok(text) = serde_json::to_string(&message) {
+        app.ws_hub.broadcast(text);
+    }
+}
+
+fn sync_animation_state_interaction_events(
+    app: &mut App,
+    current_state_id: Option<&str>,
+    transition_id: Option<&str>,
+) {
+    let previous_state_id = app.last_synced_animation_state_id.clone();
+    if previous_state_id.as_deref() == current_state_id {
+        return;
+    }
+
+    if let Some(prev) = previous_state_id.as_deref() {
+        broadcast_state_interaction_event(app, "stateleave", prev, transition_id);
+    }
+    if let Some(curr) = current_state_id {
+        broadcast_state_interaction_event(app, "stateenter", curr, transition_id);
+    }
+
+    app.last_synced_animation_state_id = current_state_id.map(str::to_string);
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let frame_time = ctx.input(|i| i.time);
@@ -217,7 +266,11 @@ impl eframe::App for App {
             .map(|session| session.step(effective_dt as f64));
 
         let mut animation_values_changed = false;
+        let mut animation_current_state_id: Option<String> = None;
+        let mut animation_active_transition_id: Option<String> = None;
         if let Some(step) = anim_step {
+            animation_current_state_id = Some(step.current_state_id.clone());
+            animation_active_transition_id = step.active_transition_id.clone();
             if step.needs_redraw {
                 animation_values_changed = true;
                 // Phase 1: apply value overrides to the cached uniform scene.
@@ -243,6 +296,12 @@ impl eframe::App for App {
                 self.time_value_secs += delta_t;
             }
         }
+
+        sync_animation_state_interaction_events(
+            self,
+            animation_current_state_id.as_deref(),
+            animation_active_transition_id.as_deref(),
+        );
 
         let time_driven_scene = self.scene_uses_time && self.time_updates_enabled;
         let should_redraw_scene =
