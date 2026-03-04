@@ -937,7 +937,7 @@ mod tests {
 
     #[test]
     fn ordered_float_key_monotonicity() {
-        let values = [-3.5, -0.0, 0.0, 0.5, 1200.0];
+        let values: [f32; 5] = [-3.5, -0.0, 0.0, 0.5, 1200.0];
         let keys = values
             .iter()
             .map(|value| {
