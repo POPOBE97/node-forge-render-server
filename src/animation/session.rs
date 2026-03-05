@@ -136,6 +136,10 @@ pub struct AnimationSession {
     prev_override_keys: Vec<OverrideKey>,
     /// Queued events to fire on the next tick (e.g. "mousedown").
     pending_events: Vec<String>,
+    /// Whether the initial dt=0 tick has been fired.
+    /// The first call to `step()` always fires a single tick with dt=0
+    /// to establish the initial state (matching the test trace path).
+    first_tick_fired: bool,
 }
 
 impl AnimationSession {
@@ -171,6 +175,7 @@ impl AnimationSession {
             active_overrides: HashMap::new(),
             prev_override_keys: Vec::new(),
             pending_events: Vec::new(),
+            first_tick_fired: false,
         }))
     }
 
@@ -194,7 +199,6 @@ impl AnimationSession {
             };
         }
 
-        let tick_count = self.clock.advance(real_dt);
         let mut diagnostics = Vec::new();
         let mut last_tick_result = None;
 
@@ -202,16 +206,33 @@ impl AnimationSession {
         // instantaneous triggers, not sustained state).
         let events = std::mem::take(&mut self.pending_events);
 
-        for i in 0..tick_count {
-            let tick_events = if i == 0 { &events } else { &Vec::new() };
+        // On the very first step, fire a single dt=0 tick to establish
+        // initial state before the clock starts advancing.  This matches
+        // the test trace path where frame 0 has dt=0.
+        if !self.first_tick_fired {
+            self.first_tick_fired = true;
             let result = self.runloop.tick(
                 &mut self.runtime,
-                self.clock.step_secs,
+                0.0,
                 &HashMap::new(),
-                tick_events,
+                &events,
             );
             diagnostics.extend(result.diagnostics.iter().cloned());
             last_tick_result = Some(result);
+        } else {
+            let tick_count = self.clock.advance(real_dt);
+
+            for i in 0..tick_count {
+                let tick_events = if i == 0 { &events } else { &Vec::new() };
+                let result = self.runloop.tick(
+                    &mut self.runtime,
+                    self.clock.step_secs,
+                    &HashMap::new(),
+                    tick_events,
+                );
+                diagnostics.extend(result.diagnostics.iter().cloned());
+                last_tick_result = Some(result);
+            }
         }
 
         // Determine new active overrides from the last tick's flush.
@@ -221,7 +242,7 @@ impl AnimationSession {
             .unwrap_or_default();
 
         // Detect if values changed.
-        let needs_redraw = tick_count > 0 && new_overrides != self.active_overrides;
+        let needs_redraw = last_tick_result.is_some() && new_overrides != self.active_overrides;
 
         // Track removed keys for base-value restoration.
         let new_keys: Vec<OverrideKey> = new_overrides.keys().cloned().collect();
@@ -317,6 +338,7 @@ impl AnimationSession {
         self.active_overrides.clear();
         self.prev_override_keys.clear();
         self.pending_events.clear();
+        self.first_tick_fired = false;
 
         restores
     }
