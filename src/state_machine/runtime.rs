@@ -130,12 +130,20 @@ impl StateMachineRuntime {
             })
             .unwrap_or_default();
 
+        // Initialize local times for ALL states to 0.0 so the trace always
+        // reports every state (even those that haven't been entered yet).
+        let state_local_times: HashMap<String, f64> = definition
+            .states
+            .iter()
+            .map(|s| (s.id.clone(), 0.0))
+            .collect();
+
         Self {
             definition,
             mutation_index,
             current_state_id: initial,
             scene_time: 0.0,
-            state_local_times: HashMap::new(),
+            state_local_times,
             active_transition: None,
             finished: false,
         }
@@ -158,7 +166,10 @@ impl StateMachineRuntime {
 
         self.current_state_id = initial;
         self.scene_time = 0.0;
-        self.state_local_times.clear();
+        // Re-initialize all state local times to 0.0 (same as construction).
+        for v in self.state_local_times.values_mut() {
+            *v = 0.0;
+        }
         self.active_transition = None;
         self.finished = false;
     }
@@ -187,11 +198,20 @@ impl StateMachineRuntime {
         if let Some(ref mut at) = self.active_transition {
             at.elapsed += dt;
 
+            // The source state (current_state_id) keeps ticking during
+            // the transition (both delay and blend phases).
+            let source_id = at.source_state_id.clone();
+            if let Some(t) = self.state_local_times.get_mut(&source_id) {
+                *t += dt;
+            }
+
             // During the blend phase (past delay), tick the *target* state's
             // local time so its mutation sees advancing localElapsedTime.
             if at.elapsed > at.delay {
                 let target_id = at.target_state_id.clone();
-                *self.state_local_times.entry(target_id).or_insert(0.0) += dt;
+                if let Some(t) = self.state_local_times.get_mut(&target_id) {
+                    *t += dt;
+                }
             }
 
             let total = at.delay + at.duration;
@@ -203,20 +223,40 @@ impl StateMachineRuntime {
                 self.current_state_id = target;
             }
         } else {
-            // No active transition — tick local time only for states that
-            // have meaningful time (mutation / animation states).
+            // No active transition — tick local time for the current state
+            // (all state types except ExitState).
             let should_tick = self
                 .find_state(&self.current_state_id)
-                .map(|s| {
-                    matches!(
-                        s.resolved_type(),
-                        AnimationStateType::MutationNode | AnimationStateType::AnimationState
-                    )
-                })
+                .map(|s| s.resolved_type() != AnimationStateType::ExitState)
                 .unwrap_or(false);
             if should_tick {
                 let id = self.current_state_id.clone();
-                *self.state_local_times.entry(id).or_insert(0.0) += dt;
+                if let Some(t) = self.state_local_times.get_mut(&id) {
+                    *t += dt;
+                }
+            }
+        }
+
+        // AnyState always ticks, regardless of which state is current or
+        // whether a transition is active — unless it's the current state
+        // (already ticked above).
+        if let Some(any_state) = self
+            .definition
+            .states
+            .iter()
+            .find(|s| s.resolved_type() == AnimationStateType::AnyState)
+        {
+            let any_id = any_state.id.clone();
+            let already_ticked = self.current_state_id == any_id
+                || self
+                    .active_transition
+                    .as_ref()
+                    .map(|at| at.source_state_id == any_id || at.target_state_id == any_id)
+                    .unwrap_or(false);
+            if !already_ticked {
+                if let Some(t) = self.state_local_times.get_mut(&any_id) {
+                    *t += dt;
+                }
             }
         }
 
