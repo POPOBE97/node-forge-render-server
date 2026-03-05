@@ -323,13 +323,9 @@ fn animation_value_traces_match_goldens() {
         let schedule = TickSchedule::new(start_secs, end_secs, fps, include_end)
             .unwrap_or_else(|e| panic!("case {name}: invalid schedule from golden: {e}"));
 
-        // Generate actual trace.
-        let actual = node_forge_render_server::state_machine::generate_trace_for_scene_with_events(
-            &scene,
-            &schedule,
-            &event_schedule,
-        )
-        .unwrap_or_else(|e| panic!("case {name}: trace generation failed: {e}"));
+        // Generate actual trace via AnimationSession (the actual run path)
+        // so the test validates the same code path the app uses at runtime.
+        let actual = generate_trace_via_session(&scene, &schedule, &event_schedule);
 
         // Always write actual to out/.
         let out_dir = case_dir.join("out");
