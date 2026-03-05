@@ -102,8 +102,8 @@ pub struct AnimationStep {
     pub current_state_id: String,
     /// Active transition id after this step, when transitioning.
     pub active_transition_id: Option<String>,
-    /// Time elapsed in the current state (from last tick).
-    pub state_local_time_secs: f64,
+    /// Per-state local elapsed times (state_id → seconds).
+    pub state_local_times: std::collections::BTreeMap<String, f64>,
     /// Blend factor if a transition is in progress (0.0 → 1.0).
     pub transition_blend: Option<f64>,
     /// Whether the runtime has finished (reached exit state).
@@ -188,7 +188,7 @@ impl AnimationSession {
                 diagnostics: vec![],
                 current_state_id: self.runtime.current_state_id().to_string(),
                 active_transition_id: self.runtime.active_transition_id().map(str::to_string),
-                state_local_time_secs: 0.0,
+                state_local_times: std::collections::BTreeMap::new(),
                 transition_blend: None,
                 finished: true,
             };
@@ -235,10 +235,10 @@ impl AnimationSession {
         self.active_overrides = new_overrides;
         self.prev_override_keys = new_keys;
 
-        let (is_finished, state_local_time_secs, transition_blend) = last_tick_result
+        let (is_finished, state_local_times, transition_blend) = last_tick_result
             .and_then(|r| r.tick_result)
-            .map(|tr| (tr.finished, tr.state_local_time_secs, tr.transition_blend))
-            .unwrap_or((false, 0.0, None));
+            .map(|tr| (tr.finished, tr.state_local_times, tr.transition_blend))
+            .unwrap_or((false, std::collections::BTreeMap::new(), None));
 
         AnimationStep {
             active_overrides: self.active_overrides.clone(),
@@ -248,7 +248,7 @@ impl AnimationSession {
             diagnostics,
             current_state_id: self.runtime.current_state_id().to_string(),
             active_transition_id: self.runtime.active_transition_id().map(str::to_string),
-            state_local_time_secs,
+            state_local_times,
             transition_blend,
             finished: is_finished,
         }

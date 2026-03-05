@@ -31,7 +31,7 @@ pub struct AnimationTraceFrame {
     pub time_secs: f64,
     pub dt_secs: f64,
     pub current_state_id: String,
-    pub state_local_time_secs: f64,
+    pub state_local_times: BTreeMap<String, f64>,
     pub scene_time_secs: f64,
     pub active_transition_id: Option<String>,
     pub transition_blend: Option<f64>,
@@ -102,7 +102,11 @@ pub fn generate_trace_for_scene_with_events(
             time_secs: round_f64(sample.time_secs),
             dt_secs: round_f64(sample.dt_secs),
             current_state_id: result.current_state_id.clone(),
-            state_local_time_secs: round_f64(result.state_local_time_secs),
+            state_local_times: result
+                .state_local_times
+                .iter()
+                .map(|(k, v)| (k.clone(), round_f64(*v)))
+                .collect(),
             scene_time_secs: round_f64(result.scene_time_secs),
             active_transition_id: result.active_transition_id.clone(),
             transition_blend: result.transition_blend.map(round_f64),
@@ -190,7 +194,16 @@ fn round_json_number(n: &serde_json::Number) -> serde_json::Number {
     }
 
     match n.as_f64() {
-        Some(v) => serde_json::Number::from_f64(round_f64(v)).unwrap_or_else(|| n.clone()),
+        Some(v) => {
+            let rounded = round_f64(v);
+            // If the rounded value is a whole number, store as integer to
+            // match the canonical JSON representation (e.g. `1` not `1.0`).
+            if rounded.fract() == 0.0 && rounded.abs() < (i64::MAX as f64) {
+                serde_json::Number::from(rounded as i64)
+            } else {
+                serde_json::Number::from_f64(rounded).unwrap_or_else(|| n.clone())
+            }
+        }
         None => n.clone(),
     }
 }

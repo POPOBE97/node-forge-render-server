@@ -15,7 +15,7 @@
 //!     .reset()                   // optional — rewind to initial state
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::Result;
 
@@ -42,8 +42,10 @@ pub struct StateMachineRuntime {
     /// Wall-clock time accumulated since scene start (seconds).
     scene_time: f64,
 
-    /// Wall-clock time accumulated since the current state was entered.
-    state_local_time: f64,
+    /// Per-state local elapsed time (seconds).
+    /// Each state independently tracks how long it has been "active"
+    /// (ticking).  Entry/Any/Exit states stay at 0.
+    state_local_times: HashMap<String, f64>,
 
     /// Active transition (if any).
     active_transition: Option<ActiveTransition>,
@@ -88,8 +90,8 @@ pub struct TickResult {
     /// Scene elapsed time in seconds after this tick.
     pub scene_time_secs: f64,
 
-    /// Time elapsed in the current state in seconds after this tick.
-    pub state_local_time_secs: f64,
+    /// Per-state local elapsed times (state_id → seconds).
+    pub state_local_times: BTreeMap<String, f64>,
 
     /// Active transition id, when transitioning.
     pub active_transition_id: Option<String>,
@@ -133,7 +135,7 @@ impl StateMachineRuntime {
             mutation_index,
             current_state_id: initial,
             scene_time: 0.0,
-            state_local_time: 0.0,
+            state_local_times: HashMap::new(),
             active_transition: None,
             finished: false,
         }
@@ -156,7 +158,7 @@ impl StateMachineRuntime {
 
         self.current_state_id = initial;
         self.scene_time = 0.0;
-        self.state_local_time = 0.0;
+        self.state_local_times.clear();
         self.active_transition = None;
         self.finished = false;
     }
@@ -168,7 +170,7 @@ impl StateMachineRuntime {
                 finished: true,
                 current_state_id: self.current_state_id.clone(),
                 scene_time_secs: self.scene_time,
-                state_local_time_secs: self.state_local_time,
+                state_local_times: self.snapshot_local_times(),
                 active_transition_id: self
                     .active_transition
                     .as_ref()
@@ -178,19 +180,43 @@ impl StateMachineRuntime {
         }
 
         self.scene_time += dt;
-        self.state_local_time += dt;
 
         let mut diagnostics: Vec<String> = Vec::new();
 
         // ── Advance active transition ──────────────────────────────────
         if let Some(ref mut at) = self.active_transition {
             at.elapsed += dt;
+
+            // During the blend phase (past delay), tick the *target* state's
+            // local time so its mutation sees advancing localElapsedTime.
+            if at.elapsed > at.delay {
+                let target_id = at.target_state_id.clone();
+                *self.state_local_times.entry(target_id).or_insert(0.0) += dt;
+            }
+
             let total = at.delay + at.duration;
             if at.elapsed >= total {
                 // Transition complete — enter target state.
+                // Target state's local time is preserved (accumulated during blend).
                 let target = at.target_state_id.clone();
                 self.active_transition = None;
-                self.enter_state(&target);
+                self.current_state_id = target;
+            }
+        } else {
+            // No active transition — tick local time only for states that
+            // have meaningful time (mutation / animation states).
+            let should_tick = self
+                .find_state(&self.current_state_id)
+                .map(|s| {
+                    matches!(
+                        s.resolved_type(),
+                        AnimationStateType::MutationNode | AnimationStateType::AnimationState
+                    )
+                })
+                .unwrap_or(false);
+            if should_tick {
+                let id = self.current_state_id.clone();
+                *self.state_local_times.entry(id).or_insert(0.0) += dt;
             }
         }
 
@@ -202,6 +228,10 @@ impl StateMachineRuntime {
                     // Instant transition (no delay, no blend).
                     self.enter_state(&transition.target);
                 } else {
+                    // Reset the target state's local time for the upcoming
+                    // blend phase (it will start ticking once delay expires).
+                    self.state_local_times
+                        .insert(transition.target.clone(), 0.0);
                     self.active_transition = Some(ActiveTransition {
                         transition_id: transition.id.clone(),
                         source_state_id: self.current_state_id.clone(),
@@ -231,7 +261,8 @@ impl StateMachineRuntime {
         if let Some(state) = self.find_state(&self.current_state_id) {
             if state.resolved_type() == AnimationStateType::MutationNode {
                 if let Some(ref mid) = state.mutation_id {
-                    match self.evaluate_mutation_state(mid, params) {
+                    let sid = self.current_state_id.clone();
+                    match self.evaluate_mutation_state(mid, &sid, params) {
                         Ok(mutation_overrides) => {
                             overrides.extend(mutation_overrides);
                         }
@@ -278,7 +309,8 @@ impl StateMachineRuntime {
                     }
                     if target_state.resolved_type() == AnimationStateType::MutationNode {
                         if let Some(ref mid) = target_state.mutation_id {
-                            match self.evaluate_mutation_state(mid, params) {
+                            let tid = at.target_state_id.clone();
+                            match self.evaluate_mutation_state(mid, &tid, params) {
                                 Ok(mutation_overrides) => {
                                     target_overrides.extend(mutation_overrides);
                                 }
@@ -324,7 +356,7 @@ impl StateMachineRuntime {
             current_state_id: self.current_state_id.clone(),
             transition_blend,
             scene_time_secs: self.scene_time,
-            state_local_time_secs: self.state_local_time,
+            state_local_times: self.snapshot_local_times(),
             active_transition_id: self
                 .active_transition
                 .as_ref()
@@ -353,7 +385,16 @@ impl StateMachineRuntime {
 
     fn enter_state(&mut self, state_id: &str) {
         self.current_state_id = state_id.to_string();
-        self.state_local_time = 0.0;
+        // Reset this state's local time on entry (instant transitions).
+        self.state_local_times.insert(state_id.to_string(), 0.0);
+    }
+
+    /// Snapshot all per-state local times as a sorted BTreeMap for output.
+    fn snapshot_local_times(&self) -> BTreeMap<String, f64> {
+        self.state_local_times
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect()
     }
 
     fn find_state(&self, state_id: &str) -> Option<&AnimationState> {
@@ -457,6 +498,7 @@ impl StateMachineRuntime {
     fn evaluate_mutation_state(
         &self,
         mutation_id: &str,
+        state_id: &str,
         params: &ExternalParams,
     ) -> Result<HashMap<OverrideKey, serde_json::Value>> {
         let mutation_idx = self
@@ -488,7 +530,7 @@ impl StateMachineRuntime {
         let ctx = MutationInputContext {
             values: input_values,
             scene_elapsed_time: self.scene_time,
-            local_elapsed_time: self.state_local_time,
+            local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
         };
 
         let outputs = mutation::evaluate_mutation(mutation, &ctx)?;
