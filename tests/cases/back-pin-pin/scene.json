@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-05T04:46:02.159Z",
-    "modified": "2026-03-05T04:46:02.159Z"
+    "created": "2026-03-05T09:55:34.207Z",
+    "modified": "2026-03-05T09:55:34.207Z"
   },
   "nodes": [
     {
@@ -735,7 +735,7 @@
           "eventName": "mousedown"
         },
         "delay": 0.3,
-        "duration": 0.3,
+        "duration": 2,
         "easing": "linear"
       }
     ],
@@ -793,7 +793,7 @@
         "outputBindings": [],
         "passthroughBindings": [
           {
-            "inputPortId": "sceneElapsedTime",
+            "inputPortId": "localElapsedTime",
             "outputPortId": "FloatInput_53:value"
           }
         ]
