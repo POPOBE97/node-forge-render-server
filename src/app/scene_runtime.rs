@@ -443,6 +443,29 @@ pub fn apply_scene_update(
                     if !app.animation_playing {
                         app.animation_playing = true;
                         eprintln!("[animation] play");
+
+                        // Reset the animation session so the state machine
+                        // starts from the initial state every time.
+                        if let Some(session) = app.animation_session.as_mut() {
+                            let restores = session.reset();
+                            if !restores.is_empty() {
+                                if let Some(ref mut uniform_scene) = app.uniform_scene {
+                                    crate::state_machine::apply_overrides(
+                                        uniform_scene,
+                                        &restores,
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(ref uniform_scene) = app.uniform_scene {
+                            let _ = apply_graph_uniform_updates_parts(
+                                &mut app.passes,
+                                &mut app.shader_space,
+                                uniform_scene,
+                            );
+                        }
+                        app.time_value_secs = 0.0;
+                        app.scene_redraw_pending = true;
                     }
                 }
                 ws::AnimationControlAction::Stop => {

@@ -89,5 +89,8 @@ impl Runloop {
     /// Reset all state: clear the value pool and task-internal state.
     pub fn reset(&mut self) {
         self.value_pool.reset_all();
+        for task in self.task_pool.tasks_mut() {
+            task.reset();
+        }
     }
 }

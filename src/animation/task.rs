@@ -74,6 +74,11 @@ impl AnimationTask {
         }
     }
 
+    /// Clear task-internal tracking state so the next tick starts fresh.
+    pub fn reset(&mut self) {
+        self.prev_active_keys.clear();
+    }
+
     /// Execute this task for one tick, reading/writing the ValuePool.
     ///
     /// For `StateMachineDriven`, also needs the runtime, dt, params, and events.
