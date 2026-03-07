@@ -245,7 +245,7 @@ pub struct AppInit {
     pub animation_session: Option<crate::animation::AnimationSession>,
 }
 
-pub struct App {
+pub(super) struct AppCore {
     pub shader_space: ShaderSpace,
     pub resolution: [u32; 2],
     pub window_resolution: [u32; 2],
@@ -255,37 +255,25 @@ pub struct App {
     pub export_texture_name: ResourceName,
     /// On-demand SDR encode pass name (UiHdrNative only).
     pub export_encode_pass_name: Option<ResourceName>,
-    pub start: Instant,
     pub passes: Vec<renderer::PassBindings>,
+    pub ws_hub: ws::WsHub,
+    pub asset_store: crate::asset_store::AssetStore,
+}
 
+pub(super) struct AppRuntime {
+    pub start: Instant,
     pub scene_rx: Receiver<ws::SceneUpdate>,
     pub capture_state_rx: Option<Receiver<bool>>,
-    pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub pipeline_rebuild_count: u64,
     pub uniform_only_update_count: u64,
     pub render_texture_fps_tracker: RenderTextureFpsTracker,
-
     pub follow_scene_resolution_for_window: bool,
-
-    pub window_mode: UiWindowMode,
-    pub prev_window_mode: UiWindowMode,
-    pub ui_sidebar_factor: f32,
-    pub did_startup_sidebar_size: bool,
-
-    pub animations: AnimationManager,
-
-    pub file_tree_state: FileTreeState,
-    pub resource_snapshot: Option<ResourceSnapshot>,
-    pub resource_tree_nodes: Vec<FileTreeNode>,
-    pub resource_snapshot_generation: u64,
-    pub canvas: CanvasState,
     pub scene_uses_time: bool,
     pub capture_redraw_active: bool,
     pub scene_redraw_pending: bool,
-    pub asset_store: crate::asset_store::AssetStore,
     pub animation_session: Option<crate::animation::AnimationSession>,
     /// Whether the animation state machine is actively playing.
     /// Defaults to `false`; toggled by `animation_control` WebSocket messages.
@@ -293,6 +281,35 @@ pub struct App {
     pub time_updates_enabled: bool,
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
+}
+
+pub(super) struct AppShell {
+    pub window_mode: UiWindowMode,
+    pub prev_window_mode: UiWindowMode,
+    pub ui_sidebar_factor: f32,
+    pub did_startup_sidebar_size: bool,
+    pub animations: AnimationManager,
+    pub file_tree_state: FileTreeState,
+    pub resource_snapshot: Option<ResourceSnapshot>,
+    pub resource_tree_nodes: Vec<FileTreeNode>,
+    pub resource_snapshot_generation: u64,
+}
+
+#[derive(Default)]
+pub(super) struct InteractionBridgeState {
+    pub interaction_event_seq: u64,
+    pub last_synced_animation_state_id: Option<String>,
+    pub cached_state_local_times: Vec<(String, f64)>,
+    pub cached_transition_blend: Option<f64>,
+    pub cached_override_values: Vec<(String, String)>,
+}
+
+pub struct App {
+    pub(super) core: AppCore,
+    pub(super) runtime: AppRuntime,
+    pub(super) shell: AppShell,
+    pub(super) interaction_bridge: InteractionBridgeState,
+    pub(super) canvas: CanvasState,
 }
 
 pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
@@ -405,47 +422,54 @@ impl App {
             .as_ref()
             .and_then(scene_reference_image_alpha_mode);
         Self {
-            shader_space: init.shader_space,
-            resolution: init.resolution,
-            window_resolution: init.window_resolution,
-            output_texture_name: init.output_texture_name,
-            scene_output_texture_name: init.scene_output_texture_name,
-            export_texture_name: init.export_texture_name,
-            export_encode_pass_name: init.export_encode_pass_name,
-            start: init.start,
-            passes: init.passes,
-            scene_rx: init.scene_rx,
-            capture_state_rx: init.capture_state_rx,
-            ws_hub: init.ws_hub,
-            last_good: init.last_good,
-            uniform_scene: init.uniform_scene,
-            last_pipeline_signature: init.last_pipeline_signature,
-            pipeline_rebuild_count: 0,
-            uniform_only_update_count: 0,
-            render_texture_fps_tracker: RenderTextureFpsTracker::default(),
-            follow_scene_resolution_for_window: init.follow_scene_resolution_for_window,
-            window_mode: UiWindowMode::Sidebar,
-            prev_window_mode: UiWindowMode::Sidebar,
-            ui_sidebar_factor: 1.0,
-            did_startup_sidebar_size: false,
-            animations: AnimationManager::default(),
-            file_tree_state: FileTreeState::default(),
-            resource_snapshot: None,
-            resource_tree_nodes: Vec::new(),
-            resource_snapshot_generation: u64::MAX,
+            core: AppCore {
+                shader_space: init.shader_space,
+                resolution: init.resolution,
+                window_resolution: init.window_resolution,
+                output_texture_name: init.output_texture_name,
+                scene_output_texture_name: init.scene_output_texture_name,
+                export_texture_name: init.export_texture_name,
+                export_encode_pass_name: init.export_encode_pass_name,
+                passes: init.passes,
+                ws_hub: init.ws_hub,
+                asset_store: init.asset_store,
+            },
+            runtime: AppRuntime {
+                start: init.start,
+                scene_rx: init.scene_rx,
+                capture_state_rx: init.capture_state_rx,
+                last_good: init.last_good,
+                uniform_scene: init.uniform_scene,
+                last_pipeline_signature: init.last_pipeline_signature,
+                pipeline_rebuild_count: 0,
+                uniform_only_update_count: 0,
+                render_texture_fps_tracker: RenderTextureFpsTracker::default(),
+                follow_scene_resolution_for_window: init.follow_scene_resolution_for_window,
+                scene_uses_time: initial_scene_uses_time,
+                capture_redraw_active: false,
+                scene_redraw_pending: true,
+                animation_session: init.animation_session,
+                animation_playing: false,
+                time_updates_enabled: true,
+                time_value_secs: 0.0,
+                time_last_raw_secs: 0.0,
+            },
+            shell: AppShell {
+                window_mode: UiWindowMode::Sidebar,
+                prev_window_mode: UiWindowMode::Sidebar,
+                ui_sidebar_factor: 1.0,
+                did_startup_sidebar_size: false,
+                animations: AnimationManager::default(),
+                file_tree_state: FileTreeState::default(),
+                resource_snapshot: None,
+                resource_tree_nodes: Vec::new(),
+                resource_snapshot_generation: u64::MAX,
+            },
+            interaction_bridge: InteractionBridgeState::default(),
             canvas: CanvasState::new(
                 initial_scene_reference_desired,
                 initial_scene_reference_image_alpha_mode,
             ),
-            scene_uses_time: initial_scene_uses_time,
-            capture_redraw_active: false,
-            scene_redraw_pending: true,
-            asset_store: init.asset_store,
-            animation_session: init.animation_session,
-            animation_playing: false,
-            time_updates_enabled: true,
-            time_value_secs: 0.0,
-            time_last_raw_secs: 0.0,
         }
     }
 }
