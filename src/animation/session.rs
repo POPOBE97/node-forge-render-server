@@ -140,6 +140,13 @@ pub struct AnimationSession {
     /// The first call to `step()` always fires a single tick with dt=0
     /// to establish the initial state (matching the test trace path).
     first_tick_fired: bool,
+    /// Cached per-state local times from the last tick (preserved across
+    /// no-tick frames to prevent UI flashing).
+    cached_state_local_times: std::collections::BTreeMap<String, f64>,
+    /// Cached transition blend from the last tick.
+    cached_transition_blend: Option<f64>,
+    /// Cached finished flag from the last tick.
+    cached_finished: bool,
 }
 
 impl AnimationSession {
@@ -176,6 +183,9 @@ impl AnimationSession {
             prev_override_keys: Vec::new(),
             pending_events: Vec::new(),
             first_tick_fired: false,
+            cached_state_local_times: std::collections::BTreeMap::new(),
+            cached_transition_blend: None,
+            cached_finished: false,
         }))
     }
 
@@ -211,12 +221,9 @@ impl AnimationSession {
         // the test trace path where frame 0 has dt=0.
         if !self.first_tick_fired {
             self.first_tick_fired = true;
-            let result = self.runloop.tick(
-                &mut self.runtime,
-                0.0,
-                &HashMap::new(),
-                &events,
-            );
+            let result = self
+                .runloop
+                .tick(&mut self.runtime, 0.0, &HashMap::new(), &events);
             diagnostics.extend(result.diagnostics.iter().cloned());
             last_tick_result = Some(result);
         } else {
@@ -236,30 +243,46 @@ impl AnimationSession {
         }
 
         // Determine new active overrides from the last tick's flush.
-        let new_overrides = last_tick_result
-            .as_ref()
-            .map(|r| r.overrides.clone())
-            .unwrap_or_default();
+        // When no tick fired this frame (tick_count == 0), preserve the
+        // existing overrides so the UI doesn't flash between populated and
+        // empty on frames where the fixed-step clock hasn't accumulated
+        // enough time for a tick.
+        let needs_redraw;
+        if let Some(ref result) = last_tick_result {
+            let new_overrides = result.overrides.clone();
+            needs_redraw = new_overrides != self.active_overrides;
 
-        // Detect if values changed.
-        let needs_redraw = last_tick_result.is_some() && new_overrides != self.active_overrides;
+            // Track removed keys for base-value restoration.
+            let new_keys: Vec<OverrideKey> = new_overrides.keys().cloned().collect();
+            let _removed: Vec<OverrideKey> = self
+                .prev_override_keys
+                .iter()
+                .filter(|k| !new_overrides.contains_key(k))
+                .cloned()
+                .collect();
 
-        // Track removed keys for base-value restoration.
-        let new_keys: Vec<OverrideKey> = new_overrides.keys().cloned().collect();
-        let _removed: Vec<OverrideKey> = self
-            .prev_override_keys
-            .iter()
-            .filter(|k| !new_overrides.contains_key(k))
-            .cloned()
-            .collect();
+            self.active_overrides = new_overrides;
+            self.prev_override_keys = new_keys;
+        } else {
+            // No tick this frame — keep existing overrides, nothing changed.
+            needs_redraw = false;
+        }
 
-        self.active_overrides = new_overrides;
-        self.prev_override_keys = new_keys;
-
-        let (is_finished, state_local_times, transition_blend) = last_tick_result
-            .and_then(|r| r.tick_result)
-            .map(|tr| (tr.finished, tr.state_local_times, tr.transition_blend))
-            .unwrap_or((false, std::collections::BTreeMap::new(), None));
+        let (is_finished, state_local_times, transition_blend) =
+            if let Some(tr) = last_tick_result.and_then(|r| r.tick_result) {
+                // A tick fired — update cached values.
+                self.cached_state_local_times = tr.state_local_times.clone();
+                self.cached_transition_blend = tr.transition_blend;
+                self.cached_finished = tr.finished;
+                (tr.finished, tr.state_local_times, tr.transition_blend)
+            } else {
+                // No tick this frame — reuse cached values so the UI stays stable.
+                (
+                    self.cached_finished,
+                    self.cached_state_local_times.clone(),
+                    self.cached_transition_blend,
+                )
+            };
 
         AnimationStep {
             active_overrides: self.active_overrides.clone(),
@@ -339,6 +362,9 @@ impl AnimationSession {
         self.prev_override_keys.clear();
         self.pending_events.clear();
         self.first_tick_fired = false;
+        self.cached_state_local_times.clear();
+        self.cached_transition_blend = None;
+        self.cached_finished = false;
 
         restores
     }
