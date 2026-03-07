@@ -33,6 +33,7 @@ pub fn sync_preview_source(
 ) -> bool {
     if let Some(preview_name) = app.canvas.display.preview_texture_name.clone() {
         if app
+            .core
             .shader_space
             .textures
             .contains_key(preview_name.as_str())
@@ -74,15 +75,16 @@ pub fn build_display_frame(
             .preview_texture_name
             .as_ref()
             .map(|name| name.as_str().to_string())
-            .unwrap_or_else(|| app.output_texture_name.as_str().to_string())
+            .unwrap_or_else(|| app.core.output_texture_name.as_str().to_string())
     } else {
-        app.output_texture_name.as_str().to_string()
+        app.core.output_texture_name.as_str().to_string()
     };
     let effective_resolution = app
+        .core
         .shader_space
         .texture_info(display_texture_name.as_str())
         .map(|info| [info.size.width, info.size.height])
-        .unwrap_or(app.resolution);
+        .unwrap_or(app.core.resolution);
 
     let compare_output_active = app.canvas.analysis.diff_texture_id.is_some();
     let display_texture_format = if compare_output_active {
@@ -95,7 +97,8 @@ pub fn build_display_frame(
         None
     }
     .or_else(|| {
-        app.shader_space
+        app.core
+            .shader_space
             .texture_info(display_texture_name.as_str())
             .map(|info| info.format)
     });
@@ -117,6 +120,7 @@ pub fn build_display_frame(
 
     if hdr_clamp_effective && !compare_output_active {
         let hdr_clamp_source = app
+            .core
             .shader_space
             .textures
             .get(display_texture_name.as_str())

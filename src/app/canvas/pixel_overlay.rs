@@ -101,11 +101,13 @@ fn read_pixel_overlay_cache(
 ) -> Arc<PixelOverlayCache> {
     let readback = match format {
         wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => app
+            .core
             .shader_space
             .read_texture_rgba8(texture_name)
             .map(|image| PixelOverlayReadback::Rgba8(image.bytes))
             .unwrap_or(PixelOverlayReadback::Unavailable),
         wgpu::TextureFormat::Rgba16Float => app
+            .core
             .shader_space
             .read_texture_rgba16f(texture_name)
             .map(|image| PixelOverlayReadback::Rgba16f(image.channels))

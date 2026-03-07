@@ -1,16 +1,14 @@
+use rust_wgpu_fiber::eframe::wgpu;
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
-use crate::{
-    app::{
-        canvas::{
-            actions::{CanvasAction, CanvasFrameResult},
-            ops, pixel_overlay, reference,
-        },
-        layout_math::clamp_zoom,
-        texture_bridge,
-        types::{App, RefImageAlphaMode, RefImageMode, SampledPixel},
+use crate::app::{
+    canvas::{
+        actions::{CanvasAction, CanvasFrameResult},
+        ops, pixel_overlay, reference,
     },
-    protocol,
+    layout_math::clamp_zoom,
+    texture_bridge,
+    types::{App, RefImageAlphaMode, RefImageMode, SampledPixel},
 };
 
 pub fn apply_action(
@@ -19,8 +17,6 @@ pub fn apply_action(
     renderer: &mut egui_wgpu::Renderer,
     action: CanvasAction,
 ) -> anyhow::Result<CanvasFrameResult> {
-    let mut frame_result = CanvasFrameResult::default();
-
     match action {
         CanvasAction::SetPreviewTexture(name) => {
             app.canvas.display.preview_texture_name = Some(name);
@@ -30,15 +26,12 @@ pub fn apply_action(
         }
         CanvasAction::ClearPreviewTexture => {
             app.canvas.display.preview_texture_name = None;
-            app.file_tree_state.selected_id = None;
+            app.shell.file_tree_state.selected_id = None;
             if let Some(id) = app.canvas.display.preview_color_attachment.take() {
                 app.canvas.display.deferred_texture_frees.push(id);
             }
             pixel_overlay::clear_cache(app);
             app.canvas.invalidation.preview_source_changed();
-        }
-        CanvasAction::ToggleCanvasOnly => {
-            frame_result.request_toggle_canvas_only = true;
         }
         CanvasAction::ToggleHdrClamp => {
             app.canvas.display.hdr_preview_clamp_enabled =
@@ -46,22 +39,22 @@ pub fn apply_action(
             app.canvas.invalidation.mark_pixel_overlay_dirty();
         }
         CanvasAction::TogglePause => {
-            app.time_updates_enabled = !app.time_updates_enabled;
+            app.runtime.time_updates_enabled = !app.runtime.time_updates_enabled;
             let has_reference_diff = matches!(
                 app.canvas.reference.ref_image.as_ref().map(|r| r.mode),
                 Some(RefImageMode::Diff)
             );
             app.canvas
                 .invalidation
-                .time_pause_toggled(app.scene_uses_time, has_reference_diff);
+                .time_pause_toggled(app.runtime.scene_uses_time, has_reference_diff);
         }
         CanvasAction::ResetView => {
             app.canvas.viewport.pending_view_reset = true;
         }
         CanvasAction::ToggleSampling => {
             app.canvas.display.texture_filter = match app.canvas.display.texture_filter {
-                super::super::wgpu::FilterMode::Nearest => super::super::wgpu::FilterMode::Linear,
-                super::super::wgpu::FilterMode::Linear => super::super::wgpu::FilterMode::Nearest,
+                wgpu::FilterMode::Nearest => wgpu::FilterMode::Linear,
+                wgpu::FilterMode::Linear => wgpu::FilterMode::Nearest,
             };
             if let Some(preview_name) = app.canvas.display.preview_texture_name.clone() {
                 texture_bridge::sync_preview_texture(
@@ -72,7 +65,7 @@ pub fn apply_action(
                     app.canvas.display.texture_filter,
                 );
             }
-            let texture_name = app.output_texture_name.clone();
+            let texture_name = app.core.output_texture_name.clone();
             texture_bridge::sync_output_texture(
                 app,
                 render_state,
@@ -103,7 +96,7 @@ pub fn apply_action(
             let mut changed = false;
             if let Some(reference_image) = app.canvas.reference.ref_image.as_mut() {
                 match reference::set_reference_alpha_mode(
-                    app.shader_space.queue.as_ref(),
+                    app.core.shader_space.queue.as_ref(),
                     reference_image,
                     app.canvas.reference.alpha_mode,
                 ) {
@@ -255,22 +248,9 @@ pub fn apply_action(
         CanvasAction::PollClipboardOp { now } => {
             ops::poll(&mut app.canvas.async_ops, now);
         }
-        CanvasAction::BroadcastQueuedInteractions(payloads) => {
-            for payload in &payloads {
-                let message = protocol::WSMessage {
-                    msg_type: "interaction_event".to_string(),
-                    timestamp: protocol::now_millis(),
-                    request_id: None,
-                    payload: Some(payload.clone()),
-                };
-                if let Ok(text) = serde_json::to_string(&message) {
-                    app.ws_hub.broadcast(text);
-                }
-            }
-        }
     }
 
-    Ok(frame_result)
+    Ok(CanvasFrameResult::default())
 }
 
 #[cfg(test)]

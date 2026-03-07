@@ -264,7 +264,7 @@ fn load_reference_image_from_decoded(
         });
 
     upload_reference_linear_premul_rgba(
-        app.shader_space.queue.as_ref(),
+        app.core.shader_space.queue.as_ref(),
         &wgpu_texture,
         [decoded.width, decoded.height],
         decoded.linear_premul_rgba.as_slice(),
@@ -347,18 +347,18 @@ pub fn sync_from_scene(app: &mut App, ctx: &egui::Context, render_state: &egui_w
             let attempt_key = ReferenceAttemptKey::Asset {
                 asset_id: asset_id.clone(),
                 alpha_mode,
-                asset_store_revision: app.asset_store.revision(),
+                asset_store_revision: app.core.asset_store.revision(),
             };
             if app.canvas.reference.last_attempt_key.as_ref() == Some(&attempt_key) {
                 return;
             }
             app.canvas.reference.last_attempt_key = Some(attempt_key);
 
-            if !app.asset_store.contains(&asset_id) {
+            if !app.core.asset_store.contains(&asset_id) {
                 return;
             }
 
-            match app.asset_store.load_image(&asset_id) {
+            match app.core.asset_store.load_image(&asset_id) {
                 Ok(Some(decoded)) => {
                     if let Err(e) = load_reference_image_from_decoded(
                         app,

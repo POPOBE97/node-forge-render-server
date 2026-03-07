@@ -38,6 +38,7 @@ pub fn sync_output_texture(
     filter: wgpu::FilterMode,
 ) {
     let texture = app
+        .core
         .shader_space
         .textures
         .get(texture_name.as_str())
@@ -66,7 +67,7 @@ pub fn ensure_output_texture_registered(
     renderer: &mut egui_wgpu::Renderer,
 ) {
     if app.canvas.display.color_attachment.is_none() {
-        let name = app.output_texture_name.clone();
+        let name = app.core.output_texture_name.clone();
         sync_output_texture(app, render_state, renderer, &name, wgpu::FilterMode::Linear);
     }
 }
@@ -79,7 +80,7 @@ pub fn sync_preview_texture(
     texture_name: &ResourceName,
     filter: wgpu::FilterMode,
 ) {
-    let texture = match app.shader_space.textures.get(texture_name.as_str()) {
+    let texture = match app.core.shader_space.textures.get(texture_name.as_str()) {
         Some(t) => t,
         None => return,
     };
