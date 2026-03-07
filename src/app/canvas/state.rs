@@ -3,9 +3,15 @@ use std::sync::Arc;
 use rust_wgpu_fiber::{ResourceName, eframe::egui, eframe::wgpu};
 
 use crate::{
-    app::types::{
-        AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageAlphaMode, RefImageState,
-        SampledPixel, ViewportOperationIndicatorVisual,
+    app::{
+        frame::request_keys::{
+            AnalysisSourceKey, ClippingRequestKey, DiffRequestKey, DiffStatsRequestKey,
+            HistogramRequestKey, ParadeRequestKey, VectorscopeRequestKey,
+        },
+        types::{
+            AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageAlphaMode,
+            RefImageState, SampledPixel, ViewportOperationIndicatorVisual,
+        },
     },
     ui::{self, viewport_indicators::ViewportIndicatorManager},
 };
@@ -106,17 +112,17 @@ pub struct CanvasAnalysisState {
     pub clip_enabled: bool,
     pub clipping_settings: ClippingSettings,
     pub analysis_source_is_diff: bool,
-    pub analysis_source_key: Option<u64>,
+    pub analysis_source_key: Option<AnalysisSourceKey>,
     pub diff_renderer: Option<ui::diff_renderer::DiffRenderer>,
     pub diff_texture_id: Option<egui::TextureId>,
     pub diff_metric_mode: DiffMetricMode,
     pub diff_stats: Option<DiffStats>,
-    pub last_diff_request_key: Option<u64>,
-    pub last_diff_stats_request_key: Option<u64>,
-    pub last_histogram_request_key: Option<u64>,
-    pub last_parade_request_key: Option<u64>,
-    pub last_vectorscope_request_key: Option<u64>,
-    pub last_clipping_request_key: Option<u64>,
+    pub last_diff_request_key: Option<DiffRequestKey>,
+    pub last_diff_stats_request_key: Option<DiffStatsRequestKey>,
+    pub last_histogram_request_key: Option<HistogramRequestKey>,
+    pub last_parade_request_key: Option<ParadeRequestKey>,
+    pub last_vectorscope_request_key: Option<VectorscopeRequestKey>,
+    pub last_clipping_request_key: Option<ClippingRequestKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -178,11 +184,6 @@ pub struct CanvasReferenceState {
 #[derive(Default)]
 pub struct CanvasInteractionState {
     pub canvas_event_focus_latched: bool,
-    pub interaction_event_seq: u64,
-    pub last_synced_animation_state_id: Option<String>,
-    pub cached_state_local_times: Vec<(String, f64)>,
-    pub cached_transition_blend: Option<f64>,
-    pub cached_override_values: Vec<(String, String)>,
     pub last_canvas_rect: Option<egui::Rect>,
 }
 
