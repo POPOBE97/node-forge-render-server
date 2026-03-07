@@ -17,10 +17,10 @@ use crate::{
             },
             reducer, reference, viewport,
         },
+        frame::commands::AppCommand,
         types::{App, RefImageMode, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
-    protocol::InteractionEventPayload,
     ui::{
         design_tokens,
         viewport_indicators::{
@@ -47,7 +47,7 @@ fn with_alpha(color: Color32, alpha: f32) -> Color32 {
 }
 
 fn merge_frame_result(into: &mut CanvasFrameResult, next: CanvasFrameResult) {
-    into.request_toggle_canvas_only |= next.request_toggle_canvas_only;
+    into.commands.extend(next.commands);
 }
 
 fn apply_action(
@@ -253,7 +253,7 @@ fn draw_operation_indicators(
             "render_fps",
             ORDER_RENDER_FPS,
             true,
-            format!("{} FPS", app.render_texture_fps_tracker.fps_at(now)),
+            format!("{} FPS", app.runtime.render_texture_fps_tracker.fps_at(now)),
             "Scene redraws per second (counts scene redraws only; excludes reference-image/diff/clipping/analysis-only updates)",
         )
     });
@@ -307,7 +307,7 @@ fn draw_operation_indicators(
             ..ViewportIndicatorEntry::compact(
                 "pause",
                 ORDER_PAUSE,
-                !app.time_updates_enabled,
+                !app.runtime.time_updates_enabled,
                 ViewportIndicator {
                     icon: "PAUSE",
                     tooltip: "Time 更新已暂停（Space 恢复）",
@@ -444,17 +444,18 @@ fn draw_badges(
     if let Some(preview_name) = app.canvas.display.preview_texture_name.as_ref()
         && using_preview
     {
-        let badge_text = if let Some(info) = app.shader_space.texture_info(preview_name.as_str()) {
-            format!(
-                "Preview • {} • {}×{} • {:?}",
-                preview_name.as_str(),
-                info.size.width,
-                info.size.height,
-                info.format,
-            )
-        } else {
-            format!("Preview • {}", preview_name.as_str())
-        };
+        let badge_text =
+            if let Some(info) = app.core.shader_space.texture_info(preview_name.as_str()) {
+                format!(
+                    "Preview • {} • {}×{} • {:?}",
+                    preview_name.as_str(),
+                    info.size.width,
+                    info.size.height,
+                    info.format,
+                )
+            } else {
+                format!("Preview • {}", preview_name.as_str())
+            };
         let badge_galley =
             ui.painter()
                 .layout_no_wrap(badge_text, badge_font, Color32::from_gray(220));
@@ -491,12 +492,13 @@ fn maybe_sample_clicked_pixel(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
 ) {
-    let continuous_scene_redraw = (app.scene_uses_time && app.time_updates_enabled)
+    let continuous_scene_redraw = (app.runtime.scene_uses_time && app.runtime.time_updates_enabled)
         || app
+            .runtime
             .animation_session
             .as_ref()
             .is_some_and(|session| session.is_active())
-        || app.capture_redraw_active;
+        || app.runtime.capture_redraw_active;
 
     if !response.clicked_by(egui::PointerButton::Primary) {
         return;
@@ -525,6 +527,7 @@ fn maybe_sample_clicked_pixel(
         value_sample_cache.cloned().map(Arc::new);
     if sample_cache.is_none() && !continuous_scene_redraw {
         if let Some(info) = app
+            .core
             .shader_space
             .texture_info(display_frame.value_sampling_texture_name.as_str())
         {
@@ -572,18 +575,11 @@ pub fn show_canvas(
     renderer: &mut egui_wgpu::Renderer,
     frame: WindowModeFrame,
     now: f64,
-    pre_collected_payloads: Vec<InteractionEventPayload>,
 ) -> CanvasFrameResult {
     let mut frame_result = CanvasFrameResult::default();
 
     if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleCanvasOnly,
-        );
+        frame_result.commands.push(AppCommand::ToggleCanvasOnly);
     }
     if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::S)) {
         apply_action(
@@ -725,12 +721,14 @@ pub fn show_canvas(
     response.context_menu(|menu_ui| {
         let copy_clicked = menu_ui.button("复制材质").clicked();
         if copy_clicked && !context_menu_opened_this_frame {
-            if let Some(pass_name) = app.export_encode_pass_name.as_ref() {
-                app.shader_space.render_pass_by_name(pass_name.as_str());
+            if let Some(pass_name) = app.core.export_encode_pass_name.as_ref() {
+                app.core
+                    .shader_space
+                    .render_pass_by_name(pass_name.as_str());
             }
-            let export_tex = app.export_texture_name.as_str();
-            if let Some(info) = app.shader_space.texture_info(export_tex)
-                && let Ok(image) = app.shader_space.read_texture_rgba8(export_tex)
+            let export_tex = app.core.export_texture_name.as_str();
+            if let Some(info) = app.core.shader_space.texture_info(export_tex)
+                && let Ok(image) = app.core.shader_space.read_texture_rgba8(export_tex)
             {
                 ops::begin_clipboard_copy(
                     &mut app.canvas.async_ops,
@@ -900,6 +898,7 @@ pub fn show_canvas(
     let mut value_sample_cache = None;
     if app.canvas.viewport.zoom >= 48.0
         && let Some(info) = app
+            .core
             .shader_space
             .texture_info(display_frame.value_sampling_texture_name.as_str())
     {
@@ -941,14 +940,6 @@ pub fn show_canvas(
         value_sample_cache.as_deref(),
         render_state,
         renderer,
-    );
-
-    apply_action(
-        &mut frame_result,
-        app,
-        render_state,
-        renderer,
-        CanvasAction::BroadcastQueuedInteractions(pre_collected_payloads),
     );
 
     app.canvas.viewport.canvas_center_prev = Some(canvas_rect.center());
