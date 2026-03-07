@@ -19,7 +19,7 @@ pub struct ViewportFrame {
 }
 
 pub fn is_pan_zoom_animating(app: &App) -> bool {
-    app.animations.is_active(ANIM_KEY_PAN_ZOOM_FACTOR)
+    app.shell.animations.is_active(ANIM_KEY_PAN_ZOOM_FACTOR)
 }
 
 pub fn prepare_viewport(
@@ -60,7 +60,7 @@ pub fn prepare_viewport(
         app.canvas.viewport.pan_zoom_start_pan = app.canvas.viewport.pan;
         app.canvas.viewport.pan_zoom_target_zoom = target_zoom;
         app.canvas.viewport.pan_zoom_target_pan = target_pan;
-        app.animations.start(
+        app.shell.animations.start(
             ANIM_KEY_PAN_ZOOM_FACTOR,
             AnimationSpec {
                 from: 0.0f32,
@@ -72,7 +72,11 @@ pub fn prepare_viewport(
         );
     }
 
-    if let Some((factor, done)) = app.animations.sample_f32(ANIM_KEY_PAN_ZOOM_FACTOR, now) {
+    if let Some((factor, done)) = app
+        .shell
+        .animations
+        .sample_f32(ANIM_KEY_PAN_ZOOM_FACTOR, now)
+    {
         app.canvas.viewport.zoom = lerp(
             app.canvas.viewport.pan_zoom_start_zoom,
             app.canvas.viewport.pan_zoom_target_zoom,
