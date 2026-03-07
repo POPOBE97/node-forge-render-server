@@ -160,11 +160,11 @@ proptest! {
 
 // ---------------------------------------------------------------------------
 // Property 1 (Bug Condition): BUGGY ordering — step BEFORE fire_event
-// → event NOT consumed in that step, proving the race condition.
+// → event NOT consumed in that step.
 //
-// THIS TEST IS EXPECTED TO FAIL ON UNFIXED CODE.
-// The assertion encodes the DESIRED behavior (event consumed same frame),
-// which the buggy ordering cannot satisfy.
+// This is now a regression guard for the ordering contract. The app must
+// keep using the "fire before step" ordering validated above; this companion
+// test documents and verifies the incorrect behavior of the inverse ordering.
 // ---------------------------------------------------------------------------
 
 proptest! {
@@ -172,10 +172,6 @@ proptest! {
     ///
     /// For any interaction event name and frame dt, calling `step()` BEFORE
     /// `fire_event()` means the event is NOT consumed in that step.
-    ///
-    /// This test asserts the DESIRED behavior: that the event IS consumed
-    /// in the same frame. On unfixed code, this assertion FAILS — confirming
-    /// the bug exists.
     #[test]
     fn buggy_ordering_step_before_fire_event_loses_event(
         event_name in event_name_strategy(),
@@ -194,13 +190,10 @@ proptest! {
         let result = session.step(dt);
         session.fire_event(&event_name);
 
-        // Assert the DESIRED behavior: event should be consumed same frame.
-        // On UNFIXED code this WILL FAIL because step() already drained the
-        // empty pending_events before fire_event() queued anything.
         prop_assert_eq!(
-            result.current_state_id, "target",
-            "buggy ordering: event '{}' with dt={} was NOT consumed in same step \
-             (still at 'entry') — this confirms the race condition bug",
+            result.current_state_id, "entry",
+            "buggy ordering: event '{}' with dt={} should remain at 'entry' because \
+             step() drained the empty pending_events before fire_event() queued anything",
             event_name, dt
         );
     }
