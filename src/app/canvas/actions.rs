@@ -1,15 +1,14 @@
 use rust_wgpu_fiber::{ResourceName, eframe::egui};
 
-use crate::{
-    app::types::{AnalysisTab, DiffMetricMode},
-    protocol::InteractionEventPayload,
+use crate::app::{
+    frame::commands::AppCommand,
+    types::{AnalysisTab, DiffMetricMode},
 };
 
 #[derive(Clone, Debug)]
 pub enum CanvasAction {
     SetPreviewTexture(ResourceName),
     ClearPreviewTexture,
-    ToggleCanvasOnly,
     ToggleHdrClamp,
     TogglePause,
     ResetView,
@@ -46,10 +45,9 @@ pub enum CanvasAction {
     PollClipboardOp {
         now: f64,
     },
-    BroadcastQueuedInteractions(Vec<InteractionEventPayload>),
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CanvasFrameResult {
-    pub request_toggle_canvas_only: bool,
+    pub commands: Vec<AppCommand>,
 }
