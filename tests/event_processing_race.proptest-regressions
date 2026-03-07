@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 877c788a907a45e986291264bfeba0cf7ea5a8da44d89dfc3de0764b8999423c # shrinks to event_name = "mousedown", dt = 0.001
+cc c4a1173330072b2f41f79ad8ebd040a6cdb77b3e057a43a5b5f7e48db5f453ec # shrinks to event_name = "mousedown", dt = 0.001
