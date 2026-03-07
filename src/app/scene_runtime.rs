@@ -63,7 +63,7 @@ fn collect_graph_uniform_updates(
 }
 
 fn apply_graph_uniform_updates(app: &mut App, scene: &crate::dsl::SceneDSL) -> Result<usize> {
-    apply_graph_uniform_updates_inner(&mut app.passes, &mut app.shader_space, scene)
+    apply_graph_uniform_updates_inner(&mut app.core.passes, &mut app.core.shader_space, scene)
 }
 
 /// Public variant that accepts split borrows so callers in `mod.rs` can avoid
@@ -152,7 +152,7 @@ fn apply_uniform_node_param_updates(
 
 pub fn drain_latest_scene_update(app: &App) -> Option<ws::SceneUpdate> {
     let mut latest: Option<ws::SceneUpdate> = None;
-    while let Ok(update) = app.scene_rx.try_recv() {
+    while let Ok(update) = app.runtime.scene_rx.try_recv() {
         latest = Some(update);
     }
     latest
@@ -192,7 +192,7 @@ pub fn apply_scene_update(
             updated_nodes,
             request_id,
         } => {
-            let scene = match app.last_good.lock() {
+            let scene = match app.runtime.last_good.lock() {
                 Ok(mut guard) => guard.take(),
                 Err(_) => None,
             };
@@ -210,7 +210,7 @@ pub fn apply_scene_update(
                 };
             };
 
-            let mut cached_uniform_scene = app.uniform_scene.take();
+            let mut cached_uniform_scene = app.runtime.uniform_scene.take();
             let update_result = (|| -> Result<crate::dsl::SceneDSL> {
                 apply_uniform_node_param_updates(&mut scene, &updated_nodes, false)?;
 
@@ -229,7 +229,7 @@ pub fn apply_scene_update(
             let scene_ref_desired = scene_reference_desired_source(&scene);
             let scene_ref_alpha_mode = scene_reference_image_alpha_mode(&scene);
 
-            if let Ok(mut guard) = app.last_good.lock() {
+            if let Ok(mut guard) = app.runtime.last_good.lock() {
                 *guard = Some(scene);
             }
 
@@ -240,9 +240,10 @@ pub fn apply_scene_update(
                     if let Some(alpha_mode) = scene_ref_alpha_mode {
                         app.canvas.reference.alpha_mode = alpha_mode;
                     }
-                    app.scene_uses_time = scene_uses_time(&uniform_scene);
-                    app.uniform_scene = Some(uniform_scene);
-                    app.uniform_only_update_count = app.uniform_only_update_count.saturating_add(1);
+                    app.runtime.scene_uses_time = scene_uses_time(&uniform_scene);
+                    app.runtime.uniform_scene = Some(uniform_scene);
+                    app.runtime.uniform_only_update_count =
+                        app.runtime.uniform_only_update_count.saturating_add(1);
                     SceneApplyResult {
                         did_rebuild_shader_space: false,
                         texture_filter_override: None,
@@ -255,8 +256,8 @@ pub fn apply_scene_update(
                     if let Some(alpha_mode) = scene_ref_alpha_mode {
                         app.canvas.reference.alpha_mode = alpha_mode;
                     }
-                    app.scene_uses_time = false;
-                    app.uniform_scene = None;
+                    app.runtime.scene_uses_time = false;
+                    app.runtime.uniform_scene = None;
                     let message = format!("uniform-only update failed: {e:#}");
                     eprintln!("[scene-runtime] {message}");
                     broadcast_error(app, request_id, "UNIFORM_UPDATE_FAILED", message);
@@ -280,11 +281,11 @@ pub fn apply_scene_update(
             }
             let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
-                app.window_resolution,
+                app.core.window_resolution,
                 crate::dsl::screen_resolution(&scene),
-                app.follow_scene_resolution_for_window,
+                app.runtime.follow_scene_resolution_for_window,
             );
-            app.window_resolution = next_window_resolution;
+            app.core.window_resolution = next_window_resolution;
 
             if let Some([w, h]) = maybe_resize {
                 let size = egui::vec2(w, h);
@@ -301,20 +302,23 @@ pub fn apply_scene_update(
                 let next_pipeline_signature =
                     renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
                         &prepared_for_fast_path.scene,
-                        &app.passes,
+                        &app.core.passes,
                     );
-                if choose_scene_update_mode(app.last_pipeline_signature, next_pipeline_signature)
-                    == SceneUpdateMode::UniformOnly
+                if choose_scene_update_mode(
+                    app.runtime.last_pipeline_signature,
+                    next_pipeline_signature,
+                ) == SceneUpdateMode::UniformOnly
                 {
                     match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
                         Ok(_updated_count) => {
-                            app.last_pipeline_signature = Some(next_pipeline_signature);
-                            app.scene_uses_time = scene_uses_time(&prepared_for_fast_path.scene);
-                            app.uniform_scene = prepared_scene_candidate;
-                            app.animation_session = next_animation_session.clone();
-                            app.uniform_only_update_count =
-                                app.uniform_only_update_count.saturating_add(1);
-                            if let Ok(mut g) = app.last_good.lock() {
+                            app.runtime.last_pipeline_signature = Some(next_pipeline_signature);
+                            app.runtime.scene_uses_time =
+                                scene_uses_time(&prepared_for_fast_path.scene);
+                            app.runtime.uniform_scene = prepared_scene_candidate;
+                            app.runtime.animation_session = next_animation_session.clone();
+                            app.runtime.uniform_only_update_count =
+                                app.runtime.uniform_only_update_count.saturating_add(1);
+                            if let Ok(mut g) = app.runtime.last_good.lock() {
                                 *g = Some(scene);
                             }
                             return SceneApplyResult {
@@ -342,28 +346,33 @@ pub fn apply_scene_update(
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
                 })
-                .with_asset_store(app.asset_store.clone())
+                .with_asset_store(app.core.asset_store.clone())
                 .build(&scene)
             }));
 
             match build_result {
                 Ok(Ok(result)) => {
-                    app.shader_space = result.shader_space;
-                    app.resolution = result.resolution;
-                    app.passes = result.pass_bindings;
-                    app.output_texture_name = result.present_output_texture;
-                    app.scene_output_texture_name = result.scene_output_texture;
-                    app.export_texture_name = result.export_output_texture;
-                    app.export_encode_pass_name = result.export_encode_pass_name;
-                    app.last_pipeline_signature = Some(result.pipeline_signature);
-                    app.uniform_scene = prepared_scene_candidate
+                    app.core.shader_space = result.shader_space;
+                    app.core.resolution = result.resolution;
+                    app.core.passes = result.pass_bindings;
+                    app.core.output_texture_name = result.present_output_texture;
+                    app.core.scene_output_texture_name = result.scene_output_texture;
+                    app.core.export_texture_name = result.export_output_texture;
+                    app.core.export_encode_pass_name = result.export_encode_pass_name;
+                    app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
+                    app.runtime.uniform_scene = prepared_scene_candidate
                         .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
-                    app.scene_uses_time = app.uniform_scene.as_ref().is_some_and(scene_uses_time);
-                    app.pipeline_rebuild_count = app.pipeline_rebuild_count.saturating_add(1);
+                    app.runtime.scene_uses_time = app
+                        .runtime
+                        .uniform_scene
+                        .as_ref()
+                        .is_some_and(scene_uses_time);
+                    app.runtime.pipeline_rebuild_count =
+                        app.runtime.pipeline_rebuild_count.saturating_add(1);
 
-                    app.animation_session = next_animation_session;
+                    app.runtime.animation_session = next_animation_session;
 
-                    if let Ok(mut g) = app.last_good.lock() {
+                    if let Ok(mut g) = app.runtime.last_good.lock() {
                         *g = Some(scene);
                     }
 
@@ -376,9 +385,9 @@ pub fn apply_scene_update(
                 Ok(Err(e)) => {
                     let message = format!("{e:#}");
                     eprintln!("[error-plane] scene build failed: {message}");
-                    app.scene_uses_time = scene_uses_time(&scene);
-                    app.uniform_scene = None;
-                    app.animation_session = None;
+                    app.runtime.scene_uses_time = scene_uses_time(&scene);
+                    app.runtime.uniform_scene = None;
+                    app.runtime.animation_session = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -397,9 +406,9 @@ pub fn apply_scene_update(
                     };
                     let message = format!("scene build panicked; showing error plane: {panic_msg}");
                     eprintln!("{message}");
-                    app.scene_uses_time = scene_uses_time(&scene);
-                    app.uniform_scene = None;
-                    app.animation_session = None;
+                    app.runtime.scene_uses_time = scene_uses_time(&scene);
+                    app.runtime.uniform_scene = None;
+                    app.runtime.animation_session = None;
                     broadcast_error(app, request_id, "PANIC", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -417,7 +426,7 @@ pub fn apply_scene_update(
             eprintln!("[error-plane] scene parse error: {message}");
             app.canvas.reference.scene_desired = None;
             app.canvas.reference.scene_alpha_mode = None;
-            app.scene_uses_time = false;
+            app.runtime.scene_uses_time = false;
             broadcast_error(app, request_id, "PARSE_ERROR", message);
             apply_error_plane(app, render_state);
             SceneApplyResult {
@@ -429,54 +438,54 @@ pub fn apply_scene_update(
         ws::SceneUpdate::AnimationControl { action } => {
             match action {
                 ws::AnimationControlAction::Play => {
-                    if !app.animation_playing {
-                        app.animation_playing = true;
+                    if !app.runtime.animation_playing {
+                        app.runtime.animation_playing = true;
                         eprintln!("[animation] play");
 
                         // Reset the animation session so the state machine
                         // starts from the initial state every time.
-                        if let Some(session) = app.animation_session.as_mut() {
+                        if let Some(session) = app.runtime.animation_session.as_mut() {
                             let restores = session.reset();
                             if !restores.is_empty() {
-                                if let Some(ref mut uniform_scene) = app.uniform_scene {
+                                if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
                                     crate::state_machine::apply_overrides(uniform_scene, &restores);
                                 }
                             }
                         }
-                        if let Some(ref uniform_scene) = app.uniform_scene {
+                        if let Some(ref uniform_scene) = app.runtime.uniform_scene {
                             let _ = apply_graph_uniform_updates_parts(
-                                &mut app.passes,
-                                &mut app.shader_space,
+                                &mut app.core.passes,
+                                &mut app.core.shader_space,
                                 uniform_scene,
                             );
                         }
-                        app.time_value_secs = 0.0;
-                        app.scene_redraw_pending = true;
+                        app.runtime.time_value_secs = 0.0;
+                        app.runtime.scene_redraw_pending = true;
                     }
                 }
                 ws::AnimationControlAction::Stop => {
-                    if app.animation_playing {
-                        app.animation_playing = false;
+                    if app.runtime.animation_playing {
+                        app.runtime.animation_playing = false;
                         eprintln!("[animation] stop");
 
                         // Reset the animation session and restore base values.
-                        if let Some(session) = app.animation_session.as_mut() {
+                        if let Some(session) = app.runtime.animation_session.as_mut() {
                             let restores = session.reset();
                             if !restores.is_empty() {
-                                if let Some(ref mut uniform_scene) = app.uniform_scene {
+                                if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
                                     crate::state_machine::apply_overrides(uniform_scene, &restores);
                                 }
                             }
                         }
-                        if let Some(ref uniform_scene) = app.uniform_scene {
+                        if let Some(ref uniform_scene) = app.runtime.uniform_scene {
                             let _ = apply_graph_uniform_updates_parts(
-                                &mut app.passes,
-                                &mut app.shader_space,
+                                &mut app.core.passes,
+                                &mut app.core.shader_space,
                                 uniform_scene,
                             );
                         }
-                        app.time_value_secs = 0.0;
-                        app.scene_redraw_pending = true;
+                        app.runtime.time_value_secs = 0.0;
+                        app.runtime.scene_redraw_pending = true;
                     }
                 }
             }
@@ -495,16 +504,16 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         Arc::new(render_state.queue.clone()),
     )
     .with_adapter(render_state.adapter.clone())
-    .build_error(app.resolution)
+    .build_error(app.core.resolution)
     {
-        app.shader_space = result.shader_space;
-        app.resolution = result.resolution;
-        app.output_texture_name = result.present_output_texture;
-        app.scene_output_texture_name = result.scene_output_texture;
-        app.export_texture_name = result.export_output_texture;
-        app.export_encode_pass_name = result.export_encode_pass_name;
-        app.passes = result.pass_bindings;
-        app.last_pipeline_signature = None;
+        app.core.shader_space = result.shader_space;
+        app.core.resolution = result.resolution;
+        app.core.output_texture_name = result.present_output_texture;
+        app.core.scene_output_texture_name = result.scene_output_texture;
+        app.core.export_texture_name = result.export_output_texture;
+        app.core.export_encode_pass_name = result.export_encode_pass_name;
+        app.core.passes = result.pass_bindings;
+        app.runtime.last_pipeline_signature = None;
     }
 }
 
@@ -519,7 +528,7 @@ fn broadcast_error(app: &App, request_id: Option<String>, code: &str, message: S
         }),
     };
     if let Ok(text) = serde_json::to_string(&msg) {
-        app.ws_hub.broadcast(text);
+        app.core.ws_hub.broadcast(text);
     }
 }
 
