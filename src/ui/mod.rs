@@ -10,6 +10,7 @@ pub mod hdr_clamp;
 pub mod histogram;
 pub mod parade;
 pub mod resource_tree;
+pub mod state_machine_panel;
 pub mod typography;
 pub mod vectorscope;
 pub mod viewport_indicators;

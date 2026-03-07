@@ -6,8 +6,7 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 use crate::{protocol, renderer, ws};
 
 use super::types::{
-    App, scene_reference_image_alpha_mode, scene_reference_image_asset_id,
-    scene_reference_image_data_url, scene_reference_image_path, scene_uses_time,
+    App, scene_reference_desired_source, scene_reference_image_alpha_mode, scene_uses_time,
 };
 
 pub struct SceneApplyResult {
@@ -227,9 +226,7 @@ pub fn apply_scene_update(
                 let _ = apply_graph_uniform_updates(app, &uniform_scene)?;
                 Ok(uniform_scene)
             })();
-            let scene_ref_path = scene_reference_image_path(&scene);
-            let scene_ref_data_url = scene_reference_image_data_url(&scene);
-            let scene_ref_asset_id = scene_reference_image_asset_id(&scene);
+            let scene_ref_desired = scene_reference_desired_source(&scene);
             let scene_ref_alpha_mode = scene_reference_image_alpha_mode(&scene);
 
             if let Ok(mut guard) = app.last_good.lock() {
@@ -238,12 +235,10 @@ pub fn apply_scene_update(
 
             match update_result {
                 Ok(uniform_scene) => {
-                    app.scene_reference_image_path = scene_ref_path;
-                    app.scene_reference_image_data_url = scene_ref_data_url;
-                    app.scene_reference_image_asset_id = scene_ref_asset_id;
-                    app.scene_reference_image_alpha_mode = scene_ref_alpha_mode;
+                    app.canvas.reference.scene_desired = scene_ref_desired.clone();
+                    app.canvas.reference.scene_alpha_mode = scene_ref_alpha_mode;
                     if let Some(alpha_mode) = scene_ref_alpha_mode {
-                        app.reference_alpha_mode = alpha_mode;
+                        app.canvas.reference.alpha_mode = alpha_mode;
                     }
                     app.scene_uses_time = scene_uses_time(&uniform_scene);
                     app.uniform_scene = Some(uniform_scene);
@@ -255,12 +250,10 @@ pub fn apply_scene_update(
                     }
                 }
                 Err(e) => {
-                    app.scene_reference_image_path = scene_ref_path;
-                    app.scene_reference_image_data_url = scene_ref_data_url;
-                    app.scene_reference_image_asset_id = scene_ref_asset_id;
-                    app.scene_reference_image_alpha_mode = scene_ref_alpha_mode;
+                    app.canvas.reference.scene_desired = scene_ref_desired;
+                    app.canvas.reference.scene_alpha_mode = scene_ref_alpha_mode;
                     if let Some(alpha_mode) = scene_ref_alpha_mode {
-                        app.reference_alpha_mode = alpha_mode;
+                        app.canvas.reference.alpha_mode = alpha_mode;
                     }
                     app.scene_uses_time = false;
                     app.uniform_scene = None;
@@ -280,12 +273,10 @@ pub fn apply_scene_update(
             request_id,
             source,
         } => {
-            app.scene_reference_image_path = scene_reference_image_path(&scene);
-            app.scene_reference_image_data_url = scene_reference_image_data_url(&scene);
-            app.scene_reference_image_asset_id = scene_reference_image_asset_id(&scene);
-            app.scene_reference_image_alpha_mode = scene_reference_image_alpha_mode(&scene);
-            if let Some(alpha_mode) = app.scene_reference_image_alpha_mode {
-                app.reference_alpha_mode = alpha_mode;
+            app.canvas.reference.scene_desired = scene_reference_desired_source(&scene);
+            app.canvas.reference.scene_alpha_mode = scene_reference_image_alpha_mode(&scene);
+            if let Some(alpha_mode) = app.canvas.reference.scene_alpha_mode {
+                app.canvas.reference.alpha_mode = alpha_mode;
             }
             let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
@@ -424,10 +415,8 @@ pub fn apply_scene_update(
             request_id,
         } => {
             eprintln!("[error-plane] scene parse error: {message}");
-            app.scene_reference_image_path = None;
-            app.scene_reference_image_data_url = None;
-            app.scene_reference_image_asset_id = None;
-            app.scene_reference_image_alpha_mode = None;
+            app.canvas.reference.scene_desired = None;
+            app.canvas.reference.scene_alpha_mode = None;
             app.scene_uses_time = false;
             broadcast_error(app, request_id, "PARSE_ERROR", message);
             apply_error_plane(app, render_state);
@@ -450,10 +439,7 @@ pub fn apply_scene_update(
                             let restores = session.reset();
                             if !restores.is_empty() {
                                 if let Some(ref mut uniform_scene) = app.uniform_scene {
-                                    crate::state_machine::apply_overrides(
-                                        uniform_scene,
-                                        &restores,
-                                    );
+                                    crate::state_machine::apply_overrides(uniform_scene, &restores);
                                 }
                             }
                         }

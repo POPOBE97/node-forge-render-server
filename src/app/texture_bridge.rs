@@ -43,7 +43,7 @@ pub fn sync_output_texture(
         .get(texture_name.as_str())
         .unwrap_or_else(|| panic!("output texture not found: {}", texture_name));
 
-    if let Some(id) = app.color_attachment {
+    if let Some(id) = app.canvas.display.color_attachment {
         renderer.update_egui_texture_from_wgpu_texture_with_sampler_options(
             &render_state.device,
             texture.wgpu_texture_view.as_ref().unwrap(),
@@ -51,11 +51,12 @@ pub fn sync_output_texture(
             id,
         );
     } else {
-        app.color_attachment = Some(renderer.register_native_texture_with_sampler_options(
-            &render_state.device,
-            texture.wgpu_texture_view.as_ref().unwrap(),
-            canvas_sampler_descriptor(filter),
-        ));
+        app.canvas.display.color_attachment =
+            Some(renderer.register_native_texture_with_sampler_options(
+                &render_state.device,
+                texture.wgpu_texture_view.as_ref().unwrap(),
+                canvas_sampler_descriptor(filter),
+            ));
     }
 }
 
@@ -64,7 +65,7 @@ pub fn ensure_output_texture_registered(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
 ) {
-    if app.color_attachment.is_none() {
+    if app.canvas.display.color_attachment.is_none() {
         let name = app.output_texture_name.clone();
         sync_output_texture(app, render_state, renderer, &name, wgpu::FilterMode::Linear);
     }
@@ -87,7 +88,7 @@ pub fn sync_preview_texture(
         None => return,
     };
 
-    if let Some(id) = app.preview_color_attachment {
+    if let Some(id) = app.canvas.display.preview_color_attachment {
         renderer.update_egui_texture_from_wgpu_texture_with_sampler_options(
             &render_state.device,
             view,
@@ -95,11 +96,12 @@ pub fn sync_preview_texture(
             id,
         );
     } else {
-        app.preview_color_attachment = Some(renderer.register_native_texture_with_sampler_options(
-            &render_state.device,
-            view,
-            canvas_sampler_descriptor(filter),
-        ));
+        app.canvas.display.preview_color_attachment =
+            Some(renderer.register_native_texture_with_sampler_options(
+                &render_state.device,
+                view,
+                canvas_sampler_descriptor(filter),
+            ));
     }
 }
 

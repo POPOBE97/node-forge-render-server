@@ -1,4 +1,4 @@
-mod canvas_controller;
+mod canvas;
 mod interaction_report;
 mod layout_math;
 mod scene_runtime;
@@ -75,50 +75,6 @@ fn clipping_request_key(source_key: u64, settings: ClippingSettings, enabled: bo
     ))
 }
 
-fn apply_analysis_tab_change(
-    analysis_tab: &mut AnalysisTab,
-    analysis_dirty: &mut bool,
-    clipping_dirty: &mut bool,
-    next_tab: AnalysisTab,
-) {
-    if *analysis_tab != next_tab {
-        *analysis_tab = next_tab;
-        *analysis_dirty = true;
-        *clipping_dirty = true;
-    }
-}
-
-fn apply_clip_enabled_change(clip_enabled: &mut bool, clipping_dirty: &mut bool, enabled: bool) {
-    if *clip_enabled != enabled {
-        *clip_enabled = enabled;
-        *clipping_dirty = true;
-    }
-}
-
-fn apply_clipping_shadow_threshold_change(
-    clipping_settings: &mut ClippingSettings,
-    clipping_dirty: &mut bool,
-    threshold: f32,
-) {
-    let threshold = threshold.clamp(0.0, 1.0);
-    if (clipping_settings.shadow_threshold - threshold).abs() > f32::EPSILON {
-        clipping_settings.shadow_threshold = threshold;
-        *clipping_dirty = true;
-    }
-}
-
-fn apply_clipping_highlight_threshold_change(
-    clipping_settings: &mut ClippingSettings,
-    clipping_dirty: &mut bool,
-    threshold: f32,
-) {
-    let threshold = threshold.clamp(0.0, 1.0);
-    if (clipping_settings.highlight_threshold - threshold).abs() > f32::EPSILON {
-        clipping_settings.highlight_threshold = threshold;
-        *clipping_dirty = true;
-    }
-}
-
 fn should_request_immediate_repaint(
     time_driven_scene: bool,
     sidebar_animating: bool,
@@ -139,10 +95,14 @@ fn broadcast_state_interaction_event(
     state_id: &str,
     transition_id: Option<&str>,
 ) {
-    app.interaction_event_seq = app.interaction_event_seq.saturating_add(1);
+    app.canvas.interactions.interaction_event_seq = app
+        .canvas
+        .interactions
+        .interaction_event_seq
+        .saturating_add(1);
     let payload = protocol::InteractionEventPayload {
         event_type: event_type.to_string(),
-        seq: app.interaction_event_seq,
+        seq: app.canvas.interactions.interaction_event_seq,
         data: Some(protocol::InteractionEventData {
             state: Some(protocol::InteractionStateData {
                 state_id: state_id.to_string(),
@@ -167,7 +127,11 @@ fn sync_animation_state_interaction_events(
     current_state_id: Option<&str>,
     transition_id: Option<&str>,
 ) {
-    let previous_state_id = app.last_synced_animation_state_id.clone();
+    let previous_state_id = app
+        .canvas
+        .interactions
+        .last_synced_animation_state_id
+        .clone();
     if previous_state_id.as_deref() == current_state_id {
         return;
     }
@@ -179,7 +143,7 @@ fn sync_animation_state_interaction_events(
         broadcast_state_interaction_event(app, "stateenter", curr, transition_id);
     }
 
-    app.last_synced_animation_state_id = current_state_id.map(str::to_string);
+    app.canvas.interactions.last_synced_animation_state_id = current_state_id.map(str::to_string);
 }
 
 impl eframe::App for App {
@@ -218,14 +182,11 @@ impl eframe::App for App {
         if let Some(update) = scene_runtime::drain_latest_scene_update(self) {
             let apply_result = scene_runtime::apply_scene_update(self, ctx, render_state, update);
             self.scene_redraw_pending = true;
-            self.diff_dirty = true;
-            self.analysis_dirty = true;
-            self.clipping_dirty = true;
-            self.pixel_overlay_dirty = true;
+            self.canvas.invalidation.preview_source_changed();
             if apply_result.did_rebuild_shader_space {
                 let filter = apply_result
                     .texture_filter_override
-                    .unwrap_or(self.texture_filter);
+                    .unwrap_or(self.canvas.display.texture_filter);
                 let texture_name = self.output_texture_name.clone();
                 texture_bridge::sync_output_texture(
                     self,
@@ -237,20 +198,22 @@ impl eframe::App for App {
                 did_rebuild_shader_space = true;
             }
             if apply_result.reset_viewport {
-                self.pending_view_reset = true;
+                self.canvas.viewport.pending_view_reset = true;
             }
         }
 
-        canvas_controller::sync_reference_image_from_scene(
-            self,
-            ctx,
-            render_state,
-            &mut renderer_guard,
-        );
+        canvas::sync_reference_from_scene(self, ctx, render_state);
 
         let raw_t = self.start.elapsed().as_secs_f32();
         let delta_t = (raw_t - self.time_last_raw_secs).max(0.0);
         self.time_last_raw_secs = raw_t;
+
+        // ── Early interaction-event collection ──────────────────────────
+        // Collect canvas interaction events and queue them into
+        // `pending_events` BEFORE `session.step()` runs, so that
+        // interaction-triggered state-machine transitions are processed
+        // in the same frame the input arrives.
+        let early_interaction_payloads = canvas::collect_interaction_events(self, ctx);
 
         // ── Animation session tick (fixed-step, deterministic) ─────────
         let effective_dt = if self.time_updates_enabled && self.animation_playing {
@@ -293,6 +256,24 @@ impl eframe::App for App {
             }
             // Unified clock: fixed-step scene time drives params.time.
             self.time_value_secs = step.scene_time_secs as f32;
+
+            // Cache dynamic data from the step for the state machine panel.
+            self.canvas.interactions.cached_state_local_times =
+                step.state_local_times.into_iter().collect();
+            self.canvas.interactions.cached_transition_blend = step.transition_blend;
+            self.canvas.interactions.cached_override_values = step
+                .active_overrides
+                .iter()
+                .map(|(k, v)| {
+                    let key = format!("{}:{}", k.node_id, k.param_name);
+                    let val = ui::state_machine_panel::format_json_value_2dp(v);
+                    (key, val)
+                })
+                .collect();
+            self.canvas
+                .interactions
+                .cached_override_values
+                .sort_by(|a, b| a.0.cmp(&b.0));
         } else {
             // No animation session — advance time with wall-clock as before.
             if self.time_updates_enabled {
@@ -319,12 +300,12 @@ impl eframe::App for App {
             }
 
             if time_driven_scene || animation_values_changed {
-                if self.ref_image.is_some() {
-                    self.diff_dirty = true;
+                if self.canvas.reference.ref_image.is_some() {
+                    self.canvas.invalidation.mark_diff_dirty();
                 }
-                self.analysis_dirty = true;
-                self.clipping_dirty = true;
-                self.pixel_overlay_dirty = true;
+                self.canvas.invalidation.mark_analysis_dirty();
+                self.canvas.invalidation.mark_clipping_dirty();
+                self.canvas.invalidation.mark_pixel_overlay_dirty();
             }
 
             self.shader_space.render();
@@ -337,7 +318,7 @@ impl eframe::App for App {
 
         let output_texture_name = self.output_texture_name.as_str();
         let (display_texture_name, display_texture) =
-            if let Some(preview_name) = self.preview_texture_name.as_ref() {
+            if let Some(preview_name) = self.canvas.display.preview_texture_name.as_ref() {
                 if let Some(texture) = self.shader_space.textures.get(preview_name.as_str()) {
                     (preview_name.as_str(), Some(texture))
                 } else {
@@ -372,7 +353,7 @@ impl eframe::App for App {
         let mut computed_diff_stats = None;
         let mut did_update_diff_output = false;
 
-        if let Some(reference) = self.ref_image.as_ref()
+        if let Some(reference) = self.canvas.reference.ref_image.as_ref()
             && let Some(source) = display_source.as_ref()
             && let Some(source_key) = compare_source_key
         {
@@ -386,36 +367,39 @@ impl eframe::App for App {
                 reference.texture_format,
             );
             let needs_recreate = self
+                .canvas
+                .analysis
                 .diff_renderer
                 .as_ref()
                 .map(|r| r.output_size() != source.size || r.output_format() != diff_output_format)
                 .unwrap_or(true);
             if needs_recreate {
-                self.diff_renderer = Some(ui::diff_renderer::DiffRenderer::new(
+                self.canvas.analysis.diff_renderer = Some(ui::diff_renderer::DiffRenderer::new(
                     &render_state.device,
                     source.size,
                     diff_output_format,
                 ));
             }
 
-            if let Some(diff_renderer) = self.diff_renderer.as_mut() {
+            if let Some(diff_renderer) = self.canvas.analysis.diff_renderer.as_mut() {
                 let request_key = diff_request_key(
                     source_key,
                     reference.size,
                     reference_offset,
                     reference_mode,
                     reference.opacity.to_bits(),
-                    self.diff_metric_mode,
-                    self.hdr_preview_clamp_enabled,
+                    self.canvas.analysis.diff_metric_mode,
+                    self.canvas.display.hdr_preview_clamp_enabled,
                 );
                 let stats_key = diff_stats_request_key(request_key);
                 let collect_stats = matches!(reference_mode, RefImageMode::Diff);
-                let should_update_diff = self.diff_dirty
+                let should_update_diff = self.canvas.invalidation.diff_dirty()
                     || should_redraw_scene
                     || needs_recreate
-                    || self.diff_texture_id.is_none()
-                    || self.last_diff_request_key != Some(request_key)
-                    || (collect_stats && self.last_diff_stats_request_key != Some(stats_key));
+                    || self.canvas.analysis.diff_texture_id.is_none()
+                    || self.canvas.analysis.last_diff_request_key != Some(request_key)
+                    || (collect_stats
+                        && self.canvas.analysis.last_diff_stats_request_key != Some(stats_key));
 
                 if should_update_diff {
                     let diff_stats = diff_renderer.update(
@@ -428,25 +412,26 @@ impl eframe::App for App {
                         reference_offset,
                         reference_mode,
                         reference.opacity,
-                        self.diff_metric_mode,
-                        self.hdr_preview_clamp_enabled,
+                        self.canvas.analysis.diff_metric_mode,
+                        self.canvas.display.hdr_preview_clamp_enabled,
                         collect_stats,
                     );
                     did_update_diff_output = true;
-                    self.last_diff_request_key = Some(request_key);
+                    self.canvas.analysis.last_diff_request_key = Some(request_key);
                     if collect_stats {
-                        self.last_diff_stats_request_key = Some(stats_key);
+                        self.canvas.analysis.last_diff_stats_request_key = Some(stats_key);
                         computed_diff_stats = diff_stats;
                     } else {
-                        self.last_diff_stats_request_key = None;
+                        self.canvas.analysis.last_diff_stats_request_key = None;
                     }
                 }
 
                 if did_update_diff_output {
-                    let mut sampler = texture_bridge::diff_sampler_descriptor(self.texture_filter);
+                    let mut sampler =
+                        texture_bridge::diff_sampler_descriptor(self.canvas.display.texture_filter);
                     sampler.label = Some("sys.diff.sampler");
 
-                    if let Some(id) = self.diff_texture_id {
+                    if let Some(id) = self.canvas.analysis.diff_texture_id {
                         renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
                             &render_state.device,
                             diff_renderer.output_view(),
@@ -454,23 +439,23 @@ impl eframe::App for App {
                             id,
                         );
                     } else {
-                        self.diff_texture_id =
+                        self.canvas.analysis.diff_texture_id =
                             Some(renderer_guard.register_native_texture_with_sampler_options(
                                 &render_state.device,
                                 diff_renderer.output_view(),
                                 sampler,
                             ));
                     }
-                    self.diff_dirty = false;
+                    self.canvas.invalidation.clear_diff();
                 }
             }
         }
 
         let mut analysis_source = display_source;
         if matches!(
-            self.ref_image.as_ref().map(|r| r.mode),
+            self.canvas.reference.ref_image.as_ref().map(|r| r.mode),
             Some(RefImageMode::Diff)
-        ) && let Some(diff_renderer) = self.diff_renderer.as_ref()
+        ) && let Some(diff_renderer) = self.canvas.analysis.diff_renderer.as_ref()
         {
             analysis_source = Some(AnalysisSourceDomain {
                 texture_name: "sys.diff.analysis",
@@ -478,41 +463,42 @@ impl eframe::App for App {
                 size: diff_renderer.analysis_output_size(),
                 format: diff_renderer.output_format(),
             });
-            self.analysis_source_is_diff = true;
+            self.canvas.analysis.analysis_source_is_diff = true;
         } else {
-            self.analysis_source_is_diff = false;
+            self.canvas.analysis.analysis_source_is_diff = false;
         }
         let analysis_source_key = analysis_source.as_ref().map(|source| {
             let base_key = analysis_source_request_key(source);
-            if self.analysis_source_is_diff {
-                hash_key(&(base_key, self.last_diff_request_key))
+            if self.canvas.analysis.analysis_source_is_diff {
+                hash_key(&(base_key, self.canvas.analysis.last_diff_request_key))
             } else {
                 base_key
             }
         });
-        self.analysis_source_key = analysis_source_key;
+        self.canvas.analysis.analysis_source_key = analysis_source_key;
 
         if computed_diff_stats.is_some() {
-            self.diff_stats = computed_diff_stats;
+            self.canvas.analysis.diff_stats = computed_diff_stats;
         } else if !matches!(
-            self.ref_image.as_ref().map(|r| r.mode),
+            self.canvas.reference.ref_image.as_ref().map(|r| r.mode),
             Some(RefImageMode::Diff)
         ) {
-            self.diff_stats = None;
-            self.last_diff_stats_request_key = None;
+            self.canvas.analysis.diff_stats = None;
+            self.canvas.analysis.last_diff_stats_request_key = None;
         }
 
-        if self.histogram_renderer.is_none() {
-            self.histogram_renderer =
+        if self.canvas.analysis.histogram_renderer.is_none() {
+            self.canvas.analysis.histogram_renderer =
                 Some(ui::histogram::HistogramRenderer::new(&render_state.device));
         }
-        if self.parade_renderer.is_none() {
-            self.parade_renderer = Some(ui::parade::ParadeRenderer::new(&render_state.device));
+        if self.canvas.analysis.parade_renderer.is_none() {
+            self.canvas.analysis.parade_renderer =
+                Some(ui::parade::ParadeRenderer::new(&render_state.device));
         }
-        if self.vectorscope_renderer.is_none() {
-            self.vectorscope_renderer = Some(ui::vectorscope::VectorscopeRenderer::new(
-                &render_state.device,
-            ));
+        if self.canvas.analysis.vectorscope_renderer.is_none() {
+            self.canvas.analysis.vectorscope_renderer = Some(
+                ui::vectorscope::VectorscopeRenderer::new(&render_state.device),
+            );
         }
 
         let mut did_update_active_analysis = false;
@@ -521,14 +507,15 @@ impl eframe::App for App {
         if let Some(source) = analysis_source.as_ref()
             && let Some(source_key) = analysis_source_key
         {
-            match self.analysis_tab {
+            match self.canvas.analysis.analysis_tab {
                 AnalysisTab::Histogram => {
                     let request_key = histogram_request_key(source_key);
-                    let should_update = self.analysis_dirty
-                        || self.histogram_texture_id.is_none()
-                        || self.last_histogram_request_key != Some(request_key);
+                    let should_update = self.canvas.invalidation.analysis_dirty()
+                        || self.canvas.analysis.histogram_texture_id.is_none()
+                        || self.canvas.analysis.last_histogram_request_key != Some(request_key);
                     if should_update
-                        && let Some(histogram_renderer) = self.histogram_renderer.as_ref()
+                        && let Some(histogram_renderer) =
+                            self.canvas.analysis.histogram_renderer.as_ref()
                     {
                         histogram_renderer.update(
                             &render_state.device,
@@ -547,7 +534,7 @@ impl eframe::App for App {
                             ..Default::default()
                         };
 
-                        if let Some(id) = self.histogram_texture_id {
+                        if let Some(id) = self.canvas.analysis.histogram_texture_id {
                             renderer_guard
                                 .update_egui_texture_from_wgpu_texture_with_sampler_options(
                                     &render_state.device,
@@ -556,23 +543,25 @@ impl eframe::App for App {
                                     id,
                                 );
                         } else {
-                            self.histogram_texture_id =
+                            self.canvas.analysis.histogram_texture_id =
                                 Some(renderer_guard.register_native_texture_with_sampler_options(
                                     &render_state.device,
                                     histogram_renderer.output_view(),
                                     sampler,
                                 ));
                         }
-                        self.last_histogram_request_key = Some(request_key);
+                        self.canvas.analysis.last_histogram_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
                 AnalysisTab::Parade => {
                     let request_key = parade_request_key(source_key);
-                    let should_update = self.analysis_dirty
-                        || self.parade_texture_id.is_none()
-                        || self.last_parade_request_key != Some(request_key);
-                    if should_update && let Some(parade_renderer) = self.parade_renderer.as_ref() {
+                    let should_update = self.canvas.invalidation.analysis_dirty()
+                        || self.canvas.analysis.parade_texture_id.is_none()
+                        || self.canvas.analysis.last_parade_request_key != Some(request_key);
+                    if should_update
+                        && let Some(parade_renderer) = self.canvas.analysis.parade_renderer.as_ref()
+                    {
                         parade_renderer.update(
                             &render_state.device,
                             self.shader_space.queue.as_ref(),
@@ -589,7 +578,7 @@ impl eframe::App for App {
                             min_filter: wgpu::FilterMode::Nearest,
                             ..Default::default()
                         };
-                        if let Some(id) = self.parade_texture_id {
+                        if let Some(id) = self.canvas.analysis.parade_texture_id {
                             renderer_guard
                                 .update_egui_texture_from_wgpu_texture_with_sampler_options(
                                     &render_state.device,
@@ -598,24 +587,25 @@ impl eframe::App for App {
                                     id,
                                 );
                         } else {
-                            self.parade_texture_id =
+                            self.canvas.analysis.parade_texture_id =
                                 Some(renderer_guard.register_native_texture_with_sampler_options(
                                     &render_state.device,
                                     parade_renderer.parade_output_view(),
                                     parade_sampler,
                                 ));
                         }
-                        self.last_parade_request_key = Some(request_key);
+                        self.canvas.analysis.last_parade_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
                 AnalysisTab::Vectorscope => {
                     let request_key = vectorscope_request_key(source_key);
-                    let should_update = self.analysis_dirty
-                        || self.vectorscope_texture_id.is_none()
-                        || self.last_vectorscope_request_key != Some(request_key);
+                    let should_update = self.canvas.invalidation.analysis_dirty()
+                        || self.canvas.analysis.vectorscope_texture_id.is_none()
+                        || self.canvas.analysis.last_vectorscope_request_key != Some(request_key);
                     if should_update
-                        && let Some(vectorscope_renderer) = self.vectorscope_renderer.as_ref()
+                        && let Some(vectorscope_renderer) =
+                            self.canvas.analysis.vectorscope_renderer.as_ref()
                     {
                         vectorscope_renderer.update(
                             &render_state.device,
@@ -634,7 +624,7 @@ impl eframe::App for App {
                             ..Default::default()
                         };
 
-                        if let Some(id) = self.vectorscope_texture_id {
+                        if let Some(id) = self.canvas.analysis.vectorscope_texture_id {
                             renderer_guard
                                 .update_egui_texture_from_wgpu_texture_with_sampler_options(
                                     &render_state.device,
@@ -643,49 +633,51 @@ impl eframe::App for App {
                                     id,
                                 );
                         } else {
-                            self.vectorscope_texture_id =
+                            self.canvas.analysis.vectorscope_texture_id =
                                 Some(renderer_guard.register_native_texture_with_sampler_options(
                                     &render_state.device,
                                     vectorscope_renderer.output_view(),
                                     sampler,
                                 ));
                         }
-                        self.last_vectorscope_request_key = Some(request_key);
+                        self.canvas.analysis.last_vectorscope_request_key = Some(request_key);
                         did_update_active_analysis = true;
                     }
                 }
             }
 
-            if self.clip_enabled {
-                let request_key = clipping_request_key(source_key, self.clipping_settings, true);
-                if self.clipping_renderer.is_none() {
-                    self.clipping_renderer = Some(ui::clipping_map::ClippingMapRenderer::new(
-                        &render_state.device,
-                        source.size,
-                    ));
+            if self.canvas.analysis.clip_enabled {
+                let request_key =
+                    clipping_request_key(source_key, self.canvas.analysis.clipping_settings, true);
+                if self.canvas.analysis.clipping_renderer.is_none() {
+                    self.canvas.analysis.clipping_renderer =
+                        Some(ui::clipping_map::ClippingMapRenderer::new(
+                            &render_state.device,
+                            source.size,
+                        ));
                 }
 
-                let should_update_clipping = self.analysis_dirty
-                    || self.clipping_dirty
-                    || self.clipping_texture_id.is_none()
-                    || self.last_clipping_request_key != Some(request_key);
+                let should_update_clipping = self.canvas.invalidation.analysis_dirty()
+                    || self.canvas.invalidation.clipping_dirty()
+                    || self.canvas.analysis.clipping_texture_id.is_none()
+                    || self.canvas.analysis.last_clipping_request_key != Some(request_key);
                 if should_update_clipping
-                    && let Some(clipping_renderer) = self.clipping_renderer.as_mut()
+                    && let Some(clipping_renderer) = self.canvas.analysis.clipping_renderer.as_mut()
                 {
                     clipping_renderer.update(
                         &render_state.device,
                         self.shader_space.queue.as_ref(),
                         source.view,
                         source.size,
-                        self.clipping_settings.shadow_threshold,
-                        self.clipping_settings.highlight_threshold,
+                        self.canvas.analysis.clipping_settings.shadow_threshold,
+                        self.canvas.analysis.clipping_settings.highlight_threshold,
                     );
 
                     let mut sampler =
                         texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
                     sampler.label = Some("sys.scope.clipping.sampler");
 
-                    if let Some(id) = self.clipping_texture_id {
+                    if let Some(id) = self.canvas.analysis.clipping_texture_id {
                         renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
                             &render_state.device,
                             clipping_renderer.output_view(),
@@ -693,24 +685,24 @@ impl eframe::App for App {
                             id,
                         );
                     } else {
-                        self.clipping_texture_id =
+                        self.canvas.analysis.clipping_texture_id =
                             Some(renderer_guard.register_native_texture_with_sampler_options(
                                 &render_state.device,
                                 clipping_renderer.output_view(),
                                 sampler,
                             ));
                     }
-                    self.last_clipping_request_key = Some(request_key);
+                    self.canvas.analysis.last_clipping_request_key = Some(request_key);
                     did_update_clipping = true;
                 }
             }
         }
 
         if did_update_active_analysis {
-            self.analysis_dirty = false;
+            self.canvas.invalidation.clear_analysis();
         }
         if did_update_clipping {
-            self.clipping_dirty = false;
+            self.canvas.invalidation.clear_clipping();
         }
 
         if did_rebuild_shader_space {
@@ -725,20 +717,19 @@ impl eframe::App for App {
 
         let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
         let sidebar_w = sidebar_full_w * frame_state.sidebar_factor;
-        let reference_sidebar_state =
-            self.ref_image
-                .as_ref()
-                .map(|reference| ui::debug_sidebar::ReferenceSidebarState {
-                    name: reference.name.clone(),
-                    mode: reference.mode,
-                    opacity: reference.opacity,
-                    diff_metric_mode: self.diff_metric_mode,
-                    diff_stats: self.diff_stats,
-                });
+        let reference_sidebar_state = self.canvas.reference.ref_image.as_ref().map(|reference| {
+            ui::debug_sidebar::ReferenceSidebarState {
+                name: reference.name.clone(),
+                mode: reference.mode,
+                opacity: reference.opacity,
+                diff_metric_mode: self.canvas.analysis.diff_metric_mode,
+                diff_stats: self.canvas.analysis.diff_stats,
+            }
+        });
         let analysis_sidebar_state = ui::debug_sidebar::AnalysisSidebarState {
-            tab: self.analysis_tab,
-            clipping: self.clipping_settings,
-            clip_enabled: self.clip_enabled,
+            tab: self.canvas.analysis.analysis_tab,
+            clipping: self.canvas.analysis.clipping_settings,
+            clip_enabled: self.canvas.analysis.clip_enabled,
         };
 
         // Rebuild resource snapshot when needed (pipeline changed or first frame).
@@ -767,6 +758,16 @@ impl eframe::App for App {
                         egui::vec2(sidebar_full_w, clip_rect.height()),
                     );
 
+                    let sm_snapshot = self.animation_session.as_ref().map(|session| {
+                        let mut snap = ui::state_machine_panel::snapshot_from_session(session);
+                        snap.state_local_times =
+                            self.canvas.interactions.cached_state_local_times.clone();
+                        snap.transition_blend = self.canvas.interactions.cached_transition_blend;
+                        snap.override_values =
+                            self.canvas.interactions.cached_override_values.clone();
+                        snap
+                    });
+
                     sidebar_action = ui::debug_sidebar::show_in_rect(
                         ctx,
                         ui,
@@ -774,13 +775,14 @@ impl eframe::App for App {
                         frame_state.animation_just_finished_opening,
                         clip_rect,
                         sidebar_rect,
-                        self.histogram_texture_id,
-                        self.parade_texture_id,
-                        self.vectorscope_texture_id,
+                        self.canvas.analysis.histogram_texture_id,
+                        self.canvas.analysis.parade_texture_id,
+                        self.canvas.analysis.vectorscope_texture_id,
                         analysis_sidebar_state,
                         reference_sidebar_state.as_ref(),
                         &self.resource_tree_nodes,
                         &mut self.file_tree_state,
+                        sm_snapshot.as_ref(),
                     );
                 });
         }
@@ -788,89 +790,89 @@ impl eframe::App for App {
         // Handle sidebar actions.
         match sidebar_action {
             Some(ui::debug_sidebar::SidebarAction::PreviewTexture(name)) => {
-                self.preview_texture_name =
-                    Some(rust_wgpu_fiber::ResourceName::from(name.as_str()));
-                self.pending_view_reset = true;
-                self.diff_dirty = true;
-                self.analysis_dirty = true;
-                self.clipping_dirty = true;
-                self.pixel_overlay_dirty = true;
-            }
-            Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
-                // Only clear the name; the canvas controller will stop using the
-                // attachment this frame and we free it next frame to avoid
-                // use-after-free when the texture was already submitted for
-                // painting earlier in this frame.
-                self.preview_texture_name = None;
-                self.diff_dirty = true;
-                self.analysis_dirty = true;
-                self.clipping_dirty = true;
-                self.pixel_overlay_dirty = true;
-            }
-            Some(ui::debug_sidebar::SidebarAction::SetReferenceOpacity(opacity)) => {
-                if let Some(reference) = self.ref_image.as_mut() {
-                    reference.opacity = opacity.clamp(0.0, 1.0);
-                }
-            }
-            Some(ui::debug_sidebar::SidebarAction::ToggleReferenceMode) => {
-                if let Some(reference) = self.ref_image.as_mut() {
-                    reference.mode = match reference.mode {
-                        RefImageMode::Overlay => RefImageMode::Diff,
-                        RefImageMode::Diff => RefImageMode::Overlay,
-                    };
-                    self.diff_dirty = true;
-                }
-            }
-            Some(ui::debug_sidebar::SidebarAction::PickReferenceImage) => {
-                if let Err(e) = canvas_controller::pick_reference_image_from_dialog(
+                let _ = canvas::reducer::apply_action(
                     self,
-                    ctx,
                     render_state,
                     &mut renderer_guard,
-                ) {
+                    canvas::actions::CanvasAction::SetPreviewTexture(
+                        rust_wgpu_fiber::ResourceName::from(name.as_str()),
+                    ),
+                );
+            }
+            Some(ui::debug_sidebar::SidebarAction::ClearPreview) => {
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::ClearPreviewTexture,
+                );
+            }
+            Some(ui::debug_sidebar::SidebarAction::SetReferenceOpacity(opacity)) => {
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetReferenceOpacity(opacity),
+                );
+            }
+            Some(ui::debug_sidebar::SidebarAction::ToggleReferenceMode) => {
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::ToggleReferenceMode,
+                );
+            }
+            Some(ui::debug_sidebar::SidebarAction::PickReferenceImage) => {
+                if let Err(e) = canvas::pick_reference_image_from_dialog(self, ctx, render_state) {
                     eprintln!(
                         "[reference-image] failed to load manually-picked reference image: {e:#}"
                     );
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::RemoveReferenceImage) => {
-                if self.ref_image.is_some() {
-                    canvas_controller::clear_reference(self, &mut renderer_guard);
+                if self.canvas.reference.ref_image.is_some() {
+                    canvas::clear_reference(self);
                 }
             }
             Some(ui::debug_sidebar::SidebarAction::SetDiffMetricMode(mode)) => {
-                if self.diff_metric_mode != mode {
-                    self.diff_metric_mode = mode;
-                    self.diff_dirty = true;
-                }
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetDiffMetricMode(mode),
+                );
             }
             Some(ui::debug_sidebar::SidebarAction::SetAnalysisTab(tab)) => {
-                apply_analysis_tab_change(
-                    &mut self.analysis_tab,
-                    &mut self.analysis_dirty,
-                    &mut self.clipping_dirty,
-                    tab,
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetAnalysisTab(tab),
                 );
             }
             Some(ui::debug_sidebar::SidebarAction::SetClipEnabled(enabled)) => {
-                apply_clip_enabled_change(
-                    &mut self.clip_enabled,
-                    &mut self.clipping_dirty,
-                    enabled,
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetClipEnabled(enabled),
                 );
             }
             Some(ui::debug_sidebar::SidebarAction::SetClippingShadowThreshold(threshold)) => {
-                apply_clipping_shadow_threshold_change(
-                    &mut self.clipping_settings,
-                    &mut self.clipping_dirty,
-                    threshold,
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetClippingShadowThreshold(threshold),
                 );
             }
             Some(ui::debug_sidebar::SidebarAction::SetClippingHighlightThreshold(threshold)) => {
-                apply_clipping_highlight_threshold_change(
-                    &mut self.clipping_settings,
-                    &mut self.clipping_dirty,
-                    threshold,
+                let _ = canvas::reducer::apply_action(
+                    self,
+                    render_state,
+                    &mut renderer_guard,
+                    canvas::actions::CanvasAction::SetClippingHighlightThreshold(threshold),
                 );
             }
             None => {}
@@ -884,7 +886,7 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(panel_frame)
             .show(ctx, |ui| {
-                request_toggle_from_canvas = canvas_controller::show_canvas_panel(
+                request_toggle_from_canvas = canvas::show(
                     self,
                     ctx,
                     ui,
@@ -892,7 +894,9 @@ impl eframe::App for App {
                     &mut renderer_guard,
                     frame_state,
                     now,
-                );
+                    early_interaction_payloads,
+                )
+                .request_toggle_canvas_only;
             });
 
         if request_toggle_from_canvas {
@@ -907,7 +911,7 @@ impl eframe::App for App {
         // Force dark title bar.
         ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
 
-        let title = if let Some(sampled) = self.last_sampled {
+        let title = if let Some(sampled) = self.canvas.viewport.last_sampled {
             format!(
                 "Node Forge Render Server - x={} y={} rgba=({:.3}, {:.3}, {:.3}, {:.3})",
                 sampled.x,
@@ -925,11 +929,8 @@ impl eframe::App for App {
         let sidebar_animating = self
             .animations
             .is_active(window_mode::ANIM_KEY_SIDEBAR_FACTOR);
-        let pan_zoom_animating = canvas_controller::is_pan_zoom_animating(self);
-        let operation_indicator_visible = !matches!(
-            self.viewport_operation_indicator,
-            types::ViewportOperationIndicator::Hidden
-        );
+        let pan_zoom_animating = canvas::is_pan_zoom_animating(self);
+        let operation_indicator_visible = canvas::ops::is_visible(&self.canvas.async_ops);
 
         let time_driven_scene_for_schedule = self.scene_uses_time && self.time_updates_enabled;
         let animation_session_active = self.animation_playing
@@ -953,58 +954,11 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::{
-        AnalysisTab, ClippingSettings, DiffMetricMode, RefImageMode, apply_analysis_tab_change,
-        apply_clip_enabled_change, apply_clipping_highlight_threshold_change,
-        apply_clipping_shadow_threshold_change, clipping_request_key, diff_request_key, hash_key,
+        ClippingSettings, DiffMetricMode, RefImageMode, clipping_request_key, diff_request_key,
+        hash_key,
         histogram_request_key, parade_request_key, should_request_immediate_repaint,
         vectorscope_request_key,
     };
-
-    #[test]
-    fn switching_infographics_tab_does_not_disable_clip() {
-        let mut tab = AnalysisTab::Histogram;
-        let clip_enabled = true;
-        let mut analysis_dirty = false;
-        let mut clipping_dirty = false;
-
-        apply_analysis_tab_change(
-            &mut tab,
-            &mut analysis_dirty,
-            &mut clipping_dirty,
-            AnalysisTab::Vectorscope,
-        );
-
-        assert_eq!(tab, AnalysisTab::Vectorscope);
-        assert!(analysis_dirty);
-        assert!(clipping_dirty);
-        assert!(clip_enabled);
-    }
-
-    #[test]
-    fn toggling_clip_does_not_change_infographics_tab() {
-        let tab = AnalysisTab::Parade;
-        let mut clip_enabled = false;
-        let mut clipping_dirty = false;
-
-        apply_clip_enabled_change(&mut clip_enabled, &mut clipping_dirty, true);
-
-        assert!(clip_enabled);
-        assert!(clipping_dirty);
-        assert_eq!(tab, AnalysisTab::Parade);
-    }
-
-    #[test]
-    fn changing_clip_threshold_marks_clipping_dirty() {
-        let mut clipping = ClippingSettings::default();
-        let mut clipping_dirty = false;
-
-        apply_clipping_shadow_threshold_change(&mut clipping, &mut clipping_dirty, 0.05);
-        assert!(clipping_dirty);
-
-        clipping_dirty = false;
-        apply_clipping_highlight_threshold_change(&mut clipping, &mut clipping_dirty, 0.95);
-        assert!(clipping_dirty);
-    }
 
     #[test]
     fn request_keys_change_with_source_domain() {

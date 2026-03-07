@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use anyhow::{Context, Result};
 
@@ -16,9 +19,19 @@ pub struct AssetData {
 }
 
 /// Thread-safe, clone-friendly in-memory asset cache keyed by `assetId`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AssetStore {
     inner: Arc<Mutex<HashMap<String, AssetData>>>,
+    revision: Arc<AtomicU64>,
+}
+
+impl Default for AssetStore {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+            revision: Arc::new(AtomicU64::new(0)),
+        }
+    }
 }
 
 impl AssetStore {
@@ -33,7 +46,10 @@ impl AssetStore {
         let Ok(mut map) = self.inner.lock() else {
             return;
         };
-        map.entry(asset_id).or_insert(data);
+        if let std::collections::hash_map::Entry::Vacant(entry) = map.entry(asset_id) {
+            entry.insert(data);
+            self.revision.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Insert or replace an asset unconditionally.
@@ -43,6 +59,7 @@ impl AssetStore {
             return;
         };
         map.insert(asset_id, data);
+        self.revision.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Retrieve a clone of the asset data for the given id.
@@ -61,7 +78,11 @@ impl AssetStore {
 
     /// Remove an asset by id.
     pub fn remove(&self, asset_id: &str) -> Option<AssetData> {
-        self.inner.lock().ok()?.remove(asset_id)
+        let removed = self.inner.lock().ok()?.remove(asset_id);
+        if removed.is_some() {
+            self.revision.fetch_add(1, Ordering::Relaxed);
+        }
+        removed
     }
 
     /// Return the subset of `ids` that are missing from the store.
@@ -79,7 +100,12 @@ impl AssetStore {
     pub fn clear(&self) {
         if let Ok(mut map) = self.inner.lock() {
             map.clear();
+            self.revision.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Relaxed)
     }
 
     /// Load a `DynamicImage` from an asset id. Returns `None` if the asset is
@@ -169,4 +195,44 @@ pub fn load_from_nforge(nforge_path: &Path) -> Result<(SceneDSL, AssetStore)> {
     }
 
     Ok((scene, store))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AssetData, AssetStore};
+
+    fn sample_asset(name: &str) -> AssetData {
+        AssetData {
+            bytes: vec![1, 2, 3],
+            mime_type: "image/png".to_string(),
+            original_name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn revision_increments_on_mutations_only() {
+        let store = AssetStore::new();
+        assert_eq!(store.revision(), 0);
+
+        store.insert("a", sample_asset("a.png"));
+        assert_eq!(store.revision(), 1);
+
+        store.insert("a", sample_asset("a-duplicate.png"));
+        assert_eq!(store.revision(), 1);
+
+        store.insert_or_replace("a", sample_asset("a-replaced.png"));
+        assert_eq!(store.revision(), 2);
+
+        let _ = store.remove("missing");
+        assert_eq!(store.revision(), 2);
+
+        let _ = store.remove("a");
+        assert_eq!(store.revision(), 3);
+
+        store.insert("b", sample_asset("b.png"));
+        assert_eq!(store.revision(), 4);
+
+        store.clear();
+        assert_eq!(store.revision(), 5);
+    }
 }

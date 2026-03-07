@@ -13,6 +13,7 @@ use super::components::value_slider;
 use super::design_tokens::{self, TextRole};
 use super::file_tree_widget::FileTreeState;
 use super::resource_tree::{FileTreeNode, NodeKind};
+use super::state_machine_panel::{StateMachineSnapshot, show_state_machine_section};
 
 pub const SIDEBAR_WIDTH: f32 = 340.0;
 pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
@@ -392,6 +393,7 @@ pub fn show_in_rect(
     reference: Option<&ReferenceSidebarState>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
+    sm_snapshot: Option<&StateMachineSnapshot>,
 ) -> Option<SidebarAction> {
     if ui_sidebar_factor <= 0.0 {
         return None;
@@ -483,6 +485,12 @@ pub fn show_in_rect(
                                     &mut sidebar_action,
                                 );
                             });
+                            if let Some(sm) = sm_snapshot {
+                                section_divider(ui);
+                                with_sidebar_content_padding(ui, |ui| {
+                                    show_state_machine_section(ui, sm);
+                                });
+                            }
                         });
                     });
             }
