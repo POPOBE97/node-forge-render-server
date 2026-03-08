@@ -2,6 +2,7 @@ mod api;
 pub(crate) mod assemble_ctx;
 mod assembler;
 mod error_space;
+pub(crate) mod finalizer;
 mod headless;
 pub(crate) mod image_utils;
 pub(crate) mod pass_assemblers;
