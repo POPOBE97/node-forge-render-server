@@ -4,9 +4,19 @@ use anyhow::Result;
 use rust_wgpu_fiber::shader_space::ShaderSpace;
 use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 
-use crate::{asset_store::AssetStore, dsl::SceneDSL, renderer::types::PassBindings};
+use crate::{
+    asset_store::AssetStore,
+    dsl::SceneDSL,
+    renderer::{
+        render_plan::{
+            planner::RenderPlanner,
+            types::{PlanBuildOptions, PlanningGpuCaps},
+        },
+        types::PassBindings,
+    },
+};
 
-use super::{assembler, error_space};
+use super::{error_space, finalizer::ShaderSpaceFinalizer};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShaderSpacePresentationMode {
@@ -84,81 +94,31 @@ impl ShaderSpaceBuilder {
     }
 
     pub fn build(self, scene: &SceneDSL) -> Result<ShaderSpaceBuildResult> {
-        let presentation_mode = self.options.presentation_mode;
-        // Enable the display-encode pass for any mode that needs sRGB-encoded
-        // output.  UiHdrNative needs it so clipboard copy / file export get
-        // correct gamma, and UiSdrDisplayEncode needs it for the legacy path.
-        // SceneLinear (tests, raw pipeline inspection) deliberately skips it.
-        let enable_display_encode = matches!(
-            presentation_mode,
-            ShaderSpacePresentationMode::UiSdrDisplayEncode
-                | ShaderSpacePresentationMode::UiHdrNative
-        );
-        let (
-            shader_space,
-            resolution,
-            scene_output_texture,
-            pass_bindings,
-            pipeline_signature,
-            sdr_encode_pass_name,
-        ) = assembler::build_shader_space_from_scene_internal(
+        let plan_options = PlanBuildOptions {
+            gpu_caps: PlanningGpuCaps {
+                features: self.device.features(),
+                limits: self.device.limits().clone(),
+            },
+            presentation_mode: self.options.presentation_mode,
+            debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
+        };
+        let plan = RenderPlanner::new(plan_options).plan(
             scene,
-            self.device,
-            self.queue,
-            self.adapter.as_ref(),
-            enable_display_encode,
-            self.options.debug_dump_wgsl_dir.clone(),
             self.asset_store.as_ref(),
-            presentation_mode,
+            self.adapter.as_ref(),
         )?;
-
-        // On-screen display texture.
-        // For UiHdrNative: use HDR gamma texture if available, else scene output
-        //   directly (do NOT use the SDR sRGB texture — egui treats its bytes as
-        //   linear on the Rgba16Float surface, causing double-gamma).
-        // For UiSdrDisplayEncode: use SDR sRGB texture (it's the only encode).
-        let present_output_texture = match presentation_mode {
-            // UiHdrNative: display the linear scene output directly.
-            // macOS applies sRGB on the Rgba16Float surface — no GPU
-            // gamma encode pass is needed.
-            ShaderSpacePresentationMode::UiHdrNative => scene_output_texture.clone(),
-            ShaderSpacePresentationMode::UiSdrDisplayEncode => {
-                let sdr_name: ResourceName =
-                    format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
-                if shader_space.textures.get(sdr_name.as_str()).is_some() {
-                    sdr_name
-                } else {
-                    scene_output_texture.clone()
-                }
-            }
-            ShaderSpacePresentationMode::SceneLinear => scene_output_texture.clone(),
-        };
-
-        // Export texture for clipboard copy / headless PNG.
-        // Prefer the SDR sRGB present texture (gamma-encoded Rgba8Unorm bytes).
-        // Falls back to scene_output when no encode pass was created (e.g.
-        // sRGB-format targets whose storage bytes are already gamma-encoded).
-        let export_output_texture = if enable_display_encode {
-            let sdr_name: ResourceName =
-                format!("{}.present.sdr.srgb", scene_output_texture.as_str()).into();
-            if shader_space.textures.get(sdr_name.as_str()).is_some() {
-                sdr_name
-            } else {
-                scene_output_texture.clone()
-            }
-        } else {
-            scene_output_texture.clone()
-        };
+        let finalized =
+            ShaderSpaceFinalizer::finalize(&plan, self.device, self.queue, self.adapter.as_ref())?;
 
         Ok(ShaderSpaceBuildResult {
-            shader_space,
-            resolution,
-            scene_output_texture,
-            present_output_texture,
-            export_output_texture,
-            export_encode_pass_name: sdr_encode_pass_name,
-            pass_bindings,
-            pipeline_signature,
+            shader_space: finalized.shader_space,
+            resolution: plan.resolution,
+            scene_output_texture: plan.scene_output_texture,
+            present_output_texture: plan.present_output_texture,
+            export_output_texture: plan.export_output_texture,
+            export_encode_pass_name: plan.export_encode_pass_name,
+            pass_bindings: finalized.pass_bindings,
+            pipeline_signature: finalized.pipeline_signature,
         })
     }
 
