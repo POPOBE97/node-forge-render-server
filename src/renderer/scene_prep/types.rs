@@ -5,6 +5,7 @@ use rust_wgpu_fiber::ResourceName;
 use crate::dsl::{Node, SceneDSL};
 
 /// Prepared scene with topologically sorted nodes and metadata.
+#[derive(Clone, Debug)]
 pub struct PreparedScene {
     pub scene: SceneDSL,
     pub nodes_by_id: HashMap<String, Node>,

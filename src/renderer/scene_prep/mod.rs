@@ -10,4 +10,5 @@ mod types;
 pub use composite::{composite_layers_in_draw_order, composition_layers_by_id};
 pub(crate) use data_parse::bake_data_parse_nodes;
 pub use pipeline::prepare_scene;
+pub(crate) use pipeline::prepare_scene_with_report;
 pub use types::{PreparedScene, ScenePrepReport};
