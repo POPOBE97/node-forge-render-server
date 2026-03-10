@@ -150,16 +150,6 @@ pub fn update_debug_state(app: &mut App, step: &AnimationStep) {
         .sort_by(|a, b| a.0.cmp(&b.0));
 }
 
-pub fn state_machine_snapshot(app: &App) -> Option<ui::state_machine_panel::StateMachineSnapshot> {
-    app.runtime.animation_session.as_ref().map(|session| {
-        let mut snapshot = ui::state_machine_panel::snapshot_from_session(session);
-        snapshot.state_local_times = app.interaction_bridge.cached_state_local_times.clone();
-        snapshot.transition_blend = app.interaction_bridge.cached_transition_blend;
-        snapshot.override_values = app.interaction_bridge.cached_override_values.clone();
-        snapshot
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{assign_sequence_numbers, interaction_message_text, state_transition_payloads};

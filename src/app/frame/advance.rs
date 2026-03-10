@@ -37,7 +37,16 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     if let Some(step) = anim_step {
         animation_current_state_id = Some(step.current_state_id.clone());
         animation_active_transition_id = step.active_transition_id.clone();
-        if step.needs_redraw {
+
+        // Force a full override re-apply when resuming from pause.
+        // While paused the timeline hover preview may have dirtied
+        // uniform_scene with values from an arbitrary frame.  The
+        // session's own `needs_redraw` flag won't catch this because
+        // from its perspective the overrides haven't changed.
+        let resuming_from_pause = effective_dt > 0.0
+            && !app.runtime.time_updates_enabled_prev_frame;
+
+        if step.needs_redraw || resuming_from_pause {
             animation_values_changed = true;
             if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
                 state_machine::apply_overrides(uniform_scene, &step.active_overrides);
@@ -53,6 +62,53 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         }
         app.runtime.time_value_secs = step.scene_time_secs as f32;
         interaction_bridge::update_debug_state(app, &step);
+
+        // Record timeline frame for the debug sidebar timeline tab.
+        // Skip recording when paused (effective_dt == 0) to avoid
+        // duplicate frames at the same scene_time.
+        if effective_dt > 0.0 && step.needs_redraw
+        && let Some(ref mut buf) = app.runtime.timeline_buffer {
+            let presentation_time = buf.elapsed_secs();
+            // Resolve transition source/target names from the session definition.
+            let (tsrc, ttgt) = app
+                .runtime
+                .animation_session
+                .as_ref()
+                .and_then(|sess| {
+                    let def = sess.runtime().definition();
+                    step.active_transition_id.as_ref().and_then(|tid| {
+                        def.transitions.iter().find(|t| t.id == *tid).map(|t| {
+                            let src = def
+                                .states
+                                .iter()
+                                .find(|s| s.id == t.source)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| t.source.clone());
+                            let tgt = def
+                                .states
+                                .iter()
+                                .find(|s| s.id == t.target)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| t.target.clone());
+                            (Some(src), Some(tgt))
+                        })
+                    })
+                })
+                .unwrap_or((None, None));
+            buf.push(crate::animation::TimelineFrame {
+                presentation_time_secs: presentation_time,
+                scene_time_secs: step.scene_time_secs,
+                current_state_id: step.current_state_id.clone(),
+                active_transition_id: step.active_transition_id.clone(),
+                transition_blend: step.transition_blend,
+                transition_source_name: tsrc,
+                transition_target_name: ttgt,
+                state_local_times: step.state_local_times.clone(),
+                diagnostics: step.diagnostics.clone(),
+                active_overrides: step.active_overrides.clone(),
+            });
+        }
+        app.runtime.last_live_overrides = Some(step.active_overrides.clone());
     } else if app.runtime.time_updates_enabled {
         app.runtime.time_value_secs += delta_t;
     }
@@ -70,6 +126,9 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             .animation_session
             .as_ref()
             .is_some_and(|session| session.is_active());
+
+    // Track for next frame's pause→play edge detection.
+    app.runtime.time_updates_enabled_prev_frame = app.runtime.time_updates_enabled;
 
     AdvancePhase {
         animation_values_changed,

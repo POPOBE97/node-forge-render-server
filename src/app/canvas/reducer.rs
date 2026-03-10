@@ -40,6 +40,16 @@ pub fn apply_action(
         }
         CanvasAction::TogglePause => {
             app.runtime.time_updates_enabled = !app.runtime.time_updates_enabled;
+            // Pause / resume the timeline presentation clock so that
+            // wall-clock time spent paused doesn't create a gap in
+            // presentation_time_secs (which drives the rolling-window trim).
+            if let Some(ref mut buf) = app.runtime.timeline_buffer {
+                if app.runtime.time_updates_enabled {
+                    buf.resume();
+                } else {
+                    buf.pause();
+                }
+            }
             let has_reference_diff = matches!(
                 app.canvas.reference.ref_image.as_ref().map(|r| r.mode),
                 Some(RefImageMode::Diff)

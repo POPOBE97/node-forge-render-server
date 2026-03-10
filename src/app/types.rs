@@ -278,7 +278,23 @@ pub(super) struct AppRuntime {
     /// Whether the animation state machine is actively playing.
     /// Defaults to `false`; toggled by `animation_control` WebSocket messages.
     pub animation_playing: bool,
+    /// Rolling timeline buffer recording per-frame state-machine snapshots.
+    /// `None` when the current scene has no state machine.
+    pub timeline_buffer: Option<crate::animation::TimelineBuffer>,
+    /// Snapshot of the most recent live `AnimationStep.active_overrides`.
+    /// Used to restore the canvas when leaving timeline hover preview.
+    pub last_live_overrides: Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
+    /// Snapshot of uniform_scene param values captured when timeline hover
+    /// begins.  Used to restore the scene when the cursor leaves the
+    /// timeline, regardless of whether the animation is playing or stopped.
+    pub timeline_pre_hover_overrides: Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
+    /// Whether the timeline hover preview was active last frame.
+    /// Used to detect hover-exit transitions (egui has no hover events).
+    pub timeline_preview_was_active: bool,
     pub time_updates_enabled: bool,
+    /// Previous frame's `time_updates_enabled`, used to detect pause→play
+    /// transitions so the advance phase can force-resync uniform_scene.
+    pub time_updates_enabled_prev_frame: bool,
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
 }
@@ -450,7 +466,12 @@ impl App {
                 scene_redraw_pending: true,
                 animation_session: init.animation_session,
                 animation_playing: false,
+                timeline_buffer: None,
+                last_live_overrides: None,
+                timeline_pre_hover_overrides: None,
+                timeline_preview_was_active: false,
                 time_updates_enabled: true,
+                time_updates_enabled_prev_frame: true,
                 time_value_secs: 0.0,
                 time_last_raw_secs: 0.0,
             },

@@ -316,6 +316,12 @@ pub fn apply_scene_update(
                                 scene_uses_time(&prepared_for_fast_path.scene);
                             app.runtime.uniform_scene = prepared_scene_candidate;
                             app.runtime.animation_session = next_animation_session.clone();
+                            app.runtime.timeline_buffer = create_timeline_buffer_for_session(
+                                app.runtime.animation_session.as_ref(),
+                            );
+                            app.runtime.last_live_overrides = None;
+                            app.runtime.timeline_pre_hover_overrides = None;
+                            app.runtime.timeline_preview_was_active = false;
                             app.runtime.uniform_only_update_count =
                                 app.runtime.uniform_only_update_count.saturating_add(1);
                             if let Ok(mut g) = app.runtime.last_good.lock() {
@@ -371,6 +377,12 @@ pub fn apply_scene_update(
                         app.runtime.pipeline_rebuild_count.saturating_add(1);
 
                     app.runtime.animation_session = next_animation_session;
+                    app.runtime.timeline_buffer = create_timeline_buffer_for_session(
+                        app.runtime.animation_session.as_ref(),
+                    );
+                    app.runtime.last_live_overrides = None;
+                    app.runtime.timeline_pre_hover_overrides = None;
+                    app.runtime.timeline_preview_was_active = false;
 
                     if let Ok(mut g) = app.runtime.last_good.lock() {
                         *g = Some(scene);
@@ -388,6 +400,10 @@ pub fn apply_scene_update(
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
                     app.runtime.animation_session = None;
+                    app.runtime.timeline_buffer = None;
+                    app.runtime.last_live_overrides = None;
+                    app.runtime.timeline_pre_hover_overrides = None;
+                    app.runtime.timeline_preview_was_active = false;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -459,6 +475,15 @@ pub fn apply_scene_update(
                                 uniform_scene,
                             );
                         }
+
+                        // Clear and reinitialize the timeline buffer for a fresh recording.
+                        if let Some(ref mut buf) = app.runtime.timeline_buffer {
+                            buf.clear();
+                        }
+                        app.runtime.last_live_overrides = None;
+                        app.runtime.timeline_pre_hover_overrides = None;
+                        app.runtime.timeline_preview_was_active = false;
+
                         app.runtime.time_value_secs = 0.0;
                         app.runtime.scene_redraw_pending = true;
                     }
@@ -467,6 +492,10 @@ pub fn apply_scene_update(
                     if app.runtime.animation_playing {
                         app.runtime.animation_playing = false;
                         eprintln!("[animation] stop");
+
+                        // Timeline buffer is intentionally preserved on Stop
+                        // so the user can scrub/inspect the captured window.
+                        app.runtime.timeline_preview_was_active = false;
 
                         // Reset the animation session and restore base values.
                         if let Some(session) = app.runtime.animation_session.as_mut() {
@@ -496,6 +525,21 @@ pub fn apply_scene_update(
             }
         }
     }
+}
+
+/// Create a fresh `TimelineBuffer` from an animation session, discovering
+/// tracked override keys from the state machine definition. Returns `None`
+/// if there is no session (scene has no state machine).
+fn create_timeline_buffer_for_session(
+    session: Option<&crate::animation::AnimationSession>,
+) -> Option<crate::animation::TimelineBuffer> {
+    let session = session?;
+    let keys: Vec<String> = crate::state_machine::trace::tracked_override_keys(
+        session.runtime().definition(),
+    )
+    .into_iter()
+    .collect();
+    Some(crate::animation::TimelineBuffer::new(10.0, keys))
 }
 
 fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {

@@ -1,7 +1,7 @@
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
-    app::{canvas, types::App, window_mode},
+    app::{canvas, scene_runtime, types::App, window_mode},
     ui,
 };
 
@@ -55,11 +55,33 @@ pub(super) fn run(
         clipping: app.canvas.analysis.clipping_settings,
         clip_enabled: app.canvas.analysis.clip_enabled,
     };
-    let state_machine_snapshot = interaction_bridge::state_machine_snapshot(app);
 
     let mut pending_commands = Vec::<AppCommand>::new();
+    let mut sidebar_result = ui::debug_sidebar::SidebarResult::default();
+
+    // ── Bottom timeline panel ────────────────────────────────────────────
+    // Rendered before sidebar and central panel so egui reserves space at
+    // the bottom first. The hover result feeds into the canvas render for
+    // live preview.
+    let mut timeline_hover: Option<ui::debug_sidebar::TimelineHover> = None;
+    if let Some(ref buf) = app.runtime.timeline_buffer {
+        egui::TopBottomPanel::bottom("timeline_panel")
+            .resizable(false)
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::color::lab(7.78201, -0.000_014_901_2, 0.0))
+                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(32))),
+            )
+            .show(ctx, |ui| {
+                let interaction = ui::timeline_panel::show_timeline(ui, buf);
+                if let Some(idx) = interaction.hovered_frame_index {
+                    timeline_hover = Some(ui::debug_sidebar::TimelineHover { frame_index: idx });
+                }
+            });
+    }
+
     if sidebar_w > 0.0 {
-        let mut sidebar_action = None;
         egui::SidePanel::left("debug_sidebar")
             .exact_width(sidebar_w)
             .resizable(false)
@@ -72,7 +94,7 @@ pub(super) fn run(
                     egui::vec2(sidebar_full_w, clip_rect.height()),
                 );
 
-                sidebar_action = ui::debug_sidebar::show_in_rect(
+                sidebar_result = ui::debug_sidebar::show_in_rect(
                     ctx,
                     ui,
                     frame_state.sidebar_factor,
@@ -86,14 +108,118 @@ pub(super) fn run(
                     reference_sidebar_state.as_ref(),
                     &app.shell.resource_tree_nodes,
                     &mut app.shell.file_tree_state,
-                    state_machine_snapshot.as_ref(),
                 );
             });
 
-        if let Some(action) = sidebar_action {
+        if let Some(action) = sidebar_result.action.take() {
             pending_commands.push(commands::from_sidebar_action(action));
         }
     }
+
+    // ── Timeline hover preview ─────────────────────────────────────────
+    //
+    // When the user hovers a frame in the timeline panel we want the canvas
+    // to show that frame's parameter state immediately.  The animation
+    // session keeps advancing under the hood (advance phase already ran),
+    // but we override the GPU texture here so the canvas displays the
+    // hovered frame.
+    //
+    // On hover-exit we snap back to the pre-hover snapshot.  During
+    // playback `last_live_overrides` is continuously updated by advance,
+    // so we prefer that (it represents the latest head).  When stopped we
+    // fall back to the snapshot we captured when hover started.
+    let hovering_now = timeline_hover.is_some();
+
+    if let Some(ref hover) = timeline_hover {
+        // On the first hover frame, snapshot the current uniform_scene
+        // values for every override key the timeline tracks.
+        if !app.runtime.timeline_preview_was_active {
+            if let Some(ref buf) = app.runtime.timeline_buffer {
+                if let Some(ref uniform_scene) = app.runtime.uniform_scene {
+                    let mut snap = std::collections::HashMap::new();
+                    for frame in buf.frames().iter().rev().take(1) {
+                        for key in frame.active_overrides.keys() {
+                            if snap.contains_key(key) {
+                                continue;
+                            }
+                            if let Some(node) =
+                                uniform_scene.nodes.iter().find(|n| n.id == key.node_id)
+                                && let Some(val) = node.params.get(&key.param_name)
+                            {
+                                snap.insert(key.clone(), val.clone());
+                            }
+                        }
+                    }
+                    app.runtime.timeline_pre_hover_overrides = Some(snap);
+                }
+            }
+        }
+
+        if let Some(frame) = app
+            .runtime
+            .timeline_buffer
+            .as_ref()
+            .and_then(|buf| buf.frame_at(hover.frame_index))
+        {
+            let hovered_overrides = frame.active_overrides.clone();
+            if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
+                crate::state_machine::apply_overrides(uniform_scene, &hovered_overrides);
+            }
+            if let Some(ref uniform_scene) = app.runtime.uniform_scene {
+                let _ = scene_runtime::apply_graph_uniform_updates_parts(
+                    &mut app.core.passes,
+                    &mut app.core.shader_space,
+                    uniform_scene,
+                );
+            }
+            for pass in &mut app.core.passes {
+                let mut params = pass.base_params;
+                params.time = app.runtime.time_value_secs;
+                let _ = crate::renderer::update_pass_params(
+                    &app.core.shader_space,
+                    pass,
+                    &params,
+                );
+            }
+            app.core.shader_space.render();
+            app.runtime.scene_redraw_pending = false;
+        }
+    } else if app.runtime.timeline_preview_was_active {
+        // Hover just exited — snap back.
+        // Prefer last_live_overrides (updated every advance tick while
+        // playing) so we land on the true head.  Fall back to the
+        // pre-hover snapshot for the stopped case.
+        let restore = app
+            .runtime
+            .last_live_overrides
+            .clone()
+            .or_else(|| app.runtime.timeline_pre_hover_overrides.take());
+        if let Some(ref overrides) = restore {
+            if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
+                crate::state_machine::apply_overrides(uniform_scene, overrides);
+            }
+            if let Some(ref uniform_scene) = app.runtime.uniform_scene {
+                let _ = scene_runtime::apply_graph_uniform_updates_parts(
+                    &mut app.core.passes,
+                    &mut app.core.shader_space,
+                    uniform_scene,
+                );
+            }
+            for pass in &mut app.core.passes {
+                let mut params = pass.base_params;
+                params.time = app.runtime.time_value_secs;
+                let _ = crate::renderer::update_pass_params(
+                    &app.core.shader_space,
+                    pass,
+                    &params,
+                );
+            }
+            app.core.shader_space.render();
+            app.runtime.scene_redraw_pending = false;
+        }
+        app.runtime.timeline_pre_hover_overrides = None;
+    }
+    app.runtime.timeline_preview_was_active = hovering_now;
 
     let panel_frame = egui::Frame::default()
         .fill(egui::Color32::BLACK)
