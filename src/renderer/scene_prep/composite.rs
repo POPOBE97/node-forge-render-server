@@ -70,3 +70,122 @@ pub fn composition_layers_by_id(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
+
+    use super::composite_layers_in_draw_order;
+
+    #[test]
+    fn composite_draw_order_is_pass_then_dynamic_indices() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                Node {
+                    id: "out".to_string(),
+                    node_type: "Composite".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![
+                        NodePort {
+                            id: "dynamic_1".to_string(),
+                            name: Some("image2".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                        NodePort {
+                            id: "dynamic_0".to_string(),
+                            name: Some("image1".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                    ],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                Node {
+                    id: "p_img".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                Node {
+                    id: "p0".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+                Node {
+                    id: "p1".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: vec![],
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                },
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_img".to_string(),
+                    from: Endpoint {
+                        node_id: "p_img".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_dyn1".to_string(),
+                    from: Endpoint {
+                        node_id: "p1".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "dynamic_1".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_dyn0".to_string(),
+                    from: Endpoint {
+                        node_id: "p0".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out".to_string(),
+                        port_id: "dynamic_0".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(HashMap::from([(
+                String::from("composite"),
+                String::from("out"),
+            )])),
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let got = composite_layers_in_draw_order(&scene, &nodes_by_id, "out").unwrap();
+        // inputs array order: dynamic_1 then dynamic_0
+        assert_eq!(got, vec!["p_img", "p1", "p0"]);
+    }
+}

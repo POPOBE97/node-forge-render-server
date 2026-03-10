@@ -422,3 +422,204 @@ pub(crate) fn parse_render_pass_depth_test(
         None => Ok(false),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::types::PassOutputSpec;
+    use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat};
+
+    #[test]
+    fn pass_textures_are_included_in_texture_bindings() {
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "upstream_pass".to_string(),
+            texture_name: "up_tex".into(),
+            resolution: [64, 64],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let bindings = resolve_pass_texture_bindings(&reg, &["upstream_pass".to_string()]).unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(
+            bindings[0].texture,
+            rust_wgpu_fiber::ResourceName::from("up_tex")
+        );
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_uses_coord_domain_for_processing_consumers() {
+        let got = sampled_render_pass_output_size(true, false, [1080, 2400], [200.0, 200.0]);
+        assert_eq!(got, [1080, 2400]);
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_keeps_geometry_extent_without_processing_consumers() {
+        let got = sampled_render_pass_output_size(false, false, [1080, 2400], [200.0, 200.0]);
+        assert_eq!(got, [200, 200]);
+    }
+
+    #[test]
+    fn sampled_render_pass_output_size_uses_geometry_extent_for_downsample_sources() {
+        let got = sampled_render_pass_output_size(true, true, [2160, 2400], [1080.0, 2400.0]);
+        assert_eq!(got, [1080, 2400]);
+    }
+
+    #[test]
+    fn gaussian_blur_extend_upsample_geo_size_cancels_shrink() {
+        let geo_size = gaussian_blur_extend_upsample_geo_size([200, 120], [240, 160]);
+        assert!((geo_size[0] - 240.0).abs() < 1e-6);
+        assert!((geo_size[1] - 160.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blur_downsample_steps_for_factor_matches_expected_chain() {
+        assert_eq!(blur_downsample_steps_for_factor(1).unwrap(), vec![1]);
+        assert_eq!(blur_downsample_steps_for_factor(2).unwrap(), vec![2]);
+        assert_eq!(blur_downsample_steps_for_factor(4).unwrap(), vec![4]);
+        assert_eq!(blur_downsample_steps_for_factor(8).unwrap(), vec![8]);
+        assert_eq!(blur_downsample_steps_for_factor(16).unwrap(), vec![8, 2]);
+    }
+
+    #[test]
+    fn blur_factor1_downsample_elision_only_triggers_for_factor1() {
+        assert!(should_skip_blur_downsample_pass(1));
+        assert!(!should_skip_blur_downsample_pass(2));
+        assert!(!should_skip_blur_downsample_pass(4));
+    }
+
+    #[test]
+    fn blur_factor1_upsample_elision_requires_sampled_and_non_extend() {
+        assert!(should_skip_blur_upsample_pass(1, false, true));
+        assert!(!should_skip_blur_upsample_pass(1, true, true));
+        assert!(!should_skip_blur_upsample_pass(1, false, false));
+        assert!(!should_skip_blur_upsample_pass(2, false, true));
+    }
+
+    #[test]
+    fn infer_blur_source_resolution_from_uniform_pass_deps() {
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "p0".to_string(),
+            texture_name: "tex.p0".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+        reg.register(PassOutputSpec {
+            node_id: "p1".to_string(),
+            texture_name: "tex.p1".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let got = infer_uniform_resolution_from_pass_deps(
+            "blur_1",
+            &["p0".to_string(), "p1".to_string()],
+            &reg,
+        )
+        .expect("resolution inference should succeed");
+        assert_eq!(got, Some([33, 75]));
+    }
+
+    #[test]
+    fn infer_blur_source_resolution_errors_on_mixed_sizes() {
+        let mut reg = PassOutputRegistry::new();
+        reg.register(PassOutputSpec {
+            node_id: "p0".to_string(),
+            texture_name: "tex.p0".into(),
+            resolution: [33, 75],
+            format: TextureFormat::Rgba8Unorm,
+        });
+        reg.register(PassOutputSpec {
+            node_id: "p1".to_string(),
+            texture_name: "tex.p1".into(),
+            resolution: [67, 150],
+            format: TextureFormat::Rgba8Unorm,
+        });
+
+        let err = infer_uniform_resolution_from_pass_deps(
+            "blur_1",
+            &["p0".to_string(), "p1".to_string()],
+            &reg,
+        )
+        .expect_err("mismatched sizes must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("GuassianBlurPass blur_1"));
+        assert!(msg.contains("p0=33x75"));
+        assert!(msg.contains("p1=67x150"));
+    }
+
+    #[test]
+    fn infer_blur_source_resolution_returns_none_without_pass_deps() {
+        let reg = PassOutputRegistry::new();
+        let got = infer_uniform_resolution_from_pass_deps("blur_1", &[], &reg)
+            .expect("empty deps should not fail");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn msaa_requested_one_kept_as_single_sample() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            1,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn msaa_unsupported_downgrades_to_single_sample_when_adapter_unavailable() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            2,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn msaa_invalid_value_is_rejected() {
+        let err = select_effective_msaa_sample_count(
+            "rp",
+            0,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect_err("invalid value must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("must be one of 1,2,4,8"));
+    }
+
+    #[test]
+    fn msaa_guaranteed_4x_is_kept_without_adapter_specific_feature() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            4,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 4);
+    }
+
+    #[test]
+    fn msaa_8x_downgrades_to_4x_when_8x_unsupported() {
+        let got = select_effective_msaa_sample_count(
+            "rp",
+            8,
+            TextureFormat::Rgba8Unorm,
+            wgpu::Features::empty(),
+            None,
+        )
+        .expect("msaa selection");
+        assert_eq!(got, 4);
+    }
+}

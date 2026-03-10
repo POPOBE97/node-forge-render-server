@@ -599,3 +599,28 @@ pub fn load_image_from_data_url(data_url: &str) -> Result<DynamicImage> {
     let bytes = decode_data_url(data_url)?;
     image::load_from_memory(&bytes).map_err(|e| anyhow!("failed to decode image bytes: {e}"))
 }
+
+#[cfg(test)]
+mod data_url_tests {
+    use super::*;
+
+    #[test]
+    fn data_url_decodes_png_bytes() {
+        use image::codecs::png::PngEncoder;
+        use image::{ExtendedColorType, ImageEncoder, Rgba, RgbaImage};
+
+        // Build a valid 1x1 PNG in memory, then wrap it as a data URL.
+        let src = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 0]));
+        let mut png_bytes: Vec<u8> = Vec::new();
+        PngEncoder::new(&mut png_bytes)
+            .write_image(src.as_raw(), 1, 1, ExtendedColorType::Rgba8)
+            .unwrap();
+
+        let b64 = general_purpose::STANDARD.encode(&png_bytes);
+        let data_url = format!("data:image/png;base64,{b64}");
+
+        let img = load_image_from_data_url(&data_url).unwrap();
+        assert_eq!(img.width(), 1);
+        assert_eq!(img.height(), 1);
+    }
+}

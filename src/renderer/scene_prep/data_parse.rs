@@ -5,8 +5,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::{
     dsl::{InputBinding, Node, SourceBinding, find_node},
     renderer::types::{BakedValue, ValueType},
-    ts_runtime::TsRuntime,
 };
+
+use super::data_parse_runtime::TsRuntime;
 
 fn map_baked_type(s: Option<&str>) -> Result<ValueType> {
     let Some(s) = s else {

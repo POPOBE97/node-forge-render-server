@@ -1,6 +1,5 @@
 mod api;
 pub(crate) mod assemble_ctx;
-mod assembler;
 mod error_space;
 pub(crate) mod finalizer;
 mod headless;

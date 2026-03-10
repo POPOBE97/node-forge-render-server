@@ -1,6 +1,8 @@
 mod auto_wrap;
 mod composite;
 mod data_parse;
+pub(crate) mod data_parse_runtime;
+pub(crate) mod graph;
 mod group_expand;
 mod image_inline;
 mod pass_dedup;

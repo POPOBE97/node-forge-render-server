@@ -5,7 +5,6 @@ use rust_wgpu_fiber::ResourceName;
 
 use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
-    graph::{topo_sort, upstream_reachable},
     renderer::utils::cpu_num_u32_min_1,
     schema,
 };
@@ -14,6 +13,7 @@ use super::{
     auto_wrap::auto_wrap_primitive_pass_inputs,
     composite::composition_layers_by_id,
     data_parse::bake_data_parse_nodes,
+    graph::{topo_sort, upstream_reachable},
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
     pass_dedup::dedup_identical_passes,

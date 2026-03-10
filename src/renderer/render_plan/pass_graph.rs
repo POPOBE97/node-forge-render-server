@@ -869,4 +869,144 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() -> Result<()> {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let scene_path =
+            manifest_dir.join("tests/fixtures/render_cases/pass-texture-alpha/scene.json");
+        if !scene_path.exists() {
+            return Ok(());
+        }
+        let scene = crate::dsl::load_scene_from_path(&scene_path)?;
+        let prepared = crate::renderer::scene_prep::prepare_scene(&scene)?;
+
+        let nodes_by_id = &prepared.nodes_by_id;
+        // Collect all pass-like node ids as roots to mirror the old sampled_pass_node_ids behavior.
+        let roots: Vec<String> = nodes_by_id
+            .values()
+            .filter(|n| crate::renderer::geometry_resolver::is_pass_like_node_type(&n.node_type))
+            .map(|n| n.id.clone())
+            .collect();
+
+        let sampled = sampled_pass_node_ids_from_roots(&prepared.scene, nodes_by_id, &roots)?;
+        assert!(
+            sampled.contains("pass_up"),
+            "expected sampled passes to include pass_up, got: {sampled:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn pass_order_supports_nested_composition_routing_nodes() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "nested-comp".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("comp_a", "Composite"),
+                node("comp_b", "Composite"),
+                Node {
+                    id: "rt_a".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(100)),
+                        ("height".to_string(), json!(100)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: vec![],
+                    outputs: vec![],
+                },
+                Node {
+                    id: "rt_b".to_string(),
+                    node_type: "RenderTexture".to_string(),
+                    params: HashMap::from([
+                        ("width".to_string(), json!(200)),
+                        ("height".to_string(), json!(200)),
+                    ]),
+                    inputs: vec![],
+                    input_bindings: vec![],
+                    outputs: vec![],
+                },
+                node("ds", "Downsample"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_ta".to_string(),
+                    from: Endpoint {
+                        node_id: "rt_a".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp_a".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_tb".to_string(),
+                    from: Endpoint {
+                        node_id: "rt_b".to_string(),
+                        port_id: "texture".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp_b".to_string(),
+                        port_id: "target".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_source".to_string(),
+                    from: Endpoint {
+                        node_id: "comp_a".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ds".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "ds".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "comp_b".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+            state_machine: None,
+        };
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("comp_b")])?;
+        assert_eq!(order, vec!["comp_a", "ds", "comp_b"]);
+
+        // Use all pass-like nodes as roots to check sampled detection.
+        let all_roots: Vec<String> = nodes_by_id
+            .values()
+            .filter(|n| crate::renderer::geometry_resolver::is_pass_like_node_type(&n.node_type))
+            .map(|n| n.id.clone())
+            .collect();
+        let sampled = sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &all_roots)?;
+        assert!(sampled.contains("comp_a"), "sampled={sampled:?}");
+        // ds is consumed by comp_b (a Composite), and the canonical algorithm
+        // does not mark inputs to Composites as sampled — only non-Composite
+        // pass nodes that sample textures trigger the sampled flag.
+
+        Ok(())
+    }
 }

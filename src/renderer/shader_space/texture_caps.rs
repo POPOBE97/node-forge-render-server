@@ -240,3 +240,93 @@ pub(crate) fn validate_texture_capability_requirements(
         effective_texture_format_features(format, device_features, adapter)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat, TextureUsages};
+
+    use crate::renderer::shader_space::pass_spec::TextureCapabilityRequirement;
+
+    fn make_format_features(
+        allowed_usages: TextureUsages,
+        flags: wgpu::TextureFormatFeatureFlags,
+    ) -> wgpu::TextureFormatFeatures {
+        wgpu::TextureFormatFeatures {
+            allowed_usages,
+            flags,
+        }
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_required_usage_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            sample_count: 1,
+            sampled_by_passes: Vec::new(),
+            blend_target_passes: Vec::new(),
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::RENDER_ATTACHMENT,
+                wgpu::TextureFormatFeatureFlags::empty(),
+            )
+        })
+        .expect_err("missing usage should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("missing required usages"));
+        assert!(msg.contains("rt"));
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_filterable_flag_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+            sample_count: 1,
+            sampled_by_passes: vec!["pass_a".to_string()],
+            blend_target_passes: Vec::new(),
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+                wgpu::TextureFormatFeatureFlags::empty(),
+            )
+        })
+        .expect_err("missing filterable should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("FILTERABLE"));
+        assert!(msg.contains("pass_a"));
+    }
+
+    #[test]
+    fn texture_capability_validation_fails_when_blendable_flag_is_missing() {
+        let req = TextureCapabilityRequirement {
+            name: "rt".into(),
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            sample_count: 1,
+            sampled_by_passes: Vec::new(),
+            blend_target_passes: vec!["pass_b".to_string()],
+        };
+
+        let err = validate_texture_capability_requirements_with_resolver(&[req], |_| {
+            make_format_features(
+                TextureUsages::RENDER_ATTACHMENT,
+                wgpu::TextureFormatFeatureFlags::FILTERABLE,
+            )
+        })
+        .expect_err("missing blendable should fail");
+
+        let msg = err.to_string();
+        assert!(msg.contains("BLENDABLE"));
+        assert!(msg.contains("pass_b"));
+    }
+}
