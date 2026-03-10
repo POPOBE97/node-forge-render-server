@@ -1,330 +1,278 @@
 # Renderer Refactoring Architecture
 
-## Overview
+## Status (2026-03)
 
-This document describes the refactored architecture for `renderer.rs`, transforming it from a monolithic 2723-line file into a modular, compiler-like system.
+The core architectural thesis is unchanged: the renderer should behave like a compiler pipeline.
+That pipeline already exists in production form:
 
-## 2026-02 Geometry/Coordination Update
+- `scene_prep::prepare_scene_with_report()` prepares and validates the input scene.
+- `render_plan::planner::RenderPlanner::plan()` builds a `RenderPlan`.
+- `shader_space::finalizer::ShaderSpaceFinalizer::finalize()` materializes GPU resources.
+- `shader_space::api::ShaderSpaceBuilder` already routes through that path.
 
-Geometry and coordinate-domain inference has been further refactored into a canonical resolver pipeline.
+This means the remaining work is not "invent the architecture". The remaining work is to remove
+the legacy ownership seams that still sit around the planner/finalizer pipeline.
 
-- Canonical reference: `docs/geometry-coordination-resolver-refactor.md`
-- Primary implementation: `src/renderer/geometry_resolver/`
-- `Composite` is routing/target-binding only (non-draw); draw geometry is resolved per draw-pass context.
-- Consumer-aware policy now controls placement:
-  - preserve placement for composition consumers
-  - normalize to local space for processing consumers
+## What Is Actually Left
 
-## Current Structure (Before Refactoring)
+The most important remaining problems are structural, not cosmetic:
 
-```
-src/renderer.rs (2723 lines)
-├── Port type utilities
-├── Scene preparation
-├── WGSL generation utilities
-├── Material expression compilation (all nodes in one giant match)
-├── Pass WGSL bundle building
-├── ShaderSpace construction
-└── Error shader generation
-```
+- `src/renderer/shader_space/assembler.rs` is still a large legacy container.
+  - `build_shader_space_from_scene_internal()` already delegates to planner + finalizer.
+  - pass-graph and kernel helpers still exist there even though canonical versions now live under
+    `render_plan/`.
+  - the test coverage in that file is useful, but much of it is validating logic that now belongs
+    elsewhere.
+- Planning state is still split across old names and old homes.
+  - `shader_space/assemble_ctx.rs` owns `AssembleContext`.
+  - `shader_space/pass_assemblers/args.rs` owns `SceneContext` and `BuilderState`.
+  - those structs carry overlapping planning data and preserve a pre-pipeline mental model.
+- `src/ws.rs` is too large and mixes unrelated concerns.
+  - server lifecycle and client handling
+  - scene delta cache/update logic
+  - asset transfer state machine
+- Several crate-root modules have unclear ownership and need an explicit decision:
+  - `src/graph.rs`
+  - `src/vm.rs`
+  - `src/stream.rs`
+  - `src/ts_runtime.rs`
 
-## New Architecture (After Refactoring)
+## Anti-Goals
 
-```
-src/renderer/
-├── mod.rs                          # Module entry point, re-exports
-├── types.rs                        # Core type definitions
-├── utils.rs                        # Utility functions
-├── scene_prep/                     # Scene preparation and validation
-├── render_plan/                    # Pass graph + geometry helpers
-├── geometry_resolver/              # Canonical coord/geometry inference
-├── wgsl.rs                         # WGSL shader bundle generation
-├── shader_space/                   # ShaderSpace construction
-├── validation.rs                   # WGSL validation using naga
-└── node_compiler/
-    ├── mod.rs                      # Compiler infrastructure
-    ├── context.rs                  # MaterialCompileContext
-    ├── input_nodes.rs              # ColorInput, FloatInput, IntInput, Vector*Input
-    ├── attribute.rs                # Attribute node
-    ├── texture_nodes.rs            # ImageTexture, CheckerTexture, GradientTexture, NoiseTexture
-    ├── math_nodes.rs               # MathAdd, MathMultiply, MathClamp, MathPower
-    ├── vector_nodes.rs             # VectorMath, CrossProduct, DotProduct, Normalize
-    ├── color_nodes.rs              # ColorMix, ColorRamp, HSVAdjust
-    ├── shader_nodes.rs             # EmissionShader, PrincipledBSDF, MixShader
-    ├── material_nodes.rs           # MaterialFromShader, PBRMaterial, ShaderMaterial
-    ├── pass_nodes.rs               # Pass node compilation helpers
-    └── geometry_nodes.rs           # Geometry node compilation helpers
-```
+This refactor should not optimize for symmetry over ownership.
 
-## Module Responsibilities
+- Do not extract `app::scene_runtime` into a top-level `runtime/` module yet.
+  - There is only one real consumer today: the app.
+  - extraction is only justified once there is another runtime surface that needs the same logic.
+- Do not create a broad `transport/` umbrella just to split `ws.rs`.
+- Do not split `dsl.rs` into many files until there is a real ownership boundary.
+- Do not introduce speculative modules such as `telemetry/` without a concrete consumer.
+- Do not rename resources casually or churn WGSL goldens unless behavior is intentionally changing.
 
-### types.rs
-- `ValueType`: WGSL type enum (F32, Vec2, Vec3, Vec4)
-- `TypedExpr`: Typed WGSL expression with time dependency tracking
-- `MaterialCompileContext`: Tracks image textures and bindings
-- `Params`: Uniform parameters for render passes
-- `PassBindings`: Binding information for passes
-- `WgslShaderBundle`: Complete WGSL shader bundle
+## Current Compiler Pipeline
 
-### utils.rs
-- `fmt_f32()`: Format floats for WGSL
-- `array8_f32_wgsl()`: Format float arrays
-- `sanitize_wgsl_ident()`: Sanitize identifiers
-- `splat_f32()`: Splat scalars to vectors
-- `coerce_for_binary()`: Type coercion for binary ops
-- `to_vec4_color()`: Convert to vec4 color
-- `as_bytes()`, `as_bytes_slice()`: Memory utilities
-- `decode_data_url()`: Data URL parsing
-- `load_image_from_data_url()`: Image loading
-
-### scene_prep/
-- `PreparedScene`: Prepared scene with topo order
-- `prepare_scene()`: Main scene preparation function
-- `auto_wrap_primitive_pass_inputs()`: Auto-wrap primitives to passes
-- Port type utilities (`port_type_contains`, etc.)
-- Composition layer ordering and output target contract resolution
-
-### render_plan/
-- `pass_graph.rs`: pass dependency traversal and sampled-pass discovery
-- `geometry.rs`: geometry metrics, Rect2D defaults, transform matrix composition, GLTF pixel-space loading
-
-### geometry_resolver/
-- `resolve_scene_draw_contexts()`: canonical entrypoint for draw contexts
-- resolves `NodeRole`, `ResolvedDrawContext`, `ResolvedCompositionContext`
-- infers nearest downstream composition domains on live branches only
-- enforces `Composite.target <- RenderTexture` coordinate-domain contract
-
-### wgsl.rs
-- `build_fullscreen_textured_bundle()`: Fullscreen quad shader
-- `build_pass_wgsl_bundle()`: Build WGSL for a single pass
-- `build_all_pass_wgsl_bundles_from_scene()`: Build all pass bundles
-- Gaussian blur utilities
-- WGSL formatting utilities
-
-### shader_space/
-- `build_shader_space_from_scene_internal()`: Main ShaderSpace builder
-- `build_error_shader_space()`: Error visualization builder
-- Texture/sampler/buffer creation
-- resolver-driven placement + compose pass synthesis
-- implicit `Composite -> Composite` fullscreen blit generation
-- Blend state parsing
-
-### validation.rs
-- `validate_wgsl()`: Validate WGSL using naga
-- `format_naga_error()`: Format naga errors nicely
-- Integration with build_pass_wgsl_bundle
-
-### node_compiler/mod.rs
-- `compile_material_expr()`: Main dispatcher function
-- Expression caching
-- Recursive compilation
-- Legacy node support (Sin, Cos, Add, Mul, Mix, etc.)
-
-### node_compiler/context.rs
-- `MaterialCompileContext`: Full implementation
-- `register_image_texture()`: Register texture bindings
-- `tex_var_name()`, `sampler_var_name()`: Name generation
-
-### Individual Node Compiler Modules
-
-Each module contains compilation logic for specific node types:
-
-```rust
-// Example: input_nodes.rs
-pub fn compile_color_input(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
-    let v = parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0]);
-    Ok(TypedExpr::new(
-        format!("vec4f({}, {}, {}, {})", v[0], v[1], v[2], v[3]),
-        ValueType::Vec4
-    ))
-}
-
-pub fn compile_float_input(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
-    let v = parse_const_f32(node).unwrap_or(0.0);
-    Ok(TypedExpr::new(format!("{v}"), ValueType::F32))
-}
+```text
+SceneDSL
+  -> schema validation
+  -> scene_prep::prepare_scene_with_report
+  -> geometry_resolver::resolve_scene_draw_contexts
+  -> render_plan::planner::RenderPlanner::plan
+     -> pass_handlers
+     -> pass_assemblers/*
+  -> shader_space::finalizer::ShaderSpaceFinalizer::finalize
+  -> ShaderSpace / PassBindings / pipeline signature
 ```
 
-## Compilation Pipeline
+Important nuance: the planner/finalizer split is real, but the planner still drives legacy-shaped
+pass assembly adapters (`SceneContext`, `BuilderState`, `AssembleContext`). That is the main debt to
+pay down next.
 
+## Revised Priority Order
+
+### Phase 1: Remove Legacy Assembler Ownership
+
+Goal: make `render_plan/` the only home for planning logic.
+
+Facts already true in the codebase:
+
+- `shader_space/api.rs` is the canonical public builder entrypoint.
+- `assembler.rs::build_shader_space_from_scene_internal()` already delegates to planner +
+  finalizer.
+- `assembler.rs` still duplicates logic that now has natural homes:
+  - pass dependency traversal and render ordering belong to `render_plan/pass_graph.rs`
+  - kernel parsing belongs to `render_plan/kernel.rs`
+
+Work:
+
+- remove the dead wrapper entrypoint once builder/finalizer coverage is sufficient
+- migrate or delete duplicate helper functions from `assembler.rs`
+- move or rewrite tests so they live with the canonical implementation instead of the legacy file
+- reduce `assembler.rs` to code that still truly belongs to error-space/finalization, or delete the
+  file entirely if that remainder disappears
+
+Exit criteria:
+
+- planning logic is no longer duplicated between `assembler.rs` and `render_plan/`
+- `assembler.rs` is either gone or clearly limited to non-planning responsibilities
+
+### Phase 2: Collapse Duplicate Planning State
+
+Goal: replace the old split state model with one render-plan-owned planning vocabulary.
+
+Facts already true in the codebase:
+
+- pass assemblers are currently called from `render_plan::pass_handlers`
+- there is no second active "old assembler" path using those pass assemblers
+
+Work:
+
+- converge `AssembleContext`, `SceneContext`, and `BuilderState` into a single ownership-aligned
+  planning state model
+- move that state into `render_plan/` under a name that reflects its role
+  - `planning_state.rs` is a reasonable candidate
+  - `args.rs` is not
+- decide whether the current `shader_space/pass_assemblers/` helpers stay temporarily in place or
+  move under `render_plan/`
+- remove the remaining planner-facing ownership leak from `shader_space/`
+
+Exit criteria:
+
+- planner code uses one coherent state model
+- `shader_space/` no longer owns planner state types
+- `args.rs` is gone
+
+### Phase 3: Split `ws.rs` Along Natural Seams
+
+Goal: reduce file size and coupling without inventing a broader transport architecture.
+
+Keep:
+
+- `protocol.rs` as the shared message schema module
+- one top-level WebSocket integration surface
+
+Split:
+
+- `ws/scene_delta.rs`
+  - `SceneDelta`
+  - `SceneCache`
+  - delta application
+  - uniform-only delta detection
+- `ws/asset_transfer.rs`
+  - upload/download state
+  - chunk validation
+  - retry/backoff and missing-chunk recovery
+- `ws/mod.rs` (or keep `ws.rs` if the directory split is deferred)
+  - server loop
+  - client handling
+  - wiring to `app` and `renderer`
+
+Not planned:
+
+- `transport/`
+- `decode.rs` / `encode.rs` / `server.rs` micro-splits
+- moving `protocol.rs` just for tree symmetry
+
+### Phase 4: Audit Orphan and Dead Modules
+
+Goal: every remaining module should have an obvious owner or be removed.
+
+- `graph.rs`
+  - currently used by `renderer::scene_prep::pipeline`
+  - move it near `scene_prep` or `dsl`, whichever ends up owning scene graph utilities
+- `ts_runtime.rs`
+  - this is DataParse infrastructure, not a general crate-root utility
+  - move it next to `scene_prep/data_parse.rs` or another explicitly named DataParse runtime home
+- `stream.rs`
+  - currently a placeholder only
+  - delete it unless a real second scene-source abstraction appears
+- `vm.rs`
+  - currently has no Rust call sites
+  - make an explicit keep-or-kill decision
+  - if kept, mark it experimental and co-locate it with the bytecode VM assets
+- also audit dead wrappers and helpers still left in `assembler.rs`
+
+Exit criteria:
+
+- no orphan modules remain at crate root without a clear owner
+- dead experimental surfaces are either removed or explicitly marked as such
+
+### Phase 5: Small Splits Only Where They Earn Their Keep
+
+After the ownership cleanup above, smaller file splits become straightforward and low risk.
+
+- `dsl.rs`
+  - keep as-is for now, or do the minimal split to `dsl/mod.rs` plus a small companion such as
+    `schema.rs`
+  - avoid creating five small files without a real ownership reason
+- WGSL helper modules
+  - split only after the planner/assembler debt is gone
+- CLI parsing
+  - keep it in `main.rs` unless subcommands or materially larger parsing logic arrive
+
+### Phase 6: Deferred Work
+
+These are valid follow-up tasks, but not current refactor drivers:
+
+- runtime extraction from `app::scene_runtime.rs`
+- public API hardening beyond the current builder surface
+- broader test pyramid work
+- telemetry or other speculative infrastructure
+
+## Dependency and Ownership Rules
+
+These rules should guide the remaining moves.
+
+- `scene_prep/` owns:
+  - scene normalization
+  - reachability pruning
+  - topological sort
+  - auto-wrap and validation
+  - DataParse baking
+- `render_plan/` owns:
+  - pass dependency traversal
+  - pass ordering
+  - planning accumulators/state
+  - planner-facing pass handlers
+- `shader_space/` owns:
+  - finalization
+  - GPU resource materialization
+  - error-space construction
+  - runtime resource setup
+- `node_compiler/` owns WGSL expression generation, but DataParse is intentionally cross-cut:
+  - CPU baking and JS evaluation live on the prep/planning side
+  - WGSL accessors for baked slots live in `node_compiler/data_parse.rs`
+  - `ts_runtime` belongs to that DataParse path, not as an orphan utility
+- `app::scene_runtime` remains app-scoped until another consumer justifies extraction
+
+## Minimal Near-Term Target Tree
+
+This is the target shape worth optimizing for now. It is intentionally conservative.
+
+```text
+src/
+├── app/
+│   └── scene_runtime.rs
+├── protocol.rs
+├── ws/
+│   ├── mod.rs
+│   ├── scene_delta.rs
+│   └── asset_transfer.rs
+├── renderer/
+│   ├── geometry_resolver/
+│   ├── scene_prep/
+│   │   ├── data_parse.rs
+│   │   ├── graph.rs
+│   │   └── ...
+│   ├── render_plan/
+│   │   ├── planner.rs
+│   │   ├── pass_graph.rs
+│   │   ├── pass_handlers.rs
+│   │   ├── planning_state.rs
+│   │   └── ...
+│   └── shader_space/
+│       ├── api.rs
+│       ├── finalizer.rs
+│       ├── error_space.rs
+│       └── ...
+└── dsl.rs
 ```
-DSL JSON
-    ↓
-Schema Validation (schema.rs)
-    ↓
-Scene Preparation (scene_prep/)
-    ├── Locate RenderTarget
-    ├── Tree-shake unused nodes
-    ├── Auto-wrap primitives
-    ├── Validate connections
-    ├── Resolve composition layers/targets
-    └── Topological sort
-    ↓
-Geometry/Coord Resolution (geometry_resolver/)
-    ├── Build composition contexts from Composite.target
-    ├── Resolve draw contexts per consumer edge
-    ├── Preserve resolved geometry placement for all consumer edges
-    └── Tree-shake dead pass branches for inference
-    ↓
-WGSL Generation (wgsl.rs + node_compiler/*)
-    ├── For each RenderPass node:
-    │   ├── Compile material expression (node_compiler/mod.rs)
-    │   │   ├── Dispatch to specific compiler (input_nodes.rs, etc.)
-    │   │   ├── Recursively compile inputs
-    │   │   ├── Type coercion (utils.rs)
-    │   │   └── Cache results
-    │   ├── Build WGSL shader bundle (wgsl.rs)
-    │   └── Validate WGSL (validation.rs + naga)
-    └── Return all bundles
-    ↓
-ShaderSpace Construction (shader_space/)
-    ├── Create textures (RenderTexture, ImageTexture)
-    ├── Create geometry buffers (Rect2DGeometry)
-    ├── Create uniform buffers (Params)
-    ├── Create pipelines (RenderPass)
-    ├── Handle composition routing
-    ├── Synthesize sampled-pass compose passes
-    ├── Synthesize Composite -> Composite blits
-    └── Setup render order
-    ↓
-Render (rust-wgpu-fiber)
-```
 
-## naga Integration
+Notes:
 
-The `naga` crate is moved from `dev-dependencies` to regular `dependencies` to enable runtime WGSL validation:
+- `graph.rs` should move before any broader `dsl/` split.
+- `pass_assemblers/` may temporarily remain where it is while planning state is collapsed, but it
+  should not be treated as a permanent `shader_space/` concern.
+- `protocol.rs` stays where it is.
+- `scene_runtime.rs` stays where it is.
 
-```toml
-[dependencies]
-naga = { version = "0.20", features = ["wgsl-in"] }
-```
+## Concrete Next Moves
 
-Usage in `validation.rs`:
+If work starts immediately, the recommended order is:
 
-```rust
-pub fn validate_wgsl(source: &str) -> Result<naga::Module> {
-    naga::front::wgsl::parse_str(source)
-        .map_err(|e| anyhow!("WGSL validation failed: {}", format_naga_error(source, &e)))
-}
-```
+1. delete the remaining planner wrapper/debt in `assembler.rs`
+2. collapse `AssembleContext` and `SceneContext` / `BuilderState`
+3. split `ws.rs` into `scene_delta` and `asset_transfer`
+4. move `graph.rs`, re-home `ts_runtime.rs`, and make explicit decisions on `stream.rs` and `vm.rs`
+5. only then do cosmetic file-tree cleanup such as `dsl.rs` or WGSL helper splits
 
-Called from `build_pass_wgsl_bundle`:
-
-```rust
-// Validate generated WGSL
-validation::validate_wgsl(&bundle.module)
-    .with_context(|| format!("pass {pass_id} generated invalid WGSL"))?;
-```
-
-## Testing Strategy
-
-### Unit Tests for Node Compilers
-
-Each node compiler module has its own test module:
-
-```rust
-// tests/node_compilers/input_nodes_test.rs
-#[test]
-fn test_color_input_compilation() {
-    let node = Node {
-        id: "color1".to_string(),
-        node_type: "ColorInput".to_string(),
-        params: HashMap::from([
-            ("value".to_string(), json!([0.5, 0.3, 0.8, 1.0]))
-        ]),
-        inputs: Vec::new(),
-    };
-    
-    let result = compile_color_input(&node, None).unwrap();
-    assert_eq!(result.ty, ValueType::Vec4);
-    assert!(result.expr.contains("vec4f"));
-    assert!(!result.uses_time);
-}
-```
-
-### Integration Tests
-
-Existing integration tests in `tests/wgsl_generation.rs` ensure:
-- Golden file comparison (vertex, fragment, module WGSL)
-- naga validation of all generated WGSL
-- Auto-wrapping of primitive values
-- Tree-shaking of unused nodes
-
-### Test Coverage Goals
-
-- [ ] 100% coverage of node compiler functions
-- [ ] All 50 node types from node-scheme.json have tests
-- [ ] Type coercion edge cases
-- [ ] Error handling (invalid connections, missing inputs)
-- [ ] WGSL validation catches syntax errors
-
-## Migration Plan
-
-1. **Phase 1: Extract types and utils** (Non-breaking)
-   - Create types.rs with all type definitions
-   - Create utils.rs with utility functions
-   - Update renderer.rs to use `super::types::*` and `super::utils::*`
-
-2. **Phase 2: Move naga to dependencies** (Non-breaking)
-   - Update Cargo.toml
-   - Create validation.rs
-   - Add validation calls to build_pass_wgsl_bundle
-
-3. **Phase 3: Extract scene_prep.rs** (Non-breaking)
-   - Move PreparedScene and prepare_scene
-   - Move auto-wrapping logic
-   - Update renderer.rs imports
-
-4. **Phase 4: Extract wgsl.rs** (Non-breaking)
-   - Move WGSL bundle building functions
-   - Move Gaussian blur utilities
-   - Update renderer.rs imports
-
-5. **Phase 5: Extract shader_space.rs** (Non-breaking)
-   - Move build_shader_space_from_scene
-   - Move blend state parsing
-   - Move composite handling
-   - Update renderer.rs imports
-
-6. **Phase 6: Create node compiler infrastructure** (Non-breaking)
-   - Create node_compiler/mod.rs with dispatch logic
-   - Keep compile_material_expr in place initially
-   - Add tests for infrastructure
-
-7. **Phase 7: Extract node compilers incrementally** (Non-breaking)
-   - Start with simple nodes (input_nodes.rs)
-   - Add unit tests for each
-   - Update dispatch in node_compiler/mod.rs
-   - Repeat for all node types
-
-8. **Phase 8: Final cleanup** (Non-breaking)
-   - Remove empty renderer.rs
-   - Update all imports to use renderer::*
-   - Update documentation
-
-## Benefits
-
-### Maintainability
-- Each module < 500 lines (vs 2723 line monolith)
-- Clear separation of concerns
-- Easy to locate specific node logic
-
-### Extensibility
-- Adding new node types: just add a function in the appropriate module
-- Modifying a node: change one function, not a giant match statement
-- node-scheme.json changes map directly to code structure
-
-### Testability
-- Unit tests for each node compiler
-- Isolated testing without full scene setup
-- Easy to test error cases
-
-### Code Quality
-- Early WGSL validation catches errors
-- Type safety enforced throughout
-- Consistent error messages
-
-### Documentation
-- Each module documents its purpose
-- Node compilers self-documenting
-- Architecture clear from directory structure
+That sequence keeps the refactor focused on real ownership wins instead of directory churn.
