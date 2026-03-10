@@ -19,6 +19,8 @@
 pub mod runloop;
 pub mod session;
 pub mod task;
+pub mod timeline;
 pub mod value_pool;
 
 pub use session::{AnimationSession, AnimationStep, FixedStepClock};
+pub use timeline::{TimelineBuffer, TimelineFrame};
