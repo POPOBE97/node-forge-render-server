@@ -13,7 +13,7 @@ use super::components::value_slider;
 use super::design_tokens::{self, TextRole};
 use super::file_tree_widget::FileTreeState;
 use super::resource_tree::{FileTreeNode, NodeKind};
-use super::state_machine_panel::{StateMachineSnapshot, show_state_machine_section};
+
 
 pub const SIDEBAR_WIDTH: f32 = 340.0;
 pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
@@ -363,6 +363,20 @@ pub enum SidebarAction {
     SetClippingHighlightThreshold(f32),
 }
 
+/// Hover state from the timeline panel.
+#[derive(Clone, Debug)]
+pub struct TimelineHover {
+    /// Index of the hovered frame in the timeline buffer.
+    pub frame_index: usize,
+}
+
+/// Structured result returned from the sidebar each frame.
+#[derive(Clone, Debug, Default)]
+pub struct SidebarResult {
+    /// Persistent action (e.g. tab switch, preview texture, reference ops).
+    pub action: Option<SidebarAction>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ReferenceSidebarState {
     pub name: String,
@@ -393,10 +407,9 @@ pub fn show_in_rect(
     reference: Option<&ReferenceSidebarState>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
-    sm_snapshot: Option<&StateMachineSnapshot>,
-) -> Option<SidebarAction> {
+) -> SidebarResult {
     if ui_sidebar_factor <= 0.0 {
-        return None;
+        return SidebarResult::default();
     }
 
     let sidebar_bg = sidebar_background_color();
@@ -485,19 +498,15 @@ pub fn show_in_rect(
                                     &mut sidebar_action,
                                 );
                             });
-                            if let Some(sm) = sm_snapshot {
-                                section_divider(ui);
-                                with_sidebar_content_padding(ui, |ui| {
-                                    show_state_machine_section(ui, sm);
-                                });
-                            }
                         });
                     });
             }
         });
     });
 
-    sidebar_action
+    SidebarResult {
+        action: sidebar_action,
+    }
 }
 
 fn show_ref_section(
@@ -758,11 +767,13 @@ fn show_infographics_section(
         });
 
         ui.add_space(SIDEBAR_GRID_ROW_GAP);
-        let selected_texture_id = match tab {
-            AnalysisTab::Histogram => histogram_texture_id,
-            AnalysisTab::Parade => parade_texture_id,
-            AnalysisTab::Vectorscope => vectorscope_texture_id,
-        };
+
+        {
+            let selected_texture_id = match tab {
+                AnalysisTab::Histogram => histogram_texture_id,
+                AnalysisTab::Parade => parade_texture_id,
+                AnalysisTab::Vectorscope => vectorscope_texture_id,
+            };
 
         sidebar_grid_row(ui, |row| {
             row.place(1, 4, |ui| {
@@ -813,6 +824,7 @@ fn show_infographics_section(
                     });
             });
         });
+        } // end analysis texture block
     });
 }
 
