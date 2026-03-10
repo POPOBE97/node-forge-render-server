@@ -636,7 +636,7 @@ fn eval_data_parse_scalar(
     let script_body = format!("{bindings_src}\n{user_src}\n");
     let script = format!("(function() {{\n{}\n}})()", script_body);
 
-    let mut rt = crate::ts_runtime::TsRuntime::new();
+    let mut rt = crate::renderer::scene_prep::data_parse_runtime::TsRuntime::new();
     let out: serde_json::Value = rt
         .eval_script(&script)
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
