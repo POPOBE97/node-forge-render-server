@@ -318,7 +318,8 @@ pub fn show_timeline(
             let section_color = design_tokens::white(40);
 
             egui::Area::new(ui.id().with("timeline_tooltip"))
-                .fixed_pos(pointer + egui::vec2(12.0, 12.0))
+                .fixed_pos(egui::pos2(pointer.x + 12.0, total_rect.min.y))
+                .pivot(egui::Align2::LEFT_BOTTOM)
                 .order(egui::Order::Tooltip)
                 .show(ui.ctx(), |ui| {
                     egui::Frame::NONE
