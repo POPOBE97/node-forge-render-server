@@ -1,12 +1,8 @@
 mod api;
-pub(crate) mod assemble_ctx;
 mod error_space;
 pub(crate) mod finalizer;
 mod headless;
 pub(crate) mod image_utils;
-pub(crate) mod pass_assemblers;
-pub(crate) mod pass_spec;
-pub(crate) mod resource_naming;
 pub(crate) mod sampler;
 pub(crate) mod texture_caps;
 

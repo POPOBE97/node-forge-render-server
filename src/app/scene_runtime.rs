@@ -377,9 +377,8 @@ pub fn apply_scene_update(
                         app.runtime.pipeline_rebuild_count.saturating_add(1);
 
                     app.runtime.animation_session = next_animation_session;
-                    app.runtime.timeline_buffer = create_timeline_buffer_for_session(
-                        app.runtime.animation_session.as_ref(),
-                    );
+                    app.runtime.timeline_buffer =
+                        create_timeline_buffer_for_session(app.runtime.animation_session.as_ref());
                     app.runtime.last_live_overrides = None;
                     app.runtime.timeline_pre_hover_overrides = None;
                     app.runtime.timeline_preview_was_active = false;
@@ -534,11 +533,10 @@ fn create_timeline_buffer_for_session(
     session: Option<&crate::animation::AnimationSession>,
 ) -> Option<crate::animation::TimelineBuffer> {
     let session = session?;
-    let keys: Vec<String> = crate::state_machine::trace::tracked_override_keys(
-        session.runtime().definition(),
-    )
-    .into_iter()
-    .collect();
+    let keys: Vec<String> =
+        crate::state_machine::trace::tracked_override_keys(session.runtime().definition())
+            .into_iter()
+            .collect();
     Some(crate::animation::TimelineBuffer::new(10.0, keys))
 }
 

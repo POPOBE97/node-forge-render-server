@@ -385,7 +385,6 @@ pub(super) fn run(
                     did_update_active_analysis = true;
                 }
             }
-
         }
 
         if app.canvas.analysis.clip_enabled {

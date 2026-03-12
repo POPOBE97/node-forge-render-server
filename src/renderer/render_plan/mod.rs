@@ -1,9 +1,12 @@
 pub mod blend;
 pub mod geometry;
 pub mod kernel;
+pub(crate) mod pass_assemblers;
 pub mod pass_graph;
 pub mod pass_handlers;
+pub(crate) mod pass_spec;
 pub mod planner;
+pub(crate) mod resource_naming;
 pub mod types;
 
 pub(crate) use blend::parse_render_pass_blend_state;

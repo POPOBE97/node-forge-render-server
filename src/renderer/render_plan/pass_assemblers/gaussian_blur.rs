@@ -29,7 +29,6 @@ use crate::{
     },
 };
 
-use super::super::image_utils::image_node_dimensions;
 use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
@@ -38,8 +37,11 @@ use super::super::resource_naming::{
     infer_uniform_resolution_from_pass_deps, resolve_chain_camera_for_first_pass,
     should_skip_blur_downsample_pass, should_skip_blur_upsample_pass,
 };
-use super::super::sampler::{sampler_kind_for_pass_texture, sampler_kind_from_node_params};
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
+use crate::renderer::shader_space::image_utils::image_node_dimensions;
+use crate::renderer::shader_space::sampler::{
+    sampler_kind_for_pass_texture, sampler_kind_from_node_params,
+};
 
 /// Assemble a `"GuassianBlurPass"` layer.
 pub(crate) fn assemble_gaussian_blur(

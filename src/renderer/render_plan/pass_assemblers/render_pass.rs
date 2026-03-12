@@ -41,8 +41,10 @@ use super::super::resource_naming::{
     parse_render_pass_cull_mode, parse_render_pass_depth_test, readable_pass_name_for_node,
     sampled_render_pass_output_size, select_effective_msaa_sample_count,
 };
-use super::super::sampler::{sampler_kind_for_pass_texture, sampler_kind_from_node_params};
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
+use crate::renderer::shader_space::sampler::{
+    sampler_kind_for_pass_texture, sampler_kind_from_node_params,
+};
 
 /// Assemble a `"RenderPass"` layer.
 pub(crate) fn assemble_render_pass(

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     dsl::Node,
-    renderer::shader_space::pass_assemblers::{
+    renderer::render_plan::pass_assemblers::{
         self,
         args::{BuilderState, SceneContext},
     },

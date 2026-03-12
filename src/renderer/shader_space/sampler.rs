@@ -13,7 +13,7 @@ use crate::{
     renderer::utils::as_bytes,
 };
 
-use super::pass_spec::SamplerKind;
+use crate::renderer::render_plan::pass_spec::SamplerKind;
 use crate::renderer::types::PassBindings;
 
 pub(crate) fn sampler_kind_from_node_params(

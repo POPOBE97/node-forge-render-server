@@ -283,11 +283,13 @@ pub(super) struct AppRuntime {
     pub timeline_buffer: Option<crate::animation::TimelineBuffer>,
     /// Snapshot of the most recent live `AnimationStep.active_overrides`.
     /// Used to restore the canvas when leaving timeline hover preview.
-    pub last_live_overrides: Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
+    pub last_live_overrides:
+        Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
     /// Snapshot of uniform_scene param values captured when timeline hover
     /// begins.  Used to restore the scene when the cursor leaves the
     /// timeline, regardless of whether the animation is playing or stopped.
-    pub timeline_pre_hover_overrides: Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
+    pub timeline_pre_hover_overrides:
+        Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
     /// Whether the timeline hover preview was active last frame.
     /// Used to detect hover-exit transitions (egui has no hover events).
     pub timeline_preview_was_active: bool,

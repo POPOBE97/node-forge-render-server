@@ -14,7 +14,6 @@ use super::design_tokens::{self, TextRole};
 use super::file_tree_widget::FileTreeState;
 use super::resource_tree::{FileTreeNode, NodeKind};
 
-
 pub const SIDEBAR_WIDTH: f32 = 340.0;
 pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
 /// Maximum sidebar width: 2/3 of the available window width.
@@ -775,55 +774,56 @@ fn show_infographics_section(
                 AnalysisTab::Vectorscope => vectorscope_texture_id,
             };
 
-        sidebar_grid_row(ui, |row| {
-            row.place(1, 4, |ui| {
-                let analysis_border_color = design_tokens::white(20);
-                egui::Frame::new()
-                    .outer_margin(egui::Margin {
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                    })
-                    .stroke(egui::Stroke::new(
-                        design_tokens::LINE_THICKNESS_1,
-                        analysis_border_color,
-                    ))
-                    .corner_radius(design_tokens::radius(
-                        design_tokens::BORDER_RADIUS_SMALL as u8,
-                    ))
-                    .show(ui, |ui| {
-                        let width = ui.available_width();
-                        let panel_size = egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
-                        ui.allocate_ui_with_layout(
-                            panel_size,
-                            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                            |ui| {
-                                if let Some(texture_id) = selected_texture_id {
-                                    let image_size = if matches!(tab, AnalysisTab::Vectorscope) {
-                                        let side = panel_size.x.min(panel_size.y);
-                                        egui::vec2(side, side)
+            sidebar_grid_row(ui, |row| {
+                row.place(1, 4, |ui| {
+                    let analysis_border_color = design_tokens::white(20);
+                    egui::Frame::new()
+                        .outer_margin(egui::Margin {
+                            left: 0,
+                            right: 0,
+                            top: 0,
+                            bottom: 0,
+                        })
+                        .stroke(egui::Stroke::new(
+                            design_tokens::LINE_THICKNESS_1,
+                            analysis_border_color,
+                        ))
+                        .corner_radius(design_tokens::radius(
+                            design_tokens::BORDER_RADIUS_SMALL as u8,
+                        ))
+                        .show(ui, |ui| {
+                            let width = ui.available_width();
+                            let panel_size = egui::vec2(width, width * ANALYSIS_PANEL_ASPECT);
+                            ui.allocate_ui_with_layout(
+                                panel_size,
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    if let Some(texture_id) = selected_texture_id {
+                                        let image_size = if matches!(tab, AnalysisTab::Vectorscope)
+                                        {
+                                            let side = panel_size.x.min(panel_size.y);
+                                            egui::vec2(side, side)
+                                        } else {
+                                            panel_size
+                                        };
+                                        let image = egui::Image::new(
+                                            egui::load::SizedTexture::new(texture_id, image_size),
+                                        )
+                                        .corner_radius(design_tokens::radius(
+                                            design_tokens::BORDER_RADIUS_SMALL as u8,
+                                        ));
+                                        ui.add_sized(image_size, image);
                                     } else {
-                                        panel_size
-                                    };
-                                    let image = egui::Image::new(egui::load::SizedTexture::new(
-                                        texture_id, image_size,
-                                    ))
-                                    .corner_radius(design_tokens::radius(
-                                        design_tokens::BORDER_RADIUS_SMALL as u8,
-                                    ));
-                                    ui.add_sized(image_size, image);
-                                } else {
-                                    ui.label(design_tokens::rich_text(
-                                        "No analysis data",
-                                        TextRole::InactiveItemTitle,
-                                    ));
-                                }
-                            },
-                        );
-                    });
+                                        ui.label(design_tokens::rich_text(
+                                            "No analysis data",
+                                            TextRole::InactiveItemTitle,
+                                        ));
+                                    }
+                                },
+                            );
+                        });
+                });
             });
-        });
         } // end analysis texture block
     });
 }

@@ -164,8 +164,7 @@ impl TimelineBuffer {
 
     /// Find the frame nearest to `t` and return a reference, or `None`.
     pub fn frame_at_time(&self, t: f64) -> Option<&TimelineFrame> {
-        self.nearest_frame_index(t)
-            .and_then(|i| self.frames.get(i))
+        self.nearest_frame_index(t).and_then(|i| self.frames.get(i))
     }
 
     /// The wall-clock `Instant` when this recording started.
@@ -203,10 +202,7 @@ mod tests {
         // Last frame is at t=2.0, so cutoff = 2.0 - 1.0 = 1.0.
         // Frames with t < 1.0 should be trimmed.
         assert!(buf.frames.front().unwrap().presentation_time_secs >= 1.0);
-        assert_eq!(
-            buf.frames.back().unwrap().presentation_time_secs,
-            2.0
-        );
+        assert_eq!(buf.frames.back().unwrap().presentation_time_secs, 2.0);
     }
 
     #[test]
@@ -219,10 +215,7 @@ mod tests {
         }
         // Last = 0.160, cutoff = 0.160 - 0.1 = 0.060
         let front_t = buf.frames.front().unwrap().presentation_time_secs;
-        assert!(
-            front_t >= 0.060,
-            "front {front_t} should be >= 0.060"
-        );
+        assert!(front_t >= 0.060, "front {front_t} should be >= 0.060");
     }
 
     #[test]

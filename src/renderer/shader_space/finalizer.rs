@@ -20,12 +20,10 @@ use crate::renderer::{
     utils::{as_bytes, as_bytes_slice},
 };
 
-use super::{
-    pass_spec::SamplerKind,
-    texture_caps::{
-        collect_texture_capability_requirements, validate_texture_capability_requirements,
-    },
+use super::texture_caps::{
+    collect_texture_capability_requirements, validate_texture_capability_requirements,
 };
+use crate::renderer::render_plan::pass_spec::SamplerKind;
 use crate::renderer::render_plan::types::RenderPlan;
 
 pub(crate) struct FinalizedShaderSpace {

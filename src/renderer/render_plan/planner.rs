@@ -21,19 +21,10 @@ use crate::{
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         scene_prep::{PreparedScene, ScenePrepReport, prepare_scene_with_report},
         shader_space::{
-            assemble_ctx::{AssembleContext, PlanningDevice, SceneRef},
             image_utils::{ensure_rgba8, load_image_from_data_url_checked, load_image_from_path},
-            pass_assemblers::args::{BuilderState, SceneContext},
-            pass_spec::{
-                PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
-            },
-            resource_naming::{
-                UI_PRESENT_HDR_GAMMA_SUFFIX, UI_PRESENT_SDR_SRGB_SUFFIX,
-                build_hdr_gamma_encode_wgsl, build_srgb_display_encode_wgsl,
-            },
             sampler::build_image_premultiply_wgsl,
         },
-        types::{MaterialCompileContext, PassBindings},
+        types::{MaterialCompileContext, PassBindings, PassOutputRegistry},
         utils::{as_bytes_slice, cpu_num_u32_min_1},
     },
 };
@@ -41,9 +32,18 @@ use crate::{
 use super::{
     compute_pass_render_order, forward_root_dependencies_from_roots,
     load_gltf_geometry_pixel_space,
+    pass_assemblers::args::{BuilderState, SceneContext, make_fullscreen_geometry},
     pass_handlers::PassPlannerRegistry,
-    resolve_geometry_for_render_pass, sampled_pass_node_ids_from_roots,
-    types::{ImagePrepass, ImageTextureSpec, PlanBuildOptions, RenderPlan, ResourcePlans},
+    pass_spec::{PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params},
+    resolve_geometry_for_render_pass,
+    resource_naming::{
+        UI_PRESENT_HDR_GAMMA_SUFFIX, UI_PRESENT_SDR_SRGB_SUFFIX, build_hdr_gamma_encode_wgsl,
+        build_srgb_display_encode_wgsl,
+    },
+    sampled_pass_node_ids_from_roots,
+    types::{
+        ImagePrepass, ImageTextureSpec, PlanBuildOptions, PlanningDevice, RenderPlan, ResourcePlans,
+    },
 };
 
 pub(crate) struct RenderPlanner {
@@ -148,45 +148,28 @@ impl RenderPlanner {
             composite_layers_in_order,
         )?;
         let (
-            downsample_source_pass_ids,
-            upsample_source_pass_ids,
-            gaussian_source_pass_ids,
-            bloom_source_pass_ids,
-            gradient_source_pass_ids,
+            mut downsample_source_pass_ids,
+            mut upsample_source_pass_ids,
+            mut gaussian_source_pass_ids,
+            mut bloom_source_pass_ids,
+            mut gradient_source_pass_ids,
         ) = collect_processing_source_pass_ids(&prepared);
 
-        let mut ctx = AssembleContext {
-            gpu_caps: self.options.gpu_caps.clone(),
-            device: planning_device.clone(),
-            adapter,
-            asset_store,
-            target_texture_name: target_texture_name.clone(),
-            target_format,
-            sampled_pass_format,
-            tgt_size: [tgt_w, tgt_h],
-            tgt_size_u: [tgt_w_u, tgt_h_u],
-            geometry_buffers: Vec::new(),
-            instance_buffers: Vec::new(),
-            textures: Vec::new(),
-            image_textures: Vec::new(),
-            render_pass_specs: Vec::new(),
-            composite_passes: Vec::new(),
-            depth_resolve_passes: Vec::new(),
-            image_prepasses: Vec::new(),
-            prepass_texture_samples: Vec::new(),
-            pass_cull_mode_by_name: HashMap::new(),
-            pass_depth_attachment_by_name: HashMap::new(),
-            baked_data_parse_meta_by_pass: HashMap::new(),
-            baked_data_parse_bytes_by_pass: HashMap::new(),
-            baked_data_parse_buffer_to_pass_id: HashMap::new(),
-            pass_output_registry: Default::default(),
-            sampled_pass_ids: sampled_pass_ids.clone(),
-            downsample_source_pass_ids,
-            upsample_source_pass_ids,
-            gaussian_source_pass_ids,
-            bloom_source_pass_ids,
-            gradient_source_pass_ids,
-        };
+        let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
+        let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
+        let mut textures: Vec<TextureDecl> = Vec::new();
+        let mut image_textures: Vec<ImageTextureSpec> = Vec::new();
+        let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
+        let mut composite_passes: Vec<ResourceName> = Vec::new();
+        let mut depth_resolve_passes = Vec::new();
+        let mut image_prepasses: Vec<ImagePrepass> = Vec::new();
+        let mut prepass_texture_samples: Vec<(String, ResourceName)> = Vec::new();
+        let mut pass_cull_mode_by_name: HashMap<ResourceName, Option<wgpu::Face>> = HashMap::new();
+        let mut pass_depth_attachment_by_name: HashMap<ResourceName, ResourceName> = HashMap::new();
+        let mut baked_data_parse_meta_by_pass = HashMap::new();
+        let mut baked_data_parse_bytes_by_pass = HashMap::new();
+        let mut baked_data_parse_buffer_to_pass_id = HashMap::new();
+        let mut pass_output_registry: PassOutputRegistry = Default::default();
 
         for id in order {
             let Some(node) = nodes_by_id.get(id) else {
@@ -230,7 +213,7 @@ impl RenderPlanner {
                         rect2d_geometry_vertices(geo_w, geo_h)
                     };
                     let bytes: Arc<[u8]> = Arc::from(as_bytes_slice(&verts).to_vec());
-                    ctx.geometry_buffers.push((name, bytes));
+                    geometry_buffers.push((name, bytes));
                 }
                 "GLTFGeometry" => {
                     let store =
@@ -244,10 +227,10 @@ impl RenderPlanner {
                     )?;
                     let vert_bytes: Arc<[u8]> =
                         Arc::from(bytemuck::cast_slice::<[f32; 5], u8>(&loaded.vertices).to_vec());
-                    ctx.geometry_buffers.push((name.clone(), vert_bytes));
+                    geometry_buffers.push((name.clone(), vert_bytes));
                     if let Some(normals_bytes) = loaded.normals_bytes {
                         let normals_name: ResourceName = format!("{name}.normals").into();
-                        ctx.geometry_buffers.push((normals_name, normals_bytes));
+                        geometry_buffers.push((normals_name, normals_bytes));
                     }
                 }
                 "RenderTexture" => {
@@ -266,7 +249,7 @@ impl RenderPlanner {
                         resolution[1],
                     )?;
                     let format = parse_texture_format(&node.params)?;
-                    ctx.textures.push(TextureDecl {
+                    textures.push(TextureDecl {
                         name,
                         size: [w, h],
                         format,
@@ -289,7 +272,7 @@ impl RenderPlanner {
                 UI_PRESENT_HDR_GAMMA_SUFFIX
             )
             .into();
-            ctx.textures.push(TextureDecl {
+            textures.push(TextureDecl {
                 name: name.clone(),
                 size: [tgt_w_u, tgt_h_u],
                 format: TextureFormat::Rgba16Float,
@@ -325,7 +308,7 @@ impl RenderPlanner {
                     UI_PRESENT_SDR_SRGB_SUFFIX
                 )
                 .into();
-                ctx.textures.push(TextureDecl {
+                textures.push(TextureDecl {
                     name: name.clone(),
                     size: [tgt_w_u, tgt_h_u],
                     format: TextureFormat::Rgba8Unorm,
@@ -348,7 +331,6 @@ impl RenderPlanner {
             composite_layers_in_order,
         )?;
         sampled_pass_ids.extend(warmup_root_ids.iter().cloned());
-        ctx.sampled_pass_ids = sampled_pass_ids;
 
         let warmup_items: Vec<(String, bool)> = composite_layers_in_order
             .iter()
@@ -366,12 +348,6 @@ impl RenderPlanner {
         execution_items.extend(warmup_items);
         execution_items.extend(normal_items);
 
-        let scene_ref = SceneRef {
-            prepared: &prepared,
-            composition_contexts: &composition_contexts,
-            composition_consumers_by_source: &composition_consumers_by_source,
-            draw_coord_size_by_pass: &draw_coord_size_by_pass,
-        };
         let registry = PassPlannerRegistry::default();
         let mut deferred_target_compose_passes_by_layer: HashMap<String, Vec<ResourceName>> =
             HashMap::new();
@@ -380,67 +356,64 @@ impl RenderPlanner {
             if !*is_warmup_pass && warmup_root_ids.contains(layer_id) {
                 if let Some(deferred_passes) = deferred_target_compose_passes_by_layer.get(layer_id)
                 {
-                    ctx.composite_passes.extend(deferred_passes.iter().cloned());
+                    composite_passes.extend(deferred_passes.iter().cloned());
                     continue;
                 }
             }
 
-            let branch_spec_start = ctx.render_pass_specs.len();
-            let branch_composite_start = ctx.composite_passes.len();
+            let branch_spec_start = render_pass_specs.len();
+            let branch_composite_start = composite_passes.len();
             let layer_node = find_node(nodes_by_id, layer_id)?;
             let scene_ctx = SceneContext {
-                prepared: scene_ref.prepared,
-                composition_contexts: scene_ref.composition_contexts,
-                composition_consumers_by_source: scene_ref.composition_consumers_by_source,
-                draw_coord_size_by_pass: scene_ref.draw_coord_size_by_pass,
+                prepared: &prepared,
+                composition_contexts: &composition_contexts,
+                composition_consumers_by_source: &composition_consumers_by_source,
+                draw_coord_size_by_pass: &draw_coord_size_by_pass,
                 asset_store,
                 device: &planning_device,
                 adapter,
             };
             let mut builder_state = BuilderState {
-                target_texture_name: &ctx.target_texture_name,
-                target_format: ctx.target_format,
-                sampled_pass_format: ctx.sampled_pass_format,
-                tgt_size: ctx.tgt_size,
-                tgt_size_u: ctx.tgt_size_u,
-                geometry_buffers: &mut ctx.geometry_buffers,
-                instance_buffers: &mut ctx.instance_buffers,
-                textures: &mut ctx.textures,
-                render_pass_specs: &mut ctx.render_pass_specs,
-                composite_passes: &mut ctx.composite_passes,
-                depth_resolve_passes: &mut ctx.depth_resolve_passes,
-                pass_cull_mode_by_name: &mut ctx.pass_cull_mode_by_name,
-                pass_depth_attachment_by_name: &mut ctx.pass_depth_attachment_by_name,
-                pass_output_registry: &mut ctx.pass_output_registry,
-                sampled_pass_ids: &ctx.sampled_pass_ids,
-                baked_data_parse_meta_by_pass: &mut ctx.baked_data_parse_meta_by_pass,
-                baked_data_parse_bytes_by_pass: &mut ctx.baked_data_parse_bytes_by_pass,
-                baked_data_parse_buffer_to_pass_id: &mut ctx.baked_data_parse_buffer_to_pass_id,
-                downsample_source_pass_ids: &mut ctx.downsample_source_pass_ids,
-                upsample_source_pass_ids: &mut ctx.upsample_source_pass_ids,
-                gaussian_source_pass_ids: &mut ctx.gaussian_source_pass_ids,
-                bloom_source_pass_ids: &mut ctx.bloom_source_pass_ids,
-                gradient_source_pass_ids: &mut ctx.gradient_source_pass_ids,
+                target_texture_name: &target_texture_name,
+                target_format,
+                sampled_pass_format,
+                tgt_size: [tgt_w, tgt_h],
+                tgt_size_u: [tgt_w_u, tgt_h_u],
+                geometry_buffers: &mut geometry_buffers,
+                instance_buffers: &mut instance_buffers,
+                textures: &mut textures,
+                render_pass_specs: &mut render_pass_specs,
+                composite_passes: &mut composite_passes,
+                depth_resolve_passes: &mut depth_resolve_passes,
+                pass_cull_mode_by_name: &mut pass_cull_mode_by_name,
+                pass_depth_attachment_by_name: &mut pass_depth_attachment_by_name,
+                pass_output_registry: &mut pass_output_registry,
+                sampled_pass_ids: &sampled_pass_ids,
+                baked_data_parse_meta_by_pass: &mut baked_data_parse_meta_by_pass,
+                baked_data_parse_bytes_by_pass: &mut baked_data_parse_bytes_by_pass,
+                baked_data_parse_buffer_to_pass_id: &mut baked_data_parse_buffer_to_pass_id,
+                downsample_source_pass_ids: &mut downsample_source_pass_ids,
+                upsample_source_pass_ids: &mut upsample_source_pass_ids,
+                gaussian_source_pass_ids: &mut gaussian_source_pass_ids,
+                bloom_source_pass_ids: &mut bloom_source_pass_ids,
+                gradient_source_pass_ids: &mut gradient_source_pass_ids,
             };
             registry.plan_layer(&scene_ctx, &mut builder_state, layer_id, layer_node)?;
             drop(builder_state);
 
             if *is_warmup_pass {
-                let target_writer_names: HashSet<ResourceName> = ctx.render_pass_specs
+                let target_writer_names: HashSet<ResourceName> = render_pass_specs
                     [branch_spec_start..]
                     .iter()
-                    .filter(|spec| spec.target_texture == ctx.target_texture_name)
+                    .filter(|spec| spec.target_texture == target_texture_name)
                     .map(|spec| spec.name.clone())
                     .collect();
                 if !target_writer_names.is_empty() {
                     let prefix: Vec<ResourceName> =
-                        ctx.composite_passes[..branch_composite_start].to_vec();
+                        composite_passes[..branch_composite_start].to_vec();
                     let mut deferred: Vec<ResourceName> = Vec::new();
                     let mut suffix: Vec<ResourceName> = Vec::new();
-                    for name in ctx.composite_passes[branch_composite_start..]
-                        .iter()
-                        .cloned()
-                    {
+                    for name in composite_passes[branch_composite_start..].iter().cloned() {
                         if target_writer_names.contains(&name) {
                             deferred.push(name);
                         } else {
@@ -453,7 +426,7 @@ impl RenderPlanner {
                             .or_default()
                             .extend(deferred);
                     }
-                    ctx.composite_passes = prefix.into_iter().chain(suffix.into_iter()).collect();
+                    composite_passes = prefix.into_iter().chain(suffix.into_iter()).collect();
                 }
             }
         }
@@ -483,7 +456,7 @@ impl RenderPlanner {
                 format!("{}{}.pass", target_texture_name.as_str(), suffix).into();
             let geo: ResourceName =
                 format!("{}{}.geo", target_texture_name.as_str(), suffix).into();
-            ctx.push_fullscreen_geometry(geo.clone(), tgt_w, tgt_h);
+            geometry_buffers.push((geo.clone(), make_fullscreen_geometry(tgt_w, tgt_h)));
 
             let params_name: ResourceName =
                 format!("params.{}{}", target_texture_name.as_str(), suffix).into();
@@ -495,7 +468,7 @@ impl RenderPlanner {
                 [0.0, 0.0, 0.0, 0.0],
             );
 
-            ctx.render_pass_specs.push(RenderPassSpec {
+            render_pass_specs.push(RenderPassSpec {
                 pass_id: pass_name.as_str().to_string(),
                 name: pass_name.clone(),
                 geometry_buffer: geo,
@@ -524,15 +497,23 @@ impl RenderPlanner {
                     sdr_encode_pass_name = Some(pass_name);
                 }
             } else {
-                ctx.composite_passes.push(pass_name);
+                composite_passes.push(pass_name);
             }
         }
 
-        normalize_first_write_load_ops(&ctx.composite_passes, &mut ctx.render_pass_specs);
-        plan_image_textures(&prepared, asset_store, &mut ctx)?;
+        normalize_first_write_load_ops(&composite_passes, &mut render_pass_specs);
+        plan_image_textures(
+            &prepared,
+            asset_store,
+            &render_pass_specs,
+            &mut image_textures,
+            &mut textures,
+            &mut geometry_buffers,
+            &mut image_prepasses,
+            &mut prepass_texture_samples,
+        )?;
 
-        let pass_bindings: Vec<PassBindings> = ctx
-            .render_pass_specs
+        let pass_bindings: Vec<PassBindings> = render_pass_specs
             .iter()
             .map(|spec| PassBindings {
                 pass_id: spec.pass_id.clone(),
@@ -569,21 +550,21 @@ impl RenderPlanner {
             export_output_texture,
             export_encode_pass_name: sdr_encode_pass_name,
             resources: ResourcePlans {
-                geometry_buffers: ctx.geometry_buffers,
-                instance_buffers: ctx.instance_buffers,
-                textures: ctx.textures,
-                image_textures: ctx.image_textures,
-                render_pass_specs: ctx.render_pass_specs,
-                composite_passes: ctx.composite_passes,
-                depth_resolve_passes: ctx.depth_resolve_passes,
-                image_prepasses: ctx.image_prepasses,
-                prepass_texture_samples: ctx.prepass_texture_samples,
-                pass_cull_mode_by_name: ctx.pass_cull_mode_by_name,
-                pass_depth_attachment_by_name: ctx.pass_depth_attachment_by_name,
-                pass_output_registry: ctx.pass_output_registry,
+                geometry_buffers,
+                instance_buffers,
+                textures,
+                image_textures,
+                render_pass_specs,
+                composite_passes,
+                depth_resolve_passes,
+                image_prepasses,
+                prepass_texture_samples,
+                pass_cull_mode_by_name,
+                pass_depth_attachment_by_name,
+                pass_output_registry,
                 pass_bindings,
-                baked_data_parse_bytes_by_pass: ctx.baked_data_parse_bytes_by_pass,
-                baked_data_parse_buffer_to_pass_id: ctx.baked_data_parse_buffer_to_pass_id,
+                baked_data_parse_bytes_by_pass,
+                baked_data_parse_buffer_to_pass_id,
             },
             debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
         })
@@ -688,13 +669,18 @@ fn normalize_first_write_load_ops(
 fn plan_image_textures(
     prepared: &PreparedScene,
     asset_store: Option<&AssetStore>,
-    ctx: &mut AssembleContext<'_>,
+    render_pass_specs: &[RenderPassSpec],
+    image_textures: &mut Vec<ImageTextureSpec>,
+    textures: &mut Vec<TextureDecl>,
+    geometry_buffers: &mut Vec<(ResourceName, Arc<[u8]>)>,
+    image_prepasses: &mut Vec<ImagePrepass>,
+    prepass_texture_samples: &mut Vec<(String, ResourceName)>,
 ) -> Result<()> {
     let rel_base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut seen_image_nodes: HashSet<String> = HashSet::new();
 
-    let render_pass_specs = ctx.render_pass_specs.clone();
-    for pass in &render_pass_specs {
+    let specs_snapshot = render_pass_specs.to_vec();
+    for pass in &specs_snapshot {
         for binding in &pass.texture_bindings {
             let Some(node_id) = binding.image_node_id.as_ref() else {
                 continue;
@@ -782,14 +768,14 @@ fn plan_image_textures(
 
             if needs_premultiply {
                 let src_name: ResourceName = format!("sys.image.{node_id}.src").into();
-                ctx.image_textures.push(ImageTextureSpec {
+                image_textures.push(ImageTextureSpec {
                     name: src_name.clone(),
                     image,
                     usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
                     srgb: is_srgb,
                 });
 
-                ctx.textures.push(TextureDecl {
+                textures.push(TextureDecl {
                     name: name.clone(),
                     size: [img_w, img_h],
                     format: if is_srgb {
@@ -804,7 +790,7 @@ fn plan_image_textures(
                 let w = img_w as f32;
                 let h = img_h as f32;
                 let geo: ResourceName = format!("sys.image.{node_id}.premultiply.geo").into();
-                ctx.push_fullscreen_geometry(geo.clone(), w, h);
+                geometry_buffers.push((geo.clone(), make_fullscreen_geometry(w, h)));
 
                 let params_buffer: ResourceName =
                     format!("params.sys.image.{node_id}.premultiply").into();
@@ -821,7 +807,7 @@ fn plan_image_textures(
                 let pass_name: ResourceName =
                     format!("sys.image.{node_id}.premultiply.pass").into();
 
-                ctx.image_prepasses.push(ImagePrepass {
+                image_prepasses.push(ImagePrepass {
                     pass_name: pass_name.clone(),
                     geometry_buffer: geo,
                     params_buffer,
@@ -830,10 +816,9 @@ fn plan_image_textures(
                     dst_texture: name,
                     shader_wgsl,
                 });
-                ctx.prepass_texture_samples
-                    .push((pass_name.as_str().to_string(), src_name));
+                prepass_texture_samples.push((pass_name.as_str().to_string(), src_name));
             } else {
-                ctx.image_textures.push(ImageTextureSpec {
+                image_textures.push(ImageTextureSpec {
                     name,
                     image,
                     usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,

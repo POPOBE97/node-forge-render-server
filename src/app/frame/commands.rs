@@ -111,5 +111,4 @@ mod tests {
         assert!(matches!(analysis, AppCommand::Canvas(_)));
         assert!(matches!(diff, AppCommand::Canvas(_)));
     }
-
 }

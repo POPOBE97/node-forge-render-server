@@ -18,6 +18,31 @@ pub(crate) struct PlanningGpuCaps {
     pub limits: wgpu::Limits,
 }
 
+/// GPU device capabilities snapshot used during planning.
+///
+/// Captures the feature flags and limits needed by pass assemblers to make
+/// planning decisions (e.g. MSAA sample count selection) without requiring
+/// a live GPU device handle.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PlanningDevice {
+    features: wgpu::Features,
+    limits: wgpu::Limits,
+}
+
+impl PlanningDevice {
+    pub fn new(features: wgpu::Features, limits: wgpu::Limits) -> Self {
+        Self { features, limits }
+    }
+
+    pub fn features(&self) -> wgpu::Features {
+        self.features
+    }
+
+    pub fn limits(&self) -> &wgpu::Limits {
+        &self.limits
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct PlanBuildOptions {
     pub gpu_caps: PlanningGpuCaps,

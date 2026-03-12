@@ -175,11 +175,7 @@ pub(super) fn run(
             for pass in &mut app.core.passes {
                 let mut params = pass.base_params;
                 params.time = app.runtime.time_value_secs;
-                let _ = crate::renderer::update_pass_params(
-                    &app.core.shader_space,
-                    pass,
-                    &params,
-                );
+                let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
             app.core.shader_space.render();
             app.runtime.scene_redraw_pending = false;
@@ -208,11 +204,7 @@ pub(super) fn run(
             for pass in &mut app.core.passes {
                 let mut params = pass.base_params;
                 params.time = app.runtime.time_value_secs;
-                let _ = crate::renderer::update_pass_params(
-                    &app.core.shader_space,
-                    pass,
-                    &params,
-                );
+                let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
             app.core.shader_space.render();
             app.runtime.scene_redraw_pending = false;

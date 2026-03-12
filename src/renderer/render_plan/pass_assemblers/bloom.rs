@@ -33,8 +33,8 @@ use super::super::resource_naming::resolve_chain_camera_for_first_pass;
 use super::super::resource_naming::{
     bloom_downsample_level_count, parse_tint_from_node_or_default,
 };
-use super::super::sampler::sampler_kind_for_pass_texture;
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
+use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
 
 /// Assemble a `"BloomNode"` layer.
 pub(crate) fn assemble_bloom(

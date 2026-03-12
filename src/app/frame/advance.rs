@@ -43,8 +43,8 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         // uniform_scene with values from an arbitrary frame.  The
         // session's own `needs_redraw` flag won't catch this because
         // from its perspective the overrides haven't changed.
-        let resuming_from_pause = effective_dt > 0.0
-            && !app.runtime.time_updates_enabled_prev_frame;
+        let resuming_from_pause =
+            effective_dt > 0.0 && !app.runtime.time_updates_enabled_prev_frame;
 
         if step.needs_redraw || resuming_from_pause {
             animation_values_changed = true;
@@ -66,8 +66,10 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         // Record timeline frame for the debug sidebar timeline tab.
         // Skip recording when paused (effective_dt == 0) to avoid
         // duplicate frames at the same scene_time.
-        if effective_dt > 0.0 && step.needs_redraw
-        && let Some(ref mut buf) = app.runtime.timeline_buffer {
+        if effective_dt > 0.0
+            && step.needs_redraw
+            && let Some(ref mut buf) = app.runtime.timeline_buffer
+        {
             let presentation_time = buf.elapsed_secs();
             // Resolve transition source/target names from the session definition.
             let (tsrc, ttgt) = app

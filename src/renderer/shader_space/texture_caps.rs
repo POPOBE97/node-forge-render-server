@@ -14,7 +14,7 @@ use rust_wgpu_fiber::{
     pool::texture_pool::TextureSpec as FiberTextureSpec,
 };
 
-use super::pass_spec::{RenderPassSpec, TextureCapabilityRequirement};
+use crate::renderer::render_plan::pass_spec::{RenderPassSpec, TextureCapabilityRequirement};
 
 pub(crate) fn effective_texture_format_features(
     format: TextureFormat,
@@ -246,7 +246,7 @@ mod tests {
     use super::*;
     use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat, TextureUsages};
 
-    use crate::renderer::shader_space::pass_spec::TextureCapabilityRequirement;
+    use crate::renderer::render_plan::pass_spec::TextureCapabilityRequirement;
 
     fn make_format_features(
         allowed_usages: TextureUsages,

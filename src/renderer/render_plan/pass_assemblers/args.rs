@@ -35,7 +35,7 @@ pub(crate) struct SceneContext<'a> {
     pub draw_coord_size_by_pass: &'a HashMap<String, [f32; 2]>,
     pub asset_store: Option<&'a crate::asset_store::AssetStore>,
     /// The planning device capabilities.
-    pub device: &'a crate::renderer::shader_space::assemble_ctx::PlanningDevice,
+    pub device: &'a crate::renderer::render_plan::types::PlanningDevice,
     pub adapter: Option<&'a wgpu::Adapter>,
 }
 

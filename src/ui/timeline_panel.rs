@@ -29,10 +29,7 @@ pub struct TimelineInteraction {
 }
 
 /// Draw the timeline panel.  Returns interaction state.
-pub fn show_timeline(
-    ui: &mut egui::Ui,
-    buffer: &TimelineBuffer,
-) -> TimelineInteraction {
+pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInteraction {
     let mut interaction = TimelineInteraction::default();
 
     if buffer.is_empty() {
@@ -64,10 +61,7 @@ pub fn show_timeline(
     let (total_rect, _) =
         ui.allocate_exact_size(egui::vec2(available_w, grid_h), egui::Sense::hover());
 
-    let label_rect = egui::Rect::from_min_size(
-        total_rect.min,
-        egui::vec2(label_w, grid_h),
-    );
+    let label_rect = egui::Rect::from_min_size(total_rect.min, egui::vec2(label_w, grid_h));
     let grid_clip_rect = egui::Rect::from_min_size(
         egui::pos2(total_rect.min.x + label_w, total_rect.min.y),
         egui::vec2(grid_viewport_w, grid_h),
@@ -91,7 +85,11 @@ pub fn show_timeline(
     if ui.rect_contains_pointer(grid_clip_rect) {
         let delta = ui.ctx().input(|i| i.smooth_scroll_delta);
         // Prefer horizontal if present, otherwise use vertical.
-        let dx = if delta.x.abs() > 0.5 { delta.x } else { delta.y };
+        let dx = if delta.x.abs() > 0.5 {
+            delta.x
+        } else {
+            delta.y
+        };
         if dx.abs() > 0.5 {
             scroll_x = (scroll_x - dx).clamp(0.0, max_scroll);
             user_scrolled = true;
@@ -107,10 +105,7 @@ pub fn show_timeline(
     ui.ctx().data_mut(|d| d.insert_temp(scroll_id, scroll_x));
 
     // The grid origin in screen space (may be negative / off-screen left).
-    let grid_origin = egui::pos2(
-        grid_clip_rect.min.x - scroll_x,
-        grid_clip_rect.min.y,
-    );
+    let grid_origin = egui::pos2(grid_clip_rect.min.x - scroll_x, grid_clip_rect.min.y);
 
     // ── Hover detection ──────────────────────────────────────────────────
     let pointer_in_grid = ui.ctx().input(|i| i.pointer.hover_pos()).and_then(|p| {
@@ -127,11 +122,7 @@ pub fn show_timeline(
             return None;
         }
         let col = (local_x / CELL_W) as usize;
-        if col < frame_count {
-            Some(col)
-        } else {
-            None
-        }
+        if col < frame_count { Some(col) } else { None }
     });
     interaction.hovered_frame_index = hovered_cell;
 
@@ -153,8 +144,14 @@ pub fn show_timeline(
         // Subtle separator line below the header.
         grid_painter.line_segment(
             [
-                egui::pos2(grid_origin.x + vis_first as f32 * CELL_W, header_y + HEADER_ROW_H),
-                egui::pos2(grid_origin.x + vis_last as f32 * CELL_W, header_y + HEADER_ROW_H),
+                egui::pos2(
+                    grid_origin.x + vis_first as f32 * CELL_W,
+                    header_y + HEADER_ROW_H,
+                ),
+                egui::pos2(
+                    grid_origin.x + vis_last as f32 * CELL_W,
+                    header_y + HEADER_ROW_H,
+                ),
             ],
             egui::Stroke::new(0.5, design_tokens::white(20)),
         );
@@ -162,7 +159,10 @@ pub fn show_timeline(
         // Walk visible cells and place a tick at each whole-second boundary.
         // We scan from vis_first to vis_last, checking where
         // floor(scene_time) changes between adjacent frames.
-        let first_scene_t = frames.get(vis_first).map(|f| f.scene_time_secs).unwrap_or(0.0);
+        let first_scene_t = frames
+            .get(vis_first)
+            .map(|f| f.scene_time_secs)
+            .unwrap_or(0.0);
         let mut next_whole_sec = first_scene_t.ceil(); // first whole second >= first visible frame
 
         for col in vis_first..vis_last {
@@ -192,10 +192,8 @@ pub fn show_timeline(
     }
 
     // ── Value rows ───────────────────────────────────────────────────────
-    let parsed_keys: Vec<Option<OverrideKey>> = tracked_keys
-        .iter()
-        .map(|k| OverrideKey::parse(k))
-        .collect();
+    let parsed_keys: Vec<Option<OverrideKey>> =
+        tracked_keys.iter().map(|k| OverrideKey::parse(k)).collect();
 
     for (row_idx, parsed) in parsed_keys.iter().enumerate() {
         let row_y = grid_origin.y + HEADER_ROW_H + row_idx as f32 * VALUE_ROW_H;
@@ -233,15 +231,19 @@ pub fn show_timeline(
             };
             let is_keyframe = match (cur, prev) {
                 (Some(c), Some(p)) => !json_values_equal(c, p),
-                (Some(_), None) => true,  // value appeared
-                (None, Some(_)) => true,  // value disappeared
+                (Some(_), None) => true, // value appeared
+                (None, Some(_)) => true, // value disappeared
                 (None, None) => false,
             };
             if is_keyframe {
                 let cx = grid_origin.x + col as f32 * CELL_W + CELL_W * 0.5;
                 let cy = row_y + VALUE_ROW_H * 0.5;
-                draw_diamond(&grid_painter, egui::pos2(cx, cy), DIAMOND_HALF,
-                    egui::Color32::from_rgb(255, 200, 60));
+                draw_diamond(
+                    &grid_painter,
+                    egui::pos2(cx, cy),
+                    DIAMOND_HALF,
+                    egui::Color32::from_rgb(255, 200, 60),
+                );
             }
         }
     }
@@ -311,10 +313,8 @@ pub fn show_timeline(
             );
             let label_color = design_tokens::white(50);
             let value_color = design_tokens::white(90);
-            let section_font = design_tokens::font_id(
-                design_tokens::FONT_SIZE_9,
-                design_tokens::FontWeight::Bold,
-            );
+            let section_font =
+                design_tokens::font_id(design_tokens::FONT_SIZE_9, design_tokens::FontWeight::Bold);
             let section_color = design_tokens::white(40);
 
             egui::Area::new(ui.id().with("timeline_tooltip"))
@@ -343,12 +343,33 @@ pub fn show_timeline(
                                 .min_col_width(70.0)
                                 .spacing(egui::vec2(12.0, 1.0))
                                 .show(ui, |ui| {
-                                    tooltip_row(ui, "Frame", &format!("#{idx}"),
-                                        &label_font, &value_font, label_color, value_color);
-                                    tooltip_row(ui, "Scene", &format!("{:.3}s", frame.scene_time_secs),
-                                        &label_font, &value_font, label_color, value_color);
-                                    tooltip_row(ui, "Wall", &format!("{:.3}s", frame.presentation_time_secs),
-                                        &label_font, &value_font, label_color, value_color);
+                                    tooltip_row(
+                                        ui,
+                                        "Frame",
+                                        &format!("#{idx}"),
+                                        &label_font,
+                                        &value_font,
+                                        label_color,
+                                        value_color,
+                                    );
+                                    tooltip_row(
+                                        ui,
+                                        "Scene",
+                                        &format!("{:.3}s", frame.scene_time_secs),
+                                        &label_font,
+                                        &value_font,
+                                        label_color,
+                                        value_color,
+                                    );
+                                    tooltip_row(
+                                        ui,
+                                        "Wall",
+                                        &format!("{:.3}s", frame.presentation_time_secs),
+                                        &label_font,
+                                        &value_font,
+                                        label_color,
+                                        value_color,
+                                    );
                                 });
 
                             // ── State ────────────────────────────────
@@ -364,14 +385,35 @@ pub fn show_timeline(
                                 .min_col_width(70.0)
                                 .spacing(egui::vec2(12.0, 1.0))
                                 .show(ui, |ui| {
-                                    tooltip_row(ui, "Active", &frame.current_state_id,
-                                        &label_font, &value_font, label_color, value_color);
+                                    tooltip_row(
+                                        ui,
+                                        "Active",
+                                        &frame.current_state_id,
+                                        &label_font,
+                                        &value_font,
+                                        label_color,
+                                        value_color,
+                                    );
                                     if let Some(ref tid) = frame.active_transition_id {
-                                        tooltip_row(ui, "Transition", tid,
-                                            &label_font, &value_font, label_color, value_color);
+                                        tooltip_row(
+                                            ui,
+                                            "Transition",
+                                            tid,
+                                            &label_font,
+                                            &value_font,
+                                            label_color,
+                                            value_color,
+                                        );
                                         if let Some(blend) = frame.transition_blend {
-                                            tooltip_row(ui, "Blend", &format!("{blend:.2}"),
-                                                &label_font, &value_font, label_color, value_color);
+                                            tooltip_row(
+                                                ui,
+                                                "Blend",
+                                                &format!("{blend:.2}"),
+                                                &label_font,
+                                                &value_font,
+                                                label_color,
+                                                value_color,
+                                            );
                                         }
                                     }
                                 });
@@ -390,15 +432,28 @@ pub fn show_timeline(
                                     .min_col_width(70.0)
                                     .spacing(egui::vec2(12.0, 1.0))
                                     .show(ui, |ui| {
-                                        let mut sorted: Vec<_> = frame.active_overrides.iter().collect();
+                                        let mut sorted: Vec<_> =
+                                            frame.active_overrides.iter().collect();
                                         sorted.sort_by(|a, b| {
-                                            (&a.0.node_id, &a.0.param_name).cmp(&(&b.0.node_id, &b.0.param_name))
+                                            (&a.0.node_id, &a.0.param_name)
+                                                .cmp(&(&b.0.node_id, &b.0.param_name))
                                         });
                                         for (k, v) in sorted {
-                                            let key_label = format!("{}.{}", k.node_id, k.param_name);
-                                            let val_str = super::state_machine_panel::format_json_value_2dp(v);
-                                            tooltip_row(ui, &key_label, &val_str,
-                                                &label_font, &value_font, label_color, value_color);
+                                            let key_label =
+                                                format!("{}.{}", k.node_id, k.param_name);
+                                            let val_str =
+                                                super::state_machine_panel::format_json_value_2dp(
+                                                    v,
+                                                );
+                                            tooltip_row(
+                                                ui,
+                                                &key_label,
+                                                &val_str,
+                                                &label_font,
+                                                &value_font,
+                                                label_color,
+                                                value_color,
+                                            );
                                         }
                                     });
                             }
@@ -434,9 +489,17 @@ fn tooltip_row(
     label_color: egui::Color32,
     value_color: egui::Color32,
 ) {
-    ui.label(egui::RichText::new(label).font(label_font.clone()).color(label_color));
+    ui.label(
+        egui::RichText::new(label)
+            .font(label_font.clone())
+            .color(label_color),
+    );
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.label(egui::RichText::new(value).font(value_font.clone()).color(value_color));
+        ui.label(
+            egui::RichText::new(value)
+                .font(value_font.clone())
+                .color(value_color),
+        );
     });
     ui.end_row();
 }
@@ -466,7 +529,10 @@ fn json_values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
         }
         (serde_json::Value::Array(aa), serde_json::Value::Array(ab)) => {
             aa.len() == ab.len()
-                && aa.iter().zip(ab.iter()).all(|(x, y)| json_values_equal(x, y))
+                && aa
+                    .iter()
+                    .zip(ab.iter())
+                    .all(|(x, y)| json_values_equal(x, y))
         }
         (serde_json::Value::Bool(ba), serde_json::Value::Bool(bb)) => ba == bb,
         _ => a == b,
