@@ -180,6 +180,15 @@ fn compile_expr(
             cache,
             compile_fn,
         )?,
+        "Matcap" => texture_nodes::compile_matcap(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
 
         // Material nodes
         "GlassMaterial" => glass_material::compile_glass_material(
@@ -260,6 +269,8 @@ fn compile_expr(
             cache,
             compile_fn,
         )?,
+
+        "ViewVector" => vector_nodes::compile_view_vector(node, out_port, ctx)?,
 
         // Color nodes
         "ColorMix" => color_nodes::compile_color_mix(

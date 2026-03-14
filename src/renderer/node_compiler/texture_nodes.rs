@@ -1,10 +1,11 @@
-//! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture).
+//! Compilers for texture nodes (ImageTexture, CheckerTexture, GradientTexture, NoiseTexture, Matcap).
 
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::renderer::utils::{coerce_to_type, fmt_f32};
 
 /// Compile an ImageTexture node.
 ///
@@ -65,6 +66,134 @@ where
         "texture" => Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D)),
         other => bail!("unsupported ImageTexture output port: {other}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Matcap
+// ---------------------------------------------------------------------------
+
+/// Stable key for the matcap WGSL helper library in `extra_wgsl_decls`.
+const MATCAP_WGSL_LIB_KEY: &str = "matcap_lib";
+
+/// Ensure the matcap UV helper function is emitted exactly once.
+fn ensure_matcap_wgsl_lib(ctx: &mut MaterialCompileContext) {
+    if ctx.extra_wgsl_decls.contains_key(MATCAP_WGSL_LIB_KEY) {
+        return;
+    }
+
+    let wgsl = r#"
+fn matcap_uv(n: vec3f, v: vec3f) -> vec2f {
+    let N = normalize(n);
+    let V = normalize(v);
+    let x_axis = normalize(vec3f(V.z, 0.0, -V.x));
+    let y_axis = normalize(cross(V, x_axis));
+    let uv = vec2f(dot(N, x_axis), dot(N, y_axis)) * 0.5 + 0.5;
+    return clamp(uv, vec2f(0.0), vec2f(1.0));
+}
+"#;
+
+    ctx.extra_wgsl_decls
+        .insert(MATCAP_WGSL_LIB_KEY.to_string(), wgsl.to_string());
+}
+
+/// Parse a vec3 default from a `{x, y, z}` JSON object in `node.params[key]`.
+fn param_vec3_literal(node: &Node, key: &str, default: [f32; 3]) -> String {
+    if let Some(obj) = node.params.get(key).and_then(|v| v.as_object()) {
+        let x = obj
+            .get("x")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(default[0] as f64) as f32;
+        let y = obj
+            .get("y")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(default[1] as f64) as f32;
+        let z = obj
+            .get("z")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(default[2] as f64) as f32;
+        format!("vec3f({}, {}, {})", fmt_f32(x), fmt_f32(y), fmt_f32(z))
+    } else {
+        format!(
+            "vec3f({}, {}, {})",
+            fmt_f32(default[0]),
+            fmt_f32(default[1]),
+            fmt_f32(default[2])
+        )
+    }
+}
+
+/// Compile a Matcap node.
+///
+/// Samples a matcap texture using view and normal vectors to compute UV coordinates.
+/// The matcap UV is derived by projecting the normal into a screen-aligned basis
+/// built from the view direction.
+///
+/// # Inputs
+/// - `image`: ImageFile texture (required — registered as image texture binding)
+/// - `normal`: vec3 normal direction (optional, default `(0, 0, 1)`)
+/// - `view`: vec3 view direction (optional, default `(0, 0, 1)`)
+///
+/// # Output
+/// - `color`: vec4 sampled matcap color
+pub fn compile_matcap<F>(
+    scene: &SceneDSL,
+    _nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let port = out_port.unwrap_or("color");
+    if port != "color" {
+        bail!("Matcap: unsupported output port '{port}'");
+    }
+
+    // Register the image texture binding (same mechanism as ImageTexture).
+    let _image_index = ctx.register_image_texture(&node.id);
+
+    // Emit the matcap UV helper function.
+    ensure_matcap_wgsl_lib(ctx);
+
+    // --- normal input ---
+    let normal_expr = if let Some(conn) = incoming_connection(scene, &node.id, "normal") {
+        let raw = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+        coerce_to_type(raw, ValueType::Vec3)?
+    } else {
+        let lit = param_vec3_literal(node, "normal", [0.0, 0.0, 1.0]);
+        TypedExpr::new(lit, ValueType::Vec3)
+    };
+
+    // --- view input ---
+    let view_expr = if let Some(conn) = incoming_connection(scene, &node.id, "view") {
+        let raw = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+        coerce_to_type(raw, ValueType::Vec3)?
+    } else {
+        let lit = param_vec3_literal(node, "view", [0.0, 0.0, 1.0]);
+        TypedExpr::new(lit, ValueType::Vec3)
+    };
+
+    let tex_var = MaterialCompileContext::tex_var_name(&node.id);
+    let samp_var = MaterialCompileContext::sampler_var_name(&node.id);
+
+    let sample_expr = format!(
+        "textureSample({tex_var}, {samp_var}, matcap_uv({}, {}))",
+        normal_expr.expr, view_expr.expr
+    );
+
+    Ok(TypedExpr::with_time(
+        sample_expr,
+        ValueType::Vec4,
+        normal_expr.uses_time || view_expr.uses_time,
+    ))
 }
 
 #[cfg(test)]

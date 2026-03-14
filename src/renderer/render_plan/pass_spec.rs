@@ -28,6 +28,7 @@ pub(crate) fn make_params(
         _pad0: 0.0,
         color,
         camera,
+        camera_position: [0.0, 0.0, 0.0, 0.0],
     }
 }
 
@@ -49,6 +50,7 @@ pub(crate) fn build_depth_resolve_wgsl(multisampled: bool) -> String {
     _pad0: f32,
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 }};
 
 @group(0) @binding(0)

@@ -79,6 +79,12 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
 /// This patches `node.params[paramName]` for each override key that
 /// matches a node in the scene.  Used to inject runtime animation
 /// values before uniform packing.
+///
+/// Override keys reference node IDs from the unexpanded scene (e.g.
+/// `FloatInput_53`).  After group expansion those nodes live under
+/// namespaced IDs like `GroupInstance_59/FloatInput_53`.  We first
+/// try an exact match and fall back to a suffix match so that
+/// group-internal nodes are correctly targeted.
 pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, serde_json::Value>) {
     if overrides.is_empty() {
         return;
@@ -86,7 +92,7 @@ pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, se
 
     for node in &mut scene.nodes {
         for (key, value) in overrides {
-            if key.node_id == node.id {
+            if key.node_id == node.id || node.id.ends_with(&format!("/{}", key.node_id)) {
                 node.params.insert(key.param_name.clone(), value.clone());
             }
         }

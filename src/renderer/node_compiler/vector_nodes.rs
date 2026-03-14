@@ -219,6 +219,27 @@ where
     ))
 }
 
+/// Compile a ViewVector node.
+///
+/// Outputs `normalize(camera_position - world_position)` in the fragment shader.
+/// Sets `needs_view_vector` on the compile context so the vertex shader emits
+/// the world-position varying and the Params uniform includes camera_position.
+pub fn compile_view_vector(
+    _node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    let port = out_port.unwrap_or("view");
+    if port != "view" {
+        bail!("ViewVector: unsupported output port '{port}'");
+    }
+    ctx.needs_view_vector = true;
+    Ok(TypedExpr::new(
+        "normalize(params.camera_position.xyz - in.world_pos)",
+        ValueType::Vec3,
+    ))
+}
+
 /// Compile a VectorMath node.
 ///
 /// Performs various vector operations based on the "operation" parameter.

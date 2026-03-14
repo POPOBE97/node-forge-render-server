@@ -220,6 +220,7 @@ struct Params {{
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 }};
 
 
@@ -331,6 +332,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -643,6 +645,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -827,6 +830,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -843,6 +847,7 @@ var<uniform> params: Params;
      @location(3) geo_size_px: vec2f,
      @location(4) instance_index: u32,
      @location(5) normal: vec3f,
+     @location(6) world_pos: vec3f,
  };
 
 "#
@@ -858,6 +863,10 @@ var<uniform> params: Params;
 
     if !has_normals {
         common = common.replace("     @location(5) normal: vec3f,\n", "");
+    }
+
+    if !material_ctx.needs_view_vector {
+        common = common.replace("     @location(6) world_pos: vec3f,\n", "");
     }
 
     if material_ctx.baked_data_parse_meta.is_some() {
@@ -1040,6 +1049,10 @@ var<uniform> params: Params;
 
     vertex_entry.push_str(" out.position = params.camera * vec4f(p_px, p_local.z, 1.0);\n\n");
 
+    if material_ctx.needs_view_vector {
+        vertex_entry.push_str(" out.world_pos = vec3f(p_px, p_local.z);\n\n");
+    }
+
     vertex_entry.push_str(" // Pixel-centered like GLSL gl_FragCoord.xy.\n");
     vertex_entry.push_str(" out.frag_coord_gl = p_px + vec2f(0.5, 0.5);\n");
     vertex_entry.push_str(" return out;\n }");
@@ -1200,7 +1213,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     vertex_graph_input_kinds,
                     vertex_uses_instance_index,
                     rect_dyn_2,
-                    _normals_bytes_2,
+                    normals_bytes_2,
                 ) = resolve_geometry_for_render_pass(
                     &prepared.scene,
                     nodes_by_id,
@@ -1230,7 +1243,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     vertex_graph_input_kinds,
                     None,
                     false, // fullscreen_vertex_positioning
-                    false, // has_normals
+                    normals_bytes_2.is_some(), // has_normals
                 )?;
 
                 out.push((layer_id, bundle));

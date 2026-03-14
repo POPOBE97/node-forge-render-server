@@ -16,6 +16,7 @@ struct Params {{\n\
 \n\
     color: vec4f,\n\
     camera: mat4x4f,\n\
+    camera_position: vec4f,\n\
 }};\n\
 \n\
 @group(0) @binding(0)\n\

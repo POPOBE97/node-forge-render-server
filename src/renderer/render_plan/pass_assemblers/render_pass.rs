@@ -417,7 +417,15 @@ pub(crate) fn assemble_render_pass(
         };
 
     let params_name: ResourceName = format!("params.{layer_id}").into();
-    let params = main_pass_params;
+    let mut params = main_pass_params;
+
+    // Resolve camera world-space position for ViewVector nodes.
+    let cam_pos = crate::renderer::camera::resolve_camera_position_for_pass_node(
+        &prepared.scene,
+        nodes_by_id,
+        layer_node,
+    )?;
+    params.camera_position = [cam_pos[0], cam_pos[1], cam_pos[2], 0.0];
 
     let has_non_identity_base_m = base_m_2 != IDENTITY_MAT4;
     let has_instance_mats = instance_mats_2.as_ref().is_some_and(|m| !m.is_empty());

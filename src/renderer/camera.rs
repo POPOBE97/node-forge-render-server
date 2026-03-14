@@ -42,6 +42,29 @@ pub fn legacy_projection_camera_matrix(target_size: [f32; 2]) -> [f32; 16] {
     ]
 }
 
+pub fn resolve_camera_position_for_pass_node(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+) -> Result<[f32; 3]> {
+    if let Some(conn) = incoming_connection(scene, &node.id, "camera") {
+        let cam_node = find_node(nodes_by_id, &conn.from.node_id)?;
+        match cam_node.node_type.as_str() {
+            "PerspectiveCamera" | "OrthographicCamera" => {
+                return resolve_camera_vec3_input(
+                    scene,
+                    nodes_by_id,
+                    cam_node,
+                    "position",
+                    [0.0, 0.0, 0.0],
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok([0.0, 0.0, 0.0])
+}
+
 pub fn resolve_effective_camera_for_pass_node(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,

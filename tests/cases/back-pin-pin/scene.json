@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-03-05T09:55:34.207Z",
-    "modified": "2026-03-05T09:55:34.207Z"
+    "created": "2026-03-13T06:56:44.439Z",
+    "modified": "2026-03-13T06:56:44.439Z"
   },
   "nodes": [
     {
@@ -24,13 +24,13 @@
       "id": "GLTFGeometry_2",
       "type": "GLTFGeometry",
       "position": {
-        "x": -1640,
+        "x": -1280,
         "y": 260
       },
       "width": 192,
       "label": "GTLF/OBJ Geometry",
       "params": {
-        "assetId": "3b37d2ec3249",
+        "assetId": "8907aee82146",
         "path": "/Users/ruiyao/Downloads/card-edge-mesh.obj"
       }
     },
@@ -91,8 +91,26 @@
           1
         ]
       },
-      "inputs": [],
-      "inputBindings": []
+      "inputs": [
+        {
+          "id": "dynamic_1773307018597_1",
+          "name": "pass2",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1773307018597_1",
+          "label": "pass2",
+          "variableName": "pass2",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_56",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        }
+      ]
     },
     {
       "id": "RenderTexture_6",
@@ -113,7 +131,7 @@
       "id": "ColorInput_7",
       "type": "ColorInput",
       "position": {
-        "x": -1420,
+        "x": -1060,
         "y": 560
       },
       "width": 160,
@@ -131,7 +149,7 @@
       "id": "SetTransform_22",
       "type": "SetTransform",
       "position": {
-        "x": -1420,
+        "x": -1060,
         "y": 260
       },
       "width": 160,
@@ -228,77 +246,6 @@
       ]
     },
     {
-      "id": "MathClosure_43",
-      "type": "MathClosure",
-      "position": {
-        "x": -1640,
-        "y": 360
-      },
-      "width": 203,
-      "label": "Math Closure",
-      "params": {
-        "source": "output = vec3(\n  0.0,\n  fract(t/10.0) * 360.0,\n  0.0\n);"
-      },
-      "inputs": [
-        {
-          "id": "dynamic_1772071983449_1",
-          "name": "t",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "vector3"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1772071983449_1",
-          "label": "t",
-          "variableName": "t",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "TimeInput_44",
-            "outputPortId": "time",
-            "outputLabel": "Time"
-          }
-        }
-      ]
-    },
-    {
-      "id": "PerspectiveCamera_45",
-      "type": "PerspectiveCamera",
-      "position": {
-        "x": -1220,
-        "y": 260
-      },
-      "width": 160,
-      "label": "Perspective Camera",
-      "params": {
-        "position": {
-          "x": 540,
-          "y": 1200,
-          "z": 1200
-        },
-        "target": {
-          "x": 540,
-          "y": 1200,
-          "z": 0
-        },
-        "up": {
-          "x": 0,
-          "y": 1,
-          "z": 0
-        },
-        "fovY": 90,
-        "aspect": 0.45,
-        "near": 0.1,
-        "far": 5000
-      }
-    },
-    {
       "id": "ImageTexture_46",
       "type": "ImageTexture",
       "position": {
@@ -324,7 +271,7 @@
       "id": "ColorMix_47",
       "type": "ColorMix",
       "position": {
-        "x": -400,
+        "x": -460,
         "y": -220
       },
       "width": 160,
@@ -453,17 +400,178 @@
       }
     },
     {
-      "id": "FloatInput_53",
-      "type": "FloatInput",
+      "id": "GLTFGeometry_54",
+      "type": "GLTFGeometry",
       "position": {
-        "x": -1820,
+        "x": -1260,
+        "y": -440
+      },
+      "width": 192,
+      "label": "GTLF/OBJ Geometry",
+      "params": {
+        "assetId": "8da9e93bf7dd",
+        "path": "/Users/ruiyao/Downloads/card-edge-mesh.obj"
+      }
+    },
+    {
+      "id": "SetTransform_55",
+      "type": "SetTransform",
+      "position": {
+        "x": -1040,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "translate": {
+          "x": 540,
+          "y": 1200,
+          "z": 0
+        },
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 0.8,
+          "y": 0.8,
+          "z": 0.8
+        }
+      }
+    },
+    {
+      "id": "RenderPass_56",
+      "type": "RenderPass",
+      "position": {
+        "x": -860,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 4,
+        "culling": "back",
+        "depthTest": true
+      }
+    },
+    {
+      "id": "GroupInstance_57",
+      "type": "GroupInstance",
+      "position": {
+        "x": -860,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Group",
+      "params": {
+        "groupId": "Camera"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_58",
+      "type": "GroupInstance",
+      "position": {
+        "x": -860,
+        "y": 180
+      },
+      "width": 160,
+      "label": "Group",
+      "params": {
+        "groupId": "Camera"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_59",
+      "type": "GroupInstance",
+      "position": {
+        "x": -1260,
+        "y": -320
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "ModelRotation"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_60",
+      "type": "GroupInstance",
+      "position": {
+        "x": -1260,
         "y": 360
       },
       "width": 160,
-      "label": "uEdgeModelRotationY",
+      "label": "Group 2",
       "params": {
-        "value": 0
-      }
+        "groupId": "ModelRotation"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_62",
+      "type": "GroupInstance",
+      "position": {
+        "x": -1040,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Group 3",
+      "params": {
+        "groupId": "CardMaterial"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "inputBindings": []
     }
   ],
   "connections": [
@@ -531,28 +639,6 @@
       "to": {
         "nodeId": "MathClosure_42",
         "portId": "dynamic_1771504274786_1"
-      }
-    },
-    {
-      "id": "edge_78",
-      "from": {
-        "nodeId": "MathClosure_43",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "SetTransform_22",
-        "portId": "rotate"
-      }
-    },
-    {
-      "id": "edge_79",
-      "from": {
-        "nodeId": "PerspectiveCamera_45",
-        "portId": "camera"
-      },
-      "to": {
-        "nodeId": "RenderPass_4",
-        "portId": "camera"
       }
     },
     {
@@ -633,7 +719,84 @@
       }
     },
     {
-      "id": "edge_97",
+      "id": "edge_102",
+      "from": {
+        "nodeId": "GLTFGeometry_54",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_55",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_104",
+      "from": {
+        "nodeId": "SetTransform_55",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_56",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_108",
+      "from": {
+        "nodeId": "GroupInstance_57",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "RenderPass_56",
+        "portId": "camera"
+      }
+    },
+    {
+      "id": "edge_109",
+      "from": {
+        "nodeId": "GroupInstance_58",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "camera"
+      }
+    },
+    {
+      "id": "edge_111",
+      "from": {
+        "nodeId": "GroupInstance_59",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "SetTransform_55",
+        "portId": "rotate"
+      }
+    },
+    {
+      "id": "edge_112",
+      "from": {
+        "nodeId": "GroupInstance_60",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "SetTransform_22",
+        "portId": "rotate"
+      }
+    },
+    {
+      "id": "edge_113",
+      "from": {
+        "nodeId": "GroupInstance_62",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "RenderPass_56",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_114",
       "from": {
         "nodeId": "MathClosure_51",
         "portId": "output"
@@ -644,14 +807,14 @@
       }
     },
     {
-      "id": "edge_98",
+      "id": "edge_115",
       "from": {
-        "nodeId": "FloatInput_53",
-        "portId": "value"
+        "nodeId": "RenderPass_56",
+        "portId": "pass"
       },
       "to": {
-        "nodeId": "MathClosure_43",
-        "portId": "dynamic_1772071983449_1"
+        "nodeId": "Composite_5",
+        "portId": "dynamic_1773307018597_1"
       }
     }
   ],
@@ -665,20 +828,418 @@
       "mimeType": "image/jpeg",
       "size": 414863
     },
-    "3b37d2ec3249": {
-      "path": "assets/3b37d2ec3249.glb",
-      "originalName": "rings.glb",
-      "mimeType": "model/gltf-binary",
-      "size": 65920
+    "5d62e74275be": {
+      "path": "assets/5d62e74275be.png",
+      "originalName": "env-blur-3.png",
+      "mimeType": "image/png",
+      "size": 938898
     },
     "6f0eab81da37": {
       "path": "assets/6f0eab81da37.png",
       "originalName": "512_512.png",
       "mimeType": "image/png",
       "size": 4641
+    },
+    "8907aee82146": {
+      "path": "assets/8907aee82146.glb",
+      "originalName": "card-edge-mesh.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 67864
+    },
+    "8da9e93bf7dd": {
+      "path": "assets/8da9e93bf7dd.glb",
+      "originalName": "card-mesh-rounded.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 372352
     }
   },
-  "groups": [],
+  "groups": [
+    {
+      "id": "Camera",
+      "name": "Group",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Camera",
+          "type": "mat4"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "PerspectiveCamera_45",
+          "type": "PerspectiveCamera",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Perspective Camera",
+          "params": {
+            "position": {
+              "x": 540,
+              "y": 1200,
+              "z": 1200
+            },
+            "target": {
+              "x": 540,
+              "y": 1200,
+              "z": 0
+            },
+            "up": {
+              "x": 0,
+              "y": 1,
+              "z": 0
+            },
+            "fovY": 90,
+            "aspect": 0.45,
+            "near": 0.1,
+            "far": 5000
+          }
+        }
+      ],
+      "connections": [],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "PerspectiveCamera_45",
+            "portId": "camera"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ModelRotation",
+      "name": "Group 2",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector3"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "MathClosure_43",
+          "type": "MathClosure",
+          "position": {
+            "x": 180,
+            "y": 0
+          },
+          "width": 203,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec3(\n  90.0,\n  fract(t/10.0) * 360.0,\n  0.0\n);"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1772071983449_1",
+              "name": "t",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector3"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1772071983449_1",
+              "label": "t",
+              "variableName": "t",
+              "type": "float",
+              "sourceBinding": {
+                "nodeId": "TimeInput_44",
+                "outputPortId": "time",
+                "outputLabel": "Time"
+              }
+            }
+          ]
+        },
+        {
+          "id": "FloatInput_53",
+          "type": "FloatInput",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "width": 160,
+          "label": "uEdgeModelRotationY",
+          "params": {
+            "value": 0
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_98",
+          "from": {
+            "nodeId": "FloatInput_53",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "MathClosure_43",
+            "portId": "dynamic_1772071983449_1"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_43",
+            "portId": "output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CardMaterial",
+      "name": "Group 3",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "Attribute_62",
+          "type": "Attribute",
+          "position": {
+            "x": 200,
+            "y": -800
+          },
+          "width": 160,
+          "label": "UV",
+          "params": {
+            "name": "uv",
+            "glslType": "vec2"
+          },
+          "outputs": [
+            {
+              "id": "value",
+              "name": "Value",
+              "type": "vector2"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_63",
+          "type": "MathClosure",
+          "position": {
+            "x": 200,
+            "y": -660
+          },
+          "width": 234,
+          "label": "Math Closure",
+          "params": {
+            "source": "if (uv.y < 0.0) {\n  output = vec4(1.0,0.0,0.0,1.0);\n} else if (uv.y > 0.5) {\n  output = vec4(0.0,1.0,0.0,1.0);\n} else {\n  output = front_color;\n}"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1773308014068_1",
+              "name": "uv",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1773308857319_2",
+              "name": "front_color",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1773336433500_3",
+              "name": "input3",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1773308014068_1",
+              "label": "uv",
+              "variableName": "uv",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "Attribute_62",
+                "outputPortId": "value",
+                "outputLabel": "Value"
+              }
+            },
+            {
+              "portId": "dynamic_1773308857319_2",
+              "label": "front_color",
+              "variableName": "front_color",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "Matcap_65",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1773336433500_3",
+              "label": "input3",
+              "variableName": "input3",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_68",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "Matcap_65",
+          "type": "Matcap",
+          "position": {
+            "x": -380,
+            "y": -800
+          },
+          "width": 160,
+          "label": "Matcap",
+          "params": {
+            "assetId": "5d62e74275be",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight"
+          }
+        },
+        {
+          "id": "ViewVector_66",
+          "type": "ViewVector",
+          "position": {
+            "x": -580,
+            "y": -800
+          },
+          "width": 160,
+          "label": "View Vector",
+          "params": {}
+        },
+        {
+          "id": "Attribute_67",
+          "type": "Attribute",
+          "position": {
+            "x": -580,
+            "y": -740
+          },
+          "width": 160,
+          "label": "Attribute",
+          "params": {
+            "name": "normal",
+            "glslType": "vec3"
+          },
+          "outputs": [
+            {
+              "id": "value",
+              "name": "Value",
+              "type": "vector3"
+            }
+          ]
+        },
+        {
+          "id": "ColorInput_68",
+          "type": "ColorInput",
+          "position": {
+            "x": -380,
+            "y": -440
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_1",
+          "from": {
+            "nodeId": "Attribute_62",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "MathClosure_63",
+            "portId": "dynamic_1773308014068_1"
+          }
+        },
+        {
+          "id": "edge_4",
+          "from": {
+            "nodeId": "ViewVector_66",
+            "portId": "view"
+          },
+          "to": {
+            "nodeId": "Matcap_65",
+            "portId": "view"
+          }
+        },
+        {
+          "id": "edge_6",
+          "from": {
+            "nodeId": "Matcap_65",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "MathClosure_63",
+            "portId": "dynamic_1773308857319_2"
+          }
+        },
+        {
+          "id": "edge_7",
+          "from": {
+            "nodeId": "Attribute_67",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "Matcap_65",
+            "portId": "normal"
+          }
+        },
+        {
+          "id": "edge_8",
+          "from": {
+            "nodeId": "ColorInput_68",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "MathClosure_63",
+            "portId": "dynamic_1773336433500_3"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_63",
+            "portId": "output"
+          }
+        }
+      ]
+    }
+  ],
   "stateMachine": {
     "id": "sm_mmamfug8_2",
     "name": "State Machine",
@@ -698,7 +1259,7 @@
         "name": "Any",
         "position": {
           "x": 100,
-          "y": 80
+          "y": 200
         },
         "parameterOverrides": {},
         "type": "anyState"
@@ -723,6 +1284,36 @@
         "parameterOverrides": {},
         "type": "mutationNode",
         "mutationId": "mutation_mmamj4me_6"
+      },
+      {
+        "id": "st_mmlrlhkq_2",
+        "name": "Ready",
+        "position": {
+          "x": 100,
+          "y": 20
+        },
+        "parameterOverrides": {},
+        "type": "animationState"
+      },
+      {
+        "id": "st_mmlrln9y_3",
+        "name": "Match",
+        "position": {
+          "x": 100,
+          "y": 80
+        },
+        "parameterOverrides": {},
+        "type": "animationState"
+      },
+      {
+        "id": "st_mmlrlu4f_4",
+        "name": "Send",
+        "position": {
+          "x": 100,
+          "y": 140
+        },
+        "parameterOverrides": {},
+        "type": "animationState"
       }
     ],
     "transitions": [

@@ -19,10 +19,12 @@ use crate::dsl::Node;
 ///
 /// # Supported Attributes
 /// - `uv`: Texture coordinates (vec2f) - user-facing bottom-left semantics
+/// - `normal`: Vertex normal (vec3f) - passed through from vertex shader
 ///
 /// # Example
 /// ```wgsl
 /// vec2f(in.uv.x, 1.0 - in.uv.y)  // For "uv" attribute
+/// in.normal                         // For "normal" attribute
 /// ```
 pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedExpr> {
     let name = node
@@ -38,8 +40,12 @@ pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedEx
             "vec2f(in.uv.x, 1.0 - in.uv.y)".to_string(),
             ValueType::Vec2,
         )),
+        "normal" => Ok(TypedExpr::new(
+            "in.normal".to_string(),
+            ValueType::Vec3,
+        )),
         other => bail!(
-            "unsupported Attribute.name: {} (only 'uv' is currently supported)",
+            "unsupported Attribute.name: {} (supported: 'uv', 'normal')",
             other
         ),
     }
@@ -113,6 +119,23 @@ mod tests {
 
         let result = compile_attribute(&node, None).unwrap();
         assert!(result.expr.contains("1.0 - in.uv.y"));
+    }
+
+    #[test]
+    fn test_attribute_normal() {
+        let node = Node {
+            id: "attr1".to_string(),
+            node_type: "Attribute".to_string(),
+            params: HashMap::from([("name".to_string(), serde_json::json!("normal"))]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+        };
+
+        let result = compile_attribute(&node, None).unwrap();
+        assert_eq!(result.ty, ValueType::Vec3);
+        assert_eq!(result.expr, "in.normal");
+        assert!(!result.uses_time);
     }
 
     #[test]

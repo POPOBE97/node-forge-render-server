@@ -414,12 +414,33 @@ fn collect_base_values(
 }
 
 fn lookup_node_param(scene: &SceneDSL, key: &OverrideKey) -> Option<serde_json::Value> {
-    scene
+    // First try top-level nodes (exact match).
+    if let Some(val) = scene
         .nodes
         .iter()
         .find(|n| n.id == key.node_id)
         .and_then(|n| n.params.get(key.param_name.as_str()))
         .cloned()
+    {
+        return Some(val);
+    }
+
+    // Fall back to searching inside group definitions.
+    // The state machine may reference nodes that live inside a group
+    // (e.g. `FloatInput_53`) which only appear in `scene.groups[].nodes`.
+    for group in &scene.groups {
+        if let Some(val) = group
+            .nodes
+            .iter()
+            .find(|n| n.id == key.node_id)
+            .and_then(|n| n.params.get(key.param_name.as_str()))
+            .cloned()
+        {
+            return Some(val);
+        }
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------

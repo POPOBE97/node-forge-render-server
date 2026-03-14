@@ -675,6 +675,7 @@ mod tests {
                 camera: [
                     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                 ],
+                camera_position: [0.0, 0.0, 0.0, 0.0],
             },
             graph_binding: Some(GraphBinding {
                 buffer_name: ResourceName::from("params.passA.graph"),
@@ -736,6 +737,7 @@ mod tests {
                 camera: [
                     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                 ],
+                camera_position: [0.0, 0.0, 0.0, 0.0],
             },
             graph_binding: Some(GraphBinding {
                 buffer_name: ResourceName::from("params.passA.graph"),

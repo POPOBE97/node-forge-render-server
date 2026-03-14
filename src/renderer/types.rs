@@ -332,6 +332,10 @@ pub struct MaterialCompileContext {
     /// in the future we may also forward it into the fragment stage.
     pub uses_instance_index: bool,
 
+    /// Set when the compiled shader needs the world-position varying (vertex → fragment)
+    /// and `params.camera_position` to compute a view direction vector.
+    pub needs_view_vector: bool,
+
     /// List of ImageTexture node IDs referenced in order.
     pub image_textures: Vec<String>,
     /// Map from node ID to texture binding index.
@@ -463,6 +467,9 @@ pub struct Params {
 
     // Column-major mat4 camera transform used by all pass-style vertex shaders.
     pub camera: [f32; 16],
+
+    // Camera world-space position (xyz), w = 0 padding for 16-byte alignment.
+    pub camera_position: [f32; 4],
 }
 
 /// Bindings for a render pass (uniform buffer and parameters).

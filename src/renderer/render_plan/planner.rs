@@ -690,7 +690,7 @@ fn plan_image_textures(
             }
 
             let node = find_node(&prepared.nodes_by_id, node_id)?;
-            if node.node_type != "ImageTexture" {
+            if node.node_type != "ImageTexture" && node.node_type != "Matcap" {
                 bail!(
                     "expected ImageTexture node for {node_id}, got {}",
                     node.node_type
