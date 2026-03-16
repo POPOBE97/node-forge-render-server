@@ -10,5 +10,6 @@ pub(crate) mod composite;
 pub(crate) mod downsample;
 pub(crate) mod gaussian_blur;
 pub(crate) mod gradient_blur;
+pub(crate) mod intelligent_light;
 pub(crate) mod render_pass;
 pub(crate) mod upsample;

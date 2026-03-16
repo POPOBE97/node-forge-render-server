@@ -1489,8 +1489,18 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     ),
                 ));
             }
+            "IntelligentLight" => {
+                // Procedural fullscreen pass — no WGSL bundle needed for the test harness.
+                // The shader is generated inline by the assembler. Push a dummy passthrough bundle.
+                out.push((
+                    format!("sys.ilight.{layer_id}.pass"),
+                    build_fullscreen_textured_bundle(
+                        "return vec4f(0.0, 0.0, 0.0, 1.0);".to_string(),
+                    ),
+                ));
+            }
             other => bail!(
-                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, or GradientBlur, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, GradientBlur, or IntelligentLight, got {other} for {layer_id}"
             ),
         }
     }

@@ -1,0 +1,65 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "IntelligentLight Test",
+    "created": "2026-03-14T00:00:00.000Z",
+    "modified": "2026-03-14T00:00:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "params": {
+        "width": 256,
+        "height": 256
+      }
+    },
+    {
+      "id": "comp",
+      "type": "Composite",
+      "params": {}
+    },
+    {
+      "id": "rt",
+      "type": "RenderTexture",
+      "params": {
+        "width": 256,
+        "height": 256,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "ilight",
+      "type": "IntelligentLight",
+      "params": {
+        "driver": 0.5,
+        "color0": "#ff0000",
+        "color1": "#00ff00",
+        "color2": "#0000ff",
+        "color3": "#ffff00",
+        "color4": "#ff00ff"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_screen",
+      "from": { "nodeId": "comp", "portId": "pass" },
+      "to": { "nodeId": "Screen_1", "portId": "pass" }
+    },
+    {
+      "id": "c_target",
+      "from": { "nodeId": "rt", "portId": "texture" },
+      "to": { "nodeId": "comp", "portId": "target" }
+    },
+    {
+      "id": "c_layer",
+      "from": { "nodeId": "ilight", "portId": "pass" },
+      "to": { "nodeId": "comp", "portId": "pass" }
+    }
+  ],
+  "outputs": {
+    "composite": "comp"
+  },
+  "assets": {}
+}

@@ -81,6 +81,7 @@ fn deps_for_pass_node(
             Ok(vec![source_conn.from.node_id.clone()])
         }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
+        "IntelligentLight" => Ok(Vec::new()),
         "GradientBlur" => {
             // GradientBlur reads "source" input (not "pass").
             let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {

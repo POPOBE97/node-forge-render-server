@@ -9,6 +9,7 @@ pub const DRAW_PASS_NODE_TYPES: &[&str] = &[
     "Downsample",
     "Upsample",
     "GradientBlur",
+    "IntelligentLight",
 ];
 
 pub fn is_draw_pass_node_type(node_type: &str) -> bool {
