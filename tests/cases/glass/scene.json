@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-01-21T09:14:04.421Z",
-    "modified": "2026-01-21T09:14:04.421Z"
+    "created": "2026-04-17T08:44:45.343Z",
+    "modified": "2026-04-17T08:44:45.343Z"
   },
   "nodes": [
     {
@@ -71,7 +71,28 @@
         "src_factor": "src-alpha",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
@@ -84,7 +105,31 @@
       "width": 160,
       "label": "Composite",
       "params": {
-        "alpha": 1
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "alpha": 1,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       },
       "inputs": [
         {
@@ -112,14 +157,14 @@
       "type": "RenderTexture",
       "position": {
         "x": 360,
-        "y": -320
+        "y": -240
       },
       "width": 160,
       "label": "Render Texture",
       "params": {
         "width": 1080,
         "height": 2400,
-        "format": "rgba8unorm"
+        "format": "rgba8unorm-srgb"
       }
     },
     {
@@ -151,8 +196,8 @@
       "id": "DataNode_20",
       "type": "DataNode",
       "position": {
-        "x": -960,
-        "y": -440
+        "x": -980,
+        "y": -500
       },
       "width": 219,
       "label": "Data",
@@ -238,7 +283,7 @@
       "type": "DataParse",
       "position": {
         "x": -700,
-        "y": -440
+        "y": -500
       },
       "width": 217,
       "label": "Data Parse",
@@ -300,43 +345,47 @@
       "id": "GlassMaterial_40",
       "type": "GlassMaterial",
       "position": {
-        "x": 80,
-        "y": -240
+        "x": 40,
+        "y": -200
       },
       "width": 237,
       "label": "Glass Material",
       "params": {
-        "uBrightness": 0,
-        "uLuminanceAmount": 0,
         "uLuminanceValues": [
           0,
           0,
           0,
           0
         ],
+        "uLuminanceAmount": 0,
         "uSaturation": 1.4,
+        "uBrightness": 0,
         "uDarker": 0,
         "uDarkerRange": {
           "x": 0,
           "y": 1
         },
-        "uShapeEdgePx": 30,
-        "uShapeEdgePow": 2,
-        "uShapeThicknessPx": 50,
-        "uShapeReflectOffsetPx": 0,
-        "uRefractBlurScale": 1,
-        "uRefractIOR": 1.5,
-        "uReflectionStrength": 0.5,
-        "uReflectionLighten": 0.5,
         "uInnerBottom": 0,
-        "uInnerColorWhite": 0,
-        "uInnerColorMix": 0,
-        "uColorPow": 1,
         "uGlassColor": [
           1,
           1,
           1,
           0
+        ],
+        "uInnerColorWhite": 0,
+        "uColorPow": 1,
+        "uShapeEdgePx": 30,
+        "uShapeEdgePow": 2,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uReflectionLighten": 0.5,
+        "uReflectionStrength": 0.5,
+        "uReflectionExtend": 0,
+        "uReflectionExtendColor": [
+          1,
+          1,
+          1,
+          1
         ],
         "uDirectionalLightDirection": {
           "x": 0.5,
@@ -346,10 +395,23 @@
         "uDirectionalLightIntensity": 1,
         "uDirectionalLightOppositeIntensity": 0,
         "uDirectionalLightAngleRange": 0.5,
+        "uRefractBlurScale": 1,
+        "uRefractIOR": 1.5,
+        "uBgColorSaturation": 1,
+        "uBgColorBrightness": 0,
+        "uBgBurn": 1,
+        "uPressLightCenterFall": 0,
+        "uPressLightCenterStrength": 0,
+        "uPressLightCenterPeak": 0,
+        "uPressRingStrength": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "uInnerColorMix": 0,
         "uDirectionalLightLightWidth": 30,
         "uDirectionalLightEdgePow": 2,
-        "uBgColorBrightness": 0,
-        "uBgColorSaturation": 1,
         "uStrength": 1,
         "uHighlightStrength": 0,
         "uAlpha": 1,
@@ -386,11 +448,16 @@
       "width": 192,
       "label": "Image Texture",
       "params": {
+        "assetId": "eea2468df096",
         "interpolation": "linear",
         "extension": "repeat",
-        "encoderSpace": "linear",
-        "alphaMode": "straight",
-        "assetId": "eea2468df096"
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight"
       }
     },
     {
@@ -398,22 +465,46 @@
       "type": "GuassianBlurPass",
       "position": {
         "x": -200,
-        "y": -20
+        "y": 80
       },
       "width": 200,
       "label": "Gaussian Blur Pass",
       "params": {
         "mode": "standard",
-        "radius": 10,
-        "extend": false
+        "radius": 40,
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "extend": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
       "id": "GeoSize_44",
       "type": "GeoSize",
       "position": {
-        "x": -400,
-        "y": 440
+        "x": -420,
+        "y": 400
       },
       "width": 160,
       "label": "Geo Size",
@@ -423,8 +514,8 @@
       "id": "MathClosure_45",
       "type": "MathClosure",
       "position": {
-        "x": -180,
-        "y": 420
+        "x": -240,
+        "y": 400
       },
       "width": 195,
       "label": "Math Closure",
@@ -458,6 +549,21 @@
           }
         }
       ]
+    },
+    {
+      "id": "ReferenceImage_46",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 760,
+        "y": -280
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "2db18011fd02",
+        "encoderSpace": "srgb",
+        "alphaMode": "premultiplied"
+      }
     }
   ],
   "connections": [
@@ -660,17 +766,6 @@
       }
     },
     {
-      "id": "edge_85",
-      "from": {
-        "nodeId": "ImageTexture_41",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "Composite_7",
-        "portId": "pass"
-      }
-    },
-    {
       "id": "edge_88",
       "from": {
         "nodeId": "GeoSize_44",
@@ -691,17 +786,35 @@
         "nodeId": "GlassMaterial_40",
         "portId": "uGeoPxSize"
       }
+    },
+    {
+      "id": "edge_90",
+      "from": {
+        "nodeId": "GuassianBlurPass_42",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      }
     }
   ],
   "outputs": {
     "composite": "Composite_7"
   },
   "assets": {
+    "2db18011fd02": {
+      "path": "assets/2db18011fd02.png",
+      "originalName": "glass-baseline.png",
+      "mimeType": "image/png",
+      "size": 953426
+    },
     "eea2468df096": {
       "path": "assets/eea2468df096.png",
       "originalName": "baseline-test.png",
       "mimeType": "image/png",
       "size": 284985
     }
-  }
+  },
+  "groups": []
 }

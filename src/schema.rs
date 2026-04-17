@@ -1,11 +1,12 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 use crate::dsl::{Connection, Node, SceneDSL, parse_f32, parse_texture_format, parse_u32};
 
 const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json");
+const DEFAULT_NODE_SCHEME_REL_PATH: &str = "assets/node-scheme.json";
 
 #[derive(Debug, Clone)]
 pub struct NodeScheme {
@@ -192,9 +193,36 @@ pub(crate) fn port_types_compatible(
     port_types_compatible_via_table(from, to, &scheme.port_type_compatibility)
 }
 
+fn load_default_scheme_source() -> Result<(String, String)> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join(DEFAULT_NODE_SCHEME_REL_PATH));
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_NODE_SCHEME_REL_PATH);
+    if !candidates.iter().any(|candidate| candidate == &manifest_dir) {
+        candidates.push(manifest_dir);
+    }
+
+    for path in candidates {
+        if path.is_file() {
+            let contents = fs::read_to_string(&path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            return Ok((path.display().to_string(), contents));
+        }
+    }
+
+    Ok((
+        DEFAULT_NODE_SCHEME_REL_PATH.to_string(),
+        DEFAULT_NODE_SCHEME_JSON.to_string(),
+    ))
+}
+
 pub fn load_default_scheme() -> Result<NodeScheme> {
-    let scheme: RawNodeScheme = serde_json::from_str(DEFAULT_NODE_SCHEME_JSON)
-        .map_err(|e| anyhow!("failed to parse assets/node-scheme.json: {e}"))?;
+    let (source_label, scheme_json) = load_default_scheme_source()?;
+    let scheme: RawNodeScheme = serde_json::from_str(&scheme_json)
+        .map_err(|e| anyhow!("failed to parse {source_label}: {e}"))?;
     Ok(match scheme {
         RawNodeScheme::Legacy(s) => NodeScheme {
             nodes: s.nodes,

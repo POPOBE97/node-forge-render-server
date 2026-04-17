@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-03-12T11:17:00.267Z",
+  "generatedAt": "2026-04-15T09:24:50.644Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -41,6 +41,7 @@
     "InstancedGeometryEnd",
     "InstancedGeometryStart",
     "IntInput",
+    "IntelligentLight",
     "Kernel",
     "Lerp",
     "Luminance",
@@ -53,6 +54,7 @@
     "MathClosure",
     "MathMultiply",
     "MathPower",
+    "MeshGradient",
     "MixShader",
     "NoiseTexture",
     "Normalize",
@@ -84,6 +86,7 @@
   "portTypes": [
     "ImageFile",
     "any",
+    "bezierCurve",
     "bool",
     "color",
     "float",
@@ -93,6 +96,7 @@
     "kernel",
     "mat4",
     "material",
+    "normalizedBezierCurve",
     "pass",
     "renderTexture",
     "shader",
@@ -222,6 +226,8 @@
       "geometry",
       "pass",
       "kernel",
+      "bezierCurve",
+      "normalizedBezierCurve",
       "any"
     ],
     "float": [
@@ -258,6 +264,7 @@
     "vector4": [
       "vector4",
       "color",
+      "normalizedBezierCurve",
       "float",
       "int",
       "bool",
@@ -267,6 +274,7 @@
     "color": [
       "color",
       "vector4",
+      "normalizedBezierCurve",
       "float",
       "int",
       "bool",
@@ -325,6 +333,19 @@
     ],
     "kernel": [
       "kernel"
+    ],
+    "bezierCurve": [
+      "bezierCurve"
+    ],
+    "normalizedBezierCurve": [
+      "normalizedBezierCurve",
+      "vector4",
+      "color",
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector3"
     ]
   },
   "nodes": [
@@ -991,229 +1012,407 @@
       "inputs": [
         {
           "id": "uBgTex",
-          "name": "Background Pass",
-          "type": "pass"
-        },
-        {
-          "id": "uRefractTex",
-          "name": "Refraction Pass",
-          "type": "pass"
-        },
-        {
-          "id": "uReflectTex",
-          "name": "Reflection Pass",
-          "type": "pass"
-        },
-        {
-          "id": "uReflectForegroundBlurTex",
-          "name": "Foreground Blur Pass",
+          "name": "bg",
           "type": "pass"
         },
         {
           "id": "uBgColorTex",
-          "name": "Background Color Pass",
+          "name": "bgColor",
           "type": "pass"
         },
         {
-          "id": "uBrightness",
-          "name": "Brightness",
-          "type": "float",
-          "default": 0
+          "id": "uRefractTex",
+          "name": "refract",
+          "type": "pass"
         },
         {
-          "id": "uLuminanceAmount",
-          "name": "Luminance Amount",
-          "type": "float",
-          "default": 0
+          "id": "uReflectTex",
+          "name": "reflect",
+          "type": "pass"
         },
         {
-          "id": "uLuminanceValues",
-          "name": "Luminance Values",
-          "type": "vector4",
+          "id": "uReflectForegroundBlurTex",
+          "name": "reflectForegroundBlur",
+          "type": "pass"
+        },
+        {
+          "id": "uBlendLuminanceValues",
+          "name": "blendLuminanceValues",
+          "type": "normalizedBezierCurve",
           "default": [
             0,
             0,
             0,
             0
-          ]
-        },
-        {
-          "id": "uSaturation",
-          "name": "Saturation",
-          "type": "float",
-          "default": 1
-        },
-        {
-          "id": "uDarker",
-          "name": "Darker",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uDarkerRange",
-          "name": "Darker Range",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 1
+          ],
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
           }
         },
         {
-          "id": "uShapeEdgePx",
-          "name": "Edge (px)",
+          "id": "uBlendLuminanceAmount",
+          "name": "blendLuminanceAmount",
           "type": "float",
-          "default": 30
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
-          "id": "uShapeEdgePow",
-          "name": "Edge Pow",
+          "id": "uBlendSaturation",
+          "name": "blendSaturation",
           "type": "float",
-          "default": 2
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
         },
         {
-          "id": "uShapeThicknessPx",
-          "name": "Thickness (px)",
+          "id": "uBlendBrightness",
+          "name": "blendBrightness",
           "type": "float",
-          "default": 50
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
-          "id": "uShapeReflectOffsetPx",
-          "name": "Reflect Offset (px)",
+          "id": "uBlendDarker",
+          "name": "blendDarker",
           "type": "float",
-          "default": 0
+          "default": 0.15,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
-          "id": "uRefractBlurScale",
-          "name": "Refract Blur Scale",
-          "type": "float",
-          "default": 1
-        },
-        {
-          "id": "uRefractIOR",
-          "name": "Refract IOR",
-          "type": "float",
-          "default": 1.5
-        },
-        {
-          "id": "uReflectionStrength",
-          "name": "Reflection Strength",
-          "type": "float",
-          "default": 0.5
-        },
-        {
-          "id": "uReflectionLighten",
-          "name": "Reflection Lighten",
-          "type": "float",
-          "default": 0.5
+          "id": "uBlendDarkerRange",
+          "name": "blendDarkerRange",
+          "type": "vector2",
+          "default": {
+            "x": 0.6,
+            "y": 0.8
+          },
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
           "id": "uInnerBottom",
-          "name": "Inner Bottom",
+          "name": "bottom",
           "type": "float",
-          "default": 0
+          "default": 0.05,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
-          "id": "uInnerColorWhite",
-          "name": "Inner Color White",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uInnerColorMix",
-          "name": "Inner Color Mix",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uColorPow",
-          "name": "Color Pow",
-          "type": "float",
-          "default": 1
-        },
-        {
-          "id": "uGlassColor",
-          "name": "Glass Color",
+          "id": "uInnerGlassColor",
+          "name": "innerGlassColor",
           "type": "color",
           "default": [
             1,
             1,
             1,
-            0
+            0.15
           ]
         },
         {
+          "id": "uInnerColorWhite",
+          "name": "colorWhite",
+          "type": "float",
+          "default": 0.1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uInnerColorMix",
+          "name": "colorMix",
+          "type": "float",
+          "default": 0.7,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uInnerColorPow",
+          "name": "innerColorPow",
+          "type": "float",
+          "default": 1.2,
+          "range": {
+            "min": 0.1,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uShapeEdgePx",
+          "name": "edgePx",
+          "type": "float",
+          "default": 20,
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeEdgePow",
+          "name": "edgePow",
+          "type": "float",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 4,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeThicknessPx",
+          "name": "thicknessPx",
+          "type": "float",
+          "default": 200,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeReflectOffsetPx",
+          "name": "reflectOffsetPx",
+          "type": "float",
+          "default": 400,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "uReflectLighten",
+          "name": "reflectLighten",
+          "type": "float",
+          "default": 0.2,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05
+          }
+        },
+        {
+          "id": "uReflectLightenOpacity",
+          "name": "reflectLightenOpacity",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05
+          }
+        },
+        {
+          "id": "uReflectLightenBlendMode",
+          "name": "reflectLightenBlendMode",
+          "type": "int",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 18,
+            "step": 1
+          }
+        },
+        {
+          "id": "uReflectStrength",
+          "name": "reflectStrength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.1
+          }
+        },
+        {
           "id": "uDirectionalLightDirection",
-          "name": "Directional Light Direction",
+          "name": "direction",
           "type": "vector3",
           "default": {
-            "x": 0.5,
-            "y": -0.7,
-            "z": 0.5
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "range": {
+            "min": -2,
+            "max": 2,
+            "step": 0.1
           }
         },
         {
           "id": "uDirectionalLightIntensity",
-          "name": "Directional Light Intensity",
+          "name": "intensity",
           "type": "float",
-          "default": 1
+          "default": 0.8,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
         },
         {
           "id": "uDirectionalLightOppositeIntensity",
-          "name": "Directional Light Opposite Intensity",
+          "name": "oppositeIntensity",
           "type": "float",
-          "default": 0
+          "default": 0.4,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
           "id": "uDirectionalLightAngleRange",
-          "name": "Directional Light Angle Range",
+          "name": "angleRange",
           "type": "float",
-          "default": 0.5
+          "default": 0.25,
+          "range": {
+            "min": 0.01,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
-          "id": "uDirectionalLightLightWidth",
-          "name": "Directional Light Width",
+          "id": "uRefractBlurScale",
+          "name": "blur",
           "type": "float",
-          "default": 30
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 1
+          }
         },
         {
-          "id": "uDirectionalLightEdgePow",
-          "name": "Directional Light Edge Pow",
+          "id": "uRefractIorIOR",
+          "name": "refractIorIOR",
           "type": "float",
-          "default": 2
-        },
-        {
-          "id": "uBgColorBrightness",
-          "name": "BG Color Brightness",
-          "type": "float",
-          "default": 0
+          "default": 1.5,
+          "range": {
+            "min": 1,
+            "max": 5,
+            "step": 0.01
+          }
         },
         {
           "id": "uBgColorSaturation",
-          "name": "BG Color Saturation",
+          "name": "bgColorSaturation",
           "type": "float",
-          "default": 1
+          "default": 4,
+          "range": {
+            "min": 0,
+            "max": 8,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBgColorBrightness",
+          "name": "bgColorBrightness",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBionicBurn",
+          "name": "burn",
+          "type": "float",
+          "default": 11,
+          "range": {
+            "min": 0.1,
+            "max": 20,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBionicUnShade",
+          "name": "unShade",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uDebugFixNeutralVibrancy",
+          "name": "fixNeutralVibrancy",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 1
+          }
+        },
+        {
+          "id": "uDebugFixNeutralVibrancyThresholdMin",
+          "name": "fixNeutralVibrancyThresholdMin",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uDebugFixNeutralVibrancyThreshold",
+          "name": "fixNeutralVibrancyThreshold",
+          "type": "float",
+          "default": 0.4,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
           "id": "uStrength",
-          "name": "Strength",
+          "name": "strength",
           "type": "float",
-          "default": 1
-        },
-        {
-          "id": "uHighlightStrength",
-          "name": "Highlight Strength",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uAlpha",
-          "name": "Alpha",
-          "type": "float",
-          "default": 1
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
           "id": "uGeoPxPos",
-          "name": "Geo Pixel Position",
+          "name": "geoPxPos",
           "type": "vector2",
           "default": {
             "x": 0,
@@ -1222,60 +1421,35 @@
         },
         {
           "id": "uGeoPxSize",
-          "name": "Geo Pixel Size",
+          "name": "geoPxSize",
           "type": "vector3",
           "default": {
             "x": 0,
             "y": 0,
-            "z": 20
+            "z": 54
           }
         },
         {
-          "id": "uNoiseScale",
-          "name": "Noise Scale",
+          "id": "uAlpha",
+          "name": "alpha",
           "type": "float",
-          "default": 1
-        },
-        {
-          "id": "uNoiseStrength",
-          "name": "Noise Strength",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uNoiseStrengthSmall",
-          "name": "Noise Strength Small",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uNoiseStrengthBig",
-          "name": "Noise Strength Big",
-          "type": "float",
-          "default": 0
-        },
-        {
-          "id": "uNoiseStrengthMix",
-          "name": "Noise Strength Mix",
-          "type": "float",
-          "default": 0
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
         },
         {
           "id": "uUseSdfTex",
-          "name": "Use SDF Texture",
-          "type": "float",
-          "default": 0
+          "name": "useSdfTex",
+          "type": "bool",
+          "default": false
         },
         {
           "id": "uSdfTex",
-          "name": "SDF Texture (Sampled Color)",
-          "type": "color",
-          "default": [
-            0,
-            0,
-            0,
-            0
-          ]
+          "name": "sdfTex",
+          "type": "texture"
         }
       ],
       "outputs": [
@@ -1286,53 +1460,56 @@
         }
       ],
       "defaultParams": {
-        "uBrightness": 0,
-        "uLuminanceAmount": 0,
-        "uLuminanceValues": [
+        "uBlendLuminanceValues": [
           0,
           0,
           0,
           0
         ],
-        "uSaturation": 1,
-        "uDarker": 0,
-        "uDarkerRange": {
-          "x": 0,
-          "y": 1
+        "uBlendLuminanceAmount": 0,
+        "uBlendSaturation": 1,
+        "uBlendBrightness": 0,
+        "uBlendDarker": 0.15,
+        "uBlendDarkerRange": {
+          "x": 0.6,
+          "y": 0.8
         },
-        "uShapeEdgePx": 30,
+        "uInnerBottom": 0.05,
+        "uInnerGlassColor": [
+          1,
+          1,
+          1,
+          0.15
+        ],
+        "uInnerColorWhite": 0.1,
+        "uInnerColorMix": 0.7,
+        "uInnerColorPow": 1.2,
+        "uShapeEdgePx": 20,
         "uShapeEdgePow": 2,
-        "uShapeThicknessPx": 50,
-        "uShapeReflectOffsetPx": 0,
-        "uRefractBlurScale": 1,
-        "uRefractIOR": 1.5,
-        "uReflectionStrength": 0.5,
-        "uReflectionLighten": 0.5,
-        "uInnerBottom": 0,
-        "uInnerColorWhite": 0,
-        "uInnerColorMix": 0,
-        "uColorPow": 1,
-        "uGlassColor": [
-          1,
-          1,
-          1,
-          0
-        ],
+        "uShapeThicknessPx": 200,
+        "uShapeReflectOffsetPx": 400,
+        "uReflectLighten": 0.2,
+        "uReflectLightenOpacity": 1,
+        "uReflectLightenBlendMode": 0,
+        "uReflectStrength": 1,
         "uDirectionalLightDirection": {
-          "x": 0.5,
-          "y": -0.7,
-          "z": 0.5
+          "x": 0,
+          "y": 1,
+          "z": 0
         },
-        "uDirectionalLightIntensity": 1,
-        "uDirectionalLightOppositeIntensity": 0,
-        "uDirectionalLightAngleRange": 0.5,
-        "uDirectionalLightLightWidth": 30,
-        "uDirectionalLightEdgePow": 2,
+        "uDirectionalLightIntensity": 0.8,
+        "uDirectionalLightOppositeIntensity": 0.4,
+        "uDirectionalLightAngleRange": 0.25,
+        "uRefractBlurScale": 1,
+        "uRefractIorIOR": 1.5,
+        "uBgColorSaturation": 4,
         "uBgColorBrightness": 0,
-        "uBgColorSaturation": 1,
-        "uStrength": 1,
-        "uHighlightStrength": 0,
-        "uAlpha": 1,
+        "uBionicBurn": 11,
+        "uBionicUnShade": 0,
+        "uDebugFixNeutralVibrancy": 1,
+        "uDebugFixNeutralVibrancyThresholdMin": 0,
+        "uDebugFixNeutralVibrancyThreshold": 0.4,
+        "uStrength": 0,
         "uGeoPxPos": {
           "x": 0,
           "y": 0
@@ -1340,20 +1517,10 @@
         "uGeoPxSize": {
           "x": 0,
           "y": 0,
-          "z": 20
+          "z": 54
         },
-        "uNoiseScale": 1,
-        "uNoiseStrength": 0,
-        "uNoiseStrengthSmall": 0,
-        "uNoiseStrengthBig": 0,
-        "uNoiseStrengthMix": 0,
-        "uUseSdfTex": 0,
-        "uSdfTex": [
-          0,
-          0,
-          0,
-          0
-        ]
+        "uAlpha": 1,
+        "uUseSdfTex": false
       }
     },
     {
@@ -1712,6 +1879,94 @@
       "defaultParams": {}
     },
     {
+      "type": "IntelligentLight",
+      "label": "Intelligent Light",
+      "category": "Lighting",
+      "description": "Drives an intelligent lighting fixture with 11 color zones and a time-like driver",
+      "inputs": [
+        {
+          "id": "driver",
+          "name": "Driver",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "color0",
+          "name": "Color 0",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color1",
+          "name": "Color 1",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color2",
+          "name": "Color 2",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color3",
+          "name": "Color 3",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color4",
+          "name": "Color 4",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color5",
+          "name": "Color 5",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color6",
+          "name": "Color 6",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color7",
+          "name": "Color 7",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color8",
+          "name": "Color 8",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color9",
+          "name": "Color 9",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color10",
+          "name": "Color 10",
+          "type": "color",
+          "default": "#ffffff"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
       "type": "IntInput",
       "label": "Int Input",
       "category": "Input",
@@ -2060,6 +2315,167 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "MeshGradient",
+      "label": "Mesh Gradient",
+      "category": "Gradient",
+      "description": "A 3×3 mesh gradient with 9 color control points and per-point positions",
+      "inputs": [
+        {
+          "id": "pos0",
+          "name": "Pos 0",
+          "type": "vector2",
+          "default": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "pos1",
+          "name": "Pos 1",
+          "type": "vector2",
+          "default": {
+            "x": 0.5,
+            "y": 0
+          }
+        },
+        {
+          "id": "pos2",
+          "name": "Pos 2",
+          "type": "vector2",
+          "default": {
+            "x": 1,
+            "y": 0
+          }
+        },
+        {
+          "id": "pos3",
+          "name": "Pos 3",
+          "type": "vector2",
+          "default": {
+            "x": 0,
+            "y": 0.5
+          }
+        },
+        {
+          "id": "pos4",
+          "name": "Pos 4",
+          "type": "vector2",
+          "default": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        },
+        {
+          "id": "pos5",
+          "name": "Pos 5",
+          "type": "vector2",
+          "default": {
+            "x": 1,
+            "y": 0.5
+          }
+        },
+        {
+          "id": "pos6",
+          "name": "Pos 6",
+          "type": "vector2",
+          "default": {
+            "x": 0,
+            "y": 1
+          }
+        },
+        {
+          "id": "pos7",
+          "name": "Pos 7",
+          "type": "vector2",
+          "default": {
+            "x": 0.5,
+            "y": 1
+          }
+        },
+        {
+          "id": "pos8",
+          "name": "Pos 8",
+          "type": "vector2",
+          "default": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        {
+          "id": "color0",
+          "name": "Color 0",
+          "type": "color",
+          "default": "#ff6b6b"
+        },
+        {
+          "id": "color1",
+          "name": "Color 1",
+          "type": "color",
+          "default": "#ffa94d"
+        },
+        {
+          "id": "color2",
+          "name": "Color 2",
+          "type": "color",
+          "default": "#ffd43b"
+        },
+        {
+          "id": "color3",
+          "name": "Color 3",
+          "type": "color",
+          "default": "#69db7c"
+        },
+        {
+          "id": "color4",
+          "name": "Color 4",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color5",
+          "name": "Color 5",
+          "type": "color",
+          "default": "#74c0fc"
+        },
+        {
+          "id": "color6",
+          "name": "Color 6",
+          "type": "color",
+          "default": "#b197fc"
+        },
+        {
+          "id": "color7",
+          "name": "Color 7",
+          "type": "color",
+          "default": "#f783ac"
+        },
+        {
+          "id": "color8",
+          "name": "Color 8",
+          "type": "color",
+          "default": "#da77f2"
+        },
+        {
+          "id": "background",
+          "name": "Background",
+          "type": "color",
+          "default": "#000000"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "width": 3,
+        "height": 3,
+        "smoothsColors": true
+      }
     },
     {
       "type": "MixShader",
