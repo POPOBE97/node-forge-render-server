@@ -37,6 +37,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: GroupInstance_59/FloatInput_53
     node_GroupInstance_59_FloatInput_53_22997734: vec4f,
+    // Node: GroupInstance_62/ColorInput_68
+    node_GroupInstance_62_ColorInput_68_0f64f50a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -62,35 +64,37 @@ fn matcap_uv(n: vec3f, v: vec3f) -> vec2f {
     return clamp(uv, vec2f(0.0), vec2f(1.0));
 }
 
-fn mc_GroupInstance_62_MathClosure_63_(uv: vec2<f32>, uv_1: vec2<f32>, front_color: vec4<f32>) -> vec4<f32> {
+fn mc_GroupInstance_62_MathClosure_63_(uv: vec2<f32>, uv_1: vec2<f32>, front_color: vec4<f32>, input3_: vec4<f32>) -> vec4<f32> {
     var uv_2: vec2<f32>;
     var uv_3: vec2<f32>;
     var front_color_1: vec4<f32>;
+    var input3_1: vec4<f32>;
     var output: vec4<f32> = vec4(0f);
 
     uv_2 = uv;
     uv_3 = uv_1;
     front_color_1 = front_color;
-    let _e9: vec2<f32> = uv_3;
-    if (_e9.y < 0f) {
+    input3_1 = input3_;
+    let _e11: vec2<f32> = uv_3;
+    if (_e11.y < 0f) {
         {
             output = vec4<f32>(1f, 0f, 0f, 1f);
         }
     } else {
-        let _e18: vec2<f32> = uv_3;
-        if (_e18.y > 0.5f) {
+        let _e20: vec2<f32> = uv_3;
+        if (_e20.y > 0.5f) {
             {
                 output = vec4<f32>(0f, 1f, 0f, 1f);
             }
         } else {
             {
-                let _e27: vec4<f32> = front_color_1;
-                output = _e27;
+                let _e29: vec4<f32> = front_color_1;
+                output = _e29;
             }
         }
     }
-    let _e28: vec4<f32> = output;
-    return _e28;
+    let _e30: vec4<f32> = output;
+    return _e30;
 }
 
 
@@ -156,7 +160,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
 
  var p_local = position;
- let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540, 1200, 0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0, 0, 0)) + (mc_GroupInstance_59_MathClosure_43_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
+ let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540.0, 1200.0, 0.0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0.0, 0.0, 0.0)) + (mc_GroupInstance_59_MathClosure_43_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).

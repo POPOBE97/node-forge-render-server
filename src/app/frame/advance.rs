@@ -138,6 +138,7 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         animation_session_active,
         should_redraw_scene: app.runtime.scene_redraw_pending
             || time_driven_scene
-            || app.runtime.capture_redraw_active,
+            || app.runtime.capture_redraw_active
+            || app.runtime.force_continuous_redraw,
     }
 }

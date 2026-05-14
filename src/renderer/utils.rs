@@ -147,11 +147,16 @@ pub fn cpu_num_u32_min_1(
     Ok(cpu_num_u32_floor(scene, nodes_by_id, node, key, default)?.max(1))
 }
 
-/// Format a float for WGSL, removing trailing zeros.
+/// Format a float for WGSL, removing trailing zeros but keeping at least one decimal digit.
 pub fn fmt_f32(v: f32) -> String {
     if v.is_finite() {
         let s = format!("{v:.9}");
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
+        let trimmed = s.trim_end_matches('0');
+        if trimmed.ends_with('.') {
+            format!("{trimmed}0")
+        } else {
+            trimmed.to_string()
+        }
     } else {
         "0.0".to_string()
     }

@@ -76,7 +76,7 @@ where
 
     let ix = match stage {
         crate::renderer::validation::GlslShaderStage::Vertex => "instance_index",
-        crate::renderer::validation::GlslShaderStage::Fragment => "instance_index",
+        crate::renderer::validation::GlslShaderStage::Fragment => "in.instance_index",
         crate::renderer::validation::GlslShaderStage::Compute => "0u",
     };
 

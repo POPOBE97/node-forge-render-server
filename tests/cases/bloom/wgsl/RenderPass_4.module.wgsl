@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -28,7 +29,8 @@ var<uniform> params: Params;
      @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
-  };
+      @location(5) normal: vec3f,
+ };
 
 
 struct GraphInputs {
@@ -79,6 +81,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  fn vs_main(
      @location(0) position: vec3f,
      @location(1) uv: vec2f,
+     @location(6) normal: vec3f,
  ) -> VSOut {
  var out: VSOut;
 
@@ -96,12 +99,14 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  // UV passed as vertex attribute.
  out.uv = uv;
 
+ out.normal = normal;
+
  out.geo_size_px = params.geo_size;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
 
  var p_local = position;
- let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540, 1200, 0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0, 0, 0)) + (mc_MathClosure_45_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
+ let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540.0, 1200.0, 0.0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0.0, 0.0, 0.0)) + (mc_MathClosure_45_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);
  p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).

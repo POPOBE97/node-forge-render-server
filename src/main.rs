@@ -16,6 +16,7 @@ struct Cli {
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
     render_to_file: bool,
+    continuous_redraw: bool,
 }
 
 #[cfg(all(target_os = "macos", debug_assertions))]
@@ -106,9 +107,13 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.render_to_file = true;
                 i += 1;
             }
+            "--continuous-redraw" | "--force-continuous-redraw" => {
+                cli.continuous_redraw = true;
+                i += 1;
+            }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --output <abs/path/to/output>, --outputdir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>)"
                 ));
             }
         }
@@ -672,6 +677,9 @@ fn main() -> Result<()> {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
             let capture_state_rx = spawn_metal_capture_state_watcher(cc.egui_ctx.clone());
+            if cli.continuous_redraw {
+                eprintln!("[capture] forcing continuous redraw via CLI flag");
+            }
 
             let animation_session = last_good
                 .lock()
@@ -700,6 +708,7 @@ fn main() -> Result<()> {
                 last_good,
                 uniform_scene: None,
                 last_pipeline_signature,
+                force_continuous_redraw: cli.continuous_redraw,
                 asset_store,
                 animation_session,
             })))
@@ -766,5 +775,19 @@ mod tests {
         let cli = parse_cli(&args).unwrap();
         assert!(cli.headless);
         assert!(cli.render_to_file);
+    }
+
+    #[test]
+    fn parse_cli_continuous_redraw_flag() {
+        let args = vec!["--continuous-redraw".to_string()];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.continuous_redraw);
+    }
+
+    #[test]
+    fn parse_cli_force_continuous_redraw_alias() {
+        let args = vec!["--force-continuous-redraw".to_string()];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.continuous_redraw);
     }
 }

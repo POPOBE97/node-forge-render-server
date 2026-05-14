@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-04-17T08:44:45.343Z",
-    "modified": "2026-04-17T08:44:45.343Z"
+    "created": "2026-05-14T11:49:15.128Z",
+    "modified": "2026-05-14T11:49:15.128Z"
   },
   "nodes": [
     {
@@ -72,7 +72,7 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 1,
+        "msaaSampleCount": 4,
         "culling": "none",
         "depthTest": false,
         "camera": [
@@ -163,8 +163,8 @@
       "label": "Render Texture",
       "params": {
         "width": 1080,
-        "height": 2400,
-        "format": "rgba8unorm-srgb"
+        "height": 2345,
+        "format": "rgba16float"
       }
     },
     {
@@ -196,8 +196,8 @@
       "id": "DataNode_20",
       "type": "DataNode",
       "position": {
-        "x": -980,
-        "y": -500
+        "x": -2600,
+        "y": -120
       },
       "width": 219,
       "label": "Data",
@@ -345,42 +345,44 @@
       "id": "GlassMaterial_40",
       "type": "GlassMaterial",
       "position": {
-        "x": 40,
+        "x": 80,
         "y": -200
       },
       "width": 237,
       "label": "Glass Material",
       "params": {
-        "uLuminanceValues": [
+        "uBlendLuminanceValues": [
           0,
-          0,
-          0,
+          0.4994843062978276,
+          0.5005719599517426,
           0
         ],
-        "uLuminanceAmount": 0,
-        "uSaturation": 1.4,
-        "uBrightness": 0,
-        "uDarker": 0,
-        "uDarkerRange": {
-          "x": 0,
+        "uBlendLuminanceAmount": 0.2,
+        "uBlendSaturation": 1.4,
+        "uBlendBrightness": -0.02,
+        "uBlendDarker": 1,
+        "uBlendDarkerRange": {
+          "x": 0.6,
           "y": 1
         },
-        "uInnerBottom": 0,
-        "uGlassColor": [
-          1,
-          1,
-          1,
-          0
+        "uInnerBottom": 0.05,
+        "uInnerGlassColor": [
+          0,
+          0,
+          0,
+          0.1
         ],
-        "uInnerColorWhite": 0,
-        "uColorPow": 1,
+        "uInnerColorWhite": 0.2,
+        "uInnerColorPow": 1,
+        "uInnerColorMix": 0.1,
+        "uGeoPxRadius": 24,
         "uShapeEdgePx": 30,
         "uShapeEdgePow": 2,
-        "uShapeThicknessPx": 50,
-        "uShapeReflectOffsetPx": 0,
-        "uReflectionLighten": 0.5,
-        "uReflectionStrength": 0.5,
-        "uReflectionExtend": 0,
+        "uShapeThicknessPx": 80,
+        "uShapeReflectOffsetPx": 750,
+        "uReflectLighten": 1.2,
+        "uReflectStrength": 2,
+        "uReflectionExtend": 100,
         "uReflectionExtendColor": [
           1,
           1,
@@ -388,49 +390,22 @@
           1
         ],
         "uDirectionalLightDirection": {
-          "x": 0.5,
-          "y": -0.7,
-          "z": 0.5
+          "x": -0.4,
+          "y": 0.6,
+          "z": -0.2
         },
-        "uDirectionalLightIntensity": 1,
-        "uDirectionalLightOppositeIntensity": 0,
-        "uDirectionalLightAngleRange": 0.5,
-        "uRefractBlurScale": 1,
-        "uRefractIOR": 1.5,
-        "uBgColorSaturation": 1,
+        "uDirectionalLightIntensity": 1.5,
+        "uDirectionalLightOppositeIntensity": 0.8,
+        "uDirectionalLightAngleRange": 0.28,
+        "uRefractBlurScale": 0.7,
+        "uRefractIorIOR": 1,
+        "uBgColorSaturation": 2,
         "uBgColorBrightness": 0,
-        "uBgBurn": 1,
-        "uPressLightCenterFall": 0,
-        "uPressLightCenterStrength": 0,
+        "uBionicBurn": 0.1,
+        "uPressLightCenterFall": 0.8,
+        "uPressLightCenterStrength": 0.82,
         "uPressLightCenterPeak": 0,
         "uPressRingStrength": [
-          0,
-          0,
-          0,
-          0
-        ],
-        "uInnerColorMix": 0,
-        "uDirectionalLightLightWidth": 30,
-        "uDirectionalLightEdgePow": 2,
-        "uStrength": 1,
-        "uHighlightStrength": 0,
-        "uAlpha": 1,
-        "uGeoPxPos": {
-          "x": 0,
-          "y": 0
-        },
-        "uGeoPxSize": {
-          "x": 0,
-          "y": 0,
-          "z": 20
-        },
-        "uNoiseScale": 1,
-        "uNoiseStrength": 0,
-        "uNoiseStrengthSmall": 0,
-        "uNoiseStrengthBig": 0,
-        "uNoiseStrengthMix": 0,
-        "uUseSdfTex": 0,
-        "uSdfTex": [
           0,
           0,
           0,
@@ -439,16 +414,59 @@
       }
     },
     {
-      "id": "ImageTexture_41",
+      "id": "ReferenceImage_46",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 760,
+        "y": -280
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "762325f2042e",
+        "encoderSpace": "srgb",
+        "alphaMode": "premultiplied"
+      }
+    },
+    {
+      "id": "GroupInstance_47",
+      "type": "GroupInstance",
+      "position": {
+        "x": -260,
+        "y": -820
+      },
+      "width": 160,
+      "label": "Group",
+      "params": {
+        "groupId": "Background Pass"
+      },
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "BackgroundImage",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "ImageTexture_48",
       "type": "ImageTexture",
       "position": {
-        "x": -200,
-        "y": -200
+        "x": -680,
+        "y": -800
       },
       "width": 192,
       "label": "Image Texture",
       "params": {
-        "assetId": "eea2468df096",
+        "assetId": "61fea0e0acb1",
         "interpolation": "linear",
         "extension": "repeat",
         "addressModeU": "repeat",
@@ -461,71 +479,80 @@
       }
     },
     {
-      "id": "GuassianBlurPass_42",
-      "type": "GuassianBlurPass",
+      "id": "ColorMix_50",
+      "type": "ColorMix",
       "position": {
-        "x": -200,
-        "y": 80
+        "x": 20,
+        "y": -820
       },
-      "width": 200,
-      "label": "Gaussian Blur Pass",
+      "width": 160,
+      "label": "Blend Color",
       "params": {
-        "mode": "standard",
-        "radius": 40,
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
-        "extend": false,
-        "camera": [
-          1,
+        "mode": "normal",
+        "color1": [
           0,
           0,
           0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1
+          0.6
         ]
       }
     },
     {
-      "id": "GeoSize_44",
-      "type": "GeoSize",
+      "id": "FragCoord_52",
+      "type": "FragCoord",
       "position": {
-        "x": -420,
-        "y": 400
+        "x": -1060,
+        "y": -800
       },
       "width": 160,
-      "label": "Geo Size",
+      "label": "FragCoord",
       "params": {}
     },
     {
-      "id": "MathClosure_45",
+      "id": "Vector2Input_53",
+      "type": "Vector2Input",
+      "position": {
+        "x": -1060,
+        "y": -740
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 1080,
+        "y": 2345
+      }
+    },
+    {
+      "id": "MathClosure_54",
       "type": "MathClosure",
       "position": {
-        "x": -240,
-        "y": 400
+        "x": -880,
+        "y": -800
       },
-      "width": 195,
+      "width": 178,
       "label": "Math Closure",
       "params": {
-        "source": "output = vec3(input1, 40.0);"
+        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size - p;"
       },
       "inputs": [
         {
-          "id": "dynamic_1768928698295_1",
-          "name": "input1",
+          "id": "dynamic_1778146018169_1",
+          "name": "xy",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1778146019085_2",
+          "name": "size",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1778146113144_3",
+          "name": "s",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1778297615811_4",
+          "name": "p",
           "type": "vector2"
         }
       ],
@@ -533,36 +560,281 @@
         {
           "id": "output",
           "name": "Output",
-          "type": "vector3"
+          "type": "vector2"
         }
       ],
       "inputBindings": [
         {
-          "portId": "dynamic_1768928698295_1",
-          "label": "input1",
-          "variableName": "input1",
+          "portId": "dynamic_1778146018169_1",
+          "label": "xy",
+          "variableName": "xy",
           "type": "vector2",
           "sourceBinding": {
-            "nodeId": "GeoSize_44",
+            "nodeId": "FragCoord_52",
             "outputPortId": "xy",
             "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_1778146019085_2",
+          "label": "size",
+          "variableName": "size",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "Vector2Input_53",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1778146113144_3",
+          "label": "s",
+          "variableName": "s",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_55",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_1778297615811_4",
+          "label": "p",
+          "variableName": "p",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "Vector2Input_65",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
           }
         }
       ]
     },
     {
-      "id": "ReferenceImage_46",
-      "type": "ReferenceImage",
+      "id": "FloatInput_55",
+      "type": "FloatInput",
       "position": {
-        "x": 760,
-        "y": -280
+        "x": -1060,
+        "y": -640
       },
       "width": 160,
-      "label": "Reference Image",
+      "label": "Float Input",
       "params": {
-        "assetId": "2db18011fd02",
+        "value": 0.8
+      }
+    },
+    {
+      "id": "ColorMix_56",
+      "type": "ColorMix",
+      "position": {
+        "x": -200,
+        "y": -1100
+      },
+      "width": 160,
+      "label": "Blend Color",
+      "params": {
+        "mode": "normal",
+        "color1": [
+          0,
+          0,
+          0,
+          0.1
+        ],
+        "color0": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "ImageTexture_57",
+      "type": "ImageTexture",
+      "position": {
+        "x": -680,
+        "y": -1060
+      },
+      "width": 192,
+      "label": "Image Texture",
+      "params": {
+        "assetId": "f2170557f733",
+        "interpolation": "linear",
+        "extension": "repeat",
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
         "encoderSpace": "srgb",
-        "alphaMode": "premultiplied"
+        "alphaMode": "straight"
+      }
+    },
+    {
+      "id": "FragCoord_58",
+      "type": "FragCoord",
+      "position": {
+        "x": -1060,
+        "y": -1060
+      },
+      "width": 160,
+      "label": "FragCoord",
+      "params": {}
+    },
+    {
+      "id": "Vector2Input_59",
+      "type": "Vector2Input",
+      "position": {
+        "x": -1060,
+        "y": -1000
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 1080,
+        "y": 2345
+      }
+    },
+    {
+      "id": "MathClosure_60",
+      "type": "MathClosure",
+      "position": {
+        "x": -880,
+        "y": -1060
+      },
+      "width": 178,
+      "label": "Math Closure",
+      "params": {
+        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size;"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1778146018169_1",
+          "name": "xy",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1778146019085_2",
+          "name": "size",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1778146113144_3",
+          "name": "s",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "vector2"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1778146018169_1",
+          "label": "xy",
+          "variableName": "xy",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "FragCoord_52",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_1778146019085_2",
+          "label": "size",
+          "variableName": "size",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "Vector2Input_53",
+            "outputPortId": "vector",
+            "outputLabel": "Vector"
+          }
+        },
+        {
+          "portId": "dynamic_1778146113144_3",
+          "label": "s",
+          "variableName": "s",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_55",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_61",
+      "type": "FloatInput",
+      "position": {
+        "x": -1060,
+        "y": -900
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 0.7
+      }
+    },
+    {
+      "id": "ColorInput_62",
+      "type": "ColorInput",
+      "position": {
+        "x": -180,
+        "y": -160
+      },
+      "width": 160,
+      "label": "Color Input",
+      "params": {
+        "value": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "ColorMix_64",
+      "type": "ColorMix",
+      "position": {
+        "x": -460,
+        "y": -1260
+      },
+      "width": 160,
+      "label": "Blend Color",
+      "params": {
+        "mode": "normal",
+        "color1": [
+          0,
+          0,
+          0,
+          0.606
+        ],
+        "color0": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Vector2Input_65",
+      "type": "Vector2Input",
+      "position": {
+        "x": -1280,
+        "y": -740
+      },
+      "width": 200,
+      "label": "Offset",
+      "params": {
+        "x": 0,
+        "y": 0
       }
     }
   ],
@@ -711,21 +983,10 @@
       }
     },
     {
-      "id": "edge_77",
+      "id": "edge_92",
       "from": {
-        "nodeId": "ImageTexture_41",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "GuassianBlurPass_42",
-        "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_79",
-      "from": {
-        "nodeId": "GuassianBlurPass_42",
-        "portId": "pass"
+        "nodeId": "GroupInstance_47",
+        "portId": "out_0"
       },
       "to": {
         "nodeId": "GlassMaterial_40",
@@ -733,29 +994,18 @@
       }
     },
     {
-      "id": "edge_81",
+      "id": "edge_93",
       "from": {
-        "nodeId": "GuassianBlurPass_42",
-        "portId": "pass"
+        "nodeId": "DataParse_21",
+        "portId": "out_radius"
       },
       "to": {
         "nodeId": "GlassMaterial_40",
-        "portId": "uRefractTex"
+        "portId": "uGeoPxRadius"
       }
     },
     {
-      "id": "edge_82",
-      "from": {
-        "nodeId": "GuassianBlurPass_42",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "GlassMaterial_40",
-        "portId": "uReflectTex"
-      }
-    },
-    {
-      "id": "edge_83",
+      "id": "edge_98",
       "from": {
         "nodeId": "RenderPass_4",
         "portId": "pass"
@@ -766,32 +1016,142 @@
       }
     },
     {
-      "id": "edge_88",
+      "id": "edge_103",
       "from": {
-        "nodeId": "GeoSize_44",
+        "nodeId": "FragCoord_52",
         "portId": "xy"
       },
       "to": {
-        "nodeId": "MathClosure_45",
-        "portId": "dynamic_1768928698295_1"
+        "nodeId": "MathClosure_54",
+        "portId": "dynamic_1778146018169_1"
       }
     },
     {
-      "id": "edge_89",
+      "id": "edge_104",
       "from": {
-        "nodeId": "MathClosure_45",
+        "nodeId": "Vector2Input_53",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathClosure_54",
+        "portId": "dynamic_1778146019085_2"
+      }
+    },
+    {
+      "id": "edge_105",
+      "from": {
+        "nodeId": "MathClosure_54",
         "portId": "output"
       },
       "to": {
-        "nodeId": "GlassMaterial_40",
-        "portId": "uGeoPxSize"
+        "nodeId": "ImageTexture_48",
+        "portId": "uv"
       }
     },
     {
-      "id": "edge_90",
+      "id": "edge_106",
       "from": {
-        "nodeId": "GuassianBlurPass_42",
-        "portId": "pass"
+        "nodeId": "FloatInput_55",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_54",
+        "portId": "dynamic_1778146113144_3"
+      }
+    },
+    {
+      "id": "edge_110",
+      "from": {
+        "nodeId": "FragCoord_58",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathClosure_60",
+        "portId": "dynamic_1778146018169_1"
+      }
+    },
+    {
+      "id": "edge_111",
+      "from": {
+        "nodeId": "Vector2Input_59",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathClosure_60",
+        "portId": "dynamic_1778146019085_2"
+      }
+    },
+    {
+      "id": "edge_112",
+      "from": {
+        "nodeId": "FloatInput_61",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_60",
+        "portId": "dynamic_1778146113144_3"
+      }
+    },
+    {
+      "id": "edge_113",
+      "from": {
+        "nodeId": "MathClosure_60",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "ImageTexture_57",
+        "portId": "uv"
+      }
+    },
+    {
+      "id": "edge_115",
+      "from": {
+        "nodeId": "ImageTexture_48",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "GroupInstance_47",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "edge_116",
+      "from": {
+        "nodeId": "ColorMix_64",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ColorMix_56",
+        "portId": "color0"
+      }
+    },
+    {
+      "id": "edge_117",
+      "from": {
+        "nodeId": "Vector2Input_65",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathClosure_54",
+        "portId": "dynamic_1778297615811_4"
+      }
+    },
+    {
+      "id": "edge_118",
+      "from": {
+        "nodeId": "ImageTexture_48",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ColorMix_50",
+        "portId": "color0"
+      }
+    },
+    {
+      "id": "edge_119",
+      "from": {
+        "nodeId": "ColorMix_50",
+        "portId": "color"
       },
       "to": {
         "nodeId": "Composite_7",
@@ -803,18 +1163,261 @@
     "composite": "Composite_7"
   },
   "assets": {
-    "2db18011fd02": {
-      "path": "assets/2db18011fd02.png",
-      "originalName": "glass-baseline.png",
-      "mimeType": "image/png",
-      "size": 953426
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
     },
-    "eea2468df096": {
-      "path": "assets/eea2468df096.png",
-      "originalName": "baseline-test.png",
+    "762325f2042e": {
+      "path": "assets/762325f2042e.png",
+      "originalName": "test.png",
       "mimeType": "image/png",
-      "size": 284985
+      "size": 1712450
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
     }
   },
-  "groups": []
+  "groups": [
+    {
+      "id": "Background Pass",
+      "name": "Group",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "BackgroundImage",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "GuassianBlurPass_42",
+          "type": "GuassianBlurPass",
+          "position": {
+            "x": 40,
+            "y": 0
+          },
+          "width": 200,
+          "label": "Gaussian Blur Pass",
+          "params": {
+            "mode": "standard",
+            "radius": 120,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "extend": false,
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "connections": [],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ]
+    }
+  ],
+  "stateMachine": {
+    "id": "sm_moxsfuam_3",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_moxsija5_4",
+        "name": "Entry",
+        "position": {
+          "x": 0,
+          "y": -60
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_moxsija6_5",
+        "name": "Any",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_moxsija6_6",
+        "name": "Exit",
+        "position": {
+          "x": 0,
+          "y": 60
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      }
+    ],
+    "transitions": [],
+    "mutations": [
+      {
+        "id": "mutation_moxsjac9_9",
+        "name": "Mutation 1",
+        "inputs": [
+          {
+            "id": "ColorInput_62:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_55:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_61:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:x",
+            "name": "Offset.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:y",
+            "name": "Offset.y",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ColorInput_62:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_55:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_61:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:x",
+            "name": "Offset.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:y",
+            "name": "Offset.y",
+            "type": "float"
+          }
+        ],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": [],
+        "passthroughBindings": [
+          {
+            "inputPortId": "localElapsedTime",
+            "outputPortId": "Vector2Input_65:y"
+          }
+        ]
+      }
+    ],
+    "initialStateId": "st_moxsija5_4"
+  }
 }

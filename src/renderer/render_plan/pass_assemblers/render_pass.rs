@@ -185,6 +185,14 @@ pub(crate) fn assemble_render_pass(
         asset_store,
     )?;
 
+    // When MSAA is active on a non-sampled pass that writes directly to the
+    // composite target, the resolve operation would overwrite the target
+    // (replacing previous layers) because MSAA resolve is a direct write, not
+    // a blend.  Force an intermediate resolve texture so a compose pass can
+    // blit the result with proper alpha blending.
+    let needs_resolve_intermediate =
+        msaa_sample_count > 1 && !is_sampled_output && has_composition_consumer;
+
     // Determine the single-sample output target for this pass.
     let (pass_target_w_u, pass_target_h_u, pass_output_texture): (u32, u32, ResourceName) =
         if is_sampled_output {
@@ -203,10 +211,21 @@ pub(crate) fn assemble_render_pass(
                 needs_sampling: false,
             });
             (w_u, h_u, out_tex)
+        } else if needs_resolve_intermediate {
+            let out_tex: ResourceName =
+                format!("sys.pass.{layer_id}.msaa.resolve").into();
+            bs.textures.push(TextureDecl {
+                name: out_tex.clone(),
+                size: [tgt_w_u, tgt_h_u],
+                format: sampled_pass_format,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+            (tgt_w_u, tgt_h_u, out_tex)
         } else {
             (tgt_w_u, tgt_h_u, target_texture_name.clone())
         };
-    let pass_output_format = if is_sampled_output {
+    let pass_output_format = if is_sampled_output || needs_resolve_intermediate {
         sampled_pass_format
     } else {
         target_format
@@ -727,7 +746,7 @@ pub(crate) fn assemble_render_pass(
     }
 
     // If a pass is sampled and consumed by Composition nodes, synthesize compose passes.
-    if is_sampled_output && has_composition_consumer {
+    if (is_sampled_output || needs_resolve_intermediate) && has_composition_consumer {
         for composition_id in &composition_consumers {
             let Some(comp_ctx) = sc.composition_contexts.get(composition_id) else {
                 continue;
@@ -920,7 +939,7 @@ pub(crate) fn assemble_render_pass(
         node_id: layer_id.to_string(),
         texture_name: pass_output_texture,
         resolution: [pass_target_w_u, pass_target_h_u],
-        format: if is_sampled_output {
+        format: if is_sampled_output || needs_resolve_intermediate {
             sampled_pass_format
         } else {
             target_format

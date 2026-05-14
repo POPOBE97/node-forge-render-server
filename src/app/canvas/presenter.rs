@@ -498,7 +498,8 @@ fn maybe_sample_clicked_pixel(
             .animation_session
             .as_ref()
             .is_some_and(|session| session.is_active())
-        || app.runtime.capture_redraw_active;
+        || app.runtime.capture_redraw_active
+        || app.runtime.force_continuous_redraw;
 
     if !response.clicked_by(egui::PointerButton::Primary) {
         return;
@@ -644,7 +645,16 @@ pub fn show_canvas(
             CanvasAction::ResetReferenceOffset,
         );
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
+    if ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command) {
+        let device_zoom = 1.0 / ctx.pixels_per_point();
+        apply_action(
+            &mut frame_result,
+            app,
+            render_state,
+            renderer,
+            CanvasAction::CenterAt1x { device_zoom },
+        );
+    } else if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
         apply_action(
             &mut frame_result,
             app,

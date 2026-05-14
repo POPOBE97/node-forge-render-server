@@ -12,6 +12,7 @@ pub enum CanvasAction {
     ToggleHdrClamp,
     TogglePause,
     ResetView,
+    CenterAt1x { device_zoom: f32 },
     ToggleSampling,
     ToggleReferenceAlpha,
     ToggleClipping,

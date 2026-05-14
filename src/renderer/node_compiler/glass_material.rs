@@ -448,12 +448,12 @@ fn glass_luminance_curve(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4f
     let scale = 1.0 / alpha;
     let scaled_rgb = scale * color.rgb;
     var luminance = dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721));
-    luminance = clamp(luminance, 0.0, 1.0);
+    // luminance = clamp(luminance, 0.0, 1.0);
 
     var adj = luminance * factor_adjust.x + factor_adjust.y;
     adj = adj * luminance + factor_adjust.z;
     adj = adj * luminance + factor_adjust.w;
-    adj = clamp(adj, 0.0, 1.0);
+    // adj = clamp(adj, 0.0, 1.0);
 
     let mixed = mix(scaled_rgb, vec3f(adj), mix_factor);
     return vec4f(mixed * alpha, color.a);
@@ -560,10 +560,12 @@ fn glass_get_lighten(fg_tex: texture_2d<f32>, fg_samp: sampler, uv: vec2f) -> f3
 }
 
 fn glass_hsvv(col: vec3f, lighten: f32) -> vec3f {
-    let v = glass_luma(col);
+    let raw_v = glass_luma(col);
+    let v = min(raw_v, 1.0);
     let w = smoothstep(0.0, 0.5, v);
     let k = mix(1.0 - v, v, w);
-    let g = 1.0 + smoothstep(0.0, 1.0, lighten) * mix(0.75, 0.4, w);
+    let g_base = 1.0 + smoothstep(0.0, 1.0, lighten) * mix(0.75, 0.4, w);
+    let g = mix(g_base, 1.0, smoothstep(1.0, 3.0, raw_v));
     return (col + vec3f(k)) * g - vec3f(k);
 }
 
@@ -631,18 +633,20 @@ fn glass_blend_reflect_light(dst: vec4f, lighten: f32, blend_mode: i32) -> vec4f
 }
 
 fn glass_dynamic_add(color: vec3f) -> f32 {
-    var white_dis = distance(vec3f(1.0), color);
-    white_dis = smoothstep(0.2, 1.0, white_dis);
-    white_dis = mix(0.5, 1.0, white_dis);
-    let lumin = glass_luma(color);
-    return mix(0.5, white_dis, lumin);
+    // var white_dis = distance(vec3f(1.0), color);
+    // white_dis = smoothstep(0.2, 1.0, white_dis);
+    // white_dis = mix(0.5, 1.0, white_dis);
+    // let lumin = glass_luma(color);
+    // return mix(0.5, white_dis, lumin);
+    return 1.0;
 }
 
 fn glass_add_light(color: vec3f, light_color: vec3f, light_strength: f32) -> vec3f {
-    var white_dis = distance(vec3f(1.0), color);
-    white_dis = smoothstep(0.2, 1.0, white_dis);
-    white_dis = mix(0.3, 1.0, white_dis);
-    return color + light_color * (light_strength * white_dis);
+    // var white_dis = distance(vec3f(1.0), color);
+    // white_dis = smoothstep(0.2, 1.0, white_dis);
+    // white_dis = mix(0.3, 1.0, white_dis);
+    // return color + light_color * (light_strength * white_dis);
+    return color + light_color * light_strength;
 }
 
 fn glass_calculate_lighting(normal: vec3f, light_dir: vec3f, intensity: f32, angle_range: f32) -> f32 {
@@ -670,6 +674,7 @@ fn glass_texture_map(
     reflect_lighten_blend_mode: i32,
     fg_tex: texture_2d<f32>,
     fg_samp: sampler,
+    frag_uv: vec2f,
 ) -> vec4f {
     var col = textureSample(tex, samp, sample_uv);
 
@@ -681,7 +686,7 @@ fn glass_texture_map(
     }
 
     if (add_foreground) {
-        let lighten = glass_get_lighten(fg_tex, fg_samp, sample_uv);
+        let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
         col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
     }
 
@@ -866,6 +871,10 @@ where
         "uGeoPxSize",
         input_vec3_expr(node, "uGeoPxSize", [0.0, 0.0, 54.0]),
     )?;
+    let u_geo_px_radius = input_expr(
+        "uGeoPxRadius",
+        input_f32_expr(node, "uGeoPxRadius", 24.0),
+    )?;
     let u_use_sdf_tex = input_expr(
         "uUseSdfTex",
         input_bool_expr(node, "uUseSdfTex", false),
@@ -886,8 +895,7 @@ where
     let bg_color = resolve_pass_binding(scene, nodes_by_id, node, "uBgColorTex", ctx)?;
     let refract = resolve_pass_binding(scene, nodes_by_id, node, "uRefractTex", ctx)?;
     let reflect = resolve_pass_binding(scene, nodes_by_id, node, "uReflectTex", ctx)?;
-    let fg_blur =
-        resolve_pass_binding(scene, nodes_by_id, node, "uReflectForegroundBlurTex", ctx)?;
+    let fg_blur = resolve_pass_binding(scene, nodes_by_id, node, "uLightTex", ctx)?;
 
     let uses_time = [
         u_blend_brightness.uses_time,
@@ -924,6 +932,7 @@ where
         u_light_angle_range.uses_time,
         u_alpha.uses_time,
         u_geo_px_size.uses_time,
+        u_geo_px_radius.uses_time,
         u_use_sdf_tex.uses_time,
         u_sdf_tex.as_ref().map(|expr| expr.uses_time).unwrap_or(false),
     ]
@@ -1019,6 +1028,7 @@ where
     )?;
     expect_ty(&u_alpha, ValueType::F32, "uAlpha")?;
     expect_ty(&u_geo_px_size, ValueType::Vec3, "uGeoPxSize")?;
+    expect_ty(&u_geo_px_radius, ValueType::F32, "uGeoPxRadius")?;
     expect_ty(&u_use_sdf_tex, ValueType::Bool, "uUseSdfTex")?;
 
     if let Some(sdf_tex) = u_sdf_tex.as_ref() {
@@ -1040,7 +1050,7 @@ where
 
     let bg_color_expr = if let Some((_, tex, samp)) = bg_color.clone().or(bg.clone()) {
         format!(
-            "glass_texture_map({tex}, {samp}, screen_uv, true, false, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp})",
+            "glass_texture_map({tex}, {samp}, screen_uv, true, true, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
             darker = u_blend_darker.expr,
             darker_range = u_blend_darker_range.expr,
             opacity = u_reflect_lighten_opacity.expr,
@@ -1052,9 +1062,9 @@ where
         "vec4f(0.0)".to_string()
     };
 
-    let refraction_expr = if let Some((_, tex, samp)) = refract {
+    let refraction_expr = if let Some((_, tex, samp)) = refract.or(bg.clone()) {
         format!(
-            "glass_texture_map({tex}, {samp}, refract_uv, true, true, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp})",
+            "glass_texture_map({tex}, {samp}, refract_uv, true, true, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
             darker = u_blend_darker.expr,
             darker_range = u_blend_darker_range.expr,
             opacity = u_reflect_lighten_opacity.expr,
@@ -1068,7 +1078,7 @@ where
 
     let reflection_expr = if let Some((_, tex, samp)) = reflect.or(bg.clone()) {
         format!(
-            "glass_texture_map({tex}, {samp}, reflect_uv, true, true, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp})",
+            "glass_texture_map({tex}, {samp}, reflect_uv, true, true, {darker}, {darker_range}, {opacity}, {blend_mode}, {fg_tex}, {fg_samp}, screen_uv)",
             darker = u_blend_darker.expr,
             darker_range = u_blend_darker_range.expr,
             opacity = u_reflect_lighten_opacity.expr,
@@ -1105,10 +1115,12 @@ where
         "     let edge_pow = f32({});",
         u_shape_edge_pow.expr
     ));
-    push_line(&format!(
-        "     let radius_px = ({}).z;",
-        u_geo_px_size.expr
-    ));
+    let radius_expr = if incoming_connection(scene, &node.id, "uGeoPxRadius").is_some() {
+        format!("f32({})", u_geo_px_radius.expr)
+    } else {
+        format!("({}).z", u_geo_px_size.expr)
+    };
+    push_line(&format!("     let radius_px = {};", radius_expr));
     push_line("     let safe_edge = max(edge, 1e-6);");
     push_line("     let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);");
     push_line("     let normalized_sdf = -box_sdf / safe_edge;");
@@ -1203,6 +1215,7 @@ where
         "     if ({} > 0.0) {{",
         u_debug_fix_neutral_vibrancy.expr
     ));
+    push_line("         let mean_glass_mat_color = (glass_mat.r + glass_mat.g + glass_mat.b) / 3.0;");
     push_line("         let mean_glass_color_ratio = (glass_color_ratio.r + glass_color_ratio.g + glass_color_ratio.b) / 3.0;");
     push_line(&format!(
         "         let neutral_threshold_min = clamp({}, 0.0, 1.0);",
@@ -1213,8 +1226,8 @@ where
         u_debug_fix_neutral_vibrancy_threshold.expr
     ));
     push_line("         neutral_threshold = max(neutral_threshold, neutral_threshold_min + 0.0001);");
-    push_line("         let grayness = distance(glass_color.rgb, vec3f(mean_glass_color_ratio));");
-    push_line("         glass_color_ratio = mix(vec3f(mean_glass_color_ratio), glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));");
+    push_line("         let grayness = distance(glass_mat.rgb, vec3f(mean_glass_mat_color));");
+    push_line("         glass_color_ratio = mix(vec3f(mean_glass_color_ratio) * 0.5 + glass_color_ratio * 0.5, glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));");
     push_line("     }");
     push_line("     glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);");
     push_line(&format!(
@@ -1238,7 +1251,7 @@ where
         u_light_angle_range.expr
     ));
     push_line("     let light_ratio = glass_dynamic_add(glass_mat.rgb);");
-    push_line("     glass_mat = vec4f(glass_hsvv(glass_mat.rgb, (lighting1 + lighting2) * 1.0 * light_ratio), glass_mat.a);");
+    push_line("     glass_mat += lighting1 + lighting2;");
     push_line(&format!(
         "     glass_mat = pow(glass_mat, vec4f({}));",
         u_inner_color_pow.expr

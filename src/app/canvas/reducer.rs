@@ -61,6 +61,9 @@ pub fn apply_action(
         CanvasAction::ResetView => {
             app.canvas.viewport.pending_view_reset = true;
         }
+        CanvasAction::CenterAt1x { device_zoom } => {
+            app.canvas.viewport.pending_center_1x_zoom = Some(device_zoom);
+        }
         CanvasAction::ToggleSampling => {
             app.canvas.display.texture_filter = match app.canvas.display.texture_filter {
                 wgpu::FilterMode::Nearest => wgpu::FilterMode::Linear,

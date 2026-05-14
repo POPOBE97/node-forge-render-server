@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-04-15T09:24:50.644Z",
+  "generatedAt": "2026-05-14T11:38:32.147Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1012,32 +1012,22 @@
       "inputs": [
         {
           "id": "uBgTex",
-          "name": "bg",
+          "name": "Background",
           "type": "pass"
         },
         {
-          "id": "uBgColorTex",
-          "name": "bgColor",
+          "id": "uLightTex",
+          "name": "Light",
           "type": "pass"
         },
         {
-          "id": "uRefractTex",
-          "name": "refract",
-          "type": "pass"
-        },
-        {
-          "id": "uReflectTex",
-          "name": "reflect",
-          "type": "pass"
-        },
-        {
-          "id": "uReflectForegroundBlurTex",
-          "name": "reflectForegroundBlur",
+          "id": "uSdfTex",
+          "name": "SDF",
           "type": "pass"
         },
         {
           "id": "uBlendLuminanceValues",
-          "name": "blendLuminanceValues",
+          "name": "luminanceValues",
           "type": "normalizedBezierCurve",
           "default": [
             0,
@@ -1053,7 +1043,7 @@
         },
         {
           "id": "uBlendLuminanceAmount",
-          "name": "blendLuminanceAmount",
+          "name": "luminanceAmount",
           "type": "float",
           "default": 0,
           "range": {
@@ -1064,7 +1054,7 @@
         },
         {
           "id": "uBlendSaturation",
-          "name": "blendSaturation",
+          "name": "saturation",
           "type": "float",
           "default": 1,
           "range": {
@@ -1075,7 +1065,7 @@
         },
         {
           "id": "uBlendBrightness",
-          "name": "blendBrightness",
+          "name": "brightness",
           "type": "float",
           "default": 0,
           "range": {
@@ -1086,9 +1076,9 @@
         },
         {
           "id": "uBlendDarker",
-          "name": "blendDarker",
+          "name": "darker",
           "type": "float",
-          "default": 0.15,
+          "default": 0,
           "range": {
             "min": 0,
             "max": 1,
@@ -1097,11 +1087,11 @@
         },
         {
           "id": "uBlendDarkerRange",
-          "name": "blendDarkerRange",
+          "name": "darkerRange",
           "type": "vector2",
           "default": {
-            "x": 0.6,
-            "y": 0.8
+            "x": 0,
+            "y": 1
           },
           "range": {
             "min": 0,
@@ -1113,7 +1103,7 @@
           "id": "uInnerBottom",
           "name": "bottom",
           "type": "float",
-          "default": 0.05,
+          "default": 0,
           "range": {
             "min": -1,
             "max": 1,
@@ -1122,31 +1112,20 @@
         },
         {
           "id": "uInnerGlassColor",
-          "name": "innerGlassColor",
+          "name": "glassColor",
           "type": "color",
           "default": [
             1,
             1,
             1,
-            0.15
+            0
           ]
         },
         {
           "id": "uInnerColorWhite",
           "name": "colorWhite",
           "type": "float",
-          "default": 0.1,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uInnerColorMix",
-          "name": "colorMix",
-          "type": "float",
-          "default": 0.7,
+          "default": 0,
           "range": {
             "min": 0,
             "max": 1,
@@ -1155,9 +1134,9 @@
         },
         {
           "id": "uInnerColorPow",
-          "name": "innerColorPow",
+          "name": "colorPow",
           "type": "float",
-          "default": 1.2,
+          "default": 1,
           "range": {
             "min": 0.1,
             "max": 2,
@@ -1165,10 +1144,32 @@
           }
         },
         {
+          "id": "uInnerColorMix",
+          "name": "colorMix",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uGeoPxRadius",
+          "name": "radiusPx",
+          "type": "float",
+          "default": 24,
+          "range": {
+            "min": 0,
+            "max": 2048,
+            "step": 1
+          }
+        },
+        {
           "id": "uShapeEdgePx",
           "name": "edgePx",
           "type": "float",
-          "default": 20,
+          "default": 30,
           "range": {
             "min": 0,
             "max": 200,
@@ -1190,7 +1191,7 @@
           "id": "uShapeThicknessPx",
           "name": "thicknessPx",
           "type": "float",
-          "default": 200,
+          "default": 50,
           "range": {
             "min": 0,
             "max": 1000,
@@ -1201,7 +1202,7 @@
           "id": "uShapeReflectOffsetPx",
           "name": "reflectOffsetPx",
           "type": "float",
-          "default": 400,
+          "default": 0,
           "range": {
             "min": 0,
             "max": 1000,
@@ -1210,42 +1211,20 @@
         },
         {
           "id": "uReflectLighten",
-          "name": "reflectLighten",
+          "name": "lighten",
           "type": "float",
-          "default": 0.2,
+          "default": 0.5,
           "range": {
             "min": 0,
             "max": 1,
             "step": 0.05
-          }
-        },
-        {
-          "id": "uReflectLightenOpacity",
-          "name": "reflectLightenOpacity",
-          "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.05
-          }
-        },
-        {
-          "id": "uReflectLightenBlendMode",
-          "name": "reflectLightenBlendMode",
-          "type": "int",
-          "default": 0,
-          "range": {
-            "min": 0,
-            "max": 18,
-            "step": 1
           }
         },
         {
           "id": "uReflectStrength",
-          "name": "reflectStrength",
+          "name": "strength",
           "type": "float",
-          "default": 1,
+          "default": 0.5,
           "range": {
             "min": 0,
             "max": 2,
@@ -1253,13 +1232,35 @@
           }
         },
         {
+          "id": "uReflectionExtend",
+          "name": "extend",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          }
+        },
+        {
+          "id": "uReflectionExtendColor",
+          "name": "extendColor",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
           "id": "uDirectionalLightDirection",
           "name": "direction",
           "type": "vector3",
           "default": {
-            "x": 0,
-            "y": 1,
-            "z": 0
+            "x": 0.5,
+            "y": -0.7,
+            "z": 0.5
           },
           "range": {
             "min": -2,
@@ -1271,7 +1272,7 @@
           "id": "uDirectionalLightIntensity",
           "name": "intensity",
           "type": "float",
-          "default": 0.8,
+          "default": 1,
           "range": {
             "min": 0,
             "max": 2,
@@ -1282,7 +1283,7 @@
           "id": "uDirectionalLightOppositeIntensity",
           "name": "oppositeIntensity",
           "type": "float",
-          "default": 0.4,
+          "default": 0,
           "range": {
             "min": 0,
             "max": 1,
@@ -1293,7 +1294,7 @@
           "id": "uDirectionalLightAngleRange",
           "name": "angleRange",
           "type": "float",
-          "default": 0.25,
+          "default": 0.5,
           "range": {
             "min": 0.01,
             "max": 1,
@@ -1326,10 +1327,10 @@
           "id": "uBgColorSaturation",
           "name": "bgColorSaturation",
           "type": "float",
-          "default": 4,
+          "default": 1,
           "range": {
             "min": 0,
-            "max": 8,
+            "max": 2,
             "step": 0.01
           }
         },
@@ -1348,16 +1349,38 @@
           "id": "uBionicBurn",
           "name": "burn",
           "type": "float",
-          "default": 11,
+          "default": 1,
           "range": {
             "min": 0.1,
             "max": 20,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uPressLightCenterFall",
+          "name": "pressLightCenterFall",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
             "step": 0.01
           }
         },
         {
-          "id": "uBionicUnShade",
-          "name": "unShade",
+          "id": "uPressLightCenterStrength",
+          "name": "pressLightCenterStrength",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uPressLightCenterPeak",
+          "name": "pressLightCenterPeak",
           "type": "float",
           "default": 0,
           "range": {
@@ -1367,89 +1390,20 @@
           }
         },
         {
-          "id": "uDebugFixNeutralVibrancy",
-          "name": "fixNeutralVibrancy",
-          "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 1
-          }
-        },
-        {
-          "id": "uDebugFixNeutralVibrancyThresholdMin",
-          "name": "fixNeutralVibrancyThresholdMin",
-          "type": "float",
-          "default": 0,
+          "id": "uPressRingStrength",
+          "name": "pressRingStrength",
+          "type": "vector4",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ],
           "range": {
             "min": 0,
             "max": 1,
             "step": 0.01
           }
-        },
-        {
-          "id": "uDebugFixNeutralVibrancyThreshold",
-          "name": "fixNeutralVibrancyThreshold",
-          "type": "float",
-          "default": 0.4,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uStrength",
-          "name": "strength",
-          "type": "float",
-          "default": 0,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uGeoPxPos",
-          "name": "geoPxPos",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 0
-          }
-        },
-        {
-          "id": "uGeoPxSize",
-          "name": "geoPxSize",
-          "type": "vector3",
-          "default": {
-            "x": 0,
-            "y": 0,
-            "z": 54
-          }
-        },
-        {
-          "id": "uAlpha",
-          "name": "alpha",
-          "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uUseSdfTex",
-          "name": "useSdfTex",
-          "type": "bool",
-          "default": false
-        },
-        {
-          "id": "uSdfTex",
-          "name": "sdfTex",
-          "type": "texture"
         }
       ],
       "outputs": [
@@ -1469,58 +1423,57 @@
         "uBlendLuminanceAmount": 0,
         "uBlendSaturation": 1,
         "uBlendBrightness": 0,
-        "uBlendDarker": 0.15,
+        "uBlendDarker": 0,
         "uBlendDarkerRange": {
-          "x": 0.6,
-          "y": 0.8
+          "x": 0,
+          "y": 1
         },
-        "uInnerBottom": 0.05,
+        "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
           1,
           1,
-          0.15
+          0
         ],
-        "uInnerColorWhite": 0.1,
-        "uInnerColorMix": 0.7,
-        "uInnerColorPow": 1.2,
-        "uShapeEdgePx": 20,
+        "uInnerColorWhite": 0,
+        "uInnerColorPow": 1,
+        "uInnerColorMix": 0,
+        "uGeoPxRadius": 24,
+        "uShapeEdgePx": 30,
         "uShapeEdgePow": 2,
-        "uShapeThicknessPx": 200,
-        "uShapeReflectOffsetPx": 400,
-        "uReflectLighten": 0.2,
-        "uReflectLightenOpacity": 1,
-        "uReflectLightenBlendMode": 0,
-        "uReflectStrength": 1,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uReflectLighten": 0.5,
+        "uReflectStrength": 0.5,
+        "uReflectionExtend": 0,
+        "uReflectionExtendColor": [
+          1,
+          1,
+          1,
+          1
+        ],
         "uDirectionalLightDirection": {
-          "x": 0,
-          "y": 1,
-          "z": 0
+          "x": 0.5,
+          "y": -0.7,
+          "z": 0.5
         },
-        "uDirectionalLightIntensity": 0.8,
-        "uDirectionalLightOppositeIntensity": 0.4,
-        "uDirectionalLightAngleRange": 0.25,
+        "uDirectionalLightIntensity": 1,
+        "uDirectionalLightOppositeIntensity": 0,
+        "uDirectionalLightAngleRange": 0.5,
         "uRefractBlurScale": 1,
         "uRefractIorIOR": 1.5,
-        "uBgColorSaturation": 4,
+        "uBgColorSaturation": 1,
         "uBgColorBrightness": 0,
-        "uBionicBurn": 11,
-        "uBionicUnShade": 0,
-        "uDebugFixNeutralVibrancy": 1,
-        "uDebugFixNeutralVibrancyThresholdMin": 0,
-        "uDebugFixNeutralVibrancyThreshold": 0.4,
-        "uStrength": 0,
-        "uGeoPxPos": {
-          "x": 0,
-          "y": 0
-        },
-        "uGeoPxSize": {
-          "x": 0,
-          "y": 0,
-          "z": 54
-        },
-        "uAlpha": 1,
-        "uUseSdfTex": false
+        "uBionicBurn": 1,
+        "uPressLightCenterFall": 0,
+        "uPressLightCenterStrength": 0,
+        "uPressLightCenterPeak": 0,
+        "uPressRingStrength": [
+          0,
+          0,
+          0,
+          0
+        ]
       }
     },
     {

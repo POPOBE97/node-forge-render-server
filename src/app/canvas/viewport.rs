@@ -113,6 +113,14 @@ pub fn prepare_viewport(
         app.canvas.viewport.pending_view_reset = false;
     }
 
+    if let Some(target_zoom) = app.canvas.viewport.pending_center_1x_zoom.take() {
+        app.canvas.viewport.zoom = target_zoom;
+        app.canvas.viewport.pan = egui::Vec2::ZERO;
+        app.canvas.viewport.pan_start = None;
+        app.canvas.viewport.pan_zoom_target_zoom = target_zoom;
+        app.canvas.viewport.pan_zoom_target_pan = egui::Vec2::ZERO;
+    }
+
     let draw_size = image_size * app.canvas.viewport.zoom;
     let base_min = canvas_rect.center() - draw_size * 0.5;
     let image_rect = Rect::from_min_size(base_min + app.canvas.viewport.pan, draw_size);

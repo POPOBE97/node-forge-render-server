@@ -29,9 +29,21 @@ pub(super) fn run(
     if let Some(capture_active) = latest_capture_state {
         if app.runtime.capture_redraw_active != capture_active {
             if capture_active {
-                eprintln!("[capture] enabling continuous redraw for active capture session");
+                if app.runtime.force_continuous_redraw {
+                    eprintln!(
+                        "[capture] metal capture started; continuous redraw already forced by CLI flag"
+                    );
+                } else {
+                    eprintln!("[capture] enabling continuous redraw for active capture session");
+                }
             } else {
-                eprintln!("[capture] disabling continuous redraw after capture session");
+                if app.runtime.force_continuous_redraw {
+                    eprintln!(
+                        "[capture] metal capture stopped; CLI-forced continuous redraw remains enabled"
+                    );
+                } else {
+                    eprintln!("[capture] disabling continuous redraw after capture session");
+                }
             }
         }
         app.runtime.capture_redraw_active = capture_active;

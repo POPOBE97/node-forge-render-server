@@ -41,7 +41,7 @@ pub(super) fn run(app: &App, ctx: &egui::Context, advance: &AdvancePhase, presen
         present.sidebar_animating,
         present.pan_zoom_animating,
         present.operation_indicator_visible,
-        app.runtime.capture_redraw_active,
+        app.runtime.capture_redraw_active || app.runtime.force_continuous_redraw,
     ) {
         ctx.request_repaint();
     }

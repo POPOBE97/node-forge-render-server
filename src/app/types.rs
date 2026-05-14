@@ -241,6 +241,7 @@ pub struct AppInit {
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub follow_scene_resolution_for_window: bool,
+    pub force_continuous_redraw: bool,
     pub asset_store: crate::asset_store::AssetStore,
     pub animation_session: Option<crate::animation::AnimationSession>,
 }
@@ -273,6 +274,7 @@ pub(super) struct AppRuntime {
     pub follow_scene_resolution_for_window: bool,
     pub scene_uses_time: bool,
     pub capture_redraw_active: bool,
+    pub force_continuous_redraw: bool,
     pub scene_redraw_pending: bool,
     pub animation_session: Option<crate::animation::AnimationSession>,
     /// Whether the animation state machine is actively playing.
@@ -465,6 +467,7 @@ impl App {
                 follow_scene_resolution_for_window: init.follow_scene_resolution_for_window,
                 scene_uses_time: initial_scene_uses_time,
                 capture_redraw_active: false,
+                force_continuous_redraw: init.force_continuous_redraw,
                 scene_redraw_pending: true,
                 animation_session: init.animation_session,
                 animation_playing: false,

@@ -65,6 +65,7 @@ pub struct CanvasViewportState {
     pub pan_zoom_target_pan: egui::Vec2,
     pub canvas_center_prev: Option<egui::Pos2>,
     pub pending_view_reset: bool,
+    pub pending_center_1x_zoom: Option<f32>,
     pub last_sampled: Option<SampledPixel>,
 }
 
