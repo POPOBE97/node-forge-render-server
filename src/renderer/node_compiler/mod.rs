@@ -106,6 +106,15 @@ fn compile_expr(
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
         "GeoSize" => input_nodes::compile_geo_size_for_stage(node, out_port, stage)?,
         "Index" => input_nodes::compile_index(node, out_port, ctx)?,
+        "ResourcePool" => input_nodes::compile_resource_pool(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
 
         // Attribute node
         "Attribute" => attribute::compile_attribute(node, out_port)?,

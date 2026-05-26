@@ -811,6 +811,13 @@ fn validate_connection(
         } else {
             Cow::Owned(PortTypeSpec::One("any".to_string()))
         }
+    } else if to_node.node_type == "ResourcePool" {
+        // ResourcePool accepts any type on its dynamic input ports.
+        if let Some(spec) = dynamic_port_type(&to_node.inputs, &c.to.port_id) {
+            Cow::Owned(spec)
+        } else {
+            Cow::Owned(PortTypeSpec::One("any".to_string()))
+        }
     } else if to_node.node_type == "DataParse" {
         if let Some(spec) = dynamic_port_type(&to_node.inputs, &c.to.port_id) {
             Cow::Owned(spec)

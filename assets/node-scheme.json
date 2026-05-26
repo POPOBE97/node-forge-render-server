@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-05-26T10:13:04.888Z",
+  "generatedAt": "2026-05-26T11:22:11.077Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -69,6 +69,7 @@
     "Remap",
     "RenderPass",
     "RenderTexture",
+    "ResourcePool",
     "Screen",
     "Sdf2D",
     "Sdf2DBevel",
@@ -1053,6 +1054,17 @@
           }
         },
         {
+          "id": "uBlendSaturation",
+          "name": "saturation",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
           "id": "uInnerBottom",
           "name": "bottom",
           "type": "float",
@@ -1374,6 +1386,7 @@
           0
         ],
         "uBlendLuminanceAmount": 0,
+        "uBlendSaturation": 1,
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
@@ -3198,6 +3211,35 @@
         "width": 1024,
         "height": 1024,
         "format": "rgba8unorm"
+      }
+    },
+    {
+      "type": "ResourcePool",
+      "label": "Resource Pool",
+      "category": "Utility",
+      "description": "Multi-input selector; pass through one of N connected inputs by index",
+      "inputs": [
+        {
+          "id": "selectedIndex",
+          "name": "Index",
+          "type": "int",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 99,
+            "step": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {
+        "selectedIndex": 0
       }
     },
     {

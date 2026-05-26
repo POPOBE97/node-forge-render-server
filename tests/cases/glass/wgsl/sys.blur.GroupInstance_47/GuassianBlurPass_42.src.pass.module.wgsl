@@ -32,21 +32,19 @@ struct VSOut {
 };
 
 struct GraphInputs {
-    // Node: FloatInput_55
-    node_FloatInput_55_ea2af720: vec4f,
-    // Node: Vector2Input_53
-    node_Vector2Input_53_4d7a45bd: vec4f,
-    // Node: Vector2Input_65
-    node_Vector2Input_65_70a94dbd: vec4f,
+    // Node: FloatInput_61
+    node_FloatInput_61_0d41fa20: vec4f,
+    // Node: Vector2Input_59
+    node_Vector2Input_59_4f6945bd: vec4f,
 };
 
 @group(0) @binding(2)
 var<uniform> graph_inputs: GraphInputs;
 @group(1) @binding(0)
-var img_tex_ImageTexture_48: texture_2d<f32>;
+var img_tex_ImageTexture_57: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_ImageTexture_48: sampler;
+var img_samp_ImageTexture_57: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -259,37 +257,34 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_MathClosure_54_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, s: f32, p: vec2<f32>) -> vec2<f32> {
+fn mc_MathClosure_60_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, s: f32) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
     var s_1: f32;
-    var p_1: vec2<f32>;
     var output: vec2<f32> = vec2(0f);
 
     uv_1 = uv;
     xy_1 = xy;
     size_1 = size;
     s_1 = s;
-    p_1 = p;
+    let _e11: vec2<f32> = xy_1;
     let _e13: vec2<f32> = xy_1;
-    let _e15: vec2<f32> = xy_1;
-    xy_1 = vec2<f32>(_e13.x, -(_e15.y));
-    let _e19: vec2<f32> = xy_1;
-    let _e20: vec2<f32> = size_1;
-    xy_1 = (_e19 - (_e20 / vec2(2f)));
-    let _e26: vec2<f32> = xy_1;
-    let _e28: f32 = s_1;
-    xy_1.x = (_e26.x * _e28);
-    let _e30: vec2<f32> = xy_1;
-    let _e31: vec2<f32> = size_1;
-    xy_1 = (_e30 + (_e31 / vec2(2f)));
-    let _e36: vec2<f32> = xy_1;
-    let _e37: vec2<f32> = size_1;
-    let _e39: vec2<f32> = p_1;
-    output = ((_e36 / _e37) - _e39);
-    let _e41: vec2<f32> = output;
-    return _e41;
+    xy_1 = vec2<f32>(_e11.x, -(_e13.y));
+    let _e17: vec2<f32> = xy_1;
+    let _e18: vec2<f32> = size_1;
+    xy_1 = (_e17 - (_e18 / vec2(2f)));
+    let _e24: vec2<f32> = xy_1;
+    let _e26: f32 = s_1;
+    xy_1.x = (_e24.x * _e26);
+    let _e28: vec2<f32> = xy_1;
+    let _e29: vec2<f32> = size_1;
+    xy_1 = (_e28 + (_e29 / vec2(2f)));
+    let _e34: vec2<f32> = xy_1;
+    let _e35: vec2<f32> = size_1;
+    output = (_e34 / _e35);
+    let _e37: vec2<f32> = output;
+    return _e37;
 }
 
 
@@ -309,16 +304,15 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var mc_MathClosure_54_out: vec2f;
+    var mc_MathClosure_60_out: vec2f;
     {
         let xy = in.frag_coord_gl;
-        let size = (graph_inputs.node_Vector2Input_53_4d7a45bd).xy;
-        let s = (graph_inputs.node_FloatInput_55_ea2af720).x;
-        let p = (graph_inputs.node_Vector2Input_65_70a94dbd).xy;
+        let size = (graph_inputs.node_Vector2Input_59_4f6945bd).xy;
+        let s = (graph_inputs.node_FloatInput_61_0d41fa20).x;
         var output: vec2f;
-        output = mc_MathClosure_54_(in.uv, xy, size, s, p);
-        mc_MathClosure_54_out = output;
+        output = mc_MathClosure_60_(in.uv, xy, size, s);
+        mc_MathClosure_60_out = output;
     }
-    let _frag_out = blendNormal((vec4f(0.0, 0.0, 0.0, 0.600000024)), (textureSample(img_tex_ImageTexture_48, img_samp_ImageTexture_48, (mc_MathClosure_54_out))));
+    let _frag_out = blendNormal((vec4f(0.0, 0.0, 0.0, 0.600000024)), (textureSample(img_tex_ImageTexture_57, img_samp_ImageTexture_57, (mc_MathClosure_60_out))));
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

@@ -1,9 +1,11 @@
-//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput, TimeInput).
+//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput, TimeInput, ResourcePool).
 
 use anyhow::{Result, bail};
+use std::collections::HashMap;
 
 use super::super::types::{GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType};
-use crate::dsl::Node;
+use super::super::utils::coerce_to_type;
+use crate::dsl::{self, Node, SceneDSL, incoming_connection};
 use crate::renderer::graph_uniforms::graph_field_name;
 use crate::renderer::validation::GlslShaderStage;
 
@@ -262,6 +264,93 @@ pub fn compile_index(
     }
 }
 
+/// Compile a ResourcePool node.
+///
+/// ResourcePool is a pure passthrough: it selects one of N dynamic inputs by index
+/// and forwards that expression. No WGSL code is generated for the node itself.
+pub fn compile_resource_pool<F>(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    _out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+    compile_fn: F,
+) -> Result<TypedExpr>
+where
+    F: Fn(
+        &str,
+        Option<&str>,
+        &mut MaterialCompileContext,
+        &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr>,
+{
+    let dynamic_inputs: Vec<&str> = node
+        .inputs
+        .iter()
+        .filter(|p| p.id != "selectedIndex")
+        .map(|p| p.id.as_str())
+        .collect();
+
+    let output_type = node
+        .outputs
+        .first()
+        .and_then(|p| p.port_type.as_deref())
+        .and_then(|t| map_pool_port_type(t));
+
+    if dynamic_inputs.is_empty() {
+        return Ok(zero_value_for(output_type.unwrap_or(ValueType::F32)));
+    }
+
+    let idx = dsl::resolve_input_i64(scene, nodes_by_id, &node.id, "selectedIndex")?
+        .unwrap_or(0)
+        .max(0) as usize;
+    let idx = idx.min(dynamic_inputs.len() - 1);
+
+    let selected_port = dynamic_inputs[idx];
+
+    let Some(conn) = incoming_connection(scene, &node.id, selected_port) else {
+        return Ok(zero_value_for(output_type.unwrap_or(ValueType::F32)));
+    };
+
+    let expr = compile_fn(&conn.from.node_id, Some(&conn.from.port_id), ctx, cache)?;
+
+    if let Some(target) = output_type {
+        if target != expr.ty {
+            return coerce_to_type(expr, target);
+        }
+    }
+
+    Ok(expr)
+}
+
+fn map_pool_port_type(s: &str) -> Option<ValueType> {
+    let t = s.to_ascii_lowercase();
+    match t.as_str() {
+        "float" | "f32" | "number" => Some(ValueType::F32),
+        "int" | "i32" => Some(ValueType::I32),
+        "bool" | "boolean" => Some(ValueType::Bool),
+        "vector2" | "vec2" => Some(ValueType::Vec2),
+        "vector3" | "vec3" => Some(ValueType::Vec3),
+        "vector4" | "vec4" | "color" => Some(ValueType::Vec4),
+        "any" => None,
+        _ => None,
+    }
+}
+
+fn zero_value_for(ty: ValueType) -> TypedExpr {
+    match ty {
+        ValueType::F32 => TypedExpr::new("0.0", ValueType::F32),
+        ValueType::I32 => TypedExpr::new("0", ValueType::I32),
+        ValueType::U32 => TypedExpr::new("0u", ValueType::U32),
+        ValueType::Bool => TypedExpr::new("false", ValueType::Bool),
+        ValueType::Vec2 => TypedExpr::new("vec2f(0.0, 0.0)", ValueType::Vec2),
+        ValueType::Vec3 => TypedExpr::new("vec3f(0.0, 0.0, 0.0)", ValueType::Vec3),
+        ValueType::Vec4 => TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)", ValueType::Vec4),
+        _ => TypedExpr::new("0.0", ValueType::F32),
+    }
+}
+
 #[cfg(test)]
 mod fragcoord_tests {
     use super::*;
@@ -507,5 +596,200 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("TimeInput: unsupported output port 'value'"));
+    }
+}
+
+#[cfg(test)]
+mod resource_pool_tests {
+    use super::*;
+    use crate::dsl::NodePort;
+    use crate::renderer::node_compiler::test_utils::{test_connection, test_scene};
+
+    fn make_float_node(id: &str, value: f64) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "FloatInput".to_string(),
+            params: HashMap::from([("value".to_string(), serde_json::json!(value))]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: vec![NodePort {
+                id: "value".to_string(),
+                name: None,
+                port_type: Some("float".to_string()),
+            }],
+        }
+    }
+
+    fn make_pool_node(id: &str, dynamic_port_ids: &[&str], selected_index: i64) -> Node {
+        let mut inputs: Vec<NodePort> = vec![NodePort {
+            id: "selectedIndex".to_string(),
+            name: Some("Index".to_string()),
+            port_type: Some("int".to_string()),
+        }];
+        for port_id in dynamic_port_ids {
+            inputs.push(NodePort {
+                id: port_id.to_string(),
+                name: None,
+                port_type: Some("any".to_string()),
+            });
+        }
+
+        Node {
+            id: id.to_string(),
+            node_type: "ResourcePool".to_string(),
+            params: HashMap::from([(
+                "selectedIndex".to_string(),
+                serde_json::json!(selected_index),
+            )]),
+            inputs,
+            input_bindings: Vec::new(),
+            outputs: vec![NodePort {
+                id: "output".to_string(),
+                name: Some("Output".to_string()),
+                port_type: Some("any".to_string()),
+            }],
+        }
+    }
+
+    #[test]
+    fn test_resource_pool_selects_second_input() {
+        let float_a = make_float_node("fa", 1.0);
+        let float_b = make_float_node("fb", 2.0);
+        let float_c = make_float_node("fc", 3.0);
+        let pool = make_pool_node("pool", &["d1", "d2", "d3"], 1);
+
+        let connections = vec![
+            test_connection("fa", "value", "pool", "d1"),
+            test_connection("fb", "value", "pool", "d2"),
+            test_connection("fc", "value", "pool", "d3"),
+        ];
+
+        let scene = test_scene(
+            vec![float_a, float_b, float_c, pool.clone()],
+            connections,
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_resource_pool(
+            &scene,
+            &nodes_by_id,
+            &pool,
+            None,
+            &mut ctx,
+            &mut cache,
+            |node_id, _port, ctx, _cache| {
+                // Mock: return the node_id as an expression tagged with the id
+                ctx.register_graph_input(node_id, GraphFieldKind::F32);
+                let field = crate::renderer::graph_uniforms::graph_field_name(node_id);
+                Ok(TypedExpr::new(
+                    format!("(graph_inputs.{field}).x"),
+                    ValueType::F32,
+                ))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::F32);
+        let fb_field = crate::renderer::graph_uniforms::graph_field_name("fb");
+        assert!(
+            result.expr.contains(&fb_field),
+            "expected expression to reference fb, got: {}",
+            result.expr
+        );
+    }
+
+    #[test]
+    fn test_resource_pool_clamps_out_of_range_index() {
+        let float_a = make_float_node("fa", 1.0);
+        let pool = make_pool_node("pool", &["d1"], 99);
+
+        let connections = vec![test_connection("fa", "value", "pool", "d1")];
+
+        let scene = test_scene(vec![float_a, pool.clone()], connections);
+        let nodes_by_id: HashMap<String, Node> =
+            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_resource_pool(
+            &scene,
+            &nodes_by_id,
+            &pool,
+            None,
+            &mut ctx,
+            &mut cache,
+            |node_id, _port, ctx, _cache| {
+                ctx.register_graph_input(node_id, GraphFieldKind::F32);
+                let field = crate::renderer::graph_uniforms::graph_field_name(node_id);
+                Ok(TypedExpr::new(
+                    format!("(graph_inputs.{field}).x"),
+                    ValueType::F32,
+                ))
+            },
+        )
+        .unwrap();
+
+        // Should clamp to index 0 (only input)
+        assert_eq!(result.ty, ValueType::F32);
+        let fa_field = crate::renderer::graph_uniforms::graph_field_name("fa");
+        assert!(result.expr.contains(&fa_field));
+    }
+
+    #[test]
+    fn test_resource_pool_no_dynamic_inputs_returns_zero() {
+        let pool = make_pool_node("pool", &[], 0);
+
+        let scene = test_scene(vec![pool.clone()], vec![]);
+        let nodes_by_id: HashMap<String, Node> =
+            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_resource_pool(
+            &scene,
+            &nodes_by_id,
+            &pool,
+            None,
+            &mut ctx,
+            &mut cache,
+            |_, _, _, _| unreachable!("should not compile any upstream"),
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::F32);
+        assert_eq!(result.expr, "0.0");
+    }
+
+    #[test]
+    fn test_resource_pool_unconnected_selected_port_returns_zero() {
+        // Pool has dynamic ports declared but the selected one is not connected
+        let pool = make_pool_node("pool", &["d1", "d2"], 0);
+
+        let scene = test_scene(vec![pool.clone()], vec![]);
+        let nodes_by_id: HashMap<String, Node> =
+            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_resource_pool(
+            &scene,
+            &nodes_by_id,
+            &pool,
+            None,
+            &mut ctx,
+            &mut cache,
+            |_, _, _, _| unreachable!("should not compile any upstream"),
+        )
+        .unwrap();
+
+        assert_eq!(result.ty, ValueType::F32);
+        assert_eq!(result.expr, "0.0");
     }
 }

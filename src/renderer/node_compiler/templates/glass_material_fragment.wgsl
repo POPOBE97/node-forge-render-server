@@ -339,12 +339,12 @@ fn glass_shape_sdf(p: vec2f, b: vec2f, r: f32, edge: f32, edge_pow: f32) -> f32 
 }
 
 fn glass_calculate_normal(pos_from_center: vec2f, half_size_px: vec2f, radius_px: f32, edge: f32, edge_pow: f32) -> vec3f {
-    let eps = 1.0;
+    let eps = 0.002;
     let right_sdf = glass_shape_sdf(pos_from_center + vec2f(eps, 0.0), half_size_px, radius_px, edge, edge_pow);
     let left_sdf = glass_shape_sdf(pos_from_center - vec2f(eps, 0.0), half_size_px, radius_px, edge, edge_pow);
     let top_sdf = glass_shape_sdf(pos_from_center + vec2f(0.0, eps), half_size_px, radius_px, edge, edge_pow);
     let bottom_sdf = glass_shape_sdf(pos_from_center - vec2f(0.0, eps), half_size_px, radius_px, edge, edge_pow);
-    let xy_gradient = vec2f((right_sdf - left_sdf) * 0.5, (top_sdf - bottom_sdf) * 0.5);
+    let xy_gradient = vec2f((right_sdf - left_sdf) / (2.0 * eps), (top_sdf - bottom_sdf) / (2.0 * eps));
     return normalize(vec3f(xy_gradient, 1.0));
 }
 
@@ -553,7 +553,6 @@ fn glass_texture_map(
      color_ratio = mix(glass_color_luma, color_ratio, burn_mix);
      color_ratio = color_ratio * 0.8;
      var glass_color_ratio = mix(vec3f(1.0), glass_color.rgb, color_ratio);
-     glass_color_ratio = mix(glass_color_ratio, {{uInnerGlassColor}}.rgb, {{uInnerGlassColor}}.a);
 
      // --- Neutral vibrancy fix ---
      if ({{uDebugFixNeutralVibrancy}} > 0.0) {
@@ -566,10 +565,13 @@ fn glass_texture_map(
          glass_color_ratio = mix(vec3f(mean_glass_color_ratio) * 0.5 + glass_color_ratio * 0.5, glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));
      }
 
+     // --- Apply inner glass color ---
+     glass_color_ratio = mix(glass_color_ratio, {{uInnerGlassColor}}.rgb, {{uInnerGlassColor}}.a);
+
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
      glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, {{uInnerColorMix}} * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * {{uInnerBottom}}), glass_mat.a);
+     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * {{uInnerBottom}}), glass_mat.a);
 
      // --- Directional lighting ---
      let lighting1 = glass_calculate_lighting(light_normal, {{uDirectionalLightDirection}}, {{uDirectionalLightIntensity}}, {{uDirectionalLightAngleRange}});

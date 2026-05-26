@@ -808,6 +808,44 @@ fn resolve_output_f64_inner(
 This node contains user-provided source code; render-time evaluation must be sandboxed and is not implemented."
             )
         }
+        "ResourcePool" => {
+            let dynamic_inputs: Vec<&str> = node
+                .inputs
+                .iter()
+                .filter(|p| p.id != "selectedIndex")
+                .map(|p| p.id.as_str())
+                .collect();
+
+            if dynamic_inputs.is_empty() {
+                0.0
+            } else {
+                let idx = resolve_input_f64_inner(
+                    scene,
+                    nodes_by_id,
+                    node_id,
+                    "selectedIndex",
+                    cache,
+                    visiting,
+                )?
+                .unwrap_or(0.0)
+                .max(0.0) as usize;
+                let idx = idx.min(dynamic_inputs.len() - 1);
+                let selected_port = dynamic_inputs[idx];
+
+                if let Some(conn) = incoming_connection(scene, node_id, selected_port) {
+                    resolve_output_f64_inner(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        cache,
+                        visiting,
+                    )?
+                } else {
+                    0.0
+                }
+            }
+        }
         "DataParse" => eval_data_parse_scalar(scene, nodes_by_id, node, out_port).unwrap_or(0.0),
         // For scalar parameter resolution, allow a fallback where the output port is stored in params.
         // (Useful for very simple constant nodes or hand-written DSL.)

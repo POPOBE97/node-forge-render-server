@@ -115,10 +115,20 @@ pub fn prepare_viewport(
 
     if let Some(target_zoom) = app.canvas.viewport.pending_center_1x_zoom.take() {
         app.canvas.viewport.zoom = target_zoom;
-        app.canvas.viewport.pan = egui::Vec2::ZERO;
         app.canvas.viewport.pan_start = None;
         app.canvas.viewport.pan_zoom_target_zoom = target_zoom;
-        app.canvas.viewport.pan_zoom_target_pan = egui::Vec2::ZERO;
+
+        // Snap image origin to physical pixel grid so that at 1:1 zoom every texel
+        // maps exactly to one device pixel — eliminating any sub-pixel offset that
+        // would cause linear and nearest sampling to differ.
+        let ppp = 1.0 / target_zoom; // pixels_per_point
+        let draw_size = image_size * target_zoom;
+        let base_min = canvas_rect.center() - draw_size * 0.5;
+        let snapped_x = (base_min.x * ppp).round() / ppp;
+        let snapped_y = (base_min.y * ppp).round() / ppp;
+        let pan = egui::Vec2::new(snapped_x - base_min.x, snapped_y - base_min.y);
+        app.canvas.viewport.pan = pan;
+        app.canvas.viewport.pan_zoom_target_pan = pan;
     }
 
     let draw_size = image_size * app.canvas.viewport.zoom;

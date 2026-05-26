@@ -623,7 +623,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      color_ratio = mix(glass_color_luma, color_ratio, burn_mix);
      color_ratio = color_ratio * 0.8;
      var glass_color_ratio = mix(vec3f(1.0), glass_color.rgb, color_ratio);
-     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 1.0).rgb, vec4f(1.0, 1.0, 1.0, 1.0).a);
 
      // --- Neutral vibrancy fix ---
      if (1.0 > 0.0) {
@@ -636,10 +635,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
          glass_color_ratio = mix(vec3f(mean_glass_color_ratio) * 0.5 + glass_color_ratio * 0.5, glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));
      }
 
+     // --- Apply inner glass color ---
+     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 1.0).rgb, vec4f(1.0, 1.0, 1.0, 1.0).a);
+
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
      glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.0 * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * 0.0), glass_mat.a);
+     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
 
      // --- Directional lighting ---
      let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003), 1.0, 0.280000001);

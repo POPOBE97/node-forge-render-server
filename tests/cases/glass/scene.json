@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-25T11:54:16.218Z",
-    "modified": "2026-05-25T11:54:16.218Z"
+    "created": "2026-05-26T15:03:19.162Z",
+    "modified": "2026-05-26T15:03:19.162Z"
   },
   "nodes": [
     {
@@ -379,12 +379,6 @@
         ],
         "uBlendLuminanceAmount": 1,
         "uBlendSaturation": 1,
-        "uBlendBrightness": 0,
-        "uBlendDarker": 0,
-        "uBlendDarkerRange": {
-          "x": 0,
-          "y": 0.04
-        },
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
@@ -431,6 +425,12 @@
           0,
           0
         ],
+        "uBlendBrightness": 0,
+        "uBlendDarker": 0,
+        "uBlendDarkerRange": {
+          "x": 0,
+          "y": 0.04
+        },
         "_uiCollapsedFields": [
           "uBlendDarkerRange"
         ]
@@ -498,7 +498,8 @@
         "minFilter": "linear",
         "mipmapFilter": "linear",
         "encoderSpace": "srgb",
-        "alphaMode": "straight"
+        "alphaMode": "straight",
+        "_uiCollapsed": true
       }
     },
     {
@@ -517,6 +518,12 @@
           0,
           0,
           0.6
+        ],
+        "color0": [
+          1,
+          0,
+          0,
+          1
         ]
       }
     },
@@ -650,8 +657,8 @@
       "id": "ColorMix_56",
       "type": "ColorMix",
       "position": {
-        "x": -200,
-        "y": -1100
+        "x": -280,
+        "y": -1260
       },
       "width": 160,
       "label": "Blend Color",
@@ -690,7 +697,8 @@
         "minFilter": "linear",
         "mipmapFilter": "linear",
         "encoderSpace": "srgb",
-        "alphaMode": "straight"
+        "alphaMode": "straight",
+        "_uiCollapsed": true
       }
     },
     {
@@ -728,7 +736,8 @@
       "width": 178,
       "label": "Math Closure",
       "params": {
-        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size;"
+        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size;",
+        "_uiCollapsed": false
       },
       "inputs": [
         {
@@ -916,6 +925,62 @@
         "alphaMode": "straight",
         "_uiCollapsed": true
       }
+    },
+    {
+      "id": "ResourcePool_69",
+      "type": "ResourcePool",
+      "position": {
+        "x": -460,
+        "y": -1060
+      },
+      "width": 160,
+      "label": "Resource Pool",
+      "params": {
+        "selectedIndex": 0
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1779794651875_1",
+          "name": "input1",
+          "type": "color"
+        },
+        {
+          "id": "dynamic_1779794654344_2",
+          "name": "input2",
+          "type": "color"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "color"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1779794651875_1",
+          "label": "input1",
+          "variableName": "input1",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ImageTexture_57",
+            "outputPortId": "color",
+            "outputLabel": "Color"
+          }
+        },
+        {
+          "portId": "dynamic_1779794654344_2",
+          "label": "input2",
+          "variableName": "input2",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ImageTexture_48",
+            "outputPortId": "color",
+            "outputLabel": "Color"
+          }
+        }
+      ]
     }
   ],
   "connections": [
@@ -1173,17 +1238,6 @@
       }
     },
     {
-      "id": "edge_118",
-      "from": {
-        "nodeId": "ImageTexture_48",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "ColorMix_50",
-        "portId": "color0"
-      }
-    },
-    {
       "id": "edge_120",
       "from": {
         "nodeId": "DataParse_21",
@@ -1269,6 +1323,39 @@
       "to": {
         "nodeId": "Composite_7",
         "portId": "dynamic_1779709943503_2"
+      }
+    },
+    {
+      "id": "edge_131",
+      "from": {
+        "nodeId": "ImageTexture_57",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ResourcePool_69",
+        "portId": "dynamic_1779794651875_1"
+      }
+    },
+    {
+      "id": "edge_132",
+      "from": {
+        "nodeId": "ImageTexture_48",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "ResourcePool_69",
+        "portId": "dynamic_1779794654344_2"
+      }
+    },
+    {
+      "id": "edge_133",
+      "from": {
+        "nodeId": "ResourcePool_69",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "ColorMix_50",
+        "portId": "color0"
       }
     }
   ],
