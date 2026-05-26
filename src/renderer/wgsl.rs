@@ -464,6 +464,40 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     }
 }
 
+fn build_intelligent_light_bundle(combined_wgsl: String) -> WgslShaderBundle {
+    let vertex_marker = "\n@vertex\n";
+    let fragment_marker = "\n@fragment\n";
+
+    let (common, vertex_entry, fragment_entry) =
+        if let Some(v_start) = combined_wgsl.find(vertex_marker) {
+            if let Some(f_start) = combined_wgsl.find(fragment_marker) {
+                let common = combined_wgsl[..v_start].to_string();
+                let vertex_entry = combined_wgsl[v_start..f_start].to_string();
+                let fragment_entry = combined_wgsl[f_start..].to_string();
+                (common, vertex_entry, fragment_entry)
+            } else {
+                (combined_wgsl.clone(), String::new(), String::new())
+            }
+        } else {
+            (combined_wgsl.clone(), String::new(), String::new())
+        };
+
+    let vertex = format!("{common}{vertex_entry}");
+    let fragment = format!("{common}{fragment_entry}");
+
+    WgslShaderBundle {
+        common,
+        vertex,
+        fragment,
+        compute: None,
+        module: combined_wgsl,
+        image_textures: Vec::new(),
+        pass_textures: Vec::new(),
+        graph_schema: None,
+        graph_binding_kind: None,
+    }
+}
+
 impl MaterialCompileContext {
     // Extension method for generating WGSL binding declarations
     pub(crate) fn wgsl_decls(&self) -> String {
@@ -1490,14 +1524,9 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 ));
             }
             "IntelligentLight" => {
-                // Procedural fullscreen pass — no WGSL bundle needed for the test harness.
-                // The shader is generated inline by the assembler. Push a dummy passthrough bundle.
-                out.push((
-                    format!("sys.ilight.{layer_id}.pass"),
-                    build_fullscreen_textured_bundle(
-                        "return vec4f(0.0, 0.0, 0.0, 1.0);".to_string(),
-                    ),
-                ));
+                let wgsl = crate::renderer::render_plan::pass_assemblers::intelligent_light::build_intelligent_light_wgsl();
+                let bundle = build_intelligent_light_bundle(wgsl);
+                out.push((format!("sys.ilight.{layer_id}.pass"), bundle));
             }
             other => bail!(
                 "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, GradientBlur, or IntelligentLight, got {other} for {layer_id}"

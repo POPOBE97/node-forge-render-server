@@ -99,6 +99,7 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
         original_from: Endpoint,
         pass_id: String,
         geo_id: String,
+        blend_params: HashMap<String, serde_json::Value>,
     }
 
     // Plan first (no mutation of vectors while iterating).
@@ -141,12 +142,33 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
             continue;
         }
 
+        let blend_params = nodes_by_id
+            .get(&c.to.node_id)
+            .filter(|n| n.node_type == "Composite")
+            .map(|n| {
+                const BLEND_KEYS: &[&str] = &[
+                    "blend_preset",
+                    "blendfunc",
+                    "src_factor",
+                    "dst_factor",
+                    "src_alpha_factor",
+                    "dst_alpha_factor",
+                ];
+                n.params
+                    .iter()
+                    .filter(|(k, _)| BLEND_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+
         plans.push(WrapPlan {
             conn_index: idx,
             conn_id: c.id.clone(),
             original_from: c.from.clone(),
             pass_id: format!("sys.auto.fullscreen.pass.{}", c.id),
             geo_id: format!("sys.auto.fullscreen.geo.{}", c.id),
+            blend_params,
         });
     }
 
@@ -173,7 +195,7 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
         scene.nodes.push(Node {
             id: p.pass_id.clone(),
             node_type: "RenderPass".to_string(),
-            params: HashMap::new(),
+            params: p.blend_params.clone(),
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),

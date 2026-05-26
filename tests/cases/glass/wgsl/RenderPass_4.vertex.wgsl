@@ -33,6 +33,14 @@ var<uniform> params: Params;
  };
 
 
+struct GraphInputs {
+    // Node: Vector3Input_67
+    node_Vector3Input_67_698d8c66: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -266,15 +274,16 @@ fn glass_luminance_curve(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4f
     let alpha = max(color.a, 0.0001);
     let scale = 1.0 / alpha;
     let scaled_rgb = scale * color.rgb;
-    var luminance = dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721));
-    // luminance = clamp(luminance, 0.0, 1.0);
+    let luminance = clamp(dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721)), 0.0, 1.0);
 
     var adj = luminance * factor_adjust.x + factor_adjust.y;
     adj = adj * luminance + factor_adjust.z;
     adj = adj * luminance + factor_adjust.w;
-    // adj = clamp(adj, 0.0, 1.0);
 
-    let mixed = mix(scaled_rgb, vec3f(adj), mix_factor);
+    let ray_scale = select(0.0, adj / luminance, luminance > 0.0001);
+    let mapped_rgb = scaled_rgb * ray_scale;
+    let mixed = mix(scaled_rgb, mapped_rgb, mix_factor);
+
     return vec4f(mixed * alpha, color.a);
 }
 
@@ -485,10 +494,7 @@ fn glass_texture_map(
     tex: texture_2d<f32>,
     samp: sampler,
     sample_uv: vec2f,
-    is_bg: bool,
     add_foreground: bool,
-    blend_darker: f32,
-    blend_darker_range: vec2f,
     reflect_lighten_opacity: f32,
     reflect_lighten_blend_mode: i32,
     fg_tex: texture_2d<f32>,
@@ -496,13 +502,6 @@ fn glass_texture_map(
     frag_uv: vec2f,
 ) -> vec4f {
     var col = textureSample(tex, samp, sample_uv);
-
-    if (is_bg) {
-        let lum = glass_luma(col.rgb);
-        let t = mix(0.0, blend_darker, smoothstep(blend_darker_range.x, blend_darker_range.y, lum));
-        let darken_tint = 0.1 * (vec3f(1.0) - vec3f(0.2126, 0.7152, 0.0722));
-        col = vec4f(mix(col.rgb, darken_tint, t), col.a);
-    }
 
     if (add_foreground) {
         let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
@@ -542,6 +541,9 @@ fn glass_texture_map(
  out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);
 
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
+
+ let delta_t = (vec3f(baked_data_parse[(instance_index) * 5u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
+ p_local = p_local + delta_t;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.

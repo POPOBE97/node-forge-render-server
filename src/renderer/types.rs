@@ -472,6 +472,25 @@ pub struct Params {
     pub camera_position: [f32; 4],
 }
 
+/// Per-frame custom update configuration for specialized pass types.
+///
+/// Each variant carries the data needed to recompute its uniform buffer
+/// every frame. The actual logic lives in the pass assembler's own module.
+#[derive(Clone, Debug)]
+pub enum PassExtension {
+    IntelligentLight(
+        crate::renderer::render_plan::pass_assemblers::intelligent_light::ILightUpdateConfig,
+    ),
+}
+
+impl PassExtension {
+    pub fn pack_buffer(&self, scene: &crate::dsl::SceneDSL) -> Vec<u8> {
+        match self {
+            Self::IntelligentLight(cfg) => cfg.pack_buffer(scene),
+        }
+    }
+}
+
 /// Bindings for a render pass (uniform buffer and parameters).
 #[derive(Clone, Debug)]
 pub struct PassBindings {
@@ -480,6 +499,7 @@ pub struct PassBindings {
     pub base_params: Params,
     pub graph_binding: Option<GraphBinding>,
     pub last_graph_hash: Option<[u8; 32]>,
+    pub extension: Option<PassExtension>,
 }
 
 /// Complete WGSL shader bundle for a render pass.

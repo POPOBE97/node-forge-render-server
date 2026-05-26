@@ -443,8 +443,6 @@ fn canonical_graph_bindings_value(pass_bindings: &[PassBindings]) -> Vec<Value> 
 }
 
 pub fn compute_pipeline_signature(scene: &SceneDSL) -> [u8; 32] {
-    // Prefer canonicalized prepared scene (group-expanded + upstream-reachable graph),
-    // and gracefully fallback to the raw scene when preparation fails.
     let maybe_prepared = crate::renderer::scene_prep::prepare_scene(scene).ok();
     let (scene_for_sig, ignored_input_value_node_ids) =
         if let Some(prepared) = maybe_prepared.as_ref() {
@@ -456,8 +454,11 @@ pub fn compute_pipeline_signature(scene: &SceneDSL) -> [u8; 32] {
             (scene, collect_all_value_driven_input_node_ids(scene))
         };
 
-    let canonical = canonical_scene_value(scene_for_sig, &ignored_input_value_node_ids);
-    let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+    let payload = json!({
+        "scene": canonical_scene_value(scene_for_sig, &ignored_input_value_node_ids),
+        "templateGeneration": crate::renderer::node_compiler::template_loader::generation(),
+    });
+    let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     hash_bytes(&bytes)
 }
 
@@ -478,6 +479,7 @@ pub fn compute_pipeline_signature_for_pass_bindings(
     let payload = json!({
         "scene": canonical_scene_value(scene, &ignored_input_value_node_ids),
         "graphBindings": canonical_graph_bindings_value(pass_bindings),
+        "templateGeneration": crate::renderer::node_compiler::template_loader::generation(),
     });
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     hash_bytes(&bytes)
@@ -686,6 +688,7 @@ mod tests {
                 },
             }),
             last_graph_hash: None,
+            extension: None,
         };
 
         let h1 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
@@ -736,6 +739,7 @@ mod tests {
                 },
             }),
             last_graph_hash: None,
+            extension: None,
         };
 
         let h_ubo = compute_pipeline_signature_for_pass_bindings(

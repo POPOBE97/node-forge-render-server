@@ -9,7 +9,7 @@ use rust_wgpu_fiber::{
 use crate::renderer::{
     ShaderSpacePresentationMode,
     scene_prep::{PreparedScene, ScenePrepReport},
-    types::{GraphBinding, Params, PassBindings, PassOutputRegistry},
+    types::{GraphBinding, Params, PassBindings, PassExtension, PassOutputRegistry},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -160,6 +160,7 @@ pub(crate) struct ResourcePlans {
     pub pass_bindings: Vec<PassBindings>,
     pub baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>>,
     pub baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String>,
+    pub pass_extensions: HashMap<String, PassExtension>,
 }
 
 #[derive(Clone, Debug)]

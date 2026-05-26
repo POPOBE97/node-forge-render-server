@@ -1,58 +1,24 @@
+// Glass Material — Complete Shader Template
+//
+// This is the single source of truth for the glass material shader.
+// It is embedded at compile time via include_str! and markers are substituted
+// with resolved expressions from the node graph.
+//
+// Structure:
+//   [HELPERS]  — static WGSL helper functions (no markers)
+//   [BODY]     — fragment body with {{marker}} placeholders
+//
+// Markers:
+//   {{name}}                — replaced with a dynamic expression
+//   {{#if feature}}...{{/if}} — conditional block (included only when feature is connected)
+//
+// The template is split at the "// {{BODY}}" marker line:
+//   - Everything above it goes into extra_wgsl_decls (helper functions)
+//   - Everything below it becomes the fragment body (with substitution)
 
-struct Params {
-    target_size: vec2f,
-    geo_size: vec2f,
-    center: vec2f,
-
-    geo_translate: vec2f,
-    geo_scale: vec2f,
-
-    // Pack to 16-byte boundary.
-    time: f32,
-    _pad0: f32,
-
-    // 16-byte aligned.
-    color: vec4f,
-    camera: mat4x4f,
-    camera_position: vec4f,
-};
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
- struct VSOut {
-     @builtin(position) position: vec4f,
-     @location(0) uv: vec2f,
-     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
-     @location(1) frag_coord_gl: vec2f,
-     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec3f,
-     // Geometry size in pixels after applying geometry/instance transforms.
-     @location(3) geo_size_px: vec2f,
-     @location(4) instance_index: u32,
- };
-
-
-struct GraphInputs {
-    // Node: Vector3Input_67
-    node_Vector3Input_67_698d8c66: vec4f,
-};
-
-@group(0) @binding(2)
-var<uniform> graph_inputs: GraphInputs;
-
-@group(0) @binding(1)
-var<storage, read> baked_data_parse: array<vec4f>;
-@group(1) @binding(0)
-var pass_tex_GroupInstance_47_GuassianBlurPass_42: texture_2d<f32>;
-
-@group(1) @binding(1)
-var pass_samp_GroupInstance_47_GuassianBlurPass_42: sampler;
-
-
-// --- Extra WGSL declarations (generated) ---
-
-// ---- GlassMaterial helpers (generated) ----
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 fn glass_luma(color: vec3f) -> f32 {
     return dot(color, vec3f(0.2126, 0.7152, 0.0722));
@@ -511,55 +477,14 @@ fn glass_texture_map(
     return col;
 }
 
+// {{BODY}}
 
- @vertex
- fn vs_main(
-     @location(0) position: vec3f,
-     @location(1) uv: vec2f,
-     @location(2) i0: vec4f,
-     @location(3) i1: vec4f,
-     @location(4) i2: vec4f,
-     @location(5) i3: vec4f,
-     @builtin(instance_index) instance_index: u32,
- ) -> VSOut {
- var out: VSOut;
+// ============================================================================
+// FRAGMENT BODY
+// ============================================================================
 
- out.instance_index = instance_index;
-
- let _unused_geo_size = params.geo_size;
- let _unused_geo_translate = params.geo_translate;
- let _unused_geo_scale = params.geo_scale;
-
- // UV passed as vertex attribute.
- out.uv = uv;
-
- let inst_m = mat4x4f(i0, i1, i2, i3);
- let geo_sx = length(inst_m[0].xy);
- let geo_sy = length(inst_m[1].xy);
- let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
- out.geo_size_px = geo_size_px;
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);
-
- var p_local = (inst_m * vec4f(position, 1.0)).xyz;
-
- let delta_t = (vec3f(baked_data_parse[(instance_index) * 5u + 0u].xy, 0.0) + (graph_inputs.node_Vector3Input_67_698d8c66).xyz);
- p_local = p_local + delta_t;
-
- // Geometry vertices are in local pixel units centered at (0,0).
- // Convert to target pixel coordinates with bottom-left origin.
- out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
-
- out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
-
- // Pixel-centered like GLSL gl_FragCoord.xy.
- out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
- return out;
- }
-@fragment
-fn fs_main(in: VSOut) -> @location(0) vec4f {
-     // GlassMaterial(GlassMaterial_40)
- var glass_out_GlassMaterial_40: vec4f;
+ // GlassMaterial({{node_id}})
+ var {{out_var}}: vec4f;
  {
      let screen_px = in.frag_coord_gl;
      let local_px = in.local_px.xy;
@@ -571,9 +496,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let screen_uv = glass_sample_screen_uv(screen_px, params.target_size);
 
      // --- Shape SDF ---
-     let edge = f32(30.0);
-     let edge_pow = f32(2.0);
-     let radius_px = f32(baked_data_parse[(in.instance_index) * 5u + 1u].x);
+     let edge = f32({{uShapeEdgePx}});
+     let edge_pow = f32({{uShapeEdgePow}});
+     let radius_px = {{radius_expr}};
      let safe_edge = max(edge, 1e-6);
      let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
@@ -587,50 +512,55 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
      var final_alpha = smoothstep(0.0, 10.0, -edge_sdf);
 
-
+{{#if use_sdf_tex}}
+     if ({{uUseSdfTex}}) {
+         let sdf_col = textureSample({{sdf_tex_var}}, {{sdf_samp_var}}, in.uv);
+         final_alpha = clamp(sdf_col.w, 0.0, 1.0);
+     }
+{{/if}}
 
      // --- Refraction ---
-     let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
+     let uv_display_px = (local_px - half_size_px) * f32({{uRefractBlurScale}}) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
-     let refractive_index = f32(1.450000048);
+     let refractive_index = f32({{uRefractIOR}});
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
-     let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
+     let refract_thickness = mix((f32({{uShapeThicknessPx}}) - edge) * 2.0, f32({{uShapeThicknessPx}}) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     let refraction = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+     let refraction = {{refraction_expr}};
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
-     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
+     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32({{uShapeReflectOffsetPx}}), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     let reflection = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+     let reflection = {{reflection_expr}};
 
      // --- Mix refraction + reflection ---
-     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray), 0.0, 1.0) * 1.0);
-     glass_mat = glass_luminance_curve(glass_mat, vec4f(0.0, 0.70286721, 0.801292837, 0.900640905), 1.0);
-    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
+     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray), 0.0, 1.0) * {{uReflectStrength}});
+     glass_mat = glass_luminance_curve(glass_mat, {{uBlendLuminanceValues}}, {{uBlendLuminanceAmount}});
+    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * {{uReflectLighten}}), glass_mat.a);
 
      // --- Background color tinting ---
-     var glass_color = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
-     glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
-     glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
+     var glass_color = {{bg_color_expr}};
+     glass_color = glass_adjust_color(glass_color, {{uBgColorSaturation}}, {{uBgColorBrightness}});
+     glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), {{uInnerColorWhite}}), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);
 
      // --- Bionic burn color ratio ---
      var color_ratio = 1.0;
-     let burn_term = pow(glass_color_luma, 1.0) - 0.5;
+     let burn_term = pow(glass_color_luma, {{uBionicBurn}}) - 0.5;
      let burn_mix = 1.587 * burn_term * burn_term * burn_term + 0.5;
      color_ratio = mix(glass_color_luma, color_ratio, burn_mix);
      color_ratio = color_ratio * 0.8;
      var glass_color_ratio = mix(vec3f(1.0), glass_color.rgb, color_ratio);
-     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 1.0).rgb, vec4f(1.0, 1.0, 1.0, 1.0).a);
+     glass_color_ratio = mix(glass_color_ratio, {{uInnerGlassColor}}.rgb, {{uInnerGlassColor}}.a);
 
      // --- Neutral vibrancy fix ---
-     if (1.0 > 0.0) {
+     if ({{uDebugFixNeutralVibrancy}} > 0.0) {
          let mean_glass_mat_color = (glass_mat.r + glass_mat.g + glass_mat.b) / 3.0;
          let mean_glass_color_ratio = (glass_color_ratio.r + glass_color_ratio.g + glass_color_ratio.b) / 3.0;
-         let neutral_threshold_min = clamp(0.0, 0.0, 1.0);
-         var neutral_threshold = clamp(0.400000006, 0.0, 1.0);
+         let neutral_threshold_min = clamp({{uDebugFixNeutralVibrancyThresholdMin}}, 0.0, 1.0);
+         var neutral_threshold = clamp({{uDebugFixNeutralVibrancyThreshold}}, 0.0, 1.0);
          neutral_threshold = max(neutral_threshold, neutral_threshold_min + 0.0001);
          let grayness = distance(glass_mat.rgb, vec3f(mean_glass_mat_color));
          glass_color_ratio = mix(vec3f(mean_glass_color_ratio) * 0.5 + glass_color_ratio * 0.5, glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));
@@ -638,23 +568,19 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
-     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.0 * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * 0.0), glass_mat.a);
+     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, {{uInnerColorMix}} * color_ratio), glass_mat.a);
+     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * {{uInnerBottom}}), glass_mat.a);
 
      // --- Directional lighting ---
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003), 1.0, 0.280000001);
-     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003) * vec3f(-1.0, -1.0, 1.0), 0.800000012, 0.280000001);
+     let lighting1 = glass_calculate_lighting(light_normal, {{uDirectionalLightDirection}}, {{uDirectionalLightIntensity}}, {{uDirectionalLightAngleRange}});
+     let lighting2 = glass_calculate_lighting(light_normal, {{uDirectionalLightDirection}} * vec3f(-1.0, -1.0, 1.0), {{uDirectionalLightOppositeIntensity}}, {{uDirectionalLightAngleRange}});
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
      glass_mat += lighting1 + lighting2;
 
      // --- Final adjustments ---
-     glass_mat = pow(glass_mat, vec4f(1.0));
-     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(1.0, 1.0, 1.0, 1.0).rgb, 0.0), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * 1.0);
+     glass_mat = pow(glass_mat, vec4f({{uInnerColorPow}}));
+     glass_mat = vec4f(mix(glass_mat.rgb, {{uInnerGlassColor}}.rgb, {{uBionicUnShade}}), glass_mat.a);
+     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * {{uAlpha}});
 
-     glass_out_GlassMaterial_40 = glass_mat;
+     {{out_var}} = glass_mat;
  }
-
-    let _frag_out = glass_out_GlassMaterial_40;
-    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
-}

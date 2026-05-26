@@ -45,6 +45,18 @@ fn collect_graph_uniform_updates(
 ) -> Result<Vec<GraphBufferUpdate>> {
     let mut out = Vec::new();
     for (pass_index, pass) in passes.iter().enumerate() {
+        if let Some(ext) = pass.extension.as_ref() {
+            let bytes = ext.pack_buffer(scene);
+            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
+            if pass.last_graph_hash != Some(hash) {
+                out.push(GraphBufferUpdate {
+                    pass_index,
+                    bytes,
+                    hash,
+                });
+            }
+            continue;
+        }
         let Some(binding) = pass.graph_binding.as_ref() else {
             continue;
         };
@@ -683,6 +695,7 @@ mod tests {
                 schema,
             }),
             last_graph_hash: Some(same_hash),
+            extension: None,
         };
 
         let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();
@@ -745,6 +758,7 @@ mod tests {
                 schema,
             }),
             last_graph_hash: None,
+            extension: None,
         };
 
         let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();

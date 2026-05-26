@@ -20,7 +20,7 @@ use crate::{
         geometry_resolver::types::ResolvedCompositionContext,
         node_compiler::geometry_nodes::rect2d_geometry_vertices,
         scene_prep::PreparedScene,
-        types::{BakedDataParseMeta, PassOutputRegistry},
+        types::{BakedDataParseMeta, PassExtension, PassOutputRegistry},
         utils::as_bytes_slice,
     },
 };
@@ -89,6 +89,8 @@ pub(crate) struct BuilderState<'b> {
     pub gaussian_source_pass_ids: &'b mut HashSet<String>,
     pub bloom_source_pass_ids: &'b mut HashSet<String>,
     pub gradient_source_pass_ids: &'b mut HashSet<String>,
+
+    pub pass_extensions: &'b mut HashMap<String, PassExtension>,
 }
 
 pub(crate) fn make_fullscreen_geometry(w: f32, h: f32) -> Arc<[u8]> {

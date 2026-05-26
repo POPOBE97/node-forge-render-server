@@ -66,6 +66,62 @@ fn spawn_metal_capture_state_watcher(
     None
 }
 
+fn spawn_template_watcher(
+    scene_tx: crossbeam_channel::Sender<ws::SceneUpdate>,
+    last_good: Arc<Mutex<Option<dsl::SceneDSL>>>,
+    egui_ctx: egui::Context,
+) {
+    use notify::{RecursiveMode, Watcher};
+    use std::time::Duration;
+
+    let templates_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("renderer")
+        .join("node_compiler")
+        .join("templates");
+
+    std::thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher = match notify::recommended_watcher(tx) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[template-hmr] failed to create watcher: {e}");
+                return;
+            }
+        };
+        if let Err(e) = watcher.watch(&templates_dir, RecursiveMode::Recursive) {
+            eprintln!("[template-hmr] failed to watch {}: {e}", templates_dir.display());
+            return;
+        }
+        eprintln!("[template-hmr] watching {}", templates_dir.display());
+
+        let debounce = Duration::from_millis(100);
+        loop {
+            match rx.recv() {
+                Ok(_event) => {
+                    // Debounce: drain any further events within the window
+                    std::thread::sleep(debounce);
+                    while rx.try_recv().is_ok() {}
+
+                    renderer::node_compiler::template_loader::invalidate_cache();
+                    eprintln!("[template-hmr] template changed, triggering rebuild");
+
+                    let scene = last_good.lock().ok().and_then(|g| g.clone());
+                    if let Some(scene) = scene {
+                        let _ = scene_tx.try_send(ws::SceneUpdate::Parsed {
+                            scene,
+                            request_id: None,
+                            source: ws::ParsedSceneSource::SceneDelta,
+                        });
+                        egui_ctx.request_repaint();
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
 fn parse_cli(args: &[String]) -> Result<Cli> {
     let mut cli = Cli::default();
     let mut i = 0;
@@ -663,6 +719,7 @@ fn main() -> Result<()> {
             let last_good = Arc::new(Mutex::new(last_good_initial));
             let hub = ws::WsHub::default();
             let asset_store = asset_store::AssetStore::new();
+            let template_scene_tx = scene_tx.clone();
             let ui_repaint_ctx = cc.egui_ctx.clone();
             let ui_wake: ws::UiWakeCallback = Arc::new(move || ui_repaint_ctx.request_repaint());
             if let Err(e) = ws::spawn_ws_server(
@@ -676,6 +733,11 @@ fn main() -> Result<()> {
             ) {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
+            spawn_template_watcher(
+                template_scene_tx,
+                last_good.clone(),
+                cc.egui_ctx.clone(),
+            );
             let capture_state_rx = spawn_metal_capture_state_watcher(cc.egui_ctx.clone());
             if cli.continuous_redraw {
                 eprintln!("[capture] forcing continuous redraw via CLI flag");

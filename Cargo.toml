@@ -17,6 +17,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Used for WGSL validation at runtime and in tests
 naga = { version = "0.20", features = ["wgsl-in", "glsl-in", "wgsl-out"] }
 
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 deno_core = { version = "0.380.0", features = ["include_icu_data"] }
 arboard = "3"
 bytemuck = { version = "1", features = ["derive"] }

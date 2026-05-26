@@ -169,6 +169,7 @@ impl RenderPlanner {
         let mut baked_data_parse_meta_by_pass = HashMap::new();
         let mut baked_data_parse_bytes_by_pass = HashMap::new();
         let mut baked_data_parse_buffer_to_pass_id = HashMap::new();
+        let mut pass_extensions = HashMap::new();
         let mut pass_output_registry: PassOutputRegistry = Default::default();
 
         for id in order {
@@ -397,6 +398,7 @@ impl RenderPlanner {
                 gaussian_source_pass_ids: &mut gaussian_source_pass_ids,
                 bloom_source_pass_ids: &mut bloom_source_pass_ids,
                 gradient_source_pass_ids: &mut gradient_source_pass_ids,
+                pass_extensions: &mut pass_extensions,
             };
             registry.plan_layer(&scene_ctx, &mut builder_state, layer_id, layer_node)?;
             drop(builder_state);
@@ -521,6 +523,7 @@ impl RenderPlanner {
                 base_params: spec.params,
                 graph_binding: spec.graph_binding.clone(),
                 last_graph_hash: spec.graph_values.as_ref().map(|v| hash_bytes(v.as_slice())),
+                extension: pass_extensions.get(&spec.pass_id).cloned(),
             })
             .collect();
         let _pipeline_signature =
@@ -565,6 +568,7 @@ impl RenderPlanner {
                 pass_bindings,
                 baked_data_parse_bytes_by_pass,
                 baked_data_parse_buffer_to_pass_id,
+                pass_extensions,
             },
             debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
         })

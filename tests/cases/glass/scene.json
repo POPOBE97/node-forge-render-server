@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-14T11:49:15.128Z",
-    "modified": "2026-05-14T11:49:15.128Z"
+    "created": "2026-05-25T11:54:16.218Z",
+    "modified": "2026-05-25T11:54:16.218Z"
   },
   "nodes": [
     {
@@ -133,14 +133,19 @@
       },
       "inputs": [
         {
-          "id": "dynamic_1768928429238_1",
+          "id": "dynamic_1779709935668_1",
           "name": "pass2",
           "type": "pass"
+        },
+        {
+          "id": "dynamic_1779709943503_2",
+          "name": "pass3",
+          "type": "color"
         }
       ],
       "inputBindings": [
         {
-          "portId": "dynamic_1768928429238_1",
+          "portId": "dynamic_1779709935668_1",
           "label": "pass2",
           "variableName": "pass2",
           "type": "pass",
@@ -148,6 +153,17 @@
             "nodeId": "RenderPass_4",
             "outputPortId": "pass",
             "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1779709943503_2",
+          "label": "pass3",
+          "variableName": "pass3",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ImageTexture_68",
+            "outputPortId": "color",
+            "outputLabel": "Color"
           }
         }
       ]
@@ -157,7 +173,7 @@
       "type": "RenderTexture",
       "position": {
         "x": 360,
-        "y": -240
+        "y": -180
       },
       "width": 160,
       "label": "Render Texture",
@@ -196,15 +212,18 @@
       "id": "DataNode_20",
       "type": "DataNode",
       "position": {
-        "x": -2600,
-        "y": -120
+        "x": -1060,
+        "y": -480
       },
       "width": 219,
       "label": "Data",
       "params": {
         "text": "{\n    \"rects\": [\n        {\n            \"x\": 85,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 615,\n            \"width\": 435,\n            \"height\": 435,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 796,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1089,\n            \"width\": 909,\n            \"height\": 209,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1.0,\n                0.68,\n                0.09,\n                1\n            ]\n        },\n        {\n            \"x\": 85,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1,\n                1,\n                1,\n                1\n            ]\n        },\n        {\n            \"x\": 559,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 85,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 465,\n            \"y\": 2103,\n            \"width\": 149,\n            \"height\": 78,\n            \"radius\": 39\n        }\n    ]\n}\n",
         "syntax": "json",
-        "fileName": ""
+        "fileName": "",
+        "_uiCollapsedFields": [
+          "sec:text"
+        ]
       }
     },
     {
@@ -217,7 +236,8 @@
       "width": 217,
       "label": "Data Parse",
       "params": {
-        "source": "let size = [\n  data[\"rects\"][index].width,\n  data[\"rects\"][index].height\n] as vec2\n\nlet position = [\n  data[\"rects\"][index].x - size[0] / 2 + size[0],\n  2400 - (data[\"rects\"][index].y - size[1] / 2 + size[1])\n] as vec2\n\nconst radius = data[\"rects\"][index].radius as float\n\nconst scale = [\n  size[0] / 100.0,\n  size[1] / 100.0,\n] as vec2\n\nreturn { position, scale, size, radius }"
+        "source": "let size = [\n  data[\"rects\"][index].width,\n  data[\"rects\"][index].height\n] as vec2\n\nlet position = [\n  data[\"rects\"][index].x - size[0] / 2 + size[0],\n  2400 - (data[\"rects\"][index].y - size[1] / 2 + size[1])\n] as vec2\n\nconst radius = data[\"rects\"][index].radius as float\n\nconst scale = [\n  size[0] / 100.0,\n  size[1] / 100.0,\n] as vec2\n\nreturn { position, scale, size, radius }",
+        "_uiCollapsedFields": []
       },
       "inputs": [
         {
@@ -353,55 +373,55 @@
       "params": {
         "uBlendLuminanceValues": [
           0,
-          0.4994843062978276,
-          0.5005719599517426,
-          0
+          0.7028672139807259,
+          0.8012928371943633,
+          0.9006408803409292
         ],
-        "uBlendLuminanceAmount": 0.2,
-        "uBlendSaturation": 1.4,
-        "uBlendBrightness": -0.02,
-        "uBlendDarker": 1,
+        "uBlendLuminanceAmount": 1,
+        "uBlendSaturation": 1,
+        "uBlendBrightness": 0,
+        "uBlendDarker": 0,
         "uBlendDarkerRange": {
-          "x": 0.6,
-          "y": 1
+          "x": 0,
+          "y": 0.04
         },
-        "uInnerBottom": 0.05,
+        "uInnerBottom": 0,
         "uInnerGlassColor": [
-          0,
-          0,
-          0,
-          0.1
+          1,
+          1,
+          1,
+          1
         ],
-        "uInnerColorWhite": 0.2,
+        "uInnerColorWhite": 0,
         "uInnerColorPow": 1,
-        "uInnerColorMix": 0.1,
+        "uInnerColorMix": 0,
         "uGeoPxRadius": 24,
         "uShapeEdgePx": 30,
         "uShapeEdgePow": 2,
         "uShapeThicknessPx": 80,
         "uShapeReflectOffsetPx": 750,
-        "uReflectLighten": 1.2,
-        "uReflectStrength": 2,
+        "uReflectLighten": 0,
+        "uReflectStrength": 1,
         "uReflectionExtend": 100,
         "uReflectionExtendColor": [
           1,
           1,
           1,
-          1
+          0
         ],
         "uDirectionalLightDirection": {
           "x": -0.4,
           "y": 0.6,
           "z": -0.2
         },
-        "uDirectionalLightIntensity": 1.5,
+        "uDirectionalLightIntensity": 1,
         "uDirectionalLightOppositeIntensity": 0.8,
         "uDirectionalLightAngleRange": 0.28,
-        "uRefractBlurScale": 0.7,
-        "uRefractIorIOR": 1,
-        "uBgColorSaturation": 2,
+        "uRefractBlurScale": 1,
+        "uRefractIorIOR": 1.45,
+        "uBgColorSaturation": 1,
         "uBgColorBrightness": 0,
-        "uBionicBurn": 0.1,
+        "uBionicBurn": 1,
         "uPressLightCenterFall": 0.8,
         "uPressLightCenterStrength": 0.82,
         "uPressLightCenterPeak": 0,
@@ -410,6 +430,9 @@
           0,
           0,
           0
+        ],
+        "_uiCollapsedFields": [
+          "uBlendDarkerRange"
         ]
       }
     },
@@ -432,8 +455,8 @@
       "id": "GroupInstance_47",
       "type": "GroupInstance",
       "position": {
-        "x": -260,
-        "y": -820
+        "x": 20,
+        "y": -620
       },
       "width": 160,
       "label": "Group",
@@ -444,7 +467,7 @@
         {
           "id": "in_0",
           "name": "BackgroundImage",
-          "type": "pass"
+          "type": "color"
         }
       ],
       "outputs": [
@@ -482,8 +505,8 @@
       "id": "ColorMix_50",
       "type": "ColorMix",
       "position": {
-        "x": 20,
-        "y": -820
+        "x": -240,
+        "y": -800
       },
       "width": 160,
       "label": "Blend Color",
@@ -794,8 +817,9 @@
           1,
           1,
           1,
-          1
-        ]
+          0
+        ],
+        "_uiCollapsedFields": []
       }
     },
     {
@@ -835,6 +859,62 @@
       "params": {
         "x": 0,
         "y": 0
+      }
+    },
+    {
+      "id": "MathAdd_66",
+      "type": "MathAdd",
+      "position": {
+        "x": -240,
+        "y": -320
+      },
+      "width": 160,
+      "label": "Add",
+      "params": {},
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ]
+    },
+    {
+      "id": "Vector3Input_67",
+      "type": "Vector3Input",
+      "position": {
+        "x": -440,
+        "y": -280
+      },
+      "width": 160,
+      "label": "Vector3 Input",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "id": "ImageTexture_68",
+      "type": "ImageTexture",
+      "position": {
+        "x": 360,
+        "y": -240
+      },
+      "width": 160,
+      "label": "UI Texture",
+      "params": {
+        "assetId": "62d709c5c137",
+        "interpolation": "linear",
+        "extension": "repeat",
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight",
+        "_uiCollapsed": true
       }
     }
   ],
@@ -950,17 +1030,6 @@
       }
     },
     {
-      "id": "edge_31",
-      "from": {
-        "nodeId": "DataParse_21",
-        "portId": "out_position"
-      },
-      "to": {
-        "nodeId": "SetTransform_24",
-        "portId": "translate"
-      }
-    },
-    {
       "id": "edge_32",
       "from": {
         "nodeId": "DataParse_21",
@@ -983,17 +1052,6 @@
       }
     },
     {
-      "id": "edge_92",
-      "from": {
-        "nodeId": "GroupInstance_47",
-        "portId": "out_0"
-      },
-      "to": {
-        "nodeId": "GlassMaterial_40",
-        "portId": "uBgTex"
-      }
-    },
-    {
       "id": "edge_93",
       "from": {
         "nodeId": "DataParse_21",
@@ -1002,17 +1060,6 @@
       "to": {
         "nodeId": "GlassMaterial_40",
         "portId": "uGeoPxRadius"
-      }
-    },
-    {
-      "id": "edge_98",
-      "from": {
-        "nodeId": "RenderPass_4",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Composite_7",
-        "portId": "dynamic_1768928429238_1"
       }
     },
     {
@@ -1104,17 +1151,6 @@
       }
     },
     {
-      "id": "edge_115",
-      "from": {
-        "nodeId": "ImageTexture_48",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "GroupInstance_47",
-        "portId": "in_0"
-      }
-    },
-    {
       "id": "edge_116",
       "from": {
         "nodeId": "ColorMix_64",
@@ -1148,14 +1184,91 @@
       }
     },
     {
-      "id": "edge_119",
+      "id": "edge_120",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_position"
+      },
+      "to": {
+        "nodeId": "MathAdd_66",
+        "portId": "a"
+      }
+    },
+    {
+      "id": "edge_122",
+      "from": {
+        "nodeId": "Vector3Input_67",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathAdd_66",
+        "portId": "b"
+      }
+    },
+    {
+      "id": "edge_123",
+      "from": {
+        "nodeId": "MathAdd_66",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "translate"
+      }
+    },
+    {
+      "id": "edge_124",
+      "from": {
+        "nodeId": "GroupInstance_47",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "GlassMaterial_40",
+        "portId": "uBgTex"
+      }
+    },
+    {
+      "id": "edge_127",
       "from": {
         "nodeId": "ColorMix_50",
         "portId": "color"
       },
       "to": {
+        "nodeId": "GroupInstance_47",
+        "portId": "in_0"
+      }
+    },
+    {
+      "id": "edge_128",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "dynamic_1779709935668_1"
+      }
+    },
+    {
+      "id": "edge_129",
+      "from": {
+        "nodeId": "GroupInstance_47",
+        "portId": "out_0"
+      },
+      "to": {
         "nodeId": "Composite_7",
         "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_130",
+      "from": {
+        "nodeId": "ImageTexture_68",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "dynamic_1779709943503_2"
       }
     }
   ],
@@ -1168,6 +1281,12 @@
       "originalName": "_11_91去玩_来自小红书网页版.jpg",
       "mimeType": "image/jpeg",
       "size": 416604
+    },
+    "62d709c5c137": {
+      "path": "assets/62d709c5c137.png",
+      "originalName": "ui.png",
+      "mimeType": "image/png",
+      "size": 171096
     },
     "762325f2042e": {
       "path": "assets/762325f2042e.png",
@@ -1205,14 +1324,14 @@
           "id": "GuassianBlurPass_42",
           "type": "GuassianBlurPass",
           "position": {
-            "x": 40,
-            "y": 0
+            "x": 100,
+            "y": 80
           },
           "width": 200,
           "label": "Gaussian Blur Pass",
           "params": {
             "mode": "standard",
-            "radius": 120,
+            "radius": 100,
             "blend_preset": "premul_alpha",
             "blendfunc": "add",
             "src_factor": "one",

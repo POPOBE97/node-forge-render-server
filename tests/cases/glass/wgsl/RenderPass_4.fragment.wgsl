@@ -33,6 +33,14 @@ var<uniform> params: Params;
  };
 
 
+struct GraphInputs {
+    // Node: Vector3Input_67
+    node_Vector3Input_67_698d8c66: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
+
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
@@ -266,15 +274,16 @@ fn glass_luminance_curve(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4f
     let alpha = max(color.a, 0.0001);
     let scale = 1.0 / alpha;
     let scaled_rgb = scale * color.rgb;
-    var luminance = dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721));
-    // luminance = clamp(luminance, 0.0, 1.0);
+    let luminance = clamp(dot(scaled_rgb, vec3f(0.2125, 0.7153, 0.0721)), 0.0, 1.0);
 
     var adj = luminance * factor_adjust.x + factor_adjust.y;
     adj = adj * luminance + factor_adjust.z;
     adj = adj * luminance + factor_adjust.w;
-    // adj = clamp(adj, 0.0, 1.0);
 
-    let mixed = mix(scaled_rgb, vec3f(adj), mix_factor);
+    let ray_scale = select(0.0, adj / luminance, luminance > 0.0001);
+    let mapped_rgb = scaled_rgb * ray_scale;
+    let mixed = mix(scaled_rgb, mapped_rgb, mix_factor);
+
     return vec4f(mixed * alpha, color.a);
 }
 
@@ -485,10 +494,7 @@ fn glass_texture_map(
     tex: texture_2d<f32>,
     samp: sampler,
     sample_uv: vec2f,
-    is_bg: bool,
     add_foreground: bool,
-    blend_darker: f32,
-    blend_darker_range: vec2f,
     reflect_lighten_opacity: f32,
     reflect_lighten_blend_mode: i32,
     fg_tex: texture_2d<f32>,
@@ -496,13 +502,6 @@ fn glass_texture_map(
     frag_uv: vec2f,
 ) -> vec4f {
     var col = textureSample(tex, samp, sample_uv);
-
-    if (is_bg) {
-        let lum = glass_luma(col.rgb);
-        let t = mix(0.0, blend_darker, smoothstep(blend_darker_range.x, blend_darker_range.y, lum));
-        let darken_tint = 0.1 * (vec3f(1.0) - vec3f(0.2126, 0.7152, 0.0722));
-        col = vec4f(mix(col.rgb, darken_tint, t), col.a);
-    }
 
     if (add_foreground) {
         let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
@@ -526,6 +525,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let pos_from_center = local_px - half_size_px;
      let geo_origin_px = screen_px - local_px;
      let screen_uv = glass_sample_screen_uv(screen_px, params.target_size);
+
+     // --- Shape SDF ---
      let edge = f32(30.0);
      let edge_pow = f32(2.0);
      let radius_px = f32(baked_data_parse[(in.instance_index) * 5u + 1u].x);
@@ -541,32 +542,46 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
      var final_alpha = smoothstep(0.0, 10.0, -edge_sdf);
-     let uv_display_px = (local_px - half_size_px) * f32(0.699999988) + half_size_px;
+
+
+
+     // --- Refraction ---
+     let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
-     let refractive_index = f32(1.0);
+     let refractive_index = f32(1.450000048);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
      let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     let refraction = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, refract_uv, true, true, 1.0, vec2f(0.600000024, 1.0), 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+     let refraction = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+
+     // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     let reflection = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, reflect_uv, true, true, 1.0, vec2f(0.600000024, 1.0), 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
-     var glass_mat = mix(refraction, reflection, (1.0 - edge_normalized_sdf) * 2.0);
-     glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 1.200000048), glass_mat.a);
-     glass_mat = glass_process_color(glass_mat, vec4f(0.0, 0.499484301, 0.500571966, 0.0), 0.200000003, 1.399999976, -0.02);
-     var glass_color = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv, true, true, 1.0, vec2f(0.600000024, 1.0), 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
-     glass_color = glass_adjust_color(glass_color, 2.0, 0.0);
-     glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.200000003), glass_color.a);
+     let reflection = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+
+     // --- Mix refraction + reflection ---
+     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray), 0.0, 1.0) * 1.0);
+     glass_mat = glass_luminance_curve(glass_mat, vec4f(0.0, 0.70286721, 0.801292837, 0.900640905), 1.0);
+    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
+
+     // --- Background color tinting ---
+     var glass_color = glass_texture_map(pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv, false, 1.0, 0, pass_tex_GroupInstance_47_GuassianBlurPass_42, pass_samp_GroupInstance_47_GuassianBlurPass_42, screen_uv);
+     glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
+     glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);
+
+     // --- Bionic burn color ratio ---
      var color_ratio = 1.0;
-     let burn_term = pow(glass_color_luma, 0.100000001) - 0.5;
+     let burn_term = pow(glass_color_luma, 1.0) - 0.5;
      let burn_mix = 1.587 * burn_term * burn_term * burn_term + 0.5;
      color_ratio = mix(glass_color_luma, color_ratio, burn_mix);
      color_ratio = color_ratio * 0.8;
      var glass_color_ratio = mix(vec3f(1.0), glass_color.rgb, color_ratio);
-     glass_color_ratio = mix(glass_color_ratio, vec4f(0.0, 0.0, 0.0, 0.100000001).rgb, vec4f(0.0, 0.0, 0.0, 0.100000001).a);
+     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 1.0).rgb, vec4f(1.0, 1.0, 1.0, 1.0).a);
+
+     // --- Neutral vibrancy fix ---
      if (1.0 > 0.0) {
          let mean_glass_mat_color = (glass_mat.r + glass_mat.g + glass_mat.b) / 3.0;
          let mean_glass_color_ratio = (glass_color_ratio.r + glass_color_ratio.g + glass_color_ratio.b) / 3.0;
@@ -576,16 +591,23 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
          let grayness = distance(glass_mat.rgb, vec3f(mean_glass_mat_color));
          glass_color_ratio = mix(vec3f(mean_glass_color_ratio) * 0.5 + glass_color_ratio * 0.5, glass_color_ratio, smoothstep(neutral_threshold_min, neutral_threshold, grayness));
      }
+
+     // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
-     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.100000001 * color_ratio), glass_mat.a);
-     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * 0.050000001), glass_mat.a);
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003), 1.5, 0.280000001);
+     glass_mat = vec4f(mix(glass_mat.rgb, glass_color_ratio, 0.0 * color_ratio), glass_mat.a);
+     glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, in.uv.y), 2.0) * 0.0), glass_mat.a);
+
+     // --- Directional lighting ---
+     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003), 1.0, 0.280000001);
      let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.400000006, 0.600000024, -0.200000003) * vec3f(-1.0, -1.0, 1.0), 0.800000012, 0.280000001);
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
      glass_mat += lighting1 + lighting2;
+
+     // --- Final adjustments ---
      glass_mat = pow(glass_mat, vec4f(1.0));
-     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(0.0, 0.0, 0.0, 0.100000001).rgb, 0.0), glass_mat.a);
+     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(1.0, 1.0, 1.0, 1.0).rgb, 0.0), glass_mat.a);
      glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * 1.0);
+
      glass_out_GlassMaterial_40 = glass_mat;
  }
 

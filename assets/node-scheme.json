@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-05-14T11:38:32.147Z",
+  "generatedAt": "2026-05-26T10:13:04.888Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -1053,53 +1053,6 @@
           }
         },
         {
-          "id": "uBlendSaturation",
-          "name": "saturation",
-          "type": "float",
-          "default": 1,
-          "range": {
-            "min": 0,
-            "max": 2,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uBlendBrightness",
-          "name": "brightness",
-          "type": "float",
-          "default": 0,
-          "range": {
-            "min": -1,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uBlendDarker",
-          "name": "darker",
-          "type": "float",
-          "default": 0,
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
-          "id": "uBlendDarkerRange",
-          "name": "darkerRange",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 1
-          },
-          "range": {
-            "min": 0,
-            "max": 1,
-            "step": 0.01
-          }
-        },
-        {
           "id": "uInnerBottom",
           "name": "bottom",
           "type": "float",
@@ -1421,13 +1374,6 @@
           0
         ],
         "uBlendLuminanceAmount": 0,
-        "uBlendSaturation": 1,
-        "uBlendBrightness": 0,
-        "uBlendDarker": 0,
-        "uBlendDarkerRange": {
-          "x": 0,
-          "y": 1
-        },
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
@@ -1838,76 +1784,110 @@
       "description": "Drives an intelligent lighting fixture with 11 color zones and a time-like driver",
       "inputs": [
         {
+          "id": "width",
+          "name": "Width",
+          "type": "int",
+          "default": 60
+        },
+        {
+          "id": "height",
+          "name": "Height",
+          "type": "int",
+          "default": 37
+        },
+        {
           "id": "driver",
           "name": "Driver",
           "type": "float",
           "default": 0
         },
         {
+          "id": "power",
+          "name": "Power",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "lightness",
+          "name": "Lightness",
+          "type": "float",
+          "default": 0.75,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
           "id": "color0",
           "name": "Color 0",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#8086ff"
         },
         {
           "id": "color1",
           "name": "Color 1",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#ffd3b3"
         },
         {
           "id": "color2",
           "name": "Color 2",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#ff8635"
         },
         {
           "id": "color3",
           "name": "Color 3",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#847eff"
         },
         {
           "id": "color4",
           "name": "Color 4",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#1269f2"
         },
         {
           "id": "color5",
           "name": "Color 5",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#8086ff"
         },
         {
           "id": "color6",
           "name": "Color 6",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#ffd3b3"
         },
         {
           "id": "color7",
           "name": "Color 7",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#ff8635"
         },
         {
           "id": "color8",
           "name": "Color 8",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#ff8635"
         },
         {
           "id": "color9",
           "name": "Color 9",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#1269f2"
         },
         {
           "id": "color10",
           "name": "Color 10",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#847eff"
         }
       ],
       "outputs": [
@@ -2151,26 +2131,24 @@
       "type": "MathAdd",
       "label": "Add",
       "category": "Math",
-      "description": "Add two values",
+      "description": "Add two values; output type inferred from inputs",
       "inputs": [
         {
           "id": "a",
           "name": "A",
-          "type": "float",
-          "default": 0
+          "type": "any"
         },
         {
           "id": "b",
           "name": "B",
-          "type": "float",
-          "default": 0
+          "type": "any"
         }
       ],
       "outputs": [
         {
           "id": "result",
           "name": "Result",
-          "type": "float"
+          "type": "any"
         }
       ],
       "defaultParams": {}
@@ -2179,32 +2157,29 @@
       "type": "MathClamp",
       "label": "Clamp",
       "category": "Math",
-      "description": "Clamp value between min and max",
+      "description": "Clamp value between min and max; output type inferred from value",
       "inputs": [
         {
           "id": "value",
           "name": "Value",
-          "type": "float",
-          "default": 0.5
+          "type": "any"
         },
         {
           "id": "min",
           "name": "Min",
-          "type": "float",
-          "default": 0
+          "type": "any"
         },
         {
           "id": "max",
           "name": "Max",
-          "type": "float",
-          "default": 1
+          "type": "any"
         }
       ],
       "outputs": [
         {
           "id": "result",
           "name": "Result",
-          "type": "float"
+          "type": "any"
         }
       ],
       "defaultParams": {}
@@ -2245,26 +2220,24 @@
       "type": "MathPower",
       "label": "Power",
       "category": "Math",
-      "description": "Raise base to exponent",
+      "description": "Raise base to exponent; output type inferred from base",
       "inputs": [
         {
           "id": "base",
           "name": "Base",
-          "type": "float",
-          "default": 2
+          "type": "any"
         },
         {
           "id": "exponent",
           "name": "Exponent",
-          "type": "float",
-          "default": 2
+          "type": "any"
         }
       ],
       "outputs": [
         {
           "id": "result",
           "name": "Result",
-          "type": "float"
+          "type": "any"
         }
       ],
       "defaultParams": {}

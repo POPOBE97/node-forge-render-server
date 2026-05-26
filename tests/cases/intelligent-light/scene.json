@@ -1,65 +1,264 @@
 {
   "version": "2.0",
   "metadata": {
-    "name": "IntelligentLight Test",
-    "created": "2026-03-14T00:00:00.000Z",
-    "modified": "2026-03-14T00:00:00.000Z"
+    "name": "My Scene",
+    "created": "2026-05-15T11:36:02.105Z",
+    "modified": "2026-05-15T11:36:02.105Z"
   },
   "nodes": [
     {
-      "id": "Screen_1",
-      "type": "Screen",
-      "params": {
-        "width": 256,
-        "height": 256
-      }
-    },
-    {
-      "id": "comp",
-      "type": "Composite",
-      "params": {}
-    },
-    {
-      "id": "rt",
+      "id": "RenderTexture_1",
       "type": "RenderTexture",
+      "position": {
+        "x": 480,
+        "y": 680
+      },
+      "width": 160,
+      "label": "Render Texture",
       "params": {
-        "width": 256,
-        "height": 256,
-        "format": "rgba8unorm"
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba16float"
       }
     },
     {
-      "id": "ilight",
-      "type": "IntelligentLight",
+      "id": "Screen_3",
+      "type": "Screen",
+      "position": {
+        "x": 880,
+        "y": 480
+      },
+      "width": 160,
+      "label": "Screen",
       "params": {
-        "driver": 0.5,
-        "color0": "#ff0000",
-        "color1": "#00ff00",
-        "color2": "#0000ff",
-        "color3": "#ffff00",
-        "color4": "#ff00ff"
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "Composite_4",
+      "type": "Composite",
+      "position": {
+        "x": 680,
+        "y": 480
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "FloatInput_7",
+      "type": "FloatInput",
+      "position": {
+        "x": 20,
+        "y": 480
+      },
+      "width": 160,
+      "label": "Float Input",
+      "params": {
+        "value": 0
+      }
+    },
+    {
+      "id": "IntelligentLight_8",
+      "type": "IntelligentLight",
+      "position": {
+        "x": 280,
+        "y": 480
+      },
+      "width": 160,
+      "label": "Intelligent Light",
+      "params": {
+        "width": 37,
+        "height": 60,
+        "power": 0,
+        "lightness": 0.75,
+        "color0": "#8086ff",
+        "color1": "#ffd3b3",
+        "color2": "#ff8635",
+        "color3": "#847eff",
+        "color4": "#1269f2",
+        "color5": "#8086ff",
+        "color6": "#ffd3b3",
+        "color7": "#ff8635",
+        "color8": "#ff8635",
+        "color9": "#1269f2",
+        "color10": "#847eff"
       }
     }
   ],
   "connections": [
     {
-      "id": "c_screen",
-      "from": { "nodeId": "comp", "portId": "pass" },
-      "to": { "nodeId": "Screen_1", "portId": "pass" }
+      "id": "edge_1",
+      "from": {
+        "nodeId": "Composite_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_3",
+        "portId": "pass"
+      }
     },
     {
-      "id": "c_target",
-      "from": { "nodeId": "rt", "portId": "texture" },
-      "to": { "nodeId": "comp", "portId": "target" }
+      "id": "edge_3",
+      "from": {
+        "nodeId": "RenderTexture_1",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_4",
+        "portId": "target"
+      }
     },
     {
-      "id": "c_layer",
-      "from": { "nodeId": "ilight", "portId": "pass" },
-      "to": { "nodeId": "comp", "portId": "pass" }
+      "id": "edge_4",
+      "from": {
+        "nodeId": "IntelligentLight_8",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_4",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "FloatInput_7",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "IntelligentLight_8",
+        "portId": "driver"
+      }
     }
   ],
   "outputs": {
-    "composite": "comp"
+    "composite": "Composite_4"
   },
-  "assets": {}
+  "assets": {},
+  "groups": [],
+  "stateMachine": {
+    "id": "sm_mp6n8upf_5",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_mp6nhg2s_6",
+        "name": "Entry",
+        "position": {
+          "x": 0,
+          "y": -40
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_mp6nhg2t_7",
+        "name": "Any",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_mp6nhg2t_8",
+        "name": "Exit",
+        "position": {
+          "x": 0,
+          "y": 40
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      },
+      {
+        "id": "st_mp6nhknz_a",
+        "name": "Mutation 1",
+        "position": {
+          "x": 260,
+          "y": -40
+        },
+        "parameterOverrides": {},
+        "type": "mutationNode",
+        "mutationId": "mutation_mp6nhknz_9"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "tr_mp6nhse1_b",
+        "source": "st_mp6nhg2s_6",
+        "target": "st_mp6nhknz_a",
+        "delay": 0,
+        "duration": 0.3,
+        "easing": "linear"
+      }
+    ],
+    "mutations": [
+      {
+        "id": "mutation_mp6nhknz_9",
+        "name": "Mutation 1",
+        "inputs": [
+          {
+            "id": "FloatInput_7:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "FloatInput_7:value",
+            "name": "Float Input.value",
+            "type": "float"
+          }
+        ],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": [],
+        "passthroughBindings": [
+          {
+            "inputPortId": "localElapsedTime",
+            "outputPortId": "FloatInput_7:value"
+          }
+        ]
+      }
+    ],
+    "initialStateId": "st_mp6nhg2s_6"
+  }
 }

@@ -71,5 +71,7 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f(0.0, 0.0, 0.0, 1.0);
+    
+ return textureSampleLevel(src_tex, src_samp, in.uv, 0.0);
+ 
 }

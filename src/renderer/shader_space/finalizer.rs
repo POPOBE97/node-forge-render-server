@@ -56,6 +56,7 @@ impl ShaderSpaceFinalizer {
                     .graph_values
                     .as_ref()
                     .map(|values| crate::renderer::graph_uniforms::hash_bytes(values.as_slice())),
+                extension: resources.pass_extensions.get(&spec.pass_id).cloned(),
             })
             .collect();
         let pipeline_signature =

@@ -10,6 +10,7 @@ pub mod math_closure;
 pub mod math_nodes;
 pub mod remap_nodes;
 pub mod sdf_nodes;
+pub mod template_loader;
 pub mod texture_nodes;
 pub mod trigonometry_nodes;
 pub mod vector_nodes;

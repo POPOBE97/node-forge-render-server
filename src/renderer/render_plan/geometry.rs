@@ -1186,8 +1186,31 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 instance_mats = Some(mats);
             }
 
-            // CPU path keeps prior behavior: no runtime translate expression forwarding.
-            let (vtx_inline_stmts, vtx_wgsl_decls, graph_input_kinds, rect_dyn) =
+            // Hybrid: if translate is connected but not baked, compile a runtime expression.
+            let translate_not_baked = translate_conn.is_some()
+                && !translate_key
+                    .as_ref()
+                    .is_some_and(|k| baked_values.is_some_and(|b| b.contains_key(k)));
+
+            let (runtime_translate_expr, extra_inline, extra_decls, extra_graph_kinds, extra_uses_idx) =
+                if translate_not_baked {
+                    let mut ctx = MaterialCompileContext {
+                        baked_data_parse: material_ctx.and_then(|m| m.baked_data_parse.clone()),
+                        baked_data_parse_meta: material_ctx.and_then(|m| m.baked_data_parse_meta.clone()),
+                        ..Default::default()
+                    };
+                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                    let conn = translate_conn.unwrap();
+                    let expr = compile_transform_connection_vec3_expr(
+                        scene, nodes_by_id, conn, &mut ctx, &mut cache,
+                    )?;
+                    let decls = ctx.wgsl_decls();
+                    (Some(expr), ctx.inline_stmts, decls, ctx.graph_input_kinds, ctx.uses_instance_index)
+                } else {
+                    (None, Vec::new(), String::new(), std::collections::BTreeMap::new(), false)
+                };
+
+            let (mut vtx_inline_stmts, mut vtx_wgsl_decls, mut graph_input_kinds, rect_dyn) =
                 if upstream_rect_dyn.is_some() {
                     (
                         upstream_vtx_inline_stmts,
@@ -1203,6 +1226,11 @@ pub(crate) fn resolve_geometry_for_render_pass(
                         None,
                     )
                 };
+            vtx_inline_stmts.extend(extra_inline);
+            vtx_wgsl_decls = merge_vertex_wgsl_decls(vtx_wgsl_decls, extra_decls);
+            graph_input_kinds = merge_graph_input_kinds(graph_input_kinds, extra_graph_kinds);
+            let uses_instance_index = upstream_uses_instance_index || extra_uses_idx;
+
             Ok((
                 buf,
                 w,
@@ -1213,11 +1241,11 @@ pub(crate) fn resolve_geometry_for_render_pass(
                 // Replace upstream base matrix (per user semantics A).
                 m,
                 instance_mats,
-                None,
+                runtime_translate_expr,
                 vtx_inline_stmts,
                 vtx_wgsl_decls,
                 graph_input_kinds,
-                upstream_uses_instance_index,
+                uses_instance_index,
                 rect_dyn,
                 upstream_normals_bytes,
             ))

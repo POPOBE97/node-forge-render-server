@@ -394,6 +394,20 @@ pub fn coerce_for_binary(a: TypedExpr, b: TypedExpr) -> Result<(TypedExpr, Typed
         return Ok((aa, b, target_ty));
     }
 
+    // Vector/vector of different dimensions: promote smaller to larger.
+    if is_vector(a.ty) && is_vector(b.ty) {
+        let dim = |t: ValueType| match t {
+            ValueType::Vec2 => 2,
+            ValueType::Vec3 => 3,
+            ValueType::Vec4 => 4,
+            _ => 0,
+        };
+        let target_ty = if dim(a.ty) >= dim(b.ty) { a.ty } else { b.ty };
+        let aa = coerce_to_type(a, target_ty)?;
+        let bb = coerce_to_type(b, target_ty)?;
+        return Ok((aa, bb, target_ty));
+    }
+
     // Scalar/scalar: prefer f32.
     if is_scalar(a.ty) && is_scalar(b.ty) {
         let aa = coerce_to_type(a, ValueType::F32)?;

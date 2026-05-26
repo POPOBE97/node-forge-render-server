@@ -41,5 +41,19 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f(0.0, 0.0, 0.0, 1.0);
+    
+ let original = vec2f(textureDimensions(src_tex));
+ let xy = in.uv * original;
+ let k = array<f32, 8>(0.165759042, 0.175142512, 0.10085883, 0.042364761, 0.012976898, 0.002897957, 0, 0);
+ let o = array<f32, 8>(0.657669067, 2.449889898, 4.410473824, 6.372174263, 8.33541584, 10.300548553, 0, 0);
+ let tap_count: u32 = 6u;
+ var color = vec4f(0.0);
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
+     let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
+     let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
+     color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+     color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
+ }
+ return color;
+
 }
