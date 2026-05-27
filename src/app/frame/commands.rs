@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use rust_wgpu_fiber::{
     ResourceName,
     eframe::{egui, egui_wgpu},
 };
 
 use crate::{
-    app::{canvas, canvas::actions::CanvasAction, types::App, window_mode},
+    app::{canvas, canvas::actions::CanvasAction, matrix_render, types::App, window_mode},
     ui,
 };
 
@@ -14,6 +16,8 @@ pub enum AppCommand {
     PickReferenceImage,
     ClearReference,
     ToggleCanvasOnly,
+    SetTestMode(crate::app::TestMode),
+    ToggleMatrixPool(String),
 }
 
 pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppCommand {
@@ -47,6 +51,40 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::SetClippingHighlightThreshold(threshold) => {
             AppCommand::Canvas(CanvasAction::SetClippingHighlightThreshold(threshold))
         }
+        ui::debug_sidebar::SidebarAction::SetTestMode(mode) => AppCommand::SetTestMode(mode),
+        ui::debug_sidebar::SidebarAction::ToggleMatrixPool(pool_id) => {
+            AppCommand::ToggleMatrixPool(pool_id)
+        }
+    }
+}
+
+fn rebuild_matrix_if_needed(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+) {
+    let Some(ref scene) = app.runtime.uniform_scene else {
+        return;
+    };
+    if app.shell.matrix_config.selected_pool_ids.is_empty() {
+        return;
+    }
+    let params = matrix_render::MatrixBuildParams {
+        scene,
+        config: &app.shell.matrix_config,
+        resource_pools: &app.shell.resource_pools,
+        device: Arc::new(render_state.device.clone()),
+        queue: Arc::new(render_state.queue.clone()),
+        adapter: Some(&render_state.adapter),
+        asset_store: &app.core.asset_store,
+    };
+    if let Err(e) = matrix_render::rebuild_matrix(
+        params,
+        render_state,
+        renderer,
+        &mut app.shell.matrix_state,
+    ) {
+        eprintln!("[matrix] rebuild failed: {e:#}");
     }
 }
 
@@ -72,6 +110,25 @@ pub fn dispatch(
         }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);
+        }
+        AppCommand::SetTestMode(mode) => {
+            app.shell.test_mode = mode;
+            if mode == crate::app::TestMode::Matrix {
+                rebuild_matrix_if_needed(app, render_state, renderer);
+            } else {
+                app.shell.matrix_state.clear(renderer);
+            }
+        }
+        AppCommand::ToggleMatrixPool(pool_id) => {
+            let selected = &mut app.shell.matrix_config.selected_pool_ids;
+            if let Some(pos) = selected.iter().position(|id| *id == pool_id) {
+                selected.remove(pos);
+            } else if selected.len() < 2 {
+                selected.push(pool_id);
+            }
+            if app.shell.test_mode == crate::app::TestMode::Matrix {
+                rebuild_matrix_if_needed(app, render_state, renderer);
+            }
         }
     }
 

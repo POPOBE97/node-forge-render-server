@@ -303,6 +303,25 @@ pub(super) struct AppRuntime {
     pub time_last_raw_secs: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TestMode {
+    #[default]
+    Single,
+    Matrix,
+}
+
+#[derive(Clone, Debug)]
+pub struct ResourcePoolInfo {
+    pub node_id: String,
+    pub label: String,
+    pub item_count: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct MatrixConfig {
+    pub selected_pool_ids: Vec<String>,
+}
+
 pub(super) struct AppShell {
     pub window_mode: UiWindowMode,
     pub prev_window_mode: UiWindowMode,
@@ -313,6 +332,10 @@ pub(super) struct AppShell {
     pub resource_snapshot: Option<ResourceSnapshot>,
     pub resource_tree_nodes: Vec<FileTreeNode>,
     pub resource_snapshot_generation: u64,
+    pub test_mode: TestMode,
+    pub matrix_config: MatrixConfig,
+    pub resource_pools: Vec<ResourcePoolInfo>,
+    pub matrix_state: super::matrix_render::MatrixRenderState,
 }
 
 #[derive(Default)]
@@ -337,6 +360,44 @@ pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
         .nodes
         .iter()
         .any(|node| matches!(node.node_type.as_str(), "TimeInput" | "Time"))
+}
+
+pub(super) fn extract_resource_pools(scene: &crate::dsl::SceneDSL) -> Vec<ResourcePoolInfo> {
+    let mut pools = Vec::new();
+    let mut seen_origins = std::collections::HashSet::new();
+
+    for node in &scene.nodes {
+        if node.node_type != "ResourcePool" {
+            continue;
+        }
+        let origin_id = node
+            .params
+            .get("__dedup_original_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&node.id);
+        if !seen_origins.insert(origin_id.to_owned()) {
+            continue;
+        }
+
+        let item_count = node
+            .inputs
+            .iter()
+            .filter(|p| p.id != "selectedIndex")
+            .count();
+        let label = node
+            .params
+            .get("label")
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| node.id.clone());
+        pools.push(ResourcePoolInfo {
+            node_id: node.id.clone(),
+            label,
+            item_count,
+        });
+    }
+
+    pools
 }
 
 pub(super) fn scene_reference_image_path(scene: &crate::dsl::SceneDSL) -> Option<String> {
@@ -490,6 +551,10 @@ impl App {
                 resource_snapshot: None,
                 resource_tree_nodes: Vec::new(),
                 resource_snapshot_generation: u64::MAX,
+                test_mode: TestMode::default(),
+                matrix_config: MatrixConfig::default(),
+                resource_pools: Vec::new(),
+                matrix_state: super::matrix_render::MatrixRenderState::default(),
             },
             interaction_bridge: InteractionBridgeState::default(),
             canvas: CanvasState::new(
@@ -636,5 +701,81 @@ mod tests {
             .params
             .insert("alphaMode".to_string(), serde_json::json!("unknown"));
         assert_eq!(super::scene_reference_image_alpha_mode(&scene), None);
+    }
+
+    #[test]
+    fn extract_resource_pools_deduplicates_by_dedup_original_id() {
+        use crate::dsl::NodePort;
+
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                Node {
+                    id: "GroupInstance_70/ResourcePool_69".to_string(),
+                    node_type: "ResourcePool".to_string(),
+                    params: HashMap::from([
+                        (
+                            "__dedup_original_id".to_string(),
+                            serde_json::json!("ResourcePool_69"),
+                        ),
+                        ("label".to_string(), serde_json::json!("Resource Pool")),
+                    ]),
+                    inputs: vec![
+                        NodePort {
+                            id: "dynamic_1".to_string(),
+                            name: Some("input1".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                        NodePort {
+                            id: "dynamic_2".to_string(),
+                            name: Some("input2".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                    ],
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                },
+                Node {
+                    id: "GroupInstance_71/ResourcePool_69".to_string(),
+                    node_type: "ResourcePool".to_string(),
+                    params: HashMap::from([
+                        (
+                            "__dedup_original_id".to_string(),
+                            serde_json::json!("ResourcePool_69"),
+                        ),
+                        ("label".to_string(), serde_json::json!("Resource Pool")),
+                    ]),
+                    inputs: vec![
+                        NodePort {
+                            id: "dynamic_1".to_string(),
+                            name: Some("input1".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                        NodePort {
+                            id: "dynamic_2".to_string(),
+                            name: Some("input2".to_string()),
+                            port_type: Some("color".to_string()),
+                        },
+                    ],
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                },
+            ],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+            state_machine: None,
+        };
+
+        let pools = super::extract_resource_pools(&scene);
+        assert_eq!(pools.len(), 1, "two instances of the same group ResourcePool should count as one");
+        assert_eq!(pools[0].item_count, 2);
+        assert_eq!(pools[0].label, "Resource Pool");
     }
 }

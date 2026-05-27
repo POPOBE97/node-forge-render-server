@@ -2,7 +2,10 @@ use rust_wgpu_fiber::eframe::egui;
 use std::cell::RefCell;
 use std::hash::Hash;
 
-use crate::app::{AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode};
+use crate::app::{
+    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode, ResourcePoolInfo,
+    TestMode,
+};
 
 use super::button::{
     self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
@@ -360,6 +363,10 @@ pub enum SidebarAction {
     SetClippingShadowThreshold(f32),
     /// Set clipping highlight threshold.
     SetClippingHighlightThreshold(f32),
+    /// Switch test mode (Single / Matrix).
+    SetTestMode(TestMode),
+    /// Toggle a resource pool's selection in matrix mode.
+    ToggleMatrixPool(String),
 }
 
 /// Hover state from the timeline panel.
@@ -392,6 +399,12 @@ pub struct AnalysisSidebarState {
     pub clip_enabled: bool,
 }
 
+pub struct TestModeSidebarState<'a> {
+    pub mode: TestMode,
+    pub resource_pools: &'a [ResourcePoolInfo],
+    pub selected_pool_ids: &'a [String],
+}
+
 pub fn show_in_rect(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
@@ -404,6 +417,7 @@ pub fn show_in_rect(
     vectorscope_texture_id: Option<egui::TextureId>,
     analysis: AnalysisSidebarState,
     reference: Option<&ReferenceSidebarState>,
+    test_mode_state: TestModeSidebarState<'_>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
 ) -> SidebarResult {
@@ -470,6 +484,14 @@ pub fn show_in_rect(
                     })
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_test_mode_section(
+                                    ui,
+                                    &test_mode_state,
+                                    &mut sidebar_action,
+                                );
+                            });
+                            section_divider(ui);
                             with_sidebar_content_padding(ui, |ui| {
                                 show_ref_section(ui, reference, &mut sidebar_action);
                             });
@@ -825,6 +847,71 @@ fn show_infographics_section(
                 });
             });
         } // end analysis texture block
+    });
+}
+
+fn test_mode_options() -> [RadioButtonOption<'static, TestMode>; 2] {
+    [
+        RadioButtonOption {
+            value: TestMode::Single,
+            label: "Single",
+        },
+        RadioButtonOption {
+            value: TestMode::Matrix,
+            label: "Matrix",
+        },
+    ]
+}
+
+fn show_test_mode_section(
+    ui: &mut egui::Ui,
+    state: &TestModeSidebarState<'_>,
+    sidebar_action: &mut Option<SidebarAction>,
+) {
+    two_column_section::section(ui, "Test Mode", |ui| {
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 4, |ui| {
+                sidebar_group_cell(ui, "Mode", |ui| {
+                    let mut mode = state.mode;
+                    if radio_button_group::radio_button_group(
+                        ui,
+                        "ui.debug_sidebar.test_mode.mode",
+                        &mut mode,
+                        &test_mode_options(),
+                    ) && mode != state.mode
+                    {
+                        *sidebar_action = Some(SidebarAction::SetTestMode(mode));
+                    }
+                });
+            });
+        });
+
+        if state.mode == TestMode::Matrix && !state.resource_pools.is_empty() {
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            sidebar_grid_label(ui, "Pools");
+            ui.add_space(SIDEBAR_GRID_LABEL_GAP);
+
+            let num_selected = state.selected_pool_ids.len();
+            for pool in state.resource_pools {
+                let is_selected = state.selected_pool_ids.contains(&pool.node_id);
+                let can_toggle = is_selected || num_selected < 2;
+
+                ui.add_enabled_ui(can_toggle, |ui| {
+                    let mut checked = is_selected;
+                    let label = format!("{} ({} items)", pool.label, pool.item_count);
+                    if ui.checkbox(&mut checked, label).changed() {
+                        *sidebar_action =
+                            Some(SidebarAction::ToggleMatrixPool(pool.node_id.clone()));
+                    }
+                });
+            }
+        } else if state.mode == TestMode::Matrix && state.resource_pools.is_empty() {
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            ui.label(design_tokens::rich_text(
+                "No resource pools in scene",
+                TextRole::InactiveItemTitle,
+            ));
+        }
     });
 }
 

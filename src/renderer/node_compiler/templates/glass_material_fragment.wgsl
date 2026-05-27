@@ -510,7 +510,10 @@ fn glass_texture_map(
      let light_normalized_sdf = -light_box_sdf / max(light_width, 1e-6);
      let normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let light_normal = glass_calculate_normal(pos_from_center, half_size_px, radius_px, light_width, light_edge_pow);
-     var final_alpha = smoothstep(0.0, 10.0, -edge_sdf);
+
+     // --- Anti-aliasing ---
+     let aa_depth = edge * glass_curve(clamp(2.5 / max(edge, 0.0001), 0.0, 1.0), 1.0);
+     var final_alpha = smoothstep(0.0, aa_depth, -edge_sdf);
 
 {{#if use_sdf_tex}}
      if ({{uUseSdfTex}}) {
@@ -580,9 +583,15 @@ fn glass_texture_map(
      glass_mat += lighting1 + lighting2;
 
      // --- Final adjustments ---
-     glass_mat = pow(glass_mat, vec4f({{uInnerColorPow}}));
+     glass_mat = vec4f(pow(glass_mat.rgb, vec3f({{uInnerColorPow}})), glass_mat.a);
+     
+     // --- Apply unshade factor ---
      glass_mat = vec4f(mix(glass_mat.rgb, {{uInnerGlassColor}}.rgb, {{uBionicUnShade}}), glass_mat.a);
+
+     // --- Apply overall alpha ---
      glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * {{uAlpha}});
 
+     // --- Premultiply alpha ---
+     glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);
      {{out_var}} = glass_mat;
  }

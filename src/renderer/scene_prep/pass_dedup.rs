@@ -419,10 +419,11 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
         seen_conns.insert(key)
     });
 
-    // 11) Clean up __dedup_* metadata from all remaining nodes.
+    // 11) Clean up internal dedup metadata from all remaining nodes.
+    // Keep __dedup_original_id — downstream consumers (extract_resource_pools,
+    // matrix_render) use it to deduplicate nodes from the same group definition.
     for node in &mut scene.nodes {
         node.params.remove("__dedup_group_id");
-        node.params.remove("__dedup_original_id");
     }
 
     DedupReport {

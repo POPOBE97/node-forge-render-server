@@ -68,6 +68,35 @@ pub(super) fn run(
         if apply_result.reset_viewport {
             app.canvas.viewport.pending_view_reset = true;
         }
+
+        if let Some(ref scene) = app.runtime.uniform_scene {
+            app.shell.resource_pools =
+                crate::app::types::extract_resource_pools(scene);
+        }
+
+        if app.shell.test_mode == crate::app::types::TestMode::Matrix
+            && !app.shell.matrix_config.selected_pool_ids.is_empty()
+        {
+            if let Some(ref scene) = app.runtime.uniform_scene {
+                let params = crate::app::matrix_render::MatrixBuildParams {
+                    scene,
+                    config: &app.shell.matrix_config,
+                    resource_pools: &app.shell.resource_pools,
+                    device: std::sync::Arc::new(render_state.device.clone()),
+                    queue: std::sync::Arc::new(render_state.queue.clone()),
+                    adapter: Some(&render_state.adapter),
+                    asset_store: &app.core.asset_store,
+                };
+                if let Err(e) = crate::app::matrix_render::rebuild_matrix(
+                    params,
+                    render_state,
+                    renderer,
+                    &mut app.shell.matrix_state,
+                ) {
+                    eprintln!("[matrix] rebuild on scene update failed: {e:#}");
+                }
+            }
+        }
     }
 
     canvas::sync_reference_from_scene(app, ctx, render_state);

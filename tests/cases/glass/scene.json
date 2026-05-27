@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-26T15:03:19.162Z",
-    "modified": "2026-05-26T15:03:19.162Z"
+    "created": "2026-05-26T19:22:16.896Z",
+    "modified": "2026-05-26T19:22:16.896Z"
   },
   "nodes": [
     {
@@ -66,13 +66,13 @@
       "label": "Render Pass",
       "params": {
         "name": "Render Pass",
-        "blend_preset": "alpha",
+        "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "src-alpha",
+        "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 4,
+        "msaaSampleCount": 1,
         "culling": "none",
         "depthTest": false,
         "camera": [
@@ -406,10 +406,10 @@
         "uDirectionalLightDirection": {
           "x": -0.4,
           "y": 0.6,
-          "z": -0.2
+          "z": -0.25
         },
-        "uDirectionalLightIntensity": 1,
-        "uDirectionalLightOppositeIntensity": 0.8,
+        "uDirectionalLightIntensity": 0.8,
+        "uDirectionalLightOppositeIntensity": 0.6,
         "uDirectionalLightAngleRange": 0.28,
         "uRefractBlurScale": 1,
         "uRefractIorIOR": 1.45,
@@ -449,425 +449,6 @@
         "assetId": "762325f2042e",
         "encoderSpace": "srgb",
         "alphaMode": "premultiplied"
-      }
-    },
-    {
-      "id": "GroupInstance_47",
-      "type": "GroupInstance",
-      "position": {
-        "x": 20,
-        "y": -620
-      },
-      "width": 160,
-      "label": "Group",
-      "params": {
-        "groupId": "Background Pass"
-      },
-      "inputs": [
-        {
-          "id": "in_0",
-          "name": "BackgroundImage",
-          "type": "color"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "out_0",
-          "name": "Pass",
-          "type": "pass"
-        }
-      ],
-      "inputBindings": []
-    },
-    {
-      "id": "ImageTexture_48",
-      "type": "ImageTexture",
-      "position": {
-        "x": -680,
-        "y": -800
-      },
-      "width": 192,
-      "label": "Image Texture",
-      "params": {
-        "assetId": "61fea0e0acb1",
-        "interpolation": "linear",
-        "extension": "repeat",
-        "addressModeU": "repeat",
-        "addressModeV": "repeat",
-        "magFilter": "linear",
-        "minFilter": "linear",
-        "mipmapFilter": "linear",
-        "encoderSpace": "srgb",
-        "alphaMode": "straight",
-        "_uiCollapsed": true
-      }
-    },
-    {
-      "id": "ColorMix_50",
-      "type": "ColorMix",
-      "position": {
-        "x": -240,
-        "y": -800
-      },
-      "width": 160,
-      "label": "Blend Color",
-      "params": {
-        "mode": "normal",
-        "color1": [
-          0,
-          0,
-          0,
-          0.6
-        ],
-        "color0": [
-          1,
-          0,
-          0,
-          1
-        ]
-      }
-    },
-    {
-      "id": "FragCoord_52",
-      "type": "FragCoord",
-      "position": {
-        "x": -1060,
-        "y": -800
-      },
-      "width": 160,
-      "label": "FragCoord",
-      "params": {}
-    },
-    {
-      "id": "Vector2Input_53",
-      "type": "Vector2Input",
-      "position": {
-        "x": -1060,
-        "y": -740
-      },
-      "width": 160,
-      "label": "Vector2 Input",
-      "params": {
-        "x": 1080,
-        "y": 2345
-      }
-    },
-    {
-      "id": "MathClosure_54",
-      "type": "MathClosure",
-      "position": {
-        "x": -880,
-        "y": -800
-      },
-      "width": 178,
-      "label": "Math Closure",
-      "params": {
-        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size - p;"
-      },
-      "inputs": [
-        {
-          "id": "dynamic_1778146018169_1",
-          "name": "xy",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1778146019085_2",
-          "name": "size",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1778146113144_3",
-          "name": "s",
-          "type": "float"
-        },
-        {
-          "id": "dynamic_1778297615811_4",
-          "name": "p",
-          "type": "vector2"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "vector2"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1778146018169_1",
-          "label": "xy",
-          "variableName": "xy",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "FragCoord_52",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "dynamic_1778146019085_2",
-          "label": "size",
-          "variableName": "size",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "Vector2Input_53",
-            "outputPortId": "vector",
-            "outputLabel": "Vector"
-          }
-        },
-        {
-          "portId": "dynamic_1778146113144_3",
-          "label": "s",
-          "variableName": "s",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_55",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_1778297615811_4",
-          "label": "p",
-          "variableName": "p",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "Vector2Input_65",
-            "outputPortId": "vector",
-            "outputLabel": "Vector"
-          }
-        }
-      ]
-    },
-    {
-      "id": "FloatInput_55",
-      "type": "FloatInput",
-      "position": {
-        "x": -1060,
-        "y": -640
-      },
-      "width": 160,
-      "label": "Float Input",
-      "params": {
-        "value": 0.8
-      }
-    },
-    {
-      "id": "ColorMix_56",
-      "type": "ColorMix",
-      "position": {
-        "x": -280,
-        "y": -1260
-      },
-      "width": 160,
-      "label": "Blend Color",
-      "params": {
-        "mode": "normal",
-        "color1": [
-          0,
-          0,
-          0,
-          0.1
-        ],
-        "color0": [
-          1,
-          1,
-          1,
-          1
-        ]
-      }
-    },
-    {
-      "id": "ImageTexture_57",
-      "type": "ImageTexture",
-      "position": {
-        "x": -680,
-        "y": -1060
-      },
-      "width": 192,
-      "label": "Image Texture",
-      "params": {
-        "assetId": "f2170557f733",
-        "interpolation": "linear",
-        "extension": "repeat",
-        "addressModeU": "repeat",
-        "addressModeV": "repeat",
-        "magFilter": "linear",
-        "minFilter": "linear",
-        "mipmapFilter": "linear",
-        "encoderSpace": "srgb",
-        "alphaMode": "straight",
-        "_uiCollapsed": true
-      }
-    },
-    {
-      "id": "FragCoord_58",
-      "type": "FragCoord",
-      "position": {
-        "x": -1060,
-        "y": -1060
-      },
-      "width": 160,
-      "label": "FragCoord",
-      "params": {}
-    },
-    {
-      "id": "Vector2Input_59",
-      "type": "Vector2Input",
-      "position": {
-        "x": -1060,
-        "y": -1000
-      },
-      "width": 160,
-      "label": "Vector2 Input",
-      "params": {
-        "x": 1080,
-        "y": 2345
-      }
-    },
-    {
-      "id": "MathClosure_60",
-      "type": "MathClosure",
-      "position": {
-        "x": -880,
-        "y": -1060
-      },
-      "width": 178,
-      "label": "Math Closure",
-      "params": {
-        "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size;",
-        "_uiCollapsed": false
-      },
-      "inputs": [
-        {
-          "id": "dynamic_1778146018169_1",
-          "name": "xy",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1778146019085_2",
-          "name": "size",
-          "type": "vector2"
-        },
-        {
-          "id": "dynamic_1778146113144_3",
-          "name": "s",
-          "type": "float"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "output",
-          "name": "Output",
-          "type": "vector2"
-        }
-      ],
-      "inputBindings": [
-        {
-          "portId": "dynamic_1778146018169_1",
-          "label": "xy",
-          "variableName": "xy",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "FragCoord_52",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
-        },
-        {
-          "portId": "dynamic_1778146019085_2",
-          "label": "size",
-          "variableName": "size",
-          "type": "vector2",
-          "sourceBinding": {
-            "nodeId": "Vector2Input_53",
-            "outputPortId": "vector",
-            "outputLabel": "Vector"
-          }
-        },
-        {
-          "portId": "dynamic_1778146113144_3",
-          "label": "s",
-          "variableName": "s",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_55",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        }
-      ]
-    },
-    {
-      "id": "FloatInput_61",
-      "type": "FloatInput",
-      "position": {
-        "x": -1060,
-        "y": -900
-      },
-      "width": 160,
-      "label": "Float Input",
-      "params": {
-        "value": 0.7
-      }
-    },
-    {
-      "id": "ColorInput_62",
-      "type": "ColorInput",
-      "position": {
-        "x": -180,
-        "y": -160
-      },
-      "width": 160,
-      "label": "Color Input",
-      "params": {
-        "value": [
-          1,
-          1,
-          1,
-          0
-        ],
-        "_uiCollapsedFields": []
-      }
-    },
-    {
-      "id": "ColorMix_64",
-      "type": "ColorMix",
-      "position": {
-        "x": -460,
-        "y": -1260
-      },
-      "width": 160,
-      "label": "Blend Color",
-      "params": {
-        "mode": "normal",
-        "color1": [
-          0,
-          0,
-          0,
-          0.606
-        ],
-        "color0": [
-          1,
-          1,
-          1,
-          1
-        ]
-      }
-    },
-    {
-      "id": "Vector2Input_65",
-      "type": "Vector2Input",
-      "position": {
-        "x": -1280,
-        "y": -740
-      },
-      "width": 200,
-      "label": "Offset",
-      "params": {
-        "x": 0,
-        "y": 0
       }
     },
     {
@@ -927,58 +508,44 @@
       }
     },
     {
-      "id": "ResourcePool_69",
-      "type": "ResourcePool",
+      "id": "GroupInstance_70",
+      "type": "GroupInstance",
       "position": {
-        "x": -460,
-        "y": -1060
+        "x": 360,
+        "y": -520
       },
       "width": 160,
-      "label": "Resource Pool",
+      "label": "Group 2",
       "params": {
-        "selectedIndex": 0
+        "groupId": "BackgroundPass"
       },
-      "inputs": [
-        {
-          "id": "dynamic_1779794651875_1",
-          "name": "input1",
-          "type": "color"
-        },
-        {
-          "id": "dynamic_1779794654344_2",
-          "name": "input2",
-          "type": "color"
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
-          "type": "color"
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
         }
-      ],
-      "inputBindings": [
+      ]
+    },
+    {
+      "id": "GroupInstance_71",
+      "type": "GroupInstance",
+      "position": {
+        "x": -100,
+        "y": -200
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "BackgroundPass"
+      },
+      "inputs": [],
+      "outputs": [
         {
-          "portId": "dynamic_1779794651875_1",
-          "label": "input1",
-          "variableName": "input1",
-          "type": "color",
-          "sourceBinding": {
-            "nodeId": "ImageTexture_57",
-            "outputPortId": "color",
-            "outputLabel": "Color"
-          }
-        },
-        {
-          "portId": "dynamic_1779794654344_2",
-          "label": "input2",
-          "variableName": "input2",
-          "type": "color",
-          "sourceBinding": {
-            "nodeId": "ImageTexture_48",
-            "outputPortId": "color",
-            "outputLabel": "Color"
-          }
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
         }
       ]
     }
@@ -1128,116 +695,6 @@
       }
     },
     {
-      "id": "edge_103",
-      "from": {
-        "nodeId": "FragCoord_52",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "MathClosure_54",
-        "portId": "dynamic_1778146018169_1"
-      }
-    },
-    {
-      "id": "edge_104",
-      "from": {
-        "nodeId": "Vector2Input_53",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "MathClosure_54",
-        "portId": "dynamic_1778146019085_2"
-      }
-    },
-    {
-      "id": "edge_105",
-      "from": {
-        "nodeId": "MathClosure_54",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "ImageTexture_48",
-        "portId": "uv"
-      }
-    },
-    {
-      "id": "edge_106",
-      "from": {
-        "nodeId": "FloatInput_55",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_54",
-        "portId": "dynamic_1778146113144_3"
-      }
-    },
-    {
-      "id": "edge_110",
-      "from": {
-        "nodeId": "FragCoord_58",
-        "portId": "xy"
-      },
-      "to": {
-        "nodeId": "MathClosure_60",
-        "portId": "dynamic_1778146018169_1"
-      }
-    },
-    {
-      "id": "edge_111",
-      "from": {
-        "nodeId": "Vector2Input_59",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "MathClosure_60",
-        "portId": "dynamic_1778146019085_2"
-      }
-    },
-    {
-      "id": "edge_112",
-      "from": {
-        "nodeId": "FloatInput_61",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_60",
-        "portId": "dynamic_1778146113144_3"
-      }
-    },
-    {
-      "id": "edge_113",
-      "from": {
-        "nodeId": "MathClosure_60",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "ImageTexture_57",
-        "portId": "uv"
-      }
-    },
-    {
-      "id": "edge_116",
-      "from": {
-        "nodeId": "ColorMix_64",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "ColorMix_56",
-        "portId": "color0"
-      }
-    },
-    {
-      "id": "edge_117",
-      "from": {
-        "nodeId": "Vector2Input_65",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "MathClosure_54",
-        "portId": "dynamic_1778297615811_4"
-      }
-    },
-    {
       "id": "edge_120",
       "from": {
         "nodeId": "DataParse_21",
@@ -1271,28 +728,6 @@
       }
     },
     {
-      "id": "edge_124",
-      "from": {
-        "nodeId": "GroupInstance_47",
-        "portId": "out_0"
-      },
-      "to": {
-        "nodeId": "GlassMaterial_40",
-        "portId": "uBgTex"
-      }
-    },
-    {
-      "id": "edge_127",
-      "from": {
-        "nodeId": "ColorMix_50",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "GroupInstance_47",
-        "portId": "in_0"
-      }
-    },
-    {
       "id": "edge_128",
       "from": {
         "nodeId": "RenderPass_4",
@@ -1301,17 +736,6 @@
       "to": {
         "nodeId": "Composite_7",
         "portId": "dynamic_1779709935668_1"
-      }
-    },
-    {
-      "id": "edge_129",
-      "from": {
-        "nodeId": "GroupInstance_47",
-        "portId": "out_0"
-      },
-      "to": {
-        "nodeId": "Composite_7",
-        "portId": "pass"
       }
     },
     {
@@ -1326,36 +750,25 @@
       }
     },
     {
-      "id": "edge_131",
+      "id": "edge_138",
       "from": {
-        "nodeId": "ImageTexture_57",
-        "portId": "color"
+        "nodeId": "GroupInstance_70",
+        "portId": "out_0"
       },
       "to": {
-        "nodeId": "ResourcePool_69",
-        "portId": "dynamic_1779794651875_1"
+        "nodeId": "Composite_7",
+        "portId": "pass"
       }
     },
     {
-      "id": "edge_132",
+      "id": "edge_139",
       "from": {
-        "nodeId": "ImageTexture_48",
-        "portId": "color"
+        "nodeId": "GroupInstance_71",
+        "portId": "out_0"
       },
       "to": {
-        "nodeId": "ResourcePool_69",
-        "portId": "dynamic_1779794654344_2"
-      }
-    },
-    {
-      "id": "edge_133",
-      "from": {
-        "nodeId": "ResourcePool_69",
-        "portId": "output"
-      },
-      "to": {
-        "nodeId": "ColorMix_50",
-        "portId": "color0"
+        "nodeId": "GlassMaterial_40",
+        "portId": "uBgTex"
       }
     }
   ],
@@ -1457,6 +870,592 @@
           }
         }
       ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "id": "BackgroundPass",
+      "name": "Group 2",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ImageTexture_48",
+          "type": "ImageTexture",
+          "position": {
+            "x": 600,
+            "y": 260
+          },
+          "width": 192,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "61fea0e0acb1",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ColorMix_50",
+          "type": "ColorMix",
+          "position": {
+            "x": 1020,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Blend Color",
+          "params": {
+            "mode": "normal",
+            "color1": [
+              0,
+              0,
+              0,
+              0.6
+            ],
+            "color0": [
+              1,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "FragCoord_52",
+          "type": "FragCoord",
+          "position": {
+            "x": 220,
+            "y": 260
+          },
+          "width": 160,
+          "label": "FragCoord",
+          "params": {}
+        },
+        {
+          "id": "Vector2Input_53",
+          "type": "Vector2Input",
+          "position": {
+            "x": 220,
+            "y": 320
+          },
+          "width": 160,
+          "label": "Vector2 Input",
+          "params": {
+            "x": 1080,
+            "y": 2345
+          }
+        },
+        {
+          "id": "MathClosure_54",
+          "type": "MathClosure",
+          "position": {
+            "x": 400,
+            "y": 260
+          },
+          "width": 178,
+          "label": "Math Closure",
+          "params": {
+            "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size - p;"
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1778146018169_1",
+              "name": "xy",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1778146019085_2",
+              "name": "size",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1778146113144_3",
+              "name": "s",
+              "type": "float"
+            },
+            {
+              "id": "dynamic_1778297615811_4",
+              "name": "p",
+              "type": "vector2"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1778146018169_1",
+              "label": "xy",
+              "variableName": "xy",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "FragCoord_52",
+                "outputPortId": "xy",
+                "outputLabel": "XY"
+              }
+            },
+            {
+              "portId": "dynamic_1778146019085_2",
+              "label": "size",
+              "variableName": "size",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "Vector2Input_53",
+                "outputPortId": "vector",
+                "outputLabel": "Vector"
+              }
+            },
+            {
+              "portId": "dynamic_1778146113144_3",
+              "label": "s",
+              "variableName": "s",
+              "type": "float",
+              "sourceBinding": {
+                "nodeId": "FloatInput_55",
+                "outputPortId": "value",
+                "outputLabel": "Value"
+              }
+            },
+            {
+              "portId": "dynamic_1778297615811_4",
+              "label": "p",
+              "variableName": "p",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "Vector2Input_65",
+                "outputPortId": "vector",
+                "outputLabel": "Vector"
+              }
+            }
+          ]
+        },
+        {
+          "id": "FloatInput_55",
+          "type": "FloatInput",
+          "position": {
+            "x": 220,
+            "y": 420
+          },
+          "width": 160,
+          "label": "Float Input",
+          "params": {
+            "value": 0.8
+          }
+        },
+        {
+          "id": "ImageTexture_57",
+          "type": "ImageTexture",
+          "position": {
+            "x": 600,
+            "y": 0
+          },
+          "width": 192,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f2170557f733",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "FragCoord_58",
+          "type": "FragCoord",
+          "position": {
+            "x": 220,
+            "y": 0
+          },
+          "width": 160,
+          "label": "FragCoord",
+          "params": {}
+        },
+        {
+          "id": "Vector2Input_59",
+          "type": "Vector2Input",
+          "position": {
+            "x": 220,
+            "y": 60
+          },
+          "width": 160,
+          "label": "Vector2 Input",
+          "params": {
+            "x": 1080,
+            "y": 2345
+          }
+        },
+        {
+          "id": "MathClosure_60",
+          "type": "MathClosure",
+          "position": {
+            "x": 400,
+            "y": 0
+          },
+          "width": 178,
+          "label": "Math Closure",
+          "params": {
+            "source": "xy = vec2(xy.x, - xy.y);\nxy -= size / 2.0;\nxy.x *= s;\nxy += size / 2.0;\noutput = xy / size;",
+            "_uiCollapsed": false
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1778146018169_1",
+              "name": "xy",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1778146019085_2",
+              "name": "size",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1778146113144_3",
+              "name": "s",
+              "type": "float"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector2"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1778146018169_1",
+              "label": "xy",
+              "variableName": "xy",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "FragCoord_52",
+                "outputPortId": "xy",
+                "outputLabel": "XY"
+              }
+            },
+            {
+              "portId": "dynamic_1778146019085_2",
+              "label": "size",
+              "variableName": "size",
+              "type": "vector2",
+              "sourceBinding": {
+                "nodeId": "Vector2Input_53",
+                "outputPortId": "vector",
+                "outputLabel": "Vector"
+              }
+            },
+            {
+              "portId": "dynamic_1778146113144_3",
+              "label": "s",
+              "variableName": "s",
+              "type": "float",
+              "sourceBinding": {
+                "nodeId": "FloatInput_55",
+                "outputPortId": "value",
+                "outputLabel": "Value"
+              }
+            }
+          ]
+        },
+        {
+          "id": "FloatInput_61",
+          "type": "FloatInput",
+          "position": {
+            "x": 220,
+            "y": 160
+          },
+          "width": 160,
+          "label": "Float Input",
+          "params": {
+            "value": 0.7
+          }
+        },
+        {
+          "id": "Vector2Input_65",
+          "type": "Vector2Input",
+          "position": {
+            "x": 0,
+            "y": 320
+          },
+          "width": 200,
+          "label": "Offset",
+          "params": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "ResourcePool_69",
+          "type": "ResourcePool",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Resource Pool",
+          "params": {
+            "selectedIndex": 1
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1779794651875_1",
+              "name": "input1",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779794654344_2",
+              "name": "input2",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "color"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1779794651875_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_57",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779794654344_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_48",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "GuassianBlurPass_42",
+          "type": "GuassianBlurPass",
+          "position": {
+            "x": 1220,
+            "y": 0
+          },
+          "width": 200,
+          "label": "Gaussian Blur Pass",
+          "params": {
+            "mode": "standard",
+            "radius": 100,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "extend": false,
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_103",
+          "from": {
+            "nodeId": "FragCoord_52",
+            "portId": "xy"
+          },
+          "to": {
+            "nodeId": "MathClosure_54",
+            "portId": "dynamic_1778146018169_1"
+          }
+        },
+        {
+          "id": "edge_104",
+          "from": {
+            "nodeId": "Vector2Input_53",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "MathClosure_54",
+            "portId": "dynamic_1778146019085_2"
+          }
+        },
+        {
+          "id": "edge_105",
+          "from": {
+            "nodeId": "MathClosure_54",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ImageTexture_48",
+            "portId": "uv"
+          }
+        },
+        {
+          "id": "edge_106",
+          "from": {
+            "nodeId": "FloatInput_55",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "MathClosure_54",
+            "portId": "dynamic_1778146113144_3"
+          }
+        },
+        {
+          "id": "edge_110",
+          "from": {
+            "nodeId": "FragCoord_58",
+            "portId": "xy"
+          },
+          "to": {
+            "nodeId": "MathClosure_60",
+            "portId": "dynamic_1778146018169_1"
+          }
+        },
+        {
+          "id": "edge_111",
+          "from": {
+            "nodeId": "Vector2Input_59",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "MathClosure_60",
+            "portId": "dynamic_1778146019085_2"
+          }
+        },
+        {
+          "id": "edge_112",
+          "from": {
+            "nodeId": "FloatInput_61",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "MathClosure_60",
+            "portId": "dynamic_1778146113144_3"
+          }
+        },
+        {
+          "id": "edge_113",
+          "from": {
+            "nodeId": "MathClosure_60",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ImageTexture_57",
+            "portId": "uv"
+          }
+        },
+        {
+          "id": "edge_117",
+          "from": {
+            "nodeId": "Vector2Input_65",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "MathClosure_54",
+            "portId": "dynamic_1778297615811_4"
+          }
+        },
+        {
+          "id": "edge_131",
+          "from": {
+            "nodeId": "ImageTexture_57",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_69",
+            "portId": "dynamic_1779794651875_1"
+          }
+        },
+        {
+          "id": "edge_132",
+          "from": {
+            "nodeId": "ImageTexture_48",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_69",
+            "portId": "dynamic_1779794654344_2"
+          }
+        },
+        {
+          "id": "edge_133",
+          "from": {
+            "nodeId": "ResourcePool_69",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ColorMix_50",
+            "portId": "color0"
+          }
+        },
+        {
+          "id": "edge_134",
+          "from": {
+            "nodeId": "ColorMix_50",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "inputBindings": [],
       "outputBindings": [
         {
           "groupPortId": "out_0",

@@ -106,6 +106,11 @@ pub(super) fn run(
                     app.canvas.analysis.vectorscope_texture_id,
                     analysis_sidebar_state,
                     reference_sidebar_state.as_ref(),
+                    ui::debug_sidebar::TestModeSidebarState {
+                        mode: app.shell.test_mode,
+                        resource_pools: &app.shell.resource_pools,
+                        selected_pool_ids: &app.shell.matrix_config.selected_pool_ids,
+                    },
                     &app.shell.resource_tree_nodes,
                     &mut app.shell.file_tree_state,
                 );

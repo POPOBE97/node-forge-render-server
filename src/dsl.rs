@@ -216,11 +216,17 @@ pub fn materialize_scene_node_labels_from_raw_json(
     scene: &mut SceneDSL,
     raw_scene: &serde_json::Value,
 ) {
-    let Some(raw_nodes) = raw_scene.get("nodes").and_then(|v| v.as_array()) else {
-        return;
-    };
+    if let Some(raw_nodes) = raw_scene.get("nodes").and_then(|v| v.as_array()) {
+        materialize_node_labels_from_raw_nodes(&mut scene.nodes, raw_nodes);
+    }
 
-    materialize_node_labels_from_raw_nodes(&mut scene.nodes, raw_nodes);
+    if let Some(raw_groups) = raw_scene.get("groups").and_then(|v| v.as_array()) {
+        for (group, raw_group) in scene.groups.iter_mut().zip(raw_groups.iter()) {
+            if let Some(raw_group_nodes) = raw_group.get("nodes").and_then(|v| v.as_array()) {
+                materialize_node_labels_from_raw_nodes(&mut group.nodes, raw_group_nodes);
+            }
+        }
+    }
 }
 
 pub fn materialize_node_labels_from_raw_nodes(nodes: &mut [Node], raw_nodes: &[serde_json::Value]) {

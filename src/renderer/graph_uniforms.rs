@@ -200,6 +200,9 @@ fn canonicalized_params(
 ) -> BTreeMap<String, Value> {
     let mut out: BTreeMap<String, Value> = BTreeMap::new();
     for (k, v) in &node.params {
+        if k.starts_with("__dedup_") {
+            continue;
+        }
         if ignored_input_value_node_ids.contains(node.id.as_str())
             && is_value_driven_input_node(node.node_type.as_str())
             && matches!(k.as_str(), "value" | "x" | "y" | "z" | "w" | "v")

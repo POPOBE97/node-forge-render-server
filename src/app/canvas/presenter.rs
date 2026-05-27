@@ -696,12 +696,29 @@ pub fn show_canvas(
         );
     }
 
-    let using_preview = display::sync_preview_source(app, render_state, renderer);
-    let display_frame = display::build_display_frame(app, render_state, renderer, using_preview);
-    let image_size = egui::vec2(
-        display_frame.effective_resolution[0] as f32,
-        display_frame.effective_resolution[1] as f32,
-    );
+    // ── Determine image_size: matrix grid or single scene ────────────
+    let matrix_active = app.shell.test_mode == crate::app::types::TestMode::Matrix
+        && !app.shell.matrix_state.cells.is_empty();
+
+    let (using_preview, display_frame, image_size) = if matrix_active {
+        let ms = &app.shell.matrix_state;
+        let cell_w = ms.cell_resolution[0] as f32;
+        let cell_h = ms.cell_resolution[1] as f32;
+        let cols = ms.grid_cols.max(1) as f32;
+        let rows = ms.grid_rows.max(1) as f32;
+        let total_w = cell_w * cols + MATRIX_GRID_GAP_PX * (cols - 1.0);
+        let total_h = cell_h * rows + MATRIX_GRID_GAP_PX * (rows - 1.0);
+        (false, None, egui::vec2(total_w.max(1.0), total_h.max(1.0)))
+    } else {
+        let using_preview = display::sync_preview_source(app, render_state, renderer);
+        let df = display::build_display_frame(app, render_state, renderer, using_preview);
+        let sz = egui::vec2(
+            df.effective_resolution[0] as f32,
+            df.effective_resolution[1] as f32,
+        );
+        (using_preview, Some(df), sz)
+    };
+
     let canvas_rect = ui.available_rect_before_wrap();
     let mut viewport_frame = viewport::prepare_viewport(app, frame, now, canvas_rect, image_size);
     let response = ui.allocate_rect(canvas_rect, egui::Sense::click_and_drag());
@@ -895,65 +912,180 @@ pub fn show_canvas(
 
     viewport_frame.image_rect = viewport::image_rect(app, canvas_rect, image_size);
     draw_checkerboard(ui, ctx, canvas_rect);
-    let uv = computed_uv(viewport_frame.image_rect, canvas_rect);
-    draw_display_layers(
-        ui,
-        app,
-        canvas_rect,
-        viewport_frame.image_rect,
-        uv,
-        &display_frame,
-    );
 
-    let mut value_sample_cache = None;
-    if app.canvas.viewport.zoom >= 48.0
-        && let Some(info) = app
-            .core
-            .shader_space
-            .texture_info(display_frame.value_sampling_texture_name.as_str())
-    {
-        value_sample_cache = Some(pixel_overlay::get_or_refresh_cache(
-            app,
-            display_frame.value_sampling_texture_name.as_str(),
-            info.size.width,
-            info.size.height,
-            info.format,
-        ));
-        draw_pixel_overlay(
+    if matrix_active {
+        draw_matrix_grid_viewport(ui, app, canvas_rect, viewport_frame.image_rect);
+    } else if let Some(ref display_frame) = display_frame {
+        let uv = computed_uv(viewport_frame.image_rect, canvas_rect);
+        draw_display_layers(
             ui,
-            viewport_frame.image_rect,
+            app,
             canvas_rect,
-            app.canvas.viewport.zoom,
-            display_frame.effective_resolution,
+            viewport_frame.image_rect,
+            uv,
+            display_frame,
+        );
+
+        let mut value_sample_cache = None;
+        if app.canvas.viewport.zoom >= 48.0
+            && let Some(info) = app
+                .core
+                .shader_space
+                .texture_info(display_frame.value_sampling_texture_name.as_str())
+        {
+            value_sample_cache = Some(pixel_overlay::get_or_refresh_cache(
+                app,
+                display_frame.value_sampling_texture_name.as_str(),
+                info.size.width,
+                info.size.height,
+                info.format,
+            ));
+            draw_pixel_overlay(
+                ui,
+                viewport_frame.image_rect,
+                canvas_rect,
+                app.canvas.viewport.zoom,
+                display_frame.effective_resolution,
+                value_sample_cache.as_deref(),
+                app.canvas
+                    .reference
+                    .ref_image
+                    .as_ref()
+                    .map(value_sampling_reference_from_state),
+                app.canvas.analysis.diff_metric_mode,
+                display_frame.compare_output_active,
+                app.canvas.display.hdr_preview_clamp_enabled,
+            );
+        }
+
+        draw_operation_indicators(app, ui, ctx, canvas_rect, now, display_frame);
+        draw_badges(app, ui, ctx, canvas_rect, using_preview);
+        maybe_sample_clicked_pixel(
+            app,
+            ctx,
+            &response,
+            canvas_rect,
+            viewport_frame.image_rect,
+            display_frame,
+            frame,
             value_sample_cache.as_deref(),
-            app.canvas
-                .reference
-                .ref_image
-                .as_ref()
-                .map(value_sampling_reference_from_state),
-            app.canvas.analysis.diff_metric_mode,
-            display_frame.compare_output_active,
-            app.canvas.display.hdr_preview_clamp_enabled,
+            render_state,
+            renderer,
         );
     }
-
-    draw_operation_indicators(app, ui, ctx, canvas_rect, now, &display_frame);
-    draw_badges(app, ui, ctx, canvas_rect, using_preview);
-    maybe_sample_clicked_pixel(
-        app,
-        ctx,
-        &response,
-        canvas_rect,
-        viewport_frame.image_rect,
-        &display_frame,
-        frame,
-        value_sample_cache.as_deref(),
-        render_state,
-        renderer,
-    );
 
     app.canvas.viewport.canvas_center_prev = Some(canvas_rect.center());
     app.canvas.interactions.last_canvas_rect = Some(canvas_rect);
 
     frame_result
+}
+
+/// Gap between matrix cells in texel units (native resolution pixels).
+const MATRIX_GRID_GAP_PX: f32 = 4.0;
+const MATRIX_LABEL_FONT_SIZE: f32 = 11.0;
+
+fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_rect: Rect) {
+    let state = &app.shell.matrix_state;
+    if state.cells.is_empty() {
+        return;
+    }
+
+    let rows = state.grid_rows.max(1);
+    let cols = state.grid_cols.max(1);
+    let cell_w = state.cell_resolution[0] as f32;
+    let cell_h = state.cell_resolution[1] as f32;
+    let zoom = app.canvas.viewport.zoom;
+
+    let painter = ui.painter_at(canvas_rect);
+
+    for cell in &state.cells {
+        let Some(texture_id) = cell.egui_texture_id else {
+            continue;
+        };
+        let local_x = cell.coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
+        let local_y = cell.coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+
+        let screen_min = pos2(
+            image_rect.min.x + local_x * zoom,
+            image_rect.min.y + local_y * zoom,
+        );
+        let screen_size = egui::vec2(cell_w * zoom, cell_h * zoom);
+        let cell_rect = Rect::from_min_size(screen_min, screen_size);
+
+        let visible = cell_rect.intersect(canvas_rect);
+        if !visible.is_positive() {
+            continue;
+        }
+
+        let uv_min = (visible.min - cell_rect.min) / cell_rect.size();
+        let uv_max = (visible.max - cell_rect.min) / cell_rect.size();
+        let uv = Rect::from_min_max(
+            pos2(uv_min.x, uv_min.y),
+            pos2(uv_max.x, uv_max.y),
+        );
+
+        painter.add(
+            egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
+                .with_texture(texture_id, uv),
+        );
+
+        let label_pos = pos2(cell_rect.center().x, cell_rect.min.y - 2.0);
+        if canvas_rect.contains(label_pos) {
+            painter.text(
+                label_pos,
+                egui::Align2::CENTER_BOTTOM,
+                &cell.label,
+                egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
+                Color32::from_gray(180),
+            );
+        }
+    }
+
+    if let Some(ref col_pool_id) = state.col_pool_id {
+        let col_label = app
+            .shell
+            .resource_pools
+            .iter()
+            .find(|p| p.node_id == *col_pool_id)
+            .map(|p| p.label.as_str())
+            .unwrap_or(col_pool_id.as_str());
+        for col in 0..cols {
+            let local_x = col as f32 * (cell_w + MATRIX_GRID_GAP_PX) + cell_w * 0.5;
+            let screen_x = image_rect.min.x + local_x * zoom;
+            let label_pos = pos2(screen_x, image_rect.min.y - 14.0);
+            if canvas_rect.contains(label_pos) {
+                painter.text(
+                    label_pos,
+                    egui::Align2::CENTER_BOTTOM,
+                    format!("{col_label}[{col}]"),
+                    egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
+                    Color32::from_gray(120),
+                );
+            }
+        }
+    }
+
+    if let Some(ref row_pool_id) = state.row_pool_id {
+        let row_label = app
+            .shell
+            .resource_pools
+            .iter()
+            .find(|p| p.node_id == *row_pool_id)
+            .map(|p| p.label.as_str())
+            .unwrap_or(row_pool_id.as_str());
+        for row in 0..rows {
+            let local_y = row as f32 * (cell_h + MATRIX_GRID_GAP_PX) + cell_h * 0.5;
+            let screen_y = image_rect.min.y + local_y * zoom;
+            let label_pos = pos2(image_rect.min.x - 4.0, screen_y);
+            if canvas_rect.contains(label_pos) {
+                painter.text(
+                    label_pos,
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{row_label}[{row}]"),
+                    egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
+                    Color32::from_gray(120),
+                );
+            }
+        }
+    }
 }
