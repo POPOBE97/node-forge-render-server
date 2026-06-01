@@ -138,6 +138,12 @@ pub struct Node {
 
     #[serde(default, rename = "inputBindings")]
     pub input_bindings: Vec<InputBinding>,
+
+    /// Optional WGSL material override. Forward-slash relative path under the
+    /// scene root (e.g. "materials/<nodeId>.wgsl"). When set, node compilers
+    /// read this file in place of the bundled template.
+    #[serde(default, rename = "wgslOverride", skip_serializing_if = "Option::is_none")]
+    pub wgsl_override: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

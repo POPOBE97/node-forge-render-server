@@ -16,6 +16,7 @@ pub fn graph_field_kind_for_node_type(node_type: &str) -> Option<GraphFieldKind>
         "BoolInput" => Some(GraphFieldKind::Bool),
         "Vector2Input" => Some(GraphFieldKind::Vec2),
         "Vector3Input" => Some(GraphFieldKind::Vec3),
+        "Vector4Input" => Some(GraphFieldKind::Vec4),
         "ColorInput" => Some(GraphFieldKind::Vec4Color),
         _ => None,
     }
@@ -120,6 +121,19 @@ fn parse_const_vec(node: &Node, keys: [&str; 4]) -> Option<[f32; 4]> {
     Some([x, y, z, w])
 }
 
+/// Read `Vector4Input` params as `[x, y, z, w]`. Unlike [`parse_const_vec`]
+/// (which leaves the `w` channel defaulting to `1.0` for color-style packing),
+/// every channel here defaults to `0.0` — `Vector4Input` has no color semantics.
+fn parse_vec4_xyzw(node: &Node) -> Option<[f32; 4]> {
+    let read = |key: &str| {
+        node.params
+            .get(key)
+            .and_then(parse_json_number_f32)
+            .unwrap_or(0.0)
+    };
+    Some([read("x"), read("y"), read("z"), read("w")])
+}
+
 fn write_f32_slot(dst: &mut [u8], slot_index: usize, values: [f32; 4]) {
     let base = slot_index * 16;
     for (i, v) in values.into_iter().enumerate() {
@@ -177,6 +191,10 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 let v = parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
                 write_f32_slot(&mut bytes, slot_index, [v[0], v[1], v[2], 0.0]);
             }
+            GraphFieldKind::Vec4 => {
+                let v = parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                write_f32_slot(&mut bytes, slot_index, v);
+            }
             GraphFieldKind::Vec4Color => {
                 let v = parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0]);
                 write_f32_slot(&mut bytes, slot_index, v);
@@ -190,7 +208,13 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
 fn is_value_driven_input_node(node_type: &str) -> bool {
     matches!(
         node_type,
-        "BoolInput" | "FloatInput" | "IntInput" | "Vector2Input" | "Vector3Input" | "ColorInput"
+        "BoolInput"
+            | "FloatInput"
+            | "IntInput"
+            | "Vector2Input"
+            | "Vector3Input"
+            | "Vector4Input"
+            | "ColorInput"
     )
 }
 
@@ -395,6 +419,7 @@ fn graph_field_kind_label(kind: GraphFieldKind) -> &'static str {
         GraphFieldKind::Bool => "bool",
         GraphFieldKind::Vec2 => "vec2",
         GraphFieldKind::Vec3 => "vec3",
+        GraphFieldKind::Vec4 => "vec4",
         GraphFieldKind::Vec4Color => "vec4_color",
     }
 }
@@ -526,6 +551,7 @@ mod tests {
             inputs: Vec::new(),
             outputs: Vec::new(),
             input_bindings: Vec::new(),
+                    wgsl_override: None,
         }
     }
 

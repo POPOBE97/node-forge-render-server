@@ -108,6 +108,7 @@ mod tests {
                     inputs: Vec::new(),
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
                 Node {
                     id: "input1".to_string(),
@@ -116,6 +117,7 @@ mod tests {
                     inputs: Vec::new(),
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
             ],
             vec![test_connection("input1", "value", "sin1", "x")],
@@ -173,6 +175,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -206,6 +209,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

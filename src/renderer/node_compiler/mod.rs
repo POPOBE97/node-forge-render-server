@@ -6,6 +6,7 @@ pub mod data_parse;
 pub mod geometry_nodes;
 pub mod glass_material;
 pub mod input_nodes;
+pub mod luminance_curve;
 pub mod math_closure;
 pub mod math_nodes;
 pub mod remap_nodes;
@@ -101,6 +102,7 @@ fn compile_expr(
         "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port, ctx)?,
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
+        "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,
         "TimeInput" => input_nodes::compile_time_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
@@ -311,6 +313,15 @@ fn compile_expr(
             compile_fn,
         )?,
         "Luminance" => color_nodes::compile_luminance(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+        "LuminanceCurve" => luminance_curve::compile_luminance_curve(
             scene,
             nodes_by_id,
             node,

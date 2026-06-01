@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-05-27T06:15:05.416Z",
+  "generatedAt": "2026-05-29T09:55:58.105Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -45,6 +45,7 @@
     "Kernel",
     "Lerp",
     "Luminance",
+    "LuminanceCurve",
     "Mat4Input",
     "Matcap",
     "MaterialFromShader",
@@ -81,6 +82,7 @@
     "Upsample",
     "Vector2Input",
     "Vector3Input",
+    "Vector4Input",
     "VectorMath",
     "ViewVector"
   ],
@@ -1724,7 +1726,8 @@
         "minFilter": "linear",
         "mipmapFilter": "linear",
         "encoderSpace": "srgb",
-        "alphaMode": "straight"
+        "alphaMode": "straight",
+        "aspectCorrection": "fill"
       }
     },
     {
@@ -2010,6 +2013,69 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "LuminanceCurve",
+      "label": "Luminance Curve",
+      "category": "Color",
+      "description": "Apply a cubic Bezier curve to color luminance (LAB or RGB)",
+      "inputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "values",
+          "name": "Curve",
+          "type": "normalizedBezierCurve",
+          "default": [
+            0,
+            0.3333333333333333,
+            0.6666666666666666,
+            1
+          ],
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "color",
+          "name": "Color",
+          "type": "color"
+        }
+      ],
+      "defaultParams": {
+        "mode": "lab",
+        "values": [
+          0,
+          0.3333333333333333,
+          0.6666666666666666,
+          1
+        ],
+        "amount": 1
+      }
     },
     {
       "type": "Mat4Input",
@@ -3690,6 +3756,51 @@
         "x": 0,
         "y": 0,
         "z": 0
+      }
+    },
+    {
+      "type": "Vector4Input",
+      "label": "Vector4 Input",
+      "category": "Input",
+      "description": "Define a 4D vector value",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "y",
+          "name": "Y",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "z",
+          "name": "Z",
+          "type": "float",
+          "default": 0
+        },
+        {
+          "id": "w",
+          "name": "W",
+          "type": "float",
+          "default": 0
+        }
+      ],
+      "outputs": [
+        {
+          "id": "vector",
+          "name": "Vector",
+          "type": "vector4"
+        }
+      ],
+      "defaultParams": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 0
       }
     },
     {

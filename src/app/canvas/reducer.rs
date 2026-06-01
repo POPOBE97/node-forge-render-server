@@ -7,8 +7,8 @@ use crate::app::{
         ops, pixel_overlay, reference,
     },
     layout_math::clamp_zoom,
-    texture_bridge,
-    types::{App, RefImageAlphaMode, RefImageMode, SampledPixel},
+    matrix_render, texture_bridge,
+    types::{App, QualifierChannel, RefImageAlphaMode, RefImageMode, SampledPixel},
 };
 
 pub fn apply_action(
@@ -37,6 +37,13 @@ pub fn apply_action(
             app.canvas.display.hdr_preview_clamp_enabled =
                 !app.canvas.display.hdr_preview_clamp_enabled;
             app.canvas.invalidation.mark_pixel_overlay_dirty();
+            matrix_render::sync_matrix_hdr_clamp(
+                &mut app.shell.matrix_state,
+                render_state,
+                renderer,
+                app.canvas.display.hdr_preview_clamp_enabled,
+                app.canvas.display.texture_filter,
+            );
         }
         CanvasAction::TogglePause => {
             app.runtime.time_updates_enabled = !app.runtime.time_updates_enabled;
@@ -99,6 +106,12 @@ pub fn apply_action(
                     diff_texture_id,
                 );
             }
+            matrix_render::sync_matrix_filter(
+                &mut app.shell.matrix_state,
+                render_state,
+                renderer,
+                app.canvas.display.texture_filter,
+            );
         }
         CanvasAction::ToggleReferenceAlpha => {
             app.canvas.reference.alpha_mode = match app.canvas.reference.alpha_mode {
@@ -190,6 +203,32 @@ pub fn apply_action(
             {
                 app.canvas.analysis.clipping_settings.highlight_threshold = threshold;
                 app.canvas.invalidation.clipping_controls_changed();
+            }
+        }
+        CanvasAction::ToggleQualifier => {
+            app.canvas.analysis.qualifier_enabled = !app.canvas.analysis.qualifier_enabled;
+            app.canvas.invalidation.qualifier_controls_changed();
+        }
+        CanvasAction::SetQualifierEnabled(enabled) => {
+            if app.canvas.analysis.qualifier_enabled != enabled {
+                app.canvas.analysis.qualifier_enabled = enabled;
+                app.canvas.invalidation.qualifier_controls_changed();
+            }
+        }
+        CanvasAction::SetQualifierRange { channel, min, max } => {
+            let lo = min.clamp(0.0, 1.0);
+            let hi = max.clamp(0.0, 1.0);
+            let (lo, hi) = if lo > hi { (hi, lo) } else { (lo, hi) };
+            let s = &mut app.canvas.analysis.qualifier_settings;
+            let (cur_min, cur_max) = match channel {
+                QualifierChannel::R => (&mut s.r_min, &mut s.r_max),
+                QualifierChannel::G => (&mut s.g_min, &mut s.g_max),
+                QualifierChannel::B => (&mut s.b_min, &mut s.b_max),
+            };
+            if (*cur_min - lo).abs() > f32::EPSILON || (*cur_max - hi).abs() > f32::EPSILON {
+                *cur_min = lo;
+                *cur_max = hi;
+                app.canvas.invalidation.qualifier_controls_changed();
             }
         }
         CanvasAction::BeginPanDrag(pointer_pos) => {

@@ -233,9 +233,19 @@ fn resolve_pass_binding(
 const GLASS_WGSL_LIB_KEY: &str = "glass_material_lib";
 const GLASS_TEMPLATE_SPLIT: &str = "\n// {{BODY}}\n";
 
-fn glass_template_parts() -> (String, String) {
-    let full = super::template_loader::load_template("glass_material_fragment.wgsl");
-    let split_pos = full.find(GLASS_TEMPLATE_SPLIT).expect("template missing // {{BODY}} marker");
+fn glass_override_path(node: &Node) -> Option<std::path::PathBuf> {
+    node.wgsl_override
+        .as_deref()
+        .and_then(super::template_loader::resolve_override_path)
+}
+
+fn glass_template_parts(node: &Node) -> (String, String) {
+    let path = glass_override_path(node);
+    let full =
+        super::template_loader::load_template_with_override(path.as_deref(), "glass_material_fragment.wgsl");
+    let split_pos = full
+        .find(GLASS_TEMPLATE_SPLIT)
+        .expect("template missing // {{BODY}} marker");
     let helpers_raw = &full[..split_pos];
     let body = full[split_pos + GLASS_TEMPLATE_SPLIT.len()..].to_owned();
     let mut helpers_start = helpers_raw;
@@ -249,14 +259,47 @@ fn glass_template_parts() -> (String, String) {
     (helpers_start.to_owned(), body)
 }
 
-fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext) {
-    if ctx.extra_wgsl_decls.contains_key(GLASS_WGSL_LIB_KEY) {
+/// When a node has a per-node override, register its helpers under a node-scoped
+/// lib key so overrides from different nodes don't stomp each other in
+/// `extra_wgsl_decls`.
+///
+/// Note: helper *symbol* names (e.g. `fn glass_blur_*`) are NOT renamed per-node.
+/// Two GlassMaterial nodes with structurally different override contents will
+/// therefore surface a duplicate-symbol error at WGSL compile time. The common
+/// case (one override per scene, or identical overrides shared by multiple
+/// nodes) works without intervention.
+fn glass_lib_key_for(node: &Node) -> String {
+    if node.wgsl_override.is_some() {
+        let suffix: String = node
+            .id
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        format!("{GLASS_WGSL_LIB_KEY}::{suffix}")
+    } else {
+        GLASS_WGSL_LIB_KEY.to_string()
+    }
+}
+
+fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) {
+    let lib_key = glass_lib_key_for(node);
+    if ctx.extra_wgsl_decls.contains_key(&lib_key) {
         return;
     }
 
-    let (helpers, _) = glass_template_parts();
+    ctx.needs_f16 = true;
+
+    let (helpers, _) = glass_template_parts(node);
+    let header = if node.wgsl_override.is_some() {
+        format!(
+            "\n// ---- GlassMaterial helpers (generated, override for {}) ----\n\n",
+            node.id
+        )
+    } else {
+        "\n// ---- GlassMaterial helpers (generated) ----\n\n".to_string()
+    };
     ctx.extra_wgsl_decls
-        .insert(GLASS_WGSL_LIB_KEY.to_string(), format!("\n// ---- GlassMaterial helpers (generated) ----\n\n{}", helpers));
+        .insert(lib_key, format!("{header}{helpers}"));
 }
 
 pub fn compile_glass_material<F>(
@@ -276,7 +319,7 @@ where
         &mut HashMap<(String, String), TypedExpr>,
     ) -> Result<TypedExpr>,
 {
-    ensure_glass_wgsl_lib(ctx);
+    ensure_glass_wgsl_lib(ctx, node);
 
     let mut input_expr = |port_id: &str, fallback: TypedExpr| -> Result<TypedExpr> {
         if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
@@ -681,7 +724,7 @@ where
         vars.push(("sdf_samp_var", sdf_samp_var));
     }
 
-    let (_, body_template) = glass_template_parts();
+    let (_, body_template) = glass_template_parts(node);
     let stmt = substitute_template(&body_template, &vars);
 
     ctx.inline_stmts.push(stmt);

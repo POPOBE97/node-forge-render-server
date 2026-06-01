@@ -86,6 +86,15 @@ fn rebuild_matrix_if_needed(
     ) {
         eprintln!("[matrix] rebuild failed: {e:#}");
     }
+    if app.canvas.display.hdr_preview_clamp_enabled {
+        matrix_render::sync_matrix_hdr_clamp(
+            &mut app.shell.matrix_state,
+            render_state,
+            renderer,
+            true,
+            app.canvas.display.texture_filter,
+        );
+    }
 }
 
 pub fn dispatch(

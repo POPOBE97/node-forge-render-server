@@ -80,6 +80,13 @@ fn spawn_template_watcher(
         .join("node_compiler")
         .join("templates");
 
+    // Per-scene WGSL material overrides live here; the editor passes the path
+    // via NODE_FORGE_MATERIALS_DIR when spawning the renderer. Watching this
+    // dir means saving the override file in VSCode triggers an HMR rebuild
+    // through the same code path as the bundled-template watcher.
+    let materials_dir =
+        renderer::node_compiler::template_loader::materials_root().map(|p| p.to_path_buf());
+
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher = match notify::recommended_watcher(tx) {
@@ -94,6 +101,18 @@ fn spawn_template_watcher(
             return;
         }
         eprintln!("[template-hmr] watching {}", templates_dir.display());
+
+        if let Some(dir) = materials_dir.as_ref() {
+            // Best-effort create the dir so notify doesn't fail on first-launch.
+            let _ = std::fs::create_dir_all(dir);
+            match watcher.watch(dir, RecursiveMode::NonRecursive) {
+                Ok(()) => eprintln!("[material-override-hmr] watching {}", dir.display()),
+                Err(e) => eprintln!(
+                    "[material-override-hmr] failed to watch {}: {e}",
+                    dir.display()
+                ),
+            }
+        }
 
         let debounce = Duration::from_millis(100);
         loop {
@@ -609,6 +628,12 @@ fn main() -> Result<()> {
                     {
                         required_features |=
                             wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+                    }
+                    if adapter
+                        .features()
+                        .contains(wgpu::Features::SHADER_F16)
+                    {
+                        required_features |= wgpu::Features::SHADER_F16;
                     }
                     wgpu::DeviceDescriptor {
                         label: Some("eframe wgpu device"),

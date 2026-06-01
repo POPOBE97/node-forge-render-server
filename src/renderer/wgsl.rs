@@ -703,6 +703,10 @@ struct VSOut {
     }
     common.push_str(&material_ctx.wgsl_decls());
 
+    if material_ctx.needs_f16 {
+        common = format!("enable f16;\n{common}");
+    }
+
     let vertex = r#"
 @vertex
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
@@ -911,6 +915,10 @@ var<uniform> params: Params;
 
     common.push_str(&material_ctx.wgsl_decls());
     common.push_str(&vertex_wgsl_decls);
+
+    if material_ctx.needs_f16 {
+        common = format!("enable f16;\n{common}");
+    }
 
     // If we inject a vertex expression (TransformGeometry driven by a node graph), we must
     // include any inline statements (e.g. MathClosure local bindings) in the vertex entry.

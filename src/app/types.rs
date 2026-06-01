@@ -124,6 +124,38 @@ impl Default for ClippingSettings {
     }
 }
 
+/// Per-channel min/max range for the Qualifier overlay. Pixels whose RGB
+/// components all fall inside their respective ranges get highlighted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct QualifierSettings {
+    pub r_min: f32,
+    pub r_max: f32,
+    pub g_min: f32,
+    pub g_max: f32,
+    pub b_min: f32,
+    pub b_max: f32,
+}
+
+impl Default for QualifierSettings {
+    fn default() -> Self {
+        Self {
+            r_min: 0.0,
+            r_max: 1.0,
+            g_min: 0.0,
+            g_max: 1.0,
+            b_min: 0.0,
+            b_max: 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum QualifierChannel {
+    R,
+    G,
+    B,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DiffStats {
     pub min: f32,
@@ -315,6 +347,7 @@ pub struct ResourcePoolInfo {
     pub node_id: String,
     pub label: String,
     pub item_count: usize,
+    pub item_names: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -379,11 +412,23 @@ pub(super) fn extract_resource_pools(scene: &crate::dsl::SceneDSL) -> Vec<Resour
             continue;
         }
 
-        let item_count = node
+        let items: Vec<&crate::dsl::NodePort> = node
             .inputs
             .iter()
             .filter(|p| p.id != "selectedIndex")
-            .count();
+            .collect();
+        let item_count = items.len();
+        let item_names: Vec<String> = items
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                p.name
+                    .as_deref()
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or(&format!("{}", i))
+                    .to_owned()
+            })
+            .collect();
         let label = node
             .params
             .get("label")
@@ -394,6 +439,7 @@ pub(super) fn extract_resource_pools(scene: &crate::dsl::SceneDSL) -> Vec<Resour
             node_id: node.id.clone(),
             label,
             item_count,
+            item_names,
         });
     }
 
@@ -643,6 +689,7 @@ mod tests {
                     inputs: Vec::new(),
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
+                                    wgsl_override: None,
                 })
                 .collect(),
             connections: Vec::new(),
@@ -739,6 +786,7 @@ mod tests {
                     ],
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
+                                    wgsl_override: None,
                 },
                 Node {
                     id: "GroupInstance_71/ResourcePool_69".to_string(),
@@ -764,6 +812,7 @@ mod tests {
                     ],
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
+                                    wgsl_override: None,
                 },
             ],
             connections: Vec::new(),

@@ -137,6 +137,31 @@ pub fn compile_vector3_input(
     ))
 }
 
+/// Compile a Vector4Input node to WGSL.
+///
+/// Vector4Input nodes provide a constant 4D vector value with no color
+/// semantics. Distinct from `ColorInput`, which premultiplies alpha at the
+/// read site.
+///
+/// # Parameters
+/// - `x`/`y`/`z`/`w`: components, each defaulting to 0.0.
+///
+/// # Output
+/// - Type: vec4f
+/// - Uses time: false
+pub fn compile_vector4_input(
+    node: &Node,
+    _out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    ctx.register_graph_input(&node.id, GraphFieldKind::Vec4);
+    let field = graph_field_name(&node.id);
+    Ok(TypedExpr::new(
+        format!("(graph_inputs.{field})"),
+        ValueType::Vec4,
+    ))
+}
+
 /// Compile a TimeInput node to WGSL.
 ///
 /// TimeInput exposes monotonic time in seconds from runtime uniforms.
@@ -365,6 +390,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let expr = compile_frag_coord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -381,6 +407,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -397,6 +424,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let expr = compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Vertex).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -413,6 +441,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
         let expr =
             compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Fragment).unwrap();
@@ -437,6 +466,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_color_input(&node, None, &mut ctx).unwrap();
@@ -459,6 +489,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_color_input(&node, None, &mut ctx).unwrap();
@@ -479,6 +510,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_float_or_int_input(&node, None, &mut ctx).unwrap();
@@ -500,6 +532,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_vector2_input(&node, None, &mut ctx).unwrap();
@@ -521,11 +554,43 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_vector3_input(&node, None, &mut ctx).unwrap();
         assert_eq!(result.ty, ValueType::Vec3);
         assert!(result.expr.contains(".xyz"));
+    }
+
+    #[test]
+    fn test_vector4_input() {
+        let mut ctx = MaterialCompileContext::default();
+        let node = Node {
+            id: "vec4_1".to_string(),
+            node_type: "Vector4Input".to_string(),
+            params: HashMap::from([
+                ("x".to_string(), serde_json::json!(1.0)),
+                ("y".to_string(), serde_json::json!(2.0)),
+                ("z".to_string(), serde_json::json!(3.0)),
+                ("w".to_string(), serde_json::json!(4.0)),
+            ]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+                    wgsl_override: None,
+        };
+
+        let result = compile_vector4_input(&node, None, &mut ctx).unwrap();
+        assert_eq!(result.ty, ValueType::Vec4);
+        assert!(result.expr.contains("graph_inputs."));
+        // No swizzle: Vector4Input reads the full 4-channel slot.
+        assert!(!result.expr.contains(".xyz"));
+        assert!(!result.expr.contains(".xy"));
+        assert_eq!(
+            ctx.graph_input_kinds.get("vec4_1"),
+            Some(&GraphFieldKind::Vec4)
+        );
+        assert!(!result.uses_time);
     }
 
     #[test]
@@ -538,6 +603,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_bool_input(&node, None, &mut ctx).unwrap();
@@ -556,6 +622,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_bool_input(&node, None, &mut ctx).unwrap();
@@ -573,6 +640,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_time_input(&node, Some("time")).unwrap();
@@ -590,6 +658,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let err = compile_time_input(&node, Some("value"))
@@ -617,6 +686,7 @@ mod resource_pool_tests {
                 name: None,
                 port_type: Some("float".to_string()),
             }],
+                    wgsl_override: None,
         }
     }
 
@@ -648,6 +718,7 @@ mod resource_pool_tests {
                 name: Some("Output".to_string()),
                 port_type: Some("any".to_string()),
             }],
+                    wgsl_override: None,
         }
     }
 

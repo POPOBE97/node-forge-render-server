@@ -296,6 +296,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "a".to_string(),
@@ -304,6 +305,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "b".to_string(),
@@ -312,6 +314,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
         ];
 
@@ -373,6 +376,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "a".to_string(),
@@ -381,6 +385,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "b".to_string(),
@@ -389,6 +394,7 @@ mod tests {
                 inputs: vec![],
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
         ];
 

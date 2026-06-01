@@ -517,6 +517,7 @@ mod tests {
             inputs: vec![],
             outputs: vec![],
             input_bindings: vec![],
+                    wgsl_override: None,
         }
     }
 

@@ -37,6 +37,12 @@ pub enum GraphFieldKind {
     Bool,
     Vec2,
     Vec3,
+    /// Generic 4-component float vector (no color semantics).
+    /// Used by `Vector4Input` — packed as `[x, y, z, w]`, sampled raw.
+    Vec4,
+    /// 4-component RGBA color. Used by `ColorInput` — sampled with
+    /// premultiplied-alpha at the read site. Distinct from [`Vec4`] so
+    /// callers can keep color/non-color paths separate.
     Vec4Color,
 }
 
@@ -335,6 +341,9 @@ pub struct MaterialCompileContext {
     /// Set when the compiled shader needs the world-position varying (vertex → fragment)
     /// and `params.camera_position` to compute a view direction vector.
     pub needs_view_vector: bool,
+
+    /// Set when the compiled shader uses f16 types and requires `enable f16;` at the top.
+    pub needs_f16: bool,
 
     /// List of ImageTexture node IDs referenced in order.
     pub image_textures: Vec<String>,

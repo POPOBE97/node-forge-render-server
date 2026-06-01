@@ -1,0 +1,2168 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-05-28T15:48:39.800Z",
+    "modified": "2026-05-28T15:48:39.800Z"
+  },
+  "nodes": [
+    {
+      "id": "node_default_render_texture",
+      "type": "RenderTexture",
+      "position": {
+        "x": 160,
+        "y": 180
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "node_default_rect",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -20,
+        "y": -20
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "node_default_render_pass",
+      "type": "RenderPass",
+      "position": {
+        "x": 160,
+        "y": -20
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "node_default_composite",
+      "type": "Composite",
+      "position": {
+        "x": 340,
+        "y": -20
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "node_default_screen",
+      "type": "Screen",
+      "position": {
+        "x": 520,
+        "y": -20
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "LuminanceCurve_1",
+      "type": "LuminanceCurve",
+      "position": {
+        "x": -380,
+        "y": -20
+      },
+      "width": 320,
+      "label": "Luminance Curve",
+      "params": {
+        "mode": "lab",
+        "values": [
+          0,
+          0.3333333333333333,
+          0.6666666666666666,
+          1
+        ],
+        "amount": 1,
+        "color": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "_uiCollapsed": false
+      }
+    },
+    {
+      "id": "GroupInstance_26",
+      "type": "GroupInstance",
+      "position": {
+        "x": -560,
+        "y": -20
+      },
+      "width": 160,
+      "label": "Group",
+      "params": {
+        "groupId": "Test Images"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "color"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_29",
+      "type": "GroupInstance",
+      "position": {
+        "x": -560,
+        "y": 60
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "Test Curves"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "inputBindings": []
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_default_rect_to_pass",
+      "from": {
+        "nodeId": "node_default_rect",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "node_default_render_pass",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_default_pass_to_composite",
+      "from": {
+        "nodeId": "node_default_render_pass",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_default_rt_to_composite",
+      "from": {
+        "nodeId": "node_default_render_texture",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_default_composite_to_screen",
+      "from": {
+        "nodeId": "node_default_composite",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_screen",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_25",
+      "from": {
+        "nodeId": "GroupInstance_26",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "LuminanceCurve_1",
+        "portId": "color"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "LuminanceCurve_1",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "node_default_render_pass",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "GroupInstance_29",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "LuminanceCurve_1",
+        "portId": "values"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "node_default_composite"
+  },
+  "assets": {
+    "1a123e792811": {
+      "path": "assets/1a123e792811.jpg",
+      "originalName": "_1_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242956
+    },
+    "1df96118da1e": {
+      "path": "assets/1df96118da1e.jpg",
+      "originalName": "18张图怎么放得下我的普吉岛7天_1_酷儿喜_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242988
+    },
+    "260525613beb": {
+      "path": "assets/260525613beb.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_6_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 253684
+    },
+    "378d49611c97": {
+      "path": "assets/378d49611c97.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_8_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 371922
+    },
+    "550377046ca4": {
+      "path": "assets/550377046ca4.jpg",
+      "originalName": "_4_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 404844
+    },
+    "569810770e32": {
+      "path": "assets/569810770e32.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_5_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 369225
+    },
+    "5c8685a3cd6c": {
+      "path": "assets/5c8685a3cd6c.jpg",
+      "originalName": "_7_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 475231
+    },
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
+    },
+    "709ef12a1d12": {
+      "path": "assets/709ef12a1d12.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_1_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 355910
+    },
+    "73560afcb7a7": {
+      "path": "assets/73560afcb7a7.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_2_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 489395
+    },
+    "7fb4ec5608c3": {
+      "path": "assets/7fb4ec5608c3.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_9_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 411289
+    },
+    "83fd614913be": {
+      "path": "assets/83fd614913be.jpg",
+      "originalName": "对对对就是这种感觉_3_雪松Oceana_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 166112
+    },
+    "86020510ff0c": {
+      "path": "assets/86020510ff0c.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_3_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 367314
+    },
+    "88ebde91c0d0": {
+      "path": "assets/88ebde91c0d0.jpg",
+      "originalName": "_6_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 454470
+    },
+    "95ff5c034fe8": {
+      "path": "assets/95ff5c034fe8.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_4_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 306154
+    },
+    "9730b5e822cc": {
+      "path": "assets/9730b5e822cc.jpg",
+      "originalName": "对对对就是这种感觉_1_雪松Oceana_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 350752
+    },
+    "a3a9888574c6": {
+      "path": "assets/a3a9888574c6.jpg",
+      "originalName": "_5_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 447911
+    },
+    "ab333f28da2f": {
+      "path": "assets/ab333f28da2f.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_4_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 401158
+    },
+    "d710ffa828a9": {
+      "path": "assets/d710ffa828a9.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_3_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 674306
+    },
+    "e8f18ab7d8df": {
+      "path": "assets/e8f18ab7d8df.jpg",
+      "originalName": "再看这组还是很感动_1_乘以加_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 297819
+    },
+    "ed44674b5f51": {
+      "path": "assets/ed44674b5f51.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_7_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 506432
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
+    },
+    "f3f2d92632a4": {
+      "path": "assets/f3f2d92632a4.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_1_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 337556
+    }
+  },
+  "groups": [
+    {
+      "id": "Test Images",
+      "name": "Group",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "color"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ResourcePool_1",
+          "type": "ResourcePool",
+          "position": {
+            "x": 360,
+            "y": -20
+          },
+          "width": 160,
+          "label": "Test Images",
+          "params": {
+            "selectedIndex": 0,
+            "_uiCollapsed": false
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1779982686580_1",
+              "name": "input1",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686597_2",
+              "name": "input2",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686631_3",
+              "name": "input3",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686650_4",
+              "name": "input4",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686665_5",
+              "name": "input5",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686679_6",
+              "name": "input6",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686695_7",
+              "name": "input7",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686711_8",
+              "name": "input8",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686730_9",
+              "name": "input9",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686748_10",
+              "name": "input10",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686767_11",
+              "name": "input11",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686790_12",
+              "name": "input12",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686810_13",
+              "name": "input13",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686823_14",
+              "name": "input14",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686837_15",
+              "name": "input15",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686851_16",
+              "name": "input16",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686864_17",
+              "name": "input17",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686881_18",
+              "name": "input18",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686895_19",
+              "name": "input19",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686909_20",
+              "name": "input20",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686924_21",
+              "name": "input21",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686940_22",
+              "name": "input22",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779982686956_23",
+              "name": "input23",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "color"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1779982686580_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_2",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686597_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_3",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686631_3",
+              "label": "input3",
+              "variableName": "input3",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_4",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686650_4",
+              "label": "input4",
+              "variableName": "input4",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_5",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686665_5",
+              "label": "input5",
+              "variableName": "input5",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_6",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686679_6",
+              "label": "input6",
+              "variableName": "input6",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_7",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686695_7",
+              "label": "input7",
+              "variableName": "input7",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_8",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686711_8",
+              "label": "input8",
+              "variableName": "input8",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_9",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686730_9",
+              "label": "input9",
+              "variableName": "input9",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_10",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686748_10",
+              "label": "input10",
+              "variableName": "input10",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_11",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686767_11",
+              "label": "input11",
+              "variableName": "input11",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_12",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686790_12",
+              "label": "input12",
+              "variableName": "input12",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_13",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686810_13",
+              "label": "input13",
+              "variableName": "input13",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_14",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686823_14",
+              "label": "input14",
+              "variableName": "input14",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_15",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686837_15",
+              "label": "input15",
+              "variableName": "input15",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_16",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686851_16",
+              "label": "input16",
+              "variableName": "input16",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_17",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686864_17",
+              "label": "input17",
+              "variableName": "input17",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_18",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686881_18",
+              "label": "input18",
+              "variableName": "input18",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_19",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686895_19",
+              "label": "input19",
+              "variableName": "input19",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_20",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686909_20",
+              "label": "input20",
+              "variableName": "input20",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_21",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686924_21",
+              "label": "input21",
+              "variableName": "input21",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_22",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686940_22",
+              "label": "input22",
+              "variableName": "input22",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_23",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779982686956_23",
+              "label": "input23",
+              "variableName": "input23",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_24",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "ImageTexture_2",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": -20
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "1a123e792811",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_3",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 40
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "550377046ca4",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_4",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 100
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "a3a9888574c6",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_5",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 160
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "88ebde91c0d0",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_6",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 220
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "5c8685a3cd6c",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_7",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 280
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "61fea0e0acb1",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_8",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 340
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "1df96118da1e",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_9",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 400
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "e8f18ab7d8df",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_10",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 460
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "9730b5e822cc",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_11",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 520
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "83fd614913be",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_12",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 580
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "709ef12a1d12",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_13",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 640
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f2170557f733",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_14",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 700
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "d710ffa828a9",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_15",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 760
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "95ff5c034fe8",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_16",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 820
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "569810770e32",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_17",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 880
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "260525613beb",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_18",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 940
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "ed44674b5f51",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_19",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1000
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "378d49611c97",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_20",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1060
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "7fb4ec5608c3",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_21",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1120
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f3f2d92632a4",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_22",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1180
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "73560afcb7a7",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_23",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1240
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "86020510ff0c",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_24",
+          "type": "ImageTexture",
+          "position": {
+            "x": 80,
+            "y": 1300
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "ab333f28da2f",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_3",
+          "from": {
+            "nodeId": "ImageTexture_4",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686631_3"
+          }
+        },
+        {
+          "id": "edge_4",
+          "from": {
+            "nodeId": "ImageTexture_5",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686650_4"
+          }
+        },
+        {
+          "id": "edge_5",
+          "from": {
+            "nodeId": "ImageTexture_6",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686665_5"
+          }
+        },
+        {
+          "id": "edge_6",
+          "from": {
+            "nodeId": "ImageTexture_7",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686679_6"
+          }
+        },
+        {
+          "id": "edge_7",
+          "from": {
+            "nodeId": "ImageTexture_8",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686695_7"
+          }
+        },
+        {
+          "id": "edge_8",
+          "from": {
+            "nodeId": "ImageTexture_9",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686711_8"
+          }
+        },
+        {
+          "id": "edge_9",
+          "from": {
+            "nodeId": "ImageTexture_10",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686730_9"
+          }
+        },
+        {
+          "id": "edge_10",
+          "from": {
+            "nodeId": "ImageTexture_11",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686748_10"
+          }
+        },
+        {
+          "id": "edge_11",
+          "from": {
+            "nodeId": "ImageTexture_12",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686767_11"
+          }
+        },
+        {
+          "id": "edge_12",
+          "from": {
+            "nodeId": "ImageTexture_13",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686790_12"
+          }
+        },
+        {
+          "id": "edge_13",
+          "from": {
+            "nodeId": "ImageTexture_14",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686810_13"
+          }
+        },
+        {
+          "id": "edge_14",
+          "from": {
+            "nodeId": "ImageTexture_15",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686823_14"
+          }
+        },
+        {
+          "id": "edge_15",
+          "from": {
+            "nodeId": "ImageTexture_16",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686837_15"
+          }
+        },
+        {
+          "id": "edge_16",
+          "from": {
+            "nodeId": "ImageTexture_17",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686851_16"
+          }
+        },
+        {
+          "id": "edge_17",
+          "from": {
+            "nodeId": "ImageTexture_18",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686864_17"
+          }
+        },
+        {
+          "id": "edge_18",
+          "from": {
+            "nodeId": "ImageTexture_19",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686881_18"
+          }
+        },
+        {
+          "id": "edge_19",
+          "from": {
+            "nodeId": "ImageTexture_20",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686895_19"
+          }
+        },
+        {
+          "id": "edge_20",
+          "from": {
+            "nodeId": "ImageTexture_21",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686909_20"
+          }
+        },
+        {
+          "id": "edge_21",
+          "from": {
+            "nodeId": "ImageTexture_22",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686924_21"
+          }
+        },
+        {
+          "id": "edge_22",
+          "from": {
+            "nodeId": "ImageTexture_23",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686940_22"
+          }
+        },
+        {
+          "id": "edge_23",
+          "from": {
+            "nodeId": "ImageTexture_24",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686956_23"
+          }
+        },
+        {
+          "id": "edge_24",
+          "from": {
+            "nodeId": "ImageTexture_3",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686597_2"
+          }
+        },
+        {
+          "id": "edge_25",
+          "from": {
+            "nodeId": "ImageTexture_2",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1779982686580_1"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_1",
+            "portId": "output"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Test Curves",
+      "name": "Group 2",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "vector4"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "MathClosure_27",
+          "type": "MathClosure",
+          "position": {
+            "x": -500,
+            "y": -20
+          },
+          "width": 290,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.0, 1.0/3.0, 2.0/3.0, 1.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "ResourcePool_28",
+          "type": "ResourcePool",
+          "position": {
+            "x": 580,
+            "y": -20
+          },
+          "width": 160,
+          "label": "Resource Pool",
+          "params": {
+            "selectedIndex": 0
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1779982819818_1",
+              "name": "input1",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779982975798_2",
+              "name": "input2",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983020384_3",
+              "name": "input3",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983087701_4",
+              "name": "input4",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983091702_5",
+              "name": "input5",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983248834_6",
+              "name": "input6",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983251692_7",
+              "name": "input7",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983271252_8",
+              "name": "input8",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983317584_9",
+              "name": "input9",
+              "type": "vector4"
+            },
+            {
+              "id": "dynamic_1779983318934_10",
+              "name": "input10",
+              "type": "vector4"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1779982819818_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_27",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779982975798_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_36",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983020384_3",
+              "label": "input3",
+              "variableName": "input3",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_37",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983087701_4",
+              "label": "input4",
+              "variableName": "input4",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_38",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983091702_5",
+              "label": "input5",
+              "variableName": "input5",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_30",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983248834_6",
+              "label": "input6",
+              "variableName": "input6",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_31",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983251692_7",
+              "label": "input7",
+              "variableName": "input7",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_32",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983271252_8",
+              "label": "input8",
+              "variableName": "input8",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_33",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983317584_9",
+              "label": "input9",
+              "variableName": "input9",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_34",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            },
+            {
+              "portId": "dynamic_1779983318934_10",
+              "label": "input10",
+              "variableName": "input10",
+              "type": "vector4",
+              "sourceBinding": {
+                "nodeId": "MathClosure_35",
+                "outputPortId": "output",
+                "outputLabel": "Output"
+              }
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_30",
+          "type": "MathClosure",
+          "position": {
+            "x": -140,
+            "y": -20
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.1, 0.4, 0.7, 1.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_31",
+          "type": "MathClosure",
+          "position": {
+            "x": -140,
+            "y": 140
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.4, 0.6, 0.8, 1.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_32",
+          "type": "MathClosure",
+          "position": {
+            "x": -140,
+            "y": 300
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.7, 0.8, 0.9, 1.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_33",
+          "type": "MathClosure",
+          "position": {
+            "x": 220,
+            "y": -20
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(1.0, 0.7, 0.4, 0.1);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_34",
+          "type": "MathClosure",
+          "position": {
+            "x": 220,
+            "y": 140
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(1.0, 0.8, 0.6, 0.4);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_35",
+          "type": "MathClosure",
+          "position": {
+            "x": 220,
+            "y": 300
+          },
+          "width": 280,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(1.0, 0.9, 0.8, 0.7);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_36",
+          "type": "MathClosure",
+          "position": {
+            "x": -500,
+            "y": 140
+          },
+          "width": 290,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_37",
+          "type": "MathClosure",
+          "position": {
+            "x": -500,
+            "y": 300
+          },
+          "width": 290,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(0.5);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        },
+        {
+          "id": "MathClosure_38",
+          "type": "MathClosure",
+          "position": {
+            "x": -500,
+            "y": 480
+          },
+          "width": 290,
+          "label": "Math Closure",
+          "params": {
+            "source": "output = vec4(1.0);"
+          },
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "vector4"
+            }
+          ]
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_1",
+          "from": {
+            "nodeId": "MathClosure_27",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779982819818_1"
+          }
+        },
+        {
+          "id": "edge_2",
+          "from": {
+            "nodeId": "MathClosure_36",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779982975798_2"
+          }
+        },
+        {
+          "id": "edge_3",
+          "from": {
+            "nodeId": "MathClosure_37",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983020384_3"
+          }
+        },
+        {
+          "id": "edge_4",
+          "from": {
+            "nodeId": "MathClosure_38",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983087701_4"
+          }
+        },
+        {
+          "id": "edge_5",
+          "from": {
+            "nodeId": "MathClosure_30",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983091702_5"
+          }
+        },
+        {
+          "id": "edge_6",
+          "from": {
+            "nodeId": "MathClosure_31",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983248834_6"
+          }
+        },
+        {
+          "id": "edge_7",
+          "from": {
+            "nodeId": "MathClosure_32",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983251692_7"
+          }
+        },
+        {
+          "id": "edge_8",
+          "from": {
+            "nodeId": "MathClosure_33",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983271252_8"
+          }
+        },
+        {
+          "id": "edge_9",
+          "from": {
+            "nodeId": "MathClosure_34",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983317584_9"
+          }
+        },
+        {
+          "id": "edge_10",
+          "from": {
+            "nodeId": "MathClosure_35",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ResourcePool_28",
+            "portId": "dynamic_1779983318934_10"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_28",
+            "portId": "output"
+          }
+        }
+      ]
+    }
+  ]
+}

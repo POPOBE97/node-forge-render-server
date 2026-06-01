@@ -337,6 +337,7 @@ mod tests {
             inputs: Vec::new(),
             outputs: Vec::new(),
             input_bindings: Vec::new(),
+                    wgsl_override: None,
         }
     }
 

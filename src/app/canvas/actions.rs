@@ -2,7 +2,7 @@ use rust_wgpu_fiber::{ResourceName, eframe::egui};
 
 use crate::app::{
     frame::commands::AppCommand,
-    types::{AnalysisTab, DiffMetricMode},
+    types::{AnalysisTab, DiffMetricMode, QualifierChannel},
 };
 
 #[derive(Clone, Debug)]
@@ -24,6 +24,13 @@ pub enum CanvasAction {
     SetAnalysisTab(AnalysisTab),
     SetClippingShadowThreshold(f32),
     SetClippingHighlightThreshold(f32),
+    ToggleQualifier,
+    SetQualifierEnabled(bool),
+    SetQualifierRange {
+        channel: QualifierChannel,
+        min: f32,
+        max: f32,
+    },
     BeginPanDrag(egui::Pos2),
     UpdatePanDrag(egui::Pos2),
     EndPanDrag,

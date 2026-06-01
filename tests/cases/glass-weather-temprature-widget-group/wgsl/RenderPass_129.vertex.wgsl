@@ -73,6 +73,19 @@ var pass_samp_GroupInstance_132_GuassianBlurPass_85: sampler;
 
 // --- Extra WGSL declarations (generated) ---
 
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
+
 // ---- ColorMix (Blend Color) helpers (generated) ----
 
 fn blendColorBurnComponent(src: vec2f, dst: vec2f) -> f32 {

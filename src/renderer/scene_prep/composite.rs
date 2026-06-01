@@ -107,6 +107,7 @@ mod tests {
                     ],
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
                 Node {
                     id: "p_img".to_string(),
@@ -115,6 +116,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
                 Node {
                     id: "p0".to_string(),
@@ -123,6 +125,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
                 Node {
                     id: "p1".to_string(),
@@ -131,6 +134,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: Vec::new(),
                     outputs: Vec::new(),
+                                    wgsl_override: None,
                 },
             ],
             connections: vec![

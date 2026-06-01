@@ -7,6 +7,45 @@ use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::utils::{coerce_to_type, fmt_f32};
 
+/// Stable key for the aspect-correction WGSL helpers in `extra_wgsl_decls`.
+const ASPECT_CORRECT_WGSL_LIB_KEY: &str = "aspect_correct_uv_lib";
+
+/// Ensure the aspect-correction UV helper functions are emitted exactly once.
+///
+/// Both helpers rescale `uv` around (0.5, 0.5) so the texture preserves its natural pixel
+/// aspect ratio when displayed on geometry whose own aspect may differ. The correction
+/// factor is `image_aspect / geo_aspect`, accounting for BOTH the bound image's resolution
+/// and the geometry's per-fragment pixel size (after instance transforms).
+///
+/// - `aspect_correct_uv_fit`  — object-fit: contain (image fully visible, empty bands handled
+///                              by the configured addressMode).
+/// - `aspect_correct_uv_fill` — object-fit: cover   (image fills geometry, sides cropped).
+fn ensure_aspect_correct_wgsl_lib(ctx: &mut MaterialCompileContext) {
+    if ctx
+        .extra_wgsl_decls
+        .contains_key(ASPECT_CORRECT_WGSL_LIB_KEY)
+    {
+        return;
+    }
+
+    let wgsl = r#"
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+"#;
+
+    ctx.extra_wgsl_decls
+        .insert(ASPECT_CORRECT_WGSL_LIB_KEY.to_string(), wgsl.to_string());
+}
+
 /// Compile an ImageTexture node.
 ///
 /// Samples a texture at a given UV coordinate and returns the color or alpha channel.
@@ -14,6 +53,15 @@ use crate::renderer::utils::{coerce_to_type, fmt_f32};
 /// Note: This renderer uses a GL-like coordinate system (origin bottom-left). We *do not* flip
 /// UVs in WGSL for ImageTexture. If an image source is top-left origin, it must be flipped on
 /// upload (CPU-side) so that UV space remains consistent across the graph.
+///
+/// `aspectCorrection` param controls UV rescaling around (0.5, 0.5) using BOTH the bound
+/// texture's runtime resolution (via WGSL `textureDimensions`) AND the geometry's per-fragment
+/// pixel size (`in.geo_size_px`, which respects instance transforms). The resulting correction
+/// is invariant to non-square geometry — e.g. a 2:1 image on a 2:1 quad needs no correction.
+///
+/// - `"off"`  (default): legacy behavior, sample UV directly.
+/// - `"fit"`:  object-fit: contain — preserves natural aspect, image fully visible.
+/// - `"fill"`: object-fit: cover   — preserves natural aspect, fills the geometry.
 pub fn compile_image_texture<F>(
     scene: &SceneDSL,
     _nodes_by_id: &HashMap<String, Node>,
@@ -49,8 +97,32 @@ where
     let tex_var = MaterialCompileContext::tex_var_name(&node.id);
     let samp_var = MaterialCompileContext::sampler_var_name(&node.id);
 
+    let aspect_mode = node
+        .params
+        .get("aspectCorrection")
+        .and_then(|v| v.as_str())
+        .unwrap_or("off");
+
+    let sample_uv = match aspect_mode {
+        "fit" => {
+            ensure_aspect_correct_wgsl_lib(ctx);
+            format!(
+                "aspect_correct_uv_fit(({}), vec2f(textureDimensions({tex_var})), in.geo_size_px)",
+                uv_expr.expr
+            )
+        }
+        "fill" => {
+            ensure_aspect_correct_wgsl_lib(ctx);
+            format!(
+                "aspect_correct_uv_fill(({}), vec2f(textureDimensions({tex_var})), in.geo_size_px)",
+                uv_expr.expr
+            )
+        }
+        _ => format!("({})", uv_expr.expr),
+    };
+
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
-    let sample_expr = format!("textureSample({tex_var}, {samp_var}, ({}))", uv_expr.expr);
+    let sample_expr = format!("textureSample({tex_var}, {samp_var}, {sample_uv})");
 
     match out_port.unwrap_or("color") {
         "color" => Ok(TypedExpr::with_time(
@@ -221,6 +293,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -263,6 +336,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -302,6 +376,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -328,6 +403,136 @@ mod tests {
 
         assert_eq!(ctx.image_textures.len(), 1);
         assert_eq!(ctx.image_textures[0], "img1");
+    }
+
+    fn aspect_scene(mode: Option<&str>) -> SceneDSL {
+        let mut params: HashMap<String, serde_json::Value> = HashMap::new();
+        if let Some(m) = mode {
+            params.insert(
+                "aspectCorrection".to_string(),
+                serde_json::Value::String(m.to_string()),
+            );
+        }
+        test_scene(
+            vec![Node {
+                id: "img1".to_string(),
+                node_type: "ImageTexture".to_string(),
+                params,
+                inputs: Vec::new(),
+                input_bindings: Vec::new(),
+                outputs: Vec::new(),
+                            wgsl_override: None,
+            }],
+            Vec::new(),
+        )
+    }
+
+    #[test]
+    fn test_image_texture_aspect_off_default() {
+        // With no aspectCorrection param (or "off"), behavior matches legacy: no helper emitted,
+        // no textureDimensions call, raw UV passed to textureSample.
+        for mode in [None, Some("off")] {
+            let scene = aspect_scene(mode);
+            let nodes_by_id: HashMap<String, Node> = scene
+                .nodes
+                .iter()
+                .cloned()
+                .map(|n| (n.id.clone(), n))
+                .collect();
+            let node = &scene.nodes[0];
+            let mut ctx = MaterialCompileContext::default();
+            let mut cache = HashMap::new();
+
+            let result = compile_image_texture(
+                &scene,
+                &nodes_by_id,
+                node,
+                Some("color"),
+                &mut ctx,
+                &mut cache,
+                mock_compile_fn,
+            )
+            .unwrap();
+
+            assert!(!result.expr.contains("aspect_correct_uv_"));
+            assert!(!result.expr.contains("textureDimensions"));
+            assert!(!ctx.extra_wgsl_decls.contains_key(ASPECT_CORRECT_WGSL_LIB_KEY));
+        }
+    }
+
+    #[test]
+    fn test_image_texture_aspect_fit() {
+        let scene = aspect_scene(Some("fit"));
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+        let node = &scene.nodes[0];
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_image_texture(
+            &scene,
+            &nodes_by_id,
+            node,
+            Some("color"),
+            &mut ctx,
+            &mut cache,
+            mock_compile_fn,
+        )
+        .unwrap();
+
+        assert!(result.expr.contains("aspect_correct_uv_fit("));
+        assert!(result.expr.contains("textureDimensions(img_tex_img1)"));
+        assert!(result.expr.contains("in.geo_size_px"));
+        assert!(result.expr.contains("textureSample"));
+
+        let lib = ctx
+            .extra_wgsl_decls
+            .get(ASPECT_CORRECT_WGSL_LIB_KEY)
+            .expect("aspect_correct_uv_lib must be emitted");
+        assert!(lib.contains("aspect_correct_uv_fit"));
+        // fit uses max() to expand UV (letterbox / contain).
+        assert!(lib.contains("max(1.0 / r, 1.0)"));
+    }
+
+    #[test]
+    fn test_image_texture_aspect_fill() {
+        let scene = aspect_scene(Some("fill"));
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+        let node = &scene.nodes[0];
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_image_texture(
+            &scene,
+            &nodes_by_id,
+            node,
+            Some("color"),
+            &mut ctx,
+            &mut cache,
+            mock_compile_fn,
+        )
+        .unwrap();
+
+        assert!(result.expr.contains("aspect_correct_uv_fill("));
+        assert!(result.expr.contains("textureDimensions(img_tex_img1)"));
+        assert!(result.expr.contains("in.geo_size_px"));
+
+        let lib = ctx
+            .extra_wgsl_decls
+            .get(ASPECT_CORRECT_WGSL_LIB_KEY)
+            .expect("aspect_correct_uv_lib must be emitted");
+        assert!(lib.contains("aspect_correct_uv_fill"));
+        // fill uses min() to compress UV (cover / crop).
+        assert!(lib.contains("min(1.0 / r, 1.0)"));
     }
 }
 
@@ -448,6 +653,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "pt".to_string(),
@@ -456,6 +662,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
         ];
 
@@ -514,6 +721,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "uvsrc".to_string(),
@@ -522,6 +730,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
             Node {
                 id: "pt".to_string(),
@@ -530,6 +739,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
+                            wgsl_override: None,
             },
         ];
 

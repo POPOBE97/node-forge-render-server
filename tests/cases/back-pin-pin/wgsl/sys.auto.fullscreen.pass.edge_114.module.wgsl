@@ -69,6 +69,19 @@ var pass_samp_BloomNode_52: sampler;
 
 // --- Extra WGSL declarations (generated) ---
 
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
+
 // ---- ColorMix (Blend Color) helpers (generated) ----
 
 fn blendColorBurnComponent(src: vec2f, dst: vec2f) -> f32 {
@@ -363,14 +376,14 @@ fn sample_pass_RenderPass_4_(uv_in: vec2f) -> vec4f {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
         var mc_MathClosure_42_out: vec4f;
     {
-        let intelli = textureSample(img_tex_ImageTexture_50, img_samp_ImageTexture_50, (in.uv));
+        let intelli = textureSample(img_tex_ImageTexture_50, img_samp_ImageTexture_50, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_ImageTexture_50)), in.geo_size_px));
         var output: vec4f;
         output = mc_MathClosure_42_(in.uv, intelli);
         mc_MathClosure_42_out = output;
     }
     var mc_MathClosure_51_out: vec4f;
     {
-        let x = blendNormal((vec4f((graph_inputs.node_ColorInput_48_cd78eb69).rgb * (graph_inputs.node_ColorInput_48_cd78eb69).a, (graph_inputs.node_ColorInput_48_cd78eb69).a)), (textureSample(img_tex_ImageTexture_46, img_samp_ImageTexture_46, (in.uv))));
+        let x = blendNormal((vec4f((graph_inputs.node_ColorInput_48_cd78eb69).rgb * (graph_inputs.node_ColorInput_48_cd78eb69).a, (graph_inputs.node_ColorInput_48_cd78eb69).a)), (textureSample(img_tex_ImageTexture_46, img_samp_ImageTexture_46, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_ImageTexture_46)), in.geo_size_px))));
         let y = mc_MathClosure_42_out;
         var output: vec4f;
         output = mc_MathClosure_51_(in.uv, x, y);

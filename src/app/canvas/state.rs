@@ -6,11 +6,11 @@ use crate::{
     app::{
         frame::request_keys::{
             AnalysisSourceKey, ClippingRequestKey, DiffRequestKey, DiffStatsRequestKey,
-            HistogramRequestKey, ParadeRequestKey, VectorscopeRequestKey,
+            HistogramRequestKey, ParadeRequestKey, QualifierRequestKey, VectorscopeRequestKey,
         },
         types::{
-            AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageAlphaMode,
-            RefImageState, SampledPixel, ViewportOperationIndicatorVisual,
+            AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierSettings,
+            RefImageAlphaMode, RefImageState, SampledPixel, ViewportOperationIndicatorVisual,
         },
     },
     ui::{self, viewport_indicators::ViewportIndicatorManager},
@@ -109,9 +109,13 @@ pub struct CanvasAnalysisState {
     pub vectorscope_texture_id: Option<egui::TextureId>,
     pub clipping_renderer: Option<ui::clipping_map::ClippingMapRenderer>,
     pub clipping_texture_id: Option<egui::TextureId>,
+    pub qualifier_renderer: Option<ui::qualifier_map::QualifierMapRenderer>,
+    pub qualifier_texture_id: Option<egui::TextureId>,
     pub analysis_tab: AnalysisTab,
     pub clip_enabled: bool,
     pub clipping_settings: ClippingSettings,
+    pub qualifier_enabled: bool,
+    pub qualifier_settings: QualifierSettings,
     pub analysis_source_is_diff: bool,
     pub analysis_source_key: Option<AnalysisSourceKey>,
     pub diff_renderer: Option<ui::diff_renderer::DiffRenderer>,
@@ -124,6 +128,7 @@ pub struct CanvasAnalysisState {
     pub last_parade_request_key: Option<ParadeRequestKey>,
     pub last_vectorscope_request_key: Option<VectorscopeRequestKey>,
     pub last_clipping_request_key: Option<ClippingRequestKey>,
+    pub last_qualifier_request_key: Option<QualifierRequestKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -199,6 +204,7 @@ pub struct CanvasInvalidation {
     diff_dirty: bool,
     analysis_dirty: bool,
     clipping_dirty: bool,
+    qualifier_dirty: bool,
     pixel_overlay_dirty: bool,
 }
 
@@ -208,6 +214,7 @@ impl Default for CanvasInvalidation {
             diff_dirty: false,
             analysis_dirty: true,
             clipping_dirty: true,
+            qualifier_dirty: true,
             pixel_overlay_dirty: true,
         }
     }
@@ -226,6 +233,10 @@ impl CanvasInvalidation {
         self.clipping_dirty
     }
 
+    pub fn qualifier_dirty(&self) -> bool {
+        self.qualifier_dirty
+    }
+
     pub fn pixel_overlay_dirty(&self) -> bool {
         self.pixel_overlay_dirty
     }
@@ -240,6 +251,10 @@ impl CanvasInvalidation {
 
     pub fn clear_clipping(&mut self) {
         self.clipping_dirty = false;
+    }
+
+    pub fn clear_qualifier(&mut self) {
+        self.qualifier_dirty = false;
     }
 
     pub fn clear_pixel_overlay(&mut self) {
@@ -258,6 +273,10 @@ impl CanvasInvalidation {
         self.clipping_dirty = true;
     }
 
+    pub fn mark_qualifier_dirty(&mut self) {
+        self.qualifier_dirty = true;
+    }
+
     pub fn mark_pixel_overlay_dirty(&mut self) {
         self.pixel_overlay_dirty = true;
     }
@@ -268,6 +287,7 @@ impl CanvasInvalidation {
         }
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
         self.pixel_overlay_dirty = true;
     }
 
@@ -275,6 +295,7 @@ impl CanvasInvalidation {
         self.diff_dirty = true;
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
         self.pixel_overlay_dirty = true;
     }
 
@@ -283,6 +304,7 @@ impl CanvasInvalidation {
         if matches!(reference_mode, crate::app::types::RefImageMode::Diff) {
             self.analysis_dirty = true;
             self.clipping_dirty = true;
+            self.qualifier_dirty = true;
         }
         self.pixel_overlay_dirty = true;
     }
@@ -291,6 +313,7 @@ impl CanvasInvalidation {
         self.diff_dirty = false;
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
         self.pixel_overlay_dirty = true;
     }
 
@@ -298,6 +321,7 @@ impl CanvasInvalidation {
         self.diff_dirty = true;
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
         self.pixel_overlay_dirty = true;
     }
 
@@ -305,15 +329,21 @@ impl CanvasInvalidation {
         self.diff_dirty = true;
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
     }
 
     pub fn clipping_controls_changed(&mut self) {
         self.clipping_dirty = true;
     }
 
+    pub fn qualifier_controls_changed(&mut self) {
+        self.qualifier_dirty = true;
+    }
+
     pub fn analysis_tab_changed(&mut self) {
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
     }
 
     pub fn time_pause_toggled(&mut self, scene_uses_time: bool, has_reference_diff: bool) {
@@ -325,6 +355,7 @@ impl CanvasInvalidation {
         }
         self.analysis_dirty = true;
         self.clipping_dirty = true;
+        self.qualifier_dirty = true;
         self.pixel_overlay_dirty = true;
     }
 }

@@ -72,6 +72,19 @@ var pass_samp_GuassianBlurPass_85: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
+
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
 fn mc_MathClosure_102_(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_1: vec4<f32>;
@@ -561,7 +574,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px.xy - mc_MathClosure_108_out)) - 16.5));
-        let c = textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, (mc_MathClosure_99_out));
+        let c = textureSample(img_tex_ImageTexture_76, img_samp_ImageTexture_76, aspect_correct_uv_fill((mc_MathClosure_99_out), vec2f(textureDimensions(img_tex_ImageTexture_76)), in.geo_size_px));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - mc_MathClosure_108_out)) - 16.5));
         var output: vec4f;
         output = mc_MathClosure_111_(in.uv, t, c, thumb);

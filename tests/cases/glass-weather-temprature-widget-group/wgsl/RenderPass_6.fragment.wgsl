@@ -73,6 +73,19 @@ var pass_samp_GroupInstance_128_GuassianBlurPass_85: sampler;
 
 // --- Extra WGSL declarations (generated) ---
 
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
+
 // ---- ColorMix (Blend Color) helpers (generated) ----
 
 fn blendColorBurnComponent(src: vec2f, dst: vec2f) -> f32 {
@@ -681,7 +694,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     var mc_GroupInstance_128_MathClosure_111_out: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px.xy - mc_GroupInstance_128_MathClosure_108_out)) - 16.5));
-        let c_ui = textureSample(img_tex_GroupInstance_128_ImageTexture_76, img_samp_GroupInstance_128_ImageTexture_76, (in.uv));
+        let c_ui = textureSample(img_tex_GroupInstance_128_ImageTexture_76, img_samp_GroupInstance_128_ImageTexture_76, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_GroupInstance_128_ImageTexture_76)), in.geo_size_px));
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - mc_GroupInstance_128_MathClosure_108_out)) - 16.5));
         let show_thumb = ((graph_inputs.node_BoolInput_139_e7c94ac1).x != 0);
         var output: vec4f;

@@ -65,6 +65,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -83,6 +84,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -99,6 +101,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -115,6 +118,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -130,6 +134,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -147,6 +152,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         assert!(compile_attribute(&node, None).is_err());

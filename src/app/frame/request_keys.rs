@@ -3,7 +3,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use crate::app::{ClippingSettings, DiffMetricMode, RefImageMode, types::AnalysisSourceDomain};
+use crate::app::{
+    ClippingSettings, DiffMetricMode, QualifierSettings, RefImageMode, types::AnalysisSourceDomain,
+};
 
 fn hash_key<T: Hash + ?Sized>(value: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -19,7 +21,6 @@ impl AnalysisSourceKey {
         Self(hash_key(&(source.texture_name, source.size, source.format)))
     }
 
-    #[cfg(test)]
     pub(crate) fn from_hashable<T: Hash + ?Sized>(value: &T) -> Self {
         Self(hash_key(value))
     }
@@ -115,6 +116,25 @@ impl ClippingRequestKey {
             enabled,
             settings.shadow_threshold.to_bits(),
             settings.highlight_threshold.to_bits(),
+        )))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct QualifierRequestKey(u64);
+
+impl QualifierRequestKey {
+    pub fn new(source_key: AnalysisSourceKey, settings: QualifierSettings, enabled: bool) -> Self {
+        Self(hash_key(&(
+            source_key.raw(),
+            "qualifier",
+            enabled,
+            settings.r_min.to_bits(),
+            settings.r_max.to_bits(),
+            settings.g_min.to_bits(),
+            settings.g_max.to_bits(),
+            settings.b_min.to_bits(),
+            settings.b_max.to_bits(),
         )))
     }
 }

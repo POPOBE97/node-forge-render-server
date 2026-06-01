@@ -9,6 +9,7 @@ pub mod file_tree_widget;
 pub mod hdr_clamp;
 pub mod histogram;
 pub mod parade;
+pub mod qualifier_map;
 pub mod resource_tree;
 pub mod state_machine_panel;
 pub mod timeline_panel;

@@ -3,14 +3,15 @@ use std::cell::RefCell;
 use std::hash::Hash;
 
 use crate::app::{
-    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, RefImageMode, ResourcePoolInfo,
-    TestMode,
+    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel, QualifierSettings,
+    RefImageMode, ResourcePoolInfo, TestMode,
 };
 
 use super::button::{
     self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
 };
 use super::components::radio_button_group::{self, RadioButtonOption};
+use super::components::range_slider;
 use super::components::two_column_section;
 use super::components::value_slider;
 use super::design_tokens::{self, TextRole};
@@ -363,6 +364,14 @@ pub enum SidebarAction {
     SetClippingShadowThreshold(f32),
     /// Set clipping highlight threshold.
     SetClippingHighlightThreshold(f32),
+    /// Enable/disable qualifier overlay.
+    SetQualifierEnabled(bool),
+    /// Set the qualifier range for a single channel.
+    SetQualifierRange {
+        channel: QualifierChannel,
+        min: f32,
+        max: f32,
+    },
     /// Switch test mode (Single / Matrix).
     SetTestMode(TestMode),
     /// Toggle a resource pool's selection in matrix mode.
@@ -397,6 +406,8 @@ pub struct AnalysisSidebarState {
     pub tab: AnalysisTab,
     pub clipping: ClippingSettings,
     pub clip_enabled: bool,
+    pub qualifier: QualifierSettings,
+    pub qualifier_enabled: bool,
 }
 
 pub struct TestModeSidebarState<'a> {
@@ -863,6 +874,54 @@ fn test_mode_options() -> [RadioButtonOption<'static, TestMode>; 2] {
     ]
 }
 
+fn numbered_checkbox(ui: &mut egui::Ui, order: Option<usize>, label: &str) -> egui::Response {
+    let spacing = ui.spacing().icon_spacing;
+    let icon_width = ui.spacing().icon_width;
+    let total_extra = icon_width + spacing;
+    let text_style = design_tokens::text_style(TextRole::ActiveItemTitle);
+    let font = design_tokens::font_id(text_style.size, text_style.weight);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, text_style.color);
+    let desired_size = egui::vec2(total_extra + galley.size().x, icon_width.max(galley.size().y));
+    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+        let box_size = icon_width * 0.8;
+        let box_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.min.x + icon_width * 0.5, rect.center().y),
+            egui::vec2(box_size, box_size),
+        );
+        ui.painter().rect(
+            box_rect,
+            egui::CornerRadius::same(2),
+            if order.is_some() {
+                visuals.bg_fill
+            } else {
+                egui::Color32::TRANSPARENT
+            },
+            visuals.bg_stroke,
+            egui::StrokeKind::Outside,
+        );
+        if let Some(idx) = order {
+            let num = format!("{}", idx + 1);
+            ui.painter().text(
+                box_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                num,
+                egui::FontId::new(box_size * 0.75, egui::FontFamily::Monospace),
+                visuals.text_color(),
+            );
+        }
+        let text_pos = egui::pos2(rect.min.x + total_extra, rect.center().y - galley.size().y * 0.5);
+        ui.painter()
+            .galley(text_pos, galley, egui::Color32::PLACEHOLDER);
+    }
+
+    response
+}
+
 fn show_test_mode_section(
     ui: &mut egui::Ui,
     state: &TestModeSidebarState<'_>,
@@ -893,13 +952,16 @@ fn show_test_mode_section(
 
             let num_selected = state.selected_pool_ids.len();
             for pool in state.resource_pools {
-                let is_selected = state.selected_pool_ids.contains(&pool.node_id);
+                let order_index = state
+                    .selected_pool_ids
+                    .iter()
+                    .position(|id| id == &pool.node_id);
+                let is_selected = order_index.is_some();
                 let can_toggle = is_selected || num_selected < 2;
 
                 ui.add_enabled_ui(can_toggle, |ui| {
-                    let mut checked = is_selected;
                     let label = format!("{} ({} items)", pool.label, pool.item_count);
-                    if ui.checkbox(&mut checked, label).changed() {
+                    if numbered_checkbox(ui, order_index, &label).clicked() {
                         *sidebar_action =
                             Some(SidebarAction::ToggleMatrixPool(pool.node_id.clone()));
                     }

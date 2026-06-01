@@ -20,6 +20,7 @@ fn file_render_target_applies_scheme_defaults() {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         }],
         connections: Vec::new(),
         outputs: None,

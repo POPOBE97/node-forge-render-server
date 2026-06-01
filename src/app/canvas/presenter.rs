@@ -18,6 +18,7 @@ use crate::{
             reducer, reference, viewport,
         },
         frame::commands::AppCommand,
+        matrix_render,
         types::{App, RefImageMode, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
@@ -37,6 +38,7 @@ const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
 const ORDER_REF_ALPHA: i32 = 21;
 const ORDER_CLIPPING: i32 = 30;
+const ORDER_QUALIFIER: i32 = 31;
 const ORDER_STATS: i32 = 40;
 const KEY_TOGGLE_SAMPLING: egui::Key = egui::Key::N;
 const KEY_TOGGLE_REFERENCE_ALPHA: egui::Key = egui::Key::P;
@@ -160,6 +162,15 @@ fn draw_display_layers(
         ui.painter().add(
             egui::epaint::RectShape::filled(canvas_rect, rounding, Color32::WHITE)
                 .with_texture(clipping_texture_id, uv),
+        );
+    }
+
+    if app.canvas.analysis.qualifier_enabled
+        && let Some(qualifier_texture_id) = app.canvas.analysis.qualifier_texture_id
+    {
+        ui.painter().add(
+            egui::epaint::RectShape::filled(canvas_rect, rounding, Color32::WHITE)
+                .with_texture(qualifier_texture_id, uv),
         );
     }
 }
@@ -335,6 +346,24 @@ fn draw_operation_indicators(
             )
         });
 
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "qualifier",
+                ORDER_QUALIFIER,
+                app.canvas.analysis.qualifier_enabled,
+                ViewportIndicator {
+                    icon: "Q",
+                    tooltip: "Qualifier overlay 已开启",
+                    kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
+                },
+            )
+        });
+
     if let Some(stats) = app.canvas.analysis.diff_stats {
         app.canvas
             .viewport_indicator_manager
@@ -362,6 +391,176 @@ fn draw_operation_indicators(
                 )
             });
     }
+
+    let indicator_result = app
+        .canvas
+        .viewport_indicator_manager
+        .render(ui, ctx, canvas_rect, now);
+    if indicator_result.needs_repaint {
+        ctx.request_repaint();
+    }
+}
+
+fn draw_matrix_indicators(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    canvas_rect: Rect,
+    now: f64,
+) {
+    let sampling_indicator = match app.canvas.display.texture_filter {
+        wgpu::FilterMode::Nearest => ViewportIndicator {
+            icon: "N",
+            tooltip: "Viewport sampling: Nearest (press N to toggle Linear)",
+            kind: ViewportIndicatorKind::Text,
+            strikethrough: false,
+        },
+        wgpu::FilterMode::Linear => ViewportIndicator {
+            icon: "L",
+            tooltip: "Viewport sampling: Linear (press N to toggle Nearest)",
+            kind: ViewportIndicatorKind::Text,
+            strikethrough: false,
+        },
+    };
+    let operation_visual = ops::current_visual(&app.canvas.async_ops);
+
+    app.canvas.viewport_indicator_manager.begin_frame();
+
+    if let Some(visual) = operation_visual {
+        let operation_indicator = match visual {
+            ViewportOperationIndicatorVisual::InProgress => ViewportIndicator {
+                icon: "",
+                tooltip: "正在复制材质到剪贴板...",
+                kind: ViewportIndicatorKind::Spinner,
+                strikethrough: false,
+            },
+            ViewportOperationIndicatorVisual::Success => ViewportIndicator {
+                icon: "✓",
+                tooltip: "复制完成",
+                kind: ViewportIndicatorKind::Success,
+                strikethrough: false,
+            },
+            ViewportOperationIndicatorVisual::Failure => ViewportIndicator {
+                icon: "✕",
+                tooltip: "复制失败",
+                kind: ViewportIndicatorKind::Failure,
+                strikethrough: false,
+            },
+        };
+        app.canvas
+            .viewport_indicator_manager
+            .register(ViewportIndicatorEntry {
+                interaction: ViewportIndicatorInteraction::HoverOnly,
+                callback_id: None,
+                ..ViewportIndicatorEntry::compact(
+                    "operation",
+                    ORDER_OPERATION,
+                    ops::is_visible(&app.canvas.async_ops),
+                    operation_indicator,
+                )
+            });
+    }
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::text_badge_right_aligned_mono(
+                "render_fps",
+                ORDER_RENDER_FPS,
+                true,
+                format!("{} FPS", app.runtime.render_texture_fps_tracker.fps_at(now)),
+                "Scene redraws per second",
+            )
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "pause",
+                ORDER_PAUSE,
+                !app.runtime.time_updates_enabled,
+                ViewportIndicator {
+                    icon: "PAUSE",
+                    tooltip: "Time 更新已暂停（Space 恢复）",
+                    kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
+                },
+            )
+        });
+
+    let hdr_clamp_active = app.canvas.display.hdr_preview_clamp_enabled;
+    let hdr_indicator_tooltip = if hdr_clamp_active {
+        "Matrix cells: Rgba16Float (HDR) • Clamp to 1.0 ON (press S to toggle)"
+    } else {
+        "Matrix cells: Rgba16Float (HDR) • Clamp to 1.0 OFF (press S to toggle)"
+    };
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "preview_hdr",
+                ORDER_HDR,
+                true,
+                ViewportIndicator {
+                    icon: "HDR",
+                    tooltip: hdr_indicator_tooltip,
+                    kind: ViewportIndicatorKind::Hdr,
+                    strikethrough: hdr_clamp_active,
+                },
+            )
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            animated: false,
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact("sampling", ORDER_SAMPLING, true, sampling_indicator)
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "clipping",
+                ORDER_CLIPPING,
+                app.canvas.analysis.clip_enabled,
+                ViewportIndicator {
+                    icon: "C",
+                    tooltip: "Clipping overlay 已开启",
+                    kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
+                },
+            )
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "qualifier",
+                ORDER_QUALIFIER,
+                app.canvas.analysis.qualifier_enabled,
+                ViewportIndicator {
+                    icon: "Q",
+                    tooltip: "Qualifier overlay 已开启",
+                    kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
+                },
+            )
+        });
 
     let indicator_result = app
         .canvas
@@ -914,7 +1113,20 @@ pub fn show_canvas(
     draw_checkerboard(ui, ctx, canvas_rect);
 
     if matrix_active {
+        update_matrix_hover(app, ctx, canvas_rect, viewport_frame.image_rect);
         draw_matrix_grid_viewport(ui, app, canvas_rect, viewport_frame.image_rect);
+        draw_matrix_pixel_overlays(ui, app, canvas_rect, viewport_frame.image_rect);
+        draw_matrix_indicators(app, ui, ctx, canvas_rect, now);
+        maybe_sample_matrix_clicked_pixel(
+            app,
+            ctx,
+            &response,
+            canvas_rect,
+            viewport_frame.image_rect,
+            render_state,
+            renderer,
+            &mut frame_result,
+        );
     } else if let Some(ref display_frame) = display_frame {
         let uv = computed_uv(viewport_frame.image_rect, canvas_rect);
         draw_display_layers(
@@ -984,6 +1196,61 @@ pub fn show_canvas(
 const MATRIX_GRID_GAP_PX: f32 = 4.0;
 const MATRIX_LABEL_FONT_SIZE: f32 = 11.0;
 
+fn matrix_cell_screen_rect(
+    state: &matrix_render::MatrixRenderState,
+    coord: matrix_render::MatrixCellCoord,
+    image_rect: Rect,
+    zoom: f32,
+) -> Rect {
+    let cell_w = state.cell_resolution[0] as f32;
+    let cell_h = state.cell_resolution[1] as f32;
+    let local_x = coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
+    let local_y = coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+    Rect::from_min_size(
+        pos2(
+            image_rect.min.x + local_x * zoom,
+            image_rect.min.y + local_y * zoom,
+        ),
+        egui::vec2(cell_w * zoom, cell_h * zoom),
+    )
+}
+
+fn matrix_hit_test(
+    state: &matrix_render::MatrixRenderState,
+    pointer_pos: egui::Pos2,
+    image_rect: Rect,
+    zoom: f32,
+) -> Option<matrix_render::MatrixCellCoord> {
+    state.cells.iter().find_map(|cell| {
+        let rect = matrix_cell_screen_rect(state, cell.coord, image_rect, zoom);
+        rect.contains(pointer_pos).then_some(cell.coord)
+    })
+}
+
+fn update_matrix_hover(
+    app: &mut App,
+    ctx: &egui::Context,
+    canvas_rect: Rect,
+    image_rect: Rect,
+) {
+    let hovered = ctx.input(|i| i.pointer.hover_pos()).and_then(|pos| {
+        if !canvas_rect.contains(pos) {
+            return None;
+        }
+        matrix_hit_test(
+            &app.shell.matrix_state,
+            pos,
+            image_rect,
+            app.canvas.viewport.zoom,
+        )
+    });
+    let state = &mut app.shell.matrix_state;
+    state.hovered_coord = hovered;
+    if let Some(coord) = hovered {
+        state.sticky_stats_coord = Some(coord);
+    }
+}
+
 fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_rect: Rect) {
     let state = &app.shell.matrix_state;
     if state.cells.is_empty() {
@@ -998,10 +1265,13 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
 
     let painter = ui.painter_at(canvas_rect);
 
+    let use_hdr_clamp = app.canvas.display.hdr_preview_clamp_enabled;
+    let reference = app.canvas.reference.ref_image.as_ref();
+    let in_diff_mode = matches!(reference.map(|r| r.mode), Some(RefImageMode::Diff));
+    let clip_enabled = app.canvas.analysis.clip_enabled;
+    let qualifier_enabled = app.canvas.analysis.qualifier_enabled;
+
     for cell in &state.cells {
-        let Some(texture_id) = cell.egui_texture_id else {
-            continue;
-        };
         let local_x = cell.coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
         let local_y = cell.coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
 
@@ -1019,73 +1289,292 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
 
         let uv_min = (visible.min - cell_rect.min) / cell_rect.size();
         let uv_max = (visible.max - cell_rect.min) / cell_rect.size();
-        let uv = Rect::from_min_max(
+        let cell_uv = Rect::from_min_max(
             pos2(uv_min.x, uv_min.y),
             pos2(uv_max.x, uv_max.y),
         );
 
+        // Base layer: in Diff mode, the diff texture replaces the cell render
+        // (mirrors the single-image `compare_output_active` semantics).
+        let base_texture_id = if in_diff_mode && cell.diff_texture_id.is_some() {
+            cell.diff_texture_id
+        } else if use_hdr_clamp {
+            cell.hdr_clamped_egui_id.or(cell.egui_texture_id)
+        } else {
+            cell.egui_texture_id
+        };
+        let Some(base_texture_id) = base_texture_id else {
+            continue;
+        };
+
         painter.add(
             egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
-                .with_texture(texture_id, uv),
+                .with_texture(base_texture_id, cell_uv),
         );
 
-        let label_pos = pos2(cell_rect.center().x, cell_rect.min.y - 2.0);
-        if canvas_rect.contains(label_pos) {
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_BOTTOM,
-                &cell.label,
-                egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
-                Color32::from_gray(180),
+        // Reference overlay: only in Overlay mode, drawn relative to each
+        // cell's local origin so the same offset/opacity applies per cell.
+        if !in_diff_mode
+            && let Some(ref_img) = reference
+        {
+            let ref_size_px = egui::vec2(ref_img.size[0] as f32, ref_img.size[1] as f32);
+            let ref_min = cell_rect.min + ref_img.offset * zoom;
+            let ref_rect = Rect::from_min_size(ref_min, ref_size_px * zoom);
+            let ref_visible = ref_rect.intersect(cell_rect).intersect(canvas_rect);
+            if ref_visible.is_positive() {
+                let ru_min = (ref_visible.min - ref_rect.min) / ref_rect.size();
+                let ru_max = (ref_visible.max - ref_rect.min) / ref_rect.size();
+                let ref_uv =
+                    Rect::from_min_max(pos2(ru_min.x, ru_min.y), pos2(ru_max.x, ru_max.y));
+                let tint = if matches!(ref_img.mode, RefImageMode::Overlay) {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, (ref_img.opacity * 255.0) as u8)
+                } else {
+                    Color32::WHITE
+                };
+                painter.add(
+                    egui::epaint::RectShape::filled(
+                        ref_visible,
+                        egui::CornerRadius::ZERO,
+                        tint,
+                    )
+                    .with_texture(ref_img.texture.id(), ref_uv),
+                );
+            }
+        }
+
+        // Clipping overlay: per-cell, bounded to the cell rect.
+        if clip_enabled
+            && let Some(clip_id) = cell.clipping_texture_id
+        {
+            painter.add(
+                egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
+                    .with_texture(clip_id, cell_uv),
+            );
+        }
+
+        // Qualifier overlay: per-cell, bounded to the cell rect.
+        if qualifier_enabled
+            && let Some(qualifier_id) = cell.qualifier_texture_id
+        {
+            painter.add(
+                egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
+                    .with_texture(qualifier_id, cell_uv),
             );
         }
     }
 
+    let label_font = egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace);
+    let col_header_h = MATRIX_LABEL_FONT_SIZE + 6.0;
+    let row_header_w = MATRIX_LABEL_FONT_SIZE + 6.0;
+
     if let Some(ref col_pool_id) = state.col_pool_id {
-        let col_label = app
+        let col_pool = app
             .shell
             .resource_pools
             .iter()
-            .find(|p| p.node_id == *col_pool_id)
-            .map(|p| p.label.as_str())
-            .unwrap_or(col_pool_id.as_str());
+            .find(|p| p.node_id == *col_pool_id);
         for col in 0..cols {
-            let local_x = col as f32 * (cell_w + MATRIX_GRID_GAP_PX) + cell_w * 0.5;
+            let fallback = format!("{col}");
+            let item_name = col_pool
+                .and_then(|p| p.item_names.get(col))
+                .map(|s| s.as_str())
+                .unwrap_or(&fallback);
+            let local_x = col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
             let screen_x = image_rect.min.x + local_x * zoom;
-            let label_pos = pos2(screen_x, image_rect.min.y - 14.0);
-            if canvas_rect.contains(label_pos) {
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_BOTTOM,
-                    format!("{col_label}[{col}]"),
-                    egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
-                    Color32::from_gray(120),
-                );
+            let lane_w = cell_w * zoom;
+            let bg_rect = Rect::from_min_size(
+                pos2(screen_x, image_rect.min.y - col_header_h - 2.0),
+                egui::vec2(lane_w, col_header_h),
+            );
+            let visible = bg_rect.intersect(canvas_rect);
+            if !visible.is_positive() {
+                continue;
+            }
+            painter.rect_filled(visible, egui::CornerRadius::ZERO, Color32::BLACK);
+            let galley = painter.layout_no_wrap(
+                item_name.to_owned(),
+                label_font.clone(),
+                Color32::WHITE,
+            );
+            let text_pos = pos2(
+                bg_rect.center().x - galley.size().x * 0.5,
+                bg_rect.center().y - galley.size().y * 0.5,
+            );
+            if canvas_rect.contains(text_pos) {
+                painter.galley(text_pos, galley, Color32::PLACEHOLDER);
             }
         }
     }
 
     if let Some(ref row_pool_id) = state.row_pool_id {
-        let row_label = app
+        let row_pool = app
             .shell
             .resource_pools
             .iter()
-            .find(|p| p.node_id == *row_pool_id)
-            .map(|p| p.label.as_str())
-            .unwrap_or(row_pool_id.as_str());
+            .find(|p| p.node_id == *row_pool_id);
         for row in 0..rows {
-            let local_y = row as f32 * (cell_h + MATRIX_GRID_GAP_PX) + cell_h * 0.5;
+            let fallback = format!("{row}");
+            let item_name = row_pool
+                .and_then(|p| p.item_names.get(row))
+                .map(|s| s.as_str())
+                .unwrap_or(&fallback);
+            let local_y = row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
             let screen_y = image_rect.min.y + local_y * zoom;
-            let label_pos = pos2(image_rect.min.x - 4.0, screen_y);
-            if canvas_rect.contains(label_pos) {
-                painter.text(
-                    label_pos,
-                    egui::Align2::RIGHT_CENTER,
-                    format!("{row_label}[{row}]"),
-                    egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace),
-                    Color32::from_gray(120),
-                );
+            let lane_h = cell_h * zoom;
+            let bg_rect = Rect::from_min_size(
+                pos2(image_rect.min.x - row_header_w - 2.0, screen_y),
+                egui::vec2(row_header_w, lane_h),
+            );
+            let visible = bg_rect.intersect(canvas_rect);
+            if !visible.is_positive() {
+                continue;
             }
+            painter.rect_filled(visible, egui::CornerRadius::ZERO, Color32::BLACK);
+            let galley = painter.layout_no_wrap(
+                item_name.to_owned(),
+                label_font.clone(),
+                Color32::WHITE,
+            );
+            let text_origin = pos2(
+                bg_rect.center().x - galley.size().y * 0.5,
+                bg_rect.center().y + galley.size().x * 0.5,
+            );
+            let rotated = egui::epaint::TextShape {
+                pos: text_origin,
+                galley,
+                override_text_color: Some(Color32::WHITE),
+                underline: egui::Stroke::NONE,
+                fallback_color: Color32::WHITE,
+                opacity_factor: 1.0,
+                angle: -std::f32::consts::FRAC_PI_2,
+            };
+            painter.add(rotated);
         }
     }
+}
+
+fn draw_matrix_pixel_overlays(
+    ui: &egui::Ui,
+    app: &mut App,
+    canvas_rect: Rect,
+    image_rect: Rect,
+) {
+    let zoom = app.canvas.viewport.zoom;
+    if zoom < 48.0 {
+        return;
+    }
+
+    let state = &mut app.shell.matrix_state;
+    if state.cells.is_empty() {
+        return;
+    }
+    let cell_w = state.cell_resolution[0] as f32;
+    let cell_h = state.cell_resolution[1] as f32;
+    let resolution = state.cell_resolution;
+
+    for cell in &mut state.cells {
+        let local_x = cell.coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
+        let local_y = cell.coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+        let cell_image_rect = Rect::from_min_size(
+            pos2(
+                image_rect.min.x + local_x * zoom,
+                image_rect.min.y + local_y * zoom,
+            ),
+            egui::vec2(cell_w * zoom, cell_h * zoom),
+        );
+
+        if !cell_image_rect.intersects(canvas_rect) {
+            continue;
+        }
+
+        matrix_render::ensure_cell_pixel_cache(cell);
+        let cache = cell.pixel_cache.as_ref();
+        draw_pixel_overlay(
+            ui,
+            cell_image_rect,
+            canvas_rect,
+            zoom,
+            resolution,
+            cache,
+            None,
+            crate::app::types::DiffMetricMode::AE,
+            false,
+            false,
+        );
+    }
+}
+
+fn maybe_sample_matrix_clicked_pixel(
+    app: &mut App,
+    ctx: &egui::Context,
+    response: &egui::Response,
+    canvas_rect: Rect,
+    image_rect: Rect,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    frame_result: &mut CanvasFrameResult,
+) {
+    if !response.clicked_by(egui::PointerButton::Primary) {
+        return;
+    }
+    let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos()) else {
+        return;
+    };
+    if !canvas_rect.contains(pointer_pos) {
+        return;
+    }
+
+    let zoom = app.canvas.viewport.zoom;
+    let Some(coord) = matrix_hit_test(
+        &app.shell.matrix_state,
+        pointer_pos,
+        image_rect,
+        zoom,
+    ) else {
+        return;
+    };
+    let cell_w = app.shell.matrix_state.cell_resolution[0] as f32;
+    let cell_h = app.shell.matrix_state.cell_resolution[1] as f32;
+    let cell_image_rect =
+        matrix_cell_screen_rect(&app.shell.matrix_state, coord, image_rect, zoom);
+    let local = (pointer_pos - cell_image_rect.min) / cell_image_rect.size();
+    let x = (local.x * cell_w).floor() as u32;
+    let y = (local.y * cell_h).floor() as u32;
+    if x >= app.shell.matrix_state.cell_resolution[0]
+        || y >= app.shell.matrix_state.cell_resolution[1]
+    {
+        return;
+    }
+
+    let Some(cell) = app
+        .shell
+        .matrix_state
+        .cells
+        .iter_mut()
+        .find(|c| c.coord == coord)
+    else {
+        return;
+    };
+    matrix_render::ensure_cell_pixel_cache(cell);
+    let Some(cache) = cell.pixel_cache.as_ref() else {
+        return;
+    };
+    let Some(rgba) = pixel_overlay::sample_value_pixel(
+        cache,
+        x,
+        y,
+        None,
+        crate::app::types::DiffMetricMode::AE,
+        false,
+        false,
+    ) else {
+        return;
+    };
+    apply_action(
+        frame_result,
+        app,
+        render_state,
+        renderer,
+        CanvasAction::SamplePixel { x, y, rgba },
+    );
 }

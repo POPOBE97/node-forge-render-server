@@ -546,6 +546,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -587,6 +588,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -624,6 +626,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -658,6 +661,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
+                    wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);

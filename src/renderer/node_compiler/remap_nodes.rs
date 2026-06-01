@@ -365,6 +365,7 @@ mod tests {
             inputs: vec![],
             input_bindings: vec![],
             outputs: vec![],
+                    wgsl_override: None,
         };
         let scene = test_scene(vec![remap.clone()], vec![]);
         let nodes_by_id: HashMap<String, Node> = vec![(remap.id.clone(), remap.clone())]
@@ -400,6 +401,7 @@ mod tests {
             inputs: vec![],
             input_bindings: vec![],
             outputs: vec![],
+                    wgsl_override: None,
         };
         let t_src = Node {
             id: "t_src".to_string(),
@@ -408,6 +410,7 @@ mod tests {
             inputs: vec![],
             input_bindings: vec![],
             outputs: vec![],
+                    wgsl_override: None,
         };
         let conn = Connection {
             id: "c1".to_string(),
