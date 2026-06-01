@@ -21,6 +21,7 @@ notify = { version = "7", default-features = false, features = ["macos_fsevent"]
 deno_core = { version = "0.380.0", features = ["include_icu_data"] }
 arboard = "3"
 bytemuck = { version = "1", features = ["derive"] }
+rayon = "1"
 half = "2"
 rfd = "0.15"
 gltf = { version = "1", features = ["extras"] }

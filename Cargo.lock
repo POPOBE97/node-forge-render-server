@@ -2991,6 +2991,7 @@ dependencies = [
  "naga 0.20.0",
  "notify",
  "proptest",
+ "rayon",
  "rfd",
  "rust-wgpu-fiber",
  "serde",
