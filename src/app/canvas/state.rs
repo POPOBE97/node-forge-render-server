@@ -4,6 +4,7 @@ use rust_wgpu_fiber::{ResourceName, eframe::egui, eframe::wgpu};
 
 use crate::{
     app::{
+        display_metrics,
         frame::request_keys::{
             AnalysisSourceKey, ClippingRequestKey, DiffRequestKey, DiffStatsRequestKey,
             HistogramRequestKey, ParadeRequestKey, QualifierRequestKey, VectorscopeRequestKey,
@@ -52,11 +53,17 @@ impl CanvasState {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicalZoomRequest {
+    pub zoom: f32,
+    pub pixels_per_point: f32,
+}
+
 pub struct CanvasViewportState {
     pub zoom: f32,
     pub zoom_initialized: bool,
     pub min_zoom: Option<f32>,
+    pub explicit_min_zoom: Option<f32>,
     pub pan: egui::Vec2,
     pub pan_start: Option<egui::Pos2>,
     pub pan_zoom_start_zoom: f32,
@@ -65,8 +72,35 @@ pub struct CanvasViewportState {
     pub pan_zoom_target_pan: egui::Vec2,
     pub canvas_center_prev: Option<egui::Pos2>,
     pub pending_view_reset: bool,
-    pub pending_center_1x_zoom: Option<f32>,
+    pub pending_center_physical_zoom: Option<PhysicalZoomRequest>,
+    pub target_ppi: f32,
+    pub display_ppi_initialized_from_device: bool,
+    pub display_ppi_user_set: bool,
     pub last_sampled: Option<SampledPixel>,
+}
+
+impl Default for CanvasViewportState {
+    fn default() -> Self {
+        Self {
+            zoom: 0.0,
+            zoom_initialized: false,
+            min_zoom: None,
+            explicit_min_zoom: None,
+            pan: egui::Vec2::ZERO,
+            pan_start: None,
+            pan_zoom_start_zoom: 0.0,
+            pan_zoom_start_pan: egui::Vec2::ZERO,
+            pan_zoom_target_zoom: 0.0,
+            pan_zoom_target_pan: egui::Vec2::ZERO,
+            canvas_center_prev: None,
+            pending_view_reset: false,
+            pending_center_physical_zoom: None,
+            target_ppi: display_metrics::DEFAULT_DISPLAY_PPI,
+            display_ppi_initialized_from_device: false,
+            display_ppi_user_set: false,
+            last_sampled: None,
+        }
+    }
 }
 
 pub struct CanvasDisplayState {

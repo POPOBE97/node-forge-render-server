@@ -1284,7 +1284,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     rect_dyn_2,
                     vertex_graph_input_kinds,
                     None,
-                    false, // fullscreen_vertex_positioning
+                    false,                     // fullscreen_vertex_positioning
                     normals_bytes_2.is_some(), // has_normals
                 )?;
 

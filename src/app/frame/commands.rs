@@ -6,7 +6,10 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    app::{canvas, canvas::actions::CanvasAction, matrix_render, types::App, window_mode},
+    app::{
+        canvas, canvas::actions::CanvasAction, display_metrics, matrix_render, types::App,
+        window_mode,
+    },
     ui,
 };
 
@@ -18,6 +21,9 @@ pub enum AppCommand {
     ToggleCanvasOnly,
     SetTestMode(crate::app::TestMode),
     ToggleMatrixPool(String),
+    SetMatrixMaxRowCols(usize),
+    SetMatrixLabelsVisible(bool),
+    SetDisplayPpi(f32),
 }
 
 pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppCommand {
@@ -51,10 +57,23 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::SetClippingHighlightThreshold(threshold) => {
             AppCommand::Canvas(CanvasAction::SetClippingHighlightThreshold(threshold))
         }
+        ui::debug_sidebar::SidebarAction::SetQualifierEnabled(enabled) => {
+            AppCommand::Canvas(CanvasAction::SetQualifierEnabled(enabled))
+        }
+        ui::debug_sidebar::SidebarAction::SetQualifierRange { channel, min, max } => {
+            AppCommand::Canvas(CanvasAction::SetQualifierRange { channel, min, max })
+        }
         ui::debug_sidebar::SidebarAction::SetTestMode(mode) => AppCommand::SetTestMode(mode),
         ui::debug_sidebar::SidebarAction::ToggleMatrixPool(pool_id) => {
             AppCommand::ToggleMatrixPool(pool_id)
         }
+        ui::debug_sidebar::SidebarAction::SetMatrixMaxRowCols(max_cols) => {
+            AppCommand::SetMatrixMaxRowCols(max_cols)
+        }
+        ui::debug_sidebar::SidebarAction::SetMatrixLabelsVisible(visible) => {
+            AppCommand::SetMatrixLabelsVisible(visible)
+        }
+        ui::debug_sidebar::SidebarAction::SetDisplayPpi(ppi) => AppCommand::SetDisplayPpi(ppi),
     }
 }
 
@@ -78,12 +97,9 @@ fn rebuild_matrix_if_needed(
         adapter: Some(&render_state.adapter),
         asset_store: &app.core.asset_store,
     };
-    if let Err(e) = matrix_render::rebuild_matrix(
-        params,
-        render_state,
-        renderer,
-        &mut app.shell.matrix_state,
-    ) {
+    if let Err(e) =
+        matrix_render::rebuild_matrix(params, render_state, renderer, &mut app.shell.matrix_state)
+    {
         eprintln!("[matrix] rebuild failed: {e:#}");
     }
     if app.canvas.display.hdr_preview_clamp_enabled {
@@ -139,6 +155,37 @@ pub fn dispatch(
                 rebuild_matrix_if_needed(app, render_state, renderer);
             }
         }
+        AppCommand::SetMatrixMaxRowCols(max_cols) => {
+            if app.shell.matrix_config.max_row_cols != max_cols {
+                app.shell.matrix_config.max_row_cols = max_cols;
+                matrix_render::relayout_matrix(
+                    &app.shell.matrix_config,
+                    &mut app.shell.matrix_state,
+                );
+            }
+        }
+        AppCommand::SetMatrixLabelsVisible(visible) => {
+            if app.shell.matrix_config.show_labels != visible {
+                app.shell.matrix_config.show_labels = visible;
+                matrix_render::relayout_matrix(
+                    &app.shell.matrix_config,
+                    &mut app.shell.matrix_state,
+                );
+            }
+        }
+        AppCommand::SetDisplayPpi(target_ppi) => {
+            let current_display_metrics = display_metrics::current_display_metrics(ctx);
+            let _ = canvas::reducer::apply_action(
+                app,
+                render_state,
+                renderer,
+                CanvasAction::SetDisplayPpi {
+                    target_ppi,
+                    current_display_ppi: current_display_metrics.display_ppi,
+                    pixels_per_point: current_display_metrics.pixels_per_point,
+                },
+            )?;
+        }
     }
 
     Ok(())
@@ -176,5 +223,13 @@ mod tests {
         let diff = from_sidebar_action(SidebarAction::SetDiffMetricMode(DiffMetricMode::SE));
         assert!(matches!(analysis, AppCommand::Canvas(_)));
         assert!(matches!(diff, AppCommand::Canvas(_)));
+    }
+
+    #[test]
+    fn sidebar_display_ppi_maps_to_app_command() {
+        let command = from_sidebar_action(SidebarAction::SetDisplayPpi(264.0));
+        assert!(
+            matches!(command, AppCommand::SetDisplayPpi(ppi) if (ppi - 264.0).abs() < f32::EPSILON)
+        );
     }
 }

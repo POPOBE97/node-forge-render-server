@@ -201,7 +201,10 @@ fn load_default_scheme_source() -> Result<(String, String)> {
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_NODE_SCHEME_REL_PATH);
-    if !candidates.iter().any(|candidate| candidate == &manifest_dir) {
+    if !candidates
+        .iter()
+        .any(|candidate| candidate == &manifest_dir)
+    {
         candidates.push(manifest_dir);
     }
 
@@ -704,7 +707,7 @@ fn validate_connection(
         Some(PortTypeSpec::One(ty.clone()))
     }
 
-    fn math_multiply_output_port_type(node: &Node, port_id: &str) -> Option<PortTypeSpec> {
+    fn inferred_math_output_port_type(node: &Node, port_id: &str) -> Option<PortTypeSpec> {
         let p = node.outputs.iter().find(|p| p.id == port_id)?;
         let ty = p.port_type.as_ref()?;
         Some(PortTypeSpec::One(ty.clone()))
@@ -714,6 +717,33 @@ fn validate_connection(
         let p = list.iter().find(|p| p.id == port_id)?;
         let ty = p.port_type.as_ref()?;
         Some(PortTypeSpec::One(ty.clone()))
+    }
+
+    fn inferred_result_output_node_type(node_type: &str) -> bool {
+        matches!(
+            node_type,
+            "MathAdd"
+                | "MathSubtract"
+                | "MathMultiply"
+                | "MathDivide"
+                | "MathPower"
+                | "MathClamp"
+                | "MathMax"
+                | "Sin"
+                | "Cos"
+                | "Tan"
+                | "Asin"
+                | "Acos"
+                | "Atan"
+                | "Atan2"
+        )
+    }
+
+    fn dynamic_math_input_node_type(node_type: &str) -> bool {
+        matches!(
+            node_type,
+            "MathAdd" | "MathSubtract" | "MathMultiply" | "MathDivide"
+        )
     }
 
     let Some(from_node) = nodes_by_id.get(c.from.node_id.as_str()).copied() else {
@@ -744,12 +774,32 @@ fn validate_connection(
         return;
     }
 
-    let from_ty: Cow<'_, PortTypeSpec> = if from_node.node_type == "MathMultiply" {
-        // MathMultiply output is instance-defined: editor now exports inferred output type in
-        // node.outputs[0].type (at least for the `result` port).
-        // If missing, fall back to scheme (usually `any`).
-        if let Some(spec) = math_multiply_output_port_type(from_node, &c.from.port_id) {
-            Cow::Owned(spec)
+    let from_ty: Cow<'_, PortTypeSpec> =
+        if inferred_result_output_node_type(from_node.node_type.as_str()) {
+            // Inferred math output is instance-defined: editor exports inferred output type in
+            // node.outputs[0].type (at least for the `result` port).
+            // If missing, fall back to scheme (usually `any`).
+            if let Some(spec) = inferred_math_output_port_type(from_node, &c.from.port_id) {
+                Cow::Owned(spec)
+            } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
+                Cow::Borrowed(t)
+            } else {
+                errors.push(format!(
+                    "connection '{}' uses unknown from port '{}.{}' (type {})",
+                    c.id, c.from.node_id, c.from.port_id, from_node.node_type
+                ));
+                return;
+            }
+        } else if from_node.node_type == "DataParse" {
+            if let Some(spec) = dynamic_port_type(&from_node.outputs, &c.from.port_id) {
+                Cow::Owned(spec)
+            } else {
+                errors.push(format!(
+                    "connection '{}' uses unknown from port '{}.{}' (type {})",
+                    c.id, c.from.node_id, c.from.port_id, from_node.node_type
+                ));
+                return;
+            }
         } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
             Cow::Borrowed(t)
         } else {
@@ -758,26 +808,7 @@ fn validate_connection(
                 c.id, c.from.node_id, c.from.port_id, from_node.node_type
             ));
             return;
-        }
-    } else if from_node.node_type == "DataParse" {
-        if let Some(spec) = dynamic_port_type(&from_node.outputs, &c.from.port_id) {
-            Cow::Owned(spec)
-        } else {
-            errors.push(format!(
-                "connection '{}' uses unknown from port '{}.{}' (type {})",
-                c.id, c.from.node_id, c.from.port_id, from_node.node_type
-            ));
-            return;
-        }
-    } else if let Some(t) = from_scheme.outputs.get(&c.from.port_id) {
-        Cow::Borrowed(t)
-    } else {
-        errors.push(format!(
-            "connection '{}' uses unknown from port '{}.{}' (type {})",
-            c.id, c.from.node_id, c.from.port_id, from_node.node_type
-        ));
-        return;
-    };
+        };
 
     let to_ty: Cow<'_, PortTypeSpec> = if let Some(t) = to_scheme.inputs.get(&c.to.port_id) {
         Cow::Borrowed(t)
@@ -799,8 +830,8 @@ fn validate_connection(
             ));
             return;
         }
-    } else if to_node.node_type == "MathMultiply" {
-        // MathMultiply inputs are instance-defined (node.inputs in the DSL export).
+    } else if dynamic_math_input_node_type(to_node.node_type.as_str()) {
+        // Dynamic math inputs are instance-defined (node.inputs in the DSL export).
         // If the node didn't include `inputs`, accept any incoming connections.
         if let Some(p) = to_node.inputs.iter().find(|p| p.id == c.to.port_id) {
             if let Some(ty) = p.port_type.as_ref() {

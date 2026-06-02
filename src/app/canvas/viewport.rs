@@ -47,7 +47,11 @@ pub fn prepare_viewport(
         app.canvas.viewport.min_zoom = Some(fit_zoom);
         app.canvas.viewport.pan_zoom_target_zoom = fit_zoom;
     }
-    let min_zoom = app.canvas.viewport.min_zoom.unwrap_or(fit_zoom);
+    let min_zoom = app
+        .canvas
+        .viewport
+        .explicit_min_zoom
+        .unwrap_or_else(|| app.canvas.viewport.min_zoom.unwrap_or(fit_zoom));
 
     if frame.prev_mode != frame.mode {
         let target_zoom = if app.canvas.viewport.pan_zoom_target_zoom > 0.0 {
@@ -108,24 +112,28 @@ pub fn prepare_viewport(
         app.canvas.viewport.zoom = fit_zoom;
         app.canvas.viewport.pan = egui::Vec2::ZERO;
         app.canvas.viewport.pan_start = None;
+        app.canvas.viewport.explicit_min_zoom = None;
+        app.canvas.viewport.min_zoom = Some(fit_zoom);
         app.canvas.viewport.pan_zoom_target_zoom = fit_zoom;
         app.canvas.viewport.pan_zoom_target_pan = egui::Vec2::ZERO;
         app.canvas.viewport.pending_view_reset = false;
     }
 
-    if let Some(target_zoom) = app.canvas.viewport.pending_center_1x_zoom.take() {
+    if let Some(request) = app.canvas.viewport.pending_center_physical_zoom.take() {
+        let target_zoom = request.zoom.max(0.01);
+        let pixels_per_point = request.pixels_per_point.max(0.000_1);
+        let fit_min_zoom = app.canvas.viewport.min_zoom.unwrap_or(fit_zoom);
+        app.canvas.viewport.explicit_min_zoom = Some(target_zoom.min(fit_min_zoom).max(0.01));
         app.canvas.viewport.zoom = target_zoom;
         app.canvas.viewport.pan_start = None;
         app.canvas.viewport.pan_zoom_target_zoom = target_zoom;
 
-        // Snap image origin to physical pixel grid so that at 1:1 zoom every texel
-        // maps exactly to one device pixel — eliminating any sub-pixel offset that
-        // would cause linear and nearest sampling to differ.
-        let ppp = 1.0 / target_zoom; // pixels_per_point
+        // Snap image origin to the physical pixel grid, eliminating sub-pixel
+        // offsets that make linear and nearest sampling disagree.
         let draw_size = image_size * target_zoom;
         let base_min = canvas_rect.center() - draw_size * 0.5;
-        let snapped_x = (base_min.x * ppp).round() / ppp;
-        let snapped_y = (base_min.y * ppp).round() / ppp;
+        let snapped_x = (base_min.x * pixels_per_point).round() / pixels_per_point;
+        let snapped_y = (base_min.y * pixels_per_point).round() / pixels_per_point;
         let pan = egui::Vec2::new(snapped_x - base_min.x, snapped_y - base_min.y);
         app.canvas.viewport.pan = pan;
         app.canvas.viewport.pan_zoom_target_pan = pan;

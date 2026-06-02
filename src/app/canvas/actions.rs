@@ -12,7 +12,15 @@ pub enum CanvasAction {
     ToggleHdrClamp,
     TogglePause,
     ResetView,
-    CenterAt1x { device_zoom: f32 },
+    CenterAt1x {
+        pixels_per_point: f32,
+        current_display_ppi: Option<f32>,
+    },
+    SetDisplayPpi {
+        target_ppi: f32,
+        current_display_ppi: Option<f32>,
+        pixels_per_point: f32,
+    },
     ToggleSampling,
     ToggleReferenceAlpha,
     ToggleClipping,

@@ -399,7 +399,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -435,7 +435,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -468,7 +468,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -504,7 +504,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

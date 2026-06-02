@@ -50,6 +50,11 @@ cargo fmt
 cargo clippy
 ```
 
+For targeted edits, do not run broad whole-repo formatting unless the user explicitly asks for a
+formatting pass. `cargo fmt` can reflow unrelated Rust files in a dirty worktree and create noisy
+diffs. Prefer small `apply_patch` edits; if formatting is truly needed, restrict it as much as
+practical and revert unrelated formatting churn before finishing.
+
 ## Key paths
 - `src/main.rs`: CLI + UI/headless entry.
 - `src/renderer/`: WGSL generation and shader-space construction.

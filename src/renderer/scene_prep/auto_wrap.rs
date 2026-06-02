@@ -191,7 +191,7 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         });
         scene.nodes.push(Node {
             id: p.pass_id.clone(),
@@ -200,7 +200,7 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         });
 
         new_connections.push(Connection {

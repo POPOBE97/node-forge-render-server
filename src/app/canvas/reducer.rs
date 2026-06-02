@@ -5,7 +5,9 @@ use crate::app::{
     canvas::{
         actions::{CanvasAction, CanvasFrameResult},
         ops, pixel_overlay, reference,
+        state::PhysicalZoomRequest,
     },
+    display_metrics,
     layout_math::clamp_zoom,
     matrix_render, texture_bridge,
     types::{App, QualifierChannel, RefImageAlphaMode, RefImageMode, SampledPixel},
@@ -68,8 +70,45 @@ pub fn apply_action(
         CanvasAction::ResetView => {
             app.canvas.viewport.pending_view_reset = true;
         }
-        CanvasAction::CenterAt1x { device_zoom } => {
-            app.canvas.viewport.pending_center_1x_zoom = Some(device_zoom);
+        CanvasAction::CenterAt1x {
+            pixels_per_point,
+            current_display_ppi,
+        } => {
+            if let Some(current_display_ppi) = current_display_ppi {
+                app.canvas.viewport.target_ppi =
+                    display_metrics::clamp_display_ppi(current_display_ppi);
+                app.canvas.viewport.display_ppi_initialized_from_device = true;
+                app.canvas.viewport.display_ppi_user_set = false;
+            }
+            if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+                app.canvas.viewport.pending_center_physical_zoom = Some(PhysicalZoomRequest {
+                    zoom: 1.0 / pixels_per_point,
+                    pixels_per_point,
+                });
+            }
+        }
+        CanvasAction::SetDisplayPpi {
+            target_ppi,
+            current_display_ppi,
+            pixels_per_point,
+        } => {
+            let target_ppi = display_metrics::clamp_display_ppi(target_ppi);
+            app.canvas.viewport.target_ppi = target_ppi;
+            app.canvas.viewport.display_ppi_user_set = true;
+
+            if let Some(current_display_ppi) = current_display_ppi {
+                app.canvas.viewport.display_ppi_initialized_from_device = true;
+                if let Some(zoom) = display_metrics::simulation_zoom(
+                    current_display_ppi,
+                    target_ppi,
+                    pixels_per_point,
+                ) {
+                    app.canvas.viewport.pending_center_physical_zoom = Some(PhysicalZoomRequest {
+                        zoom,
+                        pixels_per_point,
+                    });
+                }
+            }
         }
         CanvasAction::ToggleSampling => {
             app.canvas.display.texture_filter = match app.canvas.display.texture_filter {

@@ -9,6 +9,134 @@ use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::utils::coerce_to_type;
 
+const SDF2D_WGSL_LIB_KEY: &str = "sdf2d_lib";
+const SDF2D_BEVEL_WGSL_LIB_KEY: &str = "sdf2d_bevel_lib";
+const SDF2D_ROUND_RECT_FN: &str = "sdf2d_round_rect";
+const SDF2D_SMOOTH_ROUND_RECT_FN: &str = "sdf2d_smooth_round_rect";
+const SDF2D_BEVEL_SMOOTH5_FN: &str = "sdf2d_bevel_smooth5";
+const SDF2D_BEVEL_SMOOTH7_FN: &str = "sdf2d_bevel_smooth7";
+const SDF2D_BEVEL_NORMAL_FN: &str = "sdf2d_bevel_normal";
+const SDF2D_BEVEL_EPS_FN: &str = "sdf2d_bevel_eps";
+
+struct Sdf2DLib {
+    round_rect_fn: String,
+    smooth_round_rect_fn: String,
+}
+
+struct Sdf2DBevelLib {
+    bevel_smooth5_fn: String,
+    bevel_smooth7_fn: String,
+    bevel_normal_fn: String,
+    bevel_eps_fn: String,
+}
+
+fn sanitize_id_suffix(id: &str) -> String {
+    id.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+fn override_path(node: &Node) -> Option<std::path::PathBuf> {
+    node.wgsl_override
+        .as_deref()
+        .and_then(super::template_loader::resolve_override_path)
+}
+
+fn ensure_sdf2d_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) -> Sdf2DLib {
+    let path = override_path(node);
+    let template =
+        super::template_loader::load_template_with_override(path.as_deref(), "sdf2d.wgsl");
+
+    if path.is_some() {
+        let suffix = sanitize_id_suffix(&node.id);
+        let round_rect_fn = format!("{SDF2D_ROUND_RECT_FN}__{suffix}");
+        let smooth_round_rect_fn = format!("{SDF2D_SMOOTH_ROUND_RECT_FN}__{suffix}");
+        let lib_key = format!("{SDF2D_WGSL_LIB_KEY}::{suffix}");
+        let renamed = template
+            .replace(SDF2D_ROUND_RECT_FN, &round_rect_fn)
+            .replace(SDF2D_SMOOTH_ROUND_RECT_FN, &smooth_round_rect_fn);
+        let block = format!(
+            "\n// ---- 2D SDF helpers (generated, override for {}) ----\n{}",
+            node.id, renamed
+        );
+        ctx.extra_wgsl_decls.entry(lib_key).or_insert(block);
+        return Sdf2DLib {
+            round_rect_fn,
+            smooth_round_rect_fn,
+        };
+    }
+
+    ensure_default_sdf2d_wgsl_lib(ctx);
+    Sdf2DLib {
+        round_rect_fn: SDF2D_ROUND_RECT_FN.to_string(),
+        smooth_round_rect_fn: SDF2D_SMOOTH_ROUND_RECT_FN.to_string(),
+    }
+}
+
+pub(crate) fn ensure_default_sdf2d_wgsl_lib(ctx: &mut MaterialCompileContext) {
+    if ctx.extra_wgsl_decls.contains_key(SDF2D_WGSL_LIB_KEY) {
+        return;
+    }
+
+    let template = super::template_loader::load_template("sdf2d.wgsl");
+    let block = format!("\n// ---- 2D SDF helpers (generated) ----\n{}", template);
+    ctx.extra_wgsl_decls
+        .insert(SDF2D_WGSL_LIB_KEY.to_string(), block);
+}
+
+fn ensure_sdf2d_bevel_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) -> Sdf2DBevelLib {
+    let path = override_path(node);
+    let template =
+        super::template_loader::load_template_with_override(path.as_deref(), "sdf2d_bevel.wgsl");
+
+    if path.is_some() {
+        let suffix = sanitize_id_suffix(&node.id);
+        let bevel_smooth5_fn = format!("{SDF2D_BEVEL_SMOOTH5_FN}__{suffix}");
+        let bevel_smooth7_fn = format!("{SDF2D_BEVEL_SMOOTH7_FN}__{suffix}");
+        let bevel_normal_fn = format!("{SDF2D_BEVEL_NORMAL_FN}__{suffix}");
+        let bevel_eps_fn = format!("{SDF2D_BEVEL_EPS_FN}__{suffix}");
+        let lib_key = format!("{SDF2D_BEVEL_WGSL_LIB_KEY}::{suffix}");
+        let renamed = template
+            .replace(SDF2D_BEVEL_SMOOTH5_FN, &bevel_smooth5_fn)
+            .replace(SDF2D_BEVEL_SMOOTH7_FN, &bevel_smooth7_fn)
+            .replace(SDF2D_BEVEL_EPS_FN, &bevel_eps_fn)
+            .replace(SDF2D_BEVEL_NORMAL_FN, &bevel_normal_fn);
+        let block = format!(
+            "\n// ---- 2D SDF bevel helpers (generated, override for {}) ----\n{}",
+            node.id, renamed
+        );
+        ctx.extra_wgsl_decls.entry(lib_key).or_insert(block);
+        return Sdf2DBevelLib {
+            bevel_smooth5_fn,
+            bevel_smooth7_fn,
+            bevel_normal_fn,
+            bevel_eps_fn,
+        };
+    }
+
+    ensure_default_sdf2d_bevel_wgsl_lib(ctx);
+    Sdf2DBevelLib {
+        bevel_smooth5_fn: SDF2D_BEVEL_SMOOTH5_FN.to_string(),
+        bevel_smooth7_fn: SDF2D_BEVEL_SMOOTH7_FN.to_string(),
+        bevel_normal_fn: SDF2D_BEVEL_NORMAL_FN.to_string(),
+        bevel_eps_fn: SDF2D_BEVEL_EPS_FN.to_string(),
+    }
+}
+
+fn ensure_default_sdf2d_bevel_wgsl_lib(ctx: &mut MaterialCompileContext) {
+    if ctx.extra_wgsl_decls.contains_key(SDF2D_BEVEL_WGSL_LIB_KEY) {
+        return;
+    }
+
+    let template = super::template_loader::load_template("sdf2d_bevel.wgsl");
+    let block = format!(
+        "\n// ---- 2D SDF bevel helpers (generated) ----\n{}",
+        template
+    );
+    ctx.extra_wgsl_decls
+        .insert(SDF2D_BEVEL_WGSL_LIB_KEY.to_string(), block);
+}
+
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
     v.as_f64()
         .map(|x| x as f32)
@@ -280,6 +408,7 @@ where
 
     match shape {
         "rectangle" => {
+            let sdf_lib = ensure_sdf2d_wgsl_lib(ctx, node);
             // Rounded rectangle with per-corner radii.
             // Convention (quadrant -> radius4 component):
             // - p.x < 0 && p.y > 0 => radius4.x (left-top)
@@ -295,32 +424,41 @@ where
             );
             let rad4 = resolve_input_expr_vec4(scene, node, "radius4", ctx, cache, &compile_fn)?;
 
-            ctx.extra_wgsl_decls
-                .entry("sdf2d_round_rect".to_string())
-                .or_insert_with(|| {
-                    r#"fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
-    var r: f32 = rad4.x;
-    if (p.x > 0.0 && p.y > 0.0) {
-        r = rad4.y;
-    } else if (p.x > 0.0 && p.y < 0.0) {
-        r = rad4.z;
-    } else if (p.x < 0.0 && p.y < 0.0) {
-        r = rad4.w;
-    }
-
-    let q = abs(p) - b + vec2f(r, r);
-    let outside = length(max(q, vec2f(0.0, 0.0)));
-    let inside = min(max(q.x, q.y), 0.0);
-    return outside + inside - r;
-}
-"#
-                    .to_string()
-                });
-
             Ok(TypedExpr::with_time(
-                format!("sdf2d_round_rect({}, {}, {})", p.expr, b.expr, rad4.expr),
+                format!(
+                    "{}({}, {}, {})",
+                    sdf_lib.round_rect_fn, p.expr, b.expr, rad4.expr
+                ),
                 ValueType::F32,
                 p.uses_time || b.uses_time || rad4.uses_time,
+            ))
+        }
+        "smooth_round_rect" => {
+            let sdf_lib = ensure_sdf2d_wgsl_lib(ctx, node);
+            let size = resolve_input_expr_vec2(scene, node, "size", ctx, cache, &compile_fn)?;
+            let b = TypedExpr::with_time(
+                format!("({} * 0.5)", size.expr),
+                ValueType::Vec2,
+                size.uses_time,
+            );
+            let radius = resolve_input_expr_f32(scene, node, "radius", ctx, cache, &compile_fn)?;
+            let axis_mix = resolve_input_expr_vec2_or_default(
+                scene,
+                node,
+                "axisMix",
+                "vec2f(0.0, 0.0)",
+                ctx,
+                cache,
+                &compile_fn,
+            )?;
+
+            Ok(TypedExpr::with_time(
+                format!(
+                    "{}(abs({}), {}, {}, {}).x",
+                    sdf_lib.smooth_round_rect_fn, p.expr, b.expr, radius.expr, axis_mix.expr
+                ),
+                ValueType::F32,
+                p.uses_time || b.uses_time || radius.uses_time || axis_mix.uses_time,
             ))
         }
         // Treat unknown values as circle for resilience.
@@ -335,25 +473,8 @@ where
     }
 }
 
-fn wgsl_f32(x: f32) -> String {
-    if x.is_finite() {
-        // Ensure a decimal point so WGSL treats it as a float literal.
-        if x.fract() == 0.0 {
-            format!("{:.1}", x)
-        } else {
-            format!("{}", x)
-        }
-    } else {
-        "0.0".to_string()
-    }
-}
-
-fn offset_in_local_px(expr: &str, dx: f32, dy: f32) -> String {
-    let off = format!(
-        "(in.local_px.xy + vec2f({}, {}))",
-        wgsl_f32(dx),
-        wgsl_f32(dy)
-    );
+fn offset_in_local_px(expr: &str, dx: &str, dy: &str) -> String {
+    let off = format!("(in.local_px.xy + vec2f({dx}, {dy}))");
     expr.replace("in.local_px.xy", &off)
 }
 
@@ -394,10 +515,11 @@ where
         );
     }
 
+    let bevel_lib = ensure_sdf2d_bevel_wgsl_lib(ctx, node);
     let bevel_fn = match curve {
-        "smooth5" => "sdf2d_bevel_smooth5",
+        "smooth5" => bevel_lib.bevel_smooth5_fn.as_str(),
         // Treat unknown values as smooth7 for resilience.
-        _ => "sdf2d_bevel_smooth7",
+        _ => bevel_lib.bevel_smooth7_fn.as_str(),
     };
 
     // Inputs:
@@ -418,81 +540,6 @@ where
     let cliff =
         resolve_input_expr_f32_or_default(scene, node, "cliff", 0.5, ctx, cache, &compile_fn)?;
 
-    ctx.extra_wgsl_decls
-        .entry("sdf2d_bevel_smooth5".to_string())
-        .or_insert_with(|| {
-            r#"fn sdf2d_bevel_smooth5_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    // 5th-degree smootherstep: t^3 * (t * (t * 6 - 15) + 10)
-    t = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    return (t - 0.5) * 2.0;
-}
-
-fn sdf2d_bevel_smooth5(d_in: f32, edge: f32, cliff: f32) -> f32 {
-    var d = d_in;
-    if (d < -edge) {
-        d = -edge;
-    } else if (d < 0.0) {
-        var x = -d / edge;
-        if (x >= 0.85) {
-            x = 1.0;
-        } else {
-            x = clamp(x, 0.0, 1.0);
-            x = sdf2d_bevel_smooth5_map(x);
-            x = pow(x, cliff);
-        }
-        d = -x * edge;
-    }
-    return d;
-}
-"#
-            .to_string()
-        });
-
-    ctx.extra_wgsl_decls
-        .entry("sdf2d_bevel_smooth7".to_string())
-        .or_insert_with(|| {
-            r#"fn sdf2d_bevel_smooth7_map(t_in: f32) -> f32 {
-    // Map t in [0, 1] into a symmetric [-1, 1] curve.
-    var t = 0.5 + t_in * 0.5;
-    t = clamp(t, 0.0, 1.0);
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let t4 = t3 * t;
-    let t5 = t4 * t;
-    let t6 = t5 * t;
-    let t7 = t6 * t;
-    // 7th-degree smooth polynomial
-    t = -20.0 * t7 + 70.0 * t6 - 84.0 * t5 + 35.0 * t4;
-    return (t - 0.5) * 2.0;
-}
-
-fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {
-    var d = d_in;
-    if (d < -edge) {
-        d = -edge;
-    } else if (d < 0.0) {
-        var x = -d / edge;
-        if (x >= 0.85) {
-            x = 1.0;
-        } else {
-            x = clamp(x, 0.0, 1.0);
-            x = sdf2d_bevel_smooth7_map(x);
-            x = pow(x, cliff);
-        }
-        d = -x * edge;
-    }
-    return d;
-}
-
-// Note: normal reconstruction below uses 4 extra evaluations (finite differences).
-// Potential optimization: use `dpdx`/`dpdy` in WGSL to estimate derivatives with fewer calls.
-"#
-            .to_string()
-        });
-
     let depth0 = TypedExpr::with_time(
         format!("{bevel_fn}({}, {}, {})", d0.expr, width.expr, cliff.expr),
         ValueType::F32,
@@ -506,20 +553,21 @@ fn sdf2d_bevel_smooth7(d_in: f32, edge: f32, cliff: f32) -> f32 {
     // Normal from depth finite differences in geometry-local pixel space.
     // We approximate depth(x, y) in a small neighborhood by re-evaluating the upstream distance
     // expression with `in.local_px` substituted by offset values.
-    let d_px = offset_in_local_px(&d0.expr, 1.0, 0.0);
-    let d_nx = offset_in_local_px(&d0.expr, -1.0, 0.0);
-    let d_py = offset_in_local_px(&d0.expr, 0.0, 1.0);
-    let d_ny = offset_in_local_px(&d0.expr, 0.0, -1.0);
+    let normal_eps = format!("{}()", bevel_lib.bevel_eps_fn);
+    let d_px = offset_in_local_px(&d0.expr, &normal_eps, "0.0");
+    let d_nx = offset_in_local_px(&d0.expr, &format!("-({normal_eps})"), "0.0");
+    let d_py = offset_in_local_px(&d0.expr, "0.0", &normal_eps);
+    let d_ny = offset_in_local_px(&d0.expr, "0.0", &format!("-({normal_eps})"));
 
     let depth_px = format!("{bevel_fn}({d_px}, {}, {})", width.expr, cliff.expr);
     let depth_nx = format!("{bevel_fn}({d_nx}, {}, {})", width.expr, cliff.expr);
     let depth_py = format!("{bevel_fn}({d_py}, {}, {})", width.expr, cliff.expr);
     let depth_ny = format!("{bevel_fn}({d_ny}, {}, {})", width.expr, cliff.expr);
 
-    // Central differences (spacing = 2px).
-    let dx = format!("(({depth_px}) - ({depth_nx})) * 0.5");
-    let dy = format!("(({depth_py}) - ({depth_ny})) * 0.5");
-    let n = format!("normalize(vec3f(-({dx}), -({dy}), 1.0))");
+    let n = format!(
+        "{}({}, {}, {}, {}, {})",
+        bevel_lib.bevel_normal_fn, depth_px, depth_nx, depth_py, depth_ny, normal_eps
+    );
 
     Ok(TypedExpr::with_time(
         n,
@@ -546,7 +594,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -588,7 +636,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -609,7 +657,48 @@ mod tests {
         assert_eq!(expr.ty, ValueType::F32);
         assert!(expr.expr.contains("in.local_px"));
         assert!(expr.expr.contains("sdf2d_round_rect"));
-        assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_round_rect"));
+        let lib = ctx.extra_wgsl_decls.get(SDF2D_WGSL_LIB_KEY).unwrap();
+        assert!(lib.contains("fn sdf2d_round_rect"));
+    }
+
+    #[test]
+    fn sdf2d_smooth_round_rect_emits_helper() {
+        let node = Node {
+            id: "sdf".to_string(),
+            node_type: "Sdf2D".to_string(),
+            params: HashMap::from([
+                ("shape".to_string(), serde_json::json!("smooth_round_rect")),
+                ("position".to_string(), serde_json::json!([1.0, 2.0])),
+                ("size".to_string(), serde_json::json!([10.0, 20.0])),
+                ("radius".to_string(), serde_json::json!(3.0)),
+                ("axisMix".to_string(), serde_json::json!([0.25, 0.75])),
+            ]),
+            inputs: vec![],
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        };
+
+        let scene = test_scene(vec![node.clone()], vec![]);
+        let nodes_by_id = HashMap::from([(node.id.clone(), node)]);
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let expr = crate::renderer::node_compiler::compile_material_expr(
+            &scene,
+            &nodes_by_id,
+            "sdf",
+            Some("distance"),
+            &mut ctx,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert_eq!(expr.ty, ValueType::F32);
+        assert!(expr.expr.contains("sdf2d_smooth_round_rect"));
+        assert!(expr.expr.contains(".x"));
+        let lib = ctx.extra_wgsl_decls.get(SDF2D_WGSL_LIB_KEY).unwrap();
+        assert!(lib.contains("fn sdf2d_smooth_round_rect"));
     }
 
     #[test]
@@ -626,7 +715,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -646,7 +735,8 @@ mod tests {
 
         assert_eq!(expr.ty, ValueType::F32);
         assert!(expr.expr.contains("sdf2d_bevel_smooth7"));
-        assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_bevel_smooth7"));
+        let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
+        assert!(lib.contains("fn sdf2d_bevel_smooth7"));
     }
 
     #[test]
@@ -661,7 +751,7 @@ mod tests {
             inputs: vec![],
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let scene = test_scene(vec![node.clone()], vec![]);
@@ -680,8 +770,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::Vec3);
-        assert!(expr.expr.contains("normalize(vec3f"));
+        assert!(expr.expr.contains("sdf2d_bevel_normal"));
         assert!(expr.expr.contains("sdf2d_bevel_smooth5"));
-        assert!(ctx.extra_wgsl_decls.contains_key("sdf2d_bevel_smooth5"));
+        let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
+        assert!(lib.contains("fn sdf2d_bevel_smooth5"));
+        assert!(lib.contains("fn sdf2d_bevel_normal"));
     }
 }

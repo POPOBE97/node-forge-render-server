@@ -140,7 +140,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     inputs: Vec::new(),
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 });
             instance_input_sources(scene, &inst_node)
         };

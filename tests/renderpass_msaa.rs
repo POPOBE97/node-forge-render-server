@@ -21,7 +21,7 @@ fn make_render_pass_scene(msaa_sample_count: serde_json::Value) -> SceneDSL {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }],
         connections: Vec::new(),
         outputs: None,
@@ -43,7 +43,7 @@ fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
         inputs: Vec::new(),
         input_bindings: Vec::new(),
         outputs: Vec::new(),
-            wgsl_override: None,
+        wgsl_override: None,
     }
 }
 
@@ -99,7 +99,7 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }],
         connections: Vec::new(),
         outputs: None,

@@ -778,112 +778,121 @@ pub fn show_canvas(
 ) -> CanvasFrameResult {
     let mut frame_result = CanvasFrameResult::default();
 
-    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F)) {
-        frame_result.commands.push(AppCommand::ToggleCanvasOnly);
-    }
-    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::S)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleHdrClamp,
-        );
-    }
-    if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::TogglePause,
-        );
-    }
-    if ctx.input(|i| i.key_pressed(egui::Key::R)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ResetView,
-        );
-    }
-    if ctx.input(|i| i.key_pressed(KEY_TOGGLE_SAMPLING)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleSampling,
-        );
-    }
-    if ctx.input(|i| i.key_pressed(KEY_TOGGLE_REFERENCE_ALPHA)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleReferenceAlpha,
-        );
-    }
-    if ctx.input(|i| i.key_pressed(egui::Key::C)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleClipping,
-        );
-    }
-    if ctx.input(|i| i.key_pressed(egui::Key::A)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ResetReferenceOffset,
-        );
-    }
     if ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command) {
-        let device_zoom = 1.0 / ctx.pixels_per_point();
+        let current_display_metrics = crate::app::display_metrics::current_display_metrics(ctx);
         apply_action(
             &mut frame_result,
             app,
             render_state,
             renderer,
-            CanvasAction::CenterAt1x { device_zoom },
-        );
-    } else if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::SetReferenceOpacity(0.0),
+            CanvasAction::CenterAt1x {
+                pixels_per_point: current_display_metrics.pixels_per_point,
+                current_display_ppi: current_display_metrics.display_ppi,
+            },
         );
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Num2)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::SetReferenceOpacity(1.0),
-        );
-    }
-    if ctx.input(|i| i.key_pressed(egui::Key::D)) {
-        apply_action(
-            &mut frame_result,
-            app,
-            render_state,
-            renderer,
-            CanvasAction::ToggleReferenceMode,
-        );
+
+    let plain_shortcuts_enabled = !ctx.wants_keyboard_input();
+    if plain_shortcuts_enabled {
+        if ctx.input(|i| i.key_pressed(egui::Key::F)) {
+            frame_result.commands.push(AppCommand::ToggleCanvasOnly);
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::S)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleHdrClamp,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::TogglePause,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::R)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ResetView,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(KEY_TOGGLE_SAMPLING)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleSampling,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(KEY_TOGGLE_REFERENCE_ALPHA)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleReferenceAlpha,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::C)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleClipping,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::A)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ResetReferenceOffset,
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num1) && !i.modifiers.command) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::SetReferenceOpacity(0.0),
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num2)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::SetReferenceOpacity(1.0),
+            );
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::D)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleReferenceMode,
+            );
+        }
     }
 
     reference::maybe_handle_reference_drop(app, ctx, render_state);
 
     if app.canvas.display.preview_texture_name.is_some()
+        && plain_shortcuts_enabled
         && ctx.input(|i| i.key_pressed(egui::Key::Escape))
     {
         apply_action(
@@ -905,8 +914,9 @@ pub fn show_canvas(
         let cell_h = ms.cell_resolution[1] as f32;
         let cols = ms.grid_cols.max(1) as f32;
         let rows = ms.grid_rows.max(1) as f32;
+        let row_gap = matrix_row_gap_px(ms);
         let total_w = cell_w * cols + MATRIX_GRID_GAP_PX * (cols - 1.0);
-        let total_h = cell_h * rows + MATRIX_GRID_GAP_PX * (rows - 1.0);
+        let total_h = cell_h * rows + row_gap * (rows - 1.0);
         (false, None, egui::vec2(total_w.max(1.0), total_h.max(1.0)))
     } else {
         let using_preview = display::sync_preview_source(app, render_state, renderer);
@@ -1195,17 +1205,46 @@ pub fn show_canvas(
 /// Gap between matrix cells in texel units (native resolution pixels).
 const MATRIX_GRID_GAP_PX: f32 = 4.0;
 const MATRIX_LABEL_FONT_SIZE: f32 = 11.0;
+const MATRIX_LABEL_ROW_HEIGHT_PX: f32 = MATRIX_LABEL_FONT_SIZE + 6.0;
+const MATRIX_WRAPPED_ROW_GAP_PX: f32 = MATRIX_LABEL_ROW_HEIGHT_PX + 4.0;
+
+fn matrix_row_gap_px(state: &matrix_render::MatrixRenderState) -> f32 {
+    if state.show_labels && state.row_chunks_per_logical_row > 1 {
+        MATRIX_WRAPPED_ROW_GAP_PX
+    } else {
+        MATRIX_GRID_GAP_PX
+    }
+}
 
 fn matrix_cell_screen_rect(
     state: &matrix_render::MatrixRenderState,
     coord: matrix_render::MatrixCellCoord,
     image_rect: Rect,
     zoom: f32,
+) -> Option<Rect> {
+    let display_coord = state
+        .cells
+        .iter()
+        .find(|cell| cell.coord == coord)
+        .map(|cell| cell.display_coord)?;
+    Some(matrix_display_cell_screen_rect(
+        state,
+        display_coord,
+        image_rect,
+        zoom,
+    ))
+}
+
+fn matrix_display_cell_screen_rect(
+    state: &matrix_render::MatrixRenderState,
+    display_coord: matrix_render::MatrixCellCoord,
+    image_rect: Rect,
+    zoom: f32,
 ) -> Rect {
     let cell_w = state.cell_resolution[0] as f32;
     let cell_h = state.cell_resolution[1] as f32;
-    let local_x = coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
-    let local_y = coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+    let local_x = display_coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
+    let local_y = display_coord.row as f32 * (cell_h + matrix_row_gap_px(state));
     Rect::from_min_size(
         pos2(
             image_rect.min.x + local_x * zoom,
@@ -1222,17 +1261,12 @@ fn matrix_hit_test(
     zoom: f32,
 ) -> Option<matrix_render::MatrixCellCoord> {
     state.cells.iter().find_map(|cell| {
-        let rect = matrix_cell_screen_rect(state, cell.coord, image_rect, zoom);
+        let rect = matrix_display_cell_screen_rect(state, cell.display_coord, image_rect, zoom);
         rect.contains(pointer_pos).then_some(cell.coord)
     })
 }
 
-fn update_matrix_hover(
-    app: &mut App,
-    ctx: &egui::Context,
-    canvas_rect: Rect,
-    image_rect: Rect,
-) {
+fn update_matrix_hover(app: &mut App, ctx: &egui::Context, canvas_rect: Rect, image_rect: Rect) {
     let hovered = ctx.input(|i| i.pointer.hover_pos()).and_then(|pos| {
         if !canvas_rect.contains(pos) {
             return None;
@@ -1257,8 +1291,6 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
         return;
     }
 
-    let rows = state.grid_rows.max(1);
-    let cols = state.grid_cols.max(1);
     let cell_w = state.cell_resolution[0] as f32;
     let cell_h = state.cell_resolution[1] as f32;
     let zoom = app.canvas.viewport.zoom;
@@ -1272,15 +1304,8 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
     let qualifier_enabled = app.canvas.analysis.qualifier_enabled;
 
     for cell in &state.cells {
-        let local_x = cell.coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
-        let local_y = cell.coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
-
-        let screen_min = pos2(
-            image_rect.min.x + local_x * zoom,
-            image_rect.min.y + local_y * zoom,
-        );
-        let screen_size = egui::vec2(cell_w * zoom, cell_h * zoom);
-        let cell_rect = Rect::from_min_size(screen_min, screen_size);
+        let cell_rect =
+            matrix_display_cell_screen_rect(state, cell.display_coord, image_rect, zoom);
 
         let visible = cell_rect.intersect(canvas_rect);
         if !visible.is_positive() {
@@ -1289,10 +1314,7 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
 
         let uv_min = (visible.min - cell_rect.min) / cell_rect.size();
         let uv_max = (visible.max - cell_rect.min) / cell_rect.size();
-        let cell_uv = Rect::from_min_max(
-            pos2(uv_min.x, uv_min.y),
-            pos2(uv_max.x, uv_max.y),
-        );
+        let cell_uv = Rect::from_min_max(pos2(uv_min.x, uv_min.y), pos2(uv_max.x, uv_max.y));
 
         // Base layer: in Diff mode, the diff texture replaces the cell render
         // (mirrors the single-image `compare_output_active` semantics).
@@ -1314,9 +1336,7 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
 
         // Reference overlay: only in Overlay mode, drawn relative to each
         // cell's local origin so the same offset/opacity applies per cell.
-        if !in_diff_mode
-            && let Some(ref_img) = reference
-        {
+        if !in_diff_mode && let Some(ref_img) = reference {
             let ref_size_px = egui::vec2(ref_img.size[0] as f32, ref_img.size[1] as f32);
             let ref_min = cell_rect.min + ref_img.offset * zoom;
             let ref_rect = Rect::from_min_size(ref_min, ref_size_px * zoom);
@@ -1324,28 +1344,21 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
             if ref_visible.is_positive() {
                 let ru_min = (ref_visible.min - ref_rect.min) / ref_rect.size();
                 let ru_max = (ref_visible.max - ref_rect.min) / ref_rect.size();
-                let ref_uv =
-                    Rect::from_min_max(pos2(ru_min.x, ru_min.y), pos2(ru_max.x, ru_max.y));
+                let ref_uv = Rect::from_min_max(pos2(ru_min.x, ru_min.y), pos2(ru_max.x, ru_max.y));
                 let tint = if matches!(ref_img.mode, RefImageMode::Overlay) {
                     Color32::from_rgba_unmultiplied(255, 255, 255, (ref_img.opacity * 255.0) as u8)
                 } else {
                     Color32::WHITE
                 };
                 painter.add(
-                    egui::epaint::RectShape::filled(
-                        ref_visible,
-                        egui::CornerRadius::ZERO,
-                        tint,
-                    )
-                    .with_texture(ref_img.texture.id(), ref_uv),
+                    egui::epaint::RectShape::filled(ref_visible, egui::CornerRadius::ZERO, tint)
+                        .with_texture(ref_img.texture.id(), ref_uv),
                 );
             }
         }
 
         // Clipping overlay: per-cell, bounded to the cell rect.
-        if clip_enabled
-            && let Some(clip_id) = cell.clipping_texture_id
-        {
+        if clip_enabled && let Some(clip_id) = cell.clipping_texture_id {
             painter.add(
                 egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
                     .with_texture(clip_id, cell_uv),
@@ -1353,9 +1366,7 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
         }
 
         // Qualifier overlay: per-cell, bounded to the cell rect.
-        if qualifier_enabled
-            && let Some(qualifier_id) = cell.qualifier_texture_id
-        {
+        if qualifier_enabled && let Some(qualifier_id) = cell.qualifier_texture_id {
             painter.add(
                 egui::epaint::RectShape::filled(visible, egui::CornerRadius::ZERO, Color32::WHITE)
                     .with_texture(qualifier_id, cell_uv),
@@ -1363,17 +1374,24 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
         }
     }
 
-    let label_font = egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace);
-    let col_header_h = MATRIX_LABEL_FONT_SIZE + 6.0;
-    let row_header_w = MATRIX_LABEL_FONT_SIZE + 6.0;
+    if !state.show_labels {
+        return;
+    }
 
-    if let Some(ref col_pool_id) = state.col_pool_id {
+    let label_font = egui::FontId::new(MATRIX_LABEL_FONT_SIZE, egui::FontFamily::Monospace);
+    let col_header_h = MATRIX_LABEL_ROW_HEIGHT_PX;
+    let row_header_w = MATRIX_LABEL_FONT_SIZE + 6.0;
+    let row_chunks_per_logical_row = state.row_chunks_per_logical_row.max(1);
+
+    if row_chunks_per_logical_row <= 1
+        && let Some(ref col_pool_id) = state.col_pool_id
+    {
         let col_pool = app
             .shell
             .resource_pools
             .iter()
             .find(|p| p.node_id == *col_pool_id);
-        for col in 0..cols {
+        for col in 0..state.logical_cols {
             let fallback = format!("{col}");
             let item_name = col_pool
                 .and_then(|p| p.item_names.get(col))
@@ -1391,17 +1409,63 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
                 continue;
             }
             painter.rect_filled(visible, egui::CornerRadius::ZERO, Color32::BLACK);
-            let galley = painter.layout_no_wrap(
-                item_name.to_owned(),
-                label_font.clone(),
-                Color32::WHITE,
-            );
+            let galley =
+                painter.layout_no_wrap(item_name.to_owned(), label_font.clone(), Color32::WHITE);
             let text_pos = pos2(
                 bg_rect.center().x - galley.size().x * 0.5,
                 bg_rect.center().y - galley.size().y * 0.5,
             );
             if canvas_rect.contains(text_pos) {
                 painter.galley(text_pos, galley, Color32::PLACEHOLDER);
+            }
+        }
+    } else if row_chunks_per_logical_row > 1
+        && let Some(ref col_pool_id) = state.col_pool_id
+    {
+        let row_gap_screen = matrix_row_gap_px(state) * zoom;
+        if row_gap_screen >= col_header_h + 2.0 {
+            let col_pool = app
+                .shell
+                .resource_pools
+                .iter()
+                .find(|p| p.node_id == *col_pool_id);
+            for cell in &state.cells {
+                let cell_rect =
+                    matrix_display_cell_screen_rect(state, cell.display_coord, image_rect, zoom);
+                if !cell_rect.intersects(canvas_rect) {
+                    continue;
+                }
+
+                let fallback = format!("{}", cell.coord.col);
+                let item_name = col_pool
+                    .and_then(|p| p.item_names.get(cell.coord.col))
+                    .map(|s| s.as_str())
+                    .unwrap_or(&fallback);
+                let label_rect = Rect::from_min_size(
+                    pos2(cell_rect.min.x, cell_rect.min.y - row_gap_screen + 1.0),
+                    egui::vec2(cell_rect.width(), col_header_h),
+                );
+                let visible = label_rect.intersect(canvas_rect);
+                if !visible.is_positive() {
+                    continue;
+                }
+                painter.rect_filled(
+                    visible,
+                    egui::CornerRadius::ZERO,
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                );
+                let galley = painter.layout_no_wrap(
+                    item_name.to_owned(),
+                    label_font.clone(),
+                    Color32::WHITE,
+                );
+                let text_pos = pos2(
+                    label_rect.left() + 3.0,
+                    label_rect.center().y - galley.size().y * 0.5,
+                );
+                painter
+                    .with_clip_rect(visible)
+                    .galley(text_pos, galley, Color32::PLACEHOLDER);
             }
         }
     }
@@ -1412,15 +1476,20 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
             .resource_pools
             .iter()
             .find(|p| p.node_id == *row_pool_id);
-        for row in 0..rows {
+        for row in 0..state.logical_rows {
             let fallback = format!("{row}");
             let item_name = row_pool
                 .and_then(|p| p.item_names.get(row))
                 .map(|s| s.as_str())
                 .unwrap_or(&fallback);
-            let local_y = row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+            let display_row = row * row_chunks_per_logical_row;
+            let row_gap = matrix_row_gap_px(state);
+            let local_y = display_row as f32 * (cell_h + row_gap);
             let screen_y = image_rect.min.y + local_y * zoom;
-            let lane_h = cell_h * zoom;
+            let chunk_count = row_chunks_per_logical_row;
+            let lane_h = (cell_h * chunk_count as f32
+                + row_gap * chunk_count.saturating_sub(1) as f32)
+                * zoom;
             let bg_rect = Rect::from_min_size(
                 pos2(image_rect.min.x - row_header_w - 2.0, screen_y),
                 egui::vec2(row_header_w, lane_h),
@@ -1430,11 +1499,8 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
                 continue;
             }
             painter.rect_filled(visible, egui::CornerRadius::ZERO, Color32::BLACK);
-            let galley = painter.layout_no_wrap(
-                item_name.to_owned(),
-                label_font.clone(),
-                Color32::WHITE,
-            );
+            let galley =
+                painter.layout_no_wrap(item_name.to_owned(), label_font.clone(), Color32::WHITE);
             let text_origin = pos2(
                 bg_rect.center().x - galley.size().y * 0.5,
                 bg_rect.center().y + galley.size().x * 0.5,
@@ -1453,12 +1519,7 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
     }
 }
 
-fn draw_matrix_pixel_overlays(
-    ui: &egui::Ui,
-    app: &mut App,
-    canvas_rect: Rect,
-    image_rect: Rect,
-) {
+fn draw_matrix_pixel_overlays(ui: &egui::Ui, app: &mut App, canvas_rect: Rect, image_rect: Rect) {
     let zoom = app.canvas.viewport.zoom;
     if zoom < 48.0 {
         return;
@@ -1471,10 +1532,11 @@ fn draw_matrix_pixel_overlays(
     let cell_w = state.cell_resolution[0] as f32;
     let cell_h = state.cell_resolution[1] as f32;
     let resolution = state.cell_resolution;
+    let row_gap = matrix_row_gap_px(state);
 
     for cell in &mut state.cells {
-        let local_x = cell.coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
-        let local_y = cell.coord.row as f32 * (cell_h + MATRIX_GRID_GAP_PX);
+        let local_x = cell.display_coord.col as f32 * (cell_w + MATRIX_GRID_GAP_PX);
+        let local_y = cell.display_coord.row as f32 * (cell_h + row_gap);
         let cell_image_rect = Rect::from_min_size(
             pos2(
                 image_rect.min.x + local_x * zoom,
@@ -1525,18 +1587,17 @@ fn maybe_sample_matrix_clicked_pixel(
     }
 
     let zoom = app.canvas.viewport.zoom;
-    let Some(coord) = matrix_hit_test(
-        &app.shell.matrix_state,
-        pointer_pos,
-        image_rect,
-        zoom,
-    ) else {
+    let Some(coord) = matrix_hit_test(&app.shell.matrix_state, pointer_pos, image_rect, zoom)
+    else {
         return;
     };
     let cell_w = app.shell.matrix_state.cell_resolution[0] as f32;
     let cell_h = app.shell.matrix_state.cell_resolution[1] as f32;
-    let cell_image_rect =
-        matrix_cell_screen_rect(&app.shell.matrix_state, coord, image_rect, zoom);
+    let Some(cell_image_rect) =
+        matrix_cell_screen_rect(&app.shell.matrix_state, coord, image_rect, zoom)
+    else {
+        return;
+    };
     let local = (pointer_pos - cell_image_rect.min) / cell_image_rect.size();
     let x = (local.x * cell_w).floor() as u32;
     let y = (local.y * cell_h).floor() as u32;

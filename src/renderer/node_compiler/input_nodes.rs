@@ -390,7 +390,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let expr = compile_frag_coord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -407,7 +407,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let expr = compile_geo_fragcoord(&node, Some("xy")).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -424,7 +424,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let expr = compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Vertex).unwrap();
         assert_eq!(expr.ty, ValueType::Vec2);
@@ -441,7 +441,7 @@ mod fragcoord_tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
         let expr =
             compile_geo_size_for_stage(&node, Some("xy"), GlslShaderStage::Fragment).unwrap();
@@ -466,7 +466,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_color_input(&node, None, &mut ctx).unwrap();
@@ -489,7 +489,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_color_input(&node, None, &mut ctx).unwrap();
@@ -510,7 +510,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_float_or_int_input(&node, None, &mut ctx).unwrap();
@@ -532,7 +532,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_vector2_input(&node, None, &mut ctx).unwrap();
@@ -554,7 +554,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_vector3_input(&node, None, &mut ctx).unwrap();
@@ -577,7 +577,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_vector4_input(&node, None, &mut ctx).unwrap();
@@ -603,7 +603,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_bool_input(&node, None, &mut ctx).unwrap();
@@ -622,7 +622,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_bool_input(&node, None, &mut ctx).unwrap();
@@ -640,7 +640,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_time_input(&node, Some("time")).unwrap();
@@ -658,7 +658,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let err = compile_time_input(&node, Some("value"))
@@ -686,7 +686,7 @@ mod resource_pool_tests {
                 name: None,
                 port_type: Some("float".to_string()),
             }],
-                    wgsl_override: None,
+            wgsl_override: None,
         }
     }
 
@@ -718,7 +718,7 @@ mod resource_pool_tests {
                 name: Some("Output".to_string()),
                 port_type: Some("any".to_string()),
             }],
-                    wgsl_override: None,
+            wgsl_override: None,
         }
     }
 
@@ -735,12 +735,12 @@ mod resource_pool_tests {
             test_connection("fc", "value", "pool", "d3"),
         ];
 
-        let scene = test_scene(
-            vec![float_a, float_b, float_c, pool.clone()],
-            connections,
-        );
-        let nodes_by_id: HashMap<String, Node> =
-            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+        let scene = test_scene(vec![float_a, float_b, float_c, pool.clone()], connections);
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.clone()))
+            .collect();
 
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -781,8 +781,11 @@ mod resource_pool_tests {
         let connections = vec![test_connection("fa", "value", "pool", "d1")];
 
         let scene = test_scene(vec![float_a, pool.clone()], connections);
-        let nodes_by_id: HashMap<String, Node> =
-            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.clone()))
+            .collect();
 
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -816,8 +819,11 @@ mod resource_pool_tests {
         let pool = make_pool_node("pool", &[], 0);
 
         let scene = test_scene(vec![pool.clone()], vec![]);
-        let nodes_by_id: HashMap<String, Node> =
-            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.clone()))
+            .collect();
 
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
@@ -843,8 +849,11 @@ mod resource_pool_tests {
         let pool = make_pool_node("pool", &["d1", "d2"], 0);
 
         let scene = test_scene(vec![pool.clone()], vec![]);
-        let nodes_by_id: HashMap<String, Node> =
-            scene.nodes.iter().map(|n| (n.id.clone(), n.clone())).collect();
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.clone()))
+            .collect();
 
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();

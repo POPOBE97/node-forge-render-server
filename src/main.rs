@@ -15,6 +15,7 @@ struct Cli {
     nforge: Option<PathBuf>,
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
+    dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
     continuous_redraw: bool,
 }
@@ -97,7 +98,10 @@ fn spawn_template_watcher(
             }
         };
         if let Err(e) = watcher.watch(&templates_dir, RecursiveMode::Recursive) {
-            eprintln!("[template-hmr] failed to watch {}: {e}", templates_dir.display());
+            eprintln!(
+                "[template-hmr] failed to watch {}: {e}",
+                templates_dir.display()
+            );
             return;
         }
         eprintln!("[template-hmr] watching {}", templates_dir.display());
@@ -178,6 +182,13 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.output = Some(PathBuf::from(v));
                 i += 2;
             }
+            "--dump-wgsl-dir" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --dump-wgsl-dir"));
+                };
+                cli.dump_wgsl_dir = Some(PathBuf::from(v));
+                i += 2;
+            }
             "--render-to-file" => {
                 cli.render_to_file = true;
                 i += 1;
@@ -188,7 +199,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>)"
                 ));
             }
         }
@@ -229,6 +240,50 @@ fn ensure_parent_dir_exists(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+fn write_text_file(path: PathBuf, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            anyhow!(
+                "failed to create output directory {}: {e}",
+                parent.display()
+            )
+        })?;
+    }
+    std::fs::write(&path, contents).map_err(|e| anyhow!("failed to write {}: {e}", path.display()))
+}
+
+fn dump_scene_wgsl(
+    scene: &dsl::SceneDSL,
+    store: Option<&asset_store::AssetStore>,
+    dump_dir: Option<&PathBuf>,
+) -> Result<()> {
+    let Some(dump_dir) = dump_dir else {
+        return Ok(());
+    };
+
+    let bundles = renderer::build_all_pass_wgsl_bundles_from_scene_with_assets(scene, store)?;
+    for (pass_id, bundle) in bundles {
+        write_text_file(
+            dump_dir.join(format!("{pass_id}.vertex.wgsl")),
+            &bundle.vertex,
+        )?;
+        write_text_file(
+            dump_dir.join(format!("{pass_id}.fragment.wgsl")),
+            &bundle.fragment,
+        )?;
+        write_text_file(
+            dump_dir.join(format!("{pass_id}.module.wgsl")),
+            &bundle.module,
+        )?;
+        if let Some(compute) = bundle.compute.as_ref() {
+            write_text_file(dump_dir.join(format!("{pass_id}.compute.wgsl")), compute)?;
+        }
+    }
+
+    println!("[headless] dumped wgsl: {}", dump_dir.display());
+    Ok(())
+}
+
 fn resolve_file_output_path_under(output_dir: &PathBuf, rt: &dsl::FileRenderTarget) -> PathBuf {
     let mut out = output_dir.clone();
     out.push(&rt.file_name);
@@ -239,6 +294,7 @@ fn run_headless_json_render_once(
     dsl_json_path: &std::path::Path,
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
+    dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
 ) -> Result<()> {
     let text = std::fs::read_to_string(dsl_json_path).map_err(|e| {
@@ -259,6 +315,7 @@ fn run_headless_json_render_once(
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
     let store = asset_store::load_from_scene_dir(&scene, base_dir)?;
+    dump_scene_wgsl(&scene, Some(&store), dump_wgsl_dir.as_ref())?;
 
     let out_path = if render_to_file {
         let out =
@@ -294,9 +351,11 @@ fn run_headless_nforge_render_once(
     nforge_path: &std::path::Path,
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
+    dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
 ) -> Result<()> {
     let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
+    dump_scene_wgsl(&scene, Some(&store), dump_wgsl_dir.as_ref())?;
 
     let out_path = if render_to_file {
         let out =
@@ -331,6 +390,7 @@ fn run_headless_nforge_render_once(
 fn run_headless_ws_render_once(
     addr: &str,
     output: Option<PathBuf>,
+    dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
 ) -> Result<()> {
     use std::{thread, time::Duration};
@@ -365,6 +425,8 @@ fn run_headless_ws_render_once(
                 request_id,
                 source: _,
             } => {
+                dump_scene_wgsl(&scene, None, dump_wgsl_dir.as_ref())?;
+
                 let out_path = if render_to_file {
                     let out = output.clone().ok_or_else(|| {
                         anyhow!("--render-to-file requires --output <absolute path>")
@@ -577,6 +639,7 @@ fn main() -> Result<()> {
                 nforge_path,
                 cli.output_dir,
                 cli.output,
+                cli.dump_wgsl_dir,
                 cli.render_to_file,
             );
         }
@@ -585,12 +648,18 @@ fn main() -> Result<()> {
                 dsl_json_path,
                 cli.output_dir,
                 cli.output,
+                cli.dump_wgsl_dir,
                 cli.render_to_file,
             );
         }
 
         // Editor-driven mode: wait for editor to connect over ws and send SceneDSL.
-        return run_headless_ws_render_once("127.0.0.1:8080", cli.output, cli.render_to_file);
+        return run_headless_ws_render_once(
+            "127.0.0.1:8080",
+            cli.output,
+            cli.dump_wgsl_dir,
+            cli.render_to_file,
+        );
     }
 
     let scene = match dsl::load_scene_from_default_asset() {
@@ -629,10 +698,7 @@ fn main() -> Result<()> {
                         required_features |=
                             wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
                     }
-                    if adapter
-                        .features()
-                        .contains(wgpu::Features::SHADER_F16)
-                    {
+                    if adapter.features().contains(wgpu::Features::SHADER_F16) {
                         required_features |= wgpu::Features::SHADER_F16;
                     }
                     wgpu::DeviceDescriptor {
@@ -758,11 +824,7 @@ fn main() -> Result<()> {
             ) {
                 eprintln!("[ws] failed to start ws server: {e:#}");
             }
-            spawn_template_watcher(
-                template_scene_tx,
-                last_good.clone(),
-                cc.egui_ctx.clone(),
-            );
+            spawn_template_watcher(template_scene_tx, last_good.clone(), cc.egui_ctx.clone());
             let capture_state_rx = spawn_metal_capture_state_watcher(cc.egui_ctx.clone());
             if cli.continuous_redraw {
                 eprintln!("[capture] forcing continuous redraw via CLI flag");
@@ -862,6 +924,24 @@ mod tests {
         let cli = parse_cli(&args).unwrap();
         assert!(cli.headless);
         assert!(cli.render_to_file);
+    }
+
+    #[test]
+    fn parse_cli_dump_wgsl_dir() {
+        let args = vec![
+            "--headless".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--dump-wgsl-dir".to_string(),
+            "wgsl-out".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.headless);
+        assert_eq!(cli.nforge.as_ref().unwrap(), &PathBuf::from("scene.nforge"));
+        assert_eq!(
+            cli.dump_wgsl_dir.as_ref().unwrap(),
+            &PathBuf::from("wgsl-out")
+        );
     }
 
     #[test]

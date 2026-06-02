@@ -2982,6 +2982,7 @@ dependencies = [
  "arboard",
  "base64 0.22.1",
  "bytemuck",
+ "core-graphics",
  "crossbeam-channel",
  "deno_core",
  "gltf",

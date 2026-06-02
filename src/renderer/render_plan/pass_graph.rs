@@ -361,7 +361,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }
     }
 
@@ -498,7 +498,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: vec![],
                     outputs: vec![],
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
                 node("p_live", "RenderPass"),
                 node("ds_live", "Downsample"),
@@ -607,7 +607,7 @@ mod tests {
                         name: Some("output".to_string()),
                         port_type: Some("color".to_string()),
                     }],
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
             ],
             connections: vec![
@@ -697,7 +697,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: vec![],
                     outputs: vec![],
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
                 node("p_live", "RenderPass"),
                 node("ds_dead", "Downsample"),
@@ -925,7 +925,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: vec![],
                     outputs: vec![],
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
                 Node {
                     id: "rt_b".to_string(),
@@ -937,7 +937,7 @@ mod tests {
                     inputs: vec![],
                     input_bindings: vec![],
                     outputs: vec![],
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
                 node("ds", "Downsample"),
             ],

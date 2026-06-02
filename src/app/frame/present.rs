@@ -1,7 +1,7 @@
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
-    app::{canvas, scene_runtime, types::App, window_mode},
+    app::{canvas, display_metrics, scene_runtime, types::App, window_mode},
     ui,
 };
 
@@ -54,6 +54,19 @@ pub(super) fn run(
         tab: app.canvas.analysis.analysis_tab,
         clipping: app.canvas.analysis.clipping_settings,
         clip_enabled: app.canvas.analysis.clip_enabled,
+        qualifier: app.canvas.analysis.qualifier_settings,
+        qualifier_enabled: app.canvas.analysis.qualifier_enabled,
+    };
+    let current_display_metrics = display_metrics::current_display_metrics(ctx);
+    if !app.canvas.viewport.display_ppi_user_set
+        && let Some(current_ppi) = current_display_metrics.display_ppi
+    {
+        let current_ppi = display_metrics::clamp_display_ppi(current_ppi);
+        app.canvas.viewport.target_ppi = current_ppi;
+        app.canvas.viewport.display_ppi_initialized_from_device = true;
+    }
+    let display_sidebar_state = ui::debug_sidebar::DisplaySidebarState {
+        target_ppi: app.canvas.viewport.target_ppi,
     };
 
     let mut pending_commands = Vec::<AppCommand>::new();
@@ -105,11 +118,14 @@ pub(super) fn run(
                     app.canvas.analysis.parade_texture_id,
                     app.canvas.analysis.vectorscope_texture_id,
                     analysis_sidebar_state,
+                    display_sidebar_state,
                     reference_sidebar_state.as_ref(),
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,
                         resource_pools: &app.shell.resource_pools,
                         selected_pool_ids: &app.shell.matrix_config.selected_pool_ids,
+                        max_row_cols: app.shell.matrix_config.max_row_cols,
+                        show_labels: app.shell.matrix_config.show_labels,
                     },
                     &app.shell.resource_tree_nodes,
                     &mut app.shell.file_tree_state,

@@ -1,4 +1,5 @@
 mod canvas;
+pub(crate) mod display_metrics;
 mod frame;
 mod interaction_report;
 mod layout_math;

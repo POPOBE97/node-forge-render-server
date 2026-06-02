@@ -293,7 +293,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -336,7 +336,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -376,7 +376,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             Vec::new(),
         );
@@ -421,7 +421,7 @@ mod tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             Vec::new(),
         )
@@ -456,7 +456,10 @@ mod tests {
 
             assert!(!result.expr.contains("aspect_correct_uv_"));
             assert!(!result.expr.contains("textureDimensions"));
-            assert!(!ctx.extra_wgsl_decls.contains_key(ASPECT_CORRECT_WGSL_LIB_KEY));
+            assert!(
+                !ctx.extra_wgsl_decls
+                    .contains_key(ASPECT_CORRECT_WGSL_LIB_KEY)
+            );
         }
     }
 
@@ -653,7 +656,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             },
             Node {
                 id: "pt".to_string(),
@@ -662,7 +665,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             },
         ];
 
@@ -721,7 +724,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             },
             Node {
                 id: "uvsrc".to_string(),
@@ -730,7 +733,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             },
             Node {
                 id: "pt".to_string(),
@@ -739,7 +742,7 @@ mod pass_texture_tests {
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
                 outputs: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             },
         ];
 

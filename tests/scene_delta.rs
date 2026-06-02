@@ -17,7 +17,7 @@ fn node(id: &str) -> Node {
         inputs: vec![],
         input_bindings: Vec::new(),
         outputs: Vec::new(),
-            wgsl_override: None,
+        wgsl_override: None,
     }
 }
 

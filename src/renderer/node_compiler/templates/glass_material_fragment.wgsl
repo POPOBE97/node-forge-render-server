@@ -348,41 +348,12 @@ fn glass_curve(x_in: f32, pow_ratio: f32) -> f32 {
     return 1.0 - pow(1.0 - circle, pow_ratio);
 }
 
-fn glass_supercircle_sdf_height(point: vec2f, center: vec2f, radius: f32, axis_mix: vec2f) -> f32 {
-    let abs_radius = abs(radius);
-    let scaled_radius = 1.5286649465560913 * abs_radius;
-    let safe_scaled_radius = max(scaled_radius, 1e-6);
-    let blended_radius = mix(scaled_radius, radius, max(axis_mix.x, axis_mix.y));
-    let offset = point - center;
-    let shifted_pos = vec2f(safe_scaled_radius, safe_scaled_radius) + offset;
-    let normalized_pos = max(vec2f(0.0), shifted_pos / safe_scaled_radius);
-    let abs_norm_pos = abs(normalized_pos);
-    let axis_denom = max(abs_norm_pos.x, abs_norm_pos.y);
-    let axis_ratio = select(
-        clamp(min(abs_norm_pos.x, abs_norm_pos.y) / axis_denom, 0.0, 1.0),
-        0.0,
-        axis_denom == 0.0,
-    );
-    let poly_fit = ((((-0.7391197269 * axis_ratio + 2.4034927648) * axis_ratio - 2.4907319173) * axis_ratio + 0.4768708960) * axis_ratio + 0.4747847594);
-    let len_abs = length(abs_norm_pos);
-    let denom = 1.0 - axis_ratio * axis_ratio * clamp(len_abs, 0.0, 1.0) * poly_fit;
-    let safe_denom = select(denom, 1e-6, abs(denom) < 1e-6);
-    let dist_base = (len_abs + 1.0) - 1.0 / safe_denom;
-    let dist_alt = 0.6541655659675598 * length(max(vec2f(0.0), 1.5286649465560913 * abs_norm_pos - vec2f(0.5286650061607361))) + 0.3458344340324402;
-    let dist_mix_x = mix(dist_base, dist_alt, axis_mix.x);
-    let dist_mix_y = mix(dist_base, dist_alt, axis_mix.y);
-    let axis_sign = select(-1.0, 1.0, abs_norm_pos.y > abs_norm_pos.x);
-    let final_mix = mix(dist_mix_x, dist_mix_y, clamp(0.5 - axis_sign + axis_sign * axis_ratio, 0.0, 1.0));
-    let radial_pos = vec2f(blended_radius, blended_radius) + offset;
-    return min(max(radial_pos.x, radial_pos.y), 0.0) + safe_scaled_radius * (final_mix - 1.0);
-}
-
 fn glass_shape_sdf(p: vec2f, b: vec2f, r: f32, edge: f32, edge_pow: f32) -> f32 {
     let k1 = 0.6;
     let safe_b = max(b, vec2f(1e-6));
     let ratio = clamp((clamp(vec2f(r) / safe_b, vec2f(0.0), vec2f(1.0)) - vec2f(k1)) / vec2f(1.0 - k1), vec2f(0.0), vec2f(1.0));
     let safe_edge = max(edge, 1e-6);
-    var d = glass_supercircle_sdf_height(abs(p), b, r, ratio);
+    var d = sdf2d_smooth_round_rect(abs(p), b, r, ratio).x;
     if (d < -safe_edge) {
         d = -safe_edge;
     } else if (d < 0.0) {

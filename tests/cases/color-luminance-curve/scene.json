@@ -2,15 +2,15 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-28T15:48:39.800Z",
-    "modified": "2026-05-28T15:48:39.800Z"
+    "created": "2026-05-29T16:37:05.189Z",
+    "modified": "2026-05-29T16:37:05.189Z"
   },
   "nodes": [
     {
       "id": "node_default_render_texture",
       "type": "RenderTexture",
       "position": {
-        "x": 160,
+        "x": -20,
         "y": 180
       },
       "width": 160,
@@ -25,7 +25,7 @@
       "id": "node_default_rect",
       "type": "Rect2DGeometry",
       "position": {
-        "x": -20,
+        "x": -200,
         "y": -20
       },
       "width": 160,
@@ -39,7 +39,7 @@
       "id": "node_default_render_pass",
       "type": "RenderPass",
       "position": {
-        "x": 160,
+        "x": -20,
         "y": -20
       },
       "width": 160,
@@ -79,7 +79,7 @@
       "id": "node_default_composite",
       "type": "Composite",
       "position": {
-        "x": 340,
+        "x": 160,
         "y": -20
       },
       "width": 160,
@@ -115,7 +115,7 @@
       "id": "node_default_screen",
       "type": "Screen",
       "position": {
-        "x": 520,
+        "x": 340,
         "y": -20
       },
       "width": 160,
@@ -132,10 +132,10 @@
         "x": -380,
         "y": -20
       },
-      "width": 320,
+      "width": 160,
       "label": "Luminance Curve",
       "params": {
-        "mode": "lab",
+        "mode": "rgb",
         "values": [
           0,
           0.3333333333333333,
@@ -436,8 +436,8 @@
           "id": "ResourcePool_1",
           "type": "ResourcePool",
           "position": {
-            "x": 360,
-            "y": -20
+            "x": 1120,
+            "y": -40
           },
           "width": 160,
           "label": "Test Images",
@@ -559,6 +559,46 @@
             {
               "id": "dynamic_1779982686956_23",
               "name": "input23",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071539083_24",
+              "name": "input24",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071540596_25",
+              "name": "input25",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071542144_26",
+              "name": "input26",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071544383_27",
+              "name": "input27",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071547650_28",
+              "name": "input28",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071548904_29",
+              "name": "input29",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071550526_30",
+              "name": "input30",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1780071551519_31",
+              "name": "input31",
               "type": "color"
             }
           ],
@@ -822,6 +862,94 @@
                 "outputPortId": "color",
                 "outputLabel": "Color"
               }
+            },
+            {
+              "portId": "dynamic_1780071539083_24",
+              "label": "input24",
+              "variableName": "input24",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_25",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071540596_25",
+              "label": "input25",
+              "variableName": "input25",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_26",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071542144_26",
+              "label": "input26",
+              "variableName": "input26",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_27",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071544383_27",
+              "label": "input27",
+              "variableName": "input27",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_28",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071547650_28",
+              "label": "input28",
+              "variableName": "input28",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_29",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071548904_29",
+              "label": "input29",
+              "variableName": "input29",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_30",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071550526_30",
+              "label": "input30",
+              "variableName": "input30",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_31",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1780071551519_31",
+              "label": "input31",
+              "variableName": "input31",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ColorInput_32",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
             }
           ]
         },
@@ -829,8 +957,8 @@
           "id": "ImageTexture_2",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": -20
+            "x": 40,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -853,8 +981,8 @@
           "id": "ImageTexture_3",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 40
+            "x": 40,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -877,8 +1005,8 @@
           "id": "ImageTexture_4",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 100
+            "x": 40,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -901,8 +1029,8 @@
           "id": "ImageTexture_5",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 160
+            "x": 40,
+            "y": 140
           },
           "width": 160,
           "label": "Image Texture",
@@ -925,8 +1053,8 @@
           "id": "ImageTexture_6",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 220
+            "x": 220,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -949,8 +1077,8 @@
           "id": "ImageTexture_7",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 280
+            "x": 220,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -973,8 +1101,8 @@
           "id": "ImageTexture_8",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 340
+            "x": 220,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -997,8 +1125,8 @@
           "id": "ImageTexture_9",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 400
+            "x": 220,
+            "y": 140
           },
           "width": 160,
           "label": "Image Texture",
@@ -1021,8 +1149,8 @@
           "id": "ImageTexture_10",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 460
+            "x": 400,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -1045,8 +1173,8 @@
           "id": "ImageTexture_11",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 520
+            "x": 400,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -1069,8 +1197,8 @@
           "id": "ImageTexture_12",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 580
+            "x": 400,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -1093,8 +1221,8 @@
           "id": "ImageTexture_13",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 640
+            "x": 400,
+            "y": 140
           },
           "width": 160,
           "label": "Image Texture",
@@ -1117,8 +1245,8 @@
           "id": "ImageTexture_14",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 700
+            "x": 580,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -1141,8 +1269,8 @@
           "id": "ImageTexture_15",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 760
+            "x": 580,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -1165,8 +1293,8 @@
           "id": "ImageTexture_16",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 820
+            "x": 580,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -1189,8 +1317,8 @@
           "id": "ImageTexture_17",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 880
+            "x": 580,
+            "y": 140
           },
           "width": 160,
           "label": "Image Texture",
@@ -1213,8 +1341,8 @@
           "id": "ImageTexture_18",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 940
+            "x": 760,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -1237,8 +1365,8 @@
           "id": "ImageTexture_19",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1000
+            "x": 760,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -1261,8 +1389,8 @@
           "id": "ImageTexture_20",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1060
+            "x": 760,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -1285,8 +1413,8 @@
           "id": "ImageTexture_21",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1120
+            "x": 760,
+            "y": 140
           },
           "width": 160,
           "label": "Image Texture",
@@ -1309,8 +1437,8 @@
           "id": "ImageTexture_22",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1180
+            "x": 940,
+            "y": -40
           },
           "width": 160,
           "label": "Image Texture",
@@ -1333,8 +1461,8 @@
           "id": "ImageTexture_23",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1240
+            "x": 940,
+            "y": 20
           },
           "width": 160,
           "label": "Image Texture",
@@ -1357,8 +1485,8 @@
           "id": "ImageTexture_24",
           "type": "ImageTexture",
           "position": {
-            "x": 80,
-            "y": 1300
+            "x": 940,
+            "y": 80
           },
           "width": 160,
           "label": "Image Texture",
@@ -1375,6 +1503,150 @@
             "alphaMode": "straight",
             "aspectCorrection": "fill",
             "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ColorInput_25",
+          "type": "ColorInput",
+          "position": {
+            "x": 580,
+            "y": 200
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_26",
+          "type": "ColorInput",
+          "position": {
+            "x": 580,
+            "y": 300
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_27",
+          "type": "ColorInput",
+          "position": {
+            "x": 760,
+            "y": 200
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              1,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_28",
+          "type": "ColorInput",
+          "position": {
+            "x": 760,
+            "y": 300
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              0,
+              1,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_29",
+          "type": "ColorInput",
+          "position": {
+            "x": 760,
+            "y": 400
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_30",
+          "type": "ColorInput",
+          "position": {
+            "x": 940,
+            "y": 200
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              1,
+              1,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_31",
+          "type": "ColorInput",
+          "position": {
+            "x": 940,
+            "y": 300
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              0,
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ColorInput_32",
+          "type": "ColorInput",
+          "position": {
+            "x": 940,
+            "y": 400
+          },
+          "width": 160,
+          "label": "Color Input",
+          "params": {
+            "value": [
+              1,
+              0,
+              1,
+              1
+            ]
           }
         }
       ],
@@ -1630,6 +1902,94 @@
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1779982686580_1"
+          }
+        },
+        {
+          "id": "edge_26",
+          "from": {
+            "nodeId": "ColorInput_25",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071539083_24"
+          }
+        },
+        {
+          "id": "edge_27",
+          "from": {
+            "nodeId": "ColorInput_26",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071540596_25"
+          }
+        },
+        {
+          "id": "edge_28",
+          "from": {
+            "nodeId": "ColorInput_27",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071542144_26"
+          }
+        },
+        {
+          "id": "edge_29",
+          "from": {
+            "nodeId": "ColorInput_28",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071544383_27"
+          }
+        },
+        {
+          "id": "edge_30",
+          "from": {
+            "nodeId": "ColorInput_29",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071547650_28"
+          }
+        },
+        {
+          "id": "edge_31",
+          "from": {
+            "nodeId": "ColorInput_30",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071548904_29"
+          }
+        },
+        {
+          "id": "edge_32",
+          "from": {
+            "nodeId": "ColorInput_31",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071550526_30"
+          }
+        },
+        {
+          "id": "edge_33",
+          "from": {
+            "nodeId": "ColorInput_32",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1780071551519_31"
           }
         }
       ],

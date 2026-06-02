@@ -113,7 +113,9 @@ fn parse_param_vec4(node: &Node, key: &str, default: [f32; 4]) -> [f32; 4] {
 
     if let Some(obj) = v.as_object() {
         let read = |key: &str, fallback: f32| -> f32 {
-            obj.get(key).and_then(|x| x.as_f64()).unwrap_or(fallback as f64) as f32
+            obj.get(key)
+                .and_then(|x| x.as_f64())
+                .unwrap_or(fallback as f64) as f32
         };
         let has_xyzw = ["x", "y", "z", "w"].iter().any(|k| obj.contains_key(*k));
         if has_xyzw {
@@ -224,4 +226,70 @@ where
         ValueType::Vec4,
         uses_time,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::node_compiler::test_utils::{test_connection, test_scene};
+
+    fn mock_color_compile_fn(
+        _node_id: &str,
+        _out_port: Option<&str>,
+        _ctx: &mut MaterialCompileContext,
+        _cache: &mut HashMap<(String, String), TypedExpr>,
+    ) -> Result<TypedExpr> {
+        Ok(TypedExpr::new(
+            "vec4f(0.25, 0.5, 0.75, 1.0)".to_string(),
+            ValueType::Vec4,
+        ))
+    }
+
+    #[test]
+    fn rgb_curve_accepts_values_above_one_and_keeps_hdr_gain() {
+        let scene = test_scene(
+            Vec::new(),
+            vec![test_connection("color", "value", "curve", "color")],
+        );
+        let node = Node {
+            id: "curve".to_string(),
+            node_type: "LuminanceCurve".to_string(),
+            params: HashMap::from([
+                ("mode".to_string(), serde_json::json!("rgb")),
+                (
+                    "values".to_string(),
+                    serde_json::json!([0.0, 0.5, 1.25, 2.0]),
+                ),
+            ]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        };
+        let mut ctx = MaterialCompileContext::default();
+        let mut cache = HashMap::new();
+
+        let result = compile_luminance_curve(
+            &scene,
+            &HashMap::new(),
+            &node,
+            None,
+            &mut ctx,
+            &mut cache,
+            mock_color_compile_fn,
+        )
+        .unwrap();
+
+        assert!(result.expr.contains("lc_luminance_curve_rgb("));
+        assert!(result.expr.contains("vec4f(0.0, 0.5, 1.25, 2.0)"));
+
+        let lib = ctx
+            .extra_wgsl_decls
+            .get(LUMINANCE_CURVE_RGB_LIB_KEY)
+            .unwrap();
+        assert!(
+            lib.contains("let chroma_scale = max(target_luminance / max(luminance, 1e-6), 0.0);")
+        );
+        assert!(!lib.contains("target_luminance / max(luminance, 1e-6), 0.0, 1.0"));
+    }
 }

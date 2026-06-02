@@ -1,11 +1,15 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-05-29T09:55:58.105Z",
+  "generatedAt": "2026-06-02T02:18:44.312Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
   },
   "nodeTypes": [
+    "Acos",
+    "Asin",
+    "Atan",
+    "Atan2",
     "Attribute",
     "BloomNode",
     "BoolInput",
@@ -15,6 +19,7 @@
     "ColorRamp",
     "Composite",
     "ComputePass",
+    "Cos",
     "CrossProduct",
     "DataNode",
     "DataParse",
@@ -53,8 +58,11 @@
     "MathAdd",
     "MathClamp",
     "MathClosure",
+    "MathDivide",
+    "MathMax",
     "MathMultiply",
     "MathPower",
+    "MathSubtract",
     "MeshGradient",
     "MixShader",
     "NoiseTexture",
@@ -76,6 +84,8 @@
     "Sdf2DBevel",
     "SetTransform",
     "ShaderMaterial",
+    "Sin",
+    "Tan",
     "TextureInput",
     "TimeInput",
     "TransformGeometry",
@@ -352,6 +362,95 @@
     ]
   },
   "nodes": [
+    {
+      "type": "Acos",
+      "label": "Acos",
+      "category": "Math",
+      "description": "Compute inverse cosine; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "Asin",
+      "label": "Asin",
+      "category": "Math",
+      "description": "Compute inverse sine; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "Atan",
+      "label": "Atan",
+      "category": "Math",
+      "description": "Compute inverse tangent; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "Atan2",
+      "label": "Atan2",
+      "category": "Math",
+      "description": "Compute atan2(y, x); output type inferred from inputs",
+      "inputs": [
+        {
+          "id": "y",
+          "name": "Y",
+          "type": "any"
+        },
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
     {
       "type": "Attribute",
       "label": "Attribute",
@@ -710,6 +809,27 @@
       "defaultParams": {
         "name": "Compute Pass"
       }
+    },
+    {
+      "type": "Cos",
+      "label": "Cos",
+      "category": "Math",
+      "description": "Compute cosine; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "CrossProduct",
@@ -2043,7 +2163,7 @@
           ],
           "range": {
             "min": 0,
-            "max": 1,
+            "max": 2,
             "step": 0.01
           }
         },
@@ -2281,6 +2401,47 @@
       }
     },
     {
+      "type": "MathDivide",
+      "label": "Divide",
+      "category": "Math",
+      "description": "Divide values (dynamic inputs); output type inferred from inputs",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathMax",
+      "label": "Max",
+      "category": "Math",
+      "description": "Return the larger of two values; output type inferred from inputs",
+      "inputs": [
+        {
+          "id": "a",
+          "name": "A",
+          "type": "any"
+        },
+        {
+          "id": "b",
+          "name": "B",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
       "type": "MathMultiply",
       "label": "Multiply",
       "category": "Math",
@@ -2312,6 +2473,21 @@
           "type": "any"
         }
       ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "MathSubtract",
+      "label": "Subtract",
+      "category": "Math",
+      "description": "Subtract values (dynamic inputs); output type inferred from inputs",
+      "inputs": [],
       "outputs": [
         {
           "id": "result",
@@ -3339,7 +3515,7 @@
       "type": "Sdf2D",
       "label": "2D SDF",
       "category": "2D SDF",
-      "description": "2D signed distance field: circle / rectangle",
+      "description": "2D signed distance field: circle / rectangle / smooth round rect",
       "inputs": [
         {
           "id": "position",
@@ -3366,6 +3542,11 @@
           "id": "radius4",
           "name": "Radius",
           "type": "vector4"
+        },
+        {
+          "id": "axisMix",
+          "name": "Axis Mix",
+          "type": "vector2"
         }
       ],
       "outputs": [
@@ -3517,6 +3698,48 @@
         "vertex": "// vertex shader\n",
         "fragment": "// fragment shader\n"
       }
+    },
+    {
+      "type": "Sin",
+      "label": "Sin",
+      "category": "Math",
+      "description": "Compute sine; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
+    },
+    {
+      "type": "Tan",
+      "label": "Tan",
+      "category": "Math",
+      "description": "Compute tangent; output type follows input",
+      "inputs": [
+        {
+          "id": "x",
+          "name": "X",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "any"
+        }
+      ],
+      "defaultParams": {}
     },
     {
       "type": "TextureInput",

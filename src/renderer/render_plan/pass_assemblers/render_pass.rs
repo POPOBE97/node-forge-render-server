@@ -212,8 +212,7 @@ pub(crate) fn assemble_render_pass(
             });
             (w_u, h_u, out_tex)
         } else if needs_resolve_intermediate {
-            let out_tex: ResourceName =
-                format!("sys.pass.{layer_id}.msaa.resolve").into();
+            let out_tex: ResourceName = format!("sys.pass.{layer_id}.msaa.resolve").into();
             bs.textures.push(TextureDecl {
                 name: out_tex.clone(),
                 size: [tgt_w_u, tgt_h_u],

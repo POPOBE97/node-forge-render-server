@@ -1192,23 +1192,45 @@ pub(crate) fn resolve_geometry_for_render_pass(
                     .as_ref()
                     .is_some_and(|k| baked_values.is_some_and(|b| b.contains_key(k)));
 
-            let (runtime_translate_expr, extra_inline, extra_decls, extra_graph_kinds, extra_uses_idx) =
-                if translate_not_baked {
-                    let mut ctx = MaterialCompileContext {
-                        baked_data_parse: material_ctx.and_then(|m| m.baked_data_parse.clone()),
-                        baked_data_parse_meta: material_ctx.and_then(|m| m.baked_data_parse_meta.clone()),
-                        ..Default::default()
-                    };
-                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-                    let conn = translate_conn.unwrap();
-                    let expr = compile_transform_connection_vec3_expr(
-                        scene, nodes_by_id, conn, &mut ctx, &mut cache,
-                    )?;
-                    let decls = ctx.wgsl_decls();
-                    (Some(expr), ctx.inline_stmts, decls, ctx.graph_input_kinds, ctx.uses_instance_index)
-                } else {
-                    (None, Vec::new(), String::new(), std::collections::BTreeMap::new(), false)
+            let (
+                runtime_translate_expr,
+                extra_inline,
+                extra_decls,
+                extra_graph_kinds,
+                extra_uses_idx,
+            ) = if translate_not_baked {
+                let mut ctx = MaterialCompileContext {
+                    baked_data_parse: material_ctx.and_then(|m| m.baked_data_parse.clone()),
+                    baked_data_parse_meta: material_ctx
+                        .and_then(|m| m.baked_data_parse_meta.clone()),
+                    ..Default::default()
                 };
+                let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                let conn = translate_conn.unwrap();
+                let expr = compile_transform_connection_vec3_expr(
+                    scene,
+                    nodes_by_id,
+                    conn,
+                    &mut ctx,
+                    &mut cache,
+                )?;
+                let decls = ctx.wgsl_decls();
+                (
+                    Some(expr),
+                    ctx.inline_stmts,
+                    decls,
+                    ctx.graph_input_kinds,
+                    ctx.uses_instance_index,
+                )
+            } else {
+                (
+                    None,
+                    Vec::new(),
+                    String::new(),
+                    std::collections::BTreeMap::new(),
+                    false,
+                )
+            };
 
             let (mut vtx_inline_stmts, mut vtx_wgsl_decls, mut graph_input_kinds, rect_dyn) =
                 if upstream_rect_dyn.is_some() {
@@ -1508,7 +1530,7 @@ mod tests {
             inputs: Vec::new(),
             outputs: Vec::new(),
             input_bindings: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }
     }
 

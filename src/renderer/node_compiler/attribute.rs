@@ -40,10 +40,7 @@ pub fn compile_attribute(node: &Node, _out_port: Option<&str>) -> Result<TypedEx
             "vec2f(in.uv.x, 1.0 - in.uv.y)".to_string(),
             ValueType::Vec2,
         )),
-        "normal" => Ok(TypedExpr::new(
-            "in.normal".to_string(),
-            ValueType::Vec3,
-        )),
+        "normal" => Ok(TypedExpr::new("in.normal".to_string(), ValueType::Vec3)),
         other => bail!(
             "unsupported Attribute.name: {} (supported: 'uv', 'normal')",
             other
@@ -65,7 +62,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -84,7 +81,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -101,7 +98,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -118,7 +115,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -134,7 +131,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         let result = compile_attribute(&node, None).unwrap();
@@ -152,7 +149,7 @@ mod tests {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         };
 
         assert!(compile_attribute(&node, None).is_err());

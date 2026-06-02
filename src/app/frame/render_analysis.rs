@@ -51,8 +51,8 @@ pub(super) fn run(
 
     texture_bridge::ensure_output_texture_registered(app, render_state, renderer_guard);
 
-    let matrix_active = app.shell.test_mode == TestMode::Matrix
-        && !app.shell.matrix_state.cells.is_empty();
+    let matrix_active =
+        app.shell.test_mode == TestMode::Matrix && !app.shell.matrix_state.cells.is_empty();
     if matrix_active {
         run_matrix_analysis(app, render_state, renderer_guard);
         if ingest.did_rebuild_shader_space {
@@ -451,11 +451,8 @@ pub(super) fn run(
         }
 
         if app.canvas.analysis.qualifier_enabled {
-            let request_key = QualifierRequestKey::new(
-                source_key,
-                app.canvas.analysis.qualifier_settings,
-                true,
-            );
+            let request_key =
+                QualifierRequestKey::new(source_key, app.canvas.analysis.qualifier_settings, true);
             if app.canvas.analysis.qualifier_renderer.is_none() {
                 app.canvas.analysis.qualifier_renderer = Some(
                     ui::qualifier_map::QualifierMapRenderer::new(&render_state.device, source.size),
@@ -467,8 +464,7 @@ pub(super) fn run(
                 || app.canvas.analysis.qualifier_texture_id.is_none()
                 || app.canvas.analysis.last_qualifier_request_key != Some(request_key);
             if should_update_qualifier
-                && let Some(qualifier_renderer) =
-                    app.canvas.analysis.qualifier_renderer.as_mut()
+                && let Some(qualifier_renderer) = app.canvas.analysis.qualifier_renderer.as_mut()
             {
                 let s = app.canvas.analysis.qualifier_settings;
                 qualifier_renderer.update(
@@ -621,7 +617,10 @@ fn update_matrix_cell_analysis(
     // Resolve the cell's own output texture into an AnalysisSourceDomain.
     let (cell_view, cell_size, cell_format) = {
         let cell = &app.shell.matrix_state.cells[cell_idx];
-        let texture = cell.shader_space.textures.get(cell.output_texture_name.as_str());
+        let texture = cell
+            .shader_space
+            .textures
+            .get(cell.output_texture_name.as_str());
         match texture.and_then(|t| {
             t.wgpu_texture_view
                 .as_ref()
@@ -680,9 +679,7 @@ fn update_matrix_cell_analysis(
             || cell.last_diff_request_key != Some(request_key)
             || (collect_stats && cell.last_diff_stats_request_key != Some(stats_key));
 
-        if should_update
-            && let Some(diff_renderer) = cell.diff_renderer.as_mut()
-        {
+        if should_update && let Some(diff_renderer) = cell.diff_renderer.as_mut() {
             let stats = diff_renderer.update(
                 &render_state.device,
                 app.core.shader_space.queue.as_ref(),
@@ -741,20 +738,18 @@ fn update_matrix_cell_analysis(
     if clip_enabled {
         // Clip source: if we're in Diff mode, use the diff renderer's analysis
         // output (mirrors the single-image behavior in run()).
-        let clip_in_diff =
-            matches!(reference_mode, Some(RefImageMode::Diff));
+        let clip_in_diff = matches!(reference_mode, Some(RefImageMode::Diff));
         let cell = &mut app.shell.matrix_state.cells[cell_idx];
-        let (clip_view, clip_size, clip_source_label) = if clip_in_diff
-            && let Some(diff_renderer) = cell.diff_renderer.as_ref()
-        {
-            (
-                diff_renderer.analysis_output_view().clone(),
-                diff_renderer.analysis_output_size(),
-                "matrix.diff.analysis",
-            )
-        } else {
-            (cell_view.clone(), cell_size, "matrix.cell.output")
-        };
+        let (clip_view, clip_size, clip_source_label) =
+            if clip_in_diff && let Some(diff_renderer) = cell.diff_renderer.as_ref() {
+                (
+                    diff_renderer.analysis_output_view().clone(),
+                    diff_renderer.analysis_output_size(),
+                    "matrix.diff.analysis",
+                )
+            } else {
+                (cell_view.clone(), cell_size, "matrix.cell.output")
+            };
         let clip_source_key =
             AnalysisSourceKey::from_hashable(&(cell_idx, clip_size, clip_source_label));
         let request_key = ClippingRequestKey::new(clip_source_key, clipping_settings, true);
@@ -776,9 +771,7 @@ fn update_matrix_cell_analysis(
             || cell.clipping_texture_id.is_none()
             || cell.last_clipping_request_key != Some(request_key);
 
-        if should_update
-            && let Some(clipping_renderer) = cell.clipping_renderer.as_mut()
-        {
+        if should_update && let Some(clipping_renderer) = cell.clipping_renderer.as_mut() {
             clipping_renderer.update(
                 &render_state.device,
                 app.core.shader_space.queue.as_ref(),
@@ -788,8 +781,7 @@ fn update_matrix_cell_analysis(
                 clipping_settings.highlight_threshold,
             );
 
-            let mut sampler =
-                texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
+            let mut sampler = texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
             sampler.label = Some("sys.scope.clipping.sampler.matrix");
             if let Some(id) = cell.clipping_texture_id {
                 renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(
@@ -820,19 +812,17 @@ fn update_matrix_cell_analysis(
     if qualifier_enabled {
         let q_in_diff = matches!(reference_mode, Some(RefImageMode::Diff));
         let cell = &mut app.shell.matrix_state.cells[cell_idx];
-        let (q_view, q_size, q_source_label) = if q_in_diff
-            && let Some(diff_renderer) = cell.diff_renderer.as_ref()
-        {
-            (
-                diff_renderer.analysis_output_view().clone(),
-                diff_renderer.analysis_output_size(),
-                "matrix.diff.analysis.qualifier",
-            )
-        } else {
-            (cell_view.clone(), cell_size, "matrix.cell.output.qualifier")
-        };
-        let q_source_key =
-            AnalysisSourceKey::from_hashable(&(cell_idx, q_size, q_source_label));
+        let (q_view, q_size, q_source_label) =
+            if q_in_diff && let Some(diff_renderer) = cell.diff_renderer.as_ref() {
+                (
+                    diff_renderer.analysis_output_view().clone(),
+                    diff_renderer.analysis_output_size(),
+                    "matrix.diff.analysis.qualifier",
+                )
+            } else {
+                (cell_view.clone(), cell_size, "matrix.cell.output.qualifier")
+            };
+        let q_source_key = AnalysisSourceKey::from_hashable(&(cell_idx, q_size, q_source_label));
         let request_key = QualifierRequestKey::new(q_source_key, qualifier_settings, true);
 
         if cell.qualifier_renderer.is_none() {
@@ -847,9 +837,7 @@ fn update_matrix_cell_analysis(
             || cell.qualifier_texture_id.is_none()
             || cell.last_qualifier_request_key != Some(request_key);
 
-        if should_update
-            && let Some(qualifier_renderer) = cell.qualifier_renderer.as_mut()
-        {
+        if should_update && let Some(qualifier_renderer) = cell.qualifier_renderer.as_mut() {
             qualifier_renderer.update(
                 &render_state.device,
                 app.core.shader_space.queue.as_ref(),
@@ -863,8 +851,7 @@ fn update_matrix_cell_analysis(
                 qualifier_settings.b_max,
             );
 
-            let mut sampler =
-                texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
+            let mut sampler = texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Nearest);
             sampler.label = Some("sys.scope.qualifier.sampler.matrix");
             if let Some(id) = cell.qualifier_texture_id {
                 renderer_guard.update_egui_texture_from_wgpu_texture_with_sampler_options(

@@ -25,7 +25,7 @@ fn node(id: &str, node_type: &str) -> Node {
         inputs: Vec::new(),
         input_bindings: Vec::new(),
         outputs: Vec::new(),
-            wgsl_override: None,
+        wgsl_override: None,
     }
 }
 
@@ -203,7 +203,7 @@ fn resolve_input_uses_port_default_when_param_missing() {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }],
         connections: Vec::new(),
         outputs: None,

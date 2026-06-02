@@ -163,7 +163,11 @@ pub fn range_slider(
             egui::pos2(lo_x, center_y - FILL_HEIGHT * 0.5),
             egui::pos2(hi_x, center_y + FILL_HEIGHT * 0.5),
         );
-        painter.rect_filled(fill_rect, design_tokens::radius(2), design_tokens::white(40));
+        painter.rect_filled(
+            fill_rect,
+            design_tokens::radius(2),
+            design_tokens::white(40),
+        );
     }
 
     // Two indicator pills.

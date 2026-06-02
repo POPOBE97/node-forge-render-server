@@ -70,11 +70,11 @@ pub(super) fn run(
         }
 
         if let Some(ref scene) = app.runtime.uniform_scene {
-            app.shell.resource_pools =
-                crate::app::types::extract_resource_pools(scene);
-            app.shell.matrix_config.selected_pool_ids.retain(|id| {
-                app.shell.resource_pools.iter().any(|p| p.node_id == *id)
-            });
+            app.shell.resource_pools = crate::app::types::extract_resource_pools(scene);
+            app.shell
+                .matrix_config
+                .selected_pool_ids
+                .retain(|id| app.shell.resource_pools.iter().any(|p| p.node_id == *id));
         }
 
         if app.shell.test_mode == crate::app::types::TestMode::Matrix

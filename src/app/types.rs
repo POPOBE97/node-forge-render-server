@@ -350,9 +350,22 @@ pub struct ResourcePoolInfo {
     pub item_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MatrixConfig {
     pub selected_pool_ids: Vec<String>,
+    /// Maximum visible columns per logical matrix row. `0` means unlimited.
+    pub max_row_cols: usize,
+    pub show_labels: bool,
+}
+
+impl Default for MatrixConfig {
+    fn default() -> Self {
+        Self {
+            selected_pool_ids: Vec::new(),
+            max_row_cols: 0,
+            show_labels: true,
+        }
+    }
 }
 
 pub(super) struct AppShell {
@@ -689,7 +702,7 @@ mod tests {
                     inputs: Vec::new(),
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 })
                 .collect(),
             connections: Vec::new(),
@@ -786,7 +799,7 @@ mod tests {
                     ],
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
                 Node {
                     id: "GroupInstance_71/ResourcePool_69".to_string(),
@@ -812,7 +825,7 @@ mod tests {
                     ],
                     outputs: Vec::new(),
                     input_bindings: Vec::new(),
-                                    wgsl_override: None,
+                    wgsl_override: None,
                 },
             ],
             connections: Vec::new(),
@@ -823,7 +836,11 @@ mod tests {
         };
 
         let pools = super::extract_resource_pools(&scene);
-        assert_eq!(pools.len(), 1, "two instances of the same group ResourcePool should count as one");
+        assert_eq!(
+            pools.len(),
+            1,
+            "two instances of the same group ResourcePool should count as one"
+        );
         assert_eq!(pools[0].item_count, 2);
         assert_eq!(pools[0].label, "Resource Pool");
     }

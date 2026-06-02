@@ -39,6 +39,14 @@ fn choose_scene_update_mode(
     }
 }
 
+fn should_reset_viewport_for_scene_resolution(
+    source: &ws::ParsedSceneSource,
+    previous_resolution: [u32; 2],
+    next_resolution: [u32; 2],
+) -> bool {
+    matches!(source, ws::ParsedSceneSource::SceneUpdate) && previous_resolution != next_resolution
+}
+
 fn collect_graph_uniform_updates(
     scene: &crate::dsl::SceneDSL,
     passes: &[renderer::PassBindings],
@@ -286,15 +294,16 @@ pub fn apply_scene_update(
             request_id,
             source,
         } => {
+            let previous_output_resolution = app.core.resolution;
             app.canvas.reference.scene_desired = scene_reference_desired_source(&scene);
             app.canvas.reference.scene_alpha_mode = scene_reference_image_alpha_mode(&scene);
             if let Some(alpha_mode) = app.canvas.reference.scene_alpha_mode {
                 app.canvas.reference.alpha_mode = alpha_mode;
             }
-            let should_reset_viewport = matches!(source, ws::ParsedSceneSource::SceneUpdate);
+            let scene_screen_resolution = crate::dsl::screen_resolution(&scene);
             let (next_window_resolution, maybe_resize) = apply_scene_resolution_to_window_state(
                 app.core.window_resolution,
-                crate::dsl::screen_resolution(&scene),
+                scene_screen_resolution,
                 app.runtime.follow_scene_resolution_for_window,
             );
             app.core.window_resolution = next_window_resolution;
@@ -342,7 +351,11 @@ pub fn apply_scene_update(
                             return SceneApplyResult {
                                 did_rebuild_shader_space: false,
                                 texture_filter_override: None,
-                                reset_viewport: should_reset_viewport,
+                                reset_viewport: should_reset_viewport_for_scene_resolution(
+                                    &source,
+                                    previous_output_resolution,
+                                    prepared_for_fast_path.resolution,
+                                ),
                             };
                         }
                         Err(e) => {
@@ -402,7 +415,11 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: None,
-                        reset_viewport: should_reset_viewport,
+                        reset_viewport: should_reset_viewport_for_scene_resolution(
+                            &source,
+                            previous_output_resolution,
+                            result.resolution,
+                        ),
                     }
                 }
                 Ok(Err(e)) => {
@@ -420,7 +437,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: None,
-                        reset_viewport: should_reset_viewport,
+                        reset_viewport: false,
                     }
                 }
                 Err(panic_payload) => {
@@ -441,7 +458,7 @@ pub fn apply_scene_update(
                     SceneApplyResult {
                         did_rebuild_shader_space: true,
                         texture_filter_override: Some(wgpu::FilterMode::Linear),
-                        reset_viewport: should_reset_viewport,
+                        reset_viewport: false,
                     }
                 }
             }
@@ -638,6 +655,33 @@ mod tests {
     }
 
     #[test]
+    fn scene_update_preserves_viewport_when_output_resolution_is_unchanged() {
+        assert!(!should_reset_viewport_for_scene_resolution(
+            &ws::ParsedSceneSource::SceneUpdate,
+            [1080, 2400],
+            [1080, 2400],
+        ));
+    }
+
+    #[test]
+    fn scene_update_resets_viewport_when_output_resolution_changes() {
+        assert!(should_reset_viewport_for_scene_resolution(
+            &ws::ParsedSceneSource::SceneUpdate,
+            [1080, 2400],
+            [1440, 3200],
+        ));
+    }
+
+    #[test]
+    fn scene_delta_preserves_viewport_even_when_output_resolution_changes() {
+        assert!(!should_reset_viewport_for_scene_resolution(
+            &ws::ParsedSceneSource::SceneDelta,
+            [1080, 2400],
+            [1440, 3200],
+        ));
+    }
+
+    #[test]
     fn collect_graph_uniform_updates_skips_unchanged_buffers() {
         let scene = crate::dsl::SceneDSL {
             version: "1.0".to_string(),
@@ -653,7 +697,7 @@ mod tests {
                 inputs: Vec::new(),
                 outputs: Vec::new(),
                 input_bindings: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             connections: Vec::new(),
             outputs: None,
@@ -719,7 +763,7 @@ mod tests {
                 inputs: Vec::new(),
                 outputs: Vec::new(),
                 input_bindings: Vec::new(),
-                            wgsl_override: None,
+                wgsl_override: None,
             }],
             connections: Vec::new(),
             outputs: None,

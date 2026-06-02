@@ -18,7 +18,7 @@ fn node(id: &str, node_type: &str, params: serde_json::Value) -> Node {
         inputs: Vec::new(),
         input_bindings: Vec::new(),
         outputs: Vec::new(),
-            wgsl_override: None,
+        wgsl_override: None,
     }
 }
 

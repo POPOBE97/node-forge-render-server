@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use crate::app::{
     AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel, QualifierSettings,
-    RefImageMode, ResourcePoolInfo, TestMode,
+    RefImageMode, ResourcePoolInfo, TestMode, display_metrics,
 };
 
 use super::button::{
@@ -270,6 +270,163 @@ fn slider_with_value(
     changed
 }
 
+fn slider_with_editable_value(
+    ui: &mut egui::Ui,
+    id_source: impl Hash + Clone,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    step: f32,
+    formatter: Option<&dyn Fn(f32) -> String>,
+) -> bool {
+    let mut changed = false;
+    let mut formatted_value = formatter
+        .map(|f| f(*value))
+        .unwrap_or_else(|| format!("{:.3}", *value));
+    let label_width = fixed_value_label_width(ui);
+    let slider_width = (ui.available_width() - SIDEBAR_SLIDER_VALUE_GAP - label_width).max(0.0);
+    let text_style = design_tokens::text_style(TextRole::ValueLabel);
+    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
+    let sidebar_bg = sidebar_background_color();
+    let text_id = ui.make_persistent_id((id_source.clone(), "editable_value"));
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), design_tokens::CONTROL_ROW_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = SIDEBAR_SLIDER_VALUE_GAP;
+            ui.allocate_ui_with_layout(
+                egui::vec2(slider_width, design_tokens::CONTROL_ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(slider_width, value_slider::VALUE_SLIDER_HEIGHT),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            let out = value_slider::value_slider(
+                                ui,
+                                id_source.clone(),
+                                value,
+                                min,
+                                max,
+                                formatter,
+                            );
+                            if out.changed {
+                                let next = quantize_value(*value, min, max, step);
+                                if (*value - next).abs() > f32::EPSILON {
+                                    *value = next;
+                                }
+                                changed = true;
+                            }
+                            formatted_value = formatter
+                                .map(|f| f(*value))
+                                .unwrap_or_else(|| out.formatted_value);
+                        },
+                    );
+                },
+            );
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_width, design_tokens::CONTROL_ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let (label_rect, label_response) = ui.allocate_exact_size(
+                        egui::vec2(label_width, value_slider::VALUE_SLIDER_HEIGHT),
+                        egui::Sense::click(),
+                    );
+                    let text_focused = ui.memory(|mem| mem.has_focus(text_id));
+                    let mut text = ui
+                        .memory(|mem| mem.data.get_temp::<String>(text_id))
+                        .unwrap_or_else(|| formatted_value.clone());
+                    if !text_focused {
+                        text = formatted_value.clone();
+                    }
+
+                    let label_border_stroke = if label_response.hovered() || text_focused {
+                        egui::Stroke::new(
+                            design_tokens::LINE_THICKNESS_05,
+                            design_tokens::white(20),
+                        )
+                    } else {
+                        egui::Stroke::NONE
+                    };
+                    let painter = ui.painter_at(label_rect);
+                    painter.rect(
+                        label_rect,
+                        right_only_radius(design_tokens::BORDER_RADIUS_SMALL as u8),
+                        design_tokens::RESOURCE_ACTIVE_BG,
+                        label_border_stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.line_segment(
+                        [
+                            egui::pos2(label_rect.left(), label_rect.top()),
+                            egui::pos2(label_rect.left(), label_rect.bottom()),
+                        ],
+                        egui::Stroke::new(VALUE_LABEL_DIVIDER_WIDTH, sidebar_bg),
+                    );
+
+                    let text_rect = egui::Rect::from_min_max(
+                        egui::pos2(
+                            label_rect.left()
+                                + VALUE_LABEL_DIVIDER_WIDTH
+                                + VALUE_LABEL_TEXT_PADDING_X,
+                            label_rect.top(),
+                        ),
+                        egui::pos2(
+                            label_rect.right() - VALUE_LABEL_TEXT_PADDING_X,
+                            label_rect.bottom(),
+                        ),
+                    );
+                    let edit_response = ui
+                        .scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
+                            ui.add_sized(
+                                text_rect.size(),
+                                egui::TextEdit::singleline(&mut text)
+                                    .id(text_id)
+                                    .font(label_font.clone())
+                                    .text_color(text_style.color)
+                                    .horizontal_align(egui::Align::Center)
+                                    .vertical_align(egui::Align::Center)
+                                    .desired_width(text_rect.width())
+                                    .margin(egui::Margin::same(0))
+                                    .frame(false),
+                            )
+                        })
+                        .inner;
+
+                    if edit_response.changed()
+                        && let Ok(parsed) = text.trim().parse::<f32>()
+                    {
+                        let next = quantize_value(parsed, min, max, step);
+                        if (*value - next).abs() > f32::EPSILON {
+                            *value = next;
+                            changed = true;
+                        }
+                    }
+                    if edit_response.lost_focus() && text.trim().parse::<f32>().is_err() {
+                        text = formatter
+                            .map(|f| f(*value))
+                            .unwrap_or_else(|| format!("{:.3}", *value));
+                    }
+                    ui.memory_mut(|mem| mem.data.insert_temp(text_id, text));
+                },
+            );
+        },
+    );
+
+    changed
+}
+
+fn quantize_value(value: f32, min: f32, max: f32, step: f32) -> f32 {
+    let clamped = value_slider::clamp_to_range(value, min, max);
+    if step > 0.0 && step.is_finite() {
+        (clamped / step).round() * step
+    } else {
+        clamped
+    }
+    .clamp(min, max)
+}
+
 fn mode_options() -> [RadioButtonOption<'static, RefImageMode>; 2] {
     [
         RadioButtonOption {
@@ -376,6 +533,12 @@ pub enum SidebarAction {
     SetTestMode(TestMode),
     /// Toggle a resource pool's selection in matrix mode.
     ToggleMatrixPool(String),
+    /// Set the maximum visible columns per matrix row. `0` disables wrapping.
+    SetMatrixMaxRowCols(usize),
+    /// Show/hide matrix row and column labels.
+    SetMatrixLabelsVisible(bool),
+    /// Set the target display PPI used for physical-size preview.
+    SetDisplayPpi(f32),
 }
 
 /// Hover state from the timeline panel.
@@ -414,6 +577,13 @@ pub struct TestModeSidebarState<'a> {
     pub mode: TestMode,
     pub resource_pools: &'a [ResourcePoolInfo],
     pub selected_pool_ids: &'a [String],
+    pub max_row_cols: usize,
+    pub show_labels: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DisplaySidebarState {
+    pub target_ppi: f32,
 }
 
 pub fn show_in_rect(
@@ -427,6 +597,7 @@ pub fn show_in_rect(
     parade_texture_id: Option<egui::TextureId>,
     vectorscope_texture_id: Option<egui::TextureId>,
     analysis: AnalysisSidebarState,
+    display: DisplaySidebarState,
     reference: Option<&ReferenceSidebarState>,
     test_mode_state: TestModeSidebarState<'_>,
     tree_nodes: &[FileTreeNode],
@@ -496,11 +667,11 @@ pub fn show_in_rect(
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             with_sidebar_content_padding(ui, |ui| {
-                                show_test_mode_section(
-                                    ui,
-                                    &test_mode_state,
-                                    &mut sidebar_action,
-                                );
+                                show_test_mode_section(ui, &test_mode_state, &mut sidebar_action);
+                            });
+                            section_divider(ui);
+                            with_sidebar_content_padding(ui, |ui| {
+                                show_display_section(ui, display, &mut sidebar_action);
                             });
                             section_divider(ui);
                             with_sidebar_content_padding(ui, |ui| {
@@ -539,6 +710,35 @@ pub fn show_in_rect(
     SidebarResult {
         action: sidebar_action,
     }
+}
+
+fn show_display_section(
+    ui: &mut egui::Ui,
+    display: DisplaySidebarState,
+    sidebar_action: &mut Option<SidebarAction>,
+) {
+    two_column_section::section(ui, "Display", |ui| {
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 4, |ui| {
+                sidebar_group_cell(ui, "PPI", |ui| {
+                    let mut ppi = display.target_ppi;
+                    let formatter = |v: f32| format!("{:.0}", v);
+                    let changed = slider_with_editable_value(
+                        ui,
+                        "ui.debug_sidebar.display.ppi",
+                        &mut ppi,
+                        display_metrics::MIN_DISPLAY_PPI,
+                        display_metrics::MAX_DISPLAY_PPI,
+                        1.0,
+                        Some(&formatter),
+                    );
+                    if changed {
+                        *sidebar_action = Some(SidebarAction::SetDisplayPpi(ppi));
+                    }
+                });
+            });
+        });
+    });
 }
 
 fn show_ref_section(
@@ -874,6 +1074,16 @@ fn test_mode_options() -> [RadioButtonOption<'static, TestMode>; 2] {
     ]
 }
 
+fn selected_matrix_col_count(state: &TestModeSidebarState<'_>) -> usize {
+    state
+        .selected_pool_ids
+        .get(1)
+        .or_else(|| state.selected_pool_ids.first())
+        .and_then(|id| state.resource_pools.iter().find(|p| p.node_id == *id))
+        .map(|pool| pool.item_count)
+        .unwrap_or(0)
+}
+
 fn numbered_checkbox(ui: &mut egui::Ui, order: Option<usize>, label: &str) -> egui::Response {
     let spacing = ui.spacing().icon_spacing;
     let icon_width = ui.spacing().icon_width;
@@ -883,7 +1093,10 @@ fn numbered_checkbox(ui: &mut egui::Ui, order: Option<usize>, label: &str) -> eg
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), font, text_style.color);
-    let desired_size = egui::vec2(total_extra + galley.size().x, icon_width.max(galley.size().y));
+    let desired_size = egui::vec2(
+        total_extra + galley.size().x,
+        icon_width.max(galley.size().y),
+    );
     let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
     if ui.is_rect_visible(rect) {
@@ -914,7 +1127,10 @@ fn numbered_checkbox(ui: &mut egui::Ui, order: Option<usize>, label: &str) -> eg
                 visuals.text_color(),
             );
         }
-        let text_pos = egui::pos2(rect.min.x + total_extra, rect.center().y - galley.size().y * 0.5);
+        let text_pos = egui::pos2(
+            rect.min.x + total_extra,
+            rect.center().y - galley.size().y * 0.5,
+        );
         ui.painter()
             .galley(text_pos, galley, egui::Color32::PLACEHOLDER);
     }
@@ -946,6 +1162,95 @@ fn show_test_mode_section(
         });
 
         if state.mode == TestMode::Matrix && !state.resource_pools.is_empty() {
+            let selected_col_count = selected_matrix_col_count(state);
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            sidebar_grid_row(ui, |row| {
+                row.place(1, 3, |ui| {
+                    sidebar_group_cell(ui, "Max Cols", |ui| {
+                        let can_wrap = selected_col_count > 1;
+                        ui.add_enabled_ui(can_wrap, |ui| {
+                            let max_slider_value = selected_col_count.saturating_sub(1).max(1);
+                            let visible_max_cols = if state.max_row_cols == 0
+                                || state.max_row_cols >= selected_col_count
+                            {
+                                0
+                            } else {
+                                state.max_row_cols
+                            };
+                            let mut max_cols = visible_max_cols as f32;
+                            let formatter = |v: f32| {
+                                let rounded = v.round() as usize;
+                                if rounded == 0 {
+                                    "Off".to_string()
+                                } else {
+                                    format!("{rounded}")
+                                }
+                            };
+                            let changed = slider_with_value(
+                                ui,
+                                "ui.debug_sidebar.matrix.max_cols",
+                                &mut max_cols,
+                                0.0,
+                                max_slider_value as f32,
+                                Some(&formatter),
+                            );
+                            if changed {
+                                let next = max_cols.round() as usize;
+                                let next = if next == 0 || next >= selected_col_count {
+                                    0
+                                } else {
+                                    next
+                                };
+                                *sidebar_action = Some(SidebarAction::SetMatrixMaxRowCols(next));
+                            }
+                        });
+                    });
+                });
+                row.place(4, 1, |ui| {
+                    sidebar_group_cell(ui, "Labels", |ui| {
+                        let (tooltip, variant, icon, visual_override) = if state.show_labels {
+                            (
+                                "Hide matrix labels",
+                                ButtonVariant::Outline,
+                                button::ButtonIcon::Eye,
+                                Some(ButtonVisualOverride {
+                                    bg: design_tokens::indicator_success_bg(),
+                                    hover_bg: design_tokens::indicator_success_bg(),
+                                    active_bg: design_tokens::indicator_success_bg(),
+                                    text: design_tokens::indicator_success_fg(),
+                                    border: design_tokens::indicator_success_border(),
+                                }),
+                            )
+                        } else {
+                            (
+                                "Show matrix labels",
+                                ButtonVariant::Ghost,
+                                button::ButtonIcon::EyeOff,
+                                None,
+                            )
+                        };
+                        let response = button::button(
+                            ui,
+                            ButtonOptions {
+                                label: "",
+                                tooltip: Some(tooltip),
+                                variant,
+                                size: ButtonSize::Default,
+                                enabled: true,
+                                icon: None,
+                                icon_kind: Some(icon),
+                                visual_override,
+                                group_position: button::ButtonGroupPosition::Single,
+                            },
+                        );
+                        if response.clicked() {
+                            *sidebar_action =
+                                Some(SidebarAction::SetMatrixLabelsVisible(!state.show_labels));
+                        }
+                    });
+                });
+            });
+
             ui.add_space(SIDEBAR_GRID_ROW_GAP);
             sidebar_grid_label(ui, "Pools");
             ui.add_space(SIDEBAR_GRID_LABEL_GAP);

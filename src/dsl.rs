@@ -142,7 +142,11 @@ pub struct Node {
     /// Optional WGSL material override. Forward-slash relative path under the
     /// scene root (e.g. "materials/<nodeId>.wgsl"). When set, node compilers
     /// read this file in place of the bundled template.
-    #[serde(default, rename = "wgslOverride", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "wgslOverride",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub wgsl_override: Option<String>,
 }
 
@@ -746,11 +750,69 @@ fn resolve_output_f64_inner(
             if out_port != "result" {
                 bail!("unsupported MathAdd output port: {out_port}");
             }
-            let a = resolve_input_f64_inner(scene, nodes_by_id, node_id, "a", cache, visiting)?
-                .unwrap_or(0.0);
-            let b = resolve_input_f64_inner(scene, nodes_by_id, node_id, "b", cache, visiting)?
-                .unwrap_or(0.0);
-            a + b
+
+            let mut input_port_ids: Vec<&str> = Vec::new();
+            if !node.inputs.is_empty() {
+                input_port_ids.extend(node.inputs.iter().map(|p| p.id.as_str()));
+            } else {
+                input_port_ids.extend(["a", "b"]);
+            }
+
+            let mut values: Vec<f64> = Vec::new();
+            for port_id in input_port_ids {
+                if let Some(conn) = incoming_connection(scene, node_id, port_id) {
+                    let v = resolve_output_f64_inner(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        cache,
+                        visiting,
+                    )?;
+                    values.push(v);
+                }
+            }
+
+            if values.len() < 2 {
+                0.0
+            } else {
+                values.into_iter().fold(0.0, |acc, v| acc + v)
+            }
+        }
+        "MathSubtract" => {
+            if out_port != "result" {
+                bail!("unsupported MathSubtract output port: {out_port}");
+            }
+
+            let mut input_port_ids: Vec<&str> = Vec::new();
+            if !node.inputs.is_empty() {
+                input_port_ids.extend(node.inputs.iter().map(|p| p.id.as_str()));
+            } else {
+                input_port_ids.extend(["a", "b"]);
+            }
+
+            let mut values: Vec<f64> = Vec::new();
+            for port_id in input_port_ids {
+                if let Some(conn) = incoming_connection(scene, node_id, port_id) {
+                    let v = resolve_output_f64_inner(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        cache,
+                        visiting,
+                    )?;
+                    values.push(v);
+                }
+            }
+
+            if values.len() < 2 {
+                0.0
+            } else {
+                let mut iter = values.into_iter();
+                let first = iter.next().unwrap_or(0.0);
+                iter.fold(first, |acc, v| acc - v)
+            }
         }
         "MathMultiply" => {
             if out_port != "result" {
@@ -788,6 +850,41 @@ fn resolve_output_f64_inner(
                 0.0
             } else {
                 values.into_iter().fold(1.0, |acc, v| acc * v)
+            }
+        }
+        "MathDivide" => {
+            if out_port != "result" {
+                bail!("unsupported MathDivide output port: {out_port}");
+            }
+
+            let mut input_port_ids: Vec<&str> = Vec::new();
+            if !node.inputs.is_empty() {
+                input_port_ids.extend(node.inputs.iter().map(|p| p.id.as_str()));
+            } else {
+                input_port_ids.extend(["a", "b"]);
+            }
+
+            let mut values: Vec<f64> = Vec::new();
+            for port_id in input_port_ids {
+                if let Some(conn) = incoming_connection(scene, node_id, port_id) {
+                    let v = resolve_output_f64_inner(
+                        scene,
+                        nodes_by_id,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        cache,
+                        visiting,
+                    )?;
+                    values.push(v);
+                }
+            }
+
+            if values.len() < 2 {
+                0.0
+            } else {
+                let mut iter = values.into_iter();
+                let first = iter.next().unwrap_or(0.0);
+                iter.fold(first, |acc, v| acc / v)
             }
         }
         "MathClamp" => {

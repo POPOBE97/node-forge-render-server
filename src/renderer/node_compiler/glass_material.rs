@@ -241,8 +241,10 @@ fn glass_override_path(node: &Node) -> Option<std::path::PathBuf> {
 
 fn glass_template_parts(node: &Node) -> (String, String) {
     let path = glass_override_path(node);
-    let full =
-        super::template_loader::load_template_with_override(path.as_deref(), "glass_material_fragment.wgsl");
+    let full = super::template_loader::load_template_with_override(
+        path.as_deref(),
+        "glass_material_fragment.wgsl",
+    );
     let split_pos = full
         .find(GLASS_TEMPLATE_SPLIT)
         .expect("template missing // {{BODY}} marker");
@@ -282,6 +284,8 @@ fn glass_lib_key_for(node: &Node) -> String {
 }
 
 fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) {
+    super::sdf_nodes::ensure_default_sdf2d_wgsl_lib(ctx);
+
     let lib_key = glass_lib_key_for(node);
     if ctx.extra_wgsl_decls.contains_key(&lib_key) {
         return;
@@ -347,14 +351,8 @@ where
         input_f32_expr(node, "uBlendSaturation", 1.0),
     )?;
 
-    let u_shape_edge_px = input_expr(
-        "uShapeEdgePx",
-        input_f32_expr(node, "uShapeEdgePx", 20.0),
-    )?;
-    let u_shape_edge_pow = input_expr(
-        "uShapeEdgePow",
-        input_f32_expr(node, "uShapeEdgePow", 2.0),
-    )?;
+    let u_shape_edge_px = input_expr("uShapeEdgePx", input_f32_expr(node, "uShapeEdgePx", 20.0))?;
+    let u_shape_edge_pow = input_expr("uShapeEdgePow", input_f32_expr(node, "uShapeEdgePow", 2.0))?;
     let u_shape_thickness_px = input_expr(
         "uShapeThicknessPx",
         input_f32_expr(node, "uShapeThicknessPx", 200.0),
@@ -399,10 +397,7 @@ where
         input_f32_expr(node, "uBgColorSaturation", 4.0),
     )?;
 
-    let u_inner_bottom = input_expr(
-        "uInnerBottom",
-        input_f32_expr(node, "uInnerBottom", 0.05),
-    )?;
+    let u_inner_bottom = input_expr("uInnerBottom", input_f32_expr(node, "uInnerBottom", 0.05))?;
     let u_inner_color_white = input_expr(
         "uInnerColorWhite",
         input_f32_expr(node, "uInnerColorWhite", 0.1),
@@ -420,10 +415,7 @@ where
         input_vec4_expr(node, "uInnerGlassColor", [1.0, 1.0, 1.0, 0.15]),
     )?;
 
-    let u_bionic_burn = input_expr(
-        "uBionicBurn",
-        input_f32_expr(node, "uBionicBurn", 11.0),
-    )?;
+    let u_bionic_burn = input_expr("uBionicBurn", input_f32_expr(node, "uBionicBurn", 11.0))?;
     let u_bionic_unshade = input_expr(
         "uBionicUnShade",
         input_f32_expr(node, "uBionicUnShade", 0.0),
@@ -463,14 +455,8 @@ where
         "uGeoPxSize",
         input_vec3_expr(node, "uGeoPxSize", [0.0, 0.0, 54.0]),
     )?;
-    let u_geo_px_radius = input_expr(
-        "uGeoPxRadius",
-        input_f32_expr(node, "uGeoPxRadius", 24.0),
-    )?;
-    let u_use_sdf_tex = input_expr(
-        "uUseSdfTex",
-        input_bool_expr(node, "uUseSdfTex", false),
-    )?;
+    let u_geo_px_radius = input_expr("uGeoPxRadius", input_f32_expr(node, "uGeoPxRadius", 24.0))?;
+    let u_use_sdf_tex = input_expr("uUseSdfTex", input_bool_expr(node, "uUseSdfTex", false))?;
 
     let u_sdf_tex = if let Some(conn) = incoming_connection(scene, &node.id, "uSdfTex") {
         Some(compile_fn(
@@ -523,7 +509,10 @@ where
         u_geo_px_size.uses_time,
         u_geo_px_radius.uses_time,
         u_use_sdf_tex.uses_time,
-        u_sdf_tex.as_ref().map(|expr| expr.uses_time).unwrap_or(false),
+        u_sdf_tex
+            .as_ref()
+            .map(|expr| expr.uses_time)
+            .unwrap_or(false),
     ]
     .into_iter()
     .any(|value| value);
@@ -687,13 +676,22 @@ where
         ("uRefractBlurScale", u_refract_blur_scale.expr.clone()),
         ("uRefractIOR", u_refract_ior.expr.clone()),
         ("uShapeThicknessPx", u_shape_thickness_px.expr.clone()),
-        ("uShapeReflectOffsetPx", u_shape_reflect_offset_px.expr.clone()),
+        (
+            "uShapeReflectOffsetPx",
+            u_shape_reflect_offset_px.expr.clone(),
+        ),
         ("refraction_expr", refraction_expr),
         ("reflection_expr", reflection_expr),
         ("uReflectStrength", u_reflect_strength.expr.clone()),
         ("uReflectLighten", u_reflect_lighten.expr.clone()),
-        ("uBlendLuminanceValues", u_blend_luminance_values.expr.clone()),
-        ("uBlendLuminanceAmount", u_blend_luminance_amount.expr.clone()),
+        (
+            "uBlendLuminanceValues",
+            u_blend_luminance_values.expr.clone(),
+        ),
+        (
+            "uBlendLuminanceAmount",
+            u_blend_luminance_amount.expr.clone(),
+        ),
         ("uBlendSaturation", u_blend_saturation.expr.clone()),
         ("bg_color_expr", bg_color_expr),
         ("uBgColorSaturation", u_bg_color_saturation.expr.clone()),
@@ -701,15 +699,30 @@ where
         ("uInnerColorWhite", u_inner_color_white.expr.clone()),
         ("uBionicBurn", u_bionic_burn.expr.clone()),
         ("uInnerGlassColor", u_inner_glass_color.expr.clone()),
-        ("uDebugFixNeutralVibrancy", u_debug_fix_neutral_vibrancy.expr.clone()),
-        ("uDebugFixNeutralVibrancyThresholdMin", u_debug_fix_neutral_vibrancy_threshold_min.expr.clone()),
-        ("uDebugFixNeutralVibrancyThreshold", u_debug_fix_neutral_vibrancy_threshold.expr.clone()),
+        (
+            "uDebugFixNeutralVibrancy",
+            u_debug_fix_neutral_vibrancy.expr.clone(),
+        ),
+        (
+            "uDebugFixNeutralVibrancyThresholdMin",
+            u_debug_fix_neutral_vibrancy_threshold_min.expr.clone(),
+        ),
+        (
+            "uDebugFixNeutralVibrancyThreshold",
+            u_debug_fix_neutral_vibrancy_threshold.expr.clone(),
+        ),
         ("uInnerColorMix", u_inner_color_mix.expr.clone()),
         ("uInnerBottom", u_inner_bottom.expr.clone()),
         ("uDirectionalLightDirection", u_light_dir.expr.clone()),
         ("uDirectionalLightIntensity", u_light_intensity.expr.clone()),
-        ("uDirectionalLightOppositeIntensity", u_light_opp_intensity.expr.clone()),
-        ("uDirectionalLightAngleRange", u_light_angle_range.expr.clone()),
+        (
+            "uDirectionalLightOppositeIntensity",
+            u_light_opp_intensity.expr.clone(),
+        ),
+        (
+            "uDirectionalLightAngleRange",
+            u_light_angle_range.expr.clone(),
+        ),
         ("uInnerColorPow", u_inner_color_pow.expr.clone()),
         ("uBionicUnShade", u_bionic_unshade.expr.clone()),
         ("uAlpha", u_alpha.expr.clone()),

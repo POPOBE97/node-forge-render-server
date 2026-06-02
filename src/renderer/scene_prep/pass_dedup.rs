@@ -471,7 +471,7 @@ mod tests {
                 port_type: None,
             }],
             input_bindings: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }
     }
 

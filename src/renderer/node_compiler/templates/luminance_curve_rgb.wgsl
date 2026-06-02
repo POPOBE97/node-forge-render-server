@@ -31,7 +31,7 @@ fn lc_luminance_curve_rgb(color: vec4f, factors: vec4f, mix_factor: f32) -> vec4
     target_luminance = target_luminance * luminance + factor_adjust.w;
 
     let chroma = rgb - vec3f(luminance);
-    let chroma_scale = clamp(target_luminance / max(luminance, 1e-6), 0.0, 1.0);
+    let chroma_scale = max(target_luminance / max(luminance, 1e-6), 0.0);
     let remapped_rgb = vec3f(target_luminance) + chroma * chroma_scale;
     let mixed = max(vec3f(0.0), mix(rgb, remapped_rgb, mix_factor));
 
