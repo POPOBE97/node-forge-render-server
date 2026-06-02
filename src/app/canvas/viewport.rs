@@ -2,6 +2,7 @@ use rust_wgpu_fiber::eframe::egui::{self, Rect};
 
 use crate::{
     app::{
+        display_metrics::{self, CurrentDisplayMetrics},
         layout_math::{clamp_zoom, lerp},
         types::{App, SIDEBAR_ANIM_SECS},
         window_mode::WindowModeFrame,
@@ -10,6 +11,7 @@ use crate::{
 };
 
 pub const ANIM_KEY_PAN_ZOOM_FACTOR: &str = "ui.canvas.pan_zoom.factor";
+const EXPLICIT_MIN_ZOOM: f32 = 0.001;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ViewportFrame {
@@ -28,6 +30,7 @@ pub fn prepare_viewport(
     now: f64,
     canvas_rect: Rect,
     image_size: egui::Vec2,
+    current_display_metrics: CurrentDisplayMetrics,
 ) -> ViewportFrame {
     let prev_center = app
         .canvas
@@ -47,11 +50,6 @@ pub fn prepare_viewport(
         app.canvas.viewport.min_zoom = Some(fit_zoom);
         app.canvas.viewport.pan_zoom_target_zoom = fit_zoom;
     }
-    let min_zoom = app
-        .canvas
-        .viewport
-        .explicit_min_zoom
-        .unwrap_or_else(|| app.canvas.viewport.min_zoom.unwrap_or(fit_zoom));
 
     if frame.prev_mode != frame.mode {
         let target_zoom = if app.canvas.viewport.pan_zoom_target_zoom > 0.0 {
@@ -98,7 +96,7 @@ pub fn prepare_viewport(
 
     let pan_zoom_animating = is_pan_zoom_animating(app);
     let pan_zoom_enabled = !pan_zoom_animating;
-    let effective_min_zoom = if pan_zoom_animating { 0.01 } else { min_zoom };
+    let mut effective_min_zoom = compute_effective_min_zoom(app, fit_zoom, pan_zoom_animating);
 
     if pan_zoom_enabled {
         app.canvas.viewport.pan_zoom_target_zoom = app.canvas.viewport.zoom;
@@ -112,7 +110,7 @@ pub fn prepare_viewport(
         app.canvas.viewport.zoom = fit_zoom;
         app.canvas.viewport.pan = egui::Vec2::ZERO;
         app.canvas.viewport.pan_start = None;
-        app.canvas.viewport.explicit_min_zoom = None;
+        app.canvas.viewport.explicit_min_zoom = Some(EXPLICIT_MIN_ZOOM);
         app.canvas.viewport.min_zoom = Some(fit_zoom);
         app.canvas.viewport.pan_zoom_target_zoom = fit_zoom;
         app.canvas.viewport.pan_zoom_target_pan = egui::Vec2::ZERO;
@@ -120,10 +118,9 @@ pub fn prepare_viewport(
     }
 
     if let Some(request) = app.canvas.viewport.pending_center_physical_zoom.take() {
-        let target_zoom = request.zoom.max(0.01);
+        let target_zoom = request.zoom.max(EXPLICIT_MIN_ZOOM);
         let pixels_per_point = request.pixels_per_point.max(0.000_1);
-        let fit_min_zoom = app.canvas.viewport.min_zoom.unwrap_or(fit_zoom);
-        app.canvas.viewport.explicit_min_zoom = Some(target_zoom.min(fit_min_zoom).max(0.01));
+        app.canvas.viewport.explicit_min_zoom = Some(EXPLICIT_MIN_ZOOM);
         app.canvas.viewport.zoom = target_zoom;
         app.canvas.viewport.pan_start = None;
         app.canvas.viewport.pan_zoom_target_zoom = target_zoom;
@@ -138,6 +135,11 @@ pub fn prepare_viewport(
         app.canvas.viewport.pan = pan;
         app.canvas.viewport.pan_zoom_target_pan = pan;
     }
+
+    effective_min_zoom = compute_effective_min_zoom(app, fit_zoom, pan_zoom_animating);
+    let zoom = clamp_zoom(app.canvas.viewport.zoom, effective_min_zoom);
+    app.canvas.viewport.zoom = zoom;
+    sync_display_ppi_from_zoom(app, current_display_metrics);
 
     let draw_size = image_size * app.canvas.viewport.zoom;
     let base_min = canvas_rect.center() - draw_size * 0.5;
@@ -154,4 +156,30 @@ pub fn image_rect(app: &App, canvas_rect: Rect, image_size: egui::Vec2) -> Rect 
     let draw_size = image_size * app.canvas.viewport.zoom;
     let base_min = canvas_rect.center() - draw_size * 0.5;
     Rect::from_min_size(base_min + app.canvas.viewport.pan, draw_size)
+}
+
+fn compute_effective_min_zoom(app: &App, fit_zoom: f32, pan_zoom_animating: bool) -> f32 {
+    if pan_zoom_animating {
+        0.01
+    } else {
+        app.canvas
+            .viewport
+            .explicit_min_zoom
+            .unwrap_or_else(|| app.canvas.viewport.min_zoom.unwrap_or(fit_zoom))
+    }
+}
+
+fn sync_display_ppi_from_zoom(app: &mut App, current_display_metrics: CurrentDisplayMetrics) {
+    let Some(current_display_ppi) = current_display_metrics.display_ppi else {
+        return;
+    };
+    let Some(ppi) = display_metrics::display_ppi_from_zoom(
+        current_display_ppi,
+        app.canvas.viewport.zoom,
+        current_display_metrics.pixels_per_point,
+    ) else {
+        return;
+    };
+
+    app.canvas.viewport.display_ppi = Some(display_metrics::clamp_display_ppi(ppi));
 }

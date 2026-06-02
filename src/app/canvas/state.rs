@@ -73,10 +73,15 @@ pub struct CanvasViewportState {
     pub canvas_center_prev: Option<egui::Pos2>,
     pub pending_view_reset: bool,
     pub pending_center_physical_zoom: Option<PhysicalZoomRequest>,
-    pub target_ppi: f32,
-    pub display_ppi_initialized_from_device: bool,
-    pub display_ppi_user_set: bool,
+    pub display_ppi: Option<f32>,
     pub last_sampled: Option<SampledPixel>,
+}
+
+impl CanvasViewportState {
+    pub fn effective_display_ppi(&self) -> f32 {
+        self.display_ppi
+            .unwrap_or(display_metrics::DEFAULT_DISPLAY_PPI)
+    }
 }
 
 impl Default for CanvasViewportState {
@@ -95,9 +100,7 @@ impl Default for CanvasViewportState {
             canvas_center_prev: None,
             pending_view_reset: false,
             pending_center_physical_zoom: None,
-            target_ppi: display_metrics::DEFAULT_DISPLAY_PPI,
-            display_ppi_initialized_from_device: false,
-            display_ppi_user_set: false,
+            display_ppi: None,
             last_sampled: None,
         }
     }

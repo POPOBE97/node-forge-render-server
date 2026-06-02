@@ -9,7 +9,10 @@ pub(super) mod request_keys;
 
 use rust_wgpu_fiber::eframe::{self, egui};
 
-use crate::app::types::App;
+use crate::app::{
+    matrix_render,
+    types::{App, TestMode},
+};
 
 fn apply_dark_visuals(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
@@ -25,6 +28,15 @@ pub(super) fn run(app: &mut App, ctx: &egui::Context, frame: &mut eframe::Frame)
     let mut renderer_guard = frame.wgpu_render_state().unwrap().renderer.as_ref().write();
 
     let ingest = ingest::run(app, ctx, render_state, &mut renderer_guard, frame_time);
+    if app.shell.test_mode == TestMode::Matrix {
+        let _ = matrix_render::poll_matrix_rebuild(
+            &mut app.shell.matrix_state,
+            render_state,
+            &mut renderer_guard,
+            app.canvas.display.texture_filter,
+            app.canvas.display.hdr_preview_clamp_enabled,
+        );
+    }
     let advance = advance::run(app);
     render_analysis::run(app, render_state, &mut renderer_guard, &ingest, &advance);
     let present = present::run(app, ctx, render_state, &mut renderer_guard, &ingest);

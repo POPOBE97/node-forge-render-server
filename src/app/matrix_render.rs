@@ -1,6 +1,13 @@
-use std::sync::Arc;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+};
 
 use anyhow::Result;
+use crossbeam_channel::{Receiver, TryRecvError};
 use rayon::prelude::*;
 use rust_wgpu_fiber::{
     ResourceName,
@@ -23,7 +30,7 @@ use crate::{
 
 use super::types::{DiffStats, MatrixConfig, ResourcePoolInfo};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MatrixCellCoord {
     pub row: usize,
     pub col: usize,
@@ -65,6 +72,8 @@ pub struct MatrixRenderState {
     pub base_pipeline_signature: Option<[u8; 32]>,
     pub hovered_coord: Option<MatrixCellCoord>,
     pub sticky_stats_coord: Option<MatrixCellCoord>,
+    build_generation: u64,
+    build_job: Option<MatrixBuildJob>,
 }
 
 impl Default for MatrixRenderState {
@@ -83,12 +92,15 @@ impl Default for MatrixRenderState {
             base_pipeline_signature: None,
             hovered_coord: None,
             sticky_stats_coord: None,
+            build_generation: 0,
+            build_job: None,
         }
     }
 }
 
 impl MatrixRenderState {
     pub fn clear(&mut self, renderer: &mut egui_wgpu::Renderer) {
+        self.cancel_build();
         for cell in self.cells.drain(..) {
             if let Some(id) = cell.egui_texture_id {
                 renderer.free_texture(&id);
@@ -120,6 +132,16 @@ impl MatrixRenderState {
         self.sticky_stats_coord = None;
     }
 
+    fn cancel_build(&mut self) {
+        if let Some(job) = self.build_job.take() {
+            job.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn is_building(&self) -> bool {
+        self.build_job.is_some()
+    }
+
     pub fn stats_cell(&self) -> Option<&MatrixCell> {
         let coord = self
             .hovered_coord
@@ -127,6 +149,42 @@ impl MatrixRenderState {
             .or_else(|| self.cells.first().map(|c| c.coord))?;
         self.cells.iter().find(|c| c.coord == coord)
     }
+}
+
+struct MatrixBuildJob {
+    generation: u64,
+    rx: Receiver<MatrixBuildMessage>,
+    cancel: Arc<AtomicBool>,
+    expected_cells: usize,
+    completed_cells: usize,
+    failed_cells: usize,
+}
+
+struct BuiltCell {
+    coord: MatrixCellCoord,
+    shader_space: ShaderSpace,
+    output_texture_name: ResourceName,
+}
+
+enum MatrixBuildMessage {
+    CellReady {
+        generation: u64,
+        cell: BuiltCell,
+    },
+    CellFailed {
+        generation: u64,
+        coord: MatrixCellCoord,
+    },
+    Finished {
+        generation: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MatrixPollResult {
+    pub added_cells: usize,
+    pub failed_cells: usize,
+    pub finished: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,9 +258,8 @@ pub struct MatrixBuildParams<'a> {
     pub asset_store: &'a AssetStore,
 }
 
-pub fn rebuild_matrix(
+pub fn start_matrix_rebuild(
     params: MatrixBuildParams<'_>,
-    render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
     state: &mut MatrixRenderState,
 ) -> Result<()> {
@@ -244,103 +301,263 @@ pub fn rebuild_matrix(
         .flat_map(|r| (0..logical_cols).map(move |c| (r, c)))
         .collect();
 
-    struct BuiltCell {
-        coord: MatrixCellCoord,
-        shader_space: ShaderSpace,
-        output_texture_name: ResourceName,
-    }
-
-    let built_cells: Vec<BuiltCell> = coords
-        .par_iter()
-        .filter_map(|&(row, col)| {
-            let mut variant_scene = params.scene.clone();
-
-            if let Some(rp_id) = row_pool_id {
-                patch_pool_index(&mut variant_scene, rp_id, row as i64);
-            }
-            if let Some(cp_id) = col_pool_id {
-                patch_pool_index(&mut variant_scene, cp_id, col as i64);
-            }
-
-            let mut builder =
-                renderer::ShaderSpaceBuilder::new(params.device.clone(), params.queue.clone())
-                    .with_options(renderer::ShaderSpaceBuildOptions {
-                        presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
-                        ..Default::default()
-                    })
-                    .with_asset_store(params.asset_store.clone());
-            if let Some(adapter) = params.adapter {
-                builder = builder.with_adapter(adapter.clone());
-            }
-
-            match builder.build(&variant_scene) {
-                Ok(result) => {
-                    result.shader_space.render();
-                    Some(BuiltCell {
-                        coord: MatrixCellCoord { row, col },
-                        shader_space: result.shader_space,
-                        output_texture_name: result.present_output_texture,
-                    })
-                }
-                Err(e) => {
-                    eprintln!("[matrix] failed to build cell [{row}, {col}]: {e:#}");
-                    None
-                }
-            }
-        })
-        .collect();
-
-    for cell in built_cells {
-        let egui_id = if let Some(tex) = cell
-            .shader_space
-            .textures
-            .get(cell.output_texture_name.as_str())
-        {
-            if state.cell_resolution == [0, 0] {
-                if let Some(info) = cell
-                    .shader_space
-                    .texture_info(cell.output_texture_name.as_str())
-                {
-                    state.cell_resolution = [info.size.width, info.size.height];
-                }
-            }
-            tex.wgpu_texture_view.as_ref().map(|view| {
-                renderer.register_native_texture_with_sampler_options(
-                    &render_state.device,
-                    view,
-                    super::texture_bridge::canvas_sampler_descriptor(wgpu::FilterMode::Linear),
-                )
-            })
-        } else {
-            None
-        };
-
-        state.cells.push(MatrixCell {
-            coord: cell.coord,
-            display_coord: cell.coord,
-            shader_space: cell.shader_space,
-            output_texture_name: cell.output_texture_name,
-            egui_texture_id: egui_id,
-            hdr_clamp_renderer: None,
-            hdr_clamped_egui_id: None,
-            pixel_cache: None,
-            diff_renderer: None,
-            diff_texture_id: None,
-            last_diff_request_key: None,
-            last_diff_stats_request_key: None,
-            diff_stats: None,
-            clipping_renderer: None,
-            clipping_texture_id: None,
-            last_clipping_request_key: None,
-            qualifier_renderer: None,
-            qualifier_texture_id: None,
-            last_qualifier_request_key: None,
-        });
-    }
-
     relayout_matrix(params.config, state);
 
+    if coords.is_empty() {
+        return Ok(());
+    }
+
+    let generation = state.build_generation.wrapping_add(1);
+    state.build_generation = generation;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let worker_cancel = cancel.clone();
+    let (tx, rx) = crossbeam_channel::unbounded::<MatrixBuildMessage>();
+
+    let scene = params.scene.clone();
+    let device = params.device.clone();
+    let queue = params.queue.clone();
+    let adapter = params.adapter.cloned();
+    let asset_store = params.asset_store.clone();
+    let row_pool_id = row_pool_id.cloned();
+    let col_pool_id = col_pool_id.cloned();
+    let expected_cells = coords.len();
+
+    thread::spawn(move || {
+        coords
+            .par_iter()
+            .for_each_with(tx.clone(), |tx, &(row, col)| {
+                if worker_cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                let coord = MatrixCellCoord { row, col };
+                match build_matrix_cell(
+                    &scene,
+                    row_pool_id.as_deref(),
+                    col_pool_id.as_deref(),
+                    coord,
+                    device.clone(),
+                    queue.clone(),
+                    adapter.as_ref(),
+                    asset_store.clone(),
+                ) {
+                    Ok(cell) if !worker_cancel.load(Ordering::Relaxed) => {
+                        let _ = tx.send(MatrixBuildMessage::CellReady { generation, cell });
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("[matrix] failed to build cell [{row}, {col}]: {e:#}");
+                        if !worker_cancel.load(Ordering::Relaxed) {
+                            let _ = tx.send(MatrixBuildMessage::CellFailed { generation, coord });
+                        }
+                    }
+                }
+            });
+        let _ = tx.send(MatrixBuildMessage::Finished { generation });
+    });
+
+    state.build_job = Some(MatrixBuildJob {
+        generation,
+        rx,
+        cancel,
+        expected_cells,
+        completed_cells: 0,
+        failed_cells: 0,
+    });
+
     Ok(())
+}
+
+fn build_matrix_cell(
+    scene: &SceneDSL,
+    row_pool_id: Option<&str>,
+    col_pool_id: Option<&str>,
+    coord: MatrixCellCoord,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    adapter: Option<&wgpu::Adapter>,
+    asset_store: AssetStore,
+) -> Result<BuiltCell> {
+    let mut variant_scene = scene.clone();
+
+    if let Some(rp_id) = row_pool_id {
+        patch_pool_index(&mut variant_scene, rp_id, coord.row as i64);
+    }
+    if let Some(cp_id) = col_pool_id {
+        patch_pool_index(&mut variant_scene, cp_id, coord.col as i64);
+    }
+
+    let mut builder = renderer::ShaderSpaceBuilder::new(device, queue)
+        .with_options(renderer::ShaderSpaceBuildOptions {
+            presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
+            ..Default::default()
+        })
+        .with_asset_store(asset_store);
+    if let Some(adapter) = adapter {
+        builder = builder.with_adapter(adapter.clone());
+    }
+
+    let result = builder.build(&variant_scene)?;
+    result.shader_space.render();
+    Ok(BuiltCell {
+        coord,
+        shader_space: result.shader_space,
+        output_texture_name: result.present_output_texture,
+    })
+}
+
+const MAX_READY_CELLS_PER_FRAME: usize = 16;
+
+pub fn poll_matrix_rebuild(
+    state: &mut MatrixRenderState,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    filter: wgpu::FilterMode,
+    hdr_clamp_enabled: bool,
+) -> MatrixPollResult {
+    let Some(active_generation) = state.build_job.as_ref().map(|job| job.generation) else {
+        return MatrixPollResult::default();
+    };
+
+    let mut messages = Vec::new();
+    let mut ready_messages = 0usize;
+    let mut disconnected = false;
+
+    if let Some(job) = state.build_job.as_ref() {
+        loop {
+            match job.rx.try_recv() {
+                Ok(message) => {
+                    if matches!(message, MatrixBuildMessage::CellReady { .. }) {
+                        ready_messages += 1;
+                    }
+                    messages.push(message);
+                    if ready_messages >= MAX_READY_CELLS_PER_FRAME {
+                        break;
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut result = MatrixPollResult::default();
+    let mut saw_finished = disconnected;
+
+    for message in messages {
+        match message {
+            MatrixBuildMessage::CellReady { generation, cell }
+                if generation == active_generation =>
+            {
+                if let Some(matrix_cell) =
+                    register_built_cell(state, render_state, renderer, cell, filter)
+                {
+                    insert_cell_sorted(&mut state.cells, matrix_cell);
+                    result.added_cells += 1;
+                } else {
+                    result.failed_cells += 1;
+                }
+            }
+            MatrixBuildMessage::CellFailed { generation, coord }
+                if generation == active_generation =>
+            {
+                let _ = coord;
+                result.failed_cells += 1;
+            }
+            MatrixBuildMessage::Finished { generation } if generation == active_generation => {
+                saw_finished = true;
+            }
+            MatrixBuildMessage::CellReady { .. }
+            | MatrixBuildMessage::CellFailed { .. }
+            | MatrixBuildMessage::Finished { .. } => {}
+        }
+    }
+
+    let mut clear_job = false;
+    if let Some(job) = state.build_job.as_mut()
+        && job.generation == active_generation
+    {
+        job.completed_cells += result.added_cells;
+        job.failed_cells += result.failed_cells;
+        clear_job = saw_finished || job.completed_cells + job.failed_cells >= job.expected_cells;
+    }
+    if clear_job {
+        state.build_job = None;
+        result.finished = true;
+    }
+
+    if result.added_cells > 0 && hdr_clamp_enabled {
+        sync_matrix_hdr_clamp(state, render_state, renderer, true, filter);
+    }
+
+    result
+}
+
+fn register_built_cell(
+    state: &mut MatrixRenderState,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    cell: BuiltCell,
+    filter: wgpu::FilterMode,
+) -> Option<MatrixCell> {
+    let tex = cell
+        .shader_space
+        .textures
+        .get(cell.output_texture_name.as_str())?;
+    if state.cell_resolution == [0, 0] {
+        if let Some(info) = cell
+            .shader_space
+            .texture_info(cell.output_texture_name.as_str())
+        {
+            state.cell_resolution = [info.size.width, info.size.height];
+        }
+    }
+    let view = tex.wgpu_texture_view.as_ref()?;
+    let egui_id = renderer.register_native_texture_with_sampler_options(
+        &render_state.device,
+        view,
+        super::texture_bridge::canvas_sampler_descriptor(filter),
+    );
+
+    let layout = MatrixDisplayLayout {
+        display_rows: state.grid_rows,
+        display_cols: state.grid_cols,
+        row_chunks_per_logical_row: state.row_chunks_per_logical_row,
+    };
+
+    Some(MatrixCell {
+        coord: cell.coord,
+        display_coord: matrix_display_coord(cell.coord, layout),
+        shader_space: cell.shader_space,
+        output_texture_name: cell.output_texture_name,
+        egui_texture_id: Some(egui_id),
+        hdr_clamp_renderer: None,
+        hdr_clamped_egui_id: None,
+        pixel_cache: None,
+        diff_renderer: None,
+        diff_texture_id: None,
+        last_diff_request_key: None,
+        last_diff_stats_request_key: None,
+        diff_stats: None,
+        clipping_renderer: None,
+        clipping_texture_id: None,
+        last_clipping_request_key: None,
+        qualifier_renderer: None,
+        qualifier_texture_id: None,
+        last_qualifier_request_key: None,
+    })
+}
+
+fn insert_cell_sorted(cells: &mut Vec<MatrixCell>, cell: MatrixCell) {
+    match cells.binary_search_by_key(&cell.coord, |existing| existing.coord) {
+        Ok(pos) => {
+            cells[pos] = cell;
+        }
+        Err(pos) => cells.insert(pos, cell),
+    }
 }
 
 pub fn ensure_cell_pixel_cache(cell: &mut MatrixCell) {
@@ -411,6 +628,28 @@ mod tests {
         assert_eq!(
             matrix_display_coord(MatrixCellCoord { row: 1, col: 4 }, layout),
             MatrixCellCoord { row: 3, col: 1 }
+        );
+    }
+
+    #[test]
+    fn matrix_cell_coord_sort_is_row_major() {
+        let mut coords = vec![
+            MatrixCellCoord { row: 1, col: 0 },
+            MatrixCellCoord { row: 0, col: 2 },
+            MatrixCellCoord { row: 0, col: 0 },
+            MatrixCellCoord { row: 1, col: 1 },
+        ];
+
+        coords.sort();
+
+        assert_eq!(
+            coords,
+            vec![
+                MatrixCellCoord { row: 0, col: 0 },
+                MatrixCellCoord { row: 0, col: 2 },
+                MatrixCellCoord { row: 1, col: 0 },
+                MatrixCellCoord { row: 1, col: 1 },
+            ]
         );
     }
 }

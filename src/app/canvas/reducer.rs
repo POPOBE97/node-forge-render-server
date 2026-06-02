@@ -5,13 +5,41 @@ use crate::app::{
     canvas::{
         actions::{CanvasAction, CanvasFrameResult},
         ops, pixel_overlay, reference,
-        state::PhysicalZoomRequest,
+        state::{CanvasViewportState, PhysicalZoomRequest},
     },
     display_metrics,
     layout_math::clamp_zoom,
     matrix_render, texture_bridge,
     types::{App, QualifierChannel, RefImageAlphaMode, RefImageMode, SampledPixel},
 };
+
+fn set_viewport_display_ppi(viewport: &mut CanvasViewportState, display_ppi: Option<f32>) {
+    viewport.display_ppi = display_ppi.map(display_metrics::clamp_display_ppi);
+}
+
+fn sync_zoom_to_display_ppi(
+    viewport: &mut CanvasViewportState,
+    current_display_ppi: Option<f32>,
+    pixels_per_point: f32,
+    zoom: f32,
+    effective_min_zoom: f32,
+) -> f32 {
+    let Some(current_display_ppi) = current_display_ppi else {
+        return zoom;
+    };
+    let Some(ppi) =
+        display_metrics::display_ppi_from_zoom(current_display_ppi, zoom, pixels_per_point)
+    else {
+        return zoom;
+    };
+
+    let ppi = display_metrics::clamp_display_ppi(ppi);
+    set_viewport_display_ppi(viewport, Some(ppi));
+
+    display_metrics::simulation_zoom(current_display_ppi, ppi, pixels_per_point)
+        .map(|synced_zoom| clamp_zoom(synced_zoom, effective_min_zoom))
+        .unwrap_or(zoom)
+}
 
 pub fn apply_action(
     app: &mut App,
@@ -67,19 +95,17 @@ pub fn apply_action(
                 .invalidation
                 .time_pause_toggled(app.runtime.scene_uses_time, has_reference_diff);
         }
-        CanvasAction::ResetView => {
+        CanvasAction::ResetView {
+            current_display_ppi,
+        } => {
             app.canvas.viewport.pending_view_reset = true;
+            set_viewport_display_ppi(&mut app.canvas.viewport, current_display_ppi);
         }
         CanvasAction::CenterAt1x {
             pixels_per_point,
             current_display_ppi,
         } => {
-            if let Some(current_display_ppi) = current_display_ppi {
-                app.canvas.viewport.target_ppi =
-                    display_metrics::clamp_display_ppi(current_display_ppi);
-                app.canvas.viewport.display_ppi_initialized_from_device = true;
-                app.canvas.viewport.display_ppi_user_set = false;
-            }
+            set_viewport_display_ppi(&mut app.canvas.viewport, current_display_ppi);
             if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
                 app.canvas.viewport.pending_center_physical_zoom = Some(PhysicalZoomRequest {
                     zoom: 1.0 / pixels_per_point,
@@ -88,21 +114,17 @@ pub fn apply_action(
             }
         }
         CanvasAction::SetDisplayPpi {
-            target_ppi,
+            ppi,
             current_display_ppi,
             pixels_per_point,
         } => {
-            let target_ppi = display_metrics::clamp_display_ppi(target_ppi);
-            app.canvas.viewport.target_ppi = target_ppi;
-            app.canvas.viewport.display_ppi_user_set = true;
+            let ppi = display_metrics::clamp_display_ppi(ppi);
+            set_viewport_display_ppi(&mut app.canvas.viewport, Some(ppi));
 
             if let Some(current_display_ppi) = current_display_ppi {
-                app.canvas.viewport.display_ppi_initialized_from_device = true;
-                if let Some(zoom) = display_metrics::simulation_zoom(
-                    current_display_ppi,
-                    target_ppi,
-                    pixels_per_point,
-                ) {
+                if let Some(zoom) =
+                    display_metrics::simulation_zoom(current_display_ppi, ppi, pixels_per_point)
+                {
                     app.canvas.viewport.pending_center_physical_zoom = Some(PhysicalZoomRequest {
                         zoom,
                         pixels_per_point,
@@ -319,9 +341,18 @@ pub fn apply_action(
             canvas_rect,
             image_size,
             effective_min_zoom,
+            current_display_ppi,
+            pixels_per_point,
         } => {
             let prev_zoom = app.canvas.viewport.zoom;
-            let next_zoom = clamp_zoom(prev_zoom * zoom_delta, effective_min_zoom);
+            let mut next_zoom = clamp_zoom(prev_zoom * zoom_delta, effective_min_zoom);
+            next_zoom = sync_zoom_to_display_ppi(
+                &mut app.canvas.viewport,
+                current_display_ppi,
+                pixels_per_point,
+                next_zoom,
+                effective_min_zoom,
+            );
             if next_zoom != prev_zoom {
                 let prev_size = image_size * prev_zoom;
                 let prev_min = canvas_rect.center() - prev_size * 0.5 + app.canvas.viewport.pan;
@@ -346,7 +377,8 @@ pub fn apply_action(
 
 #[cfg(test)]
 mod tests {
-    use super::super::actions::CanvasAction;
+    use super::{super::actions::CanvasAction, set_viewport_display_ppi, sync_zoom_to_display_ppi};
+    use crate::app::canvas::state::CanvasViewportState;
     use crate::app::types::{AnalysisTab, ClippingSettings, DiffMetricMode, UiWindowMode};
 
     #[test]
@@ -368,5 +400,44 @@ mod tests {
         let _ = CanvasAction::SetClipEnabled(true);
         let _ = UiWindowMode::Sidebar;
         let _ = ClippingSettings::default();
+    }
+
+    #[test]
+    fn reset_view_syncs_ppi_back_to_current_display() {
+        let mut viewport = CanvasViewportState {
+            display_ppi: Some(440.0),
+            ..CanvasViewportState::default()
+        };
+
+        set_viewport_display_ppi(&mut viewport, Some(264.0));
+
+        assert_eq!(viewport.display_ppi, Some(264.0));
+        assert_eq!(viewport.effective_display_ppi(), 264.0);
+    }
+
+    #[test]
+    fn wheel_zoom_syncs_ppi_from_zoom() {
+        let mut viewport = CanvasViewportState {
+            display_ppi: Some(220.0),
+            ..CanvasViewportState::default()
+        };
+
+        let zoom = sync_zoom_to_display_ppi(&mut viewport, Some(220.0), 2.0, 0.25, 0.01);
+
+        assert!((zoom - 0.25).abs() < 1e-6);
+        assert_eq!(viewport.display_ppi, Some(440.0));
+    }
+
+    #[test]
+    fn wheel_zoom_clamps_ppi_and_returns_matching_zoom() {
+        let mut viewport = CanvasViewportState {
+            display_ppi: Some(220.0),
+            ..CanvasViewportState::default()
+        };
+
+        let zoom = sync_zoom_to_display_ppi(&mut viewport, Some(220.0), 2.0, 0.01, 0.01);
+
+        assert!((zoom - 0.11).abs() < 1e-6);
+        assert_eq!(viewport.display_ppi, Some(1000.0));
     }
 }

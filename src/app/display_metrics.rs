@@ -1,7 +1,7 @@
 use rust_wgpu_fiber::eframe::egui;
 
 pub const DEFAULT_DISPLAY_PPI: f32 = 160.0;
-pub const MIN_DISPLAY_PPI: f32 = 50.0;
+pub const MIN_DISPLAY_PPI: f32 = 1.0;
 pub const MAX_DISPLAY_PPI: f32 = 1000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,6 +34,24 @@ pub fn simulation_zoom(
     }
 
     Some(current_display_ppi / target_ppi / pixels_per_point)
+}
+
+pub fn display_ppi_from_zoom(
+    current_display_ppi: f32,
+    zoom: f32,
+    pixels_per_point: f32,
+) -> Option<f32> {
+    if !current_display_ppi.is_finite()
+        || !zoom.is_finite()
+        || !pixels_per_point.is_finite()
+        || current_display_ppi <= 0.0
+        || zoom <= 0.0
+        || pixels_per_point <= 0.0
+    {
+        return None;
+    }
+
+    Some(current_display_ppi / (zoom * pixels_per_point))
 }
 
 pub fn ppi_from_pixels_and_mm(
@@ -273,7 +291,8 @@ mod tests {
     use rust_wgpu_fiber::eframe::egui;
 
     use super::{
-        clamp_display_ppi, monitor_pixel_size_from_points, ppi_from_pixels_and_mm, simulation_zoom,
+        clamp_display_ppi, display_ppi_from_zoom, monitor_pixel_size_from_points,
+        ppi_from_pixels_and_mm, simulation_zoom,
     };
 
     #[test]
@@ -296,9 +315,28 @@ mod tests {
     }
 
     #[test]
+    fn display_ppi_from_zoom_matches_one_to_one_when_zoom_is_physical_1x() {
+        let ppi = display_ppi_from_zoom(220.0, 0.5, 2.0).unwrap();
+        assert!((ppi - 220.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn display_ppi_from_zoom_grows_when_zoom_shrinks() {
+        let ppi = display_ppi_from_zoom(220.0, 0.25, 2.0).unwrap();
+        assert!((ppi - 440.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn display_ppi_from_zoom_rejects_invalid_inputs() {
+        assert_eq!(display_ppi_from_zoom(0.0, 0.5, 2.0), None);
+        assert_eq!(display_ppi_from_zoom(220.0, 0.0, 2.0), None);
+        assert_eq!(display_ppi_from_zoom(220.0, 0.5, -1.0), None);
+    }
+
+    #[test]
     fn clamp_display_ppi_handles_invalid_and_out_of_range_values() {
         assert_eq!(clamp_display_ppi(f32::NAN), 160.0);
-        assert_eq!(clamp_display_ppi(10.0), 50.0);
+        assert_eq!(clamp_display_ppi(0.5), 1.0);
         assert_eq!(clamp_display_ppi(1200.0), 1000.0);
         assert_eq!(clamp_display_ppi(264.0), 264.0);
     }

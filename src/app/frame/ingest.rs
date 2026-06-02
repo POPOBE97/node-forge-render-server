@@ -90,22 +90,12 @@ pub(super) fn run(
                     adapter: Some(&render_state.adapter),
                     asset_store: &app.core.asset_store,
                 };
-                if let Err(e) = crate::app::matrix_render::rebuild_matrix(
+                if let Err(e) = crate::app::matrix_render::start_matrix_rebuild(
                     params,
-                    render_state,
                     renderer,
                     &mut app.shell.matrix_state,
                 ) {
                     eprintln!("[matrix] rebuild on scene update failed: {e:#}");
-                }
-                if app.canvas.display.hdr_preview_clamp_enabled {
-                    crate::app::matrix_render::sync_matrix_hdr_clamp(
-                        &mut app.shell.matrix_state,
-                        render_state,
-                        renderer,
-                        true,
-                        app.canvas.display.texture_filter,
-                    );
                 }
             }
         }

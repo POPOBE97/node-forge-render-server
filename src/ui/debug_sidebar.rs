@@ -583,7 +583,7 @@ pub struct TestModeSidebarState<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DisplaySidebarState {
-    pub target_ppi: f32,
+    pub ppi: f32,
 }
 
 pub fn show_in_rect(
@@ -721,7 +721,7 @@ fn show_display_section(
         sidebar_grid_row(ui, |row| {
             row.place(1, 4, |ui| {
                 sidebar_group_cell(ui, "PPI", |ui| {
-                    let mut ppi = display.target_ppi;
+                    let mut ppi = display.ppi;
                     let formatter = |v: f32| format!("{:.0}", v);
                     let changed = slider_with_editable_value(
                         ui,
@@ -1186,12 +1186,13 @@ fn show_test_mode_section(
                                     format!("{rounded}")
                                 }
                             };
-                            let changed = slider_with_value(
+                            let changed = slider_with_editable_value(
                                 ui,
                                 "ui.debug_sidebar.matrix.max_cols",
                                 &mut max_cols,
                                 0.0,
                                 max_slider_value as f32,
+                                1.0,
                                 Some(&formatter),
                             );
                             if changed {

@@ -11,13 +11,15 @@ pub enum CanvasAction {
     ClearPreviewTexture,
     ToggleHdrClamp,
     TogglePause,
-    ResetView,
+    ResetView {
+        current_display_ppi: Option<f32>,
+    },
     CenterAt1x {
         pixels_per_point: f32,
         current_display_ppi: Option<f32>,
     },
     SetDisplayPpi {
-        target_ppi: f32,
+        ppi: f32,
         current_display_ppi: Option<f32>,
         pixels_per_point: f32,
     },
@@ -52,6 +54,8 @@ pub enum CanvasAction {
         canvas_rect: egui::Rect,
         image_size: egui::Vec2,
         effective_min_zoom: f32,
+        current_display_ppi: Option<f32>,
+        pixels_per_point: f32,
     },
     SamplePixel {
         x: u32,

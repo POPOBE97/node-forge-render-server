@@ -77,7 +77,7 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
     }
 }
 
-fn rebuild_matrix_if_needed(
+fn start_matrix_rebuild_if_needed(
     app: &mut App,
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
@@ -98,18 +98,9 @@ fn rebuild_matrix_if_needed(
         asset_store: &app.core.asset_store,
     };
     if let Err(e) =
-        matrix_render::rebuild_matrix(params, render_state, renderer, &mut app.shell.matrix_state)
+        matrix_render::start_matrix_rebuild(params, renderer, &mut app.shell.matrix_state)
     {
         eprintln!("[matrix] rebuild failed: {e:#}");
-    }
-    if app.canvas.display.hdr_preview_clamp_enabled {
-        matrix_render::sync_matrix_hdr_clamp(
-            &mut app.shell.matrix_state,
-            render_state,
-            renderer,
-            true,
-            app.canvas.display.texture_filter,
-        );
     }
 }
 
@@ -139,7 +130,7 @@ pub fn dispatch(
         AppCommand::SetTestMode(mode) => {
             app.shell.test_mode = mode;
             if mode == crate::app::TestMode::Matrix {
-                rebuild_matrix_if_needed(app, render_state, renderer);
+                start_matrix_rebuild_if_needed(app, render_state, renderer);
             } else {
                 app.shell.matrix_state.clear(renderer);
             }
@@ -152,7 +143,7 @@ pub fn dispatch(
                 selected.push(pool_id);
             }
             if app.shell.test_mode == crate::app::TestMode::Matrix {
-                rebuild_matrix_if_needed(app, render_state, renderer);
+                start_matrix_rebuild_if_needed(app, render_state, renderer);
             }
         }
         AppCommand::SetMatrixMaxRowCols(max_cols) => {
@@ -173,14 +164,14 @@ pub fn dispatch(
                 );
             }
         }
-        AppCommand::SetDisplayPpi(target_ppi) => {
+        AppCommand::SetDisplayPpi(ppi) => {
             let current_display_metrics = display_metrics::current_display_metrics(ctx);
             let _ = canvas::reducer::apply_action(
                 app,
                 render_state,
                 renderer,
                 CanvasAction::SetDisplayPpi {
-                    target_ppi,
+                    ppi,
                     current_display_ppi: current_display_metrics.display_ppi,
                     pixels_per_point: current_display_metrics.pixels_per_point,
                 },

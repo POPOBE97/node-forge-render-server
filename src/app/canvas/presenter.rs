@@ -17,6 +17,7 @@ use crate::{
             },
             reducer, reference, viewport,
         },
+        display_metrics,
         frame::commands::AppCommand,
         matrix_render,
         types::{App, RefImageMode, ViewportOperationIndicatorVisual},
@@ -777,9 +778,9 @@ pub fn show_canvas(
     now: f64,
 ) -> CanvasFrameResult {
     let mut frame_result = CanvasFrameResult::default();
+    let current_display_metrics = display_metrics::current_display_metrics(ctx);
 
     if ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command) {
-        let current_display_metrics = crate::app::display_metrics::current_display_metrics(ctx);
         apply_action(
             &mut frame_result,
             app,
@@ -821,7 +822,9 @@ pub fn show_canvas(
                 app,
                 render_state,
                 renderer,
-                CanvasAction::ResetView,
+                CanvasAction::ResetView {
+                    current_display_ppi: current_display_metrics.display_ppi,
+                },
             );
         }
         if ctx.input(|i| i.key_pressed(KEY_TOGGLE_SAMPLING)) {
@@ -929,7 +932,14 @@ pub fn show_canvas(
     };
 
     let canvas_rect = ui.available_rect_before_wrap();
-    let mut viewport_frame = viewport::prepare_viewport(app, frame, now, canvas_rect, image_size);
+    let mut viewport_frame = viewport::prepare_viewport(
+        app,
+        frame,
+        now,
+        canvas_rect,
+        image_size,
+        current_display_metrics,
+    );
     let response = ui.allocate_rect(canvas_rect, egui::Sense::click_and_drag());
 
     if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
@@ -1115,6 +1125,8 @@ pub fn show_canvas(
                 canvas_rect,
                 image_size,
                 effective_min_zoom: viewport_frame.effective_min_zoom,
+                current_display_ppi: current_display_metrics.display_ppi,
+                pixels_per_point: current_display_metrics.pixels_per_point,
             },
         );
     }

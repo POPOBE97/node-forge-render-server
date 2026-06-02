@@ -615,7 +615,7 @@ fn update_matrix_cell_analysis(
     analysis_dirty: bool,
 ) {
     // Resolve the cell's own output texture into an AnalysisSourceDomain.
-    let (cell_view, cell_size, cell_format) = {
+    let (cell_coord, cell_view, cell_size, cell_format) = {
         let cell = &app.shell.matrix_state.cells[cell_idx];
         let texture = cell
             .shader_space
@@ -626,12 +626,14 @@ fn update_matrix_cell_analysis(
                 .as_ref()
                 .map(|view| (view, t.wgpu_texture_desc.size, t.wgpu_texture_desc.format))
         }) {
-            Some((view, size, format)) => (view.clone(), [size.width, size.height], format),
+            Some((view, size, format)) => {
+                (cell.coord, view.clone(), [size.width, size.height], format)
+            }
             None => return,
         }
     };
     let cell_source_key =
-        AnalysisSourceKey::from_hashable(&(cell_idx, cell_size, format!("{cell_format:?}")));
+        AnalysisSourceKey::from_hashable(&(cell_coord, cell_size, format!("{cell_format:?}")));
 
     // Diff
     let mut diff_done = false;
@@ -751,7 +753,7 @@ fn update_matrix_cell_analysis(
                 (cell_view.clone(), cell_size, "matrix.cell.output")
             };
         let clip_source_key =
-            AnalysisSourceKey::from_hashable(&(cell_idx, clip_size, clip_source_label));
+            AnalysisSourceKey::from_hashable(&(cell_coord, clip_size, clip_source_label));
         let request_key = ClippingRequestKey::new(clip_source_key, clipping_settings, true);
 
         let needs_new_renderer = cell
@@ -822,7 +824,7 @@ fn update_matrix_cell_analysis(
             } else {
                 (cell_view.clone(), cell_size, "matrix.cell.output.qualifier")
             };
-        let q_source_key = AnalysisSourceKey::from_hashable(&(cell_idx, q_size, q_source_label));
+        let q_source_key = AnalysisSourceKey::from_hashable(&(cell_coord, q_size, q_source_label));
         let request_key = QualifierRequestKey::new(q_source_key, qualifier_settings, true);
 
         if cell.qualifier_renderer.is_none() {

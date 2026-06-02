@@ -10,12 +10,14 @@ fn should_request_immediate_repaint(
     pan_zoom_animating: bool,
     operation_indicator_visible: bool,
     capture_redraw_active: bool,
+    matrix_building: bool,
 ) -> bool {
     time_driven_scene
         || sidebar_animating
         || pan_zoom_animating
         || operation_indicator_visible
         || capture_redraw_active
+        || matrix_building
 }
 
 pub(super) fn run(app: &App, ctx: &egui::Context, advance: &AdvancePhase, present: &PresentPhase) {
@@ -42,6 +44,7 @@ pub(super) fn run(app: &App, ctx: &egui::Context, advance: &AdvancePhase, presen
         present.pan_zoom_animating,
         present.operation_indicator_visible,
         app.runtime.capture_redraw_active || app.runtime.force_continuous_redraw,
+        app.shell.matrix_state.is_building(),
     ) {
         ctx.request_repaint();
     }
@@ -54,38 +57,45 @@ mod tests {
     #[test]
     fn repaint_policy_requests_immediate_for_time_driven_scene() {
         assert!(should_request_immediate_repaint(
-            true, false, false, false, false
+            true, false, false, false, false, false
         ));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_for_any_active_animation() {
         assert!(should_request_immediate_repaint(
-            false, true, false, false, false
+            false, true, false, false, false, false
         ));
         assert!(should_request_immediate_repaint(
-            false, false, true, false, false
+            false, false, true, false, false, false
         ));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_when_operation_indicator_visible() {
         assert!(should_request_immediate_repaint(
-            false, false, false, true, false
+            false, false, false, true, false, false
         ));
     }
 
     #[test]
     fn repaint_policy_requests_immediate_when_capture_redraw_active() {
         assert!(should_request_immediate_repaint(
-            false, false, false, false, true
+            false, false, false, false, true, false
+        ));
+    }
+
+    #[test]
+    fn repaint_policy_requests_immediate_for_matrix_build() {
+        assert!(should_request_immediate_repaint(
+            false, false, false, false, false, true
         ));
     }
 
     #[test]
     fn repaint_policy_skips_immediate_when_capture_inactive_and_other_triggers_inactive() {
         assert!(!should_request_immediate_repaint(
-            false, false, false, false, false
+            false, false, false, false, false, false
         ));
     }
 }

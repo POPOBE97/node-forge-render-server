@@ -58,15 +58,13 @@ pub(super) fn run(
         qualifier_enabled: app.canvas.analysis.qualifier_enabled,
     };
     let current_display_metrics = display_metrics::current_display_metrics(ctx);
-    if !app.canvas.viewport.display_ppi_user_set
-        && let Some(current_ppi) = current_display_metrics.display_ppi
-    {
-        let current_ppi = display_metrics::clamp_display_ppi(current_ppi);
-        app.canvas.viewport.target_ppi = current_ppi;
-        app.canvas.viewport.display_ppi_initialized_from_device = true;
+    if app.canvas.viewport.display_ppi.is_none() {
+        app.canvas.viewport.display_ppi = current_display_metrics
+            .display_ppi
+            .map(display_metrics::clamp_display_ppi);
     }
     let display_sidebar_state = ui::debug_sidebar::DisplaySidebarState {
-        target_ppi: app.canvas.viewport.target_ppi,
+        ppi: app.canvas.viewport.effective_display_ppi(),
     };
 
     let mut pending_commands = Vec::<AppCommand>::new();
