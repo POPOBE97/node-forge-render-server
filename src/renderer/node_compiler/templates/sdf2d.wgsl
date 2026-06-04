@@ -37,12 +37,19 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
         axis_denom == 0.0,
     );
 
-    let poly_fit = ((((-0.7391197269 * axis_ratio + 2.4034927648) * axis_ratio - 2.4907319173) * axis_ratio + 0.4768708960) * axis_ratio + 0.4747847594);
+    let poly_fit_0 = -0.7391197269 * axis_ratio + 2.4034927648;
+    let poly_fit_1 = poly_fit_0 * axis_ratio - 2.4907319173;
+    let poly_fit_2 = poly_fit_1 * axis_ratio + 0.4768708960;
+    let poly_fit = poly_fit_2 * axis_ratio + 0.4747847594;
     let len_abs = length(abs_norm_pos);
     let denom = 1.0 - axis_ratio * axis_ratio * clamp(len_abs, 0.0, 1.0) * poly_fit;
     let safe_denom = select(denom, 1e-6, abs(denom) < 1e-6);
     let dist_base = (len_abs + 1.0) - 1.0 / safe_denom;
-    let dist_alt = 0.6541655659675598 * length(max(vec2f(0.0), 1.5286649465560913 * abs_norm_pos - vec2f(0.5286650061607361))) + 0.3458344340324402;
+    let dist_alt_pos = max(
+        vec2f(0.0),
+        1.5286649465560913 * abs_norm_pos - vec2f(0.5286650061607361),
+    );
+    let dist_alt = 0.6541655659675598 * length(dist_alt_pos) + 0.3458344340324402;
 
     let dist_mix_x = mix(dist_base, dist_alt, axis_mix.x);
     let dist_mix_y = mix(dist_base, dist_alt, axis_mix.y);

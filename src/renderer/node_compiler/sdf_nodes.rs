@@ -431,7 +431,8 @@ where
                 ),
                 ValueType::F32,
                 p.uses_time || b.uses_time || rad4.uses_time,
-            ))
+            )
+            .inline())
         }
         "smooth_round_rect" => {
             let sdf_lib = ensure_sdf2d_wgsl_lib(ctx, node);
@@ -459,7 +460,8 @@ where
                 ),
                 ValueType::F32,
                 p.uses_time || b.uses_time || radius.uses_time || axis_mix.uses_time,
-            ))
+            )
+            .inline())
         }
         // Treat unknown values as circle for resilience.
         _ => {
@@ -468,7 +470,8 @@ where
                 format!("(length({}) - {})", p.expr, r.expr),
                 ValueType::F32,
                 p.uses_time || r.uses_time,
-            ))
+            )
+            .inline())
         }
     }
 }
@@ -476,6 +479,14 @@ where
 fn offset_in_local_px(expr: &str, dx: &str, dy: &str) -> String {
     let off = format!("(in.local_px.xy + vec2f({dx}, {dy}))");
     expr.replace("in.local_px.xy", &off)
+}
+
+fn sdf_temp_name(node_id: &str, suffix: &str) -> String {
+    format!(
+        "nf_fs_{}_{}",
+        crate::renderer::utils::sanitize_wgsl_ident(node_id),
+        crate::renderer::utils::sanitize_wgsl_ident(suffix)
+    )
 }
 
 pub fn compile_sdf2d_bevel<F>(
@@ -526,28 +537,32 @@ where
     // - sdfDistance: upstream SDF distance at current fragment
     // - width: bevel edge width in pixels
     // - cliff: exponent shaping near the edge
-    let d0 = resolve_input_expr_f32_or_default(
-        scene,
-        node,
-        "sdfDistance",
-        0.0,
-        ctx,
-        cache,
-        &compile_fn,
-    )?;
+    ctx.auto_temp_suppression_depth += 1;
+    let d0_result =
+        resolve_input_expr_f32_or_default(scene, node, "sdfDistance", 0.0, ctx, cache, &compile_fn);
+    ctx.auto_temp_suppression_depth = ctx.auto_temp_suppression_depth.saturating_sub(1);
+    let d0 = d0_result?;
     let width =
         resolve_input_expr_f32_or_default(scene, node, "width", 0.1, ctx, cache, &compile_fn)?;
     let cliff =
         resolve_input_expr_f32_or_default(scene, node, "cliff", 0.5, ctx, cache, &compile_fn)?;
 
-    let depth0 = TypedExpr::with_time(
-        format!("{bevel_fn}({}, {}, {})", d0.expr, width.expr, cliff.expr),
-        ValueType::F32,
-        d0.uses_time || width.uses_time || cliff.uses_time,
-    );
+    let uses_time = d0.uses_time || width.uses_time || cliff.uses_time;
 
     if out == "depth" {
-        return Ok(depth0);
+        let sdf_depth_var = sdf_temp_name(&node.id, "sdf_depth");
+        let depth0_var = sdf_temp_name(&node.id, "depth");
+        let mut stmts = vec![format!("    // Sdf2DBevel {}.depth", node.id)];
+        stmts.push(super::readable_let_stmt(&sdf_depth_var, &d0.expr));
+        stmts.push(super::readable_let_stmt(
+            &depth0_var,
+            &format!(
+                "{bevel_fn}({sdf_depth_var}, {}, {})",
+                width.expr, cliff.expr
+            ),
+        ));
+        ctx.inline_stmts.push(stmts.join("\n"));
+        return Ok(TypedExpr::with_time(depth0_var, ValueType::F32, uses_time));
     }
 
     // Normal from depth finite differences in geometry-local pixel space.
@@ -559,21 +574,50 @@ where
     let d_py = offset_in_local_px(&d0.expr, "0.0", &normal_eps);
     let d_ny = offset_in_local_px(&d0.expr, "0.0", &format!("-({normal_eps})"));
 
-    let depth_px = format!("{bevel_fn}({d_px}, {}, {})", width.expr, cliff.expr);
-    let depth_nx = format!("{bevel_fn}({d_nx}, {}, {})", width.expr, cliff.expr);
-    let depth_py = format!("{bevel_fn}({d_py}, {}, {})", width.expr, cliff.expr);
-    let depth_ny = format!("{bevel_fn}({d_ny}, {}, {})", width.expr, cliff.expr);
+    let sdf_px_var = sdf_temp_name(&node.id, "sdf_px");
+    let sdf_nx_var = sdf_temp_name(&node.id, "sdf_nx");
+    let sdf_py_var = sdf_temp_name(&node.id, "sdf_py");
+    let sdf_ny_var = sdf_temp_name(&node.id, "sdf_ny");
+    let depth_px_var = sdf_temp_name(&node.id, "depth_px");
+    let depth_nx_var = sdf_temp_name(&node.id, "depth_nx");
+    let depth_py_var = sdf_temp_name(&node.id, "depth_py");
+    let depth_ny_var = sdf_temp_name(&node.id, "depth_ny");
+    let normal_var = sdf_temp_name(&node.id, "normal");
 
-    let n = format!(
-        "{}({}, {}, {}, {}, {})",
-        bevel_lib.bevel_normal_fn, depth_px, depth_nx, depth_py, depth_ny, normal_eps
-    );
+    let mut stmts = vec![format!(
+        "    // Sdf2DBevel {}.normal finite differences",
+        node.id
+    )];
+    stmts.push(super::readable_let_stmt(&sdf_px_var, &d_px));
+    stmts.push(super::readable_let_stmt(&sdf_nx_var, &d_nx));
+    stmts.push(super::readable_let_stmt(&sdf_py_var, &d_py));
+    stmts.push(super::readable_let_stmt(&sdf_ny_var, &d_ny));
+    stmts.push(super::readable_let_stmt(
+        &depth_px_var,
+        &format!("{bevel_fn}({sdf_px_var}, {}, {})", width.expr, cliff.expr),
+    ));
+    stmts.push(super::readable_let_stmt(
+        &depth_nx_var,
+        &format!("{bevel_fn}({sdf_nx_var}, {}, {})", width.expr, cliff.expr),
+    ));
+    stmts.push(super::readable_let_stmt(
+        &depth_py_var,
+        &format!("{bevel_fn}({sdf_py_var}, {}, {})", width.expr, cliff.expr),
+    ));
+    stmts.push(super::readable_let_stmt(
+        &depth_ny_var,
+        &format!("{bevel_fn}({sdf_ny_var}, {}, {})", width.expr, cliff.expr),
+    ));
+    stmts.push(super::readable_let_stmt(
+        &normal_var,
+        &format!(
+            "{}({depth_px_var}, {depth_nx_var}, {depth_py_var}, {depth_ny_var}, {normal_eps})",
+            bevel_lib.bevel_normal_fn
+        ),
+    ));
+    ctx.inline_stmts.push(stmts.join("\n"));
 
-    Ok(TypedExpr::with_time(
-        n,
-        ValueType::Vec3,
-        d0.uses_time || width.uses_time || cliff.uses_time,
-    ))
+    Ok(TypedExpr::with_time(normal_var, ValueType::Vec3, uses_time))
 }
 
 #[cfg(test)]
@@ -734,7 +778,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::F32);
-        assert!(expr.expr.contains("sdf2d_bevel_smooth7"));
+        assert_eq!(expr.expr, "nf_fs_bev_depth");
+        let stmts = ctx.inline_stmts.join("\n");
+        assert!(stmts.contains("sdf2d_bevel_smooth7"));
         let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
         assert!(lib.contains("fn sdf2d_bevel_smooth7"));
     }
@@ -770,8 +816,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::Vec3);
-        assert!(expr.expr.contains("sdf2d_bevel_normal"));
-        assert!(expr.expr.contains("sdf2d_bevel_smooth5"));
+        assert_eq!(expr.expr, "nf_fs_bev_normal");
+        let stmts = ctx.inline_stmts.join("\n");
+        assert!(stmts.contains("sdf2d_bevel_normal"));
+        assert!(stmts.contains("sdf2d_bevel_smooth5"));
         let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
         assert!(lib.contains("fn sdf2d_bevel_smooth5"));
         assert!(lib.contains("fn sdf2d_bevel_normal"));

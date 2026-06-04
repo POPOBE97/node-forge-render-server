@@ -10,6 +10,14 @@ use crate::renderer::utils::{coerce_to_type, fmt_f32};
 /// Stable key for the aspect-correction WGSL helpers in `extra_wgsl_decls`.
 const ASPECT_CORRECT_WGSL_LIB_KEY: &str = "aspect_correct_uv_lib";
 
+fn texture_temp_name(node_id: &str, suffix: &str) -> String {
+    format!(
+        "nf_fs_{}_{}",
+        crate::renderer::utils::sanitize_wgsl_ident(node_id),
+        crate::renderer::utils::sanitize_wgsl_ident(suffix)
+    )
+}
+
 /// Ensure the aspect-correction UV helper functions are emitted exactly once.
 ///
 /// Both helpers rescale `uv` around (0.5, 0.5) so the texture preserves its natural pixel
@@ -82,6 +90,15 @@ where
     // WGSL is emitted to actually sample a bound texture. The runtime will bind the
     // texture + sampler; for headless tests we only need valid WGSL.
     let _image_index = ctx.register_image_texture(&node.id);
+    let port = out_port.unwrap_or("color");
+
+    if !matches!(port, "color" | "alpha" | "texture") {
+        bail!("unsupported ImageTexture output port: {port}");
+    }
+
+    if port == "texture" {
+        return Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D));
+    }
 
     // If an explicit UV input is provided, respect it; otherwise default to the fragment input uv.
     let uv_expr: TypedExpr = if let Some(conn) = incoming_connection(scene, &node.id, "uv") {
@@ -121,22 +138,52 @@ where
         _ => format!("({})", uv_expr.expr),
     };
 
+    let sample_uv = match aspect_mode {
+        "fit" | "fill" => {
+            let uv_var = texture_temp_name(&node.id, &format!("{port}_uv"));
+            super::push_readable_let(
+                ctx,
+                format!("ImageTexture {} aspect-correct uv", node.id),
+                &uv_var,
+                &sample_uv,
+            );
+            uv_var
+        }
+        _ => sample_uv,
+    };
+
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, {sample_uv})");
+    let sample_var = texture_temp_name(&node.id, &format!("{port}_sample"));
 
-    match out_port.unwrap_or("color") {
-        "color" => Ok(TypedExpr::with_time(
-            sample_expr,
-            ValueType::Vec4,
-            uv_expr.uses_time,
-        )),
-        "alpha" => Ok(TypedExpr::with_time(
-            format!("({sample_expr}).w"),
-            ValueType::F32,
-            uv_expr.uses_time,
-        )),
-        "texture" => Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D)),
-        other => bail!("unsupported ImageTexture output port: {other}"),
+    match port {
+        "color" => {
+            super::push_readable_let(
+                ctx,
+                format!("ImageTexture {}.color", node.id),
+                &sample_var,
+                &sample_expr,
+            );
+            Ok(TypedExpr::with_time(
+                sample_var,
+                ValueType::Vec4,
+                uv_expr.uses_time,
+            ))
+        }
+        "alpha" => {
+            super::push_readable_let(
+                ctx,
+                format!("ImageTexture {}.alpha", node.id),
+                &sample_var,
+                &sample_expr,
+            );
+            Ok(TypedExpr::with_time(
+                format!("({sample_var}).w"),
+                ValueType::F32,
+                uv_expr.uses_time,
+            ))
+        }
+        _ => unreachable!("ImageTexture port validated above"),
     }
 }
 
@@ -319,10 +366,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.ty, ValueType::Vec4);
-        assert!(result.expr.contains("textureSample"));
-        assert!(result.expr.contains("img_tex_img1"));
-        assert!(result.expr.contains("img_samp_img1"));
-        assert!(!result.expr.contains("1.0 - (in.uv).y"));
+        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        let stmts = ctx.inline_stmts.join("\n");
+        assert!(stmts.contains("textureSample"));
+        assert!(stmts.contains("img_tex_img1"));
+        assert!(stmts.contains("img_samp_img1"));
+        assert!(!stmts.contains("1.0 - (in.uv).y"));
         assert!(!result.uses_time);
     }
 
@@ -456,6 +505,9 @@ mod tests {
 
             assert!(!result.expr.contains("aspect_correct_uv_"));
             assert!(!result.expr.contains("textureDimensions"));
+            let stmts = ctx.inline_stmts.join("\n");
+            assert!(!stmts.contains("aspect_correct_uv_"));
+            assert!(!stmts.contains("textureDimensions"));
             assert!(
                 !ctx.extra_wgsl_decls
                     .contains_key(ASPECT_CORRECT_WGSL_LIB_KEY)
@@ -487,10 +539,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(result.expr.contains("aspect_correct_uv_fit("));
-        assert!(result.expr.contains("textureDimensions(img_tex_img1)"));
-        assert!(result.expr.contains("in.geo_size_px"));
-        assert!(result.expr.contains("textureSample"));
+        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        let stmts = ctx.inline_stmts.join("\n");
+        assert!(stmts.contains("aspect_correct_uv_fit("));
+        assert!(stmts.contains("textureDimensions(img_tex_img1)"));
+        assert!(stmts.contains("in.geo_size_px"));
+        assert!(stmts.contains("textureSample"));
 
         let lib = ctx
             .extra_wgsl_decls
@@ -525,9 +579,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(result.expr.contains("aspect_correct_uv_fill("));
-        assert!(result.expr.contains("textureDimensions(img_tex_img1)"));
-        assert!(result.expr.contains("in.geo_size_px"));
+        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        let stmts = ctx.inline_stmts.join("\n");
+        assert!(stmts.contains("aspect_correct_uv_fill("));
+        assert!(stmts.contains("textureDimensions(img_tex_img1)"));
+        assert!(stmts.contains("in.geo_size_px"));
 
         let lib = ctx
             .extra_wgsl_decls

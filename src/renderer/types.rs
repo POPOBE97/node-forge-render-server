@@ -299,11 +299,18 @@ impl ValueType {
 }
 
 /// A typed WGSL expression with metadata.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExprEmitPolicy {
+    Auto,
+    Inline,
+}
+
 #[derive(Clone, Debug)]
 pub struct TypedExpr {
     pub ty: ValueType,
     pub expr: String,
     pub uses_time: bool,
+    pub emit_policy: ExprEmitPolicy,
 }
 
 impl TypedExpr {
@@ -313,6 +320,7 @@ impl TypedExpr {
             ty,
             expr: expr.into(),
             uses_time: false,
+            emit_policy: ExprEmitPolicy::Auto,
         }
     }
 
@@ -322,7 +330,18 @@ impl TypedExpr {
             ty,
             expr: expr.into(),
             uses_time,
+            emit_policy: ExprEmitPolicy::Auto,
         }
+    }
+
+    /// Keep this expression inline even when the readable shader emitter is active.
+    ///
+    /// Some expressions are intentionally re-written by downstream compilers
+    /// before they become statements.  SDF finite-difference sampling is the
+    /// main example: it substitutes `in.local_px.xy` several times.
+    pub fn inline(mut self) -> Self {
+        self.emit_policy = ExprEmitPolicy::Inline;
+        self
     }
 }
 
@@ -365,6 +384,12 @@ pub struct MaterialCompileContext {
     /// Used for MathClosure nodes to generate inline `{ }` blocks that isolate
     /// variable scope and avoid naming conflicts.
     pub inline_stmts: Vec<String>,
+
+    /// Temporarily disables automatic readable temp emission.
+    ///
+    /// This is used while compiling expressions that downstream code still
+    /// needs to rewrite structurally before they are emitted as WGSL statements.
+    pub auto_temp_suppression_depth: u32,
 
     /// Graph input nodes referenced by this compiled shader context.
     ///
@@ -439,18 +464,16 @@ impl MaterialCompileContext {
         )
     }
 
-    /// Build the fragment body with inline statements prepended to the return expression.
-    ///
-    /// Inline statements (from MathClosure nodes) are emitted before the final return.
+    /// Build the fragment body with generated readable statements before the final return.
     pub fn build_fragment_body(&self, return_expr: &str) -> String {
         // Clamp alpha to [0,1] coverage — HDR energy lives in RGB only.
         let stmts = if self.inline_stmts.is_empty() {
             String::new()
         } else {
-            format!("{}\n    ", self.inline_stmts.join("\n"))
+            format!("{}\n", self.inline_stmts.join("\n"))
         };
         format!(
-            "{stmts}let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
+            "{stmts}    let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
         )
     }
 }

@@ -442,7 +442,7 @@ var src_samp: sampler;
         r#"
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {{
-    {fragment_body}
+{fragment_body}
 }}
 "#
     );
@@ -1105,7 +1105,7 @@ var<uniform> params: Params;
         r#"
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {{
-    {fragment_body}
+{fragment_body}
 }}
 "#
     );
