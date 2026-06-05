@@ -8,6 +8,7 @@ use rust_wgpu_fiber::{
 
 use crate::renderer::{
     ShaderSpacePresentationMode,
+    pass_debug::PassDebugSource,
     scene_prep::{PreparedScene, ScenePrepReport},
     types::{GraphBinding, Params, PassBindings, PassExtension, PassOutputRegistry},
 };
@@ -173,5 +174,6 @@ pub(crate) struct RenderPlan {
     pub export_output_texture: ResourceName,
     pub export_encode_pass_name: Option<ResourceName>,
     pub resources: ResourcePlans,
+    pub pass_debug_sources: HashMap<String, PassDebugSource>,
     pub debug_dump_wgsl_dir: Option<PathBuf>,
 }

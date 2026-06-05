@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use rust_wgpu_fiber::shader_space::ShaderSpace;
@@ -8,6 +8,7 @@ use crate::{
     asset_store::AssetStore,
     dsl::SceneDSL,
     renderer::{
+        pass_debug::PassDebugSource,
         render_plan::{
             planner::RenderPlanner,
             types::{PlanBuildOptions, PlanningGpuCaps},
@@ -57,6 +58,7 @@ pub struct ShaderSpaceBuildResult {
     pub export_encode_pass_name: Option<ResourceName>,
     pub pass_bindings: Vec<PassBindings>,
     pub pipeline_signature: [u8; 32],
+    pub pass_debug_sources: HashMap<String, PassDebugSource>,
 }
 
 pub struct ShaderSpaceBuilder {
@@ -119,6 +121,7 @@ impl ShaderSpaceBuilder {
             export_encode_pass_name: plan.export_encode_pass_name,
             pass_bindings: finalized.pass_bindings,
             pipeline_signature: finalized.pipeline_signature,
+            pass_debug_sources: plan.pass_debug_sources,
         })
     }
 
@@ -135,6 +138,7 @@ impl ShaderSpaceBuilder {
             scene_output_texture,
             pass_bindings,
             pipeline_signature,
+            pass_debug_sources: HashMap::new(),
         })
     }
 }

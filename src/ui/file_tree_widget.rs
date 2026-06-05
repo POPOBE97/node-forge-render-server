@@ -48,6 +48,7 @@ pub struct FileTreeState {
 pub struct FileTreeResponse {
     pub clicked: Option<FileTreeNode>,
     pub copied_texture_name: Option<String>,
+    pub open_pass_debug: Option<String>,
 }
 
 struct VisibleTreeEntry {
@@ -69,6 +70,7 @@ pub fn show_file_tree(
     let mut response = FileTreeResponse {
         clicked: None,
         copied_texture_name: None,
+        open_pass_debug: None,
     };
     let root_path = ui.id().with("file_tree_root");
     let mut visible_entries: Vec<VisibleTreeEntry> = Vec::new();
@@ -262,13 +264,24 @@ fn draw_node(
     let row_id = node_path.with("row");
     let row_response = ui.interact(row_rect, row_id, egui::Sense::click());
 
-    if let NodeKind::Texture { texture_name } = &node.kind {
-        row_response.context_menu(|ui| {
-            if ui.button("复制材质名").clicked() {
-                response.copied_texture_name = Some(texture_name.clone());
-                ui.close();
-            }
-        });
+    match &node.kind {
+        NodeKind::Texture { texture_name } => {
+            row_response.context_menu(|ui| {
+                if ui.button("复制材质名").clicked() {
+                    response.copied_texture_name = Some(texture_name.clone());
+                    ui.close();
+                }
+            });
+        }
+        NodeKind::Pass { pass_name, .. } => {
+            row_response.context_menu(|ui| {
+                if ui.button("Debug").clicked() {
+                    response.open_pass_debug = Some(pass_name.clone());
+                    ui.close();
+                }
+            });
+        }
+        _ => {}
     }
 
     let hovered = row_response.hovered() || state.keyboard_hover_id.as_deref() == Some(&node.id);

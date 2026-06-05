@@ -18,6 +18,7 @@ pub enum AppCommand {
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
+    OpenPassDebug(String),
     ToggleCanvasOnly,
     SetTestMode(crate::app::TestMode),
     ToggleMatrixPool(String),
@@ -31,6 +32,9 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
+        ui::debug_sidebar::SidebarAction::OpenPassDebug(pass_name) => {
+            AppCommand::OpenPassDebug(pass_name)
+        }
         ui::debug_sidebar::SidebarAction::ClearPreview => {
             AppCommand::Canvas(CanvasAction::ClearPreviewTexture)
         }
@@ -124,6 +128,13 @@ pub fn dispatch(
                 canvas::clear_reference(app);
             }
         }
+        AppCommand::OpenPassDebug(pass_name) => {
+            ui::pass_debug_window::open_pass_debug_window(
+                &mut app.shell.pass_debug_windows,
+                &app.shell.pass_debug_sources,
+                pass_name,
+            );
+        }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);
         }
@@ -206,6 +217,14 @@ mod tests {
     fn sidebar_reference_remove_maps_to_clear_reference_command() {
         let command = from_sidebar_action(SidebarAction::RemoveReferenceImage);
         assert!(matches!(command, AppCommand::ClearReference));
+    }
+
+    #[test]
+    fn sidebar_pass_debug_maps_to_app_command() {
+        let command = from_sidebar_action(SidebarAction::OpenPassDebug("node_2.pass".to_string()));
+        assert!(
+            matches!(command, AppCommand::OpenPassDebug(pass_name) if pass_name == "node_2.pass")
+        );
     }
 
     #[test]

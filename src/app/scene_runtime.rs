@@ -390,6 +390,7 @@ pub fn apply_scene_update(
                     app.core.scene_output_texture_name = result.scene_output_texture;
                     app.core.export_texture_name = result.export_output_texture;
                     app.core.export_encode_pass_name = result.export_encode_pass_name;
+                    app.shell.pass_debug_sources = result.pass_debug_sources;
                     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
                     app.runtime.uniform_scene = prepared_scene_candidate
                         .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));

@@ -734,6 +734,7 @@ fn main() -> Result<()> {
                 export_texture_name,
                 export_encode_pass_name,
                 passes,
+                pass_debug_sources,
                 last_good_initial,
                 last_pipeline_signature,
             ) = if let Some(scene) = scene.clone() {
@@ -756,6 +757,7 @@ fn main() -> Result<()> {
                         result.export_output_texture,
                         result.export_encode_pass_name,
                         result.pass_bindings,
+                        result.pass_debug_sources,
                         Some(scene),
                         Some(result.pipeline_signature),
                     ),
@@ -777,6 +779,7 @@ fn main() -> Result<()> {
                             result.export_output_texture,
                             result.export_encode_pass_name,
                             result.pass_bindings,
+                            std::collections::HashMap::new(),
                             None,
                             None,
                         )
@@ -797,6 +800,7 @@ fn main() -> Result<()> {
                     result.export_output_texture,
                     result.export_encode_pass_name,
                     result.pass_bindings,
+                    std::collections::HashMap::new(),
                     None,
                     None,
                 )
@@ -860,6 +864,7 @@ fn main() -> Result<()> {
                 force_continuous_redraw: cli.continuous_redraw,
                 asset_store,
                 animation_session,
+                pass_debug_sources,
             })))
         }),
     )

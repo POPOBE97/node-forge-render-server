@@ -514,6 +514,8 @@ impl RenderPlanner {
             &mut image_prepasses,
             &mut prepass_texture_samples,
         )?;
+        let pass_debug_sources =
+            collect_pass_debug_sources(&render_pass_specs, &image_prepasses, &depth_resolve_passes);
 
         let pass_bindings: Vec<PassBindings> = render_pass_specs
             .iter()
@@ -570,9 +572,50 @@ impl RenderPlanner {
                 baked_data_parse_buffer_to_pass_id,
                 pass_extensions,
             },
+            pass_debug_sources,
             debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
         })
     }
+}
+
+fn collect_pass_debug_sources(
+    render_pass_specs: &[RenderPassSpec],
+    image_prepasses: &[ImagePrepass],
+    depth_resolve_passes: &[super::types::DepthResolvePass],
+) -> HashMap<String, crate::renderer::pass_debug::PassDebugSource> {
+    let mut sources = HashMap::new();
+
+    for spec in render_pass_specs {
+        sources.insert(
+            spec.name.as_str().to_string(),
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+                spec.name.as_str(),
+                spec.shader_wgsl.clone(),
+            ),
+        );
+    }
+
+    for spec in image_prepasses {
+        sources.insert(
+            spec.pass_name.as_str().to_string(),
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+                spec.pass_name.as_str(),
+                spec.shader_wgsl.clone(),
+            ),
+        );
+    }
+
+    for spec in depth_resolve_passes {
+        sources.insert(
+            spec.pass_name.as_str().to_string(),
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+                spec.pass_name.as_str(),
+                spec.shader_wgsl.clone(),
+            ),
+        );
+    }
+
+    sources
 }
 
 fn collect_processing_source_pass_ids(
@@ -1364,6 +1407,28 @@ mod tests {
                 .map(|name| name.as_str()),
             Some("node_5.present.sdr.srgb.pass")
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn planner_collects_pass_debug_sources() -> Result<()> {
+        let (scene, assets) = load_case("graph-rectangle")?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::UiSdrDisplayEncode).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+
+        let source = plan
+            .pass_debug_sources
+            .get("node_2.pass")
+            .expect("render pass debug source");
+        assert_eq!(source.pass_name, "node_2.pass");
+        assert!(source.module_source.contains("@vertex"));
+        assert!(source.module_source.contains("@fragment"));
+        assert!(source.parse_error.is_none());
+        assert!(!source.ast_tree.is_empty());
 
         Ok(())
     }

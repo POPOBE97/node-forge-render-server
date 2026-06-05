@@ -501,6 +501,8 @@ pub fn sidebar_width(ctx: &egui::Context) -> f32 {
 pub enum SidebarAction {
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
+    /// Open a render pass shader debug window.
+    OpenPassDebug(String),
     /// Clear the preview (user clicked a non-texture node).
     ClearPreview,
     /// Update reference overlay opacity.
@@ -1300,6 +1302,11 @@ fn show_resource_tree_section(
 
         if let Some(texture_name) = tree_response.copied_texture_name.as_ref() {
             ui.ctx().copy_text(texture_name.clone());
+        }
+
+        if let Some(pass_name) = tree_response.open_pass_debug {
+            *sidebar_action = Some(SidebarAction::OpenPassDebug(pass_name));
+            return;
         }
 
         if let Some(clicked) = tree_response.clicked {

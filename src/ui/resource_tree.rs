@@ -250,6 +250,7 @@ pub enum NodeKind {
     Folder,
     /// A render pass. `target_texture` is the name of its color attachment (if any).
     Pass {
+        pass_name: String,
         target_texture: Option<String>,
     },
     Texture {
@@ -411,6 +412,7 @@ fn build_dependency_tree(
                         label: format!("{} ↻", pass_basename(&producer.name)),
                         icon: TreeIcon::Pass,
                         kind: NodeKind::Pass {
+                            pass_name: producer.name.clone(),
                             target_texture: producer.target_texture.clone(),
                         },
                         detail: None,
@@ -440,6 +442,7 @@ fn build_dependency_tree(
             label: pass_label(pass),
             icon: TreeIcon::Pass,
             kind: NodeKind::Pass {
+                pass_name: pass.name.clone(),
                 target_texture: pass.target_texture.clone(),
             },
             detail: None,
@@ -634,5 +637,35 @@ mod tests {
 
         let tree = snapshot.to_tree();
         assert_eq!(tree[0].label, "Pass Dependencies (2 DCs)");
+    }
+
+    #[test]
+    fn pass_nodes_preserve_exact_pass_name() {
+        let root_target = "sys.final.output.present.sdr.srgb";
+        let snapshot = ResourceSnapshot {
+            passes: vec![PassInfo {
+                name: "sys.render.pass.exact.name.pass".to_string(),
+                order_index: 0,
+                target_texture: Some(root_target.to_string()),
+                target_size: None,
+                target_format: None,
+                is_compute: false,
+                sampled_textures: vec![],
+                instance_count: 1,
+                vertex_count: 3,
+                workgroup_count: 0,
+            }],
+            buffers: vec![],
+            samplers: vec![],
+            final_output_texture: Some(root_target.to_string()),
+        };
+
+        let tree = snapshot.to_tree();
+        let pass_node = &tree[0].children[0].children[0];
+        assert!(matches!(
+            &pass_node.kind,
+            super::NodeKind::Pass { pass_name, .. }
+                if pass_name == "sys.render.pass.exact.name.pass"
+        ));
     }
 }

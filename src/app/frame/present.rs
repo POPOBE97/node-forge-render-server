@@ -249,6 +249,12 @@ pub(super) fn run(
         }
     }
 
+    ui::pass_debug_window::show_pass_debug_windows(
+        ctx,
+        &mut app.shell.pass_debug_windows,
+        &app.shell.pass_debug_sources,
+    );
+
     interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     app.shell.prev_window_mode = frame_state.mode;
 

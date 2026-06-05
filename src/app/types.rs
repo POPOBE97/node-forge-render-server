@@ -276,6 +276,7 @@ pub struct AppInit {
     pub force_continuous_redraw: bool,
     pub asset_store: crate::asset_store::AssetStore,
     pub animation_session: Option<crate::animation::AnimationSession>,
+    pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
 }
 
 pub(super) struct AppCore {
@@ -378,6 +379,8 @@ pub(super) struct AppShell {
     pub resource_snapshot: Option<ResourceSnapshot>,
     pub resource_tree_nodes: Vec<FileTreeNode>,
     pub resource_snapshot_generation: u64,
+    pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
+    pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
     pub test_mode: TestMode,
     pub matrix_config: MatrixConfig,
     pub resource_pools: Vec<ResourcePoolInfo>,
@@ -610,6 +613,8 @@ impl App {
                 resource_snapshot: None,
                 resource_tree_nodes: Vec::new(),
                 resource_snapshot_generation: u64::MAX,
+                pass_debug_sources: init.pass_debug_sources,
+                pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),
                 test_mode: TestMode::default(),
                 matrix_config: MatrixConfig::default(),
                 resource_pools: Vec::new(),
