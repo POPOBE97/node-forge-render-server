@@ -450,7 +450,7 @@ pub fn show_pass_debug_windows(
             }
 
             match class {
-                egui::ViewportClass::Embedded => {
+                egui::ViewportClass::EmbeddedWindow => {
                     let mut open = true;
                     egui::Window::new(title.as_str())
                         .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
@@ -988,7 +988,7 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                     .id_salt(("pass-debug-source-text", document.pass_name.as_str()))
                     .font(egui::TextStyle::Monospace)
                     .code_editor()
-                    .frame(false)
+                    .frame(egui::Frame::NONE)
                     .desired_rows(24)
                     .desired_width(f32::INFINITY)
                     .lock_focus(true)

@@ -1,5 +1,3 @@
-#![allow(unsafe_code)]
-
 use std::{borrow::Cow, num::NonZeroU64, ops::Range};
 
 use ahash::HashMap;
@@ -359,16 +357,19 @@ impl Renderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("egui_pipeline_layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[
+                Some(&uniform_bind_group_layout),
+                Some(&texture_bind_group_layout),
+            ],
+            immediate_size: 0,
         });
 
         let depth_stencil = options
             .depth_stencil_format
             .map(|format| wgpu::DepthStencilState {
                 format,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             });
@@ -413,8 +414,7 @@ impl Renderer {
                         log::warn!("Detected a linear (sRGBA aware) framebuffer {output_color_format:?}. egui prefers Rgba8Unorm or Bgra8Unorm");
                         "fs_main_linear_framebuffer"
                     } else if output_color_format == wgpu::TextureFormat::Rgba16Float {
-                        // HDR-capable linear surface (e.g. macOS EDR).  Vertex colours
-                        // (sRGB gamma) must be linearised before writing.
+                        // HDR-capable linear surface, e.g. macOS EDR. Vertex colors are sRGB gamma.
                         log::info!("Using linear framebuffer shader for HDR surface {output_color_format:?}");
                         "fs_main_linear_framebuffer"
                     } else {
@@ -438,7 +438,7 @@ impl Renderer {
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default()
                 }),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             }
         )
@@ -482,6 +482,9 @@ impl Renderer {
     /// The render pass internally keeps all referenced resources alive as long as necessary.
     /// The only consequence of `forget_lifetime` is that any operation on the parent encoder will cause a runtime error
     /// instead of a compile time error.
+    ///
+    /// # Panic
+    /// Always ensure that [`Renderer::update_buffers`] has been called otherwise calling [`Renderer::render`] will panic!
     pub fn render(
         &self,
         render_pass: &mut wgpu::RenderPass<'static>,
@@ -526,8 +529,12 @@ impl Renderer {
                     // Skip rendering zero-sized clip areas.
                     if let Primitive::Mesh(_) = primitive {
                         // If this is a mesh, we need to advance the index and vertex buffer iterators:
-                        index_buffer_slices.next().unwrap();
-                        vertex_buffer_slices.next().unwrap();
+                        index_buffer_slices
+                            .next()
+                            .expect("You must call .update_buffers() before .render()");
+                        vertex_buffer_slices
+                            .next()
+                            .expect("You must call .update_buffers() before .render()");
                     }
                     continue;
                 }
@@ -537,8 +544,12 @@ impl Renderer {
 
             match primitive {
                 Primitive::Mesh(mesh) => {
-                    let index_buffer_slice = index_buffer_slices.next().unwrap();
-                    let vertex_buffer_slice = vertex_buffer_slices.next().unwrap();
+                    let index_buffer_slice = index_buffer_slices
+                        .next()
+                        .expect("You must call .update_buffers() before .render()");
+                    let vertex_buffer_slice = vertex_buffer_slices
+                        .next()
+                        .expect("You must call .update_buffers() before .render()");
 
                     if let Some(Texture { bind_group, .. }) = self.textures.get(&mesh.texture_id) {
                         render_pass.set_bind_group(1, bind_group, &[]);
@@ -692,9 +703,8 @@ impl Renderer {
             //
             // When the output surface uses a linear framebuffer (Rgba16Float or
             // an sRGB target), egui's shader expects sampled texels to be
-            // LINEAR.  By creating the texture as Rgba8UnormSrgb the GPU
-            // automatically applies sRGB→linear decode on sample — no manual
-            // shader conversion needed.
+            // linear. By creating the texture as Rgba8UnormSrgb, the GPU
+            // applies sRGB-to-linear decode while sampling.
             let egui_tex_format = if self.output_color_format.is_srgb()
                 || self.output_color_format == wgpu::TextureFormat::Rgba16Float
             {
@@ -977,6 +987,7 @@ impl Renderer {
             let index_buffer_staging = queue.write_buffer_with(
                 &self.index_buffer.buffer,
                 0,
+                #[expect(clippy::unwrap_used)] // Checked above
                 NonZeroU64::new(required_index_buffer_size).unwrap(),
             );
 
@@ -994,7 +1005,8 @@ impl Renderer {
                     Primitive::Mesh(mesh) => {
                         let size = mesh.indices.len() * std::mem::size_of::<u32>();
                         let slice = index_offset..(size + index_offset);
-                        index_buffer_staging[slice.clone()]
+                        index_buffer_staging
+                            .slice(slice.clone())
                             .copy_from_slice(bytemuck::cast_slice(&mesh.indices));
                         self.index_buffer.slices.push(slice);
                         index_offset += size;
@@ -1020,6 +1032,7 @@ impl Renderer {
             let vertex_buffer_staging = queue.write_buffer_with(
                 &self.vertex_buffer.buffer,
                 0,
+                #[expect(clippy::unwrap_used)] // Checked above
                 NonZeroU64::new(required_vertex_buffer_size).unwrap(),
             );
 
@@ -1037,7 +1050,8 @@ impl Renderer {
                     Primitive::Mesh(mesh) => {
                         let size = mesh.vertices.len() * std::mem::size_of::<Vertex>();
                         let slice = vertex_offset..(size + vertex_offset);
-                        vertex_buffer_staging[slice.clone()]
+                        vertex_buffer_staging
+                            .slice(slice.clone())
                             .copy_from_slice(bytemuck::cast_slice(&mesh.vertices));
                         self.vertex_buffer.slices.push(slice);
                         vertex_offset += size;

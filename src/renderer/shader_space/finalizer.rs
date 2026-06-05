@@ -194,7 +194,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Nearest,
                     min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
                     address_mode_v: wgpu::AddressMode::ClampToEdge,
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -206,7 +206,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Nearest,
                     min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::MirrorRepeat,
                     address_mode_v: wgpu::AddressMode::MirrorRepeat,
                     address_mode_w: wgpu::AddressMode::MirrorRepeat,
@@ -218,7 +218,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Nearest,
                     min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::Repeat,
                     address_mode_v: wgpu::AddressMode::Repeat,
                     address_mode_w: wgpu::AddressMode::Repeat,
@@ -230,7 +230,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Linear,
                     min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::MirrorRepeat,
                     address_mode_v: wgpu::AddressMode::MirrorRepeat,
                     address_mode_w: wgpu::AddressMode::MirrorRepeat,
@@ -242,7 +242,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Linear,
                     min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::Repeat,
                     address_mode_v: wgpu::AddressMode::Repeat,
                     address_mode_w: wgpu::AddressMode::Repeat,
@@ -254,7 +254,7 @@ impl ShaderSpaceFinalizer {
                 desc: wgpu::SamplerDescriptor {
                     mag_filter: wgpu::FilterMode::Linear,
                     min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
                     address_mode_v: wgpu::AddressMode::ClampToEdge,
                     address_mode_w: wgpu::AddressMode::ClampToEdge,

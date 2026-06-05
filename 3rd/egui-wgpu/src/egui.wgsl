@@ -132,21 +132,16 @@ fn sample_texture(in: VertexOutput) -> vec4<f32> {
 
 @fragment
 fn fs_main_linear_framebuffer(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Textures are expected to be sRGB-format (Rgba8UnormSrgb) or linear
-    // (Rgba16Float, Rgba8Unorm).  Hardware does the sRGB→linear decode
-    // automatically for sRGB texture views, so sampled values are ALWAYS
-    // linear at this point.
+    // Textures are expected to be sRGB-format or linear. Hardware decodes
+    // sRGB texture views, so sampled values are linear at this point.
     let texel_linear = sample_texture(in);
 
-    // Vertex colour comes from Color32 bytes — sRGB gamma, premultiplied.
-    // Convert the RGB channels to linear (alpha stays as-is).
+    // Vertex color comes from Color32 bytes: sRGB gamma, premultiplied.
     let vert_linear = vec4<f32>(linear_from_gamma_rgb(in.color.rgb), in.color.a);
 
-    // Blend in linear space (premultiplied-alpha multiplication).
     var out_color = vert_linear * texel_linear;
 
-    // Dither in perceptual (gamma) space to minimise banding on 8-bit
-    // displays, then convert back to linear for the framebuffer write.
+    // Dither in perceptual space, then convert back to linear for framebuffer output.
     if r_locals.dithering == 1 {
         let gamma_rgb = gamma_from_linear_rgb(out_color.rgb);
         let dithered = dither_interleaved(gamma_rgb, 256.0, in.position);

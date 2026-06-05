@@ -82,7 +82,7 @@ var<storage, read_write> histogram: array<atomic<u32>, 768>;
 var<uniform> params: HistogramParams;
 
 fn symmetric_log(v: f32) -> f32 {
-    return sign(v) * log(abs(v) + 0.001);
+    return sign(v) * log(1.0 + abs(v) / 0.001);
 }
 
 fn to_hdr_bin(v: f32) -> u32 {
@@ -249,11 +249,11 @@ enum HistogramMode {
 }
 
 fn symmetric_log(v: f32) -> f32 {
-    v.signum() * (v.abs() + HIST_LOG_ADDITION).ln()
+    v.signum() * (1.0 + v.abs() / HIST_LOG_ADDITION).ln()
 }
 
 fn symmetric_log_inverse(s: f32) -> f32 {
-    s.signum() * (s.abs().exp() - HIST_LOG_ADDITION)
+    s.signum() * (s.abs().exp() - 1.0) * HIST_LOG_ADDITION
 }
 
 fn ordered_key_to_float(key: u32) -> f32 {
@@ -414,8 +414,8 @@ impl HistogramRenderer {
         let stats_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sys.histogram.stats.compute.layout"),
-                bind_group_layouts: &[&stats_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&stats_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let stats_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -467,8 +467,8 @@ impl HistogramRenderer {
         let histogram_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sys.histogram.compute.layout"),
-                bind_group_layouts: &[&histogram_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&histogram_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let histogram_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -551,8 +551,8 @@ impl HistogramRenderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sys.histogram.render.layout"),
-                bind_group_layouts: &[&render_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&render_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let output_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -595,7 +595,7 @@ impl HistogramRenderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -864,8 +864,9 @@ impl HistogramRenderer {
                     depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
-                occlusion_query_set: None,
                 timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
             });
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.render_bind_group, &[]);

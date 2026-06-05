@@ -688,8 +688,9 @@ fn main() -> Result<()> {
             .with_min_inner_size(egui::vec2(240.0, 240.0)),
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
-            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
-                device_descriptor: std::sync::Arc::new(|adapter| {
+            wgpu_setup: egui_wgpu::WgpuSetup::CreateNew({
+                let mut setup = egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+                setup.device_descriptor = std::sync::Arc::new(|adapter| {
                     let mut required_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
                     if adapter
                         .features()
@@ -706,8 +707,8 @@ fn main() -> Result<()> {
                         required_features,
                         ..Default::default()
                     }
-                }),
-                ..Default::default()
+                });
+                setup
             }),
             // Use Rgba16Float surface for HDR-native preview (macOS EDR).
             preferred_surface_format: Some(wgpu::TextureFormat::Rgba16Float),

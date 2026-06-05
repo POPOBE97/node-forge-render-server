@@ -17,7 +17,7 @@ pub use types::{
 use rust_wgpu_fiber::eframe::{self, egui};
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        frame::run(self, ctx, frame);
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        frame::run(self, ui.ctx(), frame);
     }
 }

@@ -389,7 +389,7 @@ fn slider_with_editable_value(
                                     .vertical_align(egui::Align::Center)
                                     .desired_width(text_rect.width())
                                     .margin(egui::Margin::same(0))
-                                    .frame(false),
+                                    .frame(egui::Frame::NONE),
                             )
                         })
                         .inner;

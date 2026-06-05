@@ -131,6 +131,7 @@ pub fn collect_interaction_payloads(
             egui::Event::MouseWheel {
                 unit,
                 delta,
+                phase: _,
                 modifiers,
             } => {
                 let on_canvas = pointer_hover_pos.is_some_and(|pos| canvas_rect.contains(pos));
@@ -413,11 +414,13 @@ mod tests {
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: vec2(0.0, 3.0),
+                phase: egui::TouchPhase::Move,
                 modifiers: egui::Modifiers::NONE,
             },
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Line,
                 delta: vec2(0.0, 1.0),
+                phase: egui::TouchPhase::Move,
                 modifiers: egui::Modifiers::NONE,
             },
         ];

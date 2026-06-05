@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.92"
 name = "egui-wgpu"
-version = "0.33.3"
+version = "0.34.3"
 authors = [
     "Nils Hasenbanck <nils@hasenbanck.de>",
     "embotech <opensource@embotech.com>",
@@ -21,8 +21,8 @@ authors = [
 ]
 build = false
 include = [
-    "../LICENSE-APACHE",
-    "../LICENSE-MIT",
+    "../../LICENSE-APACHE",
+    "../../LICENSE-MIT",
     "**/*.rs",
     "**/*.wgsl",
     "Cargo.toml",
@@ -54,10 +54,12 @@ all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
 
 [features]
+capture = ["dep:egui"]
 default = [
     "fragile-send-sync-non-atomic-wasm",
     "macos-window-resize-jitter-fix",
     "wgpu/default",
+    "wgpu/webgl",
 ]
 fragile-send-sync-non-atomic-wasm = ["wgpu/fragile-send-sync-non-atomic-wasm"]
 macos-window-resize-jitter-fix = ["wgpu/metal"]
@@ -65,6 +67,8 @@ wayland = ["winit?/wayland"]
 winit = [
     "dep:winit",
     "winit/rwh_06",
+    "dep:egui",
+    "capture",
 ]
 x11 = ["winit?/x11"]
 
@@ -87,11 +91,12 @@ version = "1.24.0"
 version = "0.2.11"
 
 [dependencies.egui]
-version = "0.33.3"
+version = "0.34.3"
+optional = true
 default-features = false
 
 [dependencies.epaint]
-version = "0.33.3"
+version = "0.34.3"
 features = ["bytemuck"]
 default-features = false
 
@@ -113,7 +118,7 @@ version = "0.5.1"
 version = "1.1.0"
 
 [dependencies.wgpu]
-version = "27.0.1"
+version = "29.0.1"
 features = [
     "std",
     "wgsl",
@@ -121,7 +126,7 @@ features = [
 default-features = false
 
 [dependencies.winit]
-version = "0.30.12"
+version = "0.30.13"
 optional = true
 default-features = false
 
@@ -132,10 +137,13 @@ assigning_clones = "allow"
 await_holding_lock = "warn"
 bool_to_int_with_if = "warn"
 branches_sharing_code = "warn"
+cast_possible_wrap = "allow"
 char_lit_as_u8 = "warn"
 checked_conversions = "warn"
 clear_with_drain = "warn"
+clone_on_ref_ptr = "warn"
 cloned_instead_of_copied = "warn"
+coerce_container_to_any = "warn"
 comparison_chain = "allow"
 dbg_macro = "warn"
 debug_assert_with_mut_call = "warn"
@@ -146,7 +154,9 @@ disallowed_methods = "warn"
 disallowed_names = "warn"
 disallowed_script_idents = "warn"
 disallowed_types = "warn"
+doc_broken_link = "warn"
 doc_comment_double_space_linebreaks = "warn"
+doc_include_without_cfg = "warn"
 doc_link_with_quotes = "warn"
 doc_markdown = "warn"
 elidable_lifetime_names = "warn"
@@ -179,6 +189,7 @@ inefficient_to_string = "warn"
 infinite_loop = "warn"
 into_iter_without_iter = "warn"
 invalid_upcast_comparisons = "warn"
+ip_constant = "warn"
 iter_filter_is_ok = "warn"
 iter_filter_is_some = "warn"
 iter_not_returning_iterator = "warn"
@@ -187,6 +198,7 @@ iter_on_single_items = "warn"
 iter_over_hash_type = "warn"
 iter_without_into_iter = "warn"
 large_digit_groups = "warn"
+large_futures = "warn"
 large_include_file = "warn"
 large_stack_arrays = "warn"
 large_stack_frames = "warn"
@@ -235,6 +247,7 @@ non_zero_suggestions = "warn"
 nonstandard_macro_braces = "warn"
 option_as_ref_cloned = "warn"
 option_option = "warn"
+or_fun_call = "warn"
 path_buf_push_overwrite = "warn"
 pathbuf_init_then_push = "warn"
 precedence_bits = "warn"
@@ -254,6 +267,7 @@ rest_pat_in_fully_bound_structs = "warn"
 return_and_then = "warn"
 same_functions_in_if_condition = "warn"
 self_named_module_files = "allow"
+self_only_used_in_recursion = "warn"
 semicolon_if_nothing_returned = "warn"
 set_contains_or_insert = "warn"
 should_panic_without_expect = "allow"
@@ -267,7 +281,6 @@ string_add = "warn"
 string_add_assign = "warn"
 string_lit_as_bytes = "warn"
 string_lit_chars_any = "warn"
-string_to_string = "warn"
 suspicious_command_arg_space = "warn"
 suspicious_xor_used_as_pow = "warn"
 todo = "warn"
@@ -277,7 +290,7 @@ trailing_empty_array = "warn"
 trait_duplication_in_bounds = "warn"
 transmute_ptr_to_ptr = "warn"
 tuple_array_conversions = "warn"
-unchecked_duration_subtraction = "warn"
+unchecked_time_subtraction = "warn"
 undocumented_unsafe_blocks = "warn"
 unimplemented = "warn"
 uninhabited_references = "warn"
@@ -292,11 +305,12 @@ unnecessary_semicolon = "warn"
 unnecessary_struct_initialization = "warn"
 unnecessary_wraps = "warn"
 unnested_or_patterns = "warn"
+unused_async = "warn"
 unused_peekable = "warn"
 unused_rounding = "warn"
 unused_self = "warn"
 unused_trait_names = "warn"
-unwrap_used = "allow"
+unwrap_used = "warn"
 use_self = "warn"
 useless_let_if_seq = "warn"
 useless_transmute = "warn"
