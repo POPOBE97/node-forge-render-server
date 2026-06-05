@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
@@ -13,6 +17,7 @@ pub struct SceneApplyResult {
     pub did_rebuild_shader_space: bool,
     pub texture_filter_override: Option<wgpu::FilterMode>,
     pub reset_viewport: bool,
+    pub previous_output_hash: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +50,239 @@ fn should_reset_viewport_for_scene_resolution(
     next_resolution: [u32; 2],
 ) -> bool {
     matches!(source, ws::ParsedSceneSource::SceneUpdate) && previous_resolution != next_resolution
+}
+
+pub fn apply_pass_shader_patch(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    pass_name: &str,
+    source: String,
+) -> Result<SceneApplyResult> {
+    renderer::validate_wgsl_with_context(&source, pass_name)?;
+    ensure_pass_is_live_composited(app, pass_name)?;
+    let previous_output_hash = current_output_hash(app);
+    let scene = latest_scene_for_rebuild(app)?;
+    let mut candidate_overrides = app.shell.pass_shader_overrides.clone();
+    candidate_overrides.insert(pass_name.to_string(), source);
+    let result =
+        build_shader_space_with_overrides(app, render_state, &scene, &candidate_overrides)?;
+    commit_shader_space_rebuild(app, &scene, result, candidate_overrides);
+    Ok(SceneApplyResult {
+        did_rebuild_shader_space: true,
+        texture_filter_override: None,
+        reset_viewport: false,
+        previous_output_hash,
+    })
+}
+
+pub fn reset_pass_shader_patch(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    pass_name: &str,
+) -> Result<SceneApplyResult> {
+    if !app.shell.pass_shader_overrides.contains_key(pass_name) {
+        return Ok(SceneApplyResult {
+            did_rebuild_shader_space: false,
+            texture_filter_override: None,
+            reset_viewport: false,
+            previous_output_hash: None,
+        });
+    }
+
+    ensure_pass_is_live_composited(app, pass_name)?;
+    let previous_output_hash = current_output_hash(app);
+    let scene = latest_scene_for_rebuild(app)?;
+    let mut candidate_overrides = app.shell.pass_shader_overrides.clone();
+    candidate_overrides.remove(pass_name);
+    let result =
+        build_shader_space_with_overrides(app, render_state, &scene, &candidate_overrides)?;
+    commit_shader_space_rebuild(app, &scene, result, candidate_overrides);
+    Ok(SceneApplyResult {
+        did_rebuild_shader_space: true,
+        texture_filter_override: None,
+        reset_viewport: false,
+        previous_output_hash,
+    })
+}
+
+pub fn reset_all_pass_shader_patches(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+) -> Result<SceneApplyResult> {
+    if app.shell.pass_shader_overrides.is_empty() {
+        return Ok(SceneApplyResult {
+            did_rebuild_shader_space: false,
+            texture_filter_override: None,
+            reset_viewport: false,
+            previous_output_hash: None,
+        });
+    }
+
+    let previous_output_hash = current_output_hash(app);
+    let scene = latest_scene_for_rebuild(app)?;
+    let result = build_shader_space_with_overrides(
+        app,
+        render_state,
+        &scene,
+        &std::collections::HashMap::new(),
+    )?;
+    commit_shader_space_rebuild(app, &scene, result, std::collections::HashMap::new());
+    Ok(SceneApplyResult {
+        did_rebuild_shader_space: true,
+        texture_filter_override: None,
+        reset_viewport: false,
+        previous_output_hash,
+    })
+}
+
+fn ensure_pass_is_live_composited(app: &App, pass_name: &str) -> Result<()> {
+    if !app.core.shader_space.passes.inner.contains_key(pass_name) {
+        bail!("shader patch target pass is not registered in the live ShaderSpace: {pass_name}");
+    }
+
+    let is_composited = app
+        .core
+        .shader_space
+        .composition
+        .flatten()
+        .iter()
+        .any(|node| node.pass_name.as_str() == pass_name);
+    if !is_composited {
+        bail!(
+            "shader patch target pass is registered, but is not in the current render composition: {pass_name}"
+        );
+    }
+
+    Ok(())
+}
+
+pub fn current_output_hash(app: &App) -> Option<u64> {
+    let texture_name = app.core.output_texture_name.as_str();
+    let format = app
+        .core
+        .shader_space
+        .texture_info(texture_name)
+        .map(|info| info.format)?;
+
+    let mut hasher = DefaultHasher::new();
+    texture_name.hash(&mut hasher);
+    match format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => {
+            let image = app
+                .core
+                .shader_space
+                .read_texture_rgba8(texture_name)
+                .ok()?;
+            image.width.hash(&mut hasher);
+            image.height.hash(&mut hasher);
+            image.bytes.hash(&mut hasher);
+        }
+        wgpu::TextureFormat::Rgba16Float => {
+            let image = app
+                .core
+                .shader_space
+                .read_texture_rgba16f(texture_name)
+                .ok()?;
+            image.width.hash(&mut hasher);
+            image.height.hash(&mut hasher);
+            for channel in image.channels {
+                channel.to_bits().hash(&mut hasher);
+            }
+        }
+        _ => return None,
+    }
+
+    Some(hasher.finish())
+}
+
+fn latest_scene_for_rebuild(app: &App) -> Result<crate::dsl::SceneDSL> {
+    if let Some(scene) = app.runtime.last_good.lock().ok().and_then(|g| g.clone()) {
+        return Ok(scene);
+    }
+    app.runtime
+        .uniform_scene
+        .clone()
+        .ok_or_else(|| anyhow!("no current scene available for shader patch rebuild"))
+}
+
+fn build_shader_space_with_overrides(
+    app: &App,
+    render_state: &egui_wgpu::RenderState,
+    scene: &crate::dsl::SceneDSL,
+    pass_shader_overrides: &std::collections::HashMap<String, String>,
+) -> Result<renderer::ShaderSpaceBuildResult> {
+    let build_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        renderer::ShaderSpaceBuilder::new(
+            Arc::new(render_state.device.clone()),
+            Arc::new(render_state.queue.clone()),
+        )
+        .with_adapter(render_state.adapter.clone())
+        .with_options(renderer::ShaderSpaceBuildOptions {
+            presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
+            debug_dump_wgsl_dir: None,
+            pass_shader_overrides: pass_shader_overrides.clone(),
+            strict_pass_shader_overrides: true,
+        })
+        .with_asset_store(app.core.asset_store.clone())
+        .build(scene)
+    }));
+
+    match build_result {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(e)) => Err(e),
+        Err(payload) => {
+            let panic_msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "(non-string panic payload)".to_string()
+            };
+            Err(anyhow!("shader patch rebuild panicked: {panic_msg}"))
+        }
+    }
+}
+
+fn commit_shader_space_rebuild(
+    app: &mut App,
+    scene: &crate::dsl::SceneDSL,
+    result: renderer::ShaderSpaceBuildResult,
+    pass_shader_overrides: std::collections::HashMap<String, String>,
+) {
+    app.core.shader_space = result.shader_space;
+    app.core.resolution = result.resolution;
+    app.core.passes = result.pass_bindings;
+    app.core.output_texture_name = result.present_output_texture;
+    app.core.scene_output_texture_name = result.scene_output_texture;
+    app.core.export_texture_name = result.export_output_texture;
+    app.core.export_encode_pass_name = result.export_encode_pass_name;
+    update_pass_debug_sources(app, result.pass_debug_sources);
+    app.shell.pass_shader_overrides = pass_shader_overrides;
+    let live_pass_names: std::collections::HashSet<String> =
+        app.shell.pass_debug_sources.keys().cloned().collect();
+    app.shell
+        .pass_shader_overrides
+        .retain(|pass_name, _| live_pass_names.contains(pass_name));
+    app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
+    app.runtime.uniform_scene = renderer::prepare_scene(scene).ok().map(|p| p.scene);
+    app.runtime.scene_uses_time = app
+        .runtime
+        .uniform_scene
+        .as_ref()
+        .is_some_and(scene_uses_time);
+    app.runtime.pipeline_rebuild_count = app.runtime.pipeline_rebuild_count.saturating_add(1);
+    app.runtime.scene_redraw_pending = true;
+    if let Ok(mut g) = app.runtime.last_good.lock() {
+        *g = Some(scene.clone());
+    }
+}
+
+fn update_pass_debug_sources(
+    app: &mut App,
+    sources: std::collections::HashMap<String, renderer::PassDebugSource>,
+) {
+    app.shell.pass_debug_sources = sources;
+    app.shell.pass_debug_sources_revision = app.shell.pass_debug_sources_revision.wrapping_add(1);
 }
 
 fn collect_graph_uniform_updates(
@@ -227,6 +465,7 @@ pub fn apply_scene_update(
                     did_rebuild_shader_space: false,
                     texture_filter_override: None,
                     reset_viewport: false,
+                    previous_output_hash: None,
                 };
             };
 
@@ -268,6 +507,7 @@ pub fn apply_scene_update(
                         did_rebuild_shader_space: false,
                         texture_filter_override: None,
                         reset_viewport: false,
+                        previous_output_hash: None,
                     }
                 }
                 Err(e) => {
@@ -285,6 +525,7 @@ pub fn apply_scene_update(
                         did_rebuild_shader_space: false,
                         texture_filter_override: None,
                         reset_viewport: false,
+                        previous_output_hash: None,
                     }
                 }
             }
@@ -318,7 +559,9 @@ pub fn apply_scene_update(
                 .ok()
                 .flatten();
             let mut prepared_scene_candidate: Option<crate::dsl::SceneDSL> = None;
-            if let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene) {
+            if app.shell.pass_shader_overrides.is_empty()
+                && let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene)
+            {
                 prepared_scene_candidate = Some(prepared_for_fast_path.scene.clone());
                 let next_pipeline_signature =
                     renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
@@ -356,6 +599,7 @@ pub fn apply_scene_update(
                                     previous_output_resolution,
                                     prepared_for_fast_path.resolution,
                                 ),
+                                previous_output_hash: None,
                             };
                         }
                         Err(e) => {
@@ -376,6 +620,8 @@ pub fn apply_scene_update(
                 .with_options(renderer::ShaderSpaceBuildOptions {
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
+                    pass_shader_overrides: app.shell.pass_shader_overrides.clone(),
+                    strict_pass_shader_overrides: false,
                 })
                 .with_asset_store(app.core.asset_store.clone())
                 .build(&scene)
@@ -390,7 +636,12 @@ pub fn apply_scene_update(
                     app.core.scene_output_texture_name = result.scene_output_texture;
                     app.core.export_texture_name = result.export_output_texture;
                     app.core.export_encode_pass_name = result.export_encode_pass_name;
-                    app.shell.pass_debug_sources = result.pass_debug_sources;
+                    update_pass_debug_sources(app, result.pass_debug_sources);
+                    let live_pass_names: std::collections::HashSet<String> =
+                        app.shell.pass_debug_sources.keys().cloned().collect();
+                    app.shell
+                        .pass_shader_overrides
+                        .retain(|pass_name, _| live_pass_names.contains(pass_name));
                     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
                     app.runtime.uniform_scene = prepared_scene_candidate
                         .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
@@ -421,6 +672,7 @@ pub fn apply_scene_update(
                             previous_output_resolution,
                             result.resolution,
                         ),
+                        previous_output_hash: None,
                     }
                 }
                 Ok(Err(e)) => {
@@ -439,6 +691,7 @@ pub fn apply_scene_update(
                         did_rebuild_shader_space: true,
                         texture_filter_override: None,
                         reset_viewport: false,
+                        previous_output_hash: None,
                     }
                 }
                 Err(panic_payload) => {
@@ -460,6 +713,7 @@ pub fn apply_scene_update(
                         did_rebuild_shader_space: true,
                         texture_filter_override: Some(wgpu::FilterMode::Linear),
                         reset_viewport: false,
+                        previous_output_hash: None,
                     }
                 }
             }
@@ -478,6 +732,7 @@ pub fn apply_scene_update(
                 did_rebuild_shader_space: true,
                 texture_filter_override: None,
                 reset_viewport: false,
+                previous_output_hash: None,
             }
         }
         ws::SceneUpdate::AnimationControl { action } => {
@@ -551,6 +806,7 @@ pub fn apply_scene_update(
                 did_rebuild_shader_space: false,
                 texture_filter_override: None,
                 reset_viewport: false,
+                previous_output_hash: None,
             }
         }
     }

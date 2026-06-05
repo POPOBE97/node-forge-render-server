@@ -35,7 +35,9 @@ pub mod wgsl_templates;
 
 // Re-export key types and functions for backward compatibility
 pub use node_compiler::compile_material_expr;
-pub use pass_debug::{PassDebugAstNode, PassDebugSource};
+pub use pass_debug::{
+    PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
+};
 pub use scene_prep::{PreparedScene, prepare_scene};
 pub use shader_space::{
     ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,

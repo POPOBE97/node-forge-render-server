@@ -7,8 +7,8 @@ use rust_wgpu_fiber::{
 
 use crate::{
     app::{
-        canvas, canvas::actions::CanvasAction, display_metrics, matrix_render, types::App,
-        window_mode,
+        canvas, canvas::actions::CanvasAction, display_metrics, matrix_render, scene_runtime,
+        texture_bridge, types::App, window_mode,
     },
     ui,
 };
@@ -19,6 +19,9 @@ pub enum AppCommand {
     PickReferenceImage,
     ClearReference,
     OpenPassDebug(String),
+    ApplyPassShaderPatch { pass_name: String, source: String },
+    ResetPassShaderPatch(String),
+    ResetAllPassShaderPatches,
     ToggleCanvasOnly,
     SetTestMode(crate::app::TestMode),
     ToggleMatrixPool(String),
@@ -132,8 +135,80 @@ pub fn dispatch(
             ui::pass_debug_window::open_pass_debug_window(
                 &mut app.shell.pass_debug_windows,
                 &app.shell.pass_debug_sources,
+                app.shell.pass_debug_sources_revision,
+                &app.shell.pass_shader_overrides,
                 pass_name,
             );
+        }
+        AppCommand::ApplyPassShaderPatch { pass_name, source } => {
+            match scene_runtime::apply_pass_shader_patch(
+                app,
+                render_state,
+                &pass_name,
+                source.clone(),
+            ) {
+                Ok(result) => {
+                    let status =
+                        sync_after_shader_rebuild(app, ctx, render_state, renderer, result, now);
+                    ui::pass_debug_window::mark_patch_applied(
+                        &mut app.shell.pass_debug_windows,
+                        &pass_name,
+                        app.shell.pass_debug_sources.get(&pass_name),
+                        app.shell.pass_debug_sources_revision,
+                        source,
+                        status,
+                    );
+                }
+                Err(err) => {
+                    ui::pass_debug_window::record_patch_error(
+                        &mut app.shell.pass_debug_windows,
+                        &pass_name,
+                        format!("{err:#}"),
+                    );
+                }
+            }
+        }
+        AppCommand::ResetPassShaderPatch(pass_name) => {
+            match scene_runtime::reset_pass_shader_patch(app, render_state, &pass_name) {
+                Ok(result) => {
+                    let status =
+                        sync_after_shader_rebuild(app, ctx, render_state, renderer, result, now);
+                    ui::pass_debug_window::mark_patch_reset(
+                        &mut app.shell.pass_debug_windows,
+                        &pass_name,
+                        app.shell.pass_debug_sources.get(&pass_name),
+                        app.shell.pass_debug_sources_revision,
+                        status,
+                    );
+                }
+                Err(err) => {
+                    ui::pass_debug_window::record_patch_error(
+                        &mut app.shell.pass_debug_windows,
+                        &pass_name,
+                        format!("{err:#}"),
+                    );
+                }
+            }
+        }
+        AppCommand::ResetAllPassShaderPatches => {
+            match scene_runtime::reset_all_pass_shader_patches(app, render_state) {
+                Ok(result) => {
+                    let status =
+                        sync_after_shader_rebuild(app, ctx, render_state, renderer, result, now);
+                    ui::pass_debug_window::mark_all_patches_reset(
+                        &mut app.shell.pass_debug_windows,
+                        &app.shell.pass_debug_sources,
+                        app.shell.pass_debug_sources_revision,
+                        status,
+                    );
+                }
+                Err(err) => {
+                    ui::pass_debug_window::record_all_patch_error(
+                        &mut app.shell.pass_debug_windows,
+                        format!("{err:#}"),
+                    );
+                }
+            }
         }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);
@@ -191,6 +266,52 @@ pub fn dispatch(
     }
 
     Ok(())
+}
+
+fn sync_after_shader_rebuild(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    result: scene_runtime::SceneApplyResult,
+    now: f64,
+) -> String {
+    if !result.did_rebuild_shader_space {
+        return "No shader rebuild needed".to_string();
+    }
+    render_current_shader_space(app, now);
+    let filter = result
+        .texture_filter_override
+        .unwrap_or(app.canvas.display.texture_filter);
+    let texture_name = app.core.output_texture_name.clone();
+    texture_bridge::sync_output_texture(app, render_state, renderer, &texture_name, filter);
+    let _ = canvas::display::sync_preview_source(app, render_state, renderer);
+    app.canvas.invalidation.preview_source_changed();
+    app.runtime.scene_redraw_pending = false;
+    ctx.request_repaint();
+    match (
+        result.previous_output_hash,
+        scene_runtime::current_output_hash(app),
+    ) {
+        (Some(before), Some(after)) if before != after => {
+            "Shader rebuild applied; output texture changed".to_string()
+        }
+        (Some(_), Some(_)) => "Shader rebuild applied; output texture unchanged".to_string(),
+        _ => "Shader rebuild applied; output change not measured".to_string(),
+    }
+}
+
+fn render_current_shader_space(app: &mut App, now: f64) {
+    let t = app.runtime.time_value_secs;
+    for pass in &mut app.core.passes {
+        let mut params = pass.base_params;
+        params.time = t;
+        let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
+    }
+    app.core.shader_space.render();
+    app.runtime
+        .render_texture_fps_tracker
+        .record_scene_redraw(now);
 }
 
 #[cfg(test)]

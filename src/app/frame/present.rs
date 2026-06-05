@@ -249,11 +249,28 @@ pub(super) fn run(
         }
     }
 
-    ui::pass_debug_window::show_pass_debug_windows(
+    for action in ui::pass_debug_window::show_pass_debug_windows(
         ctx,
         &mut app.shell.pass_debug_windows,
         &app.shell.pass_debug_sources,
-    );
+        app.shell.pass_debug_sources_revision,
+        &app.shell.pass_shader_overrides,
+    ) {
+        let command = match action {
+            ui::pass_debug_window::PassDebugWindowAction::ApplyPatch { pass_name, source } => {
+                AppCommand::ApplyPassShaderPatch { pass_name, source }
+            }
+            ui::pass_debug_window::PassDebugWindowAction::ResetPatch { pass_name } => {
+                AppCommand::ResetPassShaderPatch(pass_name)
+            }
+            ui::pass_debug_window::PassDebugWindowAction::ResetAllPatches => {
+                AppCommand::ResetAllPassShaderPatches
+            }
+        };
+        if let Err(err) = commands::dispatch(app, ctx, render_state, renderer, now, command) {
+            eprintln!("[app] pass debug command failed: {err:#}");
+        }
+    }
 
     interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     app.shell.prev_window_mode = frame_state.mode;

@@ -25,7 +25,7 @@ pub(super) fn run(app: &mut App, ctx: &egui::Context, frame: &mut eframe::Frame)
 
     let frame_time = ctx.input(|input| input.time);
     let render_state = frame.wgpu_render_state().unwrap();
-    let mut renderer_guard = frame.wgpu_render_state().unwrap().renderer.as_ref().write();
+    let mut renderer_guard = render_state.renderer.as_ref().write();
 
     let ingest = ingest::run(app, ctx, render_state, &mut renderer_guard, frame_time);
     if app.shell.test_mode == TestMode::Matrix {

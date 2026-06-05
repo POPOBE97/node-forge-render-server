@@ -746,6 +746,8 @@ fn main() -> Result<()> {
                 .with_options(renderer::ShaderSpaceBuildOptions {
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
+                    pass_shader_overrides: Default::default(),
+                    strict_pass_shader_overrides: false,
                 })
                 .build(&scene)
                 {

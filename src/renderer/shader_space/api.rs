@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use rust_wgpu_fiber::shader_space::ShaderSpace;
 use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 
@@ -40,6 +40,8 @@ impl Default for ShaderSpacePresentationMode {
 pub struct ShaderSpaceBuildOptions {
     pub presentation_mode: ShaderSpacePresentationMode,
     pub debug_dump_wgsl_dir: Option<PathBuf>,
+    pub pass_shader_overrides: HashMap<String, String>,
+    pub strict_pass_shader_overrides: bool,
 }
 
 pub struct ShaderSpaceBuildResult {
@@ -104,10 +106,15 @@ impl ShaderSpaceBuilder {
             presentation_mode: self.options.presentation_mode,
             debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
         };
-        let plan = RenderPlanner::new(plan_options).plan(
+        let mut plan = RenderPlanner::new(plan_options).plan(
             scene,
             self.asset_store.as_ref(),
             self.adapter.as_ref(),
+        )?;
+        apply_pass_shader_overrides(
+            &mut plan,
+            &self.options.pass_shader_overrides,
+            self.options.strict_pass_shader_overrides,
         )?;
         let finalized =
             ShaderSpaceFinalizer::finalize(&plan, self.device, self.queue, self.adapter.as_ref())?;
@@ -141,4 +148,66 @@ impl ShaderSpaceBuilder {
             pass_debug_sources: HashMap::new(),
         })
     }
+}
+
+fn apply_pass_shader_overrides(
+    plan: &mut crate::renderer::render_plan::types::RenderPlan,
+    overrides: &HashMap<String, String>,
+    strict: bool,
+) -> Result<()> {
+    if overrides.is_empty() {
+        return Ok(());
+    }
+
+    let mut applied = std::collections::HashSet::<String>::new();
+    for spec in &mut plan.resources.render_pass_specs {
+        let pass_name = spec.name.as_str();
+        if let Some(source) = overrides.get(pass_name) {
+            spec.shader_wgsl = source.clone();
+            plan.pass_debug_sources.insert(
+                pass_name.to_string(),
+                PassDebugSource::from_wgsl(pass_name, source.clone()),
+            );
+            applied.insert(pass_name.to_string());
+        }
+    }
+
+    for spec in &mut plan.resources.image_prepasses {
+        let pass_name = spec.pass_name.as_str();
+        if let Some(source) = overrides.get(pass_name) {
+            spec.shader_wgsl = source.clone();
+            plan.pass_debug_sources.insert(
+                pass_name.to_string(),
+                PassDebugSource::from_wgsl(pass_name, source.clone()),
+            );
+            applied.insert(pass_name.to_string());
+        }
+    }
+
+    for spec in &mut plan.resources.depth_resolve_passes {
+        let pass_name = spec.pass_name.as_str();
+        if let Some(source) = overrides.get(pass_name) {
+            spec.shader_wgsl = source.clone();
+            plan.pass_debug_sources.insert(
+                pass_name.to_string(),
+                PassDebugSource::from_wgsl(pass_name, source.clone()),
+            );
+            applied.insert(pass_name.to_string());
+        }
+    }
+
+    if strict && applied.len() != overrides.len() {
+        let mut missing = overrides
+            .keys()
+            .filter(|pass_name| !applied.contains(pass_name.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        missing.sort();
+        bail!(
+            "shader override did not match any current render pass: {}",
+            missing.join(", ")
+        );
+    }
+
+    Ok(())
 }
