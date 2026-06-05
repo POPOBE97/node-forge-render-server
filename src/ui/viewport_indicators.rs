@@ -189,6 +189,8 @@ impl ViewportIndicatorManager {
         let mut occupied_width = 0.0;
         let y = canvas_rect.min.y + VIEWPORT_INDICATOR_TOP_PAD;
         let right_edge = canvas_rect.max.x - VIEWPORT_INDICATOR_RIGHT_PAD;
+        let left_edge = canvas_rect.min.x + VIEWPORT_INDICATOR_RIGHT_PAD;
+        let available_width = (right_edge - left_edge).max(0.0);
 
         for entry in &entries {
             let anim_t = if entry.animated {
@@ -209,14 +211,19 @@ impl ViewportIndicatorManager {
             any_animating |= entry.animated && anim_t < 0.999;
 
             let width = entry.width(ui);
+            if entry.allow_overflow_collapse && occupied_width + width > available_width {
+                continue;
+            }
+
             let slide_x = if entry.animated {
-                (1.0 - anim_t) * 8.0
+                (1.0 - anim_t) * VIEWPORT_INDICATOR_ANIM_SLIDE_X
             } else {
                 0.0
             };
-            let x = right_edge - width - occupied_width + slide_x;
+            let x = right_edge - width - occupied_width;
             let rect =
                 Rect::from_min_size(pos2(x, y), egui::vec2(width, VIEWPORT_INDICATOR_ITEM_SIZE));
+            let paint_rect = rect.translate(egui::vec2(slide_x, 0.0));
 
             let response = match &entry.content {
                 ViewportIndicatorContent::Compact {
@@ -231,7 +238,14 @@ impl ViewportIndicatorManager {
                         kind: *kind,
                         strikethrough: *strikethrough,
                     };
-                    draw_viewport_indicator_at(ui, rect, &indicator, now, anim_t, entry.interaction)
+                    draw_viewport_indicator_at(
+                        ui,
+                        paint_rect,
+                        &indicator,
+                        now,
+                        anim_t,
+                        entry.interaction,
+                    )
                 }
                 ViewportIndicatorContent::TextBadge {
                     text,
@@ -241,7 +255,7 @@ impl ViewportIndicatorManager {
                     ..
                 } => draw_text_badge_at(
                     ui,
-                    rect,
+                    paint_rect,
                     text,
                     tooltip,
                     anim_t,
@@ -258,7 +272,7 @@ impl ViewportIndicatorManager {
                 clicked_callback_ids.push(callback_id.clone());
             }
 
-            occupied_width += anim_t * (width + VIEWPORT_INDICATOR_GAP);
+            occupied_width += width + VIEWPORT_INDICATOR_GAP;
         }
 
         self.entries = entries;
@@ -274,6 +288,7 @@ pub const VIEWPORT_INDICATOR_ITEM_SIZE: f32 = 20.0;
 pub const VIEWPORT_INDICATOR_GAP: f32 = 6.0;
 pub const VIEWPORT_INDICATOR_RIGHT_PAD: f32 = 8.0;
 pub const VIEWPORT_INDICATOR_TOP_PAD: f32 = 8.0;
+pub const VIEWPORT_INDICATOR_ANIM_SLIDE_X: f32 = 4.0;
 
 pub fn draw_viewport_indicator_at(
     ui: &mut egui::Ui,

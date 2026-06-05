@@ -35,6 +35,7 @@ use crate::{
 const ORDER_OPERATION: i32 = 0;
 const ORDER_RENDER_FPS: i32 = 1;
 const ORDER_PAUSE: i32 = 10;
+const ORDER_TEMPORARY_OUTPUT: i32 = 12;
 const ORDER_HDR: i32 = 15;
 const ORDER_SAMPLING: i32 = 20;
 const ORDER_REF_ALPHA: i32 = 21;
@@ -51,6 +52,22 @@ fn with_alpha(color: Color32, alpha: f32) -> Color32 {
 
 fn merge_frame_result(into: &mut CanvasFrameResult, next: CanvasFrameResult) {
     into.commands.extend(next.commands);
+}
+
+fn scene_has_temporary_output(scene: &crate::dsl::SceneDSL) -> bool {
+    scene.nodes.iter().any(|node| {
+        node.params
+            .get("__temporaryOutput")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    })
+}
+
+fn temporary_output_active(app: &App) -> bool {
+    app.runtime
+        .uniform_scene
+        .as_ref()
+        .is_some_and(scene_has_temporary_output)
 }
 
 fn apply_action(
@@ -276,6 +293,24 @@ fn draw_operation_indicators(
             interaction: ViewportIndicatorInteraction::HoverOnly,
             callback_id: None,
             ..ViewportIndicatorEntry::compact(
+                "temporary_output",
+                ORDER_TEMPORARY_OUTPUT,
+                temporary_output_active(app),
+                ViewportIndicator {
+                    icon: "T",
+                    tooltip: "Temporary Output preview is active",
+                    kind: ViewportIndicatorKind::Text,
+                    strikethrough: false,
+                },
+            )
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
                 "preview_hdr",
                 ORDER_HDR,
                 current_view_is_hdr,
@@ -371,6 +406,7 @@ fn draw_operation_indicators(
             .register(ViewportIndicatorEntry {
                 interaction: ViewportIndicatorInteraction::HoverOnly,
                 callback_id: None,
+                allow_overflow_collapse: true,
                 ..ViewportIndicatorEntry::text_badge(
                     "diff_stats",
                     ORDER_STATS,
@@ -489,6 +525,24 @@ fn draw_matrix_indicators(
                     icon: "PAUSE",
                     tooltip: "Time 更新已暂停（Space 恢复）",
                     kind: ViewportIndicatorKind::Failure,
+                    strikethrough: false,
+                },
+            )
+        });
+
+    app.canvas
+        .viewport_indicator_manager
+        .register(ViewportIndicatorEntry {
+            interaction: ViewportIndicatorInteraction::HoverOnly,
+            callback_id: None,
+            ..ViewportIndicatorEntry::compact(
+                "temporary_output",
+                ORDER_TEMPORARY_OUTPUT,
+                temporary_output_active(app),
+                ViewportIndicator {
+                    icon: "T",
+                    tooltip: "Temporary Output preview is active",
+                    kind: ViewportIndicatorKind::Text,
                     strikethrough: false,
                 },
             )
