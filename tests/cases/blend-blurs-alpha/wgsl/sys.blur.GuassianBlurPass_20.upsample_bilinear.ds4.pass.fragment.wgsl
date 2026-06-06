@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -40,7 +41,7 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  return textureSampleLevel(src_tex, src_samp, in.uv, 0.0);
  
 }

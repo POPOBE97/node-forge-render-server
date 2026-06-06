@@ -3,15 +3,27 @@
 //! This module keeps the UI-facing representation intentionally small: the
 //! original combined WGSL module plus collapsible trees built from Naga's IR.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 use naga::{Arena, Block, Expression, Function, Module, Statement};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PassDebugSourceRange {
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub line: u32,
+    pub column: u32,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PassDebugAstNode {
     pub label: String,
     pub target_id: Option<String>,
     pub role: Option<String>,
+    pub source_range: Option<PassDebugSourceRange>,
     pub children: Vec<PassDebugAstNode>,
 }
 
@@ -21,6 +33,7 @@ impl PassDebugAstNode {
             label: label.into(),
             target_id: None,
             role: None,
+            source_range: None,
             children: Vec::new(),
         }
     }
@@ -30,13 +43,25 @@ impl PassDebugAstNode {
             label: label.into(),
             target_id: None,
             role: None,
+            source_range: None,
             children,
         }
     }
 
-    fn with_target(mut self, target_id: impl Into<String>, role: impl Into<String>) -> Self {
+    fn with_source_range(mut self, source_range: Option<PassDebugSourceRange>) -> Self {
+        self.source_range = source_range;
+        self
+    }
+
+    fn with_target_range(
+        mut self,
+        target_id: impl Into<String>,
+        role: impl Into<String>,
+        source_range: Option<PassDebugSourceRange>,
+    ) -> Self {
         self.target_id = Some(target_id.into());
         self.role = Some(role.into());
+        self.source_range = source_range;
         self
     }
 }
@@ -48,6 +73,7 @@ pub struct PassDebugDependencyTarget {
     pub label: String,
     pub scope: String,
     pub kind: String,
+    pub source_range: Option<PassDebugSourceRange>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,11 +130,12 @@ impl PassDebugSource {
         let module_source = module_source.into();
         match naga::front::wgsl::parse_str(&module_source) {
             Ok(module) => {
-                let dependencies = build_dependency_debug(&module);
+                let dependencies = build_dependency_debug(&module, &module_source);
+                let ast_tree = module_to_ast_tree(&module, &module_source, &dependencies.targets);
                 Self {
                     pass_name,
                     module_source,
-                    ast_tree: module_to_ast_tree(&module),
+                    ast_tree,
                     dependency_targets: dependencies.targets,
                     dependency_trees: dependencies.trees,
                     dependency_error: dependencies.error,
@@ -131,12 +158,16 @@ impl PassDebugSource {
     }
 }
 
-pub fn module_to_ast_tree(module: &Module) -> Vec<PassDebugAstNode> {
+pub fn module_to_ast_tree(
+    module: &Module,
+    source: &str,
+    targets: &[PassDebugDependencyTarget],
+) -> Vec<PassDebugAstNode> {
     vec![
-        entry_points_node(module),
-        functions_node(module),
-        globals_node(module),
-        types_and_constants_node(module),
+        entry_points_node(module, source, targets),
+        functions_node(module, source, targets),
+        globals_node(module, targets),
+        types_and_constants_node(module, source),
     ]
 }
 
@@ -163,13 +194,17 @@ fn target_id_expr(scope: &str, handle: naga::Handle<Expression>) -> String {
     format!("{scope}::expr::{}", handle.index())
 }
 
-fn entry_points_node(module: &Module) -> PassDebugAstNode {
+fn entry_points_node(
+    module: &Module,
+    source: &str,
+    targets: &[PassDebugDependencyTarget],
+) -> PassDebugAstNode {
     let children = module
         .entry_points
         .iter()
         .map(|entry| {
             let scope = entry.name.as_str();
-            let mut children = function_children(scope, &entry.function);
+            let mut children = function_children(scope, &entry.function, source, targets);
             children.insert(
                 0,
                 PassDebugAstNode::leaf(format!("workgroup_size: {:?}", entry.workgroup_size)),
@@ -187,7 +222,11 @@ fn entry_points_node(module: &Module) -> PassDebugAstNode {
     )
 }
 
-fn functions_node(module: &Module) -> PassDebugAstNode {
+fn functions_node(
+    module: &Module,
+    source: &str,
+    targets: &[PassDebugDependencyTarget],
+) -> PassDebugAstNode {
     let children = module
         .functions
         .iter()
@@ -199,18 +238,19 @@ fn functions_node(module: &Module) -> PassDebugAstNode {
                     handle,
                     function.name.as_deref().unwrap_or("<anonymous function>")
                 ),
-                function_children(&scope, function),
+                function_children(&scope, function, source, targets),
             )
         })
         .collect();
     PassDebugAstNode::branch(format!("Functions ({})", module.functions.len()), children)
 }
 
-fn globals_node(module: &Module) -> PassDebugAstNode {
+fn globals_node(module: &Module, targets: &[PassDebugDependencyTarget]) -> PassDebugAstNode {
     let children = module
         .global_variables
         .iter()
         .map(|(handle, global)| {
+            let target_id = target_id_global(handle);
             PassDebugAstNode::branch(
                 format!(
                     "{:?} {}",
@@ -224,7 +264,11 @@ fn globals_node(module: &Module) -> PassDebugAstNode {
                     PassDebugAstNode::leaf(format!("init: {:?}", global.init)),
                 ],
             )
-            .with_target(target_id_global(handle), "global")
+            .with_target_range(
+                target_id.clone(),
+                "global",
+                target_source_range(targets, &target_id),
+            )
         })
         .collect();
     PassDebugAstNode::branch(
@@ -233,7 +277,7 @@ fn globals_node(module: &Module) -> PassDebugAstNode {
     )
 }
 
-fn types_and_constants_node(module: &Module) -> PassDebugAstNode {
+fn types_and_constants_node(module: &Module, source: &str) -> PassDebugAstNode {
     let type_children = module
         .types
         .iter()
@@ -301,12 +345,17 @@ fn types_and_constants_node(module: &Module) -> PassDebugAstNode {
                 format!("Overrides ({})", module.overrides.len()),
                 override_children,
             ),
-            expressions_group_node("Global Expressions", &module.global_expressions),
+            expressions_group_node("Global Expressions", &module.global_expressions, source),
         ],
     )
 }
 
-fn function_children(scope: &str, function: &Function) -> Vec<PassDebugAstNode> {
+fn function_children(
+    scope: &str,
+    function: &Function,
+    source: &str,
+    targets: &[PassDebugDependencyTarget],
+) -> Vec<PassDebugAstNode> {
     vec![
         PassDebugAstNode::branch(
             format!("Arguments ({})", function.arguments.len()),
@@ -315,6 +364,7 @@ fn function_children(scope: &str, function: &Function) -> Vec<PassDebugAstNode> 
                 .iter()
                 .enumerate()
                 .map(|(index, arg)| {
+                    let target_id = target_id_arg(scope, index as u32);
                     PassDebugAstNode::branch(
                         format!(
                             "{}: {}",
@@ -326,7 +376,11 @@ fn function_children(scope: &str, function: &Function) -> Vec<PassDebugAstNode> 
                             PassDebugAstNode::leaf(format!("binding: {:?}", arg.binding)),
                         ],
                     )
-                    .with_target(target_id_arg(scope, index as u32), "argument")
+                    .with_target_range(
+                        target_id.clone(),
+                        "argument",
+                        target_source_range(targets, &target_id),
+                    )
                 })
                 .collect(),
         ),
@@ -346,6 +400,7 @@ fn function_children(scope: &str, function: &Function) -> Vec<PassDebugAstNode> 
                 .local_variables
                 .iter()
                 .map(|(handle, local)| {
+                    let target_id = target_id_local(scope, handle);
                     PassDebugAstNode::branch(
                         format!(
                             "{:?} {}",
@@ -357,54 +412,80 @@ fn function_children(scope: &str, function: &Function) -> Vec<PassDebugAstNode> 
                             PassDebugAstNode::leaf(format!("init: {:?}", local.init)),
                         ],
                     )
-                    .with_target(target_id_local(scope, handle), "local")
+                    .with_target_range(
+                        target_id.clone(),
+                        "local",
+                        target_source_range(targets, &target_id),
+                    )
                 })
                 .collect(),
         ),
-        expressions_group_node_with_named("Expressions", scope, function),
+        expressions_group_node_with_named("Expressions", scope, function, source, targets),
         PassDebugAstNode::branch(
             "Body",
-            block_to_nodes(&function.body, &function.expressions, 0),
+            block_to_nodes(&function.body, &function.expressions, 0, source),
         ),
     ]
 }
 
-fn expressions_group_node(label: &str, expressions: &Arena<Expression>) -> PassDebugAstNode {
-    expressions_group_node_inner(label, expressions, None, &HashSet::new())
+fn expressions_group_node(
+    label: &str,
+    expressions: &Arena<Expression>,
+    source: &str,
+) -> PassDebugAstNode {
+    expressions_group_node_inner(label, expressions, source, None, &HashSet::new(), &[])
 }
 
 fn expressions_group_node_with_named(
     label: &str,
     scope: &str,
     function: &Function,
+    source: &str,
+    targets: &[PassDebugDependencyTarget],
 ) -> PassDebugAstNode {
     let named_handles = function
         .named_expressions
         .keys()
         .copied()
         .collect::<HashSet<_>>();
-    expressions_group_node_inner(label, &function.expressions, Some(scope), &named_handles)
+    expressions_group_node_inner(
+        label,
+        &function.expressions,
+        source,
+        Some(scope),
+        &named_handles,
+        targets,
+    )
 }
 
 fn expressions_group_node_inner(
     label: &str,
     expressions: &Arena<Expression>,
+    source: &str,
     scope: Option<&str>,
     named_handles: &HashSet<naga::Handle<Expression>>,
+    targets: &[PassDebugDependencyTarget],
 ) -> PassDebugAstNode {
     PassDebugAstNode::branch(
         format!("{label} ({})", expressions.len()),
         expressions
             .iter()
             .map(|(handle, expr)| {
+                let source_range = source_range_from_span(source, expressions.get_span(handle));
                 let node = PassDebugAstNode::branch(
                     expression_label(handle, expr),
-                    expression_children(expr, expressions, 0),
-                );
+                    expression_children(expr, expressions, source, 0),
+                )
+                .with_source_range(source_range);
                 if let Some(scope) = scope
                     && named_handles.contains(&handle)
                 {
-                    node.with_target(target_id_expr(scope, handle), "let")
+                    let target_id = target_id_expr(scope, handle);
+                    node.with_target_range(
+                        target_id.clone(),
+                        "let",
+                        target_source_range(targets, &target_id).or(source_range),
+                    )
                 } else {
                     node
                 }
@@ -417,13 +498,14 @@ fn block_to_nodes(
     block: &Block,
     expressions: &Arena<Expression>,
     depth: usize,
+    source: &str,
 ) -> Vec<PassDebugAstNode> {
     block
         .iter()
         .enumerate()
         .map(|(index, stmt)| {
             let label = format!("{index}: {}", statement_kind_label(stmt));
-            PassDebugAstNode::branch(label, statement_children(stmt, expressions, depth))
+            PassDebugAstNode::branch(label, statement_children(stmt, expressions, source, depth))
         })
         .collect()
 }
@@ -457,14 +539,15 @@ fn statement_kind_label(stmt: &Statement) -> String {
 fn statement_children(
     stmt: &Statement,
     expressions: &Arena<Expression>,
+    source: &str,
     depth: usize,
 ) -> Vec<PassDebugAstNode> {
     match stmt {
         Statement::Emit(range) => range
             .clone()
-            .map(|handle| expression_node(handle, expressions, depth + 1))
+            .map(|handle| expression_node(handle, expressions, source, depth + 1))
             .collect(),
-        Statement::Block(block) => block_to_nodes(block, expressions, depth + 1),
+        Statement::Block(block) => block_to_nodes(block, expressions, depth + 1, source),
         Statement::If {
             condition,
             accept,
@@ -472,20 +555,26 @@ fn statement_children(
         } => vec![
             PassDebugAstNode::branch(
                 "condition",
-                vec![expression_node(*condition, expressions, depth + 1)],
+                vec![expression_node(*condition, expressions, source, depth + 1)],
             ),
-            PassDebugAstNode::branch("accept", block_to_nodes(accept, expressions, depth + 1)),
-            PassDebugAstNode::branch("reject", block_to_nodes(reject, expressions, depth + 1)),
+            PassDebugAstNode::branch(
+                "accept",
+                block_to_nodes(accept, expressions, depth + 1, source),
+            ),
+            PassDebugAstNode::branch(
+                "reject",
+                block_to_nodes(reject, expressions, depth + 1, source),
+            ),
         ],
         Statement::Switch { selector, cases } => {
             let mut children = vec![PassDebugAstNode::branch(
                 "selector",
-                vec![expression_node(*selector, expressions, depth + 1)],
+                vec![expression_node(*selector, expressions, source, depth + 1)],
             )];
             children.extend(cases.iter().map(|case| {
                 PassDebugAstNode::branch(
                     format!("case {:?} fall_through={}", case.value, case.fall_through),
-                    block_to_nodes(&case.body, expressions, depth + 1),
+                    block_to_nodes(&case.body, expressions, depth + 1, source),
                 )
             }));
             children
@@ -495,29 +584,29 @@ fn statement_children(
             continuing,
             break_if,
         } => vec![
-            PassDebugAstNode::branch("body", block_to_nodes(body, expressions, depth + 1)),
+            PassDebugAstNode::branch("body", block_to_nodes(body, expressions, depth + 1, source)),
             PassDebugAstNode::branch(
                 "continuing",
-                block_to_nodes(continuing, expressions, depth + 1),
+                block_to_nodes(continuing, expressions, depth + 1, source),
             ),
             PassDebugAstNode::branch(
                 "break_if",
                 break_if
-                    .map(|expr| vec![expression_node(expr, expressions, depth + 1)])
+                    .map(|expr| vec![expression_node(expr, expressions, source, depth + 1)])
                     .unwrap_or_else(|| vec![PassDebugAstNode::leaf("none")]),
             ),
         ],
         Statement::Return { value } => value
-            .map(|expr| vec![expression_node(expr, expressions, depth + 1)])
+            .map(|expr| vec![expression_node(expr, expressions, source, depth + 1)])
             .unwrap_or_default(),
         Statement::Store { pointer, value } => vec![
             PassDebugAstNode::branch(
                 "pointer",
-                vec![expression_node(*pointer, expressions, depth + 1)],
+                vec![expression_node(*pointer, expressions, source, depth + 1)],
             ),
             PassDebugAstNode::branch(
                 "value",
-                vec![expression_node(*value, expressions, depth + 1)],
+                vec![expression_node(*value, expressions, source, depth + 1)],
             ),
         ],
         Statement::ImageStore {
@@ -527,6 +616,7 @@ fn statement_children(
             value,
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("image", Some(*image)),
@@ -542,6 +632,7 @@ fn statement_children(
             ..
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("pointer", Some(*pointer)),
@@ -551,6 +642,7 @@ fn statement_children(
         ),
         Statement::WorkGroupUniformLoad { pointer, result } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("pointer", Some(*pointer)), ("result", Some(*result))],
         ),
@@ -563,14 +655,14 @@ fn statement_children(
                 .map(|(index, arg)| {
                     PassDebugAstNode::branch(
                         format!("arg {index}"),
-                        vec![expression_node(*arg, expressions, depth + 1)],
+                        vec![expression_node(*arg, expressions, source, depth + 1)],
                     )
                 })
                 .collect();
             if let Some(result) = result {
                 children.push(PassDebugAstNode::branch(
                     "result",
-                    vec![expression_node(*result, expressions, depth + 1)],
+                    vec![expression_node(*result, expressions, source, depth + 1)],
                 ));
             }
             children
@@ -578,11 +670,12 @@ fn statement_children(
         Statement::RayQuery { query, .. } => {
             vec![PassDebugAstNode::branch(
                 "query",
-                vec![expression_node(*query, expressions, depth + 1)],
+                vec![expression_node(*query, expressions, source, depth + 1)],
             )]
         }
         Statement::SubgroupBallot { result, predicate } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("result", Some(*result)), ("predicate", *predicate)],
         ),
@@ -590,6 +683,7 @@ fn statement_children(
             argument, result, ..
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("argument", Some(*argument)), ("result", Some(*result))],
         ),
@@ -597,6 +691,7 @@ fn statement_children(
             argument, result, ..
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("argument", Some(*argument)), ("result", Some(*result))],
         ),
@@ -607,13 +702,15 @@ fn statement_children(
 fn expression_node(
     handle: naga::Handle<Expression>,
     expressions: &Arena<Expression>,
+    source: &str,
     depth: usize,
 ) -> PassDebugAstNode {
     let expr = &expressions[handle];
     PassDebugAstNode::branch(
         expression_label(handle, expr),
-        expression_children(expr, expressions, depth),
+        expression_children(expr, expressions, source, depth),
     )
+    .with_source_range(source_range_from_span(source, expressions.get_span(handle)))
 }
 
 fn expression_label(handle: naga::Handle<Expression>, expr: &Expression) -> String {
@@ -665,6 +762,7 @@ fn expression_kind_label(expr: &Expression) -> String {
 fn expression_children(
     expr: &Expression,
     expressions: &Arena<Expression>,
+    source: &str,
     depth: usize,
 ) -> Vec<PassDebugAstNode> {
     const MAX_EXPR_DEPTH: usize = 8;
@@ -679,26 +777,27 @@ fn expression_children(
             .map(|(index, component)| {
                 PassDebugAstNode::branch(
                     format!("component {index}"),
-                    vec![expression_node(*component, expressions, depth + 1)],
+                    vec![expression_node(*component, expressions, source, depth + 1)],
                 )
             })
             .collect(),
         Expression::Access { base, index } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("base", Some(*base)), ("index", Some(*index))],
         ),
         Expression::AccessIndex { base, .. } => {
-            expr_list_nodes(expressions, depth, &[("base", Some(*base))])
+            expr_list_nodes(expressions, source, depth, &[("base", Some(*base))])
         }
         Expression::Splat { value, .. } => {
-            expr_list_nodes(expressions, depth, &[("value", Some(*value))])
+            expr_list_nodes(expressions, source, depth, &[("value", Some(*value))])
         }
         Expression::Swizzle { vector, .. } => {
-            expr_list_nodes(expressions, depth, &[("vector", Some(*vector))])
+            expr_list_nodes(expressions, source, depth, &[("vector", Some(*vector))])
         }
         Expression::Load { pointer } => {
-            expr_list_nodes(expressions, depth, &[("pointer", Some(*pointer))])
+            expr_list_nodes(expressions, source, depth, &[("pointer", Some(*pointer))])
         }
         Expression::ImageSample {
             image,
@@ -710,6 +809,7 @@ fn expression_children(
             ..
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("image", Some(*image)),
@@ -728,6 +828,7 @@ fn expression_children(
             level,
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("image", Some(*image)),
@@ -738,13 +839,14 @@ fn expression_children(
             ],
         ),
         Expression::ImageQuery { image, .. } => {
-            expr_list_nodes(expressions, depth, &[("image", Some(*image))])
+            expr_list_nodes(expressions, source, depth, &[("image", Some(*image))])
         }
         Expression::Unary { expr, .. } => {
-            expr_list_nodes(expressions, depth, &[("expr", Some(*expr))])
+            expr_list_nodes(expressions, source, depth, &[("expr", Some(*expr))])
         }
         Expression::Binary { left, right, .. } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[("left", Some(*left)), ("right", Some(*right))],
         ),
@@ -754,6 +856,7 @@ fn expression_children(
             reject,
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("condition", Some(*condition)),
@@ -762,10 +865,10 @@ fn expression_children(
             ],
         ),
         Expression::Derivative { expr, .. } => {
-            expr_list_nodes(expressions, depth, &[("expr", Some(*expr))])
+            expr_list_nodes(expressions, source, depth, &[("expr", Some(*expr))])
         }
         Expression::Relational { argument, .. } => {
-            expr_list_nodes(expressions, depth, &[("argument", Some(*argument))])
+            expr_list_nodes(expressions, source, depth, &[("argument", Some(*argument))])
         }
         Expression::Math {
             arg,
@@ -775,6 +878,7 @@ fn expression_children(
             ..
         } => expr_list_nodes(
             expressions,
+            source,
             depth,
             &[
                 ("arg", Some(*arg)),
@@ -784,10 +888,10 @@ fn expression_children(
             ],
         ),
         Expression::As { expr, .. } => {
-            expr_list_nodes(expressions, depth, &[("expr", Some(*expr))])
+            expr_list_nodes(expressions, source, depth, &[("expr", Some(*expr))])
         }
         Expression::RayQueryGetIntersection { query, .. } => {
-            expr_list_nodes(expressions, depth, &[("query", Some(*query))])
+            expr_list_nodes(expressions, source, depth, &[("query", Some(*query))])
         }
         other => vec![PassDebugAstNode::leaf(format!("{other:#?}"))],
     }
@@ -795,6 +899,7 @@ fn expression_children(
 
 fn expr_list_nodes(
     expressions: &Arena<Expression>,
+    source: &str,
     depth: usize,
     handles: &[(&str, Option<naga::Handle<Expression>>)],
 ) -> Vec<PassDebugAstNode> {
@@ -804,7 +909,7 @@ fn expr_list_nodes(
             handle.map(|handle| {
                 PassDebugAstNode::branch(
                     *label,
-                    vec![expression_node(handle, expressions, depth + 1)],
+                    vec![expression_node(handle, expressions, source, depth + 1)],
                 )
             })
         })
@@ -874,6 +979,7 @@ struct CallDependency {
 
 struct DependencyAnalyzer<'a> {
     module: &'a Module,
+    source: &'a str,
     functions: HashMap<String, &'a Function>,
     function_handles: HashMap<naga::Handle<Function>, String>,
     targets: Vec<PassDebugDependencyTarget>,
@@ -884,9 +990,10 @@ struct DependencyAnalyzer<'a> {
 }
 
 impl<'a> DependencyAnalyzer<'a> {
-    fn new(module: &'a Module) -> Self {
+    fn new(module: &'a Module, source: &'a str) -> Self {
         let mut analyzer = Self {
             module,
+            source,
             functions: HashMap::new(),
             function_handles: HashMap::new(),
             targets: Vec::new(),
@@ -1008,6 +1115,7 @@ impl<'a> DependencyAnalyzer<'a> {
         if self.target_kinds.contains_key(&id) {
             return;
         }
+        let source_range = self.source_range_for_target(&target_kind, &name);
         self.target_kinds.insert(id.clone(), target_kind);
         self.targets.push(PassDebugDependencyTarget {
             id,
@@ -1015,7 +1123,41 @@ impl<'a> DependencyAnalyzer<'a> {
             label,
             scope,
             kind,
+            source_range,
         });
+    }
+
+    fn source_range_for_target(
+        &self,
+        target_kind: &TargetKind,
+        name: &str,
+    ) -> Option<PassDebugSourceRange> {
+        match target_kind {
+            TargetKind::Global(handle) => self
+                .module
+                .global_variables
+                .get_span(*handle)
+                .to_range()
+                .and_then(|range| find_identifier_range(self.source, range, name))
+                .or_else(|| find_global_identifier_range(self.source, name)),
+            TargetKind::Argument { scope, .. } => {
+                find_argument_identifier_range(self.source, scope, name)
+            }
+            TargetKind::Local { scope, handle } => self
+                .functions
+                .get(scope)
+                .and_then(|function| function.local_variables.get_span(*handle).to_range())
+                .and_then(|range| find_identifier_range(self.source, range, name))
+                .or_else(|| find_keyword_identifier_in_scope(self.source, scope, "var", name)),
+            TargetKind::NamedExpression { scope, handle } => {
+                find_keyword_identifier_in_scope(self.source, scope, "let", name).or_else(|| {
+                    self.functions
+                        .get(scope)
+                        .and_then(|function| function.expressions.get_span(*handle).to_range())
+                        .and_then(|range| source_range_from_byte_range(self.source, range))
+                })
+            }
+        }
     }
 
     fn collect_block_dependencies(
@@ -1800,8 +1942,214 @@ fn expr_ref_scope(expr_ref: &ExprRef) -> &str {
     }
 }
 
-fn build_dependency_debug(module: &Module) -> DependencyDebugBuild {
-    DependencyAnalyzer::new(module).into_debug()
+fn target_source_range(
+    targets: &[PassDebugDependencyTarget],
+    target_id: &str,
+) -> Option<PassDebugSourceRange> {
+    targets
+        .iter()
+        .find(|target| target.id == target_id)
+        .and_then(|target| target.source_range)
+}
+
+fn source_range_from_span(source: &str, span: naga::Span) -> Option<PassDebugSourceRange> {
+    span.to_range()
+        .and_then(|range| source_range_from_byte_range(source, range))
+}
+
+fn source_range_from_byte_range(source: &str, range: Range<usize>) -> Option<PassDebugSourceRange> {
+    if range.start >= range.end
+        || range.end > source.len()
+        || !source.is_char_boundary(range.start)
+        || !source.is_char_boundary(range.end)
+    {
+        return None;
+    }
+    let start = u32::try_from(range.start).ok()?;
+    let end = u32::try_from(range.end).ok()?;
+    let location = naga::Span::new(start, end).location(source);
+    Some(PassDebugSourceRange {
+        start_byte: range.start,
+        end_byte: range.end,
+        line: location.line_number,
+        column: location.line_position,
+    })
+}
+
+fn find_identifier_range(
+    source: &str,
+    range: Range<usize>,
+    name: &str,
+) -> Option<PassDebugSourceRange> {
+    if name.is_empty() || range.start >= range.end || range.end > source.len() {
+        return None;
+    }
+
+    let haystack = &source[range.clone()];
+    let mut offset = 0;
+    while let Some(relative) = haystack[offset..].find(name) {
+        let start = range.start + offset + relative;
+        let end = start + name.len();
+        if is_identifier_start_boundary(source, start) && is_identifier_end_boundary(source, end) {
+            return source_range_from_byte_range(source, start..end);
+        }
+        offset += relative + name.len();
+    }
+    None
+}
+
+fn find_global_identifier_range(source: &str, name: &str) -> Option<PassDebugSourceRange> {
+    find_identifier_range(source, 0..source.len(), name)
+}
+
+fn find_argument_identifier_range(
+    source: &str,
+    scope: &str,
+    name: &str,
+) -> Option<PassDebugSourceRange> {
+    let function_range = find_function_range(source, scope)?;
+    let signature_end = source[function_range.clone()]
+        .find('{')
+        .map(|offset| function_range.start + offset)
+        .unwrap_or(function_range.end);
+    find_identifier_range(source, function_range.start..signature_end, name)
+}
+
+fn find_keyword_identifier_in_scope(
+    source: &str,
+    scope: &str,
+    keyword: &str,
+    name: &str,
+) -> Option<PassDebugSourceRange> {
+    let function_range = find_function_range(source, scope)?;
+    find_keyword_identifier_range(source, function_range, keyword, name)
+}
+
+fn find_keyword_identifier_range(
+    source: &str,
+    range: Range<usize>,
+    keyword: &str,
+    name: &str,
+) -> Option<PassDebugSourceRange> {
+    if keyword.is_empty() || name.is_empty() || range.end > source.len() {
+        return None;
+    }
+
+    let haystack = &source[range.clone()];
+    let mut offset = 0;
+    while let Some(relative) = haystack[offset..].find(keyword) {
+        let keyword_start = range.start + offset + relative;
+        let keyword_end = keyword_start + keyword.len();
+        if is_identifier_start_boundary(source, keyword_start)
+            && is_identifier_end_boundary(source, keyword_end)
+        {
+            let mut name_start = keyword_end;
+            while name_start < range.end {
+                let byte = source.as_bytes()[name_start];
+                if byte.is_ascii_whitespace() {
+                    name_start += 1;
+                } else {
+                    break;
+                }
+            }
+            let name_end = name_start + name.len();
+            if name_end <= range.end
+                && &source[name_start..name_end] == name
+                && is_identifier_start_boundary(source, name_start)
+                && is_identifier_end_boundary(source, name_end)
+            {
+                return source_range_from_byte_range(source, name_start..name_end);
+            }
+        }
+        offset += relative + keyword.len();
+    }
+    None
+}
+
+fn find_function_range(source: &str, scope: &str) -> Option<Range<usize>> {
+    let mut offset = 0;
+    while let Some(relative) = source[offset..].find("fn") {
+        let fn_start = offset + relative;
+        let fn_end = fn_start + 2;
+        if !is_identifier_start_boundary(source, fn_start)
+            || !is_identifier_end_boundary(source, fn_end)
+        {
+            offset = fn_end;
+            continue;
+        }
+
+        let mut name_start = fn_end;
+        while name_start < source.len() && source.as_bytes()[name_start].is_ascii_whitespace() {
+            name_start += 1;
+        }
+        let name_end = name_start + scope.len();
+        if name_end <= source.len()
+            && &source[name_start..name_end] == scope
+            && is_identifier_start_boundary(source, name_start)
+            && is_identifier_end_boundary(source, name_end)
+        {
+            let body_start = source[name_end..]
+                .find('{')
+                .map(|relative| name_end + relative);
+            let function_end = body_start
+                .and_then(|start| find_matching_brace(source, start))
+                .map(|end| end + 1)
+                .unwrap_or(source.len());
+            return Some(fn_start..function_end);
+        }
+
+        offset = fn_end;
+    }
+    None
+}
+
+fn find_matching_brace(source: &str, open_brace: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, byte) in source.as_bytes().iter().enumerate().skip(open_brace) {
+        match *byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_identifier_start_boundary(source: &str, byte_index: usize) -> bool {
+    if byte_index > source.len() {
+        return false;
+    }
+    !byte_index
+        .checked_sub(1)
+        .and_then(|index| source.as_bytes().get(index))
+        .copied()
+        .map(is_wgsl_identifier_byte)
+        .unwrap_or(false)
+}
+
+fn is_identifier_end_boundary(source: &str, byte_index: usize) -> bool {
+    if byte_index > source.len() {
+        return false;
+    }
+    !source
+        .as_bytes()
+        .get(byte_index)
+        .copied()
+        .map(is_wgsl_identifier_byte)
+        .unwrap_or(false)
+}
+
+fn is_wgsl_identifier_byte(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphanumeric()
+}
+
+fn build_dependency_debug(module: &Module, source: &str) -> DependencyDebugBuild {
+    DependencyAnalyzer::new(module, source).into_debug()
 }
 
 #[cfg(test)]
@@ -1815,6 +2163,20 @@ mod tests {
             .unwrap_or_else(|| panic!("missing dependency target named {name}"))
             .id
             .clone()
+    }
+
+    fn assert_target_range_selects_name(doc: &PassDebugSource, name: &str) {
+        let target = doc
+            .dependency_targets
+            .iter()
+            .find(|target| target.name == name)
+            .unwrap_or_else(|| panic!("missing dependency target named {name}"));
+        let range = target
+            .source_range
+            .unwrap_or_else(|| panic!("missing source range for target named {name}"));
+        assert_eq!(&doc.module_source[range.start_byte..range.end_byte], name);
+        assert!(range.line > 0);
+        assert!(range.column > 0);
     }
 
     fn flatten_dependency_labels(node: &PassDebugDependencyNode, out: &mut Vec<String>) {
@@ -1922,6 +2284,27 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
         assert_labels_contain(&x_labels, "[store 0]");
         assert_labels_contain(&x_labels, "[rhs]");
         assert_labels_contain(&x_labels, "fs_main let y");
+    }
+
+    #[test]
+    fn dependency_targets_include_source_ranges_for_names() {
+        let source = r#"
+@group(0) @binding(0) var<uniform> threshold: f32;
+
+@fragment
+fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
+    var x: f32 = 0.0;
+    let y = uv.x + threshold;
+    return vec4f(y, x, x, 1.0);
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("ranges.pass", source);
+
+        assert!(doc.parse_error.is_none());
+        for name in ["threshold", "uv", "x", "y"] {
+            assert_target_range_selects_name(&doc, name);
+        }
     }
 
     #[test]

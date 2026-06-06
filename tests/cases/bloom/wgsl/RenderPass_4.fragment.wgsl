@@ -35,7 +35,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_7
-    node_ColorInput_7_fa5c7029: vec4f,
+    color_input_7: vec4f,
 };
 
 @group(0) @binding(2)
@@ -45,7 +45,7 @@ var<uniform> graph_inputs: GraphInputs;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_45_(uv: vec2<f32>, t: f32) -> vec3<f32> {
+fn mc_math_closure(uv: vec2<f32>, t: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var output: vec3<f32> = vec3(0f);
@@ -79,6 +79,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let _frag_out = vec4f((graph_inputs.node_ColorInput_7_fa5c7029).rgb * (graph_inputs.node_ColorInput_7_fa5c7029).a, (graph_inputs.node_ColorInput_7_fa5c7029).a);
+    // Final composite
+    let _frag_out = vec4f((graph_inputs.color_input_7).rgb * (graph_inputs.color_input_7).a, (graph_inputs.color_input_7).a);
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

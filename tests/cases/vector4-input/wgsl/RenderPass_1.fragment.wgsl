@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: Vector4Input_1
-    node_Vector4Input_1_7e5c0a36: vec4f,
+    vector4_input_1: vec4f,
 };
 
 @group(0) @binding(2)
@@ -45,6 +45,7 @@ var<storage, read> baked_data_parse: array<vec4f>;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let _frag_out = (graph_inputs.node_Vector4Input_1_7e5c0a36);
+    // Final composite
+    let _frag_out = (graph_inputs.vector4_input_1);
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

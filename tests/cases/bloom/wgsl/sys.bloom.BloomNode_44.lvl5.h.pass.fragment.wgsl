@@ -41,7 +41,7 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  let original = vec2f(textureDimensions(src_tex));
  let xy = in.uv * original;
  let k = array<f32, 8>(0.454015613, 0.045984387, 0, 0, 0, 0, 0, 0);

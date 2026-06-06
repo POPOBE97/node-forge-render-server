@@ -48,7 +48,7 @@ var pass_samp_Upsample_41: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_42_(uv: vec2<f32>) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var output: vec4<f32> = vec4(0f);
     var c_l0_: vec4<f32>;

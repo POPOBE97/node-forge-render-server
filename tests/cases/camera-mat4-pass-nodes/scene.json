@@ -74,6 +74,17 @@
       }
     },
     {
+      "id": "Kernel_1",
+      "type": "Kernel",
+      "position": { "x": 180, "y": 360 },
+      "width": 160,
+      "label": "Kernel",
+      "params": {
+        "preset": "CrossBox",
+        "source": "// Return a kernel object: { width, height, value }\n// - width/height: number\n// - value: number[] (row-major, length = width * height)\n\nreturn {\n  width: 3,\n  height: 3,\n  value: [\n    0, 0.25, 0,\n    0.25, 0, 0.25,\n    0, 0.25, 0,\n  ],\n};\n"
+      }
+    },
+    {
       "id": "RenderPass_1",
       "type": "RenderPass",
       "position": { "x": 180, "y": 180 },
@@ -181,31 +192,36 @@
     },
     {
       "id": "edge_7",
+      "from": { "nodeId": "Kernel_1", "portId": "kernel" },
+      "to": { "nodeId": "Downsample_1", "portId": "kernel" }
+    },
+    {
+      "id": "edge_8",
       "from": { "nodeId": "Downsample_1", "portId": "output" },
       "to": { "nodeId": "Upsample_1", "portId": "source" }
     },
     {
-      "id": "edge_8",
+      "id": "edge_9",
       "from": { "nodeId": "OrthographicCamera_1", "portId": "camera" },
       "to": { "nodeId": "Upsample_1", "portId": "camera" }
     },
     {
-      "id": "edge_9",
+      "id": "edge_10",
       "from": { "nodeId": "Upsample_1", "portId": "output" },
       "to": { "nodeId": "Composite_1", "portId": "pass" }
     },
     {
-      "id": "edge_10",
+      "id": "edge_11",
       "from": { "nodeId": "OrthographicCamera_1", "portId": "camera" },
       "to": { "nodeId": "Composite_1", "portId": "camera" }
     },
     {
-      "id": "edge_11",
+      "id": "edge_12",
       "from": { "nodeId": "RenderTexture_1", "portId": "texture" },
       "to": { "nodeId": "Composite_1", "portId": "target" }
     },
     {
-      "id": "edge_12",
+      "id": "edge_13",
       "from": { "nodeId": "Composite_1", "portId": "pass" },
       "to": { "nodeId": "Screen_1", "portId": "pass" }
     }

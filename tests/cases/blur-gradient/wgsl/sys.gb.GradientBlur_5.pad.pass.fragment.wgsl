@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -40,7 +41,7 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let padded_size = vec2f(1152.0, 2496.0);
+let padded_size = vec2f(1152.0, 2496.0);
     let src_size = vec2f(1080.0, 2400.0);
     let offset = vec2f(36.0, 48.0);
     let src_coord = in.uv * padded_size - offset;

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
-use crate::renderer::utils::{fmt_f32, sanitize_wgsl_ident};
+use crate::renderer::utils::fmt_f32;
 
 fn substitute_template(template: &str, vars: &[(&str, String)]) -> String {
     let mut result = String::with_capacity(template.len());
@@ -290,8 +290,6 @@ fn ensure_glass_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) {
     if ctx.extra_wgsl_decls.contains_key(&lib_key) {
         return;
     }
-
-    ctx.needs_f16 = true;
 
     let (helpers, _) = glass_template_parts(node);
     let header = if node.wgsl_override.is_some() {
@@ -610,7 +608,8 @@ where
         expect_ty(sdf_tex, ValueType::Texture2D, "uSdfTex")?;
     }
 
-    let out_var = format!("glass_out_{}", sanitize_wgsl_ident(&node.id));
+    let out_var =
+        super::readable_node_temp_name(ctx, "fs", node, _out_port.unwrap_or("color"), "out");
 
     let has_fg_light = fg_blur.is_some();
     let (fg_tex, fg_samp) = if let Some((_, tex, samp)) = fg_blur.clone() {

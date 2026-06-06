@@ -609,7 +609,7 @@ fn glass_texture_map(
 
      // --- Final adjustments ---
      glass_mat = vec4f(pow(glass_mat.rgb, vec3f({{uInnerColorPow}})), glass_mat.a);
-     
+
      // --- Apply unshade factor ---
      glass_mat = vec4f(mix(glass_mat.rgb, {{uInnerGlassColor}}.rgb, {{uBionicUnShade}}), glass_mat.a);
 

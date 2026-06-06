@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -74,7 +75,7 @@ var pass_samp_sys_gb_GradientBlur_5_mip6: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_7_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> f32 {
+fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;

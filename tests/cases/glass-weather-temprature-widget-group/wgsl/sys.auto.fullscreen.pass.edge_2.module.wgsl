@@ -89,6 +89,15 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let _frag_out = textureSample(img_tex_ImageTexture_2, img_samp_ImageTexture_2, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_ImageTexture_2)), in.geo_size_px));
+    // ImageTexture ImageTexture_2 aspect-correct uv
+    let background_uv = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_ImageTexture_2)),
+        in.geo_size_px,
+    );
+    // ImageTexture ImageTexture_2.color
+    let background_sample = textureSample(img_tex_ImageTexture_2, img_samp_ImageTexture_2, background_uv);
+    // Final composite
+    let _frag_out = background_sample;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

@@ -37,6 +37,15 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
     }
 }
 
+fn write_golden_text(case_name: &str, path: &Path, contents: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("case {case_name}: create dir {:?}: {e}", parent));
+    }
+    std::fs::write(path, contents)
+        .unwrap_or_else(|e| panic!("case {case_name}: write {:?}: {e}", path));
+}
+
 fn default_expected_image_texture(case_name: &'static str) -> Option<&'static str> {
     // Most cases validate against a baseline.png. Some cases are easier to validate by
     // comparing the output against the input ImageTexture bytes (with the same alpha-mode
@@ -417,24 +426,13 @@ fn run_case(case: &Case) {
         let expected_module_path = wgsl_dir.join(format!("{pass_id}.module.wgsl"));
 
         if update_goldens {
-            std::fs::write(&expected_vertex_path, &bundle.vertex).unwrap_or_else(|e| {
-                panic!("case {}: write {:?}: {e}", case.name, expected_vertex_path)
-            });
-            std::fs::write(&expected_fragment_path, &bundle.fragment).unwrap_or_else(|e| {
-                panic!(
-                    "case {}: write {:?}: {e}",
-                    case.name, expected_fragment_path
-                )
-            });
-            std::fs::write(&expected_module_path, &bundle.module).unwrap_or_else(|e| {
-                panic!("case {}: write {:?}: {e}", case.name, expected_module_path)
-            });
+            write_golden_text(case.name, &expected_vertex_path, &bundle.vertex);
+            write_golden_text(case.name, &expected_fragment_path, &bundle.fragment);
+            write_golden_text(case.name, &expected_module_path, &bundle.module);
 
             if let Some(compute) = &bundle.compute {
                 let expected_compute_path = wgsl_dir.join(format!("{pass_id}.compute.wgsl"));
-                std::fs::write(&expected_compute_path, compute).unwrap_or_else(|e| {
-                    panic!("case {}: write {:?}: {e}", case.name, expected_compute_path)
-                });
+                write_golden_text(case.name, &expected_compute_path, compute);
             }
         } else {
             let expected_vertex =
@@ -507,27 +505,27 @@ fn run_case(case: &Case) {
         )
     });
     for (pass_id, bundle) in &passes {
-        std::fs::write(
-            out_wgsl_dir.join(format!("{pass_id}.vertex.wgsl")),
+        write_golden_text(
+            case.name,
+            &out_wgsl_dir.join(format!("{pass_id}.vertex.wgsl")),
             &bundle.vertex,
-        )
-        .unwrap_or_else(|e| panic!("case {}: write out vertex wgsl: {e}", case.name));
-        std::fs::write(
-            out_wgsl_dir.join(format!("{pass_id}.fragment.wgsl")),
+        );
+        write_golden_text(
+            case.name,
+            &out_wgsl_dir.join(format!("{pass_id}.fragment.wgsl")),
             &bundle.fragment,
-        )
-        .unwrap_or_else(|e| panic!("case {}: write out fragment wgsl: {e}", case.name));
-        std::fs::write(
-            out_wgsl_dir.join(format!("{pass_id}.module.wgsl")),
+        );
+        write_golden_text(
+            case.name,
+            &out_wgsl_dir.join(format!("{pass_id}.module.wgsl")),
             &bundle.module,
-        )
-        .unwrap_or_else(|e| panic!("case {}: write out module wgsl: {e}", case.name));
+        );
         if let Some(compute) = &bundle.compute {
-            std::fs::write(
-                out_wgsl_dir.join(format!("{pass_id}.compute.wgsl")),
+            write_golden_text(
+                case.name,
+                &out_wgsl_dir.join(format!("{pass_id}.compute.wgsl")),
                 compute,
-            )
-            .unwrap_or_else(|e| panic!("case {}: write out compute wgsl: {e}", case.name));
+            );
         }
     }
 
@@ -1033,24 +1031,13 @@ fn run_case(case: &Case) {
                 let expected_fragment_path = wgsl_dir.join(format!("{pass_id}.fragment.wgsl"));
                 let expected_module_path = wgsl_dir.join(format!("{pass_id}.module.wgsl"));
 
-                std::fs::write(&expected_vertex_path, &bundle.vertex).unwrap_or_else(|e| {
-                    panic!("case {}: write {:?}: {e}", case.name, expected_vertex_path)
-                });
-                std::fs::write(&expected_fragment_path, &bundle.fragment).unwrap_or_else(|e| {
-                    panic!(
-                        "case {}: write {:?}: {e}",
-                        case.name, expected_fragment_path
-                    )
-                });
-                std::fs::write(&expected_module_path, &bundle.module).unwrap_or_else(|e| {
-                    panic!("case {}: write {:?}: {e}", case.name, expected_module_path)
-                });
+                write_golden_text(case.name, &expected_vertex_path, &bundle.vertex);
+                write_golden_text(case.name, &expected_fragment_path, &bundle.fragment);
+                write_golden_text(case.name, &expected_module_path, &bundle.module);
 
                 if let Some(compute) = &bundle.compute {
                     let expected_compute_path = wgsl_dir.join(format!("{pass_id}.compute.wgsl"));
-                    std::fs::write(&expected_compute_path, compute).unwrap_or_else(|e| {
-                        panic!("case {}: write {:?}: {e}", case.name, expected_compute_path)
-                    });
+                    write_golden_text(case.name, &expected_compute_path, compute);
                 }
             }
         } else {

@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -35,7 +36,7 @@ var<uniform> params: Params;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var input1_1: vec2<f32>;
     var input2_1: vec2<f32>;
@@ -92,15 +93,16 @@ fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, inpu
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-        var mc_MathClosure_8_out: vec4f;
+    var math_closure_out: vec4f;
     {
         let input1 = in.local_px.xy;
         let input2 = in.geo_size_px;
         let input3 = params.time;
         var output: vec4f;
-        output = mc_MathClosure_8_(in.uv, input1, input2, input3);
-        mc_MathClosure_8_out = output;
+        output = mc_math_closure(in.uv, input1, input2, input3);
+        math_closure_out = output;
     }
-    let _frag_out = mc_MathClosure_8_out;
+    // Final composite
+    let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

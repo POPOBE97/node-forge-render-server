@@ -66,13 +66,20 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
     let mut expanded_count: usize = 0;
 
     loop {
-        let Some((instance_id, group_id)) = scene
+        let Some((instance_id, group_id, instance_label)) = scene
             .nodes
             .iter()
             .find(|n| n.node_type == "GroupInstance")
             .map(|n| {
                 let gid = parse_group_id(n).map(|s| s.to_string());
-                (n.id.clone(), gid)
+                let label = n
+                    .params
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToOwned::to_owned);
+                (n.id.clone(), gid, label)
             })
         else {
             break;
@@ -84,6 +91,36 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
         let group = group_by_id(&scene.groups, group_id)
             .ok_or_else(|| anyhow!("GroupInstance refers to missing group '{group_id}'"))?
             .clone();
+        let group_name = group
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(group_id)
+            .to_string();
+
+        let group_input_name_by_port: HashMap<String, String> = group
+            .inputs
+            .iter()
+            .filter_map(|p| {
+                p.name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|name| (p.id.clone(), name.to_string()))
+            })
+            .collect();
+        let group_output_name_by_port: HashMap<String, String> = group
+            .outputs
+            .iter()
+            .filter_map(|p| {
+                p.name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|name| (p.id.clone(), name.to_string()))
+            })
+            .collect();
 
         // Map group-local node IDs to cloned node IDs.
         let mut node_id_map: HashMap<String, String> = HashMap::new();
@@ -97,6 +134,40 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
         // structurally identical subgraphs originating from the same group definition.
         for mut n in group.nodes.clone() {
             let original_id = n.id.clone();
+            n.params.insert(
+                "__group_id".to_string(),
+                serde_json::Value::String(group_id.to_string()),
+            );
+            n.params.insert(
+                "__group_name".to_string(),
+                serde_json::Value::String(group_name.clone()),
+            );
+            if let Some(label) = instance_label.as_ref() {
+                n.params.insert(
+                    "__group_instance_label".to_string(),
+                    serde_json::Value::String(label.clone()),
+                );
+            }
+            for b in &group.input_bindings {
+                if b.to.node_id == original_id {
+                    if let Some(name) = group_input_name_by_port.get(&b.group_port_id) {
+                        n.params.insert(
+                            "__group_input_name".to_string(),
+                            serde_json::Value::String(name.clone()),
+                        );
+                    }
+                }
+            }
+            for b in &group.output_bindings {
+                if b.from.node_id == original_id {
+                    if let Some(name) = group_output_name_by_port.get(&b.group_port_id) {
+                        n.params.insert(
+                            "__group_output_name".to_string(),
+                            serde_json::Value::String(name.clone()),
+                        );
+                    }
+                }
+            }
             if let Some(new_id) = node_id_map.get(&n.id).cloned() {
                 n.id = new_id;
             }

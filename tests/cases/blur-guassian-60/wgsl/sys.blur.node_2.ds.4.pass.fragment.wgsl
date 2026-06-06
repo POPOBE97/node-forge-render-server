@@ -41,7 +41,7 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  let src_resolution = params.target_size * 4.0;
  let src_center = in.uv * src_resolution;
  let base = src_center - vec2f(1.5);

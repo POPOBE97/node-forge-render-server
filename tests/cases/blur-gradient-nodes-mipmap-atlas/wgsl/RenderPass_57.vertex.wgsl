@@ -52,7 +52,7 @@ var pass_samp_Downsample_16: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_GroupInstance_60_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;

@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -74,7 +75,7 @@ var pass_samp_sys_gb_GradientBlur_5_mip6: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_7_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> f32 {
+fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
@@ -134,18 +135,18 @@ fn gb_sample_from_mipmap(xy: vec2f, resolution: vec2f, level: i32) -> vec4f {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-        var mc_MathClosure_7_out: f32;
+        var math_closure_out: f32;
     {
         let xy = in.local_px.xy;
         let size = in.geo_size_px;
         var output: f32;
-        output = mc_MathClosure_7_(in.uv, xy, size);
-        mc_MathClosure_7_out = output;
+        output = mc_math_closure(in.uv, xy, size);
+        math_closure_out = output;
     }
 // Evaluate mask → sigma in pixels.
     // NOTE: The mask expression sees user coordinates (in.local_px),
     // i.e. (0,0) = bottom-left of the original source image.
-    let gb_sigma = max(mc_MathClosure_7_out, 0.0);
+    let gb_sigma = max(math_closure_out, 0.0);
 
     // Sigma → mip level (clamped to safe range).
     var gb_m: f32 = 0.0;

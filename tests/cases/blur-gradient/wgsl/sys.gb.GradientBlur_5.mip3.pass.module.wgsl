@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -70,7 +71,7 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
     let dst_dims = params.target_size;
@@ -81,7 +82,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
   let kh: i32 = 3;
   let half_w: i32 = kw / 2;
   let half_h: i32 = kh / 2;
-  let k = array<f32, 9>(0, 0.25, 0, 0.25, 0, 0.25, 0, 0.25, 0);
+  let k = array<f32, 9>(0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0);
 
     var sum = vec4f(0.0);
     for (var y: i32 = 0; y < kh; y = y + 1) {

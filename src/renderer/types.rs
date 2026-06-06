@@ -2,7 +2,7 @@
 
 use rust_wgpu_fiber::ResourceName;
 use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 /// WGSL value type for shader expressions.
@@ -385,6 +385,13 @@ pub struct MaterialCompileContext {
     /// variable scope and avoid naming conflicts.
     pub inline_stmts: Vec<String>,
 
+    /// Stable local names already allocated inside the generated shader body.
+    ///
+    /// Human-authored node labels are allowed to collide, so generated WGSL
+    /// needs one small allocator instead of each compiler guessing unique names.
+    pub local_name_by_key: BTreeMap<String, String>,
+    pub used_local_names: BTreeSet<String>,
+
     /// Temporarily disables automatic readable temp emission.
     ///
     /// This is used while compiling expressions that downstream code still
@@ -396,9 +403,54 @@ pub struct MaterialCompileContext {
     /// Keyed by original node id and value kind so we can emit deterministic
     /// graph buffer schemas and pack values on the CPU side.
     pub graph_input_kinds: BTreeMap<String, GraphFieldKind>,
+    pub graph_input_field_names: BTreeMap<String, String>,
+    pub used_graph_input_field_names: BTreeSet<String>,
+
+    /// Keep legacy `node_<id>_<hash>` graph field names for contexts whose
+    /// callers only propagate field kinds. Vertex geometry compilation is the
+    /// current example.
+    pub preserve_legacy_graph_input_names: bool,
+
+    /// Expression overrides used by higher-level compilers such as pure group
+    /// helper emission. Key is `(node_id, out_port)`.
+    pub expr_overrides: BTreeMap<(String, String), TypedExpr>,
 }
 
 impl MaterialCompileContext {
+    pub fn allocate_local_name(&mut self, key: &str, preferred: &str) -> String {
+        if let Some(existing) = self.local_name_by_key.get(key) {
+            return existing.clone();
+        }
+
+        let name = allocate_unique_ident(&mut self.used_local_names, preferred, key);
+        self.local_name_by_key.insert(key.to_string(), name.clone());
+        name
+    }
+
+    pub fn register_graph_input_named(
+        &mut self,
+        node_id: &str,
+        kind: GraphFieldKind,
+        preferred: &str,
+    ) -> String {
+        // A node id should map to one stable kind (node type is fixed).
+        // If the same id is observed with a conflicting kind, keep the first
+        // to avoid introducing non-deterministic shader declarations.
+        self.graph_input_kinds
+            .entry(node_id.to_string())
+            .or_insert(kind);
+
+        if let Some(existing) = self.graph_input_field_names.get(node_id) {
+            return existing.clone();
+        }
+
+        let field_name =
+            allocate_unique_ident(&mut self.used_graph_input_field_names, preferred, node_id);
+        self.graph_input_field_names
+            .insert(node_id.to_string(), field_name.clone());
+        field_name
+    }
+
     /// Register an image texture node and return its binding index.
     pub fn register_image_texture(&mut self, node_id: &str) -> usize {
         if let Some(&idx) = self.image_index_by_node.get(node_id) {
@@ -424,12 +476,8 @@ impl MaterialCompileContext {
     }
 
     pub fn register_graph_input(&mut self, node_id: &str, kind: GraphFieldKind) {
-        // A node id should map to one stable kind (node type is fixed).
-        // If the same id is observed with a conflicting kind, keep the first
-        // to avoid introducing non-deterministic shader declarations.
-        self.graph_input_kinds
-            .entry(node_id.to_string())
-            .or_insert(kind);
+        let fallback = crate::renderer::graph_uniforms::graph_field_name(node_id);
+        self.register_graph_input_named(node_id, kind, &fallback);
     }
 
     /// Generate the WGSL variable name for a texture binding.
@@ -473,8 +521,38 @@ impl MaterialCompileContext {
             format!("{}\n", self.inline_stmts.join("\n"))
         };
         format!(
-            "{stmts}    let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
+            "{stmts}    // Final composite\n    let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
         )
+    }
+}
+
+fn short_ident_hash(key: &str) -> String {
+    let hash = crate::renderer::graph_uniforms::hash_bytes(key.as_bytes());
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}",
+        hash[0], hash[1], hash[2], hash[3]
+    )
+}
+
+fn allocate_unique_ident(used: &mut BTreeSet<String>, preferred: &str, stable_key: &str) -> String {
+    let base = crate::renderer::utils::sanitize_wgsl_ident(preferred);
+    if used.insert(base.clone()) {
+        return base;
+    }
+
+    let hash = short_ident_hash(stable_key);
+    let with_hash = format!("{base}_{hash}");
+    if used.insert(with_hash.clone()) {
+        return with_hash;
+    }
+
+    let mut suffix = 2_u32;
+    loop {
+        let candidate = format!("{base}_{hash}_{suffix}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        suffix += 1;
     }
 }
 

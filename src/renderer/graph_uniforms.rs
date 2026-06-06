@@ -33,11 +33,21 @@ pub fn graph_field_name(node_id: &str) -> String {
 }
 
 pub fn build_graph_schema(kinds_by_node_id: &BTreeMap<String, GraphFieldKind>) -> GraphSchema {
+    build_graph_schema_with_field_names(kinds_by_node_id, &BTreeMap::new())
+}
+
+pub fn build_graph_schema_with_field_names(
+    kinds_by_node_id: &BTreeMap<String, GraphFieldKind>,
+    field_names_by_node_id: &BTreeMap<String, String>,
+) -> GraphSchema {
     let mut used_names: BTreeSet<String> = BTreeSet::new();
     let mut fields: Vec<GraphField> = Vec::with_capacity(kinds_by_node_id.len());
 
     for (node_id, kind) in kinds_by_node_id {
-        let base = graph_field_name(node_id);
+        let base = field_names_by_node_id
+            .get(node_id)
+            .cloned()
+            .unwrap_or_else(|| graph_field_name(node_id));
         let mut field_name = base.clone();
         let mut suffix: u32 = 2;
         while !used_names.insert(field_name.clone()) {

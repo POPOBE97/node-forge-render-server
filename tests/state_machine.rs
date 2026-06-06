@@ -21,7 +21,7 @@ fn back_pin_pin_scene_parses_state_machine() {
     );
     let sm = scene.state_machine.as_ref().unwrap();
     assert_eq!(sm.id, "sm_mmamfug8_2");
-    assert_eq!(sm.states.len(), 4);
+    assert_eq!(sm.states.len(), 7);
     assert_eq!(sm.mutations.len(), 1);
     assert_eq!(sm.initial_state_id.as_deref(), Some("st_mmamj2am_3"));
 }
@@ -46,13 +46,13 @@ fn back_pin_pin_compile_and_tick() {
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
-    // Fire mousedown — transition fires (delay + duration = 0.6s total).
+    // Fire mousedown — transition fires (delay + duration = 2.3s total).
     let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
     assert!(result.active_transition_id.is_some());
 
-    // Advance past delay (0.3s) + duration (0.3s) = 0.6s total.
-    let result = rt.tick(0.7, &Default::default(), &vec![]);
+    // Advance past delay (0.3s) + duration (2.0s) = 2.3s total.
+    let result = rt.tick(2.4, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert!(!result.finished);
 }

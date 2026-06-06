@@ -12,7 +12,6 @@ use anyhow::{Result, anyhow, bail};
 use crate::{
     dsl::{Node, SceneDSL, find_node, incoming_connection},
     renderer::{
-        graph_uniforms::build_graph_schema,
         node_compiler::compile_material_expr,
         render_plan::{parse_kernel_source_js_like, resolve_geometry_for_render_pass},
         scene_prep::prepare_scene,
@@ -553,13 +552,19 @@ pub(crate) fn merge_graph_input_kinds(
     extra: &std::collections::BTreeMap<String, GraphFieldKind>,
 ) -> Option<GraphSchema> {
     let mut kinds = material_ctx.graph_input_kinds.clone();
+    let field_names = material_ctx.graph_input_field_names.clone();
     for (node_id, kind) in extra {
         kinds.entry(node_id.clone()).or_insert(*kind);
     }
     if kinds.is_empty() {
         None
     } else {
-        Some(build_graph_schema(&kinds))
+        Some(
+            crate::renderer::graph_uniforms::build_graph_schema_with_field_names(
+                &kinds,
+                &field_names,
+            ),
+        )
     }
 }
 

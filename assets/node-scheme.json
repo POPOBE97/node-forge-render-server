@@ -560,7 +560,14 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {}
+      "defaultParams": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "type": "BoolInput",
@@ -3636,7 +3643,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "any"
+          "type": "mat4"
         },
         {
           "id": "translate",
@@ -3792,7 +3799,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "any"
+          "type": "mat4"
         },
         {
           "id": "translate",

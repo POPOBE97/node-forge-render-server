@@ -16,12 +16,25 @@ fn instanced_math_closure_builds_and_reports_instance_count() {
 
     let snapshot = ResourceSnapshot::capture(&build.shader_space, &build.pass_bindings, None);
 
-    // Pass names are ResourceNames; for a RenderPass node this is typically `<id>.pass`.
+    // Pass display names can be normalized for readability; the generated
+    // RenderPass suffix still keeps the source node number.
     let pass = snapshot
         .passes
         .iter()
-        .find(|p| p.name.contains("RenderPass_4"))
-        .expect("find RenderPass_4 in snapshot");
+        .find(|p| p.name.ends_with(".rpass4.pass"))
+        .unwrap_or_else(|| {
+            let pass_summary = snapshot
+                .passes
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{} -> {:?} instances={}",
+                        p.name, p.target_texture, p.instance_count
+                    )
+                })
+                .collect::<Vec<_>>();
+            panic!("find RenderPass_4 pass in snapshot: {pass_summary:#?}");
+        });
 
     assert_eq!(
         pass.instance_count, 100,

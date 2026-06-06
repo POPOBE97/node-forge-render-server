@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_48
-    node_ColorInput_48_cd78eb69: vec4f,
+    u_bg_overlay: vec4f,
 };
 
 @group(0) @binding(2)
@@ -290,7 +290,7 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_MathClosure_42_(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var intelli_1: vec4<f32>;
     var output: vec4<f32> = vec4(0f);
@@ -316,7 +316,7 @@ fn mc_MathClosure_42_(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
     return _e24;
 }
 
-fn mc_MathClosure_51_(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
+fn mc_math_closure_534c24ef(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var x_1: vec4<f32>;
     var y_1: vec4<f32>;

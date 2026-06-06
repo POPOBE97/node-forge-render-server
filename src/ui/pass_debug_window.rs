@@ -10,6 +10,7 @@ use rust_wgpu_fiber::eframe::egui;
 
 use crate::renderer::{
     PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
+    PassDebugSourceRange,
 };
 
 const AST_PANEL_DEFAULT_WIDTH: f32 = 340.0;
@@ -17,6 +18,8 @@ const AST_PANEL_MIN_WIDTH: f32 = 220.0;
 const AST_PANEL_MAX_WIDTH: f32 = 560.0;
 const AST_SCROLL_CONTENT_WIDTH: f32 = 1800.0;
 const AST_ROW_INDENT_WIDTH: f32 = 14.0;
+const PASS_DEBUG_TREE_FONT_SIZE: f32 = 13.0;
+const PASS_DEBUG_CODE_FONT_SIZE: f32 = 14.0;
 
 #[derive(Clone, Debug)]
 pub enum PassDebugWindowAction {
@@ -30,6 +33,7 @@ struct PassDebugAstRow {
     depth: usize,
     label: String,
     target_id: Option<String>,
+    source_range: Option<PassDebugSourceRange>,
     selectable: bool,
 }
 
@@ -38,13 +42,21 @@ struct PassDebugDependencyRow {
     depth: usize,
     label: String,
     target_id: Option<String>,
+    source_range: Option<PassDebugSourceRange>,
     selectable: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PassDebugTreeClick {
+    target_id: Option<String>,
+    source_range: Option<PassDebugSourceRange>,
 }
 
 trait PassDebugTreeRow {
     fn depth(&self) -> usize;
     fn label(&self) -> &str;
     fn target_id(&self) -> Option<&str>;
+    fn source_range(&self) -> Option<PassDebugSourceRange>;
     fn selectable(&self) -> bool;
 }
 
@@ -59,6 +71,10 @@ impl PassDebugTreeRow for PassDebugAstRow {
 
     fn target_id(&self) -> Option<&str> {
         self.target_id.as_deref()
+    }
+
+    fn source_range(&self) -> Option<PassDebugSourceRange> {
+        self.source_range
     }
 
     fn selectable(&self) -> bool {
@@ -77,6 +93,10 @@ impl PassDebugTreeRow for PassDebugDependencyRow {
 
     fn target_id(&self) -> Option<&str> {
         self.target_id.as_deref()
+    }
+
+    fn source_range(&self) -> Option<PassDebugSourceRange> {
+        self.source_range
     }
 
     fn selectable(&self) -> bool {
@@ -99,7 +119,10 @@ pub struct PassDebugWindowDocument {
     source_revision: Option<u64>,
     ast_rows: Vec<PassDebugAstRow>,
     dependency_rows: Vec<PassDebugDependencyRow>,
-    selected_target_id: Option<String>,
+    focused_target_id: Option<String>,
+    dependency_root_target_id: Option<String>,
+    pending_editor_jump: Option<PassDebugSourceRange>,
+    pending_tree_reveal_target_id: Option<String>,
     target_search: String,
     side_panel_mode: PassDebugSidePanelMode,
     pub draft_source: String,
@@ -130,7 +153,10 @@ impl PassDebugWindowDocument {
             source_revision: Some(source_revision),
             ast_rows: Vec::new(),
             dependency_rows: Vec::new(),
-            selected_target_id: None,
+            focused_target_id: None,
+            dependency_root_target_id: None,
+            pending_editor_jump: None,
+            pending_tree_reveal_target_id: None,
             target_search: String::new(),
             side_panel_mode: PassDebugSidePanelMode::Ast,
             draft_source: loaded_source.clone(),
@@ -241,34 +267,34 @@ impl PassDebugWindowDocument {
             .as_ref()
             .map(|source| flatten_ast_tree(&source.ast_tree))
             .unwrap_or_default();
-        self.ensure_selected_target();
+        self.ensure_navigation_targets();
         self.refresh_dependency_rows();
     }
 
-    fn ensure_selected_target(&mut self) {
+    fn ensure_navigation_targets(&mut self) {
         let Some(source) = self.analysis_source.as_ref() else {
-            self.selected_target_id = None;
+            self.focused_target_id = None;
+            self.dependency_root_target_id = None;
+            self.pending_editor_jump = None;
+            self.pending_tree_reveal_target_id = None;
             return;
         };
-        let selected_still_exists = self
-            .selected_target_id
-            .as_ref()
-            .map(|selected| {
+
+        if !target_exists(source, self.dependency_root_target_id.as_deref()) {
+            self.dependency_root_target_id = source
+                .dependency_targets
+                .first()
+                .map(|target| target.id.clone());
+        }
+
+        if !target_exists(source, self.focused_target_id.as_deref()) {
+            self.focused_target_id = self.dependency_root_target_id.clone().or_else(|| {
                 source
                     .dependency_targets
-                    .iter()
-                    .any(|target| target.id == *selected)
-            })
-            .unwrap_or(false);
-        if selected_still_exists {
-            return;
+                    .first()
+                    .map(|target| target.id.clone())
+            });
         }
-        self.selected_target_id = source
-            .dependency_targets
-            .iter()
-            .find(|target| target_matches_search(target, &self.target_search))
-            .or_else(|| source.dependency_targets.first())
-            .map(|target| target.id.clone());
     }
 
     fn refresh_dependency_rows(&mut self) {
@@ -276,34 +302,76 @@ impl PassDebugWindowDocument {
             .analysis_source
             .as_ref()
             .and_then(|source| {
-                self.selected_target_id
+                self.dependency_root_target_id
                     .as_ref()
-                    .and_then(|target_id| source.dependency_trees.get(target_id))
+                    .and_then(|target_id| {
+                        source
+                            .dependency_trees
+                            .get(target_id)
+                            .map(|tree| flatten_dependency_tree(tree, source))
+                    })
             })
-            .map(flatten_dependency_tree)
             .unwrap_or_default();
     }
 
-    fn select_target(&mut self, target_id: impl Into<String>) {
+    fn set_dependency_root(&mut self, target_id: impl Into<String>) {
         let target_id = target_id.into();
         let Some(source) = self.analysis_source.as_ref() else {
             return;
         };
-        if source
-            .dependency_targets
-            .iter()
-            .any(|target| target.id == target_id)
-        {
-            self.selected_target_id = Some(target_id);
-            self.side_panel_mode = PassDebugSidePanelMode::Dependencies;
+        if target_exists(source, Some(&target_id)) {
+            self.dependency_root_target_id = Some(target_id.clone());
+            self.focus_target(target_id, true);
             self.refresh_dependency_rows();
         }
     }
 
-    fn select_first_target_matching_search(&mut self) {
+    fn focus_target(&mut self, target_id: impl Into<String>, show_dependencies: bool) {
+        self.focus_target_inner(target_id, show_dependencies, true);
+    }
+
+    fn focus_target_from_editor(&mut self, target_id: impl Into<String>) {
+        self.focus_target_inner(target_id, true, false);
+    }
+
+    fn focus_target_inner(
+        &mut self,
+        target_id: impl Into<String>,
+        show_dependencies: bool,
+        jump_editor: bool,
+    ) {
+        let target_id = target_id.into();
         let Some(source) = self.analysis_source.as_ref() else {
-            self.selected_target_id = None;
-            self.refresh_dependency_rows();
+            return;
+        };
+        if let Some(target) = source
+            .dependency_targets
+            .iter()
+            .find(|target| target.id == target_id)
+        {
+            self.focused_target_id = Some(target_id.clone());
+            self.pending_tree_reveal_target_id = Some(target_id);
+            if jump_editor {
+                self.pending_editor_jump = target.source_range;
+            }
+            if show_dependencies {
+                self.side_panel_mode = PassDebugSidePanelMode::Dependencies;
+            }
+        }
+    }
+
+    fn focus_tree_click(&mut self, click: PassDebugTreeClick, show_dependencies: bool) {
+        if let Some(target_id) = click.target_id {
+            self.focus_target(target_id, show_dependencies);
+        } else if let Some(source_range) = click.source_range {
+            self.pending_editor_jump = Some(source_range);
+        }
+    }
+
+    fn focus_first_target_matching_search(&mut self) {
+        let Some(source) = self.analysis_source.as_ref() else {
+            self.focused_target_id = None;
+            self.pending_tree_reveal_target_id = None;
             return;
         };
         if let Some(target) = source
@@ -311,27 +379,117 @@ impl PassDebugWindowDocument {
             .iter()
             .find(|target| target_matches_search(target, &self.target_search))
         {
-            self.selected_target_id = Some(target.id.clone());
+            self.focus_target(target.id.clone(), true);
         }
-        self.refresh_dependency_rows();
     }
 
-    fn select_target_named(&mut self, name: &str) {
-        let Some(source) = self.analysis_source.as_ref() else {
+    fn focus_target_at_char_index(&mut self, char_index: usize) {
+        let byte_index = char_index_to_byte_index(&self.draft_source, char_index);
+        let matching_target_id = self.analysis_source.as_ref().and_then(|source| {
+            source
+                .dependency_targets
+                .iter()
+                .find(|target| {
+                    target
+                        .source_range
+                        .map(|range| range.start_byte <= byte_index && byte_index < range.end_byte)
+                        .unwrap_or(false)
+                })
+                .map(|target| target.id.clone())
+        });
+
+        if let Some(target_id) = matching_target_id {
+            self.focus_target_from_editor(target_id);
             return;
-        };
-        if let Some(target) = source
+        }
+
+        let matching_target_id =
+            identifier_at_char_index(&self.draft_source, char_index).and_then(|identifier| {
+                self.analysis_source.as_ref().and_then(|source| {
+                    source
+                        .dependency_targets
+                        .iter()
+                        .find(|target| target.name == identifier)
+                        .map(|target| target.id.clone())
+                })
+            });
+        if let Some(target_id) = matching_target_id {
+            self.focus_target_from_editor(target_id);
+        }
+    }
+
+    fn set_focus_as_dependency_root(&mut self) {
+        if let Some(target_id) = self.focused_target_id.clone() {
+            self.set_dependency_root(target_id);
+        }
+    }
+
+    fn focused_target_label(&self) -> Option<String> {
+        self.target_label(self.focused_target_id.as_deref())
+    }
+
+    fn focused_source_range(&self) -> Option<PassDebugSourceRange> {
+        let source = self.analysis_source.as_ref()?;
+        let focused_target_id = self.focused_target_id.as_deref()?;
+        source
             .dependency_targets
             .iter()
-            .find(|target| target.name == name)
-        {
-            self.select_target(target.id.clone());
-        }
+            .find(|target| target.id == focused_target_id)
+            .and_then(|target| target.source_range)
+    }
+
+    fn dependency_root_label(&self) -> Option<String> {
+        self.target_label(self.dependency_root_target_id.as_deref())
+    }
+
+    fn target_label(&self, target_id: Option<&str>) -> Option<String> {
+        let source = self.analysis_source.as_ref()?;
+        let target_id = target_id?;
+        source
+            .dependency_targets
+            .iter()
+            .find(|target| target.id == target_id)
+            .map(|target| format!("{} {}", target.scope, target.name))
+    }
+
+    fn focus_is_in_dependency_root(&self) -> bool {
+        let Some(focused_target_id) = self.focused_target_id.as_deref() else {
+            return true;
+        };
+        self.dependency_rows
+            .iter()
+            .any(|row| row.target_id.as_deref() == Some(focused_target_id))
     }
 
     fn record_error(&mut self, error: String) {
         self.last_error = Some(error);
         self.last_status = None;
+    }
+}
+
+fn target_exists(source: &PassDebugSource, target_id: Option<&str>) -> bool {
+    let Some(target_id) = target_id else {
+        return false;
+    };
+    source
+        .dependency_targets
+        .iter()
+        .any(|target| target.id == target_id)
+}
+
+fn consume_tree_reveal_target<Row: PassDebugTreeRow>(
+    pending_target_id: &mut Option<String>,
+    rows: &[Row],
+) -> Option<String> {
+    let target_id = pending_target_id.clone()?;
+    if rows
+        .iter()
+        .any(|row| row.target_id().map(|id| id == target_id).unwrap_or(false))
+    {
+        *pending_target_id = None;
+        Some(target_id)
+    } else {
+        None
     }
 }
 
@@ -661,13 +819,18 @@ fn render_ast_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
         return;
     }
 
-    if let Some(target_id) = render_scrollable_tree_rows(
+    let reveal_target_id = consume_tree_reveal_target(
+        &mut document.pending_tree_reveal_target_id,
+        &document.ast_rows,
+    );
+    if let Some(click) = render_scrollable_tree_rows(
         ui,
         egui::Id::new(("pass-debug-ast", document.pass_name.as_str())),
         &document.ast_rows,
-        document.selected_target_id.as_deref(),
+        document.focused_target_id.as_deref(),
+        reveal_target_id.as_deref(),
     ) {
-        document.select_target(target_id);
+        document.focus_tree_click(click, false);
     }
 }
 
@@ -712,60 +875,66 @@ fn render_dependency_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
             .desired_width(f32::INFINITY),
     );
     if search_response.changed() {
-        document.select_first_target_matching_search();
+        document.focus_first_target_matching_search();
     }
 
-    let matched_targets = document
-        .analysis_source
-        .as_ref()
-        .map(|source| {
-            source
-                .dependency_targets
-                .iter()
-                .filter(|target| target_matches_search(target, &document.target_search))
-                .take(24)
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    if !document.target_search.trim().is_empty() {
+        let matched_targets = document
+            .analysis_source
+            .as_ref()
+            .map(|source| {
+                source
+                    .dependency_targets
+                    .iter()
+                    .filter(|target| target_matches_search(target, &document.target_search))
+                    .take(24)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
-    if matched_targets.is_empty() {
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("No matching targets")
-                .monospace()
-                .small(),
-        );
-        return;
-    }
+        if matched_targets.is_empty() {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("No matching targets")
+                    .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
+            );
+            return;
+        }
 
-    ui.add_space(6.0);
-    egui::ScrollArea::vertical()
-        .id_salt(("pass-debug-target-list", document.pass_name.as_str()))
-        .max_height(128.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            for target in matched_targets {
-                let selected = document
-                    .selected_target_id
-                    .as_ref()
-                    .map(|selected| *selected == target.id)
-                    .unwrap_or(false);
-                let label = format!("{}  {}", target.scope, target.name);
-                let response =
-                    ui.selectable_label(selected, egui::RichText::new(label).monospace().small());
-                if response.clicked() {
-                    document.select_target(target.id);
+        ui.add_space(6.0);
+        egui::ScrollArea::vertical()
+            .id_salt(("pass-debug-target-list", document.pass_name.as_str()))
+            .max_height(128.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for target in matched_targets {
+                    let selected = document
+                        .focused_target_id
+                        .as_ref()
+                        .map(|selected| *selected == target.id)
+                        .unwrap_or(false);
+                    let label = format!("{}  {}", target.scope, target.name);
+                    let response = ui.selectable_label(
+                        selected,
+                        egui::RichText::new(label)
+                            .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
+                    );
+                    if response.clicked() {
+                        document.focus_target(target.id, true);
+                    }
                 }
-            }
-        });
+            });
 
-    ui.add_space(6.0);
+        ui.add_space(6.0);
+    } else {
+        ui.add_space(8.0);
+    }
+
     if document.dependency_rows.is_empty() {
         ui.label(
             egui::RichText::new("Select a dependency target")
-                .monospace()
-                .small(),
+                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
         );
         return;
     }
@@ -774,13 +943,53 @@ fn render_dependency_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
 }
 
 fn render_dependency_rows(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
-    if let Some(target_id) = render_scrollable_tree_rows(
+    ui.horizontal_wrapped(|ui| {
+        let root = document
+            .dependency_root_label()
+            .unwrap_or_else(|| "<none>".to_string());
+        let focus = document
+            .focused_target_label()
+            .unwrap_or_else(|| "<none>".to_string());
+        ui.label(
+            egui::RichText::new(format!("Root: {root}"))
+                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
+        );
+        ui.separator();
+        ui.label(
+            egui::RichText::new(format!("Focus: {focus}"))
+                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
+        );
+        let can_set_root = document.focused_target_id.is_some()
+            && document.focused_target_id != document.dependency_root_target_id;
+        if ui
+            .add_enabled(can_set_root, egui::Button::new("Set focus as root"))
+            .clicked()
+        {
+            document.set_focus_as_dependency_root();
+        }
+    });
+
+    if !document.focus_is_in_dependency_root() {
+        ui.label(
+            egui::RichText::new("Focus is outside the current dependency map")
+                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE))
+                .color(egui::Color32::from_rgb(255, 180, 120)),
+        );
+    }
+
+    ui.add_space(6.0);
+    let reveal_target_id = consume_tree_reveal_target(
+        &mut document.pending_tree_reveal_target_id,
+        &document.dependency_rows,
+    );
+    if let Some(click) = render_scrollable_tree_rows(
         ui,
         egui::Id::new(("pass-debug-dependencies", document.pass_name.as_str())),
         &document.dependency_rows,
-        document.selected_target_id.as_deref(),
+        document.focused_target_id.as_deref(),
+        reveal_target_id.as_deref(),
     ) {
-        document.select_target(target_id);
+        document.focus_tree_click(click, true);
     }
 }
 
@@ -788,12 +997,13 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
     ui: &mut egui::Ui,
     id: egui::Id,
     rows: &[Row],
-    selected_target_id: Option<&str>,
-) -> Option<String> {
-    let row_height = ui.text_style_height(&egui::TextStyle::Small);
+    focused_target_id: Option<&str>,
+    reveal_target_id: Option<&str>,
+) -> Option<PassDebugTreeClick> {
+    let font_id = pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE);
+    let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font_id));
     let row_height_with_spacing = row_height + ui.spacing().item_spacing.y;
-    let font_id = egui::TextStyle::Small.resolve(ui.style());
-    let mut clicked_target: Option<String> = None;
+    let mut clicked_row: Option<PassDebugTreeClick> = None;
 
     egui::ScrollArea::both()
         .id_salt(id)
@@ -807,6 +1017,21 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                 ((viewport.max.y / row_height_with_spacing).ceil() as usize + 1).min(rows.len());
             let content_origin = ui.min_rect().min;
 
+            if let Some(reveal_target_id) = reveal_target_id
+                && let Some(row_index) = rows.iter().position(|row| {
+                    row.target_id()
+                        .map(|target_id| target_id == reveal_target_id)
+                        .unwrap_or(false)
+                })
+            {
+                let row_top = content_origin.y + row_index as f32 * row_height_with_spacing;
+                let row_rect = egui::Rect::from_min_size(
+                    egui::pos2(content_origin.x, row_top),
+                    egui::vec2(AST_SCROLL_CONTENT_WIDTH, row_height_with_spacing),
+                );
+                ui.scroll_to_rect(row_rect, Some(egui::Align::Center));
+            }
+
             for row_index in min_row..max_row {
                 let row = &rows[row_index];
                 let row_top = content_origin.y + row_index as f32 * row_height_with_spacing;
@@ -815,7 +1040,7 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                     egui::vec2(AST_SCROLL_CONTENT_WIDTH, row_height_with_spacing),
                 );
 
-                let selected = selected_target_id
+                let selected = focused_target_id
                     .zip(row.target_id())
                     .map(|(selected, target)| selected == target)
                     .unwrap_or(false);
@@ -836,10 +1061,12 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                     );
                 }
 
-                if response.clicked()
-                    && let Some(target_id) = row.target_id()
+                if response.clicked() && (row.target_id().is_some() || row.source_range().is_some())
                 {
-                    clicked_target = Some(target_id.to_string());
+                    clicked_row = Some(PassDebugTreeClick {
+                        target_id: row.target_id().map(str::to_string),
+                        source_range: row.source_range(),
+                    });
                 }
 
                 let indent = row.depth() as f32 * AST_ROW_INDENT_WIDTH;
@@ -861,7 +1088,7 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
             }
         });
 
-    clicked_target
+    clicked_row
 }
 
 fn render_pass_debug_toolbar(
@@ -965,6 +1192,7 @@ fn render_ast_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
 }
 
 fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
+    let focused_source_range = document.focused_source_range();
     let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
         let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
         let mut layout_job = egui_extras::syntax_highlighting::highlight(
@@ -974,6 +1202,14 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
             buf.as_str(),
             "rust",
         );
+        if let Some(source_range) = focused_source_range {
+            apply_layout_job_highlight(
+                &mut layout_job,
+                buf.as_str(),
+                source_range,
+                egui::Color32::from_rgba_premultiplied(251, 191, 36, 56),
+            );
+        }
         layout_job.wrap.max_width = wrap_width;
         ui.fonts_mut(|fonts| fonts.layout_job(layout_job))
     };
@@ -986,7 +1222,7 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
             .show(ui, |ui| {
                 let editor = egui::TextEdit::multiline(&mut document.draft_source)
                     .id_salt(("pass-debug-source-text", document.pass_name.as_str()))
-                    .font(egui::TextStyle::Monospace)
+                    .font(pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE))
                     .code_editor()
                     .frame(egui::Frame::NONE)
                     .desired_rows(24)
@@ -1000,15 +1236,103 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                     document.last_status = None;
                     document.refresh_draft_analysis();
                 }
+                if let Some(source_range) = document.pending_editor_jump.take() {
+                    jump_editor_to_source_range(ui, &output, &document.draft_source, source_range);
+                }
                 if (output.response.clicked() || output.response.changed())
                     && let Some(cursor_range) = output.cursor_range
-                    && let Some(identifier) =
-                        identifier_at_char_index(&document.draft_source, cursor_range.primary.index)
                 {
-                    document.select_target_named(&identifier);
+                    document.focus_target_at_char_index(cursor_range.primary.index);
                 }
             });
     });
+}
+
+fn apply_layout_job_highlight(
+    layout_job: &mut egui::text::LayoutJob,
+    source: &str,
+    source_range: PassDebugSourceRange,
+    background: egui::Color32,
+) {
+    let highlight_start = source_range.start_byte;
+    let highlight_end = source_range.end_byte;
+    if highlight_start >= highlight_end
+        || highlight_end > source.len()
+        || !source.is_char_boundary(highlight_start)
+        || !source.is_char_boundary(highlight_end)
+    {
+        return;
+    }
+
+    let sections = std::mem::take(&mut layout_job.sections);
+    for section in sections {
+        let section_start = section.byte_range.start;
+        let section_end = section.byte_range.end;
+        let overlap_start = section_start.max(highlight_start);
+        let overlap_end = section_end.min(highlight_end);
+
+        if overlap_start >= overlap_end {
+            layout_job.sections.push(section);
+            continue;
+        }
+
+        if section_start < overlap_start {
+            layout_job.sections.push(egui::text::LayoutSection {
+                leading_space: section.leading_space,
+                byte_range: section_start..overlap_start,
+                format: section.format.clone(),
+            });
+        }
+
+        let mut highlight_format = section.format.clone();
+        highlight_format.background = background;
+        layout_job.sections.push(egui::text::LayoutSection {
+            leading_space: if section_start == overlap_start {
+                section.leading_space
+            } else {
+                0.0
+            },
+            byte_range: overlap_start..overlap_end,
+            format: highlight_format,
+        });
+
+        if overlap_end < section_end {
+            layout_job.sections.push(egui::text::LayoutSection {
+                leading_space: 0.0,
+                byte_range: overlap_end..section_end,
+                format: section.format,
+            });
+        }
+    }
+}
+
+fn jump_editor_to_source_range(
+    ui: &mut egui::Ui,
+    output: &egui::widgets::text_edit::TextEditOutput,
+    source: &str,
+    source_range: PassDebugSourceRange,
+) {
+    if source_range.start_byte >= source_range.end_byte || source_range.end_byte > source.len() {
+        return;
+    }
+
+    let start_char = byte_index_to_char_index(source, source_range.start_byte);
+    let end_char = byte_index_to_char_index(source, source_range.end_byte).max(start_char + 1);
+    let selection = egui::text::CCursorRange::two(
+        egui::text::CCursor::new(start_char),
+        egui::text::CCursor::new(end_char),
+    );
+    let mut state = output.state.clone();
+    state.cursor.set_char_range(Some(selection));
+    state.store(ui.ctx(), output.response.id);
+    output.response.request_focus();
+
+    let cursor_rect = output
+        .galley
+        .pos_from_cursor(egui::text::CCursor::new(start_char))
+        .translate(output.galley_pos.to_vec2())
+        .expand2(egui::vec2(0.0, 64.0));
+    ui.scroll_to_rect(cursor_rect, Some(egui::Align::Center));
 }
 
 fn push_action(
@@ -1018,6 +1342,10 @@ fn push_action(
     if let Ok(mut pending) = pending_actions.lock() {
         pending.push(action);
     }
+}
+
+fn pass_debug_mono_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name("geist_mono".into()))
 }
 
 fn flatten_ast_tree(nodes: &[PassDebugAstNode]) -> Vec<PassDebugAstRow> {
@@ -1031,41 +1359,79 @@ fn flatten_ast_tree(nodes: &[PassDebugAstNode]) -> Vec<PassDebugAstRow> {
 fn push_ast_rows(node: &PassDebugAstNode, depth: usize, rows: &mut Vec<PassDebugAstRow>) {
     rows.push(PassDebugAstRow {
         depth,
-        label: node.label.clone(),
+        label: clean_debug_tree_row_label(&node.label),
         target_id: node.target_id.clone(),
-        selectable: node.target_id.is_some(),
+        source_range: node.source_range,
+        selectable: node.target_id.is_some() || node.source_range.is_some(),
     });
     for child in &node.children {
         push_ast_rows(child, depth + 1, rows);
     }
 }
 
-fn flatten_dependency_tree(root: &PassDebugDependencyNode) -> Vec<PassDebugDependencyRow> {
+fn clean_debug_tree_row_label(label: &str) -> String {
+    let Some(stripped) = strip_leading_naga_handle(label.trim_start()) else {
+        return label.to_string();
+    };
+    stripped.trim_start().to_string()
+}
+
+fn strip_leading_naga_handle(label: &str) -> Option<&str> {
+    let rest = label.strip_prefix('[')?;
+    let (handle, after_handle) = rest.split_once(']')?;
+    if handle.is_empty() || !handle.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    Some(after_handle.strip_prefix(':').unwrap_or(after_handle))
+}
+
+fn flatten_dependency_tree(
+    root: &PassDebugDependencyNode,
+    source: &PassDebugSource,
+) -> Vec<PassDebugDependencyRow> {
     let mut rows = Vec::new();
-    push_dependency_rows(root, 0, &mut rows);
+    push_dependency_rows(root, source, 0, &mut rows);
     rows
 }
 
 fn push_dependency_rows(
     node: &PassDebugDependencyNode,
+    source: &PassDebugSource,
     depth: usize,
     rows: &mut Vec<PassDebugDependencyRow>,
 ) {
-    rows.push(PassDebugDependencyRow {
-        depth,
-        label: node.label.clone(),
-        target_id: node.target_id.clone(),
-        selectable: node.target_id.is_some(),
-    });
+    let child_depth = if node.target_id.is_some() {
+        rows.push(PassDebugDependencyRow {
+            depth,
+            label: clean_debug_tree_row_label(&node.label),
+            target_id: node.target_id.clone(),
+            source_range: node
+                .target_id
+                .as_deref()
+                .and_then(|target_id| target_source_range(source, target_id)),
+            selectable: true,
+        });
+        depth + 1
+    } else {
+        depth
+    };
     for child in &node.children {
-        push_dependency_rows(child, depth + 1, rows);
+        push_dependency_rows(child, source, child_depth, rows);
     }
+}
+
+fn target_source_range(source: &PassDebugSource, target_id: &str) -> Option<PassDebugSourceRange> {
+    source
+        .dependency_targets
+        .iter()
+        .find(|target| target.id == target_id)
+        .and_then(|target| target.source_range)
 }
 
 fn target_matches_search(target: &PassDebugDependencyTarget, search: &str) -> bool {
     let search = search.trim().to_ascii_lowercase();
     if search.is_empty() {
-        return true;
+        return false;
     }
     target.name.to_ascii_lowercase().contains(&search)
         || target.scope.to_ascii_lowercase().contains(&search)
@@ -1127,6 +1493,11 @@ fn char_index_to_byte_index(source: &str, char_index: usize) -> usize {
         .unwrap_or(source.len())
 }
 
+fn byte_index_to_char_index(source: &str, byte_index: usize) -> usize {
+    let byte_index = byte_index.min(source.len());
+    source[..byte_index].chars().count()
+}
+
 fn is_wgsl_identifier_start(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphabetic()
 }
@@ -1137,8 +1508,14 @@ fn is_wgsl_identifier_char(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::PassDebugWindowDocument;
-    use crate::renderer::PassDebugSource;
+    use std::collections::HashMap;
+
+    use super::{
+        PassDebugWindowDocument, flatten_ast_tree, flatten_dependency_tree, target_matches_search,
+    };
+    use crate::renderer::{
+        PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
+    };
 
     fn has_target_named(document: &PassDebugWindowDocument, name: &str) -> bool {
         document
@@ -1151,6 +1528,20 @@ mod tests {
                     .any(|target| target.name == name)
             })
             .unwrap_or(false)
+    }
+
+    fn target_id_by_name(document: &PassDebugWindowDocument, name: &str) -> String {
+        document
+            .analysis_source
+            .as_ref()
+            .and_then(|source| {
+                source
+                    .dependency_targets
+                    .iter()
+                    .find(|target| target.name == name)
+            })
+            .map(|target| target.id.clone())
+            .unwrap_or_else(|| panic!("missing target named {name}"))
     }
 
     #[test]
@@ -1250,6 +1641,142 @@ mod tests {
         );
         assert!(has_target_named(&document, "draft"));
         assert!(!has_target_named(&document, "generated"));
+    }
+
+    #[test]
+    fn focusing_dependency_child_does_not_replace_root_tree() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            "fn f() -> f32 { var a: f32 = 0.0; let b = a + 1.0; let c = b + 1.0; return c; }\n",
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let root_id = target_id_by_name(&document, "c");
+        let child_id = target_id_by_name(&document, "b");
+
+        document.set_dependency_root(root_id.clone());
+        document.focus_target(child_id.clone(), true);
+
+        assert_eq!(
+            document.dependency_root_target_id.as_deref(),
+            Some(root_id.as_str())
+        );
+        assert_eq!(
+            document.focused_target_id.as_deref(),
+            Some(child_id.as_str())
+        );
+        assert_eq!(
+            document.dependency_rows[0].target_id.as_deref(),
+            Some(root_id.as_str())
+        );
+    }
+
+    #[test]
+    fn target_search_focuses_without_replacing_root_tree() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            "fn f() -> f32 { var a: f32 = 0.0; let b = a + 1.0; let c = b + 1.0; return c; }\n",
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let root_id = target_id_by_name(&document, "c");
+        let child_id = target_id_by_name(&document, "b");
+
+        document.set_dependency_root(root_id.clone());
+        document.target_search = "b".to_string();
+        document.focus_first_target_matching_search();
+
+        assert_eq!(
+            document.dependency_root_target_id.as_deref(),
+            Some(root_id.as_str())
+        );
+        assert_eq!(
+            document.focused_target_id.as_deref(),
+            Some(child_id.as_str())
+        );
+        assert_eq!(
+            document.dependency_rows[0].target_id.as_deref(),
+            Some(root_id.as_str())
+        );
+    }
+
+    #[test]
+    fn ast_rows_strip_leading_naga_handle_noise() {
+        let rows = flatten_ast_tree(&[PassDebugAstNode {
+            label: "[12]: Binary Add".to_string(),
+            target_id: Some("target::12".to_string()),
+            role: Some("let".to_string()),
+            source_range: None,
+            children: vec![PassDebugAstNode {
+                label: "[3] helper".to_string(),
+                target_id: None,
+                role: None,
+                source_range: None,
+                children: Vec::new(),
+            }],
+        }]);
+
+        assert_eq!(rows[0].label, "Binary Add");
+        assert_eq!(rows[0].target_id.as_deref(), Some("target::12"));
+        assert_eq!(rows[1].label, "helper");
+    }
+
+    #[test]
+    fn dependency_rows_hide_unselectable_intermediate_nodes() {
+        let source = PassDebugSource {
+            pass_name: "p".to_string(),
+            module_source: String::new(),
+            ast_tree: Vec::new(),
+            dependency_targets: Vec::new(),
+            dependency_trees: HashMap::new(),
+            dependency_error: None,
+            parse_error: None,
+        };
+        let rows = flatten_dependency_tree(
+            &PassDebugDependencyNode {
+                label: "fs_main x (local)".to_string(),
+                target_id: Some("target::x".to_string()),
+                children: vec![PassDebugDependencyNode {
+                    label: "[rhs] Binary Add".to_string(),
+                    target_id: None,
+                    children: vec![
+                        PassDebugDependencyNode {
+                            label: "[source] function argument fs_main::0".to_string(),
+                            target_id: None,
+                            children: Vec::new(),
+                        },
+                        PassDebugDependencyNode {
+                            label: "fs_main uv (argument)".to_string(),
+                            target_id: Some("target::uv".to_string()),
+                            children: Vec::new(),
+                        },
+                    ],
+                }],
+            },
+            &source,
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].label, "fs_main x (local)");
+        assert_eq!(rows[0].depth, 0);
+        assert_eq!(rows[0].target_id.as_deref(), Some("target::x"));
+        assert_eq!(rows[1].label, "fs_main uv (argument)");
+        assert_eq!(rows[1].depth, 1);
+        assert_eq!(rows[1].target_id.as_deref(), Some("target::uv"));
+    }
+
+    #[test]
+    fn empty_target_search_matches_no_options() {
+        let target = PassDebugDependencyTarget {
+            id: "target::uv".to_string(),
+            name: "uv".to_string(),
+            label: "uv".to_string(),
+            scope: "fs_main".to_string(),
+            kind: "argument".to_string(),
+            source_range: None,
+        };
+
+        assert!(!target_matches_search(&target, ""));
+        assert!(!target_matches_search(&target, "   "));
+        assert!(target_matches_search(&target, "uv"));
     }
 
     #[test]

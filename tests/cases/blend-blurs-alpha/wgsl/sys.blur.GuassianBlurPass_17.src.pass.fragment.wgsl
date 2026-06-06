@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -36,8 +37,28 @@ var img_tex_node_15: texture_2d<f32>;
 var img_samp_node_15: sampler;
 
 
+// --- Extra WGSL declarations (generated) ---
+
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-let _frag_out = textureSample(img_tex_node_15, img_samp_node_15, (in.uv));
+    // ImageTexture node_15 aspect-correct uv
+    let image_texture_uv = aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_node_15)), in.geo_size_px);
+    // ImageTexture node_15.color
+    let image_texture_sample = textureSample(img_tex_node_15, img_samp_node_15, image_texture_uv);
+    // Final composite
+    let _frag_out = image_texture_sample;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

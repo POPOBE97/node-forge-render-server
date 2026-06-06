@@ -481,12 +481,13 @@ fn offset_in_local_px(expr: &str, dx: &str, dy: &str) -> String {
     expr.replace("in.local_px.xy", &off)
 }
 
-fn sdf_temp_name(node_id: &str, suffix: &str) -> String {
-    format!(
-        "nf_fs_{}_{}",
-        crate::renderer::utils::sanitize_wgsl_ident(node_id),
-        crate::renderer::utils::sanitize_wgsl_ident(suffix)
-    )
+fn sdf_temp_name(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    out_port: &str,
+    suffix: &str,
+) -> String {
+    super::readable_node_temp_name(ctx, "fs", node, out_port, suffix)
 }
 
 pub fn compile_sdf2d_bevel<F>(
@@ -550,8 +551,8 @@ where
     let uses_time = d0.uses_time || width.uses_time || cliff.uses_time;
 
     if out == "depth" {
-        let sdf_depth_var = sdf_temp_name(&node.id, "sdf_depth");
-        let depth0_var = sdf_temp_name(&node.id, "depth");
+        let sdf_depth_var = sdf_temp_name(ctx, node, out, "sdf_depth");
+        let depth0_var = sdf_temp_name(ctx, node, out, "depth");
         let mut stmts = vec![format!("    // Sdf2DBevel {}.depth", node.id)];
         stmts.push(super::readable_let_stmt(&sdf_depth_var, &d0.expr));
         stmts.push(super::readable_let_stmt(
@@ -574,15 +575,15 @@ where
     let d_py = offset_in_local_px(&d0.expr, "0.0", &normal_eps);
     let d_ny = offset_in_local_px(&d0.expr, "0.0", &format!("-({normal_eps})"));
 
-    let sdf_px_var = sdf_temp_name(&node.id, "sdf_px");
-    let sdf_nx_var = sdf_temp_name(&node.id, "sdf_nx");
-    let sdf_py_var = sdf_temp_name(&node.id, "sdf_py");
-    let sdf_ny_var = sdf_temp_name(&node.id, "sdf_ny");
-    let depth_px_var = sdf_temp_name(&node.id, "depth_px");
-    let depth_nx_var = sdf_temp_name(&node.id, "depth_nx");
-    let depth_py_var = sdf_temp_name(&node.id, "depth_py");
-    let depth_ny_var = sdf_temp_name(&node.id, "depth_ny");
-    let normal_var = sdf_temp_name(&node.id, "normal");
+    let sdf_px_var = sdf_temp_name(ctx, node, out, "sdf_px");
+    let sdf_nx_var = sdf_temp_name(ctx, node, out, "sdf_nx");
+    let sdf_py_var = sdf_temp_name(ctx, node, out, "sdf_py");
+    let sdf_ny_var = sdf_temp_name(ctx, node, out, "sdf_ny");
+    let depth_px_var = sdf_temp_name(ctx, node, out, "depth_px");
+    let depth_nx_var = sdf_temp_name(ctx, node, out, "depth_nx");
+    let depth_py_var = sdf_temp_name(ctx, node, out, "depth_py");
+    let depth_ny_var = sdf_temp_name(ctx, node, out, "depth_ny");
+    let normal_var = sdf_temp_name(ctx, node, out, "normal");
 
     let mut stmts = vec![format!(
         "    // Sdf2DBevel {}.normal finite differences",
@@ -778,7 +779,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::F32);
-        assert_eq!(expr.expr, "nf_fs_bev_depth");
+        assert_eq!(expr.expr, "sdf2d_bevel_depth_depth");
         let stmts = ctx.inline_stmts.join("\n");
         assert!(stmts.contains("sdf2d_bevel_smooth7"));
         let lib = ctx.extra_wgsl_decls.get(SDF2D_BEVEL_WGSL_LIB_KEY).unwrap();
@@ -816,7 +817,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(expr.ty, ValueType::Vec3);
-        assert_eq!(expr.expr, "nf_fs_bev_normal");
+        assert_eq!(expr.expr, "sdf2d_bevel_normal_normal");
         let stmts = ctx.inline_stmts.join("\n");
         assert!(stmts.contains("sdf2d_bevel_normal"));
         assert!(stmts.contains("sdf2d_bevel_smooth5"));

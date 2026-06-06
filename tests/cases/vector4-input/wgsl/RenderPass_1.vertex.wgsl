@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: Vector4Input_1
-    node_Vector4Input_1_7e5c0a36: vec4f,
+    vector4_input_1: vec4f,
 };
 
 @group(0) @binding(2)

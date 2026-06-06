@@ -41,5 +41,5 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return textureSample(src_tex, src_samp, in.uv);
+return textureSample(src_tex, src_samp, in.uv);
 }

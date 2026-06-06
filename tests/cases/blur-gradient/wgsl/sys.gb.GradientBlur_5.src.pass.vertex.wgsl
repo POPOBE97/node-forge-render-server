@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -35,6 +36,21 @@ var img_tex_ImageTexture_10: texture_2d<f32>;
 
 @group(1) @binding(1)
 var img_samp_ImageTexture_10: sampler;
+
+
+// --- Extra WGSL declarations (generated) ---
+
+fn aspect_correct_uv_fit(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    // r = image_aspect / geo_aspect; r > 1 means image is relatively wider than geometry.
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(max(1.0 / r, 1.0), max(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
+fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
+    let r = (img_dim.x * geo_dim.y) / (img_dim.y * geo_dim.x);
+    let s = vec2f(min(1.0 / r, 1.0), min(r, 1.0));
+    return (uv - vec2f(0.5)) * s + vec2f(0.5);
+}
 
 
 @vertex

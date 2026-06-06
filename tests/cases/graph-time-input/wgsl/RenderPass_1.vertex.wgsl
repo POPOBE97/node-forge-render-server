@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -35,7 +36,7 @@ var<uniform> params: Params;
 var<storage, read> baked_data_parse: array<vec4f>;
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_8_(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>, input1_: vec2<f32>, input2_: vec2<f32>, input3_: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var input1_1: vec2<f32>;
     var input2_1: vec2<f32>;

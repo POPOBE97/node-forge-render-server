@@ -52,7 +52,7 @@ var pass_samp_Downsample_10: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_GroupInstance_31_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     var uv_1: vec2<f32>;
     var xy_1: vec2<f32>;
     var size_1: vec2<f32>;
@@ -106,14 +106,21 @@ fn mc_GroupInstance_31_MathClosure_30_(uv: vec2<f32>, xy: vec2<f32>, size: vec2<
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-        var mc_GroupInstance_31_MathClosure_30_out: vec2f;
+    var math_closure_out: vec2f;
     {
         let xy = in.local_px.xy;
         let size = in.geo_size_px;
         var output: vec2f;
-        output = mc_GroupInstance_31_MathClosure_30_(in.uv, xy, size);
-        mc_GroupInstance_31_MathClosure_30_out = output;
+        output = mc_math_closure(in.uv, xy, size);
+        math_closure_out = output;
     }
-    let _frag_out = textureSample(pass_tex_Downsample_10, pass_samp_Downsample_10, vec2f((mc_GroupInstance_31_MathClosure_30_out).x, 1.0 - (mc_GroupInstance_31_MathClosure_30_out).y));
+    // Pass Texture PassTexture_26.color
+    let pass_texture = textureSample(
+        pass_tex_Downsample_10,
+        pass_samp_Downsample_10,
+        vec2f((math_closure_out).x, 1.0 - (math_closure_out).y),
+    );
+    // Final composite
+    let _frag_out = pass_texture;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

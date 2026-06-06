@@ -32,7 +32,7 @@ fn is_pass_node(node_type: &str) -> bool {
 /// Compute a deterministic content signature for a node, recursing into upstream
 /// dependencies. The signature captures:
 ///   - node_type
-///   - all params (except __dedup_* metadata), sorted by key
+///   - all params (except internal metadata), sorted by key
 ///   - for each connected input: (to_port_id, from_port_id, signature(upstream_node))
 ///
 /// Two nodes with the same signature produce identical shader output regardless
@@ -60,11 +60,13 @@ fn compute_node_signature(
     // 1) node_type
     node.node_type.hash(&mut hasher);
 
-    // 2) params (excluding dedup metadata), sorted by key for determinism
+    // 2) params (excluding compiler/readability metadata), sorted by key for determinism.
+    // Group readability metadata is attached during expansion so the WGSL emitter
+    // can recover labels, but it must not affect structural pass equivalence.
     let params: BTreeMap<&String, &serde_json::Value> = node
         .params
         .iter()
-        .filter(|(k, _)| !k.starts_with("__dedup_"))
+        .filter(|(k, _)| !k.starts_with("__dedup_") && !k.starts_with("__group_"))
         .collect();
     for (k, v) in &params {
         k.hash(&mut hasher);

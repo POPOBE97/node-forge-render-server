@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_48
-    node_ColorInput_48_cd78eb69: vec4f,
+    u_bg_overlay: vec4f,
 };
 
 @group(0) @binding(2)
@@ -290,7 +290,7 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_MathClosure_42_(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var intelli_1: vec4<f32>;
     var output: vec4<f32> = vec4(0f);
@@ -316,7 +316,7 @@ fn mc_MathClosure_42_(uv: vec2<f32>, intelli: vec4<f32>) -> vec4<f32> {
     return _e24;
 }
 
-fn mc_MathClosure_51_(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
+fn mc_math_closure_534c24ef(uv: vec2<f32>, x: vec4<f32>, y: vec4<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var x_1: vec4<f32>;
     var y_1: vec4<f32>;
@@ -343,21 +343,42 @@ fn sample_pass_RenderPass_4_(uv_in: vec2f) -> vec4f {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-        var mc_MathClosure_42_out: vec4f;
+    // ImageTexture ImageTexture_46 aspect-correct uv
+    let image_texture_uv = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_ImageTexture_46)),
+        in.geo_size_px,
+    );
+    // ImageTexture ImageTexture_46.color
+    let image_texture_sample = textureSample(img_tex_ImageTexture_46, img_samp_ImageTexture_46, image_texture_uv);
+    // ImageTexture ImageTexture_50 aspect-correct uv
+    let image_texture_uv_6ef50715 = aspect_correct_uv_fill(
+        (in.uv),
+        vec2f(textureDimensions(img_tex_ImageTexture_50)),
+        in.geo_size_px,
+    );
+    // ImageTexture ImageTexture_50.color
+    let image_texture_sample_9bb83210 = textureSample(
+        img_tex_ImageTexture_50,
+        img_samp_ImageTexture_50,
+        image_texture_uv_6ef50715,
+    );
+    var math_closure_out_4bd9b11e: vec4f;
     {
-        let intelli = textureSample(img_tex_ImageTexture_50, img_samp_ImageTexture_50, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_ImageTexture_50)), in.geo_size_px));
+        let intelli = image_texture_sample_9bb83210;
         var output: vec4f;
-        output = mc_MathClosure_42_(in.uv, intelli);
-        mc_MathClosure_42_out = output;
+        output = mc_math_closure(in.uv, intelli);
+        math_closure_out_4bd9b11e = output;
     }
-    var mc_MathClosure_51_out: vec4f;
+    var math_closure_out: vec4f;
     {
-        let x = blendNormal((vec4f((graph_inputs.node_ColorInput_48_cd78eb69).rgb * (graph_inputs.node_ColorInput_48_cd78eb69).a, (graph_inputs.node_ColorInput_48_cd78eb69).a)), (textureSample(img_tex_ImageTexture_46, img_samp_ImageTexture_46, aspect_correct_uv_fill((in.uv), vec2f(textureDimensions(img_tex_ImageTexture_46)), in.geo_size_px))));
-        let y = mc_MathClosure_42_out;
+        let x = blendNormal((vec4f((graph_inputs.u_bg_overlay).rgb * (graph_inputs.u_bg_overlay).a, (graph_inputs.u_bg_overlay).a)), (image_texture_sample));
+        let y = math_closure_out_4bd9b11e;
         var output: vec4f;
-        output = mc_MathClosure_51_(in.uv, x, y);
-        mc_MathClosure_51_out = output;
+        output = mc_math_closure_534c24ef(in.uv, x, y);
+        math_closure_out = output;
     }
-    let _frag_out = mc_MathClosure_51_out;
+    // Final composite
+    let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

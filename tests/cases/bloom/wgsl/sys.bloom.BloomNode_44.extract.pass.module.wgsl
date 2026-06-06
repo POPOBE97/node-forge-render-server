@@ -71,7 +71,7 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
 let src = textureSample(src_tex, src_samp, in.uv);
 let lum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
 let mask = smoothstep(0.00000000, 0.15686275, lum);

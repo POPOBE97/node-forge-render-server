@@ -48,7 +48,7 @@ var pass_samp_Upsample_41: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_MathClosure_42_(uv: vec2<f32>) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var output: vec4<f32> = vec4(0f);
     var c_l0_: vec4<f32>;
@@ -79,12 +79,13 @@ fn sample_pass_Upsample_41_(uv_in: vec2f) -> vec4f {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-        var mc_MathClosure_42_out: vec4f;
+    var math_closure_out: vec4f;
     {
         var output: vec4f;
-        output = mc_MathClosure_42_(in.uv);
-        mc_MathClosure_42_out = output;
+        output = mc_math_closure(in.uv);
+        math_closure_out = output;
     }
-    let _frag_out = mc_MathClosure_42_out;
+    // Final composite
+    let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

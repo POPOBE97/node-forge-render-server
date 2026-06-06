@@ -37,6 +37,7 @@ pub mod wgsl_templates;
 pub use node_compiler::compile_material_expr;
 pub use pass_debug::{
     PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
+    PassDebugSourceRange,
 };
 pub use scene_prep::{PreparedScene, prepare_scene};
 pub use shader_space::{

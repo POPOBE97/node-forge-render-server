@@ -14,6 +14,7 @@ struct Params {
     // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -40,7 +41,7 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  let original = vec2f(textureDimensions(src_tex));
  let xy = in.uv * original;
  let k = array<f32, 8>(0.212054133, 0.192007989, 0.075903155, 0.017631816, 0.002402914, 0, 0, 0);

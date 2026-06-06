@@ -10,12 +10,13 @@ use crate::renderer::utils::{coerce_to_type, fmt_f32};
 /// Stable key for the aspect-correction WGSL helpers in `extra_wgsl_decls`.
 const ASPECT_CORRECT_WGSL_LIB_KEY: &str = "aspect_correct_uv_lib";
 
-fn texture_temp_name(node_id: &str, suffix: &str) -> String {
-    format!(
-        "nf_fs_{}_{}",
-        crate::renderer::utils::sanitize_wgsl_ident(node_id),
-        crate::renderer::utils::sanitize_wgsl_ident(suffix)
-    )
+fn texture_temp_name(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    out_port: &str,
+    suffix: &str,
+) -> String {
+    super::readable_node_temp_name(ctx, "fs", node, out_port, suffix)
 }
 
 /// Ensure the aspect-correction UV helper functions are emitted exactly once.
@@ -140,7 +141,7 @@ where
 
     let sample_uv = match aspect_mode {
         "fit" | "fill" => {
-            let uv_var = texture_temp_name(&node.id, &format!("{port}_uv"));
+            let uv_var = texture_temp_name(ctx, node, port, "uv");
             super::push_readable_let(
                 ctx,
                 format!("ImageTexture {} aspect-correct uv", node.id),
@@ -154,7 +155,7 @@ where
 
     // UVs here are already in the renderer's GL-like convention: (0,0) bottom-left.
     let sample_expr = format!("textureSample({tex_var}, {samp_var}, {sample_uv})");
-    let sample_var = texture_temp_name(&node.id, &format!("{port}_sample"));
+    let sample_var = texture_temp_name(ctx, node, port, "sample");
 
     match port {
         "color" => {
@@ -366,7 +367,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.ty, ValueType::Vec4);
-        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        assert_eq!(result.expr, "image_texture_sample");
         let stmts = ctx.inline_stmts.join("\n");
         assert!(stmts.contains("textureSample"));
         assert!(stmts.contains("img_tex_img1"));
@@ -539,7 +540,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        assert_eq!(result.expr, "image_texture_sample");
         let stmts = ctx.inline_stmts.join("\n");
         assert!(stmts.contains("aspect_correct_uv_fit("));
         assert!(stmts.contains("textureDimensions(img_tex_img1)"));
@@ -579,7 +580,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.expr, "nf_fs_img1_color_sample");
+        assert_eq!(result.expr, "image_texture_sample");
         let stmts = ctx.inline_stmts.join("\n");
         assert!(stmts.contains("aspect_correct_uv_fill("));
         assert!(stmts.contains("textureDimensions(img_tex_img1)"));

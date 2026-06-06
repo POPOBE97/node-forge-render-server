@@ -4,10 +4,41 @@ use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::super::types::{GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType};
-use super::super::utils::coerce_to_type;
+use super::super::utils::{coerce_to_type, readable_wgsl_ident};
 use crate::dsl::{self, Node, SceneDSL, incoming_connection};
 use crate::renderer::graph_uniforms::graph_field_name;
 use crate::renderer::validation::GlslShaderStage;
+
+fn display_param<'a>(node: &'a Node, key: &str) -> Option<&'a str> {
+    node.params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn graph_input_preferred_name(node: &Node) -> String {
+    let raw = display_param(node, "__group_input_name")
+        .or_else(|| display_param(node, "label"))
+        .unwrap_or(node.id.as_str());
+    let name = readable_wgsl_ident(raw);
+    match name.as_str() {
+        "float_input" | "int_input" | "bool_input" | "vector2_input" | "vector3_input"
+        | "vector4_input" | "color_input" | "input" => readable_wgsl_ident(&node.id),
+        _ => name,
+    }
+}
+
+fn register_graph_field(
+    ctx: &mut MaterialCompileContext,
+    node: &Node,
+    kind: GraphFieldKind,
+) -> String {
+    if ctx.preserve_legacy_graph_input_names {
+        return ctx.register_graph_input_named(node.id.as_str(), kind, &graph_field_name(&node.id));
+    }
+    ctx.register_graph_input_named(&node.id, kind, &graph_input_preferred_name(node))
+}
 
 /// Compile a ColorInput node to WGSL.
 ///
@@ -24,8 +55,7 @@ pub fn compile_color_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    ctx.register_graph_input(&node.id, GraphFieldKind::Vec4Color);
-    let field = graph_field_name(&node.id);
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec4Color);
     Ok(TypedExpr::new(
         format!(
             "vec4f((graph_inputs.{field}).rgb * (graph_inputs.{field}).a, (graph_inputs.{field}).a)"
@@ -49,15 +79,14 @@ pub fn compile_float_or_int_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    let field = graph_field_name(&node.id);
     if node.node_type == "IntInput" {
-        ctx.register_graph_input(&node.id, GraphFieldKind::I32);
+        let field = register_graph_field(ctx, node, GraphFieldKind::I32);
         Ok(TypedExpr::new(
             format!("f32((graph_inputs.{field}).x)"),
             ValueType::F32,
         ))
     } else {
-        ctx.register_graph_input(&node.id, GraphFieldKind::F32);
+        let field = register_graph_field(ctx, node, GraphFieldKind::F32);
         Ok(TypedExpr::new(
             format!("(graph_inputs.{field}).x"),
             ValueType::F32,
@@ -80,8 +109,7 @@ pub fn compile_bool_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    ctx.register_graph_input(&node.id, GraphFieldKind::Bool);
-    let field = graph_field_name(&node.id);
+    let field = register_graph_field(ctx, node, GraphFieldKind::Bool);
     Ok(TypedExpr::new(
         format!("((graph_inputs.{field}).x != 0)"),
         ValueType::Bool,
@@ -104,8 +132,7 @@ pub fn compile_vector2_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    ctx.register_graph_input(&node.id, GraphFieldKind::Vec2);
-    let field = graph_field_name(&node.id);
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec2);
     Ok(TypedExpr::new(
         format!("(graph_inputs.{field}).xy"),
         ValueType::Vec2,
@@ -129,8 +156,7 @@ pub fn compile_vector3_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    ctx.register_graph_input(&node.id, GraphFieldKind::Vec3);
-    let field = graph_field_name(&node.id);
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec3);
     Ok(TypedExpr::new(
         format!("(graph_inputs.{field}).xyz"),
         ValueType::Vec3,
@@ -154,8 +180,7 @@ pub fn compile_vector4_input(
     _out_port: Option<&str>,
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
-    ctx.register_graph_input(&node.id, GraphFieldKind::Vec4);
-    let field = graph_field_name(&node.id);
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec4);
     Ok(TypedExpr::new(
         format!("(graph_inputs.{field})"),
         ValueType::Vec4,

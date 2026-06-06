@@ -441,7 +441,7 @@ where
         }
     }
 
-    let output_var = format!("mc_{}_out", sanitize_wgsl_ident(&node.id));
+    let output_var = super::readable_node_temp_name(ctx, "fs", node, "output", "out");
 
     // Collect pass texture inputs for direct sampling support.
     let mut pass_texture_inputs: Vec<PassTextureInput> = Vec::new();
@@ -526,7 +526,8 @@ where
     //
     // EXCEPTION: If any port uses an array type, we bypass naga entirely and do direct
     // GLSL→WGSL string conversion, because GLSL doesn't support array function return types.
-    let fn_name = format!("mc_{}", sanitize_wgsl_ident(&node.id));
+    let fn_base = format!("mc_{}", super::readable_symbol_base(node, "output"));
+    let fn_name = ctx.allocate_local_name(&format!("fn:{}", node.id), &fn_base);
     let mut source = source
         .replace("vUv", "uv")
         .replace("v_UV", "uv")

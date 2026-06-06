@@ -187,6 +187,65 @@ pub fn sanitize_wgsl_ident(s: &str) -> String {
     out
 }
 
+/// Convert display text into a compact snake_case WGSL identifier.
+///
+/// This is intentionally separate from [`sanitize_wgsl_ident`]: generated IDs
+/// such as `MathMultiply_9` should keep their case when used as resource keys,
+/// while user-facing labels make better local symbols as lowercase words.
+pub fn readable_wgsl_ident(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_was_sep = true;
+    let mut prev_was_lower = false;
+    let mut prev_was_upper = false;
+    let mut prev_was_digit = false;
+    let chars: Vec<char> = s.chars().collect();
+
+    for (idx, ch) in chars.iter().copied().enumerate() {
+        if ch.is_ascii_alphanumeric() {
+            let next_is_lower = chars
+                .get(idx + 1)
+                .is_some_and(|next| next.is_ascii_lowercase());
+            let starts_new_word = ch.is_ascii_uppercase()
+                && (prev_was_lower
+                    || (prev_was_upper && next_is_lower)
+                    || (prev_was_digit && next_is_lower));
+            if starts_new_word && !prev_was_sep && !out.is_empty() && !out.ends_with('_') {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+            prev_was_sep = false;
+            prev_was_lower = ch.is_ascii_lowercase();
+            prev_was_upper = ch.is_ascii_uppercase();
+            prev_was_digit = ch.is_ascii_digit();
+        } else if ch == '_' || ch == '-' || ch.is_whitespace() {
+            if !prev_was_sep && !out.is_empty() {
+                out.push('_');
+                prev_was_sep = true;
+            }
+            prev_was_lower = false;
+            prev_was_upper = false;
+            prev_was_digit = false;
+        } else if !prev_was_sep && !out.is_empty() {
+            out.push('_');
+            prev_was_sep = true;
+            prev_was_lower = false;
+            prev_was_upper = false;
+            prev_was_digit = false;
+        }
+    }
+
+    while out.ends_with('_') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push('_');
+    }
+    if matches!(out.chars().next(), Some('0'..='9')) {
+        out.insert(0, '_');
+    }
+    sanitize_wgsl_ident(&out)
+}
+
 /// Convert a scalar expression into an f32 expression.
 pub(crate) fn coerce_scalar_to_f32(x: &TypedExpr) -> Option<TypedExpr> {
     match x.ty {
@@ -622,6 +681,14 @@ pub fn load_image_from_data_url(data_url: &str) -> Result<DynamicImage> {
 #[cfg(test)]
 mod data_url_tests {
     use super::*;
+
+    #[test]
+    fn readable_ident_keeps_shader_acronyms_compact() {
+        assert_eq!(readable_wgsl_ident("Sdf2DBevel"), "sdf2d_bevel");
+        assert_eq!(readable_wgsl_ident("SDF2DBevel"), "sdf2d_bevel");
+        assert_eq!(readable_wgsl_ident("Vector2Input"), "vector2_input");
+        assert_eq!(readable_wgsl_ident("MathMultiply"), "math_multiply");
+    }
 
     #[test]
     fn data_url_decodes_png_bytes() {

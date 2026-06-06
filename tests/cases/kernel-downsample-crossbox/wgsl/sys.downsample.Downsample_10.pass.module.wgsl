@@ -71,7 +71,7 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
     let dst_dims = params.target_size;
