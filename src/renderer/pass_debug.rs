@@ -8,7 +8,10 @@ use std::{
     ops::Range,
 };
 
-use naga::{Arena, Block, Expression, Function, Module, Statement};
+use naga::{
+    Arena, Block, Expression, Function, Module, ShaderStage, Statement, SwizzleComponent, Type,
+    TypeInner,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PassDebugSourceRange {
@@ -79,6 +82,9 @@ pub struct PassDebugDependencyTarget {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PassDebugDependencyNode {
     pub label: String,
+    pub edge_label: Option<String>,
+    pub display_label: Option<String>,
+    pub source_range: Option<PassDebugSourceRange>,
     pub target_id: Option<String>,
     pub children: Vec<PassDebugDependencyNode>,
 }
@@ -87,6 +93,9 @@ impl PassDebugDependencyNode {
     fn leaf(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
+            edge_label: None,
+            display_label: None,
+            source_range: None,
             target_id: None,
             children: Vec::new(),
         }
@@ -95,6 +104,9 @@ impl PassDebugDependencyNode {
     fn branch(label: impl Into<String>, children: Vec<PassDebugDependencyNode>) -> Self {
         Self {
             label: label.into(),
+            edge_label: None,
+            display_label: None,
+            source_range: None,
             target_id: None,
             children,
         }
@@ -107,9 +119,27 @@ impl PassDebugDependencyNode {
     ) -> Self {
         Self {
             label: label.into(),
+            edge_label: None,
+            display_label: None,
+            source_range: None,
             target_id: Some(target_id.into()),
             children,
         }
+    }
+
+    fn with_edge_label(mut self, edge_label: Option<String>) -> Self {
+        self.edge_label = edge_label;
+        self
+    }
+
+    fn with_display_label(mut self, display_label: Option<String>) -> Self {
+        self.display_label = display_label;
+        self
+    }
+
+    fn with_source_range(mut self, source_range: Option<PassDebugSourceRange>) -> Self {
+        self.source_range = source_range;
+        self
     }
 }
 
@@ -120,6 +150,7 @@ pub struct PassDebugSource {
     pub ast_tree: Vec<PassDebugAstNode>,
     pub dependency_targets: Vec<PassDebugDependencyTarget>,
     pub dependency_trees: HashMap<String, PassDebugDependencyNode>,
+    pub dependency_root_target_id: Option<String>,
     pub dependency_error: Option<String>,
     pub parse_error: Option<String>,
 }
@@ -138,6 +169,7 @@ impl PassDebugSource {
                     ast_tree,
                     dependency_targets: dependencies.targets,
                     dependency_trees: dependencies.trees,
+                    dependency_root_target_id: dependencies.root_target_id,
                     dependency_error: dependencies.error,
                     parse_error: None,
                 }
@@ -151,6 +183,7 @@ impl PassDebugSource {
                 )],
                 dependency_targets: Vec::new(),
                 dependency_trees: HashMap::new(),
+                dependency_root_target_id: None,
                 dependency_error: None,
                 parse_error: Some(error.to_string()),
             },
@@ -192,6 +225,10 @@ fn target_id_local(scope: &str, handle: naga::Handle<naga::LocalVariable>) -> St
 
 fn target_id_expr(scope: &str, handle: naga::Handle<Expression>) -> String {
     format!("{scope}::expr::{}", handle.index())
+}
+
+fn target_id_return(scope: &str) -> String {
+    format!("{scope}::return")
 }
 
 fn entry_points_node(
@@ -920,6 +957,7 @@ fn expr_list_nodes(
 struct DependencyDebugBuild {
     targets: Vec<PassDebugDependencyTarget>,
     trees: HashMap<String, PassDebugDependencyNode>,
+    root_target_id: Option<String>,
     error: Option<String>,
 }
 
@@ -956,6 +994,9 @@ enum TargetKind {
         scope: String,
         handle: naga::Handle<Expression>,
     },
+    Return {
+        scope: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -977,6 +1018,13 @@ struct CallDependency {
     arguments: Vec<naga::Handle<Expression>>,
 }
 
+#[derive(Clone, Debug)]
+struct AccessPathTarget {
+    target_id: String,
+    display_label: String,
+    source_range: Option<PassDebugSourceRange>,
+}
+
 struct DependencyAnalyzer<'a> {
     module: &'a Module,
     source: &'a str,
@@ -987,6 +1035,8 @@ struct DependencyAnalyzer<'a> {
     stores_by_target: HashMap<String, Vec<StoreDependency>>,
     returns_by_function: HashMap<String, Vec<ReturnDependency>>,
     calls_by_result: HashMap<(String, usize), CallDependency>,
+    entry_scopes: Vec<String>,
+    fragment_entry_scopes: Vec<String>,
 }
 
 impl<'a> DependencyAnalyzer<'a> {
@@ -1001,12 +1051,16 @@ impl<'a> DependencyAnalyzer<'a> {
             stores_by_target: HashMap::new(),
             returns_by_function: HashMap::new(),
             calls_by_result: HashMap::new(),
+            entry_scopes: Vec::new(),
+            fragment_entry_scopes: Vec::new(),
         };
         analyzer.index_module();
         analyzer
     }
 
     fn into_debug(mut self) -> DependencyDebugBuild {
+        self.add_entry_return_targets();
+        let root_target_id = self.root_target_id();
         self.targets
             .sort_by(|a, b| a.scope.cmp(&b.scope).then_with(|| a.name.cmp(&b.name)));
         let mut trees = HashMap::new();
@@ -1017,6 +1071,7 @@ impl<'a> DependencyAnalyzer<'a> {
         DependencyDebugBuild {
             targets: self.targets,
             trees,
+            root_target_id,
             error: None,
         }
     }
@@ -1040,6 +1095,10 @@ impl<'a> DependencyAnalyzer<'a> {
 
         for entry in &self.module.entry_points {
             let scope = entry.name.clone();
+            self.entry_scopes.push(scope.clone());
+            if entry.stage == ShaderStage::Fragment {
+                self.fragment_entry_scopes.push(scope.clone());
+            }
             self.functions.insert(scope.clone(), &entry.function);
             self.index_function(scope, &entry.function);
         }
@@ -1050,6 +1109,42 @@ impl<'a> DependencyAnalyzer<'a> {
             self.functions.insert(scope.clone(), function);
             self.index_function(scope, function);
         }
+    }
+
+    fn add_entry_return_targets(&mut self) {
+        let scopes = self
+            .fragment_entry_scopes
+            .iter()
+            .chain(self.entry_scopes.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        for scope in scopes {
+            if !self.returns_by_function.contains_key(&scope) {
+                continue;
+            }
+            self.add_target(
+                target_id_return(&scope),
+                "return".to_string(),
+                format!("{scope} return"),
+                scope.clone(),
+                "return".to_string(),
+                TargetKind::Return { scope },
+            );
+        }
+    }
+
+    fn root_target_id(&self) -> Option<String> {
+        self.fragment_entry_scopes
+            .iter()
+            .map(|scope| target_id_return(scope))
+            .find(|target_id| self.target_kinds.contains_key(target_id))
+            .or_else(|| {
+                self.entry_scopes
+                    .iter()
+                    .map(|scope| target_id_return(scope))
+                    .find(|target_id| self.target_kinds.contains_key(target_id))
+            })
+            .or_else(|| self.targets.first().map(|target| target.id.clone()))
     }
 
     fn index_function(&mut self, scope: String, function: &'a Function) {
@@ -1157,6 +1252,7 @@ impl<'a> DependencyAnalyzer<'a> {
                         .and_then(|range| source_range_from_byte_range(self.source, range))
                 })
             }
+            TargetKind::Return { .. } => None,
         }
     }
 
@@ -1280,20 +1376,46 @@ impl<'a> DependencyAnalyzer<'a> {
         target_stack: &mut Vec<String>,
         depth: usize,
     ) -> PassDebugDependencyNode {
+        self.build_target_tree_with_edge(target_id, target_stack, depth, None)
+    }
+
+    fn build_target_tree_with_edge(
+        &self,
+        target_id: &str,
+        target_stack: &mut Vec<String>,
+        depth: usize,
+        edge_label: Option<String>,
+    ) -> PassDebugDependencyNode {
+        self.build_target_tree_with_context(target_id, target_stack, depth, edge_label, None, None)
+    }
+
+    fn build_target_tree_with_context(
+        &self,
+        target_id: &str,
+        target_stack: &mut Vec<String>,
+        depth: usize,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+    ) -> PassDebugDependencyNode {
         const MAX_DEPENDENCY_DEPTH: usize = 36;
         if depth >= MAX_DEPENDENCY_DEPTH {
             return PassDebugDependencyNode::target(
                 format!("{target_id} [depth limit]"),
                 target_id.to_string(),
                 Vec::new(),
-            );
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label);
         }
         if target_stack.iter().any(|id| id == target_id) {
             return PassDebugDependencyNode::target(
                 format!("{target_id} [cycle]"),
                 target_id.to_string(),
                 Vec::new(),
-            );
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label);
         }
 
         let Some(target) = self.targets.iter().find(|target| target.id == target_id) else {
@@ -1314,16 +1436,19 @@ impl<'a> DependencyAnalyzer<'a> {
             TargetKind::Local { scope, handle } => {
                 self.local_target_children(scope, *handle, target_id, target_stack, depth)
             }
-            TargetKind::NamedExpression { scope, handle } => vec![self.build_expr_dependency(
+            TargetKind::NamedExpression { scope, handle } => self.semantic_expr_dependencies(
                 ExprRef::Function {
                     scope: scope.clone(),
                     handle: *handle,
                 },
-                "[value]",
+                None,
                 target_stack,
                 &mut HashSet::new(),
                 depth + 1,
-            )],
+            ),
+            TargetKind::Return { scope } => {
+                self.return_target_children(scope, target_stack, depth + 1)
+            }
         };
         if children.is_empty() {
             children.push(PassDebugDependencyNode::leaf("[source] no contributors"));
@@ -1331,10 +1456,13 @@ impl<'a> DependencyAnalyzer<'a> {
         target_stack.pop();
 
         PassDebugDependencyNode::target(
-            format!("{} ({})", target.label, target.kind),
+            dependency_target_node_label(target, display_label.as_deref()),
             target.id.clone(),
             children,
         )
+        .with_edge_label(edge_label)
+        .with_display_label(display_label)
+        .with_source_range(source_range)
     }
 
     fn global_target_children(
@@ -1346,9 +1474,9 @@ impl<'a> DependencyAnalyzer<'a> {
         let mut children = Vec::new();
         let global = &self.module.global_variables[handle];
         if let Some(init) = global.init {
-            children.push(self.build_expr_dependency(
+            children.extend(self.semantic_expr_dependencies(
                 ExprRef::Global(init),
-                "[init]",
+                None,
                 target_stack,
                 &mut HashSet::new(),
                 depth + 1,
@@ -1371,12 +1499,12 @@ impl<'a> DependencyAnalyzer<'a> {
         if let Some(function) = self.functions.get(scope) {
             let local = &function.local_variables[handle];
             if let Some(init) = local.init {
-                children.push(self.build_expr_dependency(
+                children.extend(self.semantic_expr_dependencies(
                     ExprRef::Function {
                         scope: scope.to_string(),
                         handle: init,
                     },
-                    "[init]",
+                    None,
                     target_stack,
                     &mut HashSet::new(),
                     depth + 1,
@@ -1402,12 +1530,12 @@ impl<'a> DependencyAnalyzer<'a> {
                     .map(|(index, store)| {
                         let mut children =
                             self.control_nodes(&store.controls, target_stack, depth + 1);
-                        children.push(self.build_expr_dependency(
+                        children.extend(self.semantic_expr_dependencies(
                             ExprRef::Function {
                                 scope: store.scope.clone(),
                                 handle: store.value,
                             },
-                            "[rhs]",
+                            None,
                             target_stack,
                             &mut HashSet::new(),
                             depth + 1,
@@ -1422,6 +1550,57 @@ impl<'a> DependencyAnalyzer<'a> {
             .unwrap_or_default()
     }
 
+    fn return_target_children(
+        &self,
+        scope: &str,
+        target_stack: &mut Vec<String>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode> {
+        let Some(returns) = self.returns_by_function.get(scope) else {
+            return Vec::new();
+        };
+        if let [ret] = returns.as_slice()
+            && ret.controls.is_empty()
+        {
+            return ret
+                .value
+                .map(|value| {
+                    self.semantic_expr_dependencies(
+                        ExprRef::Function {
+                            scope: scope.to_string(),
+                            handle: value,
+                        },
+                        None,
+                        target_stack,
+                        &mut HashSet::new(),
+                        depth + 1,
+                    )
+                })
+                .unwrap_or_default();
+        }
+
+        returns
+            .iter()
+            .enumerate()
+            .map(|(index, ret)| {
+                let mut children = self.control_nodes(&ret.controls, target_stack, depth + 1);
+                if let Some(value) = ret.value {
+                    children.extend(self.semantic_expr_dependencies(
+                        ExprRef::Function {
+                            scope: scope.to_string(),
+                            handle: value,
+                        },
+                        None,
+                        target_stack,
+                        &mut HashSet::new(),
+                        depth + 1,
+                    ));
+                }
+                PassDebugDependencyNode::branch(format!("[return {index}] {scope}"), children)
+            })
+            .collect()
+    }
+
     fn control_nodes(
         &self,
         controls: &[(String, ExprRef)],
@@ -1431,7 +1610,7 @@ impl<'a> DependencyAnalyzer<'a> {
         controls
             .iter()
             .map(|(label, expr)| {
-                self.build_expr_dependency(
+                self.semantic_relation_node(
                     expr.clone(),
                     label,
                     target_stack,
@@ -1442,58 +1621,93 @@ impl<'a> DependencyAnalyzer<'a> {
             .collect()
     }
 
-    fn build_expr_dependency(
+    fn semantic_relation_node(
         &self,
         expr_ref: ExprRef,
-        edge_label: &str,
+        relation_label: &str,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         depth: usize,
     ) -> PassDebugDependencyNode {
+        let children =
+            self.semantic_expr_dependencies(expr_ref, None, target_stack, seen_exprs, depth + 1);
+        if children.is_empty() {
+            PassDebugDependencyNode::leaf(format!("{relation_label} [no variable dependencies]"))
+        } else {
+            PassDebugDependencyNode::branch(relation_label.to_string(), children)
+        }
+    }
+
+    fn semantic_expr_dependencies(
+        &self,
+        expr_ref: ExprRef,
+        inherited_edge: Option<String>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode> {
         const MAX_DEPENDENCY_DEPTH: usize = 36;
         if depth >= MAX_DEPENDENCY_DEPTH {
-            return PassDebugDependencyNode::leaf(format!("{edge_label} [depth limit]"));
+            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
         }
 
         if let Some(target_id) = self.named_expression_target_id(&expr_ref)
             && !target_stack.iter().any(|id| id == &target_id)
         {
-            return PassDebugDependencyNode::branch(
-                format!("{edge_label} named expression"),
-                vec![self.build_target_tree(&target_id, target_stack, depth + 1)],
-            );
+            return vec![self.build_target_tree_with_edge(
+                &target_id,
+                target_stack,
+                depth + 1,
+                inherited_edge,
+            )];
+        }
+
+        if let Some(access_path) = self.access_path_target(&expr_ref) {
+            let mut dependencies = vec![self.build_target_tree_with_context(
+                &access_path.target_id,
+                target_stack,
+                depth + 1,
+                inherited_edge.clone(),
+                Some(access_path.display_label),
+                access_path.source_range,
+            )];
+            dependencies.extend(self.access_path_index_dependencies(
+                &expr_ref,
+                inherited_edge,
+                target_stack,
+                seen_exprs,
+                depth + 1,
+            ));
+            return dependencies;
         }
 
         let expr_key = expr_ref.key();
-        if !seen_exprs.insert(expr_key) {
-            return PassDebugDependencyNode::leaf(format!("{edge_label} already shown"));
+        if !seen_exprs.insert(expr_key.clone()) {
+            return Vec::new();
         }
 
         let Some(expr) = self.expression(&expr_ref) else {
-            return PassDebugDependencyNode::leaf(format!("{edge_label} missing expression"));
+            seen_exprs.remove(&expr_key);
+            return Vec::new();
         };
 
-        let mut children = self.expression_dependency_children(
-            expr_ref.clone(),
+        let children = self.semantic_expression_children(
+            &expr_ref,
             expr,
+            inherited_edge,
             target_stack,
             seen_exprs,
             depth + 1,
         );
-        if children.is_empty() {
-            children.push(PassDebugDependencyNode::leaf("[leaf]"));
-        }
-
-        PassDebugDependencyNode::branch(
-            format!("{edge_label} {}", expression_kind_label(expr)),
-            children,
-        )
+        seen_exprs.remove(&expr_key);
+        children
     }
 
-    fn expression_dependency_children(
+    fn semantic_expression_children(
         &self,
-        expr_ref: ExprRef,
+        expr_ref: &ExprRef,
         expr: &Expression,
+        inherited_edge: Option<String>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         depth: usize,
@@ -1502,114 +1716,94 @@ impl<'a> DependencyAnalyzer<'a> {
             Expression::Literal(_) | Expression::ZeroValue(_) => Vec::new(),
             Expression::Constant(handle) => {
                 let init = self.module.constants[*handle].init;
-                vec![self.build_expr_dependency(
+                self.semantic_expr_dependencies(
                     ExprRef::Global(init),
-                    "[constant.init]",
+                    inherited_edge,
                     target_stack,
                     seen_exprs,
                     depth + 1,
-                )]
+                )
             }
             Expression::Override(handle) => self.module.overrides[*handle]
                 .init
                 .map(|init| {
-                    vec![self.build_expr_dependency(
+                    self.semantic_expr_dependencies(
                         ExprRef::Global(init),
-                        "[override.init]",
-                        target_stack,
-                        seen_exprs,
-                        depth + 1,
-                    )]
-                })
-                .unwrap_or_default(),
-            Expression::Compose { components, .. } => components
-                .iter()
-                .enumerate()
-                .map(|(index, component)| {
-                    self.build_sibling_expr_dependency(
-                        &expr_ref,
-                        *component,
-                        &format!("[component {index}]"),
+                        inherited_edge,
                         target_stack,
                         seen_exprs,
                         depth + 1,
                     )
                 })
-                .collect(),
-            Expression::Access { base, index } => vec![
-                self.build_sibling_expr_dependency(
-                    &expr_ref,
-                    *base,
-                    "[access.base]",
-                    target_stack,
-                    seen_exprs,
-                    depth + 1,
-                ),
-                self.build_sibling_expr_dependency(
-                    &expr_ref,
-                    *index,
-                    "[access.index]",
-                    target_stack,
-                    seen_exprs,
-                    depth + 1,
-                ),
-            ],
-            Expression::AccessIndex { base, index } => vec![self.build_sibling_expr_dependency(
-                &expr_ref,
-                *base,
-                &format!("[access.{index}]"),
+                .unwrap_or_default(),
+            Expression::Compose { components, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                components.iter().copied().map(Some),
+                operation_edge(inherited_edge, "Compose"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
-            )],
-            Expression::Splat { value, .. } => vec![self.build_sibling_expr_dependency(
-                &expr_ref,
-                *value,
-                "[splat.value]",
+            ),
+            Expression::Access { base, index } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*base), Some(*index)],
+                operation_edge(inherited_edge, "Access"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
-            )],
-            Expression::Swizzle { vector, .. } => vec![self.build_sibling_expr_dependency(
-                &expr_ref,
-                *vector,
-                "[swizzle.vector]",
+            ),
+            Expression::AccessIndex { base, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*base)],
+                operation_edge(inherited_edge, "Access"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
-            )],
-            Expression::FunctionArgument(index) => self.target_node_for_expr_target(
-                &expr_ref,
-                target_id_arg(expr_ref_scope(&expr_ref), *index),
-                target_stack,
-                depth,
             ),
-            Expression::GlobalVariable(handle) => self.target_node_for_expr_target(
-                &expr_ref,
-                target_id_global(*handle),
+            Expression::Splat { value, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*value)],
+                operation_edge(inherited_edge, "Splat"),
                 target_stack,
-                depth,
+                seen_exprs,
+                depth + 1,
             ),
-            Expression::LocalVariable(handle) => self.target_node_for_expr_target(
-                &expr_ref,
-                target_id_local(expr_ref_scope(&expr_ref), *handle),
+            Expression::Swizzle { vector, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*vector)],
+                operation_edge(inherited_edge, "Swizzle"),
                 target_stack,
-                depth,
+                seen_exprs,
+                depth + 1,
             ),
-            Expression::Load { pointer } => {
-                let pointer_ref = self.sibling_expr_ref(&expr_ref, *pointer);
-                let mut children = vec![self.build_expr_dependency(
-                    pointer_ref.clone(),
-                    "[load.pointer]",
+            Expression::FunctionArgument(index) => {
+                vec![self.build_target_tree_with_edge(
+                    &target_id_arg(expr_ref_scope(expr_ref), *index),
                     target_stack,
-                    seen_exprs,
                     depth + 1,
-                )];
-                if let Some(target_id) = self.resolve_pointer_target(&pointer_ref) {
-                    children.push(self.build_target_tree(&target_id, target_stack, depth + 1));
-                }
-                children
+                    inherited_edge,
+                )]
             }
+            Expression::GlobalVariable(handle) => vec![self.build_target_tree_with_edge(
+                &target_id_global(*handle),
+                target_stack,
+                depth + 1,
+                inherited_edge,
+            )],
+            Expression::LocalVariable(handle) => vec![self.build_target_tree_with_edge(
+                &target_id_local(expr_ref_scope(expr_ref), *handle),
+                target_stack,
+                depth + 1,
+                inherited_edge,
+            )],
+            Expression::Load { pointer } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*pointer)],
+                inherited_edge,
+                target_stack,
+                seen_exprs,
+                depth + 1,
+            ),
             Expression::ImageSample {
                 image,
                 sampler,
@@ -1618,16 +1812,17 @@ impl<'a> DependencyAnalyzer<'a> {
                 offset,
                 depth_ref,
                 ..
-            } => self.expr_operand_nodes(
-                &expr_ref,
-                &[
-                    ("[sample.image]", Some(*image)),
-                    ("[sample.sampler]", Some(*sampler)),
-                    ("[sample.coordinate]", Some(*coordinate)),
-                    ("[sample.array_index]", *array_index),
-                    ("[sample.offset]", *offset),
-                    ("[sample.depth_ref]", *depth_ref),
+            } => self.semantic_operand_dependencies(
+                expr_ref,
+                [
+                    Some(*image),
+                    Some(*sampler),
+                    Some(*coordinate),
+                    *array_index,
+                    *offset,
+                    *depth_ref,
                 ],
+                Some("textureSample".to_string()),
                 target_stack,
                 seen_exprs,
                 depth + 1,
@@ -1638,39 +1833,40 @@ impl<'a> DependencyAnalyzer<'a> {
                 array_index,
                 sample,
                 level,
-            } => self.expr_operand_nodes(
-                &expr_ref,
-                &[
-                    ("[image_load.image]", Some(*image)),
-                    ("[image_load.coordinate]", Some(*coordinate)),
-                    ("[image_load.array_index]", *array_index),
-                    ("[image_load.sample]", *sample),
-                    ("[image_load.level]", *level),
+            } => self.semantic_operand_dependencies(
+                expr_ref,
+                [
+                    Some(*image),
+                    Some(*coordinate),
+                    *array_index,
+                    *sample,
+                    *level,
                 ],
+                Some("textureLoad".to_string()),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::ImageQuery { image, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[image_query.image]", Some(*image))],
+            Expression::ImageQuery { image, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*image)],
+                Some("textureQuery".to_string()),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::Unary { expr, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[unary.expr]", Some(*expr))],
+            Expression::Unary { op, expr } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*expr)],
+                operation_edge(inherited_edge, format!("{op:?}")),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::Binary { left, right, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[
-                    ("[binary.left]", Some(*left)),
-                    ("[binary.right]", Some(*right)),
-                ],
+            Expression::Binary { op, left, right } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*left), Some(*right)],
+                operation_edge(inherited_edge, format!("{op:?}")),
                 target_stack,
                 seen_exprs,
                 depth + 1,
@@ -1679,196 +1875,358 @@ impl<'a> DependencyAnalyzer<'a> {
                 condition,
                 accept,
                 reject,
-            } => self.expr_operand_nodes(
-                &expr_ref,
-                &[
-                    ("[select.condition]", Some(*condition)),
-                    ("[select.accept]", Some(*accept)),
-                    ("[select.reject]", Some(*reject)),
-                ],
+            } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*condition), Some(*accept), Some(*reject)],
+                operation_edge(inherited_edge, "Select"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::Derivative { expr, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[derivative.expr]", Some(*expr))],
+            Expression::Derivative { axis, ctrl, expr } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*expr)],
+                operation_edge(inherited_edge, format!("{axis:?}/{ctrl:?}")),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::Relational { argument, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[relational.argument]", Some(*argument))],
+            Expression::Relational { fun, argument } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*argument)],
+                operation_edge(inherited_edge, format!("{fun:?}")),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
             Expression::Math {
+                fun,
                 arg,
                 arg1,
                 arg2,
                 arg3,
-                ..
-            } => self.expr_operand_nodes(
-                &expr_ref,
-                &[
-                    ("[math.arg]", Some(*arg)),
-                    ("[math.arg1]", *arg1),
-                    ("[math.arg2]", *arg2),
-                    ("[math.arg3]", *arg3),
-                ],
+            } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*arg), *arg1, *arg2, *arg3],
+                operation_edge(inherited_edge, format!("{fun:?}")),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::As { expr, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[as.expr]", Some(*expr))],
+            Expression::As { expr, .. } => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*expr)],
+                operation_edge(inherited_edge, "As"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
             Expression::CallResult(_) => {
-                let ExprRef::Function { scope, handle } = &expr_ref else {
+                let ExprRef::Function { scope, handle } = expr_ref else {
                     return Vec::new();
                 };
                 let Some(call) = self.calls_by_result.get(&(scope.clone(), handle.index())) else {
                     return Vec::new();
                 };
-                let mut children = call
-                    .arguments
+                let call_edge = self
+                    .function_handles
+                    .get(&call.function)
+                    .cloned()
+                    .unwrap_or_else(|| "call".to_string());
+                call.arguments
                     .iter()
-                    .enumerate()
-                    .map(|(index, arg)| {
-                        self.build_expr_dependency(
+                    .flat_map(|arg| {
+                        self.semantic_expr_dependencies(
                             ExprRef::Function {
                                 scope: scope.clone(),
                                 handle: *arg,
                             },
-                            &format!("[arg {index}]"),
+                            Some(call_edge.clone()),
                             target_stack,
                             seen_exprs,
                             depth + 1,
                         )
                     })
-                    .collect::<Vec<_>>();
-                if let Some(callee_scope) = self.function_handles.get(&call.function) {
-                    if target_stack
-                        .iter()
-                        .any(|target| target == &format!("return::{callee_scope}"))
-                    {
-                        children.push(PassDebugDependencyNode::leaf(format!(
-                            "[return] {callee_scope} [cycle]"
-                        )));
-                    } else {
-                        target_stack.push(format!("return::{callee_scope}"));
-                        children.extend(self.return_nodes(callee_scope, target_stack, depth + 1));
-                        target_stack.pop();
-                    }
-                }
-                children
+                    .collect()
             }
-            Expression::ArrayLength(handle) => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[array_length.pointer]", Some(*handle))],
+            Expression::ArrayLength(handle) => self.semantic_operand_dependencies(
+                expr_ref,
+                [Some(*handle)],
+                operation_edge(inherited_edge, "arrayLength"),
                 target_stack,
                 seen_exprs,
                 depth + 1,
             ),
-            Expression::RayQueryGetIntersection { query, .. } => self.expr_operand_nodes(
-                &expr_ref,
-                &[("[ray_query.query]", Some(*query))],
-                target_stack,
-                seen_exprs,
-                depth + 1,
-            ),
+            Expression::RayQueryGetIntersection { query, .. } => self
+                .semantic_operand_dependencies(
+                    expr_ref,
+                    [Some(*query)],
+                    operation_edge(inherited_edge, "rayQueryGetIntersection"),
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                ),
             _ => Vec::new(),
         }
     }
 
-    fn return_nodes(
-        &self,
-        scope: &str,
-        target_stack: &mut Vec<String>,
-        depth: usize,
-    ) -> Vec<PassDebugDependencyNode> {
-        self.returns_by_function
-            .get(scope)
-            .map(|returns| {
-                returns
-                    .iter()
-                    .enumerate()
-                    .map(|(index, ret)| {
-                        let mut children =
-                            self.control_nodes(&ret.controls, target_stack, depth + 1);
-                        if let Some(value) = ret.value {
-                            children.push(self.build_expr_dependency(
-                                ExprRef::Function {
-                                    scope: scope.to_string(),
-                                    handle: value,
-                                },
-                                "[return.value]",
-                                target_stack,
-                                &mut HashSet::new(),
-                                depth + 1,
-                            ));
-                        }
-                        PassDebugDependencyNode::branch(
-                            format!("[return {index}] {scope}"),
-                            children,
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_else(|| {
-                vec![PassDebugDependencyNode::leaf(format!(
-                    "[return] {scope} has no return value"
-                ))]
-            })
-    }
-
-    fn expr_operand_nodes(
+    fn semantic_operand_dependencies<I>(
         &self,
         current: &ExprRef,
-        operands: &[(&str, Option<naga::Handle<Expression>>)],
+        operands: I,
+        edge_label: Option<String>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         depth: usize,
-    ) -> Vec<PassDebugDependencyNode> {
+    ) -> Vec<PassDebugDependencyNode>
+    where
+        I: IntoIterator<Item = Option<naga::Handle<Expression>>>,
+    {
         operands
-            .iter()
-            .filter_map(|(label, handle)| {
-                handle.map(|handle| {
-                    self.build_sibling_expr_dependency(
-                        current,
-                        handle,
-                        label,
-                        target_stack,
-                        seen_exprs,
-                        depth + 1,
-                    )
-                })
+            .into_iter()
+            .flatten()
+            .flat_map(|handle| {
+                self.semantic_expr_dependencies(
+                    self.sibling_expr_ref(current, handle),
+                    edge_label.clone(),
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                )
             })
             .collect()
     }
 
-    fn build_sibling_expr_dependency(
+    fn access_path_target(&self, expr_ref: &ExprRef) -> Option<AccessPathTarget> {
+        let expr = self.expression(expr_ref)?;
+        match expr {
+            Expression::FunctionArgument(index) => {
+                let target_id = target_id_arg(expr_ref_scope(expr_ref), *index);
+                Some(AccessPathTarget {
+                    display_label: self.target_name_for_id(&target_id)?,
+                    target_id,
+                    source_range: self.source_range_for_expr(expr_ref),
+                })
+            }
+            Expression::GlobalVariable(handle) => {
+                let target_id = target_id_global(*handle);
+                Some(AccessPathTarget {
+                    display_label: self.target_name_for_id(&target_id)?,
+                    target_id,
+                    source_range: self.source_range_for_expr(expr_ref),
+                })
+            }
+            Expression::LocalVariable(handle) => {
+                let target_id = target_id_local(expr_ref_scope(expr_ref), *handle);
+                Some(AccessPathTarget {
+                    display_label: self.target_name_for_id(&target_id)?,
+                    target_id,
+                    source_range: self.source_range_for_expr(expr_ref),
+                })
+            }
+            Expression::Load { pointer } => {
+                let pointer_ref = self.sibling_expr_ref(expr_ref, *pointer);
+                let mut path = self.access_path_target(&pointer_ref)?;
+                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                Some(path)
+            }
+            Expression::AccessIndex { base, index } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                let mut path = self.access_path_target(&base_ref)?;
+                path.display_label
+                    .push_str(&self.access_index_suffix(&base_ref, *index));
+                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                Some(path)
+            }
+            Expression::Access { base, .. } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                let mut path = self.access_path_target(&base_ref)?;
+                path.display_label.push_str("[]");
+                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                Some(path)
+            }
+            Expression::Swizzle {
+                size,
+                vector,
+                pattern,
+            } => {
+                let vector_ref = self.sibling_expr_ref(expr_ref, *vector);
+                let mut path = self.access_path_target(&vector_ref)?;
+                path.display_label
+                    .push_str(&format!(".{}", swizzle_pattern_label(*size, pattern)));
+                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                Some(path)
+            }
+            _ => None,
+        }
+    }
+
+    fn access_path_index_dependencies(
         &self,
-        current: &ExprRef,
-        handle: naga::Handle<Expression>,
-        edge_label: &str,
+        expr_ref: &ExprRef,
+        inherited_edge: Option<String>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         depth: usize,
-    ) -> PassDebugDependencyNode {
-        self.build_expr_dependency(
-            self.sibling_expr_ref(current, handle),
-            edge_label,
-            target_stack,
-            seen_exprs,
-            depth + 1,
-        )
+    ) -> Vec<PassDebugDependencyNode> {
+        let Some(expr) = self.expression(expr_ref) else {
+            return Vec::new();
+        };
+        match expr {
+            Expression::Load { pointer } => {
+                let pointer_ref = self.sibling_expr_ref(expr_ref, *pointer);
+                self.access_path_index_dependencies(
+                    &pointer_ref,
+                    inherited_edge,
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                )
+            }
+            Expression::Access { base, index } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                let index_ref = self.sibling_expr_ref(expr_ref, *index);
+                let mut dependencies = self.access_path_index_dependencies(
+                    &base_ref,
+                    inherited_edge.clone(),
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                );
+                dependencies.extend(self.semantic_expr_dependencies(
+                    index_ref,
+                    inherited_edge,
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                ));
+                dependencies
+            }
+            Expression::AccessIndex { base, .. } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                self.access_path_index_dependencies(
+                    &base_ref,
+                    inherited_edge,
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                )
+            }
+            Expression::Swizzle { vector, .. } => {
+                let vector_ref = self.sibling_expr_ref(expr_ref, *vector);
+                self.access_path_index_dependencies(
+                    &vector_ref,
+                    inherited_edge,
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                )
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn access_index_suffix(&self, base_ref: &ExprRef, index: u32) -> String {
+        if let Some(member_name) = self.struct_member_name(base_ref, index) {
+            format!(".{member_name}")
+        } else if let Some(component) = swizzle_component_for_index(index) {
+            format!(".{component}")
+        } else {
+            format!("[{index}]")
+        }
+    }
+
+    fn struct_member_name(&self, base_ref: &ExprRef, index: u32) -> Option<String> {
+        let ty = self.type_handle_for_expr(base_ref)?;
+        let ty = self.deref_type_handle(ty);
+        match &self.module.types[ty].inner {
+            TypeInner::Struct { members, .. } => members
+                .get(index as usize)
+                .and_then(|member| member.name.clone())
+                .or_else(|| Some(format!("field_{index}"))),
+            _ => None,
+        }
+    }
+
+    fn type_handle_for_expr(&self, expr_ref: &ExprRef) -> Option<naga::Handle<Type>> {
+        let expr = self.expression(expr_ref)?;
+        match expr {
+            Expression::FunctionArgument(index) => {
+                let function = self.functions.get(expr_ref_scope(expr_ref))?;
+                function.arguments.get(*index as usize).map(|arg| arg.ty)
+            }
+            Expression::GlobalVariable(handle) => Some(self.module.global_variables[*handle].ty),
+            Expression::LocalVariable(handle) => {
+                let function = self.functions.get(expr_ref_scope(expr_ref))?;
+                Some(function.local_variables[*handle].ty)
+            }
+            Expression::Load { pointer } => {
+                let pointer_ref = self.sibling_expr_ref(expr_ref, *pointer);
+                self.type_handle_for_expr(&pointer_ref)
+                    .map(|ty| self.deref_type_handle(ty))
+            }
+            Expression::AccessIndex { base, index } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                let base_ty = self.type_handle_for_expr(&base_ref)?;
+                self.access_index_type_handle(base_ty, *index)
+            }
+            Expression::Access { base, .. } => {
+                let base_ref = self.sibling_expr_ref(expr_ref, *base);
+                let base_ty = self.type_handle_for_expr(&base_ref)?;
+                self.indexed_type_handle(base_ty)
+            }
+            Expression::Compose { ty, .. } => Some(*ty),
+            Expression::Splat { .. }
+            | Expression::Swizzle { .. }
+            | Expression::Unary { .. }
+            | Expression::Binary { .. }
+            | Expression::Select { .. }
+            | Expression::Derivative { .. }
+            | Expression::Relational { .. }
+            | Expression::Math { .. }
+            | Expression::As { .. }
+            | Expression::CallResult(_)
+            | Expression::ArrayLength(_)
+            | Expression::RayQueryGetIntersection { .. } => None,
+            _ => None,
+        }
+    }
+
+    fn access_index_type_handle(
+        &self,
+        base_ty: naga::Handle<Type>,
+        index: u32,
+    ) -> Option<naga::Handle<Type>> {
+        let base_ty = self.deref_type_handle(base_ty);
+        match &self.module.types[base_ty].inner {
+            TypeInner::Struct { members, .. } => {
+                members.get(index as usize).map(|member| member.ty)
+            }
+            TypeInner::Array { base, .. } | TypeInner::BindingArray { base, .. } => Some(*base),
+            _ => None,
+        }
+    }
+
+    fn indexed_type_handle(&self, base_ty: naga::Handle<Type>) -> Option<naga::Handle<Type>> {
+        let base_ty = self.deref_type_handle(base_ty);
+        match &self.module.types[base_ty].inner {
+            TypeInner::Array { base, .. } | TypeInner::BindingArray { base, .. } => Some(*base),
+            _ => None,
+        }
+    }
+
+    fn deref_type_handle(&self, ty: naga::Handle<Type>) -> naga::Handle<Type> {
+        match self.module.types[ty].inner {
+            TypeInner::Pointer { base, .. } => base,
+            _ => ty,
+        }
+    }
+
+    fn target_name_for_id(&self, target_id: &str) -> Option<String> {
+        self.targets
+            .iter()
+            .find(|target| target.id == target_id)
+            .map(|target| target.name.clone())
     }
 
     fn sibling_expr_ref(&self, current: &ExprRef, handle: naga::Handle<Expression>) -> ExprRef {
@@ -1878,20 +2236,6 @@ impl<'a> DependencyAnalyzer<'a> {
                 scope: scope.clone(),
                 handle,
             },
-        }
-    }
-
-    fn target_node_for_expr_target(
-        &self,
-        current: &ExprRef,
-        target_id: String,
-        target_stack: &mut Vec<String>,
-        depth: usize,
-    ) -> Vec<PassDebugDependencyNode> {
-        match current {
-            ExprRef::Function { .. } | ExprRef::Global(_) => {
-                vec![self.build_target_tree(&target_id, target_stack, depth + 1)]
-            }
         }
     }
 
@@ -1924,6 +2268,18 @@ impl<'a> DependencyAnalyzer<'a> {
         }
     }
 
+    fn source_range_for_expr(&self, expr_ref: &ExprRef) -> Option<PassDebugSourceRange> {
+        match expr_ref {
+            ExprRef::Global(handle) => source_range_from_span(
+                self.source,
+                self.module.global_expressions.get_span(*handle),
+            ),
+            ExprRef::Function { scope, handle } => self.functions.get(scope).and_then(|function| {
+                source_range_from_span(self.source, function.expressions.get_span(*handle))
+            }),
+        }
+    }
+
     fn expression(&self, expr_ref: &ExprRef) -> Option<&Expression> {
         match expr_ref {
             ExprRef::Global(handle) => Some(&self.module.global_expressions[*handle]),
@@ -1939,6 +2295,52 @@ fn expr_ref_scope(expr_ref: &ExprRef) -> &str {
     match expr_ref {
         ExprRef::Global(_) => "module",
         ExprRef::Function { scope, .. } => scope.as_str(),
+    }
+}
+
+fn operation_edge(inherited_edge: Option<String>, operation: impl Into<String>) -> Option<String> {
+    inherited_edge.or_else(|| Some(operation.into()))
+}
+
+fn dependency_target_node_label(
+    target: &PassDebugDependencyTarget,
+    display_label: Option<&str>,
+) -> String {
+    let target_label = format!("{} ({})", target.label, target.kind);
+    let Some(display_label) = display_label
+        .map(str::trim)
+        .filter(|label| !label.is_empty() && *label != target.name.as_str())
+    else {
+        return target_label;
+    };
+    format!("{display_label} -> {target_label}")
+}
+
+fn swizzle_pattern_label(size: naga::VectorSize, pattern: &[SwizzleComponent; 4]) -> String {
+    pattern
+        .iter()
+        .take(size as u8 as usize)
+        .filter_map(|component| swizzle_component_label(*component))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn swizzle_component_for_index(index: u32) -> Option<&'static str> {
+    match index {
+        0 => Some("x"),
+        1 => Some("y"),
+        2 => Some("z"),
+        3 => Some("w"),
+        _ => None,
+    }
+}
+
+fn swizzle_component_label(component: SwizzleComponent) -> Option<&'static str> {
+    match component {
+        SwizzleComponent::X => Some("x"),
+        SwizzleComponent::Y => Some("y"),
+        SwizzleComponent::Z => Some("z"),
+        SwizzleComponent::W => Some("w"),
     }
 }
 
@@ -2205,6 +2607,48 @@ mod tests {
         );
     }
 
+    fn target_name_for_id<'a>(doc: &'a PassDebugSource, target_id: &str) -> &'a str {
+        doc.dependency_targets
+            .iter()
+            .find(|target| target.id == target_id)
+            .map(|target| target.name.as_str())
+            .unwrap_or_else(|| panic!("missing dependency target id {target_id}"))
+    }
+
+    fn child_target<'a>(
+        doc: &PassDebugSource,
+        node: &'a PassDebugDependencyNode,
+        name: &str,
+        edge_label: Option<&str>,
+    ) -> &'a PassDebugDependencyNode {
+        node.children
+            .iter()
+            .find(|child| {
+                child
+                    .target_id
+                    .as_deref()
+                    .map(|target_id| target_name_for_id(doc, target_id) == name)
+                    .unwrap_or(false)
+                    && child.edge_label.as_deref() == edge_label
+            })
+            .unwrap_or_else(|| {
+                let children = node
+                    .children
+                    .iter()
+                    .map(|child| {
+                        let target = child
+                            .target_id
+                            .as_deref()
+                            .map(|target_id| target_name_for_id(doc, target_id))
+                            .unwrap_or("<non-target>");
+                        format!("{target} edge={:?} label={}", child.edge_label, child.label)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                panic!("missing child target {name} edge={edge_label:?}\nchildren:\n{children}")
+            })
+    }
+
     #[test]
     fn valid_wgsl_builds_non_empty_ast() {
         let source = r#"
@@ -2280,10 +2724,10 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
         );
 
         let x_labels = dependency_labels_for(&doc, "x");
-        assert_labels_contain(&x_labels, "[init]");
         assert_labels_contain(&x_labels, "[store 0]");
-        assert_labels_contain(&x_labels, "[rhs]");
         assert_labels_contain(&x_labels, "fs_main let y");
+        assert_labels_contain(&x_labels, "argument uv");
+        assert_labels_contain(&x_labels, "global threshold");
     }
 
     #[test]
@@ -2335,33 +2779,180 @@ fn choose(i: i32) -> f32 {
     }
 
     #[test]
-    fn function_call_result_includes_arguments_and_callee_return() {
+    fn function_call_dependencies_are_variable_map_edges() {
         let source = r#"
-fn helper(a: f32, gate: bool) -> f32 {
-    var out: f32 = 0.0;
-    if gate {
-        out = a + 1.0;
-    }
-    return out;
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
 }
 
-@fragment
-fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-    var x: f32 = 0.0;
-    let y = uv.x;
-    x = helper(y, true);
-    return vec4f(x, x, x, 1.0);
+fn math_multiply(a: f32, e: f32) -> f32 {
+    return a * e;
+}
+
+fn debug_main() -> f32 {
+    let b = 1.0;
+    let c = 2.0;
+    let e = 3.0;
+    let a = foo(b, c);
+    let d = math_multiply(a, e);
+    return d;
 }
 "#;
 
         let doc = PassDebugSource::from_wgsl("call.pass", source);
         assert!(doc.parse_error.is_none());
 
-        let labels = dependency_labels_for(&doc, "x");
-        assert_labels_contain(&labels, "[arg 0]");
-        assert_labels_contain(&labels, "[arg 1]");
-        assert_labels_contain(&labels, "[return 0] helper");
-        assert_labels_contain(&labels, "helper local out");
+        let d_id = target_id_by_name(&doc, "d");
+        let d = doc
+            .dependency_trees
+            .get(&d_id)
+            .expect("missing dependency tree for d");
+        assert_eq!(d.edge_label.as_deref(), None);
+
+        let a = child_target(&doc, d, "a", Some("math_multiply"));
+        child_target(&doc, d, "e", Some("math_multiply"));
+        child_target(&doc, a, "b", Some("foo"));
+        child_target(&doc, a, "c", Some("foo"));
+    }
+
+    #[test]
+    fn function_call_argument_edges_keep_argument_dependency_trees_per_call_site() {
+        let source = r#"
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
+}
+
+fn bar(b: f32, c: f32) -> f32 {
+    return b - c;
+}
+
+fn debug_main() -> f32 {
+    let source_b = 1.0;
+    let source_c = 2.0;
+    let b = source_b + 10.0;
+    let c = source_c + 20.0;
+    let a = foo(b, c);
+    let d = bar(b, c);
+    return a + d;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("call-args.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let a_id = target_id_by_name(&doc, "a");
+        let a = doc
+            .dependency_trees
+            .get(&a_id)
+            .expect("missing dependency tree for a");
+        let a_b = child_target(&doc, a, "b", Some("foo"));
+        let a_c = child_target(&doc, a, "c", Some("foo"));
+        child_target(&doc, a_b, "source_b", Some("Add"));
+        child_target(&doc, a_c, "source_c", Some("Add"));
+
+        let d_id = target_id_by_name(&doc, "d");
+        let d = doc
+            .dependency_trees
+            .get(&d_id)
+            .expect("missing dependency tree for d");
+        let d_b = child_target(&doc, d, "b", Some("bar"));
+        let d_c = child_target(&doc, d, "c", Some("bar"));
+        child_target(&doc, d_b, "source_b", Some("Add"));
+        child_target(&doc, d_c, "source_c", Some("Add"));
+    }
+
+    #[test]
+    fn struct_argument_access_dependencies_keep_full_path_label() {
+        let source = r#"
+struct Bar {
+    x: f32,
+}
+
+struct Foo {
+    bar: Bar,
+}
+
+struct Input {
+    foo: Foo,
+}
+
+fn use_value(v: f32) -> f32 {
+    return v;
+}
+
+fn debug_main(in: Input) -> f32 {
+    let a = use_value(in.foo.bar.x);
+    return a;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("path.pass", source);
+        assert!(
+            doc.parse_error.is_none(),
+            "parse error: {:?}",
+            doc.parse_error
+        );
+
+        let a_id = target_id_by_name(&doc, "a");
+        let a = doc
+            .dependency_trees
+            .get(&a_id)
+            .expect("missing dependency tree for a");
+        let input = child_target(&doc, a, "in", Some("use_value"));
+
+        assert_eq!(input.display_label.as_deref(), Some("in.foo.bar.x"));
+        let input_range = input
+            .source_range
+            .expect("expected source range for full access path");
+        assert_eq!(
+            &doc.module_source[input_range.start_byte..input_range.end_byte],
+            "in.foo.bar.x"
+        );
+    }
+
+    #[test]
+    fn sdf_bevel_depth_dependency_labels_show_local_px_access_path() {
+        let source = r#"
+struct GraphInputs {
+    float_input_10: vec4f,
+    float_input_12: vec4f,
+}
+
+@group(0) @binding(0)
+var<uniform> graph_inputs: GraphInputs;
+
+struct VSOut {
+    @location(2) local_px: vec3f,
+    @location(3) geo_size_px: vec2f,
+}
+
+fn sdf2d_round_rect(p: vec2f, b: vec2f, rad4: vec4f) -> f32 {
+    return p.x + b.x + rad4.x;
+}
+
+@fragment
+fn fs_main(in: VSOut) -> @location(0) f32 {
+    let _2d_sdf_bevel_depth_sdf_depth = sdf2d_round_rect(
+        (in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))),
+        (in.geo_size_px * 0.5),
+        vec4f((graph_inputs.float_input_12).x),
+    );
+    return _2d_sdf_bevel_depth_sdf_depth;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("sdf.pass", source);
+        assert!(
+            doc.parse_error.is_none(),
+            "parse error: {:?}",
+            doc.parse_error
+        );
+
+        let labels = dependency_labels_for(&doc, "_2d_sdf_bevel_depth_sdf_depth");
+        assert_labels_contain(&labels, "in.local_px.xy");
+        assert_labels_contain(&labels, "in.geo_size_px");
+        assert_labels_contain(&labels, "graph_inputs.float_input_10.x");
+        assert_labels_contain(&labels, "graph_inputs.float_input_12.x");
     }
 
     #[test]
@@ -2380,13 +2971,14 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
         let doc = PassDebugSource::from_wgsl("sample.pass", source);
         assert!(doc.parse_error.is_none());
 
-        let labels = dependency_labels_for(&doc, "color");
-        assert_labels_contain(&labels, "[sample.image]");
-        assert_labels_contain(&labels, "[sample.sampler]");
-        assert_labels_contain(&labels, "[sample.coordinate]");
-        assert_labels_contain(&labels, "global tex");
-        assert_labels_contain(&labels, "global samp");
-        assert_labels_contain(&labels, "argument uv");
+        let color_id = target_id_by_name(&doc, "color");
+        let color = doc
+            .dependency_trees
+            .get(&color_id)
+            .expect("missing dependency tree for color");
+        child_target(&doc, color, "tex", Some("textureSample"));
+        child_target(&doc, color, "samp", Some("textureSample"));
+        child_target(&doc, color, "uv", Some("textureSample"));
     }
 
     #[test]

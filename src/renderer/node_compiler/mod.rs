@@ -287,25 +287,18 @@ fn is_pure_expression_group(group: &crate::dsl::GroupDSL) -> bool {
 fn group_function_name(
     ctx: &mut MaterialCompileContext,
     group_id: &str,
-    instance_id: &str,
-    instance_label: Option<&str>,
+    group_port_id: &str,
     group_name: Option<&str>,
 ) -> String {
-    let raw = instance_label
-        .or(group_name)
+    let raw = group_name
         .filter(|s| !matches!(readable_wgsl_ident(s).as_str(), "group" | "node_group"))
         .unwrap_or(group_id);
     let base = readable_wgsl_ident(raw);
-    ctx.allocate_local_name(&format!("group_fn:{instance_id}:{group_id}"), &base)
+    ctx.allocate_local_name(&format!("group_fn:{group_id}:{group_port_id}"), &base)
 }
 
-fn group_display_name<'a>(
-    group_id: &'a str,
-    instance_label: Option<&'a str>,
-    group_name: Option<&'a str>,
-) -> &'a str {
-    instance_label
-        .or(group_name)
+fn group_display_name<'a>(group_id: &'a str, group_name: Option<&'a str>) -> &'a str {
+    group_name
         .filter(|s| !matches!(readable_wgsl_ident(s).as_str(), "group" | "node_group"))
         .unwrap_or(group_id)
 }
@@ -489,14 +482,10 @@ fn try_compile_pure_group_call(
     let fn_name = group_function_name(
         ctx,
         group_id,
-        instance_id,
-        node_string_param(node, "__group_instance_label"),
+        &output_binding.group_port_id,
         group.name.as_deref(),
     );
-    let decl_key = format!(
-        "group_fn:{instance_id}:{group_id}:{}",
-        output_binding.group_port_id
-    );
+    let decl_key = format!("group_fn:{group_id}:{}", output_binding.group_port_id);
     if !ctx.extra_wgsl_decls.contains_key(&decl_key) {
         for (key, decl) in helper_ctx.extra_wgsl_decls {
             ctx.extra_wgsl_decls.entry(key).or_insert(decl);
@@ -505,11 +494,7 @@ fn try_compile_pure_group_call(
         let mut body = String::new();
         body.push_str(&format!(
             "// Group: {}\nfn {fn_name}({}) -> {} {{\n",
-            group_display_name(
-                group_id,
-                node_string_param(node, "__group_instance_label"),
-                group.name.as_deref(),
-            ),
+            group_display_name(group_id, group.name.as_deref()),
             helper_params.join(", "),
             helper_result.ty.wgsl_type_string()
         ));
@@ -1450,13 +1435,42 @@ mod readability_tests {
         expanded_mul
             .params
             .insert("__group_instance_label".to_string(), json!("Nice Group"));
+        let mut expanded_a2 = node("GroupInstance_2/ga", "FloatInput", "Float Input");
+        expanded_a2
+            .params
+            .insert("__dedup_group_id".to_string(), json!("group_1"));
+        expanded_a2
+            .params
+            .insert("__dedup_original_id".to_string(), json!("ga"));
+        let mut expanded_b2 = node("GroupInstance_2/gb", "FloatInput", "Float Input");
+        expanded_b2
+            .params
+            .insert("__dedup_group_id".to_string(), json!("group_1"));
+        expanded_b2
+            .params
+            .insert("__dedup_original_id".to_string(), json!("gb"));
+        let mut expanded_mul2 = node("GroupInstance_2/gmul", "MathMultiply", "Multiply");
+        expanded_mul2
+            .params
+            .insert("__dedup_group_id".to_string(), json!("group_1"));
+        expanded_mul2
+            .params
+            .insert("__dedup_original_id".to_string(), json!("gmul"));
+        expanded_mul2
+            .params
+            .insert("__group_instance_label".to_string(), json!("Other Label"));
 
         let nodes = vec![
             node("x", "FloatInput", "Input X"),
             node("y", "FloatInput", "Input Y"),
+            node("x2", "FloatInput", "Input X2"),
+            node("y2", "FloatInput", "Input Y2"),
             expanded_a,
             expanded_b,
             expanded_mul,
+            expanded_a2,
+            expanded_b2,
+            expanded_mul2,
         ];
         let scene = scene(
             nodes.clone(),
@@ -1465,6 +1479,10 @@ mod readability_tests {
                 conn("y", "value", "GroupInstance_1/gb", "value"),
                 conn("GroupInstance_1/ga", "value", "GroupInstance_1/gmul", "a"),
                 conn("GroupInstance_1/gb", "value", "GroupInstance_1/gmul", "b"),
+                conn("x2", "value", "GroupInstance_2/ga", "value"),
+                conn("y2", "value", "GroupInstance_2/gb", "value"),
+                conn("GroupInstance_2/ga", "value", "GroupInstance_2/gmul", "a"),
+                conn("GroupInstance_2/gb", "value", "GroupInstance_2/gmul", "b"),
             ],
             vec![group],
         );
@@ -1483,9 +1501,25 @@ mod readability_tests {
         )
         .unwrap();
 
-        assert!(expr.expr.starts_with("nice_group("), "got {}", expr.expr);
+        let expr2 = compile_material_expr(
+            &scene,
+            &nodes_by_id,
+            "GroupInstance_2/gmul",
+            Some("result"),
+            &mut ctx,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert!(expr.expr.starts_with("pure_multiply("), "got {}", expr.expr);
+        assert!(
+            expr2.expr.starts_with("pure_multiply("),
+            "got {}",
+            expr2.expr
+        );
         let decls = ctx.extra_wgsl_decls.values().cloned().collect::<String>();
-        assert!(decls.contains("fn nice_group(left: f32, right: f32) -> f32"));
+        assert!(decls.contains("fn pure_multiply(left: f32, right: f32) -> f32"));
         assert!(decls.contains("return (left * right);"));
+        assert_eq!(decls.matches("fn pure_multiply(").count(), 1);
     }
 }
