@@ -1646,6 +1646,25 @@ impl<'a> DependencyAnalyzer<'a> {
         seen_exprs: &mut HashSet<String>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
+        self.semantic_expr_dependencies_with_hint(
+            expr_ref,
+            inherited_edge,
+            None,
+            target_stack,
+            seen_exprs,
+            depth,
+        )
+    }
+
+    fn semantic_expr_dependencies_with_hint(
+        &self,
+        expr_ref: ExprRef,
+        inherited_edge: Option<String>,
+        occurrence_range: Option<PassDebugSourceRange>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode> {
         const MAX_DEPENDENCY_DEPTH: usize = 36;
         if depth >= MAX_DEPENDENCY_DEPTH {
             return vec![PassDebugDependencyNode::leaf("[depth limit]")];
@@ -1654,11 +1673,13 @@ impl<'a> DependencyAnalyzer<'a> {
         if let Some(target_id) = self.named_expression_target_id(&expr_ref)
             && !target_stack.iter().any(|id| id == &target_id)
         {
-            return vec![self.build_target_tree_with_edge(
+            return vec![self.build_target_tree_with_context(
                 &target_id,
                 target_stack,
                 depth + 1,
                 inherited_edge,
+                None,
+                occurrence_range,
             )];
         }
 
@@ -1669,7 +1690,7 @@ impl<'a> DependencyAnalyzer<'a> {
                 depth + 1,
                 inherited_edge.clone(),
                 Some(access_path.display_label),
-                access_path.source_range,
+                occurrence_range.or(access_path.source_range),
             )];
             dependencies.extend(self.access_path_index_dependencies(
                 &expr_ref,
@@ -1933,21 +1954,14 @@ impl<'a> DependencyAnalyzer<'a> {
                     .get(&call.function)
                     .cloned()
                     .unwrap_or_else(|| "call".to_string());
-                call.arguments
-                    .iter()
-                    .flat_map(|arg| {
-                        self.semantic_expr_dependencies(
-                            ExprRef::Function {
-                                scope: scope.clone(),
-                                handle: *arg,
-                            },
-                            Some(call_edge.clone()),
-                            target_stack,
-                            seen_exprs,
-                            depth + 1,
-                        )
-                    })
-                    .collect()
+                self.semantic_operand_dependencies(
+                    expr_ref,
+                    call.arguments.iter().copied().map(Some),
+                    Some(call_edge),
+                    target_stack,
+                    seen_exprs,
+                    depth + 1,
+                )
             }
             Expression::ArrayLength(handle) => self.semantic_operand_dependencies(
                 expr_ref,
@@ -1982,19 +1996,59 @@ impl<'a> DependencyAnalyzer<'a> {
     where
         I: IntoIterator<Item = Option<naga::Handle<Expression>>>,
     {
-        operands
-            .into_iter()
-            .flatten()
-            .flat_map(|handle| {
-                self.semantic_expr_dependencies(
-                    self.sibling_expr_ref(current, handle),
-                    edge_label.clone(),
-                    target_stack,
-                    seen_exprs,
-                    depth + 1,
-                )
-            })
-            .collect()
+        let search_range = self.operand_search_byte_range(current);
+        let mut occurrence_counts = HashMap::<String, usize>::new();
+        let mut dependencies = Vec::new();
+        for handle in operands.into_iter().flatten() {
+            let operand_ref = self.sibling_expr_ref(current, handle);
+            let occurrence_range = self.operand_occurrence_range(
+                search_range.clone(),
+                &operand_ref,
+                &mut occurrence_counts,
+            );
+            dependencies.extend(self.semantic_expr_dependencies_with_hint(
+                operand_ref,
+                edge_label.clone(),
+                occurrence_range,
+                target_stack,
+                seen_exprs,
+                depth + 1,
+            ));
+        }
+        dependencies
+    }
+
+    fn operand_occurrence_range(
+        &self,
+        search_range: Option<Range<usize>>,
+        operand_ref: &ExprRef,
+        occurrence_counts: &mut HashMap<String, usize>,
+    ) -> Option<PassDebugSourceRange> {
+        let search_range = search_range?;
+        let label = self.reference_label_for_expr(operand_ref)?;
+        let occurrence_index = occurrence_counts.entry(label.clone()).or_insert(0);
+        let range =
+            find_identifier_occurrence_range(self.source, search_range, &label, *occurrence_index);
+        *occurrence_index += 1;
+        range
+    }
+
+    fn operand_search_byte_range(&self, current: &ExprRef) -> Option<Range<usize>> {
+        let source_range = self.source_range_for_expr(current)?;
+        let byte_range = source_range.start_byte..source_range.end_byte;
+        if matches!(self.expression(current), Some(Expression::CallResult(_))) {
+            find_enclosed_arguments_range(self.source, byte_range.clone()).or(Some(byte_range))
+        } else {
+            Some(byte_range)
+        }
+    }
+
+    fn reference_label_for_expr(&self, expr_ref: &ExprRef) -> Option<String> {
+        if let Some(target_id) = self.named_expression_target_id(expr_ref) {
+            return self.target_name_for_id(&target_id);
+        }
+        self.access_path_target(expr_ref)
+            .map(|access_path| access_path.display_label)
     }
 
     fn access_path_target(&self, expr_ref: &ExprRef) -> Option<AccessPathTarget> {
@@ -2383,17 +2437,30 @@ fn find_identifier_range(
     range: Range<usize>,
     name: &str,
 ) -> Option<PassDebugSourceRange> {
+    find_identifier_occurrence_range(source, range, name, 0)
+}
+
+fn find_identifier_occurrence_range(
+    source: &str,
+    range: Range<usize>,
+    name: &str,
+    occurrence_index: usize,
+) -> Option<PassDebugSourceRange> {
     if name.is_empty() || range.start >= range.end || range.end > source.len() {
         return None;
     }
 
     let haystack = &source[range.clone()];
     let mut offset = 0;
+    let mut seen = 0usize;
     while let Some(relative) = haystack[offset..].find(name) {
         let start = range.start + offset + relative;
         let end = start + name.len();
         if is_identifier_start_boundary(source, start) && is_identifier_end_boundary(source, end) {
-            return source_range_from_byte_range(source, start..end);
+            if seen == occurrence_index {
+                return source_range_from_byte_range(source, start..end);
+            }
+            seen += 1;
         }
         offset += relative + name.len();
     }
@@ -2514,6 +2581,30 @@ fn find_matching_brace(source: &str, open_brace: usize) -> Option<usize> {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn find_enclosed_arguments_range(source: &str, range: Range<usize>) -> Option<Range<usize>> {
+    if range.start >= range.end || range.end > source.len() {
+        return None;
+    }
+    let open = source.as_bytes()[range.clone()]
+        .iter()
+        .position(|byte| *byte == b'(')
+        .map(|relative| range.start + relative)?;
+    let mut depth = 0usize;
+    for index in open..range.end {
+        match source.as_bytes()[index] {
+            b'(' => depth += 1,
+            b')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(open + 1..index);
                 }
             }
             _ => {}
@@ -2647,6 +2738,22 @@ mod tests {
                     .join("\n");
                 panic!("missing child target {name} edge={edge_label:?}\nchildren:\n{children}")
             })
+    }
+
+    fn assert_node_range_selects(
+        doc: &PassDebugSource,
+        node: &PassDebugDependencyNode,
+        expected_start_byte: usize,
+        expected_text: &str,
+    ) {
+        let range = node
+            .source_range
+            .unwrap_or_else(|| panic!("missing node source range for {}", node.label));
+        assert_eq!(range.start_byte, expected_start_byte);
+        assert_eq!(
+            &doc.module_source[range.start_byte..range.end_byte],
+            expected_text
+        );
     }
 
     #[test]
@@ -2813,6 +2920,85 @@ fn debug_main() -> f32 {
         child_target(&doc, d, "e", Some("math_multiply"));
         child_target(&doc, a, "b", Some("foo"));
         child_target(&doc, a, "c", Some("foo"));
+    }
+
+    #[test]
+    fn named_expression_dependency_nodes_point_to_reference_occurrences() {
+        let source = r#"
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
+}
+
+fn bar(a: f32, c: f32) -> f32 {
+    return a + c;
+}
+
+fn debug_main() -> f32 {
+    let b = 1.0;
+    let c = 2.0;
+    let a = foo(b, c);
+    let d = bar(a, c);
+    return d;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("reference-occurrence.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let d_id = target_id_by_name(&doc, "d");
+        let d = doc
+            .dependency_trees
+            .get(&d_id)
+            .expect("missing dependency tree for d");
+        let a = child_target(&doc, d, "a", Some("bar"));
+        let b = child_target(&doc, a, "b", Some("foo"));
+
+        let d_arg_start = doc.module_source.find("bar(a, c)").unwrap() + "bar(".len();
+        assert_node_range_selects(&doc, a, d_arg_start, "a");
+
+        let a_arg_start = doc.module_source.find("foo(b, c)").unwrap() + "foo(".len();
+        assert_node_range_selects(&doc, b, a_arg_start, "b");
+    }
+
+    #[test]
+    fn duplicate_named_expression_operands_keep_distinct_occurrence_ranges() {
+        let source = r#"
+fn bar(left: f32, right: f32) -> f32 {
+    return left + right;
+}
+
+fn debug_main() -> f32 {
+    let a = 1.0;
+    let d = bar(a, a);
+    return d;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("duplicate-reference.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let d_id = target_id_by_name(&doc, "d");
+        let d = doc
+            .dependency_trees
+            .get(&d_id)
+            .expect("missing dependency tree for d");
+        let a_children = d
+            .children
+            .iter()
+            .filter(|child| {
+                child.edge_label.as_deref() == Some("bar")
+                    && child
+                        .target_id
+                        .as_deref()
+                        .map(|target_id| target_name_for_id(&doc, target_id) == "a")
+                        .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(a_children.len(), 2);
+
+        let call_start = doc.module_source.find("bar(a, a)").unwrap();
+        assert_node_range_selects(&doc, a_children[0], call_start + "bar(".len(), "a");
+        assert_node_range_selects(&doc, a_children[1], call_start + "bar(a, ".len(), "a");
     }
 
     #[test]

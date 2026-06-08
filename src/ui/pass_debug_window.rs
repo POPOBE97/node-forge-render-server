@@ -8,18 +8,21 @@ use std::{
 
 use rust_wgpu_fiber::eframe::egui;
 
-use crate::renderer::{
-    PassDebugAstNode, PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange,
-};
+use crate::renderer::{PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange};
 
-const AST_PANEL_DEFAULT_WIDTH: f32 = 340.0;
-const AST_PANEL_MIN_WIDTH: f32 = 220.0;
-const AST_PANEL_MAX_WIDTH: f32 = 560.0;
-const AST_ROW_INDENT_WIDTH: f32 = 14.0;
+const SIDE_PANEL_DEFAULT_WIDTH: f32 = 340.0;
+const SIDE_PANEL_MIN_WIDTH: f32 = 220.0;
+const SIDE_PANEL_MAX_WIDTH: f32 = 560.0;
+const TREE_ROW_INDENT_WIDTH: f32 = 14.0;
 const PASS_DEBUG_SPLIT_HANDLE_WIDTH: f32 = 6.0;
 const PASS_DEBUG_SPLIT_LINE_WIDTH: f32 = 1.0;
 const PASS_DEBUG_EDITOR_MIN_WIDTH: f32 = 260.0;
 const TREE_ROW_TRAILING_PADDING: f32 = 24.0;
+const TREE_ROW_SOURCE_JUMP_GAP: f32 = 8.0;
+const TREE_ROW_SOURCE_JUMP_LABEL: &str = "src";
+const TREE_ROW_SOURCE_JUMP_HORIZONTAL_PADDING: f32 = 5.0;
+const TREE_ROW_SOURCE_JUMP_VERTICAL_PADDING: f32 = 2.0;
+const PASS_DEBUG_CLOSE_RESIZE_DELTA_THRESHOLD: f32 = 48.0;
 const PASS_DEBUG_TREE_FONT_SIZE: f32 = 13.0;
 const PASS_DEBUG_CODE_FONT_SIZE: f32 = 14.0;
 
@@ -31,24 +34,15 @@ pub enum PassDebugWindowAction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct PassDebugAstRow {
-    depth: usize,
-    label: String,
-    target_id: Option<String>,
-    source_range: Option<PassDebugSourceRange>,
-    selectable: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 struct PassDebugDependencyRow {
     depth: usize,
     row_key: String,
     parent_row_key: Option<String>,
     label: String,
     relation_path: String,
-    search_text: String,
     target_id: Option<String>,
     source_range: Option<PassDebugSourceRange>,
+    source_jump_range: Option<PassDebugSourceRange>,
     selectable: bool,
 }
 
@@ -60,11 +54,6 @@ struct PassDebugTreeClick {
     toggle_row_key: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct DependencySearchMatch {
-    row_key: String,
-}
-
 trait PassDebugTreeRow {
     fn depth(&self) -> usize;
     fn row_key(&self) -> Option<&str>;
@@ -72,37 +61,8 @@ trait PassDebugTreeRow {
     fn relation_path(&self) -> Option<&str>;
     fn target_id(&self) -> Option<&str>;
     fn source_range(&self) -> Option<PassDebugSourceRange>;
+    fn source_jump_range(&self) -> Option<PassDebugSourceRange>;
     fn selectable(&self) -> bool;
-}
-
-impl PassDebugTreeRow for PassDebugAstRow {
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
-    fn row_key(&self) -> Option<&str> {
-        None
-    }
-
-    fn label(&self) -> &str {
-        &self.label
-    }
-
-    fn relation_path(&self) -> Option<&str> {
-        None
-    }
-
-    fn target_id(&self) -> Option<&str> {
-        self.target_id.as_deref()
-    }
-
-    fn source_range(&self) -> Option<PassDebugSourceRange> {
-        self.source_range
-    }
-
-    fn selectable(&self) -> bool {
-        self.selectable
-    }
 }
 
 impl PassDebugTreeRow for PassDebugDependencyRow {
@@ -134,15 +94,13 @@ impl PassDebugTreeRow for PassDebugDependencyRow {
         self.source_range
     }
 
+    fn source_jump_range(&self) -> Option<PassDebugSourceRange> {
+        self.source_jump_range
+    }
+
     fn selectable(&self) -> bool {
         self.selectable
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PassDebugSidePanelMode {
-    Ast,
-    Dependencies,
 }
 
 #[derive(Clone, Debug)]
@@ -152,19 +110,13 @@ pub struct PassDebugWindowDocument {
     analysis_source: Option<PassDebugSource>,
     analysis_source_text: String,
     source_revision: Option<u64>,
-    ast_rows: Vec<PassDebugAstRow>,
     dependency_rows: Vec<PassDebugDependencyRow>,
     focused_target_id: Option<String>,
     focused_dependency_row_key: Option<String>,
     dependency_root_target_id: Option<String>,
     dependency_expanded_row_keys: HashSet<String>,
     pending_editor_jump: Option<PassDebugSourceRange>,
-    pending_ast_reveal_target_id: Option<String>,
     pending_dependency_reveal_row_key: Option<String>,
-    dependency_search_query: String,
-    dependency_search_matches: Vec<DependencySearchMatch>,
-    active_dependency_search_match: Option<usize>,
-    side_panel_mode: PassDebugSidePanelMode,
     pub draft_source: String,
     loaded_source: String,
     dirty: bool,
@@ -191,19 +143,13 @@ impl PassDebugWindowDocument {
             analysis_source,
             analysis_source_text: loaded_source.clone(),
             source_revision: Some(source_revision),
-            ast_rows: Vec::new(),
             dependency_rows: Vec::new(),
             focused_target_id: None,
             focused_dependency_row_key: None,
             dependency_root_target_id: None,
             dependency_expanded_row_keys: HashSet::new(),
             pending_editor_jump: None,
-            pending_ast_reveal_target_id: None,
             pending_dependency_reveal_row_key: None,
-            dependency_search_query: String::new(),
-            dependency_search_matches: Vec::new(),
-            active_dependency_search_match: None,
-            side_panel_mode: PassDebugSidePanelMode::Ast,
             draft_source: loaded_source.clone(),
             loaded_source,
             dirty: false,
@@ -307,11 +253,6 @@ impl PassDebugWindowDocument {
     }
 
     fn refresh_analysis_rows(&mut self) {
-        self.ast_rows = self
-            .analysis_source
-            .as_ref()
-            .map(|source| flatten_ast_tree(&source.ast_tree))
-            .unwrap_or_default();
         self.ensure_navigation_targets();
         self.refresh_dependency_rows();
     }
@@ -323,10 +264,7 @@ impl PassDebugWindowDocument {
             self.dependency_root_target_id = None;
             self.dependency_expanded_row_keys.clear();
             self.pending_editor_jump = None;
-            self.pending_ast_reveal_target_id = None;
             self.pending_dependency_reveal_row_key = None;
-            self.dependency_search_matches.clear();
-            self.active_dependency_search_match = None;
             return;
         };
 
@@ -375,16 +313,15 @@ impl PassDebugWindowDocument {
         self.ensure_focused_dependency_row();
         self.prune_dependency_expansion();
         self.ensure_dependency_root_expanded();
-        self.refresh_dependency_search_matches(None);
     }
 
-    fn focus_target(&mut self, target_id: impl Into<String>, show_dependencies: bool) {
-        self.focus_target_inner(target_id, show_dependencies, true);
+    fn focus_target(&mut self, target_id: impl Into<String>, _show_dependencies: bool) {
+        self.focus_target_inner(target_id, true);
     }
 
     fn focus_target_from_editor(&mut self, target_id: impl Into<String>) {
         let target_id = target_id.into();
-        self.focus_target_inner(target_id.clone(), true, false);
+        self.focus_target_inner(target_id.clone(), false);
         if let Some(row_key) = self.shortest_dependency_row_key_for_target(&target_id) {
             self.focused_dependency_row_key = Some(row_key.clone());
             self.pending_dependency_reveal_row_key = Some(row_key.clone());
@@ -392,12 +329,7 @@ impl PassDebugWindowDocument {
         }
     }
 
-    fn focus_target_inner(
-        &mut self,
-        target_id: impl Into<String>,
-        show_dependencies: bool,
-        jump_editor: bool,
-    ) {
+    fn focus_target_inner(&mut self, target_id: impl Into<String>, jump_editor: bool) {
         let target_id = target_id.into();
         let Some(source) = self.analysis_source.as_ref() else {
             return;
@@ -409,7 +341,6 @@ impl PassDebugWindowDocument {
             .and_then(|target| target.source_range)
         {
             self.focused_target_id = Some(target_id.clone());
-            self.pending_ast_reveal_target_id = Some(target_id.clone());
             if let Some(row_key) = self.shortest_dependency_row_key_for_target(&target_id) {
                 self.focused_dependency_row_key = Some(row_key.clone());
                 self.pending_dependency_reveal_row_key = Some(row_key.clone());
@@ -420,25 +351,18 @@ impl PassDebugWindowDocument {
             if jump_editor {
                 self.pending_editor_jump = Some(source_range);
             }
-            if show_dependencies {
-                self.side_panel_mode = PassDebugSidePanelMode::Dependencies;
-            }
         } else if source
             .dependency_targets
             .iter()
             .any(|target| target.id == target_id)
         {
             self.focused_target_id = Some(target_id.clone());
-            self.pending_ast_reveal_target_id = Some(target_id.clone());
             if let Some(row_key) = self.shortest_dependency_row_key_for_target(&target_id) {
                 self.focused_dependency_row_key = Some(row_key.clone());
                 self.pending_dependency_reveal_row_key = Some(row_key.clone());
                 self.reveal_dependency_row_key(&row_key, false);
             } else {
                 self.focused_dependency_row_key = None;
-            }
-            if show_dependencies {
-                self.side_panel_mode = PassDebugSidePanelMode::Dependencies;
             }
         }
     }
@@ -447,7 +371,16 @@ impl PassDebugWindowDocument {
         if let Some(row_key) = click.toggle_row_key {
             self.toggle_dependency_row_expanded(&row_key);
         } else if let Some(row_key) = click.row_key {
-            self.focus_dependency_row_key(row_key, show_dependencies, true, false);
+            let jump_override = click.source_range;
+            self.focus_dependency_row_key(
+                row_key,
+                show_dependencies,
+                jump_override.is_none(),
+                false,
+            );
+            if let Some(source_range) = jump_override {
+                self.pending_editor_jump = Some(source_range);
+            }
         } else if let Some(target_id) = click.target_id {
             self.focus_target(target_id, show_dependencies);
         } else if let Some(source_range) = click.source_range {
@@ -458,7 +391,7 @@ impl PassDebugWindowDocument {
     fn focus_dependency_row_key(
         &mut self,
         row_key: impl Into<String>,
-        show_dependencies: bool,
+        _show_dependencies: bool,
         jump_editor: bool,
         reveal_row: bool,
     ) {
@@ -478,83 +411,10 @@ impl PassDebugWindowDocument {
         }
         if let Some(target_id) = row.target_id {
             self.focused_target_id = Some(target_id.clone());
-            self.pending_ast_reveal_target_id = Some(target_id);
         }
         if jump_editor {
             self.pending_editor_jump = row.source_range;
         }
-        if show_dependencies {
-            self.side_panel_mode = PassDebugSidePanelMode::Dependencies;
-        }
-    }
-
-    fn apply_dependency_search_change(&mut self) {
-        self.refresh_dependency_search_matches(None);
-        if !self.dependency_search_query.trim().is_empty() {
-            self.focus_active_dependency_search_match();
-        }
-    }
-
-    fn refresh_dependency_search_matches(&mut self, preferred_row_key: Option<String>) {
-        let previous_active_row_key = self
-            .active_dependency_search_match
-            .and_then(|index| self.dependency_search_matches.get(index))
-            .map(|search_match| search_match.row_key.clone());
-        self.dependency_search_matches = self
-            .dependency_rows
-            .iter()
-            .filter(|row| dependency_row_matches_search(row, &self.dependency_search_query))
-            .map(|row| DependencySearchMatch {
-                row_key: row.row_key.clone(),
-            })
-            .collect();
-
-        if self.dependency_search_matches.is_empty() {
-            self.active_dependency_search_match = None;
-            return;
-        }
-
-        let preferred_row_key = preferred_row_key
-            .or(previous_active_row_key)
-            .or_else(|| self.focused_dependency_row_key.clone());
-        self.active_dependency_search_match = preferred_row_key
-            .and_then(|row_key| {
-                self.dependency_search_matches
-                    .iter()
-                    .position(|search_match| search_match.row_key == row_key)
-            })
-            .or(Some(0));
-    }
-
-    fn focus_active_dependency_search_match(&mut self) {
-        let Some(row_key) = self.active_dependency_search_row_key().map(str::to_string) else {
-            return;
-        };
-        self.focus_dependency_row_key(row_key, true, true, true);
-    }
-
-    fn activate_dependency_search_match(&mut self, index: usize) {
-        if index >= self.dependency_search_matches.len() {
-            return;
-        }
-        self.active_dependency_search_match = Some(index);
-        self.focus_active_dependency_search_match();
-    }
-
-    fn move_dependency_search_match(&mut self, delta: isize) {
-        if self.dependency_search_matches.is_empty() {
-            return;
-        }
-        let len = self.dependency_search_matches.len() as isize;
-        let current = self.active_dependency_search_match.unwrap_or(0) as isize;
-        let next = (current + delta).rem_euclid(len) as usize;
-        self.activate_dependency_search_match(next);
-    }
-
-    fn active_dependency_search_row_key(&self) -> Option<&str> {
-        self.active_dependency_search_match
-            .and_then(|index| self.dependency_search_matches.get(index))
-            .map(|search_match| search_match.row_key.as_str())
     }
 
     fn focus_target_at_char_index(&mut self, char_index: usize) {
@@ -621,10 +481,6 @@ impl PassDebugWindowDocument {
         }
     }
 
-    fn focused_target_label(&self) -> Option<String> {
-        self.target_label(self.focused_target_id.as_deref())
-    }
-
     fn focused_source_range(&self) -> Option<PassDebugSourceRange> {
         if let Some(row_source_range) = self
             .focused_dependency_row_key
@@ -646,20 +502,6 @@ impl PassDebugWindowDocument {
             .iter()
             .find(|target| target.id == focused_target_id)
             .and_then(|target| target.source_range)
-    }
-
-    fn dependency_root_label(&self) -> Option<String> {
-        self.target_label(self.dependency_root_target_id.as_deref())
-    }
-
-    fn target_label(&self, target_id: Option<&str>) -> Option<String> {
-        let source = self.analysis_source.as_ref()?;
-        let target_id = target_id?;
-        source
-            .dependency_targets
-            .iter()
-            .find(|target| target.id == target_id)
-            .map(|target| format!("{} {}", target.scope, target.name))
     }
 
     fn focus_is_in_dependency_root(&self) -> bool {
@@ -809,22 +651,6 @@ fn target_exists(source: &PassDebugSource, target_id: Option<&str>) -> bool {
         .any(|target| target.id == target_id)
 }
 
-fn consume_tree_reveal_target<Row: PassDebugTreeRow>(
-    pending_target_id: &mut Option<String>,
-    rows: &[Row],
-) -> Option<String> {
-    let target_id = pending_target_id.clone()?;
-    if rows
-        .iter()
-        .any(|row| row.target_id().map(|id| id == target_id).unwrap_or(false))
-    {
-        *pending_target_id = None;
-        Some(target_id)
-    } else {
-        None
-    }
-}
-
 fn consume_tree_reveal_row_key<Row: PassDebugTreeRow>(
     pending_row_key: &mut Option<String>,
     rows: &[Row],
@@ -844,11 +670,8 @@ fn consume_tree_reveal_row_key<Row: PassDebugTreeRow>(
 struct PassDebugTreeRenderState<'a> {
     focused_target_id: Option<&'a str>,
     focused_row_key: Option<&'a str>,
-    reveal_target_id: Option<&'a str>,
     reveal_row_key: Option<&'a str>,
     path_row_keys: &'a [String],
-    search_match_row_keys: &'a HashSet<String>,
-    active_search_row_key: Option<&'a str>,
     expandable_row_keys: Option<&'a HashSet<String>>,
     expanded_row_keys: Option<&'a HashSet<String>>,
 }
@@ -859,6 +682,7 @@ pub struct PassDebugWindowState {
     document: Arc<Mutex<PassDebugWindowDocument>>,
     close_requested: Arc<AtomicBool>,
     pending_actions: Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    last_viewport_inner_rect: Arc<Mutex<Option<egui::Rect>>>,
     focus_requested: bool,
 }
 
@@ -879,6 +703,7 @@ impl PassDebugWindowState {
             ))),
             close_requested: Arc::new(AtomicBool::new(false)),
             pending_actions: Arc::new(Mutex::new(Vec::new())),
+            last_viewport_inner_rect: Arc::new(Mutex::new(None)),
             pass_name,
             viewport_id,
             focus_requested: true,
@@ -954,20 +779,17 @@ pub fn show_pass_debug_windows(
         let document = Arc::clone(&state.document);
         let close_requested = Arc::clone(&state.close_requested);
         let pending_actions = Arc::clone(&state.pending_actions);
+        let last_viewport_inner_rect = Arc::clone(&state.last_viewport_inner_rect);
         let title = format!("RenderPass Debug - {}", state.pass_name);
         let viewport_builder = egui::ViewportBuilder::default()
             .with_title(title.clone())
             .with_inner_size(egui::vec2(1180.0, 760.0))
             .with_min_inner_size(egui::vec2(640.0, 360.0));
 
-        ctx.show_viewport_deferred(viewport_id, viewport_builder, move |ctx, class| {
-            if ctx.input(|input| input.viewport().close_requested()) {
-                close_requested.store(true, Ordering::Relaxed);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                return;
-            }
-
-            match class {
+        ctx.show_viewport_deferred(
+            viewport_id,
+            viewport_builder,
+            move |ctx, class| match class {
                 egui::ViewportClass::EmbeddedWindow => {
                     let mut open = true;
                     egui::Window::new(title.as_str())
@@ -982,10 +804,17 @@ pub fn show_pass_debug_windows(
                     }
                 }
                 _ => {
+                    if handle_pass_debug_viewport_close_request(
+                        ctx,
+                        &close_requested,
+                        &last_viewport_inner_rect,
+                    ) {
+                        return;
+                    }
                     render_pass_debug_viewport(ctx, &document, &pending_actions);
                 }
-            }
-        });
+            },
+        );
 
         if state.focus_requested {
             ctx.send_viewport_cmd_to(state.viewport_id, egui::ViewportCommand::Focus);
@@ -1060,6 +889,43 @@ pub fn record_all_patch_error(windows: &mut PassDebugWindowMap, error: String) {
     }
 }
 
+fn handle_pass_debug_viewport_close_request(
+    ctx: &egui::Context,
+    close_requested: &AtomicBool,
+    last_inner_rect: &Mutex<Option<egui::Rect>>,
+) -> bool {
+    let viewport = ctx.input(|input| input.viewport().clone());
+    let previous_inner_rect = last_inner_rect.lock().ok().and_then(|guard| *guard);
+    if let Ok(mut guard) = last_inner_rect.lock() {
+        *guard = viewport.inner_rect;
+    }
+
+    if !viewport.close_requested() {
+        return false;
+    }
+
+    if is_close_request_during_large_viewport_resize(previous_inner_rect, viewport.inner_rect) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        return false;
+    }
+
+    close_requested.store(true, Ordering::Relaxed);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    true
+}
+
+fn is_close_request_during_large_viewport_resize(
+    previous: Option<egui::Rect>,
+    current: Option<egui::Rect>,
+) -> bool {
+    let (Some(previous), Some(current)) = (previous, current) else {
+        return false;
+    };
+    let width_delta = (previous.width() - current.width()).abs();
+    let height_delta = (previous.height() - current.height()).abs();
+    width_delta.max(height_delta) >= PASS_DEBUG_CLOSE_RESIZE_DELTA_THRESHOLD
+}
+
 fn render_pass_debug_viewport(
     ctx: &egui::Context,
     document: &Arc<Mutex<PassDebugWindowDocument>>,
@@ -1090,7 +956,7 @@ fn render_pass_debug_viewport(
             render_missing_source_message(ui);
             return;
         }
-        render_ast_editor_split(ui, &mut document);
+        render_dependency_editor_split(ui, &mut document);
     });
 }
 
@@ -1113,97 +979,15 @@ fn render_pass_debug_embedded_content(
     }
 
     ui.add_space(8.0);
-    render_ast_editor_split(ui, &mut document);
+    render_dependency_editor_split(ui, &mut document);
 }
 
 fn render_side_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
-    ui.horizontal(|ui| {
-        ui.selectable_value(
-            &mut document.side_panel_mode,
-            PassDebugSidePanelMode::Ast,
-            "AST",
-        );
-        ui.selectable_value(
-            &mut document.side_panel_mode,
-            PassDebugSidePanelMode::Dependencies,
-            "Dependencies",
-        );
-    });
-    ui.add_space(4.0);
-
-    match document.side_panel_mode {
-        PassDebugSidePanelMode::Ast => render_ast_panel(ui, document),
-        PassDebugSidePanelMode::Dependencies => render_dependency_panel(ui, document),
-    }
-}
-
-fn render_ast_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
-    ui.heading("WGSL AST");
-    ui.label(
-        egui::RichText::new(document.pass_name.as_str())
-            .monospace()
-            .small(),
-    );
-
-    let Some(source) = document.analysis_source.as_ref() else {
-        ui.add_space(8.0);
-        ui.colored_label(
-            egui::Color32::from_rgb(255, 180, 120),
-            "Pass no longer exists",
-        );
-        return;
-    };
-
-    if let Some(error) = source.parse_error.as_ref() {
-        ui.add_space(8.0);
-        ui.colored_label(egui::Color32::from_rgb(255, 118, 118), "WGSL parse failed");
-        ui.label(egui::RichText::new(error.as_str()).monospace().small());
-        ui.add_space(8.0);
-    }
-
-    if document.ast_rows.is_empty() {
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new("No AST rows").monospace().small());
-        return;
-    }
-
-    let reveal_target_id = consume_tree_reveal_target(
-        &mut document.pending_ast_reveal_target_id,
-        &document.ast_rows,
-    );
-    let empty_path = Vec::new();
-    let empty_matches = HashSet::new();
-    let tree_state = PassDebugTreeRenderState {
-        focused_target_id: document.focused_target_id.as_deref(),
-        focused_row_key: None,
-        reveal_target_id: reveal_target_id.as_deref(),
-        reveal_row_key: None,
-        path_row_keys: &empty_path,
-        search_match_row_keys: &empty_matches,
-        active_search_row_key: None,
-        expandable_row_keys: None,
-        expanded_row_keys: None,
-    };
-    if let Some(click) = render_scrollable_tree_rows(
-        ui,
-        egui::Id::new(("pass-debug-ast", document.pass_name.as_str())),
-        &document.ast_rows,
-        &tree_state,
-    ) {
-        document.focus_tree_click(click, false);
-    }
+    render_dependency_panel(ui, document);
 }
 
 fn render_dependency_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
-    ui.heading("WGSL Dependencies");
-    ui.label(
-        egui::RichText::new(document.pass_name.as_str())
-            .monospace()
-            .small(),
-    );
-
     let Some(source) = document.analysis_source.as_ref() else {
-        ui.add_space(8.0);
         ui.colored_label(
             egui::Color32::from_rgb(255, 180, 120),
             "Pass no longer exists",
@@ -1220,98 +1004,11 @@ fn render_dependency_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
     }
 
     if let Some(error) = source.dependency_error.as_ref() {
-        ui.add_space(8.0);
         ui.colored_label(
             egui::Color32::from_rgb(255, 180, 120),
             "Dependency analysis failed",
         );
         ui.label(egui::RichText::new(error.as_str()).monospace().small());
-        ui.add_space(8.0);
-    }
-
-    ui.horizontal(|ui| {
-        let search_response = ui.add(
-            egui::TextEdit::singleline(&mut document.dependency_search_query)
-                .hint_text("Search current map")
-                .desired_width(f32::INFINITY),
-        );
-        if search_response.changed() {
-            document.apply_dependency_search_change();
-        }
-
-        let total = document.dependency_search_matches.len();
-        let current = document
-            .active_dependency_search_match
-            .map(|index| index + 1)
-            .unwrap_or(0);
-        let can_move = total > 0;
-        if ui.add_enabled(can_move, egui::Button::new("<")).clicked() {
-            document.move_dependency_search_match(-1);
-        }
-        ui.label(
-            egui::RichText::new(format!("{current}/{total}"))
-                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
-        );
-        if ui.add_enabled(can_move, egui::Button::new(">")).clicked() {
-            document.move_dependency_search_match(1);
-        }
-    });
-
-    if !document.dependency_search_query.trim().is_empty() {
-        if document.dependency_search_matches.is_empty() {
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new("No matches in current map")
-                    .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
-            );
-        } else {
-            let result_items = document
-                .dependency_search_matches
-                .iter()
-                .enumerate()
-                .take(24)
-                .filter_map(|(index, search_match)| {
-                    document
-                        .dependency_rows
-                        .iter()
-                        .find(|row| row.row_key == search_match.row_key)
-                        .map(|row| {
-                            (
-                                index,
-                                row.label.clone(),
-                                row.relation_path.clone(),
-                                document.active_dependency_search_match == Some(index),
-                            )
-                        })
-                })
-                .collect::<Vec<_>>();
-
-            ui.add_space(6.0);
-            egui::ScrollArea::vertical()
-                .id_salt(("pass-debug-map-search-list", document.pass_name.as_str()))
-                .max_height(128.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    for (index, label, relation_path, selected) in result_items {
-                        let response = ui.selectable_label(
-                            selected,
-                            egui::RichText::new(label)
-                                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
-                        );
-                        let response = if relation_path.is_empty() {
-                            response
-                        } else {
-                            response.on_hover_text(format!("Path: {relation_path}"))
-                        };
-                        if response.clicked() {
-                            document.activate_dependency_search_match(index);
-                        }
-                    }
-                });
-        }
-
-        ui.add_space(6.0);
-    } else {
         ui.add_space(8.0);
     }
 
@@ -1327,24 +1024,6 @@ fn render_dependency_panel(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
 }
 
 fn render_dependency_rows(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
-    ui.horizontal_wrapped(|ui| {
-        let root = document
-            .dependency_root_label()
-            .unwrap_or_else(|| "<none>".to_string());
-        let focus = document
-            .focused_target_label()
-            .unwrap_or_else(|| "<none>".to_string());
-        ui.label(
-            egui::RichText::new(format!("Root: {root}"))
-                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
-        );
-        ui.separator();
-        ui.label(
-            egui::RichText::new(format!("Focus: {focus}"))
-                .font(pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE)),
-        );
-    });
-
     if !document.focus_is_in_dependency_root() {
         ui.label(
             egui::RichText::new("Focus is outside the current dependency map")
@@ -1353,7 +1032,6 @@ fn render_dependency_rows(ui: &mut egui::Ui, document: &mut PassDebugWindowDocum
         );
     }
 
-    ui.add_space(6.0);
     let reveal_row_key = consume_tree_reveal_row_key(
         &mut document.pending_dependency_reveal_row_key,
         &document.dependency_rows,
@@ -1361,22 +1039,11 @@ fn render_dependency_rows(ui: &mut egui::Ui, document: &mut PassDebugWindowDocum
     let path_row_keys = document.dependency_focus_path_row_keys();
     let visible_dependency_rows = document.visible_dependency_rows();
     let expandable_row_keys = document.dependency_expandable_row_keys();
-    let search_match_row_keys = document
-        .dependency_search_matches
-        .iter()
-        .map(|search_match| search_match.row_key.clone())
-        .collect::<HashSet<_>>();
-    let active_search_row_key = document
-        .active_dependency_search_row_key()
-        .map(str::to_string);
     let tree_state = PassDebugTreeRenderState {
         focused_target_id: document.focused_target_id.as_deref(),
         focused_row_key: document.focused_dependency_row_key.as_deref(),
-        reveal_target_id: None,
         reveal_row_key: reveal_row_key.as_deref(),
         path_row_keys: &path_row_keys,
-        search_match_row_keys: &search_match_row_keys,
-        active_search_row_key: active_search_row_key.as_deref(),
         expandable_row_keys: Some(&expandable_row_keys),
         expanded_row_keys: Some(&document.dependency_expanded_row_keys),
     };
@@ -1414,24 +1081,13 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                 ((viewport.max.y / row_height_with_spacing).ceil() as usize + 1).min(rows.len());
             let content_origin = ui.min_rect().min;
 
-            let reveal_row_index = tree_state
-                .reveal_row_key
-                .and_then(|reveal_row_key| {
-                    rows.iter().position(|row| {
-                        row.row_key()
-                            .map(|row_key| row_key == reveal_row_key)
-                            .unwrap_or(false)
-                    })
+            let reveal_row_index = tree_state.reveal_row_key.and_then(|reveal_row_key| {
+                rows.iter().position(|row| {
+                    row.row_key()
+                        .map(|row_key| row_key == reveal_row_key)
+                        .unwrap_or(false)
                 })
-                .or_else(|| {
-                    tree_state.reveal_target_id.and_then(|reveal_target_id| {
-                        rows.iter().position(|row| {
-                            row.target_id()
-                                .map(|target_id| target_id == reveal_target_id)
-                                .unwrap_or(false)
-                        })
-                    })
-                });
+            });
             if let Some(row_index) = reveal_row_index {
                 let row_top = content_origin.y + row_index as f32 * row_height_with_spacing;
                 let visible_reveal_rect = egui::Rect::from_min_max(
@@ -1478,14 +1134,6 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                         .iter()
                         .position(|path_row_key| path_row_key == row_key)
                 });
-                let search_match = row_key
-                    .map(|row_key| tree_state.search_match_row_keys.contains(row_key))
-                    .unwrap_or(false);
-                let active_search_match = tree_state
-                    .active_search_row_key
-                    .zip(row_key)
-                    .map(|(active, row_key)| active == row_key)
-                    .unwrap_or(false);
                 let response = if row.selectable() {
                     ui.interact(row_rect, id.with(row_index), egui::Sense::click())
                 } else {
@@ -1496,38 +1144,58 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                 } else {
                     response
                 };
-                let indent = row.depth() as f32 * AST_ROW_INDENT_WIDTH;
+                let indent = row.depth() as f32 * TREE_ROW_INDENT_WIDTH;
                 let toggle_slot = if tree_state.expandable_row_keys.is_some() && row_key.is_some() {
-                    AST_ROW_INDENT_WIDTH
+                    TREE_ROW_INDENT_WIDTH
                 } else {
                     0.0
                 };
-                let toggle_clicked = if expandable {
-                    let toggle_rect = egui::Rect::from_min_size(
+                let text_x = row_rect.left() + indent + toggle_slot;
+                let label_width = ui
+                    .painter()
+                    .layout_no_wrap(
+                        row.label().to_string(),
+                        font_id.clone(),
+                        ui.visuals().text_color(),
+                    )
+                    .size()
+                    .x;
+                let source_jump_range = row.source_jump_range();
+                let source_jump_rect = source_jump_range.map(|_| {
+                    let button_size = source_jump_button_size(ui, &font_id);
+                    egui::Rect::from_min_size(
+                        egui::pos2(
+                            text_x + label_width + TREE_ROW_SOURCE_JUMP_GAP,
+                            row_rect.center().y - button_size.y * 0.5,
+                        ),
+                        button_size,
+                    )
+                });
+                let source_jump_response = source_jump_rect.map(|button_rect| {
+                    ui.interact(
+                        button_rect,
+                        id.with(("source-jump", row_key.unwrap_or_default(), row_index)),
+                        egui::Sense::click(),
+                    )
+                    .on_hover_text("Jump to source")
+                });
+                let mut toggle_clicked = false;
+                let mut toggle_hovered = false;
+                let mut toggle_rect = None;
+                let toggle_symbol = if expandable {
+                    let next_toggle_rect = egui::Rect::from_min_size(
                         egui::pos2(row_rect.left() + indent, row_rect.top()),
-                        egui::vec2(AST_ROW_INDENT_WIDTH, row_height_with_spacing),
+                        egui::vec2(TREE_ROW_INDENT_WIDTH, row_height_with_spacing),
                     );
                     let toggle_id = id.with(("toggle", row_key.unwrap_or_default().to_string()));
-                    let toggle_response = ui.interact(toggle_rect, toggle_id, egui::Sense::click());
-                    let symbol = if expanded { "-" } else { "+" };
-                    let symbol_color = if toggle_response.hovered() {
-                        ui.visuals().text_color()
-                    } else {
-                        ui.visuals().weak_text_color()
-                    };
-                    let symbol_galley = ui.painter().layout_no_wrap(
-                        symbol.to_string(),
-                        font_id.clone(),
-                        symbol_color,
-                    );
-                    let symbol_pos = egui::pos2(
-                        toggle_rect.center().x - symbol_galley.size().x * 0.5,
-                        toggle_rect.center().y - symbol_galley.size().y * 0.5,
-                    );
-                    ui.painter().galley(symbol_pos, symbol_galley, symbol_color);
-                    toggle_response.clicked()
+                    let toggle_response =
+                        ui.interact(next_toggle_rect, toggle_id, egui::Sense::click());
+                    toggle_clicked = toggle_response.clicked();
+                    toggle_hovered = toggle_response.hovered();
+                    toggle_rect = Some(next_toggle_rect);
+                    Some(if expanded { "-" } else { "+" })
                 } else {
-                    false
+                    None
                 };
 
                 if let Some(path_index) = path_index {
@@ -1535,13 +1203,6 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                         row_rect,
                         0.0,
                         dependency_path_color(ui, path_index, tree_state.path_row_keys.len()),
-                    );
-                }
-                if search_match {
-                    ui.painter().rect_filled(
-                        row_rect,
-                        0.0,
-                        dependency_search_match_color(ui, active_search_match),
                     );
                 }
                 if selected {
@@ -1559,6 +1220,17 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                         source_range: None,
                         toggle_row_key: row.row_key().map(str::to_string),
                     });
+                } else if source_jump_response
+                    .as_ref()
+                    .map(|response| response.clicked())
+                    .unwrap_or(false)
+                {
+                    clicked_row = Some(PassDebugTreeClick {
+                        row_key: row.row_key().map(str::to_string),
+                        target_id: row.target_id().map(str::to_string),
+                        source_range: source_jump_range,
+                        toggle_row_key: None,
+                    });
                 } else if response.clicked()
                     && (row.target_id().is_some() || row.source_range().is_some())
                 {
@@ -1570,12 +1242,11 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                     });
                 }
 
-                let text_color = if selected || active_search_match {
+                let text_color = if selected {
                     tree_highlight_text_color(ui)
                 } else {
                     ui.visuals().text_color()
                 };
-                let text_x = row_rect.left() + indent + toggle_slot;
                 let galley = ui.painter().layout_no_wrap(
                     row.label().to_string(),
                     font_id.clone(),
@@ -1583,6 +1254,20 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
                 );
                 let text_pos = egui::pos2(text_x, row_rect.center().y - galley.size().y * 0.5);
                 ui.painter().galley(text_pos, galley, text_color);
+                if let (Some(toggle_rect), Some(toggle_symbol)) = (toggle_rect, toggle_symbol) {
+                    paint_tree_toggle_symbol(
+                        ui,
+                        toggle_rect,
+                        toggle_symbol,
+                        toggle_hovered,
+                        &font_id,
+                    );
+                }
+                if let (Some(button_rect), Some(button_response)) =
+                    (source_jump_rect, source_jump_response.as_ref())
+                {
+                    paint_source_jump_button(ui, button_rect, button_response.hovered(), &font_id);
+                }
             }
         });
 
@@ -1600,10 +1285,10 @@ fn tree_rows_content_width<Row: PassDebugTreeRow>(
 
     rows.iter()
         .map(|row| {
-            let indent = row.depth() as f32 * AST_ROW_INDENT_WIDTH;
+            let indent = row.depth() as f32 * TREE_ROW_INDENT_WIDTH;
             let toggle_slot = if tree_state.expandable_row_keys.is_some() && row.row_key().is_some()
             {
-                AST_ROW_INDENT_WIDTH
+                TREE_ROW_INDENT_WIDTH
             } else {
                 0.0
             };
@@ -1612,10 +1297,82 @@ fn tree_rows_content_width<Row: PassDebugTreeRow>(
                 .layout_no_wrap(row.label().to_string(), font_id.clone(), text_color)
                 .size()
                 .x;
+            let source_jump_width = if row.source_jump_range().is_some() {
+                TREE_ROW_SOURCE_JUMP_GAP + source_jump_button_size(ui, font_id).x
+            } else {
+                0.0
+            };
 
-            indent + toggle_slot + label_width + TREE_ROW_TRAILING_PADDING
+            indent + toggle_slot + label_width + source_jump_width + TREE_ROW_TRAILING_PADDING
         })
         .fold(available_width, f32::max)
+}
+
+fn source_jump_button_size(ui: &egui::Ui, font_id: &egui::FontId) -> egui::Vec2 {
+    let text_color = ui.visuals().text_color();
+    let label_size = ui
+        .painter()
+        .layout_no_wrap(
+            TREE_ROW_SOURCE_JUMP_LABEL.to_string(),
+            font_id.clone(),
+            text_color,
+        )
+        .size();
+    egui::vec2(
+        label_size.x + TREE_ROW_SOURCE_JUMP_HORIZONTAL_PADDING * 2.0,
+        label_size.y + TREE_ROW_SOURCE_JUMP_VERTICAL_PADDING * 2.0,
+    )
+}
+
+fn paint_tree_toggle_symbol(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    symbol: &str,
+    hovered: bool,
+    font_id: &egui::FontId,
+) {
+    let symbol_color = if hovered {
+        ui.visuals().text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    let symbol_galley =
+        ui.painter()
+            .layout_no_wrap(symbol.to_string(), font_id.clone(), symbol_color);
+    let symbol_pos = egui::pos2(
+        rect.center().x - symbol_galley.size().x * 0.5,
+        rect.center().y - symbol_galley.size().y * 0.5,
+    );
+    ui.painter().galley(symbol_pos, symbol_galley, symbol_color);
+}
+
+fn paint_source_jump_button(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    hovered: bool,
+    font_id: &egui::FontId,
+) {
+    let fill = if hovered {
+        source_jump_button_hover_bg(ui)
+    } else {
+        source_jump_button_bg(ui)
+    };
+    let text_color = if hovered {
+        tree_highlight_text_color(ui)
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.painter().rect_filled(rect, 3.0, fill);
+    let galley = ui.painter().layout_no_wrap(
+        TREE_ROW_SOURCE_JUMP_LABEL.to_string(),
+        font_id.clone(),
+        text_color,
+    );
+    let text_pos = egui::pos2(
+        rect.center().x - galley.size().x * 0.5,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    ui.painter().galley(text_pos, galley, text_color);
 }
 
 fn dependency_path_color(ui: &egui::Ui, index: usize, len: usize) -> egui::Color32 {
@@ -1638,16 +1395,6 @@ fn dependency_path_color(ui: &egui::Ui, index: usize, len: usize) -> egui::Color
     lerp_color(start, end, t)
 }
 
-fn dependency_search_match_color(ui: &egui::Ui, active: bool) -> egui::Color32 {
-    let alpha = match (ui.visuals().dark_mode, active) {
-        (true, true) => 46,
-        (true, false) => 24,
-        (false, true) => 36,
-        (false, false) => 20,
-    };
-    egui::Color32::from_rgba_unmultiplied(34, 197, 94, alpha)
-}
-
 fn tree_selected_row_bg(ui: &egui::Ui) -> egui::Color32 {
     if ui.visuals().dark_mode {
         egui::Color32::from_rgb(44, 58, 76)
@@ -1661,6 +1408,22 @@ fn tree_hovered_row_bg(ui: &egui::Ui) -> egui::Color32 {
         egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18)
     } else {
         egui::Color32::from_rgba_unmultiplied(0, 0, 0, 10)
+    }
+}
+
+fn source_jump_button_bg(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_rgba_unmultiplied(148, 163, 184, 30)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(71, 85, 105, 20)
+    }
+}
+
+fn source_jump_button_hover_bg(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_rgba_unmultiplied(96, 165, 250, 62)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(37, 99, 235, 42)
     }
 }
 
@@ -1761,7 +1524,7 @@ fn render_missing_source_message(ui: &mut egui::Ui) {
     );
 }
 
-fn render_ast_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
+fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
     let full_rect = ui.available_rect_before_wrap();
     if full_rect.width() <= 0.0 || full_rect.height() <= 0.0 {
         return;
@@ -1769,19 +1532,19 @@ fn render_ast_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
 
     let split_id = egui::Id::new(("pass-debug-split-width", document.pass_name.as_str()));
     let available_for_panel = (full_rect.width() - PASS_DEBUG_SPLIT_HANDLE_WIDTH).max(0.0);
-    let max_panel_width = AST_PANEL_MAX_WIDTH
+    let max_panel_width = SIDE_PANEL_MAX_WIDTH
         .min(
             (available_for_panel - PASS_DEBUG_EDITOR_MIN_WIDTH)
-                .max(AST_PANEL_MIN_WIDTH)
+                .max(SIDE_PANEL_MIN_WIDTH)
                 .min(available_for_panel),
         )
         .max(0.0);
-    let min_panel_width = AST_PANEL_MIN_WIDTH.min(max_panel_width);
+    let min_panel_width = SIDE_PANEL_MIN_WIDTH.min(max_panel_width);
     let panel_width = ui
         .ctx()
         .data_mut(|data| {
             data.get_persisted::<f32>(split_id)
-                .unwrap_or(AST_PANEL_DEFAULT_WIDTH)
+                .unwrap_or(SIDE_PANEL_DEFAULT_WIDTH)
         })
         .clamp(min_panel_width, max_panel_width);
 
@@ -2010,27 +1773,6 @@ fn pass_debug_mono_font(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name("geist_mono".into()))
 }
 
-fn flatten_ast_tree(nodes: &[PassDebugAstNode]) -> Vec<PassDebugAstRow> {
-    let mut rows = Vec::new();
-    for node in nodes {
-        push_ast_rows(node, 0, &mut rows);
-    }
-    rows
-}
-
-fn push_ast_rows(node: &PassDebugAstNode, depth: usize, rows: &mut Vec<PassDebugAstRow>) {
-    rows.push(PassDebugAstRow {
-        depth,
-        label: clean_debug_tree_row_label(&node.label),
-        target_id: node.target_id.clone(),
-        source_range: node.source_range,
-        selectable: node.target_id.is_some() || node.source_range.is_some(),
-    });
-    for child in &node.children {
-        push_ast_rows(child, depth + 1, rows);
-    }
-}
-
 fn clean_debug_tree_row_label(label: &str) -> String {
     let Some(stripped) = strip_leading_naga_handle(label.trim_start()) else {
         return label.to_string();
@@ -2084,22 +1826,21 @@ fn push_dependency_rows(
             node.display_label.as_deref(),
             node.edge_label.as_deref(),
         );
-        let source_range = node.source_range.or_else(|| {
-            target_id
-                .as_deref()
-                .and_then(|target_id| target_source_range(source, target_id))
-        });
-        let search_text =
-            dependency_row_search_text(source, target_id.as_deref(), &label, &relation_path_text);
+        let target_range = target_id
+            .as_deref()
+            .and_then(|target_id| target_source_range(source, target_id));
+        let source_range = node.source_range.or(target_range);
+        let source_jump_range =
+            target_range.filter(|target_range| source_range != Some(*target_range));
         rows.push(PassDebugDependencyRow {
             depth,
             row_key: row_key.clone(),
             parent_row_key,
             label,
             relation_path: relation_path_text,
-            search_text,
             target_id,
             source_range,
+            source_jump_range,
             selectable: true,
         });
         for (index, child) in node.children.iter().enumerate() {
@@ -2195,55 +1936,12 @@ fn compact_dependency_relation_label(label: &str) -> String {
     label.to_string()
 }
 
-fn dependency_row_search_text(
-    source: &PassDebugSource,
-    target_id: Option<&str>,
-    label: &str,
-    relation_path: &str,
-) -> String {
-    let mut parts = vec![label.to_string(), relation_path.to_string()];
-    if let Some(target) = target_id.and_then(|target_id| {
-        source
-            .dependency_targets
-            .iter()
-            .find(|target| target.id == target_id)
-    }) {
-        parts.extend([
-            target.name.clone(),
-            target.scope.clone(),
-            target.kind.clone(),
-            target.label.clone(),
-        ]);
-    }
-    parts.join(" ").to_ascii_lowercase()
-}
-
 fn target_source_range(source: &PassDebugSource, target_id: &str) -> Option<PassDebugSourceRange> {
     source
         .dependency_targets
         .iter()
         .find(|target| target.id == target_id)
         .and_then(|target| target.source_range)
-}
-
-fn dependency_row_matches_search(row: &PassDebugDependencyRow, search: &str) -> bool {
-    let tokens = search
-        .split_whitespace()
-        .map(str::to_ascii_lowercase)
-        .collect::<Vec<_>>();
-    let words = row
-        .search_text
-        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>();
-    !tokens.is_empty()
-        && tokens.iter().all(|token| {
-            if token.len() <= 2 {
-                words.iter().any(|word| *word == token)
-            } else {
-                row.search_text.contains(token.as_str())
-            }
-        })
 }
 
 fn dependency_path_for_row_key(rows: &[PassDebugDependencyRow], row_key: &str) -> Vec<String> {
@@ -2335,14 +2033,15 @@ fn is_wgsl_identifier_char(ch: char) -> bool {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
+    use rust_wgpu_fiber::eframe::egui;
+
     use super::{
         PassDebugDependencyRow, PassDebugTreeClick, PassDebugWindowDocument,
-        dependency_path_for_row_key, dependency_row_matches_search, flatten_ast_tree,
-        flatten_dependency_tree,
+        byte_index_to_char_index, dependency_path_for_row_key, flatten_dependency_tree,
+        is_close_request_during_large_viewport_resize,
     };
     use crate::renderer::{
-        PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
-        PassDebugSourceRange,
+        PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource, PassDebugSourceRange,
     };
 
     fn has_target_named(document: &PassDebugWindowDocument, name: &str) -> bool {
@@ -2422,6 +2121,44 @@ mod tests {
         );
     }
 
+    fn dependency_row_by_label<'a>(
+        rows: &'a [PassDebugDependencyRow],
+        label: &str,
+    ) -> &'a PassDebugDependencyRow {
+        rows.iter()
+            .find(|row| row.label == label)
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing dependency row `{label}`\nrows:\n{}",
+                    rows.iter()
+                        .map(|row| row.label.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            })
+    }
+
+    #[test]
+    fn close_request_resize_guard_only_matches_large_size_changes() {
+        let previous = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(800.0, 600.0));
+        let maximized = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1440.0, 900.0));
+        let nearly_same =
+            egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(804.0, 604.0));
+
+        assert!(is_close_request_during_large_viewport_resize(
+            Some(previous),
+            Some(maximized),
+        ));
+        assert!(!is_close_request_during_large_viewport_resize(
+            Some(previous),
+            Some(nearly_same),
+        ));
+        assert!(!is_close_request_during_large_viewport_resize(
+            None,
+            Some(maximized),
+        ));
+    }
+
     #[test]
     fn dirty_draft_is_not_replaced_by_source_refresh() {
         let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
@@ -2459,19 +2196,6 @@ mod tests {
 
         assert_eq!(document.draft_source, "fn a() {}\n");
         assert!(document.patch_active);
-    }
-
-    #[test]
-    fn ast_rows_are_flattened_once_per_source_update() {
-        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
-        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
-        let initial_rows = document.ast_rows.len();
-
-        let refreshed = PassDebugSource::from_wgsl("p", "fn generated() {}\n");
-        document.update_source(Some(&refreshed), 1, false);
-
-        assert!(initial_rows > 0);
-        assert!(!document.ast_rows.is_empty());
     }
 
     #[test]
@@ -2636,54 +2360,6 @@ mod tests {
     }
 
     #[test]
-    fn dependency_search_focuses_map_row_without_replacing_root_tree() {
-        let source = PassDebugSource::from_wgsl(
-            "p",
-            "@fragment fn fs_main() -> @location(0) vec4f { var a: f32 = 0.0; let b = a + 1.0; let c = b + 1.0; return vec4f(c, c, c, 1.0); }\n",
-        );
-        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
-        let root_id = document.dependency_root_target_id.clone().unwrap();
-        let child_id = target_id_by_name(&document, "b");
-
-        document.dependency_search_query = "b".to_string();
-        document.apply_dependency_search_change();
-
-        assert_eq!(
-            document.dependency_root_target_id.as_deref(),
-            Some(root_id.as_str())
-        );
-        assert_eq!(
-            document.focused_target_id.as_deref(),
-            Some(child_id.as_str())
-        );
-        assert_eq!(
-            document.dependency_rows[0].target_id.as_deref(),
-            Some(root_id.as_str())
-        );
-        assert_eq!(document.dependency_search_matches.len(), 3);
-        assert!(
-            document
-                .dependency_search_matches
-                .iter()
-                .all(|search_match| {
-                    document
-                        .dependency_rows
-                        .iter()
-                        .find(|row| row.row_key == search_match.row_key)
-                        .and_then(|row| row.target_id.as_deref())
-                        == Some(child_id.as_str())
-                })
-        );
-        assert_eq!(
-            document.focused_dependency_row_key.as_deref(),
-            document
-                .dependency_search_matches
-                .first()
-                .map(|search_match| search_match.row_key.as_str())
-        );
-    }
-
-    #[test]
     fn dependency_tree_click_focuses_without_queueing_reveal_scroll() {
         let source = PassDebugSource::from_wgsl(
             "p",
@@ -2711,31 +2387,6 @@ mod tests {
     }
 
     #[test]
-    fn dependency_search_only_matches_current_root_map() {
-        let source = PassDebugSource::from_wgsl(
-            "p",
-            "@fragment fn fs_main() -> @location(0) vec4f { var a: f32 = 0.0; let b = a + 1.0; let c = b + 1.0; let outside = 9.0; return vec4f(c, c, c, 1.0); }\n",
-        );
-        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
-        let root_id = document.dependency_root_target_id.clone().unwrap();
-
-        document.dependency_search_query = "outside".to_string();
-        document.apply_dependency_search_change();
-
-        assert_eq!(
-            document.dependency_root_target_id.as_deref(),
-            Some(root_id.as_str())
-        );
-        assert!(document.dependency_search_matches.is_empty());
-        assert!(
-            document
-                .dependency_rows
-                .iter()
-                .all(|row| !row.search_text.contains("outside"))
-        );
-    }
-
-    #[test]
     fn focusing_target_outside_current_map_does_not_move_root() {
         let source = PassDebugSource::from_wgsl(
             "p",
@@ -2757,27 +2408,6 @@ mod tests {
         );
         assert_eq!(document.focused_dependency_row_key, None);
         assert!(!document.focus_is_in_dependency_root());
-    }
-
-    #[test]
-    fn ast_rows_strip_leading_naga_handle_noise() {
-        let rows = flatten_ast_tree(&[PassDebugAstNode {
-            label: "[12]: Binary Add".to_string(),
-            target_id: Some("target::12".to_string()),
-            role: Some("let".to_string()),
-            source_range: None,
-            children: vec![PassDebugAstNode {
-                label: "[3] helper".to_string(),
-                target_id: None,
-                role: None,
-                source_range: None,
-                children: Vec::new(),
-            }],
-        }]);
-
-        assert_eq!(rows[0].label, "Binary Add");
-        assert_eq!(rows[0].target_id.as_deref(), Some("target::12"));
-        assert_eq!(rows[1].label, "helper");
     }
 
     #[test]
@@ -2910,8 +2540,6 @@ mod tests {
             &source.module_source[row_range.start_byte..row_range.end_byte],
             "input.foo.bar.x"
         );
-        assert!(rows[1].search_text.contains("input.foo.bar.x"));
-        assert!(rows[1].search_text.contains("math_multiply"));
     }
 
     #[test]
@@ -3000,33 +2628,188 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
-    fn empty_dependency_search_matches_no_rows() {
-        let source = PassDebugSource {
-            pass_name: "p".to_string(),
-            module_source: String::new(),
-            ast_tree: Vec::new(),
-            dependency_targets: Vec::new(),
-            dependency_trees: HashMap::new(),
-            dependency_root_target_id: None,
-            dependency_error: None,
-            parse_error: None,
-        };
-        let rows = flatten_dependency_tree(
-            &PassDebugDependencyNode {
-                label: "fs_main uv (argument)".to_string(),
-                edge_label: None,
-                display_label: None,
+    fn dependency_tree_click_jumps_to_reference_occurrence_range() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
+}
+
+fn bar(a: f32, c: f32) -> f32 {
+    return a + c;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let b = 1.0;
+    let c = 2.0;
+    let a = foo(b, c);
+    let d = bar(a, c);
+    return d;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let a_row = dependency_row_by_label(&document.dependency_rows, "a (bar)").clone();
+
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(a_row.row_key.clone()),
+                target_id: None,
                 source_range: None,
-                target_id: Some("target::uv".to_string()),
-                children: Vec::new(),
+                toggle_row_key: None,
             },
-            &source,
+            true,
         );
 
-        assert!(!dependency_row_matches_search(&rows[0], ""));
-        assert!(!dependency_row_matches_search(&rows[0], "   "));
-        assert!(dependency_row_matches_search(&rows[0], "uv"));
-        assert!(dependency_row_matches_search(&rows[0], "fs_main uv"));
+        let jump = document
+            .pending_editor_jump
+            .expect("expected dependency click to queue editor jump");
+        let expected_start = document.draft_source.find("bar(a, c)").unwrap() + "bar(".len();
+        assert_eq!(jump.start_byte, expected_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "a");
+        assert_eq!(
+            document.focused_dependency_row_key.as_deref(),
+            Some(a_row.row_key.as_str())
+        );
+    }
+
+    #[test]
+    fn reference_row_source_jump_range_jumps_to_target_source() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
+}
+
+fn bar(a: f32, c: f32) -> f32 {
+    return a + c;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let b = 1.0;
+    let c = 2.0;
+    let a = foo(b, c);
+    let d = bar(a, c);
+    return d;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let a_row = dependency_row_by_label(&document.dependency_rows, "a (bar)").clone();
+        let source_jump_range = a_row
+            .source_jump_range
+            .expect("expected reference row to expose source jump range");
+
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(a_row.row_key.clone()),
+                target_id: None,
+                source_range: Some(source_jump_range),
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected source jump to queue editor jump");
+        let expected_start = document.draft_source.find("let a = foo").unwrap() + "let ".len();
+        assert_eq!(jump.start_byte, expected_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "a");
+        assert_eq!(
+            document.focused_dependency_row_key.as_deref(),
+            Some(a_row.row_key.as_str())
+        );
+    }
+
+    #[test]
+    fn editor_click_on_reference_focuses_matching_dependency_row() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn foo(b: f32, c: f32) -> f32 {
+    return b + c;
+}
+
+fn bar(a: f32, c: f32) -> f32 {
+    return a + c;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let b = 1.0;
+    let c = 2.0;
+    let a = foo(b, c);
+    let d = bar(a, c);
+    return d;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let reference_start = document.draft_source.find("bar(a, c)").unwrap() + "bar(".len();
+        let reference_char_index =
+            byte_index_to_char_index(&document.draft_source, reference_start);
+
+        document.focus_target_at_char_index(reference_char_index);
+
+        let focused_row = document
+            .focused_dependency_row_key
+            .as_deref()
+            .and_then(|row_key| {
+                document
+                    .dependency_rows
+                    .iter()
+                    .find(|row| row.row_key == row_key)
+            })
+            .expect("expected editor click to focus dependency row");
+        assert_eq!(focused_row.label, "a (bar)");
+        let focused_range = document
+            .focused_source_range()
+            .expect("expected focused occurrence range");
+        assert_eq!(focused_range.start_byte, reference_start);
+        assert_eq!(
+            &document.draft_source[focused_range.start_byte..focused_range.end_byte],
+            "a"
+        );
+    }
+
+    #[test]
+    fn duplicate_dependency_rows_share_target_id_but_keep_row_occurrences() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn bar(left: f32, right: f32) -> f32 {
+    return left + right;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let a = 1.0;
+    let d = bar(a, a);
+    return d;
+}
+"#,
+        );
+        let document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let a_id = target_id_by_name(&document, "a");
+        let a_rows = document
+            .dependency_rows
+            .iter()
+            .filter(|row| row.label == "a (bar)" && row.target_id.as_deref() == Some(&a_id))
+            .collect::<Vec<_>>();
+        assert_eq!(a_rows.len(), 2);
+        assert_ne!(a_rows[0].row_key, a_rows[1].row_key);
+        assert_eq!(a_rows[0].target_id, a_rows[1].target_id);
+
+        let call_start = document.draft_source.find("bar(a, a)").unwrap();
+        let first_range = a_rows[0].source_range.expect("first occurrence range");
+        let second_range = a_rows[1].source_range.expect("second occurrence range");
+        assert_eq!(first_range.start_byte, call_start + "bar(".len());
+        assert_eq!(second_range.start_byte, call_start + "bar(a, ".len());
     }
 
     #[test]
@@ -3116,9 +2899,9 @@ fn fs_main() -> @location(0) f32 {
                 parent_row_key: None,
                 label: "root c (let)".to_string(),
                 relation_path: String::new(),
-                search_text: "root c let".to_string(),
                 target_id: Some("target::c".to_string()),
                 source_range: None,
+                source_jump_range: None,
                 selectable: true,
             },
             PassDebugDependencyRow {
@@ -3127,9 +2910,9 @@ fn fs_main() -> @location(0) f32 {
                 parent_row_key: Some("0".to_string()),
                 label: "shared a (local)".to_string(),
                 relation_path: "left".to_string(),
-                search_text: "shared a local left".to_string(),
                 target_id: Some("target::a".to_string()),
                 source_range: None,
+                source_jump_range: None,
                 selectable: true,
             },
             PassDebugDependencyRow {
@@ -3138,17 +2921,14 @@ fn fs_main() -> @location(0) f32 {
                 parent_row_key: Some("0".to_string()),
                 label: "shared a (local)".to_string(),
                 relation_path: "right".to_string(),
-                search_text: "shared a local right".to_string(),
                 target_id: Some("target::a".to_string()),
                 source_range: None,
+                source_jump_range: None,
                 selectable: true,
             },
         ];
-        document.dependency_search_query = "shared".to_string();
-        document.refresh_dependency_search_matches(None);
-        document.activate_dependency_search_match(1);
+        document.focus_dependency_row_key("0/1", true, false, false);
 
-        assert_eq!(document.dependency_search_matches.len(), 2);
         assert_eq!(document.focused_target_id.as_deref(), Some("target::a"));
         assert_eq!(document.focused_dependency_row_key.as_deref(), Some("0/1"));
     }
@@ -3185,7 +2965,6 @@ fn fs_main() -> @location(0) f32 {
                 parent_row_key: None,
                 label: "input".to_string(),
                 relation_path: String::new(),
-                search_text: "input".to_string(),
                 target_id: Some("target::input".to_string()),
                 source_range: Some(PassDebugSourceRange {
                     start_byte: 8,
@@ -3193,6 +2972,7 @@ fn fs_main() -> @location(0) f32 {
                     line: 1,
                     column: 9,
                 }),
+                source_jump_range: None,
                 selectable: true,
             },
             PassDebugDependencyRow {
@@ -3201,7 +2981,6 @@ fn fs_main() -> @location(0) f32 {
                 parent_row_key: Some("0".to_string()),
                 label: "input.foo.bar.x".to_string(),
                 relation_path: "use_value".to_string(),
-                search_text: "input.foo.bar.x use_value".to_string(),
                 target_id: Some("target::input".to_string()),
                 source_range: Some(PassDebugSourceRange {
                     start_byte: 8,
@@ -3209,6 +2988,7 @@ fn fs_main() -> @location(0) f32 {
                     line: 1,
                     column: 9,
                 }),
+                source_jump_range: None,
                 selectable: true,
             },
         ];
