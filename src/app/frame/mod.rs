@@ -20,14 +20,15 @@ fn apply_dark_visuals(ctx: &egui::Context) {
     ctx.set_visuals(visuals);
 }
 
-pub(super) fn run(app: &mut App, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    apply_dark_visuals(ctx);
+pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    let ctx = ui.ctx().clone();
+    apply_dark_visuals(&ctx);
 
     let frame_time = ctx.input(|input| input.time);
     let render_state = frame.wgpu_render_state().unwrap();
     let mut renderer_guard = render_state.renderer.as_ref().write();
 
-    let ingest = ingest::run(app, ctx, render_state, &mut renderer_guard, frame_time);
+    let ingest = ingest::run(app, &ctx, render_state, &mut renderer_guard, frame_time);
     if app.shell.test_mode == TestMode::Matrix {
         let _ = matrix_render::poll_matrix_rebuild(
             &mut app.shell.matrix_state,
@@ -39,6 +40,6 @@ pub(super) fn run(app: &mut App, ctx: &egui::Context, frame: &mut eframe::Frame)
     }
     let advance = advance::run(app);
     render_analysis::run(app, render_state, &mut renderer_guard, &ingest, &advance);
-    let present = present::run(app, ctx, render_state, &mut renderer_guard, &ingest);
-    finalize::run(app, ctx, &advance, &present);
+    let present = present::run(app, ui, &ctx, render_state, &mut renderer_guard, &ingest);
+    finalize::run(app, &ctx, &advance, &present);
 }

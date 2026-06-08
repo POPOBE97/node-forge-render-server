@@ -4,8 +4,6 @@
 //! then composites with a per-pixel blur radius (mask-driven) by sampling across
 //! MIP levels.
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result, anyhow};
 use rust_wgpu_fiber::{
     ResourceName,

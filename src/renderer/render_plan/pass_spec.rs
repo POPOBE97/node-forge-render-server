@@ -1,7 +1,7 @@
 //! Shared pass-planning helper utilities.
 
 pub(crate) use crate::renderer::render_plan::types::{
-    DepthResolvePass, ImagePrepass, PassTextureBinding, RenderPassSpec, SamplerKind,
+    DepthResolvePass, PassTextureBinding, RenderPassSpec, SamplerKind,
     TextureCapabilityRequirement, TextureDecl,
 };
 

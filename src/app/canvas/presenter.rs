@@ -847,7 +847,7 @@ pub fn show_canvas(
         );
     }
 
-    let plain_shortcuts_enabled = !ctx.wants_keyboard_input();
+    let plain_shortcuts_enabled = !ctx.egui_wants_keyboard_input();
     if plain_shortcuts_enabled {
         if ctx.input(|i| i.key_pressed(egui::Key::F)) {
             frame_result.commands.push(AppCommand::ToggleCanvasOnly);

@@ -34,6 +34,7 @@ pub enum CanvasAction {
     SetAnalysisTab(AnalysisTab),
     SetClippingShadowThreshold(f32),
     SetClippingHighlightThreshold(f32),
+    #[allow(dead_code)]
     ToggleQualifier,
     SetQualifierEnabled(bool),
     SetQualifierRange {

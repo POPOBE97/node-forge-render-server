@@ -184,6 +184,7 @@ pub struct RefImageState {
     pub size: [u32; 2],
     pub texture_format: wgpu::TextureFormat,
     pub alpha_mode: RefImageAlphaMode,
+    #[allow(dead_code)]
     pub transfer_mode: RefImageTransferMode,
     pub offset: egui::Vec2,
     pub mode: RefImageMode,
@@ -207,6 +208,7 @@ pub struct SampledPixel {
     pub rgba: [f32; 4],
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub enum ViewportOperationIndicator {
     Hidden,
@@ -251,6 +253,7 @@ impl RenderTextureFpsTracker {
     }
 }
 
+#[allow(dead_code)]
 pub const CANVAS_RADIUS: f32 = 16.0;
 pub const OUTER_MARGIN: f32 = 4.0;
 pub const SIDEBAR_ANIM_SECS: f64 = crate::ui::debug_sidebar::SIDEBAR_ANIM_SECS;

@@ -789,15 +789,19 @@ pub fn show_pass_debug_windows(
         ctx.show_viewport_deferred(
             viewport_id,
             viewport_builder,
-            move |ctx, class| match class {
+            move |ui, class| match class {
                 egui::ViewportClass::EmbeddedWindow => {
                     let mut open = true;
                     egui::Window::new(title.as_str())
                         .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
                         .open(&mut open)
                         .default_size(egui::vec2(1180.0, 760.0))
-                        .show(ctx, |ui| {
-                            render_pass_debug_embedded_content(ui, &document, &pending_actions);
+                        .show(ui.ctx(), |window_ui| {
+                            render_pass_debug_embedded_content(
+                                window_ui,
+                                &document,
+                                &pending_actions,
+                            );
                         });
                     if !open {
                         close_requested.store(true, Ordering::Relaxed);
@@ -805,13 +809,13 @@ pub fn show_pass_debug_windows(
                 }
                 _ => {
                     if handle_pass_debug_viewport_close_request(
-                        ctx,
+                        ui.ctx(),
                         &close_requested,
                         &last_viewport_inner_rect,
                     ) {
                         return;
                     }
-                    render_pass_debug_viewport(ctx, &document, &pending_actions);
+                    render_pass_debug_viewport(ui, &document, &pending_actions);
                 }
             },
         );
@@ -927,7 +931,7 @@ fn is_close_request_during_large_viewport_resize(
 }
 
 fn render_pass_debug_viewport(
-    ctx: &egui::Context,
+    ui: &mut egui::Ui,
     document: &Arc<Mutex<PassDebugWindowDocument>>,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
@@ -936,9 +940,9 @@ fn render_pass_debug_viewport(
         .map(|document| document.pass_name.clone())
         .unwrap_or_else(|_| "unavailable".to_string());
 
-    egui::TopBottomPanel::top(egui::Id::new(("pass-debug-toolbar", pass_name.as_str())))
+    egui::Panel::top(egui::Id::new(("pass-debug-toolbar", pass_name.as_str())))
         .resizable(false)
-        .show(ctx, |ui| {
+        .show_inside(ui, |ui| {
             let Ok(mut document) = document.lock() else {
                 ui.label("Debug document unavailable");
                 return;
@@ -947,7 +951,7 @@ fn render_pass_debug_viewport(
             render_patch_messages(ui, &document);
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    egui::CentralPanel::default().show_inside(ui, |ui| {
         let Ok(mut document) = document.lock() else {
             ui.label("Debug document unavailable");
             return;

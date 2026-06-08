@@ -4,8 +4,6 @@
 //! optionally downsamples, applies horizontal + vertical separated Gaussian blur,
 //! and optionally upsamples back to the target resolution.
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::{
     ResourceName,

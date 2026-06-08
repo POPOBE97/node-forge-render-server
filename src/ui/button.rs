@@ -617,7 +617,7 @@ pub fn group_button(ui: &mut egui::Ui, mut options: GroupButtonOptions<'_>) -> G
             .as_ref()
             .is_some_and(|response| response.hovered());
 
-    if has_secondary && options.behavior.draw_group_hover_border {
+    if has_secondary && options.behavior.draw_group_hover_border && group_hovered {
         ui.painter().rect_stroke(
             group_rect,
             design_tokens::button_corner_radius(options.primary.variant),

@@ -187,6 +187,7 @@ pub enum ReferenceDesiredSource {
 }
 
 impl ReferenceDesiredSource {
+    #[allow(dead_code)]
     pub fn alpha_mode(&self) -> Option<RefImageAlphaMode> {
         match self {
             Self::SceneAsset { alpha_mode, .. }
@@ -318,6 +319,7 @@ impl CanvasInvalidation {
         self.pixel_overlay_dirty = true;
     }
 
+    #[allow(dead_code)]
     pub fn scene_redraw_changed(&mut self, has_reference_diff: bool) {
         if has_reference_diff {
             self.diff_dirty = true;
@@ -362,6 +364,7 @@ impl CanvasInvalidation {
         self.pixel_overlay_dirty = true;
     }
 
+    #[allow(dead_code)]
     pub fn analysis_controls_changed(&mut self) {
         self.diff_dirty = true;
         self.analysis_dirty = true;

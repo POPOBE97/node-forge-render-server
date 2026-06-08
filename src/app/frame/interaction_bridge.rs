@@ -79,7 +79,7 @@ pub fn collect_early_canvas_interactions(
         .canvas
         .interactions
         .last_canvas_rect
-        .unwrap_or_else(|| ctx.available_rect());
+        .unwrap_or_else(|| ctx.content_rect());
     let pointer_hover_pos = ctx.input(|i| i.pointer.hover_pos());
 
     let mut payloads = interaction_report::collect_interaction_payloads(

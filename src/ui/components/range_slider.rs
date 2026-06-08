@@ -206,11 +206,9 @@ mod tests {
     #[test]
     fn min_clamped_below_max() {
         // Simulate dragging the min handle to a value above max.
-        let mut lo = 0.3_f32;
         let hi = 0.6_f32;
         let target = 0.9_f32;
-        let next = clamp_to_range(target, 0.0, hi);
-        lo = next;
+        let lo = clamp_to_range(target, 0.0, hi);
         assert!(lo <= hi);
         assert_eq!(lo, hi);
     }
@@ -218,10 +216,8 @@ mod tests {
     #[test]
     fn max_clamped_above_min() {
         let lo = 0.4_f32;
-        let mut hi = 0.7_f32;
         let target = 0.1_f32;
-        let next = clamp_to_range(target, lo, 1.0);
-        hi = next;
+        let hi = clamp_to_range(target, lo, 1.0);
         assert!(hi >= lo);
         assert_eq!(hi, lo);
     }

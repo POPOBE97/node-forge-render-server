@@ -157,7 +157,9 @@ pub(crate) struct ResourcePlans {
     pub prepass_texture_samples: Vec<(String, ResourceName)>,
     pub pass_cull_mode_by_name: HashMap<ResourceName, Option<wgpu::Face>>,
     pub pass_depth_attachment_by_name: HashMap<ResourceName, ResourceName>,
+    #[allow(dead_code)]
     pub pass_output_registry: PassOutputRegistry,
+    #[allow(dead_code)]
     pub pass_bindings: Vec<PassBindings>,
     pub baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>>,
     pub baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String>,
@@ -167,6 +169,7 @@ pub(crate) struct ResourcePlans {
 #[derive(Clone, Debug)]
 pub(crate) struct RenderPlan {
     pub prepared: PreparedScene,
+    #[allow(dead_code)]
     pub scene_report: ScenePrepReport,
     pub resolution: [u32; 2],
     pub scene_output_texture: ResourceName,

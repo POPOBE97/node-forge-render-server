@@ -19,6 +19,7 @@ pub(super) struct PresentPhase {
 
 pub(super) fn run(
     app: &mut App,
+    ui: &mut egui::Ui,
     ctx: &egui::Context,
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
@@ -76,7 +77,7 @@ pub(super) fn run(
     // live preview.
     let mut timeline_hover: Option<ui::debug_sidebar::TimelineHover> = None;
     if let Some(ref buf) = app.runtime.timeline_buffer {
-        egui::TopBottomPanel::bottom("timeline_panel")
+        egui::Panel::bottom("timeline_panel")
             .resizable(false)
             .frame(
                 egui::Frame::NONE
@@ -84,7 +85,7 @@ pub(super) fn run(
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(32))),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 let interaction = ui::timeline_panel::show_timeline(ui, buf);
                 if let Some(idx) = interaction.hovered_frame_index {
                     timeline_hover = Some(ui::debug_sidebar::TimelineHover { frame_index: idx });
@@ -93,11 +94,11 @@ pub(super) fn run(
     }
 
     if sidebar_w > 0.0 {
-        egui::SidePanel::left("debug_sidebar")
-            .exact_width(sidebar_w)
+        egui::Panel::left("debug_sidebar")
+            .exact_size(sidebar_w)
             .resizable(false)
             .frame(egui::Frame::NONE)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 let clip_rect = ui.available_rect_before_wrap();
                 let x_offset = -sidebar_full_w * (1.0 - frame_state.sidebar_factor);
                 let sidebar_rect = egui::Rect::from_min_size(
@@ -238,7 +239,7 @@ pub(super) fn run(
 
     egui::CentralPanel::default()
         .frame(panel_frame)
-        .show(ctx, |ui| {
+        .show_inside(ui, |ui| {
             let frame_result = canvas::show(app, ctx, ui, render_state, renderer, frame_state, now);
             pending_commands.extend(frame_result.commands);
         });

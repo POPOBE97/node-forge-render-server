@@ -18,6 +18,6 @@ use rust_wgpu_fiber::eframe::{self, egui};
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        frame::run(self, ui.ctx(), frame);
+        frame::run(self, ui, frame);
     }
 }

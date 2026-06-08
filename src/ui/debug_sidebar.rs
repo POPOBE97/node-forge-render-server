@@ -11,7 +11,6 @@ use super::button::{
     self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
 };
 use super::components::radio_button_group::{self, RadioButtonOption};
-use super::components::range_slider;
 use super::components::two_column_section;
 use super::components::value_slider;
 use super::design_tokens::{self, TextRole};
@@ -36,7 +35,6 @@ const SIDEBAR_GRID_GAP: f32 = 8.0;
 const SIDEBAR_GRID_LABEL_GAP: f32 = 4.0;
 const SIDEBAR_GRID_ROW_GAP: f32 = 8.0;
 const SIDEBAR_SLIDER_VALUE_GAP: f32 = 0.0;
-const SIDEBAR_SECTION_DIVIDER_GAP: f32 = 4.0;
 const VALUE_LABEL_TEXT_PADDING_X: f32 = 4.0;
 const VALUE_LABEL_DIVIDER_WIDTH: f32 = 1.0;
 const SIDEBAR_CONTENT_SIDE_PADDING: i8 = 16;

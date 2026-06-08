@@ -3,6 +3,7 @@ use rust_wgpu_fiber::eframe::wgpu;
 const X_BINS: u32 = 512;
 const Y_BINS: u32 = 256;
 const PLANES: u32 = 3;
+#[cfg(test)]
 const PLANE_WORD_COUNT: usize = (X_BINS * Y_BINS) as usize;
 const TOTAL_WORD_COUNT: usize = (X_BINS * Y_BINS * PLANES) as usize;
 const BUFFER_BYTE_COUNT: usize = TOTAL_WORD_COUNT * std::mem::size_of::<u32>();
