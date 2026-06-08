@@ -2727,6 +2727,77 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
+    fn reassigned_local_row_click_jumps_to_store_and_src_jumps_to_declaration() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn foo(v: f32) -> f32 {
+    return v;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    var x: f32 = 0.0;
+    x = foo(x);
+    x = foo(x);
+    return x;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let x_id = target_id_by_name(&document, "x");
+        let latest_store_start = document.draft_source.rfind("x = foo(x);").unwrap();
+        let latest_x_row = document
+            .dependency_rows
+            .iter()
+            .find(|row| {
+                row.target_id.as_deref() == Some(x_id.as_str())
+                    && row
+                        .source_range
+                        .map(|range| range.start_byte == latest_store_start)
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .expect("expected latest reassignment dependency row");
+
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(latest_x_row.row_key.clone()),
+                target_id: None,
+                source_range: None,
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected reassignment row click to jump to store");
+        assert_eq!(jump.start_byte, latest_store_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "x");
+
+        let source_jump_range = latest_x_row
+            .source_jump_range
+            .expect("expected reassignment row to expose declaration jump");
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(latest_x_row.row_key.clone()),
+                target_id: None,
+                source_range: Some(source_jump_range),
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected src jump to go to declaration");
+        let declaration_start = document.draft_source.find("var x").unwrap() + "var ".len();
+        assert_eq!(jump.start_byte, declaration_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "x");
+    }
+
+    #[test]
     fn editor_click_on_reference_focuses_matching_dependency_row() {
         let source = PassDebugSource::from_wgsl(
             "p",

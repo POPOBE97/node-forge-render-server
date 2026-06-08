@@ -999,17 +999,30 @@ enum TargetKind {
     },
 }
 
+type DefinitionId = usize;
+type DefinitionEnv = HashMap<String, Vec<DefinitionId>>;
+
 #[derive(Clone, Debug)]
-struct StoreDependency {
-    scope: String,
-    value: naga::Handle<Expression>,
-    controls: Vec<(String, ExprRef)>,
+struct ControlDependency {
+    label: String,
+    expr: ExprRef,
+    env: DefinitionEnv,
+}
+
+#[derive(Clone, Debug)]
+struct DefinitionSite {
+    target_id: String,
+    value: Option<ExprRef>,
+    controls: Vec<ControlDependency>,
+    env: DefinitionEnv,
+    source_range: Option<PassDebugSourceRange>,
 }
 
 #[derive(Clone, Debug)]
 struct ReturnDependency {
     value: Option<naga::Handle<Expression>>,
-    controls: Vec<(String, ExprRef)>,
+    controls: Vec<ControlDependency>,
+    env: DefinitionEnv,
 }
 
 #[derive(Clone, Debug)]
@@ -1032,7 +1045,9 @@ struct DependencyAnalyzer<'a> {
     function_handles: HashMap<naga::Handle<Function>, String>,
     targets: Vec<PassDebugDependencyTarget>,
     target_kinds: HashMap<String, TargetKind>,
-    stores_by_target: HashMap<String, Vec<StoreDependency>>,
+    definitions: Vec<DefinitionSite>,
+    final_definitions_by_target: HashMap<String, Vec<DefinitionId>>,
+    expression_envs: HashMap<String, DefinitionEnv>,
     returns_by_function: HashMap<String, Vec<ReturnDependency>>,
     calls_by_result: HashMap<(String, usize), CallDependency>,
     entry_scopes: Vec<String>,
@@ -1048,7 +1063,9 @@ impl<'a> DependencyAnalyzer<'a> {
             function_handles: HashMap::new(),
             targets: Vec::new(),
             target_kinds: HashMap::new(),
-            stores_by_target: HashMap::new(),
+            definitions: Vec::new(),
+            final_definitions_by_target: HashMap::new(),
+            expression_envs: HashMap::new(),
             returns_by_function: HashMap::new(),
             calls_by_result: HashMap::new(),
             entry_scopes: Vec::new(),
@@ -1195,7 +1212,15 @@ impl<'a> DependencyAnalyzer<'a> {
             );
         }
 
-        self.collect_block_dependencies(&scope, function, &function.body, &mut Vec::new());
+        let mut env = self.initial_function_definition_env(&scope, function);
+        self.collect_block_dependencies(
+            &scope,
+            function,
+            &function.body,
+            &mut Vec::new(),
+            &mut env,
+        );
+        self.merge_final_definitions(env);
     }
 
     fn add_target(
@@ -1256,53 +1281,131 @@ impl<'a> DependencyAnalyzer<'a> {
         }
     }
 
+    fn initial_function_definition_env(
+        &mut self,
+        scope: &str,
+        function: &'a Function,
+    ) -> DefinitionEnv {
+        let mut env = DefinitionEnv::new();
+        for (handle, local) in function.local_variables.iter() {
+            let Some(init) = local.init else {
+                continue;
+            };
+            let target_id = target_id_local(scope, handle);
+            let definition_id = self.add_definition(DefinitionSite {
+                target_id: target_id.clone(),
+                value: Some(ExprRef::Function {
+                    scope: scope.to_string(),
+                    handle: init,
+                }),
+                controls: Vec::new(),
+                env: env.clone(),
+                source_range: target_source_range(&self.targets, &target_id),
+            });
+            env.insert(target_id, vec![definition_id]);
+        }
+        env
+    }
+
+    fn add_definition(&mut self, definition: DefinitionSite) -> DefinitionId {
+        let definition_id = self.definitions.len();
+        self.definitions.push(definition);
+        definition_id
+    }
+
+    fn merge_final_definitions(&mut self, env: DefinitionEnv) {
+        merge_definition_env_into(&mut self.final_definitions_by_target, env);
+    }
+
     fn collect_block_dependencies(
         &mut self,
         scope: &str,
         function: &'a Function,
         block: &Block,
-        controls: &mut Vec<(String, ExprRef)>,
+        controls: &mut Vec<ControlDependency>,
+        env: &mut DefinitionEnv,
     ) {
         for stmt in block {
             match stmt {
+                Statement::Emit(range) => {
+                    for handle in range.clone() {
+                        let expr_ref = ExprRef::Function {
+                            scope: scope.to_string(),
+                            handle,
+                        };
+                        self.expression_envs
+                            .entry(expr_ref.key())
+                            .or_insert_with(|| env.clone());
+                    }
+                }
                 Statement::Block(block) => {
-                    self.collect_block_dependencies(scope, function, block, controls);
+                    self.collect_block_dependencies(scope, function, block, controls, env);
                 }
                 Statement::If {
                     condition,
                     accept,
                     reject,
                 } => {
-                    controls.push((
-                        "[condition] if".to_string(),
-                        ExprRef::Function {
+                    let before = env.clone();
+                    controls.push(ControlDependency {
+                        label: "[condition] if".to_string(),
+                        expr: ExprRef::Function {
                             scope: scope.to_string(),
                             handle: *condition,
                         },
-                    ));
-                    self.collect_block_dependencies(scope, function, accept, controls);
-                    self.collect_block_dependencies(scope, function, reject, controls);
+                        env: before.clone(),
+                    });
+                    let mut accept_env = before.clone();
+                    self.collect_block_dependencies(
+                        scope,
+                        function,
+                        accept,
+                        controls,
+                        &mut accept_env,
+                    );
+                    let mut reject_env = before;
+                    self.collect_block_dependencies(
+                        scope,
+                        function,
+                        reject,
+                        controls,
+                        &mut reject_env,
+                    );
+                    *env = merge_definition_envs([accept_env, reject_env]);
                     controls.pop();
                 }
                 Statement::Switch { selector, cases } => {
-                    controls.push((
-                        "[condition] switch selector".to_string(),
-                        ExprRef::Function {
+                    let before = env.clone();
+                    controls.push(ControlDependency {
+                        label: "[condition] switch selector".to_string(),
+                        expr: ExprRef::Function {
                             scope: scope.to_string(),
                             handle: *selector,
                         },
-                    ));
+                        env: before.clone(),
+                    });
+                    let mut merged_env = before.clone();
                     for case in cases {
-                        controls.push((
-                            format!("[condition] case {:?}", case.value),
-                            ExprRef::Function {
+                        controls.push(ControlDependency {
+                            label: format!("[condition] case {:?}", case.value),
+                            expr: ExprRef::Function {
                                 scope: scope.to_string(),
                                 handle: *selector,
                             },
-                        ));
-                        self.collect_block_dependencies(scope, function, &case.body, controls);
+                            env: before.clone(),
+                        });
+                        let mut case_env = before.clone();
+                        self.collect_block_dependencies(
+                            scope,
+                            function,
+                            &case.body,
+                            controls,
+                            &mut case_env,
+                        );
+                        merge_definition_env_into(&mut merged_env, case_env);
                         controls.pop();
                     }
+                    *env = merged_env;
                     controls.pop();
                 }
                 Statement::Loop {
@@ -1310,17 +1413,27 @@ impl<'a> DependencyAnalyzer<'a> {
                     continuing,
                     break_if,
                 } => {
+                    let before = env.clone();
                     if let Some(expr) = break_if {
-                        controls.push((
-                            "[condition] loop break_if".to_string(),
-                            ExprRef::Function {
+                        controls.push(ControlDependency {
+                            label: "[condition] loop break_if".to_string(),
+                            expr: ExprRef::Function {
                                 scope: scope.to_string(),
                                 handle: *expr,
                             },
-                        ));
+                            env: before.clone(),
+                        });
                     }
-                    self.collect_block_dependencies(scope, function, body, controls);
-                    self.collect_block_dependencies(scope, function, continuing, controls);
+                    let mut loop_env = before.clone();
+                    self.collect_block_dependencies(scope, function, body, controls, &mut loop_env);
+                    self.collect_block_dependencies(
+                        scope,
+                        function,
+                        continuing,
+                        controls,
+                        &mut loop_env,
+                    );
+                    *env = merge_definition_envs([before, loop_env]);
                     if break_if.is_some() {
                         controls.pop();
                     }
@@ -1330,15 +1443,28 @@ impl<'a> DependencyAnalyzer<'a> {
                         scope: scope.to_string(),
                         handle: *pointer,
                     };
+                    let value_ref = ExprRef::Function {
+                        scope: scope.to_string(),
+                        handle: *value,
+                    };
+                    self.expression_envs.insert(value_ref.key(), env.clone());
                     if let Some(target_id) = self.resolve_pointer_target(&pointer_ref) {
-                        self.stores_by_target
-                            .entry(target_id)
-                            .or_default()
-                            .push(StoreDependency {
-                                scope: scope.to_string(),
-                                value: *value,
-                                controls: controls.clone(),
-                            });
+                        let definition_id = self.add_definition(DefinitionSite {
+                            target_id: target_id.clone(),
+                            value: Some(value_ref),
+                            controls: controls.clone(),
+                            env: env.clone(),
+                            source_range: self.store_lhs_source_range(
+                                scope,
+                                &pointer_ref,
+                                &ExprRef::Function {
+                                    scope: scope.to_string(),
+                                    handle: *value,
+                                },
+                                &target_id,
+                            ),
+                        });
+                        env.insert(target_id, vec![definition_id]);
                     }
                 }
                 Statement::Return { value } => {
@@ -1348,6 +1474,7 @@ impl<'a> DependencyAnalyzer<'a> {
                         .push(ReturnDependency {
                             value: *value,
                             controls: controls.clone(),
+                            env: env.clone(),
                         });
                 }
                 Statement::Call {
@@ -1356,6 +1483,11 @@ impl<'a> DependencyAnalyzer<'a> {
                     result,
                 } => {
                     if let Some(result) = result {
+                        let result_ref = ExprRef::Function {
+                            scope: scope.to_string(),
+                            handle: *result,
+                        };
+                        self.expression_envs.insert(result_ref.key(), env.clone());
                         self.calls_by_result.insert(
                             (scope.to_string(), result.index()),
                             CallDependency {
@@ -1442,8 +1574,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     handle: *handle,
                 },
                 None,
+                None,
                 target_stack,
                 &mut HashSet::new(),
+                &mut Vec::new(),
                 depth + 1,
             ),
             TargetKind::Return { scope } => {
@@ -1477,13 +1611,19 @@ impl<'a> DependencyAnalyzer<'a> {
             children.extend(self.semantic_expr_dependencies(
                 ExprRef::Global(init),
                 None,
+                None,
                 target_stack,
                 &mut HashSet::new(),
+                &mut Vec::new(),
                 depth + 1,
             ));
         }
         let target_id = target_id_global(handle);
-        children.extend(self.store_nodes_for_target(&target_id, target_stack, depth + 1));
+        children.extend(self.final_definition_nodes_for_target(
+            &target_id,
+            target_stack,
+            depth + 1,
+        ));
         children
     }
 
@@ -1495,59 +1635,237 @@ impl<'a> DependencyAnalyzer<'a> {
         target_stack: &mut Vec<String>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
-        let mut children = Vec::new();
-        if let Some(function) = self.functions.get(scope) {
-            let local = &function.local_variables[handle];
-            if let Some(init) = local.init {
-                children.extend(self.semantic_expr_dependencies(
-                    ExprRef::Function {
-                        scope: scope.to_string(),
-                        handle: init,
-                    },
-                    None,
-                    target_stack,
-                    &mut HashSet::new(),
-                    depth + 1,
-                ));
-            }
+        let definitions =
+            self.final_definition_nodes_for_target(target_id, target_stack, depth + 1);
+        if !definitions.is_empty() {
+            return definitions;
         }
-        children.extend(self.store_nodes_for_target(target_id, target_stack, depth + 1));
+
+        let mut children = Vec::new();
+        if let Some(function) = self.functions.get(scope)
+            && let Some(init) = function.local_variables[handle].init
+        {
+            children.extend(self.semantic_expr_dependencies(
+                ExprRef::Function {
+                    scope: scope.to_string(),
+                    handle: init,
+                },
+                None,
+                None,
+                target_stack,
+                &mut HashSet::new(),
+                &mut Vec::new(),
+                depth + 1,
+            ));
+        }
         children
     }
 
-    fn store_nodes_for_target(
+    fn final_definition_nodes_for_target(
         &self,
         target_id: &str,
         target_stack: &mut Vec<String>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
-        self.stores_by_target
+        self.final_definitions_by_target
             .get(target_id)
-            .map(|stores| {
-                stores
+            .map(|definitions| {
+                definitions
                     .iter()
-                    .enumerate()
-                    .map(|(index, store)| {
-                        let mut children =
-                            self.control_nodes(&store.controls, target_stack, depth + 1);
-                        children.extend(self.semantic_expr_dependencies(
-                            ExprRef::Function {
-                                scope: store.scope.clone(),
-                                handle: store.value,
-                            },
+                    .map(|definition_id| {
+                        self.build_definition_node(
+                            *definition_id,
+                            None,
                             None,
                             target_stack,
                             &mut HashSet::new(),
+                            &mut Vec::new(),
                             depth + 1,
-                        ));
-                        PassDebugDependencyNode::branch(
-                            format!("[store {index}] {}", store.scope),
-                            children,
                         )
                     })
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn definition_nodes_for_target(
+        &self,
+        target_id: &str,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        env: Option<&DefinitionEnv>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+        depth: usize,
+    ) -> Option<Vec<PassDebugDependencyNode>> {
+        let definitions = env?.get(target_id)?;
+        Some(
+            definitions
+                .iter()
+                .map(|definition_id| {
+                    self.build_definition_node(
+                        *definition_id,
+                        edge_label.clone(),
+                        display_label.clone(),
+                        target_stack,
+                        seen_exprs,
+                        definition_stack,
+                        depth + 1,
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    fn build_definition_node(
+        &self,
+        definition_id: DefinitionId,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+        depth: usize,
+    ) -> PassDebugDependencyNode {
+        const MAX_DEPENDENCY_DEPTH: usize = 36;
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            return PassDebugDependencyNode::leaf("[depth limit]");
+        }
+        let Some(definition) = self.definitions.get(definition_id) else {
+            return PassDebugDependencyNode::leaf(format!("missing definition {definition_id}"));
+        };
+        let Some(target) = self
+            .targets
+            .iter()
+            .find(|target| target.id == definition.target_id)
+        else {
+            return PassDebugDependencyNode::leaf(format!(
+                "missing target {}",
+                definition.target_id
+            ));
+        };
+        if definition_stack.contains(&definition_id) {
+            return PassDebugDependencyNode::target(
+                format!("{} [cycle]", target.label),
+                target.id.clone(),
+                Vec::new(),
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label)
+            .with_source_range(definition.source_range);
+        }
+
+        definition_stack.push(definition_id);
+        let mut children = self.control_nodes(&definition.controls, target_stack, depth + 1);
+        if let Some(value) = definition.value.clone() {
+            children.extend(self.semantic_expr_dependencies(
+                value,
+                None,
+                Some(&definition.env),
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ));
+        }
+        if children.is_empty() {
+            children.push(PassDebugDependencyNode::leaf("[source] no contributors"));
+        }
+        definition_stack.pop();
+
+        let display_label = self.definition_display_label(target, definition, display_label);
+        PassDebugDependencyNode::target(
+            dependency_target_node_label(target, display_label.as_deref()),
+            target.id.clone(),
+            children,
+        )
+        .with_edge_label(edge_label)
+        .with_display_label(display_label)
+        .with_source_range(definition.source_range)
+    }
+
+    fn build_named_expression_tree_with_context(
+        &self,
+        target_id: &str,
+        expr_ref: &ExprRef,
+        env: Option<&DefinitionEnv>,
+        target_stack: &mut Vec<String>,
+        depth: usize,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+    ) -> PassDebugDependencyNode {
+        const MAX_DEPENDENCY_DEPTH: usize = 36;
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            return PassDebugDependencyNode::target(
+                format!("{target_id} [depth limit]"),
+                target_id.to_string(),
+                Vec::new(),
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label);
+        }
+        if target_stack.iter().any(|id| id == target_id) {
+            return PassDebugDependencyNode::target(
+                format!("{target_id} [cycle]"),
+                target_id.to_string(),
+                Vec::new(),
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label)
+            .with_source_range(source_range);
+        }
+        let Some(target) = self.targets.iter().find(|target| target.id == target_id) else {
+            return PassDebugDependencyNode::leaf(format!("missing target {target_id}"));
+        };
+
+        target_stack.push(target_id.to_string());
+        let mut children = self.semantic_expr_dependencies(
+            expr_ref.clone(),
+            None,
+            env,
+            target_stack,
+            seen_exprs,
+            definition_stack,
+            depth + 1,
+        );
+        if children.is_empty() {
+            children.push(PassDebugDependencyNode::leaf("[source] no contributors"));
+        }
+        target_stack.pop();
+
+        PassDebugDependencyNode::target(
+            dependency_target_node_label(target, display_label.as_deref()),
+            target.id.clone(),
+            children,
+        )
+        .with_edge_label(edge_label)
+        .with_display_label(display_label)
+        .with_source_range(source_range)
+    }
+
+    fn definition_display_label(
+        &self,
+        target: &PassDebugDependencyTarget,
+        definition: &DefinitionSite,
+        display_label: Option<String>,
+    ) -> Option<String> {
+        let base = display_label.unwrap_or_else(|| target.name.clone());
+        let has_multiple_definitions = self
+            .definitions
+            .iter()
+            .filter(|definition| definition.target_id == target.id)
+            .take(2)
+            .count()
+            > 1;
+        if has_multiple_definitions && let Some(range) = definition.source_range {
+            Some(format!("{base} ({})", range.line))
+        } else {
+            Some(base)
+        }
     }
 
     fn return_target_children(
@@ -1571,8 +1889,10 @@ impl<'a> DependencyAnalyzer<'a> {
                             handle: value,
                         },
                         None,
+                        Some(&ret.env),
                         target_stack,
                         &mut HashSet::new(),
+                        &mut Vec::new(),
                         depth + 1,
                     )
                 })
@@ -1591,8 +1911,10 @@ impl<'a> DependencyAnalyzer<'a> {
                             handle: value,
                         },
                         None,
+                        Some(&ret.env),
                         target_stack,
                         &mut HashSet::new(),
+                        &mut Vec::new(),
                         depth + 1,
                     ));
                 }
@@ -1603,18 +1925,20 @@ impl<'a> DependencyAnalyzer<'a> {
 
     fn control_nodes(
         &self,
-        controls: &[(String, ExprRef)],
+        controls: &[ControlDependency],
         target_stack: &mut Vec<String>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         controls
             .iter()
-            .map(|(label, expr)| {
+            .map(|control| {
                 self.semantic_relation_node(
-                    expr.clone(),
-                    label,
+                    control.expr.clone(),
+                    control.label.as_str(),
+                    Some(&control.env),
                     target_stack,
                     &mut HashSet::new(),
+                    &mut Vec::new(),
                     depth + 1,
                 )
             })
@@ -1625,12 +1949,21 @@ impl<'a> DependencyAnalyzer<'a> {
         &self,
         expr_ref: ExprRef,
         relation_label: &str,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> PassDebugDependencyNode {
-        let children =
-            self.semantic_expr_dependencies(expr_ref, None, target_stack, seen_exprs, depth + 1);
+        let children = self.semantic_expr_dependencies(
+            expr_ref,
+            None,
+            env,
+            target_stack,
+            seen_exprs,
+            definition_stack,
+            depth + 1,
+        );
         if children.is_empty() {
             PassDebugDependencyNode::leaf(format!("{relation_label} [no variable dependencies]"))
         } else {
@@ -1642,16 +1975,20 @@ impl<'a> DependencyAnalyzer<'a> {
         &self,
         expr_ref: ExprRef,
         inherited_edge: Option<String>,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         self.semantic_expr_dependencies_with_hint(
             expr_ref,
             inherited_edge,
             None,
+            env,
             target_stack,
             seen_exprs,
+            definition_stack,
             depth,
         )
     }
@@ -1661,8 +1998,10 @@ impl<'a> DependencyAnalyzer<'a> {
         expr_ref: ExprRef,
         inherited_edge: Option<String>,
         occurrence_range: Option<PassDebugSourceRange>,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         const MAX_DEPENDENCY_DEPTH: usize = 36;
@@ -1670,33 +2009,53 @@ impl<'a> DependencyAnalyzer<'a> {
             return vec![PassDebugDependencyNode::leaf("[depth limit]")];
         }
 
+        let effective_env = env.or_else(|| self.expression_envs.get(&expr_ref.key()));
         if let Some(target_id) = self.named_expression_target_id(&expr_ref)
             && !target_stack.iter().any(|id| id == &target_id)
         {
-            return vec![self.build_target_tree_with_context(
+            return vec![self.build_named_expression_tree_with_context(
                 &target_id,
+                &expr_ref,
+                effective_env,
                 target_stack,
                 depth + 1,
                 inherited_edge,
                 None,
                 occurrence_range,
+                seen_exprs,
+                definition_stack,
             )];
         }
 
         if let Some(access_path) = self.access_path_target(&expr_ref) {
-            let mut dependencies = vec![self.build_target_tree_with_context(
-                &access_path.target_id,
-                target_stack,
-                depth + 1,
-                inherited_edge.clone(),
-                Some(access_path.display_label),
-                occurrence_range.or(access_path.source_range),
-            )];
+            let mut dependencies = self
+                .definition_nodes_for_target(
+                    &access_path.target_id,
+                    inherited_edge.clone(),
+                    Some(access_path.display_label.clone()),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                )
+                .unwrap_or_else(|| {
+                    vec![self.build_target_tree_with_context(
+                        &access_path.target_id,
+                        target_stack,
+                        depth + 1,
+                        inherited_edge.clone(),
+                        Some(access_path.display_label),
+                        occurrence_range.or(access_path.source_range),
+                    )]
+                });
             dependencies.extend(self.access_path_index_dependencies(
                 &expr_ref,
                 inherited_edge,
+                effective_env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ));
             return dependencies;
@@ -1716,8 +2075,10 @@ impl<'a> DependencyAnalyzer<'a> {
             &expr_ref,
             expr,
             inherited_edge,
+            effective_env,
             target_stack,
             seen_exprs,
+            definition_stack,
             depth + 1,
         );
         seen_exprs.remove(&expr_key);
@@ -1729,8 +2090,10 @@ impl<'a> DependencyAnalyzer<'a> {
         expr_ref: &ExprRef,
         expr: &Expression,
         inherited_edge: Option<String>,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         match expr {
@@ -1740,8 +2103,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 self.semantic_expr_dependencies(
                     ExprRef::Global(init),
                     inherited_edge,
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             }
@@ -1751,8 +2116,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     self.semantic_expr_dependencies(
                         ExprRef::Global(init),
                         inherited_edge,
+                        env,
                         target_stack,
                         seen_exprs,
+                        definition_stack,
                         depth + 1,
                     )
                 })
@@ -1761,40 +2128,50 @@ impl<'a> DependencyAnalyzer<'a> {
                 expr_ref,
                 components.iter().copied().map(Some),
                 operation_edge(inherited_edge, "Compose"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Access { base, index } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*base), Some(*index)],
                 operation_edge(inherited_edge, "Access"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::AccessIndex { base, .. } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*base)],
                 operation_edge(inherited_edge, "Access"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Splat { value, .. } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*value)],
                 operation_edge(inherited_edge, "Splat"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Swizzle { vector, .. } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*vector)],
                 operation_edge(inherited_edge, "Swizzle"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::FunctionArgument(index) => {
@@ -1821,8 +2198,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 expr_ref,
                 [Some(*pointer)],
                 inherited_edge,
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::ImageSample {
@@ -1844,8 +2223,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     *depth_ref,
                 ],
                 Some("textureSample".to_string()),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::ImageLoad {
@@ -1864,32 +2245,40 @@ impl<'a> DependencyAnalyzer<'a> {
                     *level,
                 ],
                 Some("textureLoad".to_string()),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::ImageQuery { image, .. } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*image)],
                 Some("textureQuery".to_string()),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Unary { op, expr } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*expr)],
                 operation_edge(inherited_edge, format!("{op:?}")),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Binary { op, left, right } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*left), Some(*right)],
                 operation_edge(inherited_edge, format!("{op:?}")),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Select {
@@ -1900,24 +2289,30 @@ impl<'a> DependencyAnalyzer<'a> {
                 expr_ref,
                 [Some(*condition), Some(*accept), Some(*reject)],
                 operation_edge(inherited_edge, "Select"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Derivative { axis, ctrl, expr } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*expr)],
                 operation_edge(inherited_edge, format!("{axis:?}/{ctrl:?}")),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Relational { fun, argument } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*argument)],
                 operation_edge(inherited_edge, format!("{fun:?}")),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::Math {
@@ -1930,16 +2325,20 @@ impl<'a> DependencyAnalyzer<'a> {
                 expr_ref,
                 [Some(*arg), *arg1, *arg2, *arg3],
                 operation_edge(inherited_edge, format!("{fun:?}")),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::As { expr, .. } => self.semantic_operand_dependencies(
                 expr_ref,
                 [Some(*expr)],
                 operation_edge(inherited_edge, "As"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::CallResult(_) => {
@@ -1958,8 +2357,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     expr_ref,
                     call.arguments.iter().copied().map(Some),
                     Some(call_edge),
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             }
@@ -1967,8 +2368,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 expr_ref,
                 [Some(*handle)],
                 operation_edge(inherited_edge, "arrayLength"),
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ),
             Expression::RayQueryGetIntersection { query, .. } => self
@@ -1976,8 +2379,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     expr_ref,
                     [Some(*query)],
                     operation_edge(inherited_edge, "rayQueryGetIntersection"),
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 ),
             _ => Vec::new(),
@@ -1989,8 +2394,10 @@ impl<'a> DependencyAnalyzer<'a> {
         current: &ExprRef,
         operands: I,
         edge_label: Option<String>,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode>
     where
@@ -2010,8 +2417,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 operand_ref,
                 edge_label.clone(),
                 occurrence_range,
+                env,
                 target_stack,
                 seen_exprs,
+                definition_stack,
                 depth + 1,
             ));
         }
@@ -2119,8 +2528,10 @@ impl<'a> DependencyAnalyzer<'a> {
         &self,
         expr_ref: &ExprRef,
         inherited_edge: Option<String>,
+        env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
         let Some(expr) = self.expression(expr_ref) else {
@@ -2132,8 +2543,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 self.access_path_index_dependencies(
                     &pointer_ref,
                     inherited_edge,
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             }
@@ -2143,15 +2556,19 @@ impl<'a> DependencyAnalyzer<'a> {
                 let mut dependencies = self.access_path_index_dependencies(
                     &base_ref,
                     inherited_edge.clone(),
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 );
                 dependencies.extend(self.semantic_expr_dependencies(
                     index_ref,
                     inherited_edge,
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 ));
                 dependencies
@@ -2161,8 +2578,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 self.access_path_index_dependencies(
                     &base_ref,
                     inherited_edge,
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             }
@@ -2171,8 +2590,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 self.access_path_index_dependencies(
                     &vector_ref,
                     inherited_edge,
+                    env,
                     target_stack,
                     seen_exprs,
+                    definition_stack,
                     depth + 1,
                 )
             }
@@ -2293,6 +2714,35 @@ impl<'a> DependencyAnalyzer<'a> {
         }
     }
 
+    fn store_lhs_source_range(
+        &self,
+        scope: &str,
+        pointer_ref: &ExprRef,
+        value_ref: &ExprRef,
+        target_id: &str,
+    ) -> Option<PassDebugSourceRange> {
+        self.source_range_for_expr(pointer_ref).or_else(|| {
+            let name = self.target_name_for_id(target_id)?;
+            let value_range = self.source_range_for_expr(value_ref)?;
+            let function_start = find_function_range(self.source, scope)
+                .map(|range| range.start)
+                .unwrap_or(0);
+            let line_start = self.source[..value_range.start_byte]
+                .rfind('\n')
+                .map(|index| index + 1)
+                .unwrap_or(function_start)
+                .max(function_start);
+            find_last_identifier_range(self.source, line_start..value_range.start_byte, &name)
+                .or_else(|| {
+                    let line_end = self.source[value_range.start_byte..]
+                        .find('\n')
+                        .map(|relative| value_range.start_byte + relative)
+                        .unwrap_or(self.source.len());
+                    find_identifier_range(self.source, line_start..line_end, &name)
+                })
+        })
+    }
+
     fn resolve_pointer_target(&self, expr_ref: &ExprRef) -> Option<String> {
         let expr = self.expression(expr_ref)?;
         match expr {
@@ -2354,6 +2804,28 @@ fn expr_ref_scope(expr_ref: &ExprRef) -> &str {
 
 fn operation_edge(inherited_edge: Option<String>, operation: impl Into<String>) -> Option<String> {
     inherited_edge.or_else(|| Some(operation.into()))
+}
+
+fn merge_definition_envs<I>(envs: I) -> DefinitionEnv
+where
+    I: IntoIterator<Item = DefinitionEnv>,
+{
+    let mut merged = DefinitionEnv::new();
+    for env in envs {
+        merge_definition_env_into(&mut merged, env);
+    }
+    merged
+}
+
+fn merge_definition_env_into(target: &mut DefinitionEnv, source: DefinitionEnv) {
+    for (target_id, definitions) in source {
+        let target_definitions = target.entry(target_id).or_default();
+        for definition_id in definitions {
+            if !target_definitions.contains(&definition_id) {
+                target_definitions.push(definition_id);
+            }
+        }
+    }
 }
 
 fn dependency_target_node_label(
@@ -2438,6 +2910,29 @@ fn find_identifier_range(
     name: &str,
 ) -> Option<PassDebugSourceRange> {
     find_identifier_occurrence_range(source, range, name, 0)
+}
+
+fn find_last_identifier_range(
+    source: &str,
+    range: Range<usize>,
+    name: &str,
+) -> Option<PassDebugSourceRange> {
+    if name.is_empty() || range.start >= range.end || range.end > source.len() {
+        return None;
+    }
+
+    let haystack = &source[range.clone()];
+    let mut offset = 0;
+    let mut last = None;
+    while let Some(relative) = haystack[offset..].find(name) {
+        let start = range.start + offset + relative;
+        let end = start + name.len();
+        if is_identifier_start_boundary(source, start) && is_identifier_end_boundary(source, end) {
+            last = source_range_from_byte_range(source, start..end);
+        }
+        offset += relative + name.len();
+    }
+    last
 }
 
 fn find_identifier_occurrence_range(
@@ -2698,6 +3193,14 @@ mod tests {
         );
     }
 
+    fn assert_labels_do_not_contain(labels: &[String], needle: &str) {
+        assert!(
+            labels.iter().all(|label| !label.contains(needle)),
+            "expected dependency labels not to contain `{needle}`\nlabels:\n{}",
+            labels.join("\n")
+        );
+    }
+
     fn target_name_for_id<'a>(doc: &'a PassDebugSource, target_id: &str) -> &'a str {
         doc.dependency_targets
             .iter()
@@ -2831,10 +3334,10 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
         );
 
         let x_labels = dependency_labels_for(&doc, "x");
-        assert_labels_contain(&x_labels, "[store 0]");
         assert_labels_contain(&x_labels, "fs_main let y");
         assert_labels_contain(&x_labels, "argument uv");
         assert_labels_contain(&x_labels, "global threshold");
+        assert_labels_do_not_contain(&x_labels, "[cycle]");
     }
 
     #[test]
@@ -3168,20 +3671,43 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
     }
 
     #[test]
-    fn repeated_self_references_stop_with_cycle_marker() {
+    fn repeated_self_references_follow_previous_definitions() {
         let source = r#"
+fn foo(v: f32) -> f32 {
+    return v;
+}
+
 @fragment
-fn fs_main() -> @location(0) vec4f {
+fn fs_main() -> @location(0) f32 {
     var x: f32 = 0.0;
-    x = x + 1.0;
-    return vec4f(x, x, x, 1.0);
+    x = foo(x);
+    x = foo(x);
+    return x;
 }
 "#;
 
-        let doc = PassDebugSource::from_wgsl("cycle.pass", source);
+        let doc = PassDebugSource::from_wgsl("reassign.pass", source);
         assert!(doc.parse_error.is_none());
 
         let labels = dependency_labels_for(&doc, "x");
-        assert_labels_contain(&labels, "[cycle]");
+        assert_labels_do_not_contain(&labels, "[cycle]");
+
+        let return_id = target_id_by_name(&doc, "return");
+        let return_tree = doc
+            .dependency_trees
+            .get(&return_id)
+            .expect("missing dependency tree for return");
+        let latest_x = child_target(&doc, return_tree, "x", None);
+        let previous_x = child_target(&doc, latest_x, "x", Some("foo"));
+        let initial_x = child_target(&doc, previous_x, "x", Some("foo"));
+
+        let latest_start = doc.module_source.rfind("x = foo(x);").unwrap();
+        assert_node_range_selects(&doc, latest_x, latest_start, "x");
+
+        let previous_start = doc.module_source.find("x = foo(x);").unwrap();
+        assert_node_range_selects(&doc, previous_x, previous_start, "x");
+
+        let initial_start = doc.module_source.find("var x").unwrap() + "var ".len();
+        assert_node_range_selects(&doc, initial_x, initial_start, "x");
     }
 }
