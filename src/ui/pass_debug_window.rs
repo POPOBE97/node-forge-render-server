@@ -1835,9 +1835,12 @@ fn push_dependency_rows(
         let target_range = target_id
             .as_deref()
             .and_then(|target_id| target_source_range(source, target_id));
-        let source_range = node.source_range.or(target_range);
-        let source_jump_range =
-            target_range.filter(|target_range| source_range != Some(*target_range));
+        let source_range = node.source_range;
+        let definition_source_range = node
+            .definition_source_range
+            .or_else(|| source_range.is_none().then_some(target_range).flatten());
+        let source_jump_range = definition_source_range
+            .filter(|definition_source_range| source_range != Some(*definition_source_range));
         rows.push(PassDebugDependencyRow {
             depth,
             row_key: row_key.clone(),
@@ -2849,7 +2852,7 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
-    fn reassigned_local_row_click_jumps_to_store_and_src_jumps_to_declaration() {
+    fn reassigned_local_definition_row_click_jumps_to_store_without_src_jump() {
         let source = PassDebugSource::from_wgsl(
             "p",
             r#"
@@ -2898,12 +2901,88 @@ fn fs_main() -> @location(0) f32 {
         assert_eq!(jump.start_byte, latest_store_start);
         assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "x");
 
-        let source_jump_range = latest_x_row
-            .source_jump_range
-            .expect("expected reassignment row to expose declaration jump");
+        assert_eq!(latest_x_row.source_jump_range, None);
+    }
+
+    #[test]
+    fn reassigned_reference_row_clicks_occurrence_and_src_jumps_to_reaching_definition() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+fn fun(v: f32) -> f32 {
+    return v;
+}
+
+fn foo(v: f32) -> f32 {
+    return v;
+}
+
+fn bar(v: f32) -> f32 {
+    return v;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    var a: f32 = 1.0;
+    a = fun(a);
+    let b = foo(a);
+    let c = bar(a);
+    return b + c;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let analysis_source = document
+            .analysis_source
+            .as_ref()
+            .expect("missing analysis source");
+        let a_id = source_target_id_by_name(analysis_source, "a");
+        let foo_arg_start = document.draft_source.find("foo(a)").unwrap() + "foo(".len();
+        let store_start = document.draft_source.find("a = fun(a);").unwrap();
+        let declaration_start = document.draft_source.find("var a").unwrap() + "var ".len();
+        let a_foo_row = document
+            .dependency_rows
+            .iter()
+            .find(|row| {
+                row.target_id.as_deref() == Some(a_id.as_str())
+                    && row
+                        .source_range
+                        .is_some_and(|range| range.start_byte == foo_arg_start)
+            })
+            .cloned()
+            .expect("expected foo(a) dependency row");
+
+        let row_range = a_foo_row
+            .source_range
+            .expect("expected foo(a) occurrence range");
+        assert_eq!(row_range.start_byte, foo_arg_start);
+        assert_eq!(
+            &document.draft_source[row_range.start_byte..row_range.end_byte],
+            "a"
+        );
+
         document.focus_tree_click(
             PassDebugTreeClick {
-                row_key: Some(latest_x_row.row_key.clone()),
+                row_key: Some(a_foo_row.row_key.clone()),
+                target_id: None,
+                source_range: None,
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected row click to jump to foo(a) occurrence");
+        assert_eq!(jump.start_byte, foo_arg_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "a");
+
+        let source_jump_range = a_foo_row
+            .source_jump_range
+            .expect("expected foo(a) row to expose reaching definition jump");
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(a_foo_row.row_key.clone()),
                 target_id: None,
                 source_range: Some(source_jump_range),
                 toggle_row_key: None,
@@ -2913,10 +2992,42 @@ fn fs_main() -> @location(0) f32 {
 
         let jump = document
             .pending_editor_jump
-            .expect("expected src jump to go to declaration");
-        let declaration_start = document.draft_source.find("var x").unwrap() + "var ".len();
-        assert_eq!(jump.start_byte, declaration_start);
-        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "x");
+            .expect("expected src jump to go to reaching definition");
+        assert_eq!(jump.start_byte, store_start);
+        assert_eq!(&document.draft_source[jump.start_byte..jump.end_byte], "a");
+
+        let fun_arg_start = store_start + "a = fun(".len();
+        let a_fun_row = document
+            .dependency_rows
+            .iter()
+            .find(|row| {
+                row.target_id.as_deref() == Some(a_id.as_str())
+                    && row
+                        .source_range
+                        .is_some_and(|range| range.start_byte == fun_arg_start)
+                    && dependency_path_for_row_key(&document.dependency_rows, &row.row_key)
+                        .iter()
+                        .any(|row_key| row_key == &a_foo_row.row_key)
+            })
+            .cloned()
+            .expect("expected nested fun(a) dependency row under foo(a)");
+        let nested_range = a_fun_row
+            .source_range
+            .expect("expected fun(a) occurrence range");
+        assert_eq!(nested_range.start_byte, fun_arg_start);
+        assert_eq!(
+            &document.draft_source[nested_range.start_byte..nested_range.end_byte],
+            "a"
+        );
+        let nested_source_jump_range = a_fun_row
+            .source_jump_range
+            .expect("expected nested fun(a) src jump to previous definition");
+        assert_eq!(nested_source_jump_range.start_byte, declaration_start);
+        assert_eq!(
+            &document.draft_source
+                [nested_source_jump_range.start_byte..nested_source_jump_range.end_byte],
+            "a"
+        );
     }
 
     #[test]

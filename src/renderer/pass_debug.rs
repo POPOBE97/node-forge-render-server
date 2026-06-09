@@ -1087,6 +1087,7 @@ struct DependencyAnalyzer<'a> {
     expression_envs: HashMap<String, DefinitionEnv>,
     returns_by_function: HashMap<String, Vec<ReturnDependency>>,
     calls_by_result: HashMap<(String, usize), CallDependency>,
+    store_lhs_counts_by_target: HashMap<String, usize>,
     entry_scopes: Vec<String>,
     fragment_entry_scopes: Vec<String>,
 }
@@ -1105,6 +1106,7 @@ impl<'a> DependencyAnalyzer<'a> {
             expression_envs: HashMap::new(),
             returns_by_function: HashMap::new(),
             calls_by_result: HashMap::new(),
+            store_lhs_counts_by_target: HashMap::new(),
             entry_scopes: Vec::new(),
             fragment_entry_scopes: Vec::new(),
         };
@@ -1486,12 +1488,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     };
                     self.expression_envs.insert(value_ref.key(), env.clone());
                     if let Some(target_id) = self.resolve_pointer_target(&pointer_ref) {
-                        let definition_id = self.add_definition(DefinitionSite {
-                            target_id: target_id.clone(),
-                            value: Some(value_ref),
-                            controls: controls.clone(),
-                            env: env.clone(),
-                            source_range: self.store_lhs_source_range(
+                        let fallback_source_range =
+                            self.next_store_lhs_source_range(scope, &target_id);
+                        let source_range = self
+                            .store_lhs_source_range(
                                 scope,
                                 &pointer_ref,
                                 &ExprRef::Function {
@@ -1499,7 +1499,14 @@ impl<'a> DependencyAnalyzer<'a> {
                                     handle: *value,
                                 },
                                 &target_id,
-                            ),
+                            )
+                            .or(fallback_source_range);
+                        let definition_id = self.add_definition(DefinitionSite {
+                            target_id: target_id.clone(),
+                            value: Some(value_ref),
+                            controls: controls.clone(),
+                            env: env.clone(),
+                            source_range,
                         });
                         env.insert(target_id, vec![definition_id]);
                     }
@@ -1574,13 +1581,14 @@ impl<'a> DependencyAnalyzer<'a> {
                 edge_label.clone(),
                 display_label.clone(),
                 source_range,
+                None,
             )
         {
             return reference;
         }
         if depth >= MAX_DEPENDENCY_DEPTH {
             if let Some(reference) =
-                self.target_reference_node(target_id, edge_label, display_label, source_range)
+                self.target_reference_node(target_id, edge_label, display_label, source_range, None)
             {
                 return reference;
             }
@@ -1729,6 +1737,7 @@ impl<'a> DependencyAnalyzer<'a> {
                             None,
                             None,
                             None,
+                            true,
                             target_stack,
                             &mut HashSet::new(),
                             &mut Vec::new(),
@@ -1753,17 +1762,6 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Option<Vec<PassDebugDependencyNode>> {
-        if self.should_reference_target(target_id, target_stack)
-            && let Some(reference) = self.target_reference_node(
-                target_id,
-                edge_label.clone(),
-                display_label.clone(),
-                source_range,
-            )
-        {
-            return Some(vec![reference]);
-        }
-
         let definitions = env?.get(target_id)?;
         Some(
             definitions
@@ -1774,12 +1772,23 @@ impl<'a> DependencyAnalyzer<'a> {
                     } else {
                         depth + 1
                     };
+                    if self.should_reference_target(target_id, target_stack)
+                        && let Some(reference) = self.build_definition_reference_node(
+                            *definition_id,
+                            edge_label.clone(),
+                            display_label.clone(),
+                            source_range,
+                        )
+                    {
+                        return reference;
+                    }
                     self.build_definition_node(
                         *definition_id,
                         edge_label.clone(),
                         display_label.clone(),
                         source_range,
                         projection,
+                        false,
                         target_stack,
                         seen_exprs,
                         definition_stack,
@@ -1797,6 +1806,7 @@ impl<'a> DependencyAnalyzer<'a> {
         display_label: Option<String>,
         source_range: Option<PassDebugSourceRange>,
         projection: Option<&AccessProjection>,
+        definition_is_occurrence: bool,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         definition_stack: &mut Vec<DefinitionId>,
@@ -1815,16 +1825,21 @@ impl<'a> DependencyAnalyzer<'a> {
                 definition.target_id
             ));
         };
+        let node_source_range = if definition_is_occurrence {
+            source_range.or(definition.source_range)
+        } else {
+            source_range
+        };
         if self.should_reference_target(&definition.target_id, target_stack) {
-            let source_range = source_range.or(definition.source_range);
             let display_label =
-                self.definition_display_label(target, definition, display_label, source_range);
+                self.definition_display_label(target, definition, display_label, node_source_range);
             return self
                 .target_reference_node(
                     &definition.target_id,
                     edge_label,
                     display_label,
-                    source_range,
+                    node_source_range,
+                    definition.source_range,
                 )
                 .unwrap_or_else(|| {
                     PassDebugDependencyNode::target(
@@ -1835,13 +1850,18 @@ impl<'a> DependencyAnalyzer<'a> {
                 });
         }
         if depth >= MAX_DEPENDENCY_DEPTH {
-            let source_range = source_range.or(definition.source_range);
             let definition_source_range =
-                distinct_definition_source_range(definition.source_range, source_range);
+                distinct_definition_source_range(definition.source_range, node_source_range);
             let display_label =
-                self.definition_display_label(target, definition, display_label, source_range);
+                self.definition_display_label(target, definition, display_label, node_source_range);
             return self
-                .target_reference_node(&target.id, edge_label, display_label, source_range)
+                .target_reference_node(
+                    &target.id,
+                    edge_label.clone(),
+                    display_label.clone(),
+                    node_source_range,
+                    definition.source_range,
+                )
                 .map(|node| node.with_definition_source_range(definition_source_range))
                 .unwrap_or_else(|| {
                     PassDebugDependencyNode::target(
@@ -1849,9 +1869,15 @@ impl<'a> DependencyAnalyzer<'a> {
                         target.id.clone(),
                         Vec::new(),
                     )
+                    .with_edge_label(edge_label)
+                    .with_display_label(display_label)
+                    .with_source_range(node_source_range)
+                    .with_definition_source_range(definition_source_range)
                 });
         }
         if definition_stack.contains(&definition_id) {
+            let definition_source_range =
+                distinct_definition_source_range(definition.source_range, node_source_range);
             return PassDebugDependencyNode::target(
                 format!("{} [cycle]", target.label),
                 target.id.clone(),
@@ -1859,17 +1885,21 @@ impl<'a> DependencyAnalyzer<'a> {
             )
             .with_edge_label(edge_label)
             .with_display_label(display_label)
-            .with_source_range(definition.source_range);
+            .with_source_range(node_source_range)
+            .with_definition_source_range(definition_source_range);
         }
 
         definition_stack.push(definition_id);
         let mut children = self.control_nodes(&definition.controls, target_stack, depth + 1);
         if let Some(value) = definition.value.clone() {
+            let value_occurrence_range = definition.source_range.and_then(|source_range| {
+                self.definition_value_occurrence_range(source_range, &value)
+            });
             if let Some(projection) = projection.filter(|projection| !projection.is_empty()) {
                 children.extend(self.semantic_expr_dependencies_projected(
                     value,
                     None,
-                    None,
+                    value_occurrence_range,
                     projection,
                     Some(&definition.env),
                     target_stack,
@@ -1878,9 +1908,10 @@ impl<'a> DependencyAnalyzer<'a> {
                     depth + 1,
                 ));
             } else {
-                children.extend(self.semantic_expr_dependencies(
+                children.extend(self.semantic_expr_dependencies_with_hint(
                     value,
                     None,
+                    value_occurrence_range,
                     Some(&definition.env),
                     target_stack,
                     seen_exprs,
@@ -1894,11 +1925,10 @@ impl<'a> DependencyAnalyzer<'a> {
         }
         definition_stack.pop();
 
-        let source_range = source_range.or(definition.source_range);
         let definition_source_range =
-            distinct_definition_source_range(definition.source_range, source_range);
+            distinct_definition_source_range(definition.source_range, node_source_range);
         let display_label =
-            self.definition_display_label(target, definition, display_label, source_range);
+            self.definition_display_label(target, definition, display_label, node_source_range);
         PassDebugDependencyNode::target(
             dependency_target_node_label(target, display_label.as_deref()),
             target.id.clone(),
@@ -1906,8 +1936,31 @@ impl<'a> DependencyAnalyzer<'a> {
         )
         .with_edge_label(edge_label)
         .with_display_label(display_label)
-        .with_source_range(source_range)
+        .with_source_range(node_source_range)
         .with_definition_source_range(definition_source_range)
+    }
+
+    fn build_definition_reference_node(
+        &self,
+        definition_id: DefinitionId,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+    ) -> Option<PassDebugDependencyNode> {
+        let definition = self.definitions.get(definition_id)?;
+        let target = self
+            .targets
+            .iter()
+            .find(|target| target.id == definition.target_id)?;
+        let display_label =
+            self.definition_display_label(target, definition, display_label, source_range);
+        self.target_reference_node(
+            &definition.target_id,
+            edge_label,
+            display_label,
+            source_range,
+            definition.source_range,
+        )
     }
 
     fn build_named_expression_tree_with_context(
@@ -1930,13 +1983,14 @@ impl<'a> DependencyAnalyzer<'a> {
                 edge_label.clone(),
                 display_label.clone(),
                 source_range,
+                None,
             )
         {
             return reference;
         }
         if depth >= MAX_DEPENDENCY_DEPTH {
             if let Some(reference) =
-                self.target_reference_node(target_id, edge_label, display_label, source_range)
+                self.target_reference_node(target_id, edge_label, display_label, source_range, None)
             {
                 return reference;
             }
@@ -2003,11 +2057,14 @@ impl<'a> DependencyAnalyzer<'a> {
         edge_label: Option<String>,
         display_label: Option<String>,
         source_range: Option<PassDebugSourceRange>,
+        definition_source_range: Option<PassDebugSourceRange>,
     ) -> Option<PassDebugDependencyNode> {
         let target = self.targets.iter().find(|target| target.id == target_id)?;
-        let node_source_range = source_range.or(target.source_range);
-        let definition_source_range =
-            distinct_definition_source_range(target.source_range, node_source_range);
+        let node_source_range = source_range;
+        let definition_source_range = distinct_definition_source_range(
+            definition_source_range.or(target.source_range),
+            node_source_range,
+        );
         Some(
             PassDebugDependencyNode::target_reference(
                 dependency_target_node_label(target, display_label.as_deref()),
@@ -2183,7 +2240,7 @@ impl<'a> DependencyAnalyzer<'a> {
             return Vec::new();
         }
         let effective_env = env.or_else(|| self.expression_envs.get(&expr_ref.key()));
-        if let Some(access_path) = self.access_path_target(&expr_ref) {
+        if let Some(access_path) = self.access_path_target(&expr_ref, target_stack) {
             let target_projection =
                 combine_access_projection(access_path.projection.as_ref(), projection);
             if target_projection.is_empty() {
@@ -2457,7 +2514,7 @@ impl<'a> DependencyAnalyzer<'a> {
             )];
         }
 
-        if let Some(access_path) = self.access_path_target(&expr_ref) {
+        if let Some(access_path) = self.access_path_target(&expr_ref, target_stack) {
             let mut dependencies = self
                 .definition_nodes_for_target(
                     &access_path.target_id,
@@ -2839,16 +2896,13 @@ impl<'a> DependencyAnalyzer<'a> {
     where
         I: IntoIterator<Item = Option<naga::Handle<Expression>>>,
     {
-        let search_range = self.operand_search_byte_range(current);
+        let search_ranges = self.operand_search_byte_ranges(current);
         let mut occurrence_counts = HashMap::<String, usize>::new();
         let mut dependencies = Vec::new();
         for handle in operands.into_iter().flatten() {
             let operand_ref = self.sibling_expr_ref(current, handle);
-            let occurrence_range = self.operand_occurrence_range(
-                search_range.clone(),
-                &operand_ref,
-                &mut occurrence_counts,
-            );
+            let occurrence_range =
+                self.operand_occurrence_range(&search_ranges, &operand_ref, &mut occurrence_counts);
             dependencies.extend(self.semantic_expr_dependencies_with_hint(
                 operand_ref,
                 edge_label.clone(),
@@ -2875,7 +2929,7 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
-        let search_range = self.operand_search_byte_range(current);
+        let search_ranges = self.operand_search_byte_ranges(current);
         let mut occurrence_counts = HashMap::<String, usize>::new();
         let mut dependencies = Vec::new();
         let mut output_offset = 0_u32;
@@ -2897,11 +2951,8 @@ impl<'a> DependencyAnalyzer<'a> {
                 continue;
             }
 
-            let occurrence_range = self.operand_occurrence_range(
-                search_range.clone(),
-                &operand_ref,
-                &mut occurrence_counts,
-            );
+            let occurrence_range =
+                self.operand_occurrence_range(&search_ranges, &operand_ref, &mut occurrence_counts);
             let child_projection = if width > 1 && selected_projection.len() < width as usize {
                 Some(dedupe_projection(selected_projection))
             } else {
@@ -2950,16 +3001,13 @@ impl<'a> DependencyAnalyzer<'a> {
     where
         I: IntoIterator<Item = (naga::Handle<Expression>, Option<AccessProjection>)>,
     {
-        let search_range = self.operand_search_byte_range(current);
+        let search_ranges = self.operand_search_byte_ranges(current);
         let mut occurrence_counts = HashMap::<String, usize>::new();
         let mut dependencies = Vec::new();
         for (handle, projection) in operands {
             let operand_ref = self.sibling_expr_ref(current, handle);
-            let occurrence_range = self.operand_occurrence_range(
-                search_range.clone(),
-                &operand_ref,
-                &mut occurrence_counts,
-            );
+            let occurrence_range =
+                self.operand_occurrence_range(&search_ranges, &operand_ref, &mut occurrence_counts);
             if let Some(projection) = projection
                 .as_ref()
                 .filter(|projection| !projection.is_empty())
@@ -3012,17 +3060,40 @@ impl<'a> DependencyAnalyzer<'a> {
 
     fn operand_occurrence_range(
         &self,
-        search_range: Option<Range<usize>>,
+        search_ranges: &[Range<usize>],
         operand_ref: &ExprRef,
         occurrence_counts: &mut HashMap<String, usize>,
     ) -> Option<PassDebugSourceRange> {
-        let search_range = search_range?;
+        if search_ranges.is_empty() {
+            return None;
+        }
         let label = self.reference_label_for_expr(operand_ref)?;
         let occurrence_index = occurrence_counts.entry(label.clone()).or_insert(0);
-        let range =
-            find_identifier_occurrence_range(self.source, search_range, &label, *occurrence_index);
+        let range = search_ranges.iter().find_map(|search_range| {
+            find_identifier_occurrence_range(
+                self.source,
+                search_range.clone(),
+                &label,
+                *occurrence_index,
+            )
+        });
         *occurrence_index += 1;
         range
+    }
+
+    fn operand_search_byte_ranges(&self, current: &ExprRef) -> Vec<Range<usize>> {
+        let mut ranges = Vec::new();
+        if let Some(range) = self.operand_search_byte_range(current) {
+            ranges.push(range);
+        }
+        if let Some(line_range) = self
+            .source_range_for_expr(current)
+            .and_then(|range| source_line_byte_range(self.source, range.start_byte))
+            && !ranges.iter().any(|range| range == &line_range)
+        {
+            ranges.push(line_range);
+        }
+        ranges
     }
 
     fn operand_search_byte_range(&self, current: &ExprRef) -> Option<Range<usize>> {
@@ -3039,60 +3110,93 @@ impl<'a> DependencyAnalyzer<'a> {
         if let Some(target_id) = self.named_expression_target_id(expr_ref) {
             return self.target_name_for_id(&target_id);
         }
-        self.access_path_target(expr_ref)
+        self.access_path_target(expr_ref, &[])
             .map(|access_path| access_path.display_label)
     }
 
-    fn access_path_target(&self, expr_ref: &ExprRef) -> Option<AccessPathTarget> {
+    fn access_path_target(
+        &self,
+        expr_ref: &ExprRef,
+        target_stack: &[String],
+    ) -> Option<AccessPathTarget> {
         let expr = self.expression(expr_ref)?;
+        if let Some(target_id) = self.named_expression_target_id(expr_ref)
+            && !target_stack.iter().any(|id| id == &target_id)
+            && self.should_use_named_expression_access_path(expr_ref, expr, &target_id)
+        {
+            return Some(AccessPathTarget {
+                display_label: self.target_name_for_id(&target_id)?,
+                source_range: self
+                    .source_range_for_expr(expr_ref)
+                    .or_else(|| target_source_range(&self.targets, &target_id)),
+                target_id,
+                projection: None,
+            });
+        }
+
         match expr {
             Expression::FunctionArgument(index) => {
                 let target_id = target_id_arg(expr_ref_scope(expr_ref), *index);
+                let source_range = self
+                    .source_range_for_expr(expr_ref)
+                    .or_else(|| self.named_expression_value_source_range(expr_ref, &target_id));
                 Some(AccessPathTarget {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
-                    source_range: self.source_range_for_expr(expr_ref),
+                    source_range,
                     projection: None,
                 })
             }
             Expression::GlobalVariable(handle) => {
                 let target_id = target_id_global(*handle);
+                let source_range = self
+                    .source_range_for_expr(expr_ref)
+                    .or_else(|| self.named_expression_value_source_range(expr_ref, &target_id));
                 Some(AccessPathTarget {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
-                    source_range: self.source_range_for_expr(expr_ref),
+                    source_range,
                     projection: None,
                 })
             }
             Expression::LocalVariable(handle) => {
                 let target_id = target_id_local(expr_ref_scope(expr_ref), *handle);
+                let source_range = self
+                    .source_range_for_expr(expr_ref)
+                    .or_else(|| self.named_expression_value_source_range(expr_ref, &target_id));
                 Some(AccessPathTarget {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
-                    source_range: self.source_range_for_expr(expr_ref),
+                    source_range,
                     projection: None,
                 })
             }
             Expression::Load { pointer } => {
                 let pointer_ref = self.sibling_expr_ref(expr_ref, *pointer);
-                let mut path = self.access_path_target(&pointer_ref)?;
-                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                let mut path = self.access_path_target(&pointer_ref, target_stack)?;
+                path.source_range = self
+                    .access_path_source_range(expr_ref, &path.target_id)
+                    .or(path.source_range);
                 Some(path)
             }
             Expression::AccessIndex { base, index } => {
                 let base_ref = self.sibling_expr_ref(expr_ref, *base);
-                let mut path = self.access_path_target(&base_ref)?;
+                let mut path = self.access_path_target(&base_ref, target_stack)?;
                 path.projection = self.access_index_projection(&base_ref, &path, *index);
                 path.display_label
                     .push_str(&self.access_index_suffix(&base_ref, *index));
-                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                path.source_range = self
+                    .access_path_source_range(expr_ref, &path.target_id)
+                    .or(path.source_range);
                 Some(path)
             }
             Expression::Access { base, .. } => {
                 let base_ref = self.sibling_expr_ref(expr_ref, *base);
-                let mut path = self.access_path_target(&base_ref)?;
+                let mut path = self.access_path_target(&base_ref, target_stack)?;
                 path.display_label.push_str("[]");
-                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                path.source_range = self
+                    .access_path_source_range(expr_ref, &path.target_id)
+                    .or(path.source_range);
                 Some(path)
             }
             Expression::Swizzle {
@@ -3101,15 +3205,77 @@ impl<'a> DependencyAnalyzer<'a> {
                 pattern,
             } => {
                 let vector_ref = self.sibling_expr_ref(expr_ref, *vector);
-                let mut path = self.access_path_target(&vector_ref)?;
+                let mut path = self.access_path_target(&vector_ref, target_stack)?;
                 path.projection = self.swizzle_projection(&vector_ref, &path, *size, pattern);
                 path.display_label
                     .push_str(&format!(".{}", swizzle_pattern_label(*size, pattern)));
-                path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
+                path.source_range = self
+                    .access_path_source_range(expr_ref, &path.target_id)
+                    .or(path.source_range);
                 Some(path)
             }
             _ => None,
         }
+    }
+
+    fn access_path_source_range(
+        &self,
+        expr_ref: &ExprRef,
+        target_id: &str,
+    ) -> Option<PassDebugSourceRange> {
+        self.source_range_for_expr(expr_ref)
+            .or_else(|| self.named_expression_value_source_range(expr_ref, target_id))
+    }
+
+    fn should_use_named_expression_access_path(
+        &self,
+        expr_ref: &ExprRef,
+        expr: &Expression,
+        named_target_id: &str,
+    ) -> bool {
+        let Some(underlying_target_id) = self.direct_access_target_id(expr_ref, expr) else {
+            return true;
+        };
+        self.target_name_for_id(named_target_id) != self.target_name_for_id(&underlying_target_id)
+    }
+
+    fn direct_access_target_id(&self, expr_ref: &ExprRef, expr: &Expression) -> Option<String> {
+        match expr {
+            Expression::FunctionArgument(index) => {
+                Some(target_id_arg(expr_ref_scope(expr_ref), *index))
+            }
+            Expression::GlobalVariable(handle) => Some(target_id_global(*handle)),
+            Expression::LocalVariable(handle) => {
+                Some(target_id_local(expr_ref_scope(expr_ref), *handle))
+            }
+            _ => None,
+        }
+    }
+
+    fn named_expression_value_source_range(
+        &self,
+        expr_ref: &ExprRef,
+        value_target_id: &str,
+    ) -> Option<PassDebugSourceRange> {
+        let named_target_id = self.named_expression_target_id(expr_ref)?;
+        let named_range = target_source_range(&self.targets, &named_target_id)?;
+        let value_name = self.target_name_for_id(value_target_id)?;
+        let line_range = source_line_byte_range(self.source, named_range.start_byte)?;
+        let rhs_start = named_range.end_byte.min(line_range.end);
+        find_identifier_range(self.source, rhs_start..line_range.end, &value_name)
+            .or_else(|| find_identifier_range(self.source, line_range, &value_name))
+    }
+
+    fn definition_value_occurrence_range(
+        &self,
+        definition_source_range: PassDebugSourceRange,
+        value_ref: &ExprRef,
+    ) -> Option<PassDebugSourceRange> {
+        let label = self.reference_label_for_expr(value_ref)?;
+        let line_range = source_line_byte_range(self.source, definition_source_range.start_byte)?;
+        let rhs_start = definition_source_range.end_byte.min(line_range.end);
+        find_identifier_range(self.source, rhs_start..line_range.end, &label)
+            .or_else(|| find_identifier_range(self.source, line_range, &label))
     }
 
     fn access_path_index_dependencies(
@@ -3447,6 +3613,21 @@ impl<'a> DependencyAnalyzer<'a> {
         })
     }
 
+    fn next_store_lhs_source_range(
+        &mut self,
+        scope: &str,
+        target_id: &str,
+    ) -> Option<PassDebugSourceRange> {
+        let name = self.target_name_for_id(target_id)?;
+        let occurrence_index = self
+            .store_lhs_counts_by_target
+            .entry(target_id.to_string())
+            .or_insert(0);
+        let range = find_store_lhs_identifier_range(self.source, scope, &name, *occurrence_index);
+        *occurrence_index += 1;
+        range
+    }
+
     fn resolve_pointer_target(&self, expr_ref: &ExprRef) -> Option<String> {
         let expr = self.expression(expr_ref)?;
         match expr {
@@ -3654,6 +3835,21 @@ fn source_range_from_byte_range(source: &str, range: Range<usize>) -> Option<Pas
     })
 }
 
+fn source_line_byte_range(source: &str, byte_index: usize) -> Option<Range<usize>> {
+    if byte_index > source.len() || !source.is_char_boundary(byte_index) {
+        return None;
+    }
+    let start = source[..byte_index]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let end = source[byte_index..]
+        .find('\n')
+        .map(|relative| byte_index + relative)
+        .unwrap_or(source.len());
+    (start < end).then_some(start..end)
+}
+
 fn find_identifier_range(
     source: &str,
     range: Range<usize>,
@@ -3776,6 +3972,106 @@ fn find_keyword_identifier_range(
             }
         }
         offset += relative + keyword.len();
+    }
+    None
+}
+
+fn find_store_lhs_identifier_range(
+    source: &str,
+    scope: &str,
+    name: &str,
+    occurrence_index: usize,
+) -> Option<PassDebugSourceRange> {
+    let range = find_function_range(source, scope)?;
+    if name.is_empty() || range.end > source.len() {
+        return None;
+    }
+
+    let haystack = &source[range.clone()];
+    let mut offset = 0;
+    let mut seen = 0usize;
+    while let Some(relative) = haystack[offset..].find(name) {
+        let start = range.start + offset + relative;
+        let end = start + name.len();
+        if is_identifier_start_boundary(source, start)
+            && is_identifier_end_boundary(source, end)
+            && store_assignment_operator_start(source, end, range.end).is_some()
+        {
+            if seen == occurrence_index {
+                return source_range_from_byte_range(source, start..end);
+            }
+            seen += 1;
+        }
+        offset += relative + name.len();
+    }
+    None
+}
+
+fn store_assignment_operator_start(source: &str, mut index: usize, end: usize) -> Option<usize> {
+    index = skip_ascii_whitespace(source, index, end);
+    while index < end {
+        match source.as_bytes()[index] {
+            b'.' => {
+                index += 1;
+                while index < end {
+                    let byte = source.as_bytes()[index];
+                    if byte.is_ascii_alphanumeric() || byte == b'_' {
+                        index += 1;
+                    } else {
+                        break;
+                    }
+                }
+                index = skip_ascii_whitespace(source, index, end);
+            }
+            b'[' => {
+                index = skip_bracketed_source(source, index, end)?;
+                index = skip_ascii_whitespace(source, index, end);
+            }
+            _ => break,
+        }
+    }
+
+    let bytes = source.as_bytes();
+    match bytes.get(index).copied()? {
+        b'=' if bytes.get(index + 1) != Some(&b'=') => Some(index),
+        b'+' | b'-' | b'*' | b'/' | b'%' | b'&' | b'|' | b'^'
+            if bytes.get(index + 1) == Some(&b'=') =>
+        {
+            Some(index)
+        }
+        b'<' if bytes.get(index + 1) == Some(&b'<') && bytes.get(index + 2) == Some(&b'=') => {
+            Some(index)
+        }
+        b'>' if bytes.get(index + 1) == Some(&b'>') && bytes.get(index + 2) == Some(&b'=') => {
+            Some(index)
+        }
+        _ => None,
+    }
+}
+
+fn skip_ascii_whitespace(source: &str, mut index: usize, end: usize) -> usize {
+    while index < end && source.as_bytes()[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    index
+}
+
+fn skip_bracketed_source(source: &str, open: usize, end: usize) -> Option<usize> {
+    if source.as_bytes().get(open) != Some(&b'[') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for index in open..end {
+        match source.as_bytes()[index] {
+            b'[' => depth += 1,
+            b']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index + 1);
+                }
+            }
+            _ => {}
+        }
     }
     None
 }
@@ -4339,6 +4635,80 @@ fn debug_main() -> f32 {
     }
 
     #[test]
+    fn reassigned_reference_nodes_keep_occurrence_and_reaching_definition_ranges() {
+        let source = r#"
+fn fun(v: f32) -> f32 {
+    return v;
+}
+
+fn foo(v: f32) -> f32 {
+    return v;
+}
+
+fn bar(v: f32) -> f32 {
+    return v;
+}
+
+@fragment
+fn fs_main() -> @location(0) f32 {
+    var a: f32 = 1.0;
+    a = fun(a);
+    let b = foo(a);
+    let c = bar(a);
+    return b + c;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("reassigned-reference.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let b_id = target_id_by_name(&doc, "b");
+        let b = doc
+            .dependency_trees
+            .get(&b_id)
+            .expect("missing dependency tree for b");
+        let a_from_b = child_target(&doc, b, "a", Some("foo"));
+        let foo_arg_start = doc.module_source.find("foo(a)").unwrap() + "foo(".len();
+        let store_start = doc.module_source.find("a = fun(a);").unwrap();
+        assert_node_range_selects(&doc, a_from_b, foo_arg_start, "a");
+        let definition_range = a_from_b
+            .definition_source_range
+            .expect("expected foo(a) to expose reaching definition");
+        assert_eq!(definition_range.start_byte, store_start);
+        assert_eq!(
+            &doc.module_source[definition_range.start_byte..definition_range.end_byte],
+            "a"
+        );
+
+        let a_id = target_id_by_name(&doc, "a");
+        let a_tree = doc
+            .dependency_trees
+            .get(&a_id)
+            .expect("missing dependency tree for a");
+        let fun_arg_start = doc.module_source.find("a = fun(a);").unwrap() + "a = fun(".len();
+        let declaration_start = doc.module_source.find("var a").unwrap() + "var ".len();
+        let mut a_nodes = Vec::new();
+        collect_target_nodes_by_name(&doc, a_tree, "a", &mut a_nodes);
+        let nested_a = a_nodes
+            .into_iter()
+            .find(|node| {
+                node.source_range
+                    .is_some_and(|range| range.start_byte == fun_arg_start)
+            })
+            .expect("missing nested fun(a) target node");
+        assert_node_range_selects(&doc, nested_a, fun_arg_start, "a");
+        let nested_definition_range = nested_a
+            .definition_source_range
+            .expect("expected fun(a) to expose previous definition");
+        assert_eq!(nested_definition_range.start_byte, declaration_start);
+        assert_eq!(
+            &doc.module_source
+                [nested_definition_range.start_byte..nested_definition_range.end_byte],
+            "a"
+        );
+    }
+
+    #[test]
     fn local_reference_node_points_to_occurrence_and_keeps_definition_children() {
         let source = r#"
 @fragment
@@ -4555,6 +4925,76 @@ fn fs_main() -> @location(0) vec4f {
             dependency_graph_reaches_target(&doc, root_id, &lighting2_id),
             "root dependency graph should reach lighting2 through target references"
         );
+        let frag_out = child_target(&doc, root, "_frag_out", Some("Compose"));
+        assert_node_range_selects(
+            &doc,
+            frag_out,
+            doc.module_source.find("_frag_out.rgb").unwrap(),
+            "_frag_out.rgb",
+        );
+        let frag_out_definition_range = frag_out
+            .definition_source_range
+            .expect("expected _frag_out source jump range");
+        assert_eq!(frag_out_definition_range.line, 764);
+        assert_eq!(
+            &doc.module_source
+                [frag_out_definition_range.start_byte..frag_out_definition_range.end_byte],
+            "_frag_out"
+        );
+
+        let frag_out_id = target_id_by_name(&doc, "_frag_out");
+        let frag_out_tree = doc
+            .dependency_trees
+            .get(&frag_out_id)
+            .expect("missing dependency tree for _frag_out");
+        let material_out = child_target(&doc, frag_out_tree, "glass_material_material_out", None);
+        assert_node_range_selects(
+            &doc,
+            material_out,
+            doc.module_source
+                .find("let _frag_out = glass_material_material_out")
+                .unwrap()
+                + "let _frag_out = ".len(),
+            "glass_material_material_out",
+        );
+        let material_out_definition_range = material_out
+            .definition_source_range
+            .expect("expected glass_material_material_out source jump range");
+        assert_eq!(material_out_definition_range.line, 760);
+        assert_eq!(
+            &doc.module_source
+                [material_out_definition_range.start_byte..material_out_definition_range.end_byte],
+            "glass_material_material_out"
+        );
+
+        let material_out_id = target_id_by_name(&doc, "glass_material_material_out");
+        let material_out_tree = doc
+            .dependency_trees
+            .get(&material_out_id)
+            .expect("missing dependency tree for glass_material_material_out");
+        let material_out_definition =
+            child_target(&doc, material_out_tree, "glass_material_material_out", None);
+        assert_eq!(
+            material_out_definition
+                .source_range
+                .expect("expected material_out definition occurrence")
+                .line,
+            760
+        );
+        let material_value = child_target(&doc, material_out_definition, "glass_mat", None);
+        assert_node_range_selects(
+            &doc,
+            material_value,
+            doc.module_source
+                .find("glass_material_material_out = glass_mat")
+                .unwrap()
+                + "glass_material_material_out = ".len(),
+            "glass_mat",
+        );
+        let material_value_definition_range = material_value
+            .definition_source_range
+            .expect("expected glass_mat source jump range from material_out");
+        assert_eq!(material_value_definition_range.line, 759);
 
         let mut glass_nodes = Vec::new();
         collect_target_nodes_by_name(&doc, glass_mat, "glass_mat", &mut glass_nodes);
@@ -4574,6 +5014,30 @@ fn fs_main() -> @location(0) vec4f {
                 .is_some_and(|source_range| source_range.line == 706)),
             "line 707 glass_mat references should expose the initial definition on line 706"
         );
+        for (name, definition_line) in [("refraction", 697), ("reflection", 703)] {
+            let mut nodes = Vec::new();
+            collect_target_nodes_by_name(&doc, glass_mat, name, &mut nodes);
+            assert!(
+                nodes
+                    .iter()
+                    .any(|node| node.source_range.is_some_and(|source_range| {
+                        source_range.line == 706
+                            && &doc.module_source[source_range.start_byte..source_range.end_byte]
+                                == name
+                    })),
+                "{name} should keep its line 706 mix() occurrence"
+            );
+            assert!(
+                nodes.iter().any(
+                    |node| node.definition_source_range.is_some_and(|source_range| {
+                        source_range.line == definition_line
+                            && &doc.module_source[source_range.start_byte..source_range.end_byte]
+                                == name
+                    })
+                ),
+                "{name} should expose its reaching definition line {definition_line}"
+            );
+        }
 
         let alpha_759_ranges = glass_nodes
             .iter()
