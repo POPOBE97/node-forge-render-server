@@ -1,0 +1,95 @@
+# bloom-nodes dependency log
+scene: tests/cases/bloom-nodes/scene.json
+generated_at: 2026-02-19T14:04:36.787Z
+nodes: 37
+connections: 42
+output_root: Composite_5
+reachable_from_output_root: 36
+unreached_nodes: Screen_1
+source_nodes: GLTFGeometry_2, RenderTexture_6, ColorInput_7, Kernel_11, Kernel_13, Kernel_15, Kernel_17, Kernel_19, Kernel_21
+sink_nodes: Screen_1
+
+## dependency_tree_upstream_from_output_root
+Composite_5 (Composite)
+├─ [pass <= output]
+│  └─ MathClosure_42 (MathClosure)
+│     ├─ [dynamic_1771504274786_1 <= pass]
+│     │  └─ RenderPass_4 (RenderPass)
+│     │     ├─ [material <= color]
+│     │     │  └─ ColorInput_7 (ColorInput)
+│     │     └─ [geometry <= geometry]
+│     │        └─ SetTransform_22 (SetTransform)
+│     │           └─ [geometry <= geometry]
+│     │              └─ GLTFGeometry_2 (GLTFGeometry)
+│     └─ [dynamic_1771504277344_2 <= output]
+│        └─ Upsample_41 (Upsample)
+│           └─ [source <= pass]
+│              └─ GuassianBlurPass_40 (GuassianBlurPass)
+│                 └─ [pass <= output]
+│                    └─ MathClosure_39 (MathClosure)
+│                       ├─ [dynamic_1771504274786_1 <= output]
+│                       │  └─ Downsample_10 (Downsample)
+│                       │     ├─ [kernel <= kernel]
+│                       │     │  └─ Kernel_11 (Kernel)
+│                       │     └─ [source <= pass]
+│                       │        └─ RenderPass_4 (RenderPass) [reused]
+│                       └─ [dynamic_1771504277344_2 <= output]
+│                          └─ Upsample_38 (Upsample)
+│                             └─ [source <= pass]
+│                                └─ GuassianBlurPass_37 (GuassianBlurPass)
+│                                   └─ [pass <= output]
+│                                      └─ MathClosure_36 (MathClosure)
+│                                         ├─ [dynamic_1771504274786_1 <= output]
+│                                         │  └─ Downsample_12 (Downsample)
+│                                         │     ├─ [source <= output]
+│                                         │     │  └─ Downsample_10 (Downsample) [reused]
+│                                         │     └─ [kernel <= kernel]
+│                                         │        └─ Kernel_13 (Kernel)
+│                                         └─ [dynamic_1771504277344_2 <= output]
+│                                            └─ Upsample_35 (Upsample)
+│                                               └─ [source <= pass]
+│                                                  └─ GuassianBlurPass_34 (GuassianBlurPass)
+│                                                     └─ [pass <= output]
+│                                                        └─ MathClosure_33 (MathClosure)
+│                                                           ├─ [dynamic_1771504274786_1 <= output]
+│                                                           │  └─ Downsample_14 (Downsample)
+│                                                           │     ├─ [source <= output]
+│                                                           │     │  └─ Downsample_12 (Downsample) [reused]
+│                                                           │     └─ [kernel <= kernel]
+│                                                           │        └─ Kernel_15 (Kernel)
+│                                                           └─ [dynamic_1771504277344_2 <= output]
+│                                                              └─ Upsample_32 (Upsample)
+│                                                                 └─ [source <= pass]
+│                                                                    └─ GuassianBlurPass_31 (GuassianBlurPass)
+│                                                                       └─ [pass <= output]
+│                                                                          └─ MathClosure_29 (MathClosure)
+│                                                                             ├─ [dynamic_1771504274786_1 <= output]
+│                                                                             │  └─ Downsample_16 (Downsample)
+│                                                                             │     ├─ [source <= output]
+│                                                                             │     │  └─ Downsample_14 (Downsample) [reused]
+│                                                                             │     └─ [kernel <= kernel]
+│                                                                             │        └─ Kernel_17 (Kernel)
+│                                                                             └─ [dynamic_1771504277344_2 <= output]
+│                                                                                └─ Upsample_28 (Upsample)
+│                                                                                   └─ [source <= pass]
+│                                                                                      └─ GuassianBlurPass_27 (GuassianBlurPass)
+│                                                                                         └─ [pass <= output]
+│                                                                                            └─ MathClosure_30 (MathClosure)
+│                                                                                               ├─ [dynamic_1771504274786_1 <= output]
+│                                                                                               │  └─ Downsample_18 (Downsample)
+│                                                                                               │     ├─ [source <= output]
+│                                                                                               │     │  └─ Downsample_16 (Downsample) [reused]
+│                                                                                               │     └─ [kernel <= kernel]
+│                                                                                               │        └─ Kernel_19 (Kernel)
+│                                                                                               └─ [dynamic_1771504277344_2 <= output]
+│                                                                                                  └─ Upsample_24 (Upsample)
+│                                                                                                     └─ [source <= pass]
+│                                                                                                        └─ GuassianBlurPass_23 (GuassianBlurPass)
+│                                                                                                           └─ [pass <= output]
+│                                                                                                              └─ Downsample_20 (Downsample)
+│                                                                                                                 ├─ [source <= output]
+│                                                                                                                 │  └─ Downsample_18 (Downsample) [reused]
+│                                                                                                                 └─ [kernel <= kernel]
+│                                                                                                                    └─ Kernel_21 (Kernel)
+└─ [target <= texture]
+   └─ RenderTexture_6 (RenderTexture)

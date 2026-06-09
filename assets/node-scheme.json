@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-03T07:13:33.136Z",
+  "generatedAt": "2026-06-08T15:50:33.211Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -560,14 +560,7 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
-      }
+      "defaultParams": {}
     },
     {
       "type": "BoolInput",
@@ -3643,7 +3636,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "mat4"
+          "type": "any"
         },
         {
           "id": "translate",
@@ -3799,7 +3792,7 @@
         {
           "id": "matrix",
           "name": "Matrix (mat4)",
-          "type": "mat4"
+          "type": "any"
         },
         {
           "id": "translate",

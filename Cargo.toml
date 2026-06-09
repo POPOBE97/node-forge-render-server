@@ -34,6 +34,7 @@ metal = "0.32"
 
 [patch.crates-io]
 egui-wgpu = { path = "3rd/egui-wgpu" }
+block = { path = "3rd/block" }
 
 [dev-dependencies]
 proptest = "1"
