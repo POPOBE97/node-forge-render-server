@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -16,8 +17,20 @@ struct Cli {
     output_dir: Option<PathBuf>,
     output: Option<PathBuf>,
     dump_wgsl_dir: Option<PathBuf>,
+    dump_shader_deps: Option<String>,
+    dump_shader_deps_output: Option<PathBuf>,
     render_to_file: bool,
     continuous_redraw: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ShaderDependencyDump<'a> {
+    pass_name: &'a str,
+    dependency_root_target_id: Option<&'a str>,
+    targets: Vec<&'a renderer::PassDebugDependencyTarget>,
+    dependency_trees: BTreeMap<&'a str, &'a renderer::PassDebugDependencyNode>,
+    parse_error: Option<&'a str>,
+    dependency_error: Option<&'a str>,
 }
 
 #[cfg(all(target_os = "macos", debug_assertions))]
@@ -189,6 +202,20 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.dump_wgsl_dir = Some(PathBuf::from(v));
                 i += 2;
             }
+            "--dump-shader-deps" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --dump-shader-deps"));
+                };
+                cli.dump_shader_deps = Some(v.clone());
+                i += 2;
+            }
+            "--dump-shader-deps-output" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --dump-shader-deps-output"));
+                };
+                cli.dump_shader_deps_output = Some(PathBuf::from(v));
+                i += 2;
+            }
             "--render-to-file" => {
                 cli.render_to_file = true;
                 i += 1;
@@ -199,7 +226,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>)"
                 ));
             }
         }
@@ -208,6 +235,16 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
     if cli.output.is_some() && cli.output_dir.is_some() {
         return Err(anyhow!(
             "cannot use --output together with --outputdir/--output-dir"
+        ));
+    }
+    if cli.dump_shader_deps.is_some() && cli.dsl_json.is_none() && cli.nforge.is_none() {
+        return Err(anyhow!(
+            "--dump-shader-deps requires --dsl-json <scene.json> or --nforge <file.nforge>"
+        ));
+    }
+    if cli.dump_shader_deps_output.is_some() && cli.dump_shader_deps.is_none() {
+        return Err(anyhow!(
+            "--dump-shader-deps-output requires --dump-shader-deps <pass-name>"
         ));
     }
 
@@ -281,6 +318,104 @@ fn dump_scene_wgsl(
     }
 
     println!("[headless] dumped wgsl: {}", dump_dir.display());
+    Ok(())
+}
+
+fn load_scene_from_dsl_json_path(
+    dsl_json_path: &std::path::Path,
+) -> Result<(dsl::SceneDSL, asset_store::AssetStore)> {
+    let text = std::fs::read_to_string(dsl_json_path).map_err(|e| {
+        anyhow!(
+            "failed to read --dsl-json file {}: {e}",
+            dsl_json_path.display()
+        )
+    })?;
+
+    let mut scene: dsl::SceneDSL = serde_json::from_str(&text)
+        .map_err(|e| anyhow!("invalid SceneDSL json in {}: {e}", dsl_json_path.display()))?;
+
+    dsl::normalize_scene_defaults(&mut scene)
+        .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
+
+    let base_dir = dsl_json_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let store = asset_store::load_from_scene_dir(&scene, base_dir)?;
+    Ok((scene, store))
+}
+
+fn pass_debug_source_for_scene(
+    scene: &dsl::SceneDSL,
+    store: Option<&asset_store::AssetStore>,
+    pass_name: &str,
+) -> Result<renderer::PassDebugSource> {
+    let bundles = renderer::build_all_pass_wgsl_bundles_from_scene_with_assets(scene, store)?;
+    let available_passes = bundles
+        .iter()
+        .map(|(pass_id, _)| pass_id.clone())
+        .collect::<Vec<_>>();
+    let Some((pass_id, bundle)) = bundles
+        .into_iter()
+        .find(|(pass_id, _)| pass_id == pass_name)
+    else {
+        return Err(anyhow!(
+            "shader pass `{}` not found; available passes: {}",
+            pass_name,
+            available_passes.join(", ")
+        ));
+    };
+    Ok(renderer::PassDebugSource::from_wgsl(pass_id, bundle.module))
+}
+
+fn shader_dependency_dump_json(source: &renderer::PassDebugSource) -> Result<String> {
+    let mut targets = source.dependency_targets.iter().collect::<Vec<_>>();
+    targets.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let dependency_trees = source
+        .dependency_trees
+        .iter()
+        .map(|(target_id, tree)| (target_id.as_str(), tree))
+        .collect::<BTreeMap<_, _>>();
+
+    let dump = ShaderDependencyDump {
+        pass_name: source.pass_name.as_str(),
+        dependency_root_target_id: source.dependency_root_target_id.as_deref(),
+        targets,
+        dependency_trees,
+        parse_error: source.parse_error.as_deref(),
+        dependency_error: source.dependency_error.as_deref(),
+    };
+
+    serde_json::to_string_pretty(&dump)
+        .map_err(|e| anyhow!("failed to serialize dependency dump: {e}"))
+}
+
+fn run_shader_dependency_dump(cli: &Cli) -> Result<()> {
+    let pass_name = cli
+        .dump_shader_deps
+        .as_deref()
+        .ok_or_else(|| anyhow!("--dump-shader-deps requires a pass name"))?;
+
+    let (scene, store) = if let Some(nforge_path) = cli.nforge.as_deref() {
+        asset_store::load_from_nforge(nforge_path)?
+    } else if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
+        load_scene_from_dsl_json_path(dsl_json_path)?
+    } else {
+        return Err(anyhow!(
+            "--dump-shader-deps requires --dsl-json <scene.json> or --nforge <file.nforge>"
+        ));
+    };
+
+    let source = pass_debug_source_for_scene(&scene, Some(&store), pass_name)?;
+    let json = shader_dependency_dump_json(&source)?;
+
+    if let Some(output_path) = cli.dump_shader_deps_output.as_ref() {
+        write_text_file(output_path.clone(), &json)?;
+        println!("[shader-deps] dumped: {}", output_path.display());
+    } else {
+        println!("{json}");
+    }
+
     Ok(())
 }
 
@@ -632,6 +767,10 @@ fn main() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let cli = parse_cli(&argv)?;
 
+    if cli.dump_shader_deps.is_some() {
+        return run_shader_dependency_dump(&cli);
+    }
+
     // Script-friendly mode: pass DSL JSON directly.
     if cli.headless {
         if let Some(nforge_path) = cli.nforge.as_deref() {
@@ -953,6 +1092,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_cli_dump_shader_deps() {
+        let args = vec![
+            "--dsl-json".to_string(),
+            "scene.json".to_string(),
+            "--dump-shader-deps".to_string(),
+            "RenderPass_4".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(cli.dsl_json.as_ref().unwrap(), &PathBuf::from("scene.json"));
+        assert_eq!(cli.dump_shader_deps.as_deref(), Some("RenderPass_4"));
+    }
+
+    #[test]
+    fn parse_cli_dump_shader_deps_output() {
+        let args = vec![
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--dump-shader-deps".to_string(),
+            "RenderPass_4".to_string(),
+            "--dump-shader-deps-output".to_string(),
+            "/tmp/deps.json".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(cli.nforge.as_ref().unwrap(), &PathBuf::from("scene.nforge"));
+        assert_eq!(cli.dump_shader_deps.as_deref(), Some("RenderPass_4"));
+        assert_eq!(
+            cli.dump_shader_deps_output.as_ref().unwrap(),
+            &PathBuf::from("/tmp/deps.json")
+        );
+    }
+
+    #[test]
+    fn parse_cli_dump_shader_deps_requires_scene_input() {
+        let args = vec!["--dump-shader-deps".to_string(), "RenderPass_4".to_string()];
+        let err = parse_cli(&args).unwrap_err().to_string();
+        assert!(err.contains("--dump-shader-deps requires --dsl-json"));
+    }
+
+    #[test]
     fn parse_cli_continuous_redraw_flag() {
         let args = vec!["--continuous-redraw".to_string()];
         let cli = parse_cli(&args).unwrap();
@@ -964,5 +1142,72 @@ mod tests {
         let args = vec!["--force-continuous-redraw".to_string()];
         let cli = parse_cli(&args).unwrap();
         assert!(cli.continuous_redraw);
+    }
+
+    fn collect_target_nodes<'a>(
+        node: &'a renderer::PassDebugDependencyNode,
+        target_id: &str,
+        out: &mut Vec<&'a renderer::PassDebugDependencyNode>,
+    ) {
+        if node.target_id.as_deref() == Some(target_id) {
+            out.push(node);
+        }
+        for child in &node.children {
+            collect_target_nodes(child, target_id, out);
+        }
+    }
+
+    #[test]
+    fn shader_dependency_dump_glass_final_alpha_reference_keeps_children() {
+        let scene_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("cases")
+            .join("glass")
+            .join("scene.json");
+        let (scene, store) = load_scene_from_dsl_json_path(&scene_path).unwrap();
+        let source = pass_debug_source_for_scene(&scene, Some(&store), "RenderPass_4").unwrap();
+        let final_alpha_id = source
+            .dependency_targets
+            .iter()
+            .find(|target| target.name == "final_alpha")
+            .map(|target| target.id.as_str())
+            .expect("final_alpha target");
+        let root_id = source
+            .dependency_root_target_id
+            .as_deref()
+            .expect("dependency root target");
+        let root = source
+            .dependency_trees
+            .get(root_id)
+            .expect("root dependency tree");
+
+        let declaration_start =
+            source.module_source.find("var final_alpha").unwrap() + "var ".len();
+        let reference_start = source.module_source.find("final_alpha * 1.0").unwrap();
+        let mut final_alpha_nodes = Vec::new();
+        collect_target_nodes(root, final_alpha_id, &mut final_alpha_nodes);
+        let reference_node = final_alpha_nodes
+            .iter()
+            .copied()
+            .find(|node| {
+                node.source_range
+                    .map(|range| range.start_byte == reference_start)
+                    .unwrap_or(false)
+                    && !node.children.is_empty()
+            })
+            .expect("downstream final_alpha reference node with dependency children");
+
+        let range = reference_node.source_range.unwrap();
+        assert_eq!(range.start_byte, reference_start);
+        assert_ne!(range.start_byte, declaration_start);
+        assert_eq!(
+            &source.module_source[range.start_byte..range.end_byte],
+            "final_alpha"
+        );
+
+        assert!(
+            !reference_node.children.is_empty(),
+            "expected downstream final_alpha reference to keep dependency children"
+        );
     }
 }

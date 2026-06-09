@@ -12,8 +12,11 @@ use naga::{
     Arena, Block, Expression, Function, Module, ShaderStage, Statement, SwizzleComponent, Type,
     TypeInner,
 };
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+const MAX_DEPENDENCY_DEPTH: usize = 48;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugSourceRange {
     pub start_byte: usize,
     pub end_byte: usize,
@@ -21,7 +24,7 @@ pub struct PassDebugSourceRange {
     pub column: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugAstNode {
     pub label: String,
     pub target_id: Option<String>,
@@ -69,7 +72,7 @@ impl PassDebugAstNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugDependencyTarget {
     pub id: String,
     pub name: String,
@@ -79,7 +82,7 @@ pub struct PassDebugDependencyTarget {
     pub source_range: Option<PassDebugSourceRange>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugDependencyNode {
     pub label: String,
     pub edge_label: Option<String>,
@@ -143,7 +146,7 @@ impl PassDebugDependencyNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugSource {
     pub pass_name: String,
     pub module_source: String,
@@ -1036,7 +1039,10 @@ struct AccessPathTarget {
     target_id: String,
     display_label: String,
     source_range: Option<PassDebugSourceRange>,
+    projection: Option<AccessProjection>,
 }
+
+type AccessProjection = Vec<u32>;
 
 struct DependencyAnalyzer<'a> {
     module: &'a Module,
@@ -1530,15 +1536,20 @@ impl<'a> DependencyAnalyzer<'a> {
         display_label: Option<String>,
         source_range: Option<PassDebugSourceRange>,
     ) -> PassDebugDependencyNode {
-        const MAX_DEPENDENCY_DEPTH: usize = 36;
+        let target = self.targets.iter().find(|target| target.id == target_id);
         if depth >= MAX_DEPENDENCY_DEPTH {
+            let node_source_range =
+                source_range.or_else(|| target.and_then(|target| target.source_range));
             return PassDebugDependencyNode::target(
-                format!("{target_id} [depth limit]"),
+                target
+                    .map(|target| format!("{} [depth limit]", target.label))
+                    .unwrap_or_else(|| format!("{target_id} [depth limit]")),
                 target_id.to_string(),
                 Vec::new(),
             )
             .with_edge_label(edge_label)
-            .with_display_label(display_label);
+            .with_display_label(display_label)
+            .with_source_range(node_source_range);
         }
         if target_stack.iter().any(|id| id == target_id) {
             return PassDebugDependencyNode::target(
@@ -1550,7 +1561,7 @@ impl<'a> DependencyAnalyzer<'a> {
             .with_display_label(display_label);
         }
 
-        let Some(target) = self.targets.iter().find(|target| target.id == target_id) else {
+        let Some(target) = target else {
             return PassDebugDependencyNode::leaf(format!("missing target {target_id}"));
         };
         let Some(kind) = self.target_kinds.get(target_id) else {
@@ -1677,6 +1688,8 @@ impl<'a> DependencyAnalyzer<'a> {
                             *definition_id,
                             None,
                             None,
+                            None,
+                            None,
                             target_stack,
                             &mut HashSet::new(),
                             &mut Vec::new(),
@@ -1693,6 +1706,8 @@ impl<'a> DependencyAnalyzer<'a> {
         target_id: &str,
         edge_label: Option<String>,
         display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+        projection: Option<&AccessProjection>,
         env: Option<&DefinitionEnv>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
@@ -1708,6 +1723,8 @@ impl<'a> DependencyAnalyzer<'a> {
                         *definition_id,
                         edge_label.clone(),
                         display_label.clone(),
+                        source_range,
+                        projection,
                         target_stack,
                         seen_exprs,
                         definition_stack,
@@ -1723,15 +1740,13 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_id: DefinitionId,
         edge_label: Option<String>,
         display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+        projection: Option<&AccessProjection>,
         target_stack: &mut Vec<String>,
         seen_exprs: &mut HashSet<String>,
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> PassDebugDependencyNode {
-        const MAX_DEPENDENCY_DEPTH: usize = 36;
-        if depth >= MAX_DEPENDENCY_DEPTH {
-            return PassDebugDependencyNode::leaf("[depth limit]");
-        }
         let Some(definition) = self.definitions.get(definition_id) else {
             return PassDebugDependencyNode::leaf(format!("missing definition {definition_id}"));
         };
@@ -1745,6 +1760,19 @@ impl<'a> DependencyAnalyzer<'a> {
                 definition.target_id
             ));
         };
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            let source_range = source_range.or(definition.source_range);
+            let display_label =
+                self.definition_display_label(target, definition, display_label, source_range);
+            return PassDebugDependencyNode::target(
+                format!("{} [depth limit]", target.label),
+                target.id.clone(),
+                Vec::new(),
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label)
+            .with_source_range(source_range);
+        }
         if definition_stack.contains(&definition_id) {
             return PassDebugDependencyNode::target(
                 format!("{} [cycle]", target.label),
@@ -1759,22 +1787,38 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack.push(definition_id);
         let mut children = self.control_nodes(&definition.controls, target_stack, depth + 1);
         if let Some(value) = definition.value.clone() {
-            children.extend(self.semantic_expr_dependencies(
-                value,
-                None,
-                Some(&definition.env),
-                target_stack,
-                seen_exprs,
-                definition_stack,
-                depth + 1,
-            ));
+            if let Some(projection) = projection.filter(|projection| !projection.is_empty()) {
+                children.extend(self.semantic_expr_dependencies_projected(
+                    value,
+                    None,
+                    None,
+                    projection,
+                    Some(&definition.env),
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            } else {
+                children.extend(self.semantic_expr_dependencies(
+                    value,
+                    None,
+                    Some(&definition.env),
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            }
         }
         if children.is_empty() {
             children.push(PassDebugDependencyNode::leaf("[source] no contributors"));
         }
         definition_stack.pop();
 
-        let display_label = self.definition_display_label(target, definition, display_label);
+        let source_range = source_range.or(definition.source_range);
+        let display_label =
+            self.definition_display_label(target, definition, display_label, source_range);
         PassDebugDependencyNode::target(
             dependency_target_node_label(target, display_label.as_deref()),
             target.id.clone(),
@@ -1782,7 +1826,7 @@ impl<'a> DependencyAnalyzer<'a> {
         )
         .with_edge_label(edge_label)
         .with_display_label(display_label)
-        .with_source_range(definition.source_range)
+        .with_source_range(source_range)
     }
 
     fn build_named_expression_tree_with_context(
@@ -1798,15 +1842,20 @@ impl<'a> DependencyAnalyzer<'a> {
         seen_exprs: &mut HashSet<String>,
         definition_stack: &mut Vec<DefinitionId>,
     ) -> PassDebugDependencyNode {
-        const MAX_DEPENDENCY_DEPTH: usize = 36;
+        let target = self.targets.iter().find(|target| target.id == target_id);
         if depth >= MAX_DEPENDENCY_DEPTH {
             return PassDebugDependencyNode::target(
-                format!("{target_id} [depth limit]"),
+                target
+                    .map(|target| format!("{} [depth limit]", target.label))
+                    .unwrap_or_else(|| format!("{target_id} [depth limit]")),
                 target_id.to_string(),
                 Vec::new(),
             )
             .with_edge_label(edge_label)
-            .with_display_label(display_label);
+            .with_display_label(display_label)
+            .with_source_range(
+                source_range.or_else(|| target.and_then(|target| target.source_range)),
+            );
         }
         if target_stack.iter().any(|id| id == target_id) {
             return PassDebugDependencyNode::target(
@@ -1818,7 +1867,7 @@ impl<'a> DependencyAnalyzer<'a> {
             .with_display_label(display_label)
             .with_source_range(source_range);
         }
-        let Some(target) = self.targets.iter().find(|target| target.id == target_id) else {
+        let Some(target) = target else {
             return PassDebugDependencyNode::leaf(format!("missing target {target_id}"));
         };
 
@@ -1852,6 +1901,7 @@ impl<'a> DependencyAnalyzer<'a> {
         target: &PassDebugDependencyTarget,
         definition: &DefinitionSite,
         display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
     ) -> Option<String> {
         let base = display_label.unwrap_or_else(|| target.name.clone());
         let has_multiple_definitions = self
@@ -1861,7 +1911,7 @@ impl<'a> DependencyAnalyzer<'a> {
             .take(2)
             .count()
             > 1;
-        if has_multiple_definitions && let Some(range) = definition.source_range {
+        if has_multiple_definitions && let Some(range) = source_range.or(definition.source_range) {
             Some(format!("{base} ({})", range.line))
         } else {
             Some(base)
@@ -1993,6 +2043,236 @@ impl<'a> DependencyAnalyzer<'a> {
         )
     }
 
+    fn semantic_expr_dependencies_projected(
+        &self,
+        expr_ref: ExprRef,
+        inherited_edge: Option<String>,
+        occurrence_range: Option<PassDebugSourceRange>,
+        projection: &AccessProjection,
+        env: Option<&DefinitionEnv>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode> {
+        if projection.is_empty() {
+            return Vec::new();
+        }
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
+        }
+
+        let effective_env = env.or_else(|| self.expression_envs.get(&expr_ref.key()));
+        if let Some(access_path) = self.access_path_target(&expr_ref) {
+            let target_projection =
+                combine_access_projection(access_path.projection.as_ref(), projection);
+            if target_projection.is_empty() {
+                return Vec::new();
+            }
+            let mut dependencies = self
+                .definition_nodes_for_target(
+                    &access_path.target_id,
+                    inherited_edge.clone(),
+                    Some(access_path.display_label.clone()),
+                    occurrence_range.or(access_path.source_range),
+                    Some(&target_projection),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                )
+                .unwrap_or_else(|| {
+                    vec![self.build_target_tree_with_context(
+                        &access_path.target_id,
+                        target_stack,
+                        depth + 1,
+                        inherited_edge.clone(),
+                        Some(access_path.display_label),
+                        occurrence_range.or(access_path.source_range),
+                    )]
+                });
+            dependencies.extend(self.access_path_index_dependencies(
+                &expr_ref,
+                inherited_edge,
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ));
+            return dependencies;
+        }
+
+        if self.named_expression_target_id(&expr_ref).is_some() {
+            return self.semantic_expr_dependencies_with_hint(
+                expr_ref,
+                inherited_edge,
+                occurrence_range,
+                env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            );
+        }
+
+        let expr_key = expr_ref.key();
+        if !seen_exprs.insert(expr_key.clone()) {
+            return Vec::new();
+        }
+
+        let Some(expr) = self.expression(&expr_ref) else {
+            seen_exprs.remove(&expr_key);
+            return Vec::new();
+        };
+
+        let children = match expr {
+            Expression::Compose { components, .. } => self.projected_compose_dependencies(
+                &expr_ref,
+                components,
+                operation_edge(inherited_edge, "Compose"),
+                projection,
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::Splat { value, .. } => self.projected_operand_dependencies(
+                &expr_ref,
+                [(*value, None)],
+                operation_edge(inherited_edge, "Splat"),
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::Binary { op, left, right } => self.projected_operand_dependencies(
+                &expr_ref,
+                [
+                    (*left, self.operand_projection(&expr_ref, *left, projection)),
+                    (
+                        *right,
+                        self.operand_projection(&expr_ref, *right, projection),
+                    ),
+                ],
+                operation_edge(inherited_edge, format!("{op:?}")),
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::Unary { op, expr } => self.projected_operand_dependencies(
+                &expr_ref,
+                [(*expr, Some(projection.clone()))],
+                operation_edge(inherited_edge, format!("{op:?}")),
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::As { expr, .. } => self.projected_operand_dependencies(
+                &expr_ref,
+                [(*expr, Some(projection.clone()))],
+                operation_edge(inherited_edge, "As"),
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::Derivative { axis, ctrl, expr } => self.projected_operand_dependencies(
+                &expr_ref,
+                [(*expr, Some(projection.clone()))],
+                operation_edge(inherited_edge, format!("{axis:?}/{ctrl:?}")),
+                effective_env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+            Expression::Math {
+                fun,
+                arg,
+                arg1,
+                arg2,
+                arg3,
+            } => {
+                let mut operands =
+                    vec![(*arg, self.operand_projection(&expr_ref, *arg, projection))];
+                for handle in [*arg1, *arg2, *arg3].into_iter().flatten() {
+                    operands.push((
+                        handle,
+                        self.operand_projection(&expr_ref, handle, projection),
+                    ));
+                }
+                self.projected_operand_dependencies(
+                    &expr_ref,
+                    operands,
+                    operation_edge(inherited_edge, format!("{fun:?}")),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                )
+            }
+            Expression::Select {
+                condition,
+                accept,
+                reject,
+            } => {
+                let mut dependencies = self.projected_operand_dependencies(
+                    &expr_ref,
+                    [(*condition, None)],
+                    operation_edge(inherited_edge.clone(), "Select"),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                );
+                dependencies.extend(self.projected_operand_dependencies(
+                    &expr_ref,
+                    [
+                        (
+                            *accept,
+                            self.operand_projection(&expr_ref, *accept, projection),
+                        ),
+                        (
+                            *reject,
+                            self.operand_projection(&expr_ref, *reject, projection),
+                        ),
+                    ],
+                    operation_edge(inherited_edge, "Select"),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+                dependencies
+            }
+            _ => self.semantic_expr_dependencies_with_hint(
+                expr_ref.clone(),
+                inherited_edge,
+                occurrence_range,
+                env,
+                target_stack,
+                seen_exprs,
+                definition_stack,
+                depth + 1,
+            ),
+        };
+
+        seen_exprs.remove(&expr_key);
+        children
+    }
+
     fn semantic_expr_dependencies_with_hint(
         &self,
         expr_ref: ExprRef,
@@ -2004,7 +2284,6 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
-        const MAX_DEPENDENCY_DEPTH: usize = 36;
         if depth >= MAX_DEPENDENCY_DEPTH {
             return vec![PassDebugDependencyNode::leaf("[depth limit]")];
         }
@@ -2033,6 +2312,8 @@ impl<'a> DependencyAnalyzer<'a> {
                     &access_path.target_id,
                     inherited_edge.clone(),
                     Some(access_path.display_label.clone()),
+                    occurrence_range.or(access_path.source_range),
+                    access_path.projection.as_ref(),
                     effective_env,
                     target_stack,
                     seen_exprs,
@@ -2427,6 +2708,153 @@ impl<'a> DependencyAnalyzer<'a> {
         dependencies
     }
 
+    fn projected_compose_dependencies(
+        &self,
+        current: &ExprRef,
+        components: &[naga::Handle<Expression>],
+        edge_label: Option<String>,
+        projection: &AccessProjection,
+        env: Option<&DefinitionEnv>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode> {
+        let search_range = self.operand_search_byte_range(current);
+        let mut occurrence_counts = HashMap::<String, usize>::new();
+        let mut dependencies = Vec::new();
+        let mut output_offset = 0_u32;
+
+        for handle in components {
+            let operand_ref = self.sibling_expr_ref(current, *handle);
+            let width = self.expression_component_count(&operand_ref).max(1) as u32;
+            let selected_projection = projection
+                .iter()
+                .copied()
+                .filter(|component| {
+                    output_offset <= *component && *component < output_offset + width
+                })
+                .map(|component| component - output_offset)
+                .collect::<Vec<_>>();
+            output_offset += width;
+
+            if selected_projection.is_empty() {
+                continue;
+            }
+
+            let occurrence_range = self.operand_occurrence_range(
+                search_range.clone(),
+                &operand_ref,
+                &mut occurrence_counts,
+            );
+            let child_projection = if width > 1 && selected_projection.len() < width as usize {
+                Some(dedupe_projection(selected_projection))
+            } else {
+                None
+            };
+            if let Some(child_projection) = child_projection.as_ref() {
+                dependencies.extend(self.semantic_expr_dependencies_projected(
+                    operand_ref,
+                    edge_label.clone(),
+                    occurrence_range,
+                    child_projection,
+                    env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            } else {
+                dependencies.extend(self.semantic_expr_dependencies_with_hint(
+                    operand_ref,
+                    edge_label.clone(),
+                    occurrence_range,
+                    env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            }
+        }
+
+        dependencies
+    }
+
+    fn projected_operand_dependencies<I>(
+        &self,
+        current: &ExprRef,
+        operands: I,
+        edge_label: Option<String>,
+        env: Option<&DefinitionEnv>,
+        target_stack: &mut Vec<String>,
+        seen_exprs: &mut HashSet<String>,
+        definition_stack: &mut Vec<DefinitionId>,
+        depth: usize,
+    ) -> Vec<PassDebugDependencyNode>
+    where
+        I: IntoIterator<Item = (naga::Handle<Expression>, Option<AccessProjection>)>,
+    {
+        let search_range = self.operand_search_byte_range(current);
+        let mut occurrence_counts = HashMap::<String, usize>::new();
+        let mut dependencies = Vec::new();
+        for (handle, projection) in operands {
+            let operand_ref = self.sibling_expr_ref(current, handle);
+            let occurrence_range = self.operand_occurrence_range(
+                search_range.clone(),
+                &operand_ref,
+                &mut occurrence_counts,
+            );
+            if let Some(projection) = projection
+                .as_ref()
+                .filter(|projection| !projection.is_empty())
+            {
+                dependencies.extend(self.semantic_expr_dependencies_projected(
+                    operand_ref,
+                    edge_label.clone(),
+                    occurrence_range,
+                    projection,
+                    env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            } else {
+                dependencies.extend(self.semantic_expr_dependencies_with_hint(
+                    operand_ref,
+                    edge_label.clone(),
+                    occurrence_range,
+                    env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                ));
+            }
+        }
+        dependencies
+    }
+
+    fn operand_projection(
+        &self,
+        current: &ExprRef,
+        handle: naga::Handle<Expression>,
+        projection: &AccessProjection,
+    ) -> Option<AccessProjection> {
+        let operand_ref = self.sibling_expr_ref(current, handle);
+        let width = self.expression_component_count(&operand_ref);
+        if width <= 1 {
+            return None;
+        }
+        let projection = projection
+            .iter()
+            .copied()
+            .filter(|component| (*component as usize) < width)
+            .collect::<Vec<_>>();
+        (!projection.is_empty()).then(|| dedupe_projection(projection))
+    }
+
     fn operand_occurrence_range(
         &self,
         search_range: Option<Range<usize>>,
@@ -2469,6 +2897,7 @@ impl<'a> DependencyAnalyzer<'a> {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
                     source_range: self.source_range_for_expr(expr_ref),
+                    projection: None,
                 })
             }
             Expression::GlobalVariable(handle) => {
@@ -2477,6 +2906,7 @@ impl<'a> DependencyAnalyzer<'a> {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
                     source_range: self.source_range_for_expr(expr_ref),
+                    projection: None,
                 })
             }
             Expression::LocalVariable(handle) => {
@@ -2485,6 +2915,7 @@ impl<'a> DependencyAnalyzer<'a> {
                     display_label: self.target_name_for_id(&target_id)?,
                     target_id,
                     source_range: self.source_range_for_expr(expr_ref),
+                    projection: None,
                 })
             }
             Expression::Load { pointer } => {
@@ -2496,6 +2927,7 @@ impl<'a> DependencyAnalyzer<'a> {
             Expression::AccessIndex { base, index } => {
                 let base_ref = self.sibling_expr_ref(expr_ref, *base);
                 let mut path = self.access_path_target(&base_ref)?;
+                path.projection = self.access_index_projection(&base_ref, &path, *index);
                 path.display_label
                     .push_str(&self.access_index_suffix(&base_ref, *index));
                 path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
@@ -2515,6 +2947,7 @@ impl<'a> DependencyAnalyzer<'a> {
             } => {
                 let vector_ref = self.sibling_expr_ref(expr_ref, *vector);
                 let mut path = self.access_path_target(&vector_ref)?;
+                path.projection = self.swizzle_projection(&vector_ref, &path, *size, pattern);
                 path.display_label
                     .push_str(&format!(".{}", swizzle_pattern_label(*size, pattern)));
                 path.source_range = self.source_range_for_expr(expr_ref).or(path.source_range);
@@ -2601,6 +3034,51 @@ impl<'a> DependencyAnalyzer<'a> {
         }
     }
 
+    fn access_index_projection(
+        &self,
+        base_ref: &ExprRef,
+        path: &AccessPathTarget,
+        index: u32,
+    ) -> Option<AccessProjection> {
+        if let Some(projection) = path.projection.as_ref() {
+            return projection
+                .get(index as usize)
+                .copied()
+                .map(|component| vec![component]);
+        }
+        self.vector_width_for_expr(base_ref)
+            .filter(|width| (index as usize) < *width)
+            .map(|_| vec![index])
+    }
+
+    fn swizzle_projection(
+        &self,
+        vector_ref: &ExprRef,
+        path: &AccessPathTarget,
+        size: naga::VectorSize,
+        pattern: &[SwizzleComponent; 4],
+    ) -> Option<AccessProjection> {
+        let swizzle_indices = pattern
+            .iter()
+            .take(vector_size_len(size))
+            .filter_map(|component| swizzle_component_index(*component))
+            .collect::<Vec<_>>();
+        if swizzle_indices.is_empty() {
+            return None;
+        }
+
+        if let Some(projection) = path.projection.as_ref() {
+            let mapped = swizzle_indices
+                .into_iter()
+                .filter_map(|index| projection.get(index as usize).copied())
+                .collect::<Vec<_>>();
+            return Some(dedupe_projection(mapped));
+        }
+
+        self.vector_width_for_expr(vector_ref)
+            .map(|_| dedupe_projection(swizzle_indices))
+    }
+
     fn access_index_suffix(&self, base_ref: &ExprRef, index: u32) -> String {
         if let Some(member_name) = self.struct_member_name(base_ref, index) {
             format!(".{member_name}")
@@ -2609,6 +3087,77 @@ impl<'a> DependencyAnalyzer<'a> {
         } else {
             format!("[{index}]")
         }
+    }
+
+    fn vector_width_for_expr(&self, expr_ref: &ExprRef) -> Option<usize> {
+        let ty = self.type_handle_for_expr(expr_ref)?;
+        match &self.module.types[self.deref_type_handle(ty)].inner {
+            TypeInner::Vector { size, .. } => Some(vector_size_len(*size)),
+            _ => None,
+        }
+    }
+
+    fn expression_component_count(&self, expr_ref: &ExprRef) -> usize {
+        let Some(expr) = self.expression(expr_ref) else {
+            return 1;
+        };
+        match expr {
+            Expression::Compose { ty, .. } => self.type_component_count(*ty),
+            Expression::Splat { size, .. } | Expression::Swizzle { size, .. } => {
+                vector_size_len(*size)
+            }
+            Expression::Unary { expr, .. }
+            | Expression::As { expr, .. }
+            | Expression::Derivative { expr, .. } => {
+                self.expression_component_count(&self.sibling_expr_ref(expr_ref, *expr))
+            }
+            Expression::Binary { left, right, .. } => self
+                .expression_component_count(&self.sibling_expr_ref(expr_ref, *left))
+                .max(self.expression_component_count(&self.sibling_expr_ref(expr_ref, *right))),
+            Expression::Select { accept, reject, .. } => self
+                .expression_component_count(&self.sibling_expr_ref(expr_ref, *accept))
+                .max(self.expression_component_count(&self.sibling_expr_ref(expr_ref, *reject))),
+            Expression::Math {
+                arg,
+                arg1,
+                arg2,
+                arg3,
+                ..
+            } => {
+                let mut count =
+                    self.expression_component_count(&self.sibling_expr_ref(expr_ref, *arg));
+                for handle in [*arg1, *arg2, *arg3].into_iter().flatten() {
+                    count = count.max(
+                        self.expression_component_count(&self.sibling_expr_ref(expr_ref, handle)),
+                    );
+                }
+                count
+            }
+            Expression::CallResult(_) => self.call_result_component_count(expr_ref).unwrap_or(1),
+            _ => self
+                .type_handle_for_expr(expr_ref)
+                .map(|ty| self.type_component_count(ty))
+                .unwrap_or(1),
+        }
+    }
+
+    fn type_component_count(&self, ty: naga::Handle<Type>) -> usize {
+        match &self.module.types[self.deref_type_handle(ty)].inner {
+            TypeInner::Vector { size, .. } => vector_size_len(*size),
+            _ => 1,
+        }
+    }
+
+    fn call_result_component_count(&self, expr_ref: &ExprRef) -> Option<usize> {
+        let ExprRef::Function { scope, handle } = expr_ref else {
+            return None;
+        };
+        let call = self.calls_by_result.get(&(scope.clone(), handle.index()))?;
+        let function = &self.module.functions[call.function];
+        function
+            .result
+            .as_ref()
+            .map(|result| self.type_component_count(result.ty))
     }
 
     fn struct_member_name(&self, base_ref: &ExprRef, index: u32) -> Option<String> {
@@ -2845,10 +3394,14 @@ fn dependency_target_node_label(
 fn swizzle_pattern_label(size: naga::VectorSize, pattern: &[SwizzleComponent; 4]) -> String {
     pattern
         .iter()
-        .take(size as u8 as usize)
+        .take(vector_size_len(size))
         .filter_map(|component| swizzle_component_label(*component))
         .collect::<Vec<_>>()
         .join("")
+}
+
+fn vector_size_len(size: naga::VectorSize) -> usize {
+    size as u8 as usize
 }
 
 fn swizzle_component_for_index(index: u32) -> Option<&'static str> {
@@ -2861,12 +3414,47 @@ fn swizzle_component_for_index(index: u32) -> Option<&'static str> {
     }
 }
 
+fn swizzle_component_index(component: SwizzleComponent) -> Option<u32> {
+    match component {
+        SwizzleComponent::X => Some(0),
+        SwizzleComponent::Y => Some(1),
+        SwizzleComponent::Z => Some(2),
+        SwizzleComponent::W => Some(3),
+    }
+}
+
 fn swizzle_component_label(component: SwizzleComponent) -> Option<&'static str> {
     match component {
         SwizzleComponent::X => Some("x"),
         SwizzleComponent::Y => Some("y"),
         SwizzleComponent::Z => Some("z"),
         SwizzleComponent::W => Some("w"),
+    }
+}
+
+fn dedupe_projection(projection: AccessProjection) -> AccessProjection {
+    projection
+        .into_iter()
+        .fold(Vec::new(), |mut deduped, component| {
+            if !deduped.contains(&component) {
+                deduped.push(component);
+            }
+            deduped
+        })
+}
+
+fn combine_access_projection(
+    access_projection: Option<&AccessProjection>,
+    projection: &AccessProjection,
+) -> AccessProjection {
+    match access_projection {
+        Some(access_projection) => dedupe_projection(
+            projection
+                .iter()
+                .filter_map(|component| access_projection.get(*component as usize).copied())
+                .collect(),
+        ),
+        None => dedupe_projection(projection.clone()),
     }
 }
 
@@ -3243,6 +3831,25 @@ mod tests {
             })
     }
 
+    fn collect_target_nodes_by_name<'a>(
+        doc: &PassDebugSource,
+        node: &'a PassDebugDependencyNode,
+        name: &str,
+        out: &mut Vec<&'a PassDebugDependencyNode>,
+    ) {
+        if node
+            .target_id
+            .as_deref()
+            .map(|target_id| target_name_for_id(doc, target_id) == name)
+            .unwrap_or(false)
+        {
+            out.push(node);
+        }
+        for child in &node.children {
+            collect_target_nodes_by_name(doc, child, name, out);
+        }
+    }
+
     fn assert_node_range_selects(
         doc: &PassDebugSource,
         node: &PassDebugDependencyNode,
@@ -3505,6 +4112,137 @@ fn debug_main() -> f32 {
     }
 
     #[test]
+    fn local_reference_node_points_to_occurrence_and_keeps_definition_children() {
+        let source = r#"
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let edge = 30.0;
+    let edge_sdf = edge + 1.0;
+    let aa_depth = edge * 2.0;
+    var final_alpha = smoothstep(0.0, aa_depth, -edge_sdf);
+    let out = 0.5 * final_alpha;
+    return out;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("final-alpha.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let out_id = target_id_by_name(&doc, "out");
+        let out = doc
+            .dependency_trees
+            .get(&out_id)
+            .expect("missing dependency tree for out");
+        let final_alpha = child_target(&doc, out, "final_alpha", Some("Multiply"));
+
+        let occurrence_start =
+            doc.module_source.find("0.5 * final_alpha").unwrap() + "0.5 * ".len();
+        assert_node_range_selects(&doc, final_alpha, occurrence_start, "final_alpha");
+        assert!(
+            !final_alpha.children.is_empty(),
+            "final_alpha reference should expand to its definition dependencies"
+        );
+
+        let mut labels = Vec::new();
+        flatten_dependency_labels(final_alpha, &mut labels);
+        assert_labels_contain(&labels, "aa_depth");
+        assert_labels_contain(&labels, "edge_sdf");
+    }
+
+    #[test]
+    fn compound_vector_self_assignment_keeps_rhs_contributors() {
+        let source = r#"
+@fragment
+fn fs_main() -> @location(0) vec4f {
+    var x = vec4f(0.0);
+    let lighting1 = 0.25;
+    let lighting2 = 0.5;
+    x = vec4f(x.rgb, x.a);
+    x += lighting1 + lighting2;
+    x = vec4f(x.rgb * x.a, x.a);
+    return x;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("compound.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let x_id = target_id_by_name(&doc, "x");
+        let x = doc
+            .dependency_trees
+            .get(&x_id)
+            .expect("missing dependency tree for x");
+        let mut labels = Vec::new();
+        flatten_dependency_labels(x, &mut labels);
+        assert_labels_contain(&labels, "lighting1");
+        assert_labels_contain(&labels, "lighting2");
+
+        let mut x_nodes = Vec::new();
+        collect_target_nodes_by_name(&doc, x, "x", &mut x_nodes);
+        let alpha_occurrences = x_nodes
+            .iter()
+            .filter_map(|node| node.source_range)
+            .filter(|range| &doc.module_source[range.start_byte..range.end_byte] == "x.a")
+            .collect::<Vec<_>>();
+        assert!(
+            alpha_occurrences.len() >= 2,
+            "expected distinct x.a occurrences in dependency tree"
+        );
+        assert_ne!(alpha_occurrences[0], alpha_occurrences[1]);
+    }
+
+    #[test]
+    fn glass_mat_dependency_tree_keeps_lighting_and_distinct_alpha_occurrences() {
+        let source = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("cases")
+                .join("glass")
+                .join("wgsl")
+                .join("RenderPass_4.module.wgsl"),
+        )
+        .expect("failed to read glass RenderPass_4 WGSL");
+        let doc = PassDebugSource::from_wgsl("glass.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let glass_id = target_id_by_name(&doc, "glass_mat");
+        let glass_mat = doc
+            .dependency_trees
+            .get(&glass_id)
+            .expect("missing dependency tree for glass_mat");
+
+        let mut lighting1_nodes = Vec::new();
+        let mut lighting2_nodes = Vec::new();
+        collect_target_nodes_by_name(&doc, glass_mat, "lighting1", &mut lighting1_nodes);
+        collect_target_nodes_by_name(&doc, glass_mat, "lighting2", &mut lighting2_nodes);
+        assert!(
+            !lighting1_nodes.is_empty(),
+            "glass_mat dependency tree should include lighting1"
+        );
+        assert!(
+            !lighting2_nodes.is_empty(),
+            "glass_mat dependency tree should include lighting2"
+        );
+
+        let mut glass_nodes = Vec::new();
+        collect_target_nodes_by_name(&doc, glass_mat, "glass_mat", &mut glass_nodes);
+        let alpha_759_ranges = glass_nodes
+            .iter()
+            .filter_map(|node| node.source_range)
+            .filter(|range| {
+                range.line == 759
+                    && &doc.module_source[range.start_byte..range.end_byte] == "glass_mat.a"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            alpha_759_ranges.len(),
+            2,
+            "expected two distinct alpha references on line 759"
+        );
+        assert_ne!(alpha_759_ranges[0], alpha_759_ranges[1]);
+    }
+
+    #[test]
     fn function_call_argument_edges_keep_argument_dependency_trees_per_call_site() {
         let source = r#"
 fn foo(b: f32, c: f32) -> f32 {
@@ -3705,9 +4443,10 @@ fn fs_main() -> @location(0) f32 {
         assert_node_range_selects(&doc, latest_x, latest_start, "x");
 
         let previous_start = doc.module_source.find("x = foo(x);").unwrap();
-        assert_node_range_selects(&doc, previous_x, previous_start, "x");
+        let latest_reference_start = latest_start + "x = foo(".len();
+        assert_node_range_selects(&doc, previous_x, latest_reference_start, "x");
 
-        let initial_start = doc.module_source.find("var x").unwrap() + "var ".len();
-        assert_node_range_selects(&doc, initial_x, initial_start, "x");
+        let previous_reference_start = previous_start + "x = foo(".len();
+        assert_node_range_selects(&doc, initial_x, previous_reference_start, "x");
     }
 }

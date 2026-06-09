@@ -2731,6 +2731,87 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
+    fn local_reference_row_clicks_occurrence_and_src_jumps_to_declaration() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            r#"
+@fragment
+fn fs_main() -> @location(0) f32 {
+    let edge = 30.0;
+    let edge_sdf = edge + 1.0;
+    let aa_depth = edge * 2.0;
+    var final_alpha = smoothstep(0.0, aa_depth, -edge_sdf);
+    let out = 0.5 * final_alpha;
+    return out;
+}
+"#,
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let final_alpha_row =
+            dependency_row_by_label(&document.dependency_rows, "final_alpha (Multiply)").clone();
+
+        let occurrence_start =
+            document.draft_source.find("0.5 * final_alpha").unwrap() + "0.5 * ".len();
+        let row_range = final_alpha_row
+            .source_range
+            .expect("expected final_alpha row occurrence range");
+        assert_eq!(row_range.start_byte, occurrence_start);
+        assert_eq!(
+            &document.draft_source[row_range.start_byte..row_range.end_byte],
+            "final_alpha"
+        );
+        assert!(
+            document.dependency_rows.iter().any(|row| {
+                row.parent_row_key.as_deref() == Some(final_alpha_row.row_key.as_str())
+            }),
+            "final_alpha reference row should have dependency children"
+        );
+
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(final_alpha_row.row_key.clone()),
+                target_id: None,
+                source_range: None,
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected final_alpha row click to queue editor jump");
+        assert_eq!(jump.start_byte, occurrence_start);
+        assert_eq!(
+            &document.draft_source[jump.start_byte..jump.end_byte],
+            "final_alpha"
+        );
+
+        let source_jump_range = final_alpha_row
+            .source_jump_range
+            .expect("expected final_alpha row to expose declaration jump");
+        document.focus_tree_click(
+            PassDebugTreeClick {
+                row_key: Some(final_alpha_row.row_key.clone()),
+                target_id: None,
+                source_range: Some(source_jump_range),
+                toggle_row_key: None,
+            },
+            true,
+        );
+
+        let jump = document
+            .pending_editor_jump
+            .expect("expected src jump to queue editor jump");
+        let declaration_start =
+            document.draft_source.find("var final_alpha").unwrap() + "var ".len();
+        assert_eq!(jump.start_byte, declaration_start);
+        assert_eq!(
+            &document.draft_source[jump.start_byte..jump.end_byte],
+            "final_alpha"
+        );
+    }
+
+    #[test]
     fn reassigned_local_row_click_jumps_to_store_and_src_jumps_to_declaration() {
         let source = PassDebugSource::from_wgsl(
             "p",
