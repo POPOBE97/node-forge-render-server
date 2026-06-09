@@ -25,6 +25,11 @@ const TREE_ROW_SOURCE_JUMP_VERTICAL_PADDING: f32 = 2.0;
 const PASS_DEBUG_CLOSE_RESIZE_DELTA_THRESHOLD: f32 = 48.0;
 const PASS_DEBUG_TREE_FONT_SIZE: f32 = 13.0;
 const PASS_DEBUG_CODE_FONT_SIZE: f32 = 14.0;
+const PASS_DEBUG_WINDOW_DEFAULT_WIDTH: f32 = 1180.0;
+const PASS_DEBUG_WINDOW_DEFAULT_HEIGHT: f32 = 760.0;
+const PASS_DEBUG_WINDOW_MIN_WIDTH: f32 = 640.0;
+const PASS_DEBUG_WINDOW_MIN_HEIGHT: f32 = 360.0;
+const PASS_DEBUG_DRAFT_ANALYSIS_DEBOUNCE_SECS: f64 = 0.150;
 
 #[derive(Clone, Debug)]
 pub enum PassDebugWindowAction {
@@ -52,6 +57,70 @@ struct PassDebugTreeClick {
     target_id: Option<String>,
     source_range: Option<PassDebugSourceRange>,
     toggle_row_key: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugHighlightCache {
+    draft_revision: u64,
+    source_text: Arc<str>,
+    base_layout_job: egui::text::LayoutJob,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugExpandableRowsCache {
+    rows_generation: u64,
+    row_keys: HashSet<String>,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugVisibleRowsCache {
+    rows_generation: u64,
+    expansion_generation: u64,
+    row_indices: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugTreeWidthCache {
+    rows_generation: u64,
+    intrinsic_width: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PassDebugViewportSnapshot {
+    inner_rect: Option<egui::Rect>,
+    outer_rect: Option<egui::Rect>,
+    monitor_size: Option<egui::Vec2>,
+    native_pixels_per_point: Option<f32>,
+    focused: Option<bool>,
+    visible: Option<bool>,
+}
+
+impl PassDebugViewportSnapshot {
+    fn from_info(info: &egui::ViewportInfo) -> Self {
+        Self {
+            inner_rect: info.inner_rect,
+            outer_rect: info.outer_rect,
+            monitor_size: info.monitor_size,
+            native_pixels_per_point: info.native_pixels_per_point,
+            focused: info.focused,
+            visible: info.visible(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PassDebugCloseDecision {
+    Accept,
+    Cancel(PassDebugCloseCancelReason),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PassDebugCloseCancelReason {
+    FocusLost,
+    Hidden,
+    MonitorChanged,
+    ScaleChanged,
+    ViewportJumped,
 }
 
 trait PassDebugTreeRow {
@@ -119,6 +188,14 @@ pub struct PassDebugWindowDocument {
     pending_dependency_reveal_row_key: Option<String>,
     pub draft_source: String,
     loaded_source: String,
+    draft_revision: u64,
+    draft_analysis_due_secs: Option<f64>,
+    highlight_cache: Option<PassDebugHighlightCache>,
+    dependency_rows_generation: u64,
+    dependency_expansion_generation: u64,
+    dependency_expandable_row_keys_cache: Option<PassDebugExpandableRowsCache>,
+    visible_dependency_row_indices_cache: Option<PassDebugVisibleRowsCache>,
+    dependency_tree_width_cache: Option<PassDebugTreeWidthCache>,
     dirty: bool,
     patch_active: bool,
     last_error: Option<String>,
@@ -152,6 +229,14 @@ impl PassDebugWindowDocument {
             pending_dependency_reveal_row_key: None,
             draft_source: loaded_source.clone(),
             loaded_source,
+            draft_revision: 0,
+            draft_analysis_due_secs: None,
+            highlight_cache: None,
+            dependency_rows_generation: 0,
+            dependency_expansion_generation: 0,
+            dependency_expandable_row_keys_cache: None,
+            visible_dependency_row_indices_cache: None,
+            dependency_tree_width_cache: None,
             dirty: false,
             patch_active,
             last_error: None,
@@ -159,6 +244,76 @@ impl PassDebugWindowDocument {
         };
         document.refresh_analysis_rows();
         document
+    }
+
+    fn replace_draft_source(&mut self, next_source: String) {
+        if self.draft_source == next_source {
+            return;
+        }
+        self.draft_source = next_source;
+        self.invalidate_draft_render_cache();
+    }
+
+    fn invalidate_draft_render_cache(&mut self) {
+        self.draft_revision = self.draft_revision.wrapping_add(1);
+        self.highlight_cache = None;
+    }
+
+    fn mark_draft_edited(&mut self, now_secs: f64) {
+        self.invalidate_draft_render_cache();
+        self.dirty = self.draft_source != self.loaded_source;
+        self.last_status = None;
+        self.schedule_draft_analysis(now_secs);
+    }
+
+    fn schedule_draft_analysis(&mut self, now_secs: f64) {
+        self.draft_analysis_due_secs = Some(now_secs + PASS_DEBUG_DRAFT_ANALYSIS_DEBOUNCE_SECS);
+    }
+
+    fn maybe_refresh_pending_draft_analysis(&mut self, now_secs: f64) {
+        let Some(due_secs) = self.draft_analysis_due_secs else {
+            return;
+        };
+        if now_secs >= due_secs {
+            self.refresh_draft_analysis();
+        }
+    }
+
+    fn cached_base_layout_job(&mut self, ui: &egui::Ui) -> (Arc<str>, egui::text::LayoutJob) {
+        let cache_valid = self
+            .highlight_cache
+            .as_ref()
+            .map(|cache| {
+                cache.draft_revision == self.draft_revision
+                    && cache.source_text.as_ref() == self.draft_source.as_str()
+            })
+            .unwrap_or(false);
+
+        if !cache_valid {
+            let theme =
+                egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
+            let base_layout_job = egui_extras::syntax_highlighting::highlight(
+                ui.ctx(),
+                ui.style(),
+                &theme,
+                self.draft_source.as_str(),
+                "rust",
+            );
+            self.highlight_cache = Some(PassDebugHighlightCache {
+                draft_revision: self.draft_revision,
+                source_text: Arc::from(self.draft_source.as_str()),
+                base_layout_job,
+            });
+        }
+
+        let cache = self
+            .highlight_cache
+            .as_ref()
+            .expect("highlight cache must be initialized");
+        (
+            Arc::clone(&cache.source_text),
+            cache.base_layout_job.clone(),
+        )
     }
 
     fn update_source(
@@ -178,17 +333,19 @@ impl PassDebugWindowDocument {
         if !self.dirty {
             let Some(next_source_text) = source.map(|s| s.module_source.clone()) else {
                 self.loaded_source.clear();
-                self.draft_source.clear();
+                self.replace_draft_source(String::new());
                 self.analysis_source = None;
                 self.analysis_source_text.clear();
+                self.draft_analysis_due_secs = None;
                 self.refresh_analysis_rows();
                 self.last_error = None;
                 return;
             };
             self.loaded_source = next_source_text.clone();
-            self.draft_source = next_source_text.clone();
+            self.replace_draft_source(next_source_text.clone());
             self.analysis_source = source.cloned();
             self.analysis_source_text = next_source_text;
+            self.draft_analysis_due_secs = None;
             self.refresh_analysis_rows();
             self.last_error = None;
         } else {
@@ -206,9 +363,10 @@ impl PassDebugWindowDocument {
         self.source_revision = Some(source_revision);
         self.source = source.cloned();
         self.loaded_source = draft_source.clone();
-        self.draft_source = draft_source;
+        self.replace_draft_source(draft_source);
         self.analysis_source = source.cloned();
         self.analysis_source_text = self.draft_source.clone();
+        self.draft_analysis_due_secs = None;
         self.refresh_analysis_rows();
         self.dirty = false;
         self.patch_active = true;
@@ -226,13 +384,14 @@ impl PassDebugWindowDocument {
         self.source = source.cloned();
         if let Some(source) = source {
             self.loaded_source = source.module_source.clone();
-            self.draft_source = source.module_source.clone();
+            self.replace_draft_source(source.module_source.clone());
             self.analysis_source = Some(source.clone());
             self.analysis_source_text = self.draft_source.clone();
         } else {
             self.analysis_source = None;
             self.analysis_source_text.clear();
         }
+        self.draft_analysis_due_secs = None;
         self.refresh_analysis_rows();
         self.dirty = false;
         self.patch_active = false;
@@ -242,6 +401,7 @@ impl PassDebugWindowDocument {
 
     fn refresh_draft_analysis(&mut self) {
         if self.analysis_source_text == self.draft_source {
+            self.draft_analysis_due_secs = None;
             return;
         }
         self.analysis_source = Some(PassDebugSource::from_wgsl(
@@ -249,6 +409,7 @@ impl PassDebugWindowDocument {
             self.draft_source.clone(),
         ));
         self.analysis_source_text = self.draft_source.clone();
+        self.draft_analysis_due_secs = None;
         self.refresh_analysis_rows();
     }
 
@@ -257,12 +418,25 @@ impl PassDebugWindowDocument {
         self.refresh_dependency_rows();
     }
 
+    fn invalidate_dependency_row_caches(&mut self) {
+        self.dependency_rows_generation = self.dependency_rows_generation.wrapping_add(1);
+        self.dependency_expandable_row_keys_cache = None;
+        self.visible_dependency_row_indices_cache = None;
+        self.dependency_tree_width_cache = None;
+    }
+
+    fn invalidate_dependency_visibility_cache(&mut self) {
+        self.dependency_expansion_generation = self.dependency_expansion_generation.wrapping_add(1);
+        self.visible_dependency_row_indices_cache = None;
+    }
+
     fn ensure_navigation_targets(&mut self) {
         let Some(source) = self.analysis_source.as_ref() else {
             self.focused_target_id = None;
             self.focused_dependency_row_key = None;
             self.dependency_root_target_id = None;
             self.dependency_expanded_row_keys.clear();
+            self.invalidate_dependency_visibility_cache();
             self.pending_editor_jump = None;
             self.pending_dependency_reveal_row_key = None;
             return;
@@ -310,6 +484,7 @@ impl PassDebugWindowDocument {
                     })
             })
             .unwrap_or_default();
+        self.invalidate_dependency_row_caches();
         self.ensure_focused_dependency_row();
         self.prune_dependency_expansion();
         self.ensure_dependency_root_expanded();
@@ -549,32 +724,58 @@ impl PassDebugWindowDocument {
             .map(|(_, row_key)| row_key)
     }
 
+    #[cfg(test)]
     fn dependency_expandable_row_keys(&self) -> HashSet<String> {
+        self.compute_dependency_expandable_row_keys()
+    }
+
+    fn compute_dependency_expandable_row_keys(&self) -> HashSet<String> {
         self.dependency_rows
             .iter()
             .filter_map(|row| row.parent_row_key.clone())
             .collect()
     }
 
+    fn ensure_dependency_expandable_row_keys_cache(&mut self) {
+        let cache_valid = self
+            .dependency_expandable_row_keys_cache
+            .as_ref()
+            .map(|cache| cache.rows_generation == self.dependency_rows_generation)
+            .unwrap_or(false);
+        if !cache_valid {
+            self.dependency_expandable_row_keys_cache = Some(PassDebugExpandableRowsCache {
+                rows_generation: self.dependency_rows_generation,
+                row_keys: self.compute_dependency_expandable_row_keys(),
+            });
+        }
+    }
+
     fn reset_dependency_expansion_to_root(&mut self) {
         self.dependency_expanded_row_keys.clear();
+        self.invalidate_dependency_visibility_cache();
         self.ensure_dependency_root_expanded();
     }
 
     fn ensure_dependency_root_expanded(&mut self) {
         if let Some(root_row_key) = self.dependency_rows.first().map(|row| row.row_key.clone()) {
-            self.dependency_expanded_row_keys.insert(root_row_key);
+            if self.dependency_expanded_row_keys.insert(root_row_key) {
+                self.invalidate_dependency_visibility_cache();
+            }
         }
     }
 
     fn prune_dependency_expansion(&mut self) {
-        let expandable_row_keys = self.dependency_expandable_row_keys();
+        let expandable_row_keys = self.compute_dependency_expandable_row_keys();
+        let before_len = self.dependency_expanded_row_keys.len();
         self.dependency_expanded_row_keys
             .retain(|row_key| expandable_row_keys.contains(row_key));
+        if self.dependency_expanded_row_keys.len() != before_len {
+            self.invalidate_dependency_visibility_cache();
+        }
     }
 
     fn toggle_dependency_row_expanded(&mut self, row_key: &str) {
-        let expandable_row_keys = self.dependency_expandable_row_keys();
+        let expandable_row_keys = self.compute_dependency_expandable_row_keys();
         if !expandable_row_keys.contains(row_key) {
             return;
         }
@@ -582,6 +783,7 @@ impl PassDebugWindowDocument {
             self.dependency_expanded_row_keys
                 .insert(row_key.to_string());
         }
+        self.invalidate_dependency_visibility_cache();
     }
 
     fn reveal_dependency_row_key(&mut self, row_key: &str, collapse_to_path: bool) {
@@ -589,25 +791,107 @@ impl PassDebugWindowDocument {
         if path.is_empty() {
             return;
         }
-        let expandable_row_keys = self.dependency_expandable_row_keys();
+        let expandable_row_keys = self.compute_dependency_expandable_row_keys();
         let ancestor_keys = path
             .iter()
             .take(path.len().saturating_sub(1))
             .filter(|row_key| expandable_row_keys.contains(*row_key))
             .cloned()
             .collect::<HashSet<_>>();
+        let before = self.dependency_expanded_row_keys.clone();
         if collapse_to_path {
             self.dependency_expanded_row_keys = ancestor_keys;
         } else {
             self.dependency_expanded_row_keys.extend(ancestor_keys);
         }
+        if self.dependency_expanded_row_keys != before {
+            self.invalidate_dependency_visibility_cache();
+        }
         self.ensure_dependency_root_expanded();
     }
 
+    #[cfg(test)]
     fn visible_dependency_rows(&self) -> Vec<PassDebugDependencyRow> {
+        self.compute_visible_dependency_row_indices()
+            .into_iter()
+            .map(|index| self.dependency_rows[index].clone())
+            .collect()
+    }
+
+    fn cached_visible_dependency_row_indices(&mut self) -> &[usize] {
+        let cache_valid = self
+            .visible_dependency_row_indices_cache
+            .as_ref()
+            .map(|cache| {
+                cache.rows_generation == self.dependency_rows_generation
+                    && cache.expansion_generation == self.dependency_expansion_generation
+            })
+            .unwrap_or(false);
+        if !cache_valid {
+            self.visible_dependency_row_indices_cache = Some(PassDebugVisibleRowsCache {
+                rows_generation: self.dependency_rows_generation,
+                expansion_generation: self.dependency_expansion_generation,
+                row_indices: self.compute_visible_dependency_row_indices(),
+            });
+        }
+        &self
+            .visible_dependency_row_indices_cache
+            .as_ref()
+            .expect("visible dependency row cache must be initialized")
+            .row_indices
+    }
+
+    fn cached_dependency_tree_intrinsic_width(
+        &mut self,
+        ui: &egui::Ui,
+        font_id: &egui::FontId,
+    ) -> f32 {
+        let cache_valid = self
+            .dependency_tree_width_cache
+            .as_ref()
+            .map(|cache| cache.rows_generation == self.dependency_rows_generation)
+            .unwrap_or(false);
+        if !cache_valid {
+            let text_color = ui.visuals().text_color();
+            let source_jump_button_width = source_jump_button_size(ui, font_id).x;
+            let intrinsic_width = self
+                .dependency_rows
+                .iter()
+                .map(|row| {
+                    let indent = row.depth as f32 * TREE_ROW_INDENT_WIDTH;
+                    let toggle_slot = TREE_ROW_INDENT_WIDTH;
+                    let label_width = ui
+                        .painter()
+                        .layout_no_wrap(row.label.clone(), font_id.clone(), text_color)
+                        .size()
+                        .x;
+                    let source_jump_width = if row.source_jump_range.is_some() {
+                        TREE_ROW_SOURCE_JUMP_GAP + source_jump_button_width
+                    } else {
+                        0.0
+                    };
+                    indent
+                        + toggle_slot
+                        + label_width
+                        + source_jump_width
+                        + TREE_ROW_TRAILING_PADDING
+                })
+                .fold(0.0, f32::max);
+            self.dependency_tree_width_cache = Some(PassDebugTreeWidthCache {
+                rows_generation: self.dependency_rows_generation,
+                intrinsic_width,
+            });
+        }
+        self.dependency_tree_width_cache
+            .as_ref()
+            .map(|cache| cache.intrinsic_width)
+            .unwrap_or(0.0)
+    }
+
+    fn compute_visible_dependency_row_indices(&self) -> Vec<usize> {
         let mut visible_rows = Vec::new();
         let mut hidden_depth: Option<usize> = None;
-        for row in &self.dependency_rows {
+        for (row_index, row) in self.dependency_rows.iter().enumerate() {
             if let Some(depth) = hidden_depth {
                 if row.depth > depth {
                     continue;
@@ -615,7 +899,7 @@ impl PassDebugWindowDocument {
                 hidden_depth = None;
             }
 
-            visible_rows.push(row.clone());
+            visible_rows.push(row_index);
             if self
                 .dependency_rows
                 .iter()
@@ -682,7 +966,8 @@ pub struct PassDebugWindowState {
     document: Arc<Mutex<PassDebugWindowDocument>>,
     close_requested: Arc<AtomicBool>,
     pending_actions: Arc<Mutex<Vec<PassDebugWindowAction>>>,
-    last_viewport_inner_rect: Arc<Mutex<Option<egui::Rect>>>,
+    last_viewport_snapshot: Arc<Mutex<Option<PassDebugViewportSnapshot>>>,
+    viewport_initialized: bool,
     focus_requested: bool,
 }
 
@@ -703,7 +988,8 @@ impl PassDebugWindowState {
             ))),
             close_requested: Arc::new(AtomicBool::new(false)),
             pending_actions: Arc::new(Mutex::new(Vec::new())),
-            last_viewport_inner_rect: Arc::new(Mutex::new(None)),
+            last_viewport_snapshot: Arc::new(Mutex::new(None)),
+            viewport_initialized: false,
             pass_name,
             viewport_id,
             focus_requested: true,
@@ -729,6 +1015,29 @@ impl PassDebugWindowState {
 }
 
 pub type PassDebugWindowMap = HashMap<String, PassDebugWindowState>;
+
+fn pass_debug_default_window_size() -> egui::Vec2 {
+    egui::vec2(
+        PASS_DEBUG_WINDOW_DEFAULT_WIDTH,
+        PASS_DEBUG_WINDOW_DEFAULT_HEIGHT,
+    )
+}
+
+fn pass_debug_min_window_size() -> egui::Vec2 {
+    egui::vec2(PASS_DEBUG_WINDOW_MIN_WIDTH, PASS_DEBUG_WINDOW_MIN_HEIGHT)
+}
+
+fn pass_debug_viewport_builder(title: String, include_initial_size: bool) -> egui::ViewportBuilder {
+    let builder = egui::ViewportBuilder::default()
+        .with_title(title)
+        .with_min_inner_size(pass_debug_min_window_size());
+
+    if include_initial_size {
+        builder.with_inner_size(pass_debug_default_window_size())
+    } else {
+        builder
+    }
+}
 
 pub fn open_pass_debug_window(
     windows: &mut PassDebugWindowMap,
@@ -779,12 +1088,11 @@ pub fn show_pass_debug_windows(
         let document = Arc::clone(&state.document);
         let close_requested = Arc::clone(&state.close_requested);
         let pending_actions = Arc::clone(&state.pending_actions);
-        let last_viewport_inner_rect = Arc::clone(&state.last_viewport_inner_rect);
+        let last_viewport_snapshot = Arc::clone(&state.last_viewport_snapshot);
         let title = format!("RenderPass Debug - {}", state.pass_name);
-        let viewport_builder = egui::ViewportBuilder::default()
-            .with_title(title.clone())
-            .with_inner_size(egui::vec2(1180.0, 760.0))
-            .with_min_inner_size(egui::vec2(640.0, 360.0));
+        let viewport_builder =
+            pass_debug_viewport_builder(title.clone(), !state.viewport_initialized);
+        state.viewport_initialized = true;
 
         ctx.show_viewport_deferred(
             viewport_id,
@@ -795,7 +1103,7 @@ pub fn show_pass_debug_windows(
                     egui::Window::new(title.as_str())
                         .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
                         .open(&mut open)
-                        .default_size(egui::vec2(1180.0, 760.0))
+                        .default_size(pass_debug_default_window_size())
                         .show(ui.ctx(), |window_ui| {
                             render_pass_debug_embedded_content(
                                 window_ui,
@@ -811,7 +1119,7 @@ pub fn show_pass_debug_windows(
                     if handle_pass_debug_viewport_close_request(
                         ui.ctx(),
                         &close_requested,
-                        &last_viewport_inner_rect,
+                        &last_viewport_snapshot,
                     ) {
                         return;
                     }
@@ -896,28 +1204,33 @@ pub fn record_all_patch_error(windows: &mut PassDebugWindowMap, error: String) {
 fn handle_pass_debug_viewport_close_request(
     ctx: &egui::Context,
     close_requested: &AtomicBool,
-    last_inner_rect: &Mutex<Option<egui::Rect>>,
+    last_snapshot: &Mutex<Option<PassDebugViewportSnapshot>>,
 ) -> bool {
     let viewport = ctx.input(|input| input.viewport().clone());
-    let previous_inner_rect = last_inner_rect.lock().ok().and_then(|guard| *guard);
-    if let Ok(mut guard) = last_inner_rect.lock() {
-        *guard = viewport.inner_rect;
+    let current_snapshot = PassDebugViewportSnapshot::from_info(&viewport);
+    let previous_snapshot = last_snapshot.lock().ok().and_then(|guard| *guard);
+    if let Ok(mut guard) = last_snapshot.lock() {
+        *guard = Some(current_snapshot);
     }
 
     if !viewport.close_requested() {
         return false;
     }
 
-    if is_close_request_during_large_viewport_resize(previous_inner_rect, viewport.inner_rect) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        return false;
+    match classify_pass_debug_close_request(previous_snapshot, current_snapshot) {
+        PassDebugCloseDecision::Accept => {
+            close_requested.store(true, Ordering::Relaxed);
+            true
+        }
+        PassDebugCloseDecision::Cancel(reason) => {
+            eprintln!("[pass-debug] canceling transient close request: {reason:?}");
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            false
+        }
     }
-
-    close_requested.store(true, Ordering::Relaxed);
-    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-    true
 }
 
+#[cfg(test)]
 fn is_close_request_during_large_viewport_resize(
     previous: Option<egui::Rect>,
     current: Option<egui::Rect>,
@@ -928,6 +1241,62 @@ fn is_close_request_during_large_viewport_resize(
     let width_delta = (previous.width() - current.width()).abs();
     let height_delta = (previous.height() - current.height()).abs();
     width_delta.max(height_delta) >= PASS_DEBUG_CLOSE_RESIZE_DELTA_THRESHOLD
+}
+
+fn classify_pass_debug_close_request(
+    previous: Option<PassDebugViewportSnapshot>,
+    current: PassDebugViewportSnapshot,
+) -> PassDebugCloseDecision {
+    if current.focused == Some(false) {
+        return PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::FocusLost);
+    }
+
+    if current.visible == Some(false) {
+        return PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::Hidden);
+    }
+
+    let Some(previous) = previous else {
+        return PassDebugCloseDecision::Accept;
+    };
+
+    if previous.monitor_size != current.monitor_size {
+        return PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::MonitorChanged);
+    }
+
+    if viewport_scale_changed(
+        previous.native_pixels_per_point,
+        current.native_pixels_per_point,
+    ) {
+        return PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::ScaleChanged);
+    }
+
+    if viewport_rect_jumped(previous.inner_rect, current.inner_rect)
+        || viewport_rect_jumped(previous.outer_rect, current.outer_rect)
+    {
+        return PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::ViewportJumped);
+    }
+
+    PassDebugCloseDecision::Accept
+}
+
+fn viewport_scale_changed(previous: Option<f32>, current: Option<f32>) -> bool {
+    match (previous, current) {
+        (Some(previous), Some(current)) => {
+            (previous - current).abs() >= f32::EPSILON && current.is_finite()
+        }
+        _ => false,
+    }
+}
+
+fn viewport_rect_jumped(previous: Option<egui::Rect>, current: Option<egui::Rect>) -> bool {
+    let (Some(previous), Some(current)) = (previous, current) else {
+        return false;
+    };
+    let position_delta = previous.min.distance(current.min);
+    let size_delta = (previous.width() - current.width())
+        .abs()
+        .max((previous.height() - current.height()).abs());
+    position_delta.max(size_delta) >= PASS_DEBUG_CLOSE_RESIZE_DELTA_THRESHOLD
 }
 
 fn render_pass_debug_viewport(
@@ -1041,33 +1410,49 @@ fn render_dependency_rows(ui: &mut egui::Ui, document: &mut PassDebugWindowDocum
         &document.dependency_rows,
     );
     let path_row_keys = document.dependency_focus_path_row_keys();
-    let visible_dependency_rows = document.visible_dependency_rows();
-    let expandable_row_keys = document.dependency_expandable_row_keys();
-    let tree_state = PassDebugTreeRenderState {
-        focused_target_id: document.focused_target_id.as_deref(),
-        focused_row_key: document.focused_dependency_row_key.as_deref(),
-        reveal_row_key: reveal_row_key.as_deref(),
-        path_row_keys: &path_row_keys,
-        expandable_row_keys: Some(&expandable_row_keys),
-        expanded_row_keys: Some(&document.dependency_expanded_row_keys),
+    let visible_dependency_row_indices = document.cached_visible_dependency_row_indices().to_vec();
+    let font_id = pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE);
+    let content_width = document.cached_dependency_tree_intrinsic_width(ui, &font_id);
+    document.ensure_dependency_expandable_row_keys_cache();
+    let click = {
+        let expandable_row_keys = &document
+            .dependency_expandable_row_keys_cache
+            .as_ref()
+            .expect("dependency expandable row cache must be initialized")
+            .row_keys;
+        let tree_state = PassDebugTreeRenderState {
+            focused_target_id: document.focused_target_id.as_deref(),
+            focused_row_key: document.focused_dependency_row_key.as_deref(),
+            reveal_row_key: reveal_row_key.as_deref(),
+            path_row_keys: &path_row_keys,
+            expandable_row_keys: Some(expandable_row_keys),
+            expanded_row_keys: Some(&document.dependency_expanded_row_keys),
+        };
+        render_scrollable_tree_rows(
+            ui,
+            egui::Id::new(("pass-debug-dependencies", document.pass_name.as_str())),
+            &document.dependency_rows,
+            &visible_dependency_row_indices,
+            &tree_state,
+            &font_id,
+            content_width,
+        )
     };
-    if let Some(click) = render_scrollable_tree_rows(
-        ui,
-        egui::Id::new(("pass-debug-dependencies", document.pass_name.as_str())),
-        &visible_dependency_rows,
-        &tree_state,
-    ) {
+    if let Some(click) = click {
+        document.refresh_draft_analysis();
         document.focus_tree_click(click, true);
     }
 }
 
-fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
+fn render_scrollable_tree_rows(
     ui: &mut egui::Ui,
     id: egui::Id,
-    rows: &[Row],
+    rows: &[PassDebugDependencyRow],
+    row_indices: &[usize],
     tree_state: &PassDebugTreeRenderState<'_>,
+    font_id: &egui::FontId,
+    intrinsic_content_width: f32,
 ) -> Option<PassDebugTreeClick> {
-    let font_id = pass_debug_mono_font(PASS_DEBUG_TREE_FONT_SIZE);
     let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font_id));
     let row_height_with_spacing = row_height + ui.spacing().item_spacing.y;
     let mut clicked_row: Option<PassDebugTreeClick> = None;
@@ -1076,18 +1461,19 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
         .id_salt(id)
         .auto_shrink([false, false])
         .show_viewport(ui, |ui, viewport| {
-            let total_height = row_height_with_spacing * rows.len() as f32;
-            let content_width = tree_rows_content_width(ui, rows, tree_state, &font_id);
+            let total_height = row_height_with_spacing * row_indices.len() as f32;
+            let content_width = ui.available_width().max(intrinsic_content_width).max(0.0);
             ui.set_min_size(egui::vec2(content_width, total_height));
 
             let min_row = (viewport.min.y / row_height_with_spacing).floor().max(0.0) as usize;
-            let max_row =
-                ((viewport.max.y / row_height_with_spacing).ceil() as usize + 1).min(rows.len());
+            let max_row = ((viewport.max.y / row_height_with_spacing).ceil() as usize + 1)
+                .min(row_indices.len());
             let content_origin = ui.min_rect().min;
 
             let reveal_row_index = tree_state.reveal_row_key.and_then(|reveal_row_key| {
-                rows.iter().position(|row| {
-                    row.row_key()
+                row_indices.iter().position(|row_index| {
+                    rows[*row_index]
+                        .row_key()
                         .map(|row_key| row_key == reveal_row_key)
                         .unwrap_or(false)
                 })
@@ -1105,7 +1491,7 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
             }
 
             for row_index in min_row..max_row {
-                let row = &rows[row_index];
+                let row = &rows[row_indices[row_index]];
                 let row_top = content_origin.y + row_index as f32 * row_height_with_spacing;
                 let row_rect = egui::Rect::from_min_size(
                     egui::pos2(content_origin.x, row_top),
@@ -1276,40 +1662,6 @@ fn render_scrollable_tree_rows<Row: PassDebugTreeRow>(
         });
 
     clicked_row
-}
-
-fn tree_rows_content_width<Row: PassDebugTreeRow>(
-    ui: &egui::Ui,
-    rows: &[Row],
-    tree_state: &PassDebugTreeRenderState<'_>,
-    font_id: &egui::FontId,
-) -> f32 {
-    let available_width = ui.available_width().max(0.0);
-    let text_color = ui.visuals().text_color();
-
-    rows.iter()
-        .map(|row| {
-            let indent = row.depth() as f32 * TREE_ROW_INDENT_WIDTH;
-            let toggle_slot = if tree_state.expandable_row_keys.is_some() && row.row_key().is_some()
-            {
-                TREE_ROW_INDENT_WIDTH
-            } else {
-                0.0
-            };
-            let label_width = ui
-                .painter()
-                .layout_no_wrap(row.label().to_string(), font_id.clone(), text_color)
-                .size()
-                .x;
-            let source_jump_width = if row.source_jump_range().is_some() {
-                TREE_ROW_SOURCE_JUMP_GAP + source_jump_button_size(ui, font_id).x
-            } else {
-                0.0
-            };
-
-            indent + toggle_slot + label_width + source_jump_width + TREE_ROW_TRAILING_PADDING
-        })
-        .fold(available_width, f32::max)
 }
 
 fn source_jump_button_size(ui: &egui::Ui, font_id: &egui::FontId) -> egui::Vec2 {
@@ -1487,8 +1839,9 @@ fn render_pass_debug_toolbar(
                 .add_enabled(document.dirty, egui::Button::new("Revert Draft"))
                 .clicked()
             {
-                document.draft_source = document.loaded_source.clone();
+                document.replace_draft_source(document.loaded_source.clone());
                 document.dirty = false;
+                document.refresh_draft_analysis();
                 document.last_error = None;
                 document.last_status = Some("Draft reverted".to_string());
             }
@@ -1496,6 +1849,7 @@ fn render_pass_debug_toolbar(
                 .add_enabled(document.dirty, egui::Button::new("Apply"))
                 .clicked();
             if apply_clicked || (save_requested && document.dirty) {
+                document.refresh_draft_analysis();
                 document.last_error = None;
                 document.last_status = Some("Applying patch...".to_string());
                 push_action(
@@ -1621,16 +1975,24 @@ fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWin
 }
 
 fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
+    let now_secs = ui.input(|input| input.time);
+    document.maybe_refresh_pending_draft_analysis(now_secs);
     let focused_source_range = document.focused_source_range();
-    let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-        let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
-        let mut layout_job = egui_extras::syntax_highlighting::highlight(
-            ui.ctx(),
-            ui.style(),
-            &theme,
-            buf.as_str(),
-            "rust",
-        );
+    let (cached_source_text, cached_base_layout_job) = document.cached_base_layout_job(ui);
+    let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+        let mut layout_job = if cached_source_text.as_ref() == buf.as_str() {
+            cached_base_layout_job.clone()
+        } else {
+            let theme =
+                egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
+            egui_extras::syntax_highlighting::highlight(
+                ui.ctx(),
+                ui.style(),
+                &theme,
+                buf.as_str(),
+                "rust",
+            )
+        };
         if let Some(source_range) = focused_source_range {
             apply_layout_job_highlight(
                 &mut layout_job,
@@ -1661,16 +2023,15 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
 
                 let output = editor.show(ui);
                 if output.response.changed() {
-                    document.dirty = document.draft_source != document.loaded_source;
-                    document.last_status = None;
-                    document.refresh_draft_analysis();
+                    document.mark_draft_edited(now_secs);
                 }
                 if let Some(source_range) = document.pending_editor_jump.take() {
                     jump_editor_to_source_range(ui, &output, &document.draft_source, source_range);
                 }
-                if (output.response.clicked() || output.response.changed())
+                if output.response.clicked()
                     && let Some(cursor_range) = output.cursor_range
                 {
+                    document.refresh_draft_analysis();
                     document.focus_target_at_char_index(cursor_range.primary.index);
                 }
             });
@@ -2068,9 +2429,11 @@ mod tests {
     use rust_wgpu_fiber::eframe::egui;
 
     use super::{
-        PassDebugDependencyRow, PassDebugTreeClick, PassDebugWindowDocument,
-        byte_index_to_char_index, dependency_path_for_row_key, flatten_dependency_tree,
-        is_close_request_during_large_viewport_resize,
+        PassDebugCloseCancelReason, PassDebugCloseDecision, PassDebugDependencyRow,
+        PassDebugTreeClick, PassDebugViewportSnapshot, PassDebugWindowDocument,
+        byte_index_to_char_index, classify_pass_debug_close_request, dependency_path_for_row_key,
+        flatten_dependency_tree, is_close_request_during_large_viewport_resize,
+        pass_debug_viewport_builder,
     };
     use crate::renderer::{
         PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource, PassDebugSourceRange,
@@ -2170,6 +2533,44 @@ mod tests {
             })
     }
 
+    fn viewport_snapshot(
+        inner_rect: egui::Rect,
+        outer_rect: egui::Rect,
+    ) -> PassDebugViewportSnapshot {
+        PassDebugViewportSnapshot {
+            inner_rect: Some(inner_rect),
+            outer_rect: Some(outer_rect),
+            monitor_size: Some(egui::vec2(1440.0, 900.0)),
+            native_pixels_per_point: Some(2.0),
+            focused: Some(true),
+            visible: Some(true),
+        }
+    }
+
+    #[test]
+    fn debug_viewport_builder_only_sets_default_size_initially() {
+        let first = pass_debug_viewport_builder("Debug".to_string(), true);
+        assert_eq!(
+            first.inner_size,
+            Some(egui::vec2(
+                super::PASS_DEBUG_WINDOW_DEFAULT_WIDTH,
+                super::PASS_DEBUG_WINDOW_DEFAULT_HEIGHT
+            ))
+        );
+        assert_eq!(
+            first.min_inner_size,
+            Some(egui::vec2(
+                super::PASS_DEBUG_WINDOW_MIN_WIDTH,
+                super::PASS_DEBUG_WINDOW_MIN_HEIGHT
+            ))
+        );
+
+        let subsequent = pass_debug_viewport_builder("Debug".to_string(), false);
+        assert_eq!(subsequent.inner_size, None);
+        assert_eq!(subsequent.title.as_deref(), Some("Debug"));
+        assert_eq!(subsequent.min_inner_size, first.min_inner_size);
+    }
+
     #[test]
     fn close_request_resize_guard_only_matches_large_size_changes() {
         let previous = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(800.0, 600.0));
@@ -2189,6 +2590,64 @@ mod tests {
             None,
             Some(maximized),
         ));
+    }
+
+    #[test]
+    fn stable_focused_close_request_is_accepted() {
+        let rect = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(800.0, 600.0));
+        let snapshot = viewport_snapshot(rect, rect);
+
+        assert_eq!(
+            classify_pass_debug_close_request(Some(snapshot), snapshot),
+            PassDebugCloseDecision::Accept
+        );
+    }
+
+    #[test]
+    fn transient_close_requests_are_canceled_during_focus_or_display_changes() {
+        let previous_inner =
+            egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(800.0, 600.0));
+        let previous_outer =
+            egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(820.0, 640.0));
+        let previous = viewport_snapshot(previous_inner, previous_outer);
+
+        let mut focus_lost = previous;
+        focus_lost.focused = Some(false);
+        assert_eq!(
+            classify_pass_debug_close_request(Some(previous), focus_lost),
+            PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::FocusLost)
+        );
+
+        let mut hidden = previous;
+        hidden.visible = Some(false);
+        assert_eq!(
+            classify_pass_debug_close_request(Some(previous), hidden),
+            PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::Hidden)
+        );
+
+        let mut monitor_changed = previous;
+        monitor_changed.monitor_size = Some(egui::vec2(2560.0, 1440.0));
+        assert_eq!(
+            classify_pass_debug_close_request(Some(previous), monitor_changed),
+            PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::MonitorChanged)
+        );
+
+        let mut scale_changed = previous;
+        scale_changed.native_pixels_per_point = Some(1.0);
+        assert_eq!(
+            classify_pass_debug_close_request(Some(previous), scale_changed),
+            PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::ScaleChanged)
+        );
+
+        let mut jumped = previous;
+        jumped.outer_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(1200.0, 10.0),
+            egui::vec2(820.0, 640.0),
+        ));
+        assert_eq!(
+            classify_pass_debug_close_request(Some(previous), jumped),
+            PassDebugCloseDecision::Cancel(PassDebugCloseCancelReason::ViewportJumped)
+        );
     }
 
     #[test]
@@ -2275,6 +2734,84 @@ mod tests {
         );
         assert!(has_target_named(&document, "draft"));
         assert!(!has_target_named(&document, "generated"));
+    }
+
+    #[test]
+    fn draft_analysis_refresh_is_debounced_until_due_time() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            "fn a() -> f32 { var before: f32 = 0.0; return before; }\n",
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        document.replace_draft_source(
+            "fn a() -> f32 { var after: f32 = 1.0; return after; }\n".to_string(),
+        );
+        document.mark_draft_edited(10.0);
+
+        document.maybe_refresh_pending_draft_analysis(10.10);
+        assert!(has_target_named(&document, "before"));
+        assert!(!has_target_named(&document, "after"));
+        assert!(document.draft_analysis_due_secs.is_some());
+
+        document.maybe_refresh_pending_draft_analysis(10.16);
+        assert!(!has_target_named(&document, "before"));
+        assert!(has_target_named(&document, "after"));
+        assert_eq!(document.draft_analysis_due_secs, None);
+    }
+
+    #[test]
+    fn draft_analysis_can_be_forced_before_debounce_deadline() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            "fn a() -> f32 { var before: f32 = 0.0; return before; }\n",
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        document.replace_draft_source(
+            "fn a() -> f32 { var forced: f32 = 1.0; return forced; }\n".to_string(),
+        );
+        document.mark_draft_edited(20.0);
+
+        document.refresh_draft_analysis();
+
+        assert!(!has_target_named(&document, "before"));
+        assert!(has_target_named(&document, "forced"));
+        assert_eq!(document.draft_analysis_due_secs, None);
+    }
+
+    #[test]
+    fn dependency_render_caches_invalidate_on_expansion_and_source_refresh() {
+        let source = PassDebugSource::from_wgsl(
+            "p",
+            "@fragment fn fs_main() -> @location(0) f32 { var a: f32 = 0.0; let b = a + 1.0; return b; }\n",
+        );
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        assert!(document.visible_dependency_row_indices_cache.is_none());
+
+        let first_visible = document.cached_visible_dependency_row_indices().to_vec();
+        assert!(!first_visible.is_empty());
+        assert!(document.visible_dependency_row_indices_cache.is_some());
+        let first_rows_generation = document.dependency_rows_generation;
+        let first_expansion_generation = document.dependency_expansion_generation;
+
+        document.toggle_dependency_row_expanded("0");
+        assert!(document.visible_dependency_row_indices_cache.is_none());
+        assert_ne!(
+            document.dependency_expansion_generation,
+            first_expansion_generation
+        );
+
+        let _ = document.cached_visible_dependency_row_indices();
+        assert!(document.visible_dependency_row_indices_cache.is_some());
+        let refreshed = PassDebugSource::from_wgsl(
+            "p",
+            "@fragment fn fs_main() -> @location(0) f32 { var c: f32 = 2.0; return c; }\n",
+        );
+        document.update_source(Some(&refreshed), 1, false);
+
+        assert!(document.visible_dependency_row_indices_cache.is_none());
+        assert!(document.dependency_expandable_row_keys_cache.is_none());
+        assert!(document.dependency_tree_width_cache.is_none());
+        assert_ne!(document.dependency_rows_generation, first_rows_generation);
     }
 
     #[test]
