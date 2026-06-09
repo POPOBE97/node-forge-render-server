@@ -16,6 +16,10 @@ use serde::Serialize;
 
 const MAX_DEPENDENCY_DEPTH: usize = 48;
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct PassDebugSourceRange {
     pub start_byte: usize,
@@ -88,7 +92,11 @@ pub struct PassDebugDependencyNode {
     pub edge_label: Option<String>,
     pub display_label: Option<String>,
     pub source_range: Option<PassDebugSourceRange>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition_source_range: Option<PassDebugSourceRange>,
     pub target_id: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub reference: bool,
     pub children: Vec<PassDebugDependencyNode>,
 }
 
@@ -99,7 +107,9 @@ impl PassDebugDependencyNode {
             edge_label: None,
             display_label: None,
             source_range: None,
+            definition_source_range: None,
             target_id: None,
+            reference: false,
             children: Vec::new(),
         }
     }
@@ -110,7 +120,9 @@ impl PassDebugDependencyNode {
             edge_label: None,
             display_label: None,
             source_range: None,
+            definition_source_range: None,
             target_id: None,
+            reference: false,
             children,
         }
     }
@@ -125,9 +137,20 @@ impl PassDebugDependencyNode {
             edge_label: None,
             display_label: None,
             source_range: None,
+            definition_source_range: None,
             target_id: Some(target_id.into()),
+            reference: false,
             children,
         }
+    }
+
+    fn target_reference(label: impl Into<String>, target_id: impl Into<String>) -> Self {
+        Self::target(label, target_id, Vec::new()).with_reference()
+    }
+
+    fn with_reference(mut self) -> Self {
+        self.reference = true;
+        self
     }
 
     fn with_edge_label(mut self, edge_label: Option<String>) -> Self {
@@ -142,6 +165,14 @@ impl PassDebugDependencyNode {
 
     fn with_source_range(mut self, source_range: Option<PassDebugSourceRange>) -> Self {
         self.source_range = source_range;
+        self
+    }
+
+    fn with_definition_source_range(
+        mut self,
+        definition_source_range: Option<PassDebugSourceRange>,
+    ) -> Self {
+        self.definition_source_range = definition_source_range;
         self
     }
 }
@@ -1537,19 +1568,27 @@ impl<'a> DependencyAnalyzer<'a> {
         source_range: Option<PassDebugSourceRange>,
     ) -> PassDebugDependencyNode {
         let target = self.targets.iter().find(|target| target.id == target_id);
+        if self.should_reference_target(target_id, target_stack)
+            && let Some(reference) = self.target_reference_node(
+                target_id,
+                edge_label.clone(),
+                display_label.clone(),
+                source_range,
+            )
+        {
+            return reference;
+        }
         if depth >= MAX_DEPENDENCY_DEPTH {
-            let node_source_range =
-                source_range.or_else(|| target.and_then(|target| target.source_range));
+            if let Some(reference) =
+                self.target_reference_node(target_id, edge_label, display_label, source_range)
+            {
+                return reference;
+            }
             return PassDebugDependencyNode::target(
-                target
-                    .map(|target| format!("{} [depth limit]", target.label))
-                    .unwrap_or_else(|| format!("{target_id} [depth limit]")),
+                format!("{target_id} [depth limit]"),
                 target_id.to_string(),
                 Vec::new(),
-            )
-            .with_edge_label(edge_label)
-            .with_display_label(display_label)
-            .with_source_range(node_source_range);
+            );
         }
         if target_stack.iter().any(|id| id == target_id) {
             return PassDebugDependencyNode::target(
@@ -1714,11 +1753,27 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Option<Vec<PassDebugDependencyNode>> {
+        if self.should_reference_target(target_id, target_stack)
+            && let Some(reference) = self.target_reference_node(
+                target_id,
+                edge_label.clone(),
+                display_label.clone(),
+                source_range,
+            )
+        {
+            return Some(vec![reference]);
+        }
+
         let definitions = env?.get(target_id)?;
         Some(
             definitions
                 .iter()
                 .map(|definition_id| {
+                    let depth = if self.is_root_target(target_id, target_stack) {
+                        1
+                    } else {
+                        depth + 1
+                    };
                     self.build_definition_node(
                         *definition_id,
                         edge_label.clone(),
@@ -1728,7 +1783,7 @@ impl<'a> DependencyAnalyzer<'a> {
                         target_stack,
                         seen_exprs,
                         definition_stack,
-                        depth + 1,
+                        depth,
                     )
                 })
                 .collect(),
@@ -1760,18 +1815,41 @@ impl<'a> DependencyAnalyzer<'a> {
                 definition.target_id
             ));
         };
-        if depth >= MAX_DEPENDENCY_DEPTH {
+        if self.should_reference_target(&definition.target_id, target_stack) {
             let source_range = source_range.or(definition.source_range);
             let display_label =
                 self.definition_display_label(target, definition, display_label, source_range);
-            return PassDebugDependencyNode::target(
-                format!("{} [depth limit]", target.label),
-                target.id.clone(),
-                Vec::new(),
-            )
-            .with_edge_label(edge_label)
-            .with_display_label(display_label)
-            .with_source_range(source_range);
+            return self
+                .target_reference_node(
+                    &definition.target_id,
+                    edge_label,
+                    display_label,
+                    source_range,
+                )
+                .unwrap_or_else(|| {
+                    PassDebugDependencyNode::target(
+                        target.label.clone(),
+                        target.id.clone(),
+                        Vec::new(),
+                    )
+                });
+        }
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            let source_range = source_range.or(definition.source_range);
+            let definition_source_range =
+                distinct_definition_source_range(definition.source_range, source_range);
+            let display_label =
+                self.definition_display_label(target, definition, display_label, source_range);
+            return self
+                .target_reference_node(&target.id, edge_label, display_label, source_range)
+                .map(|node| node.with_definition_source_range(definition_source_range))
+                .unwrap_or_else(|| {
+                    PassDebugDependencyNode::target(
+                        format!("{} [depth limit]", target.label),
+                        target.id.clone(),
+                        Vec::new(),
+                    )
+                });
         }
         if definition_stack.contains(&definition_id) {
             return PassDebugDependencyNode::target(
@@ -1817,6 +1895,8 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack.pop();
 
         let source_range = source_range.or(definition.source_range);
+        let definition_source_range =
+            distinct_definition_source_range(definition.source_range, source_range);
         let display_label =
             self.definition_display_label(target, definition, display_label, source_range);
         PassDebugDependencyNode::target(
@@ -1827,6 +1907,7 @@ impl<'a> DependencyAnalyzer<'a> {
         .with_edge_label(edge_label)
         .with_display_label(display_label)
         .with_source_range(source_range)
+        .with_definition_source_range(definition_source_range)
     }
 
     fn build_named_expression_tree_with_context(
@@ -1843,18 +1924,26 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
     ) -> PassDebugDependencyNode {
         let target = self.targets.iter().find(|target| target.id == target_id);
+        if self.should_reference_target(target_id, target_stack)
+            && let Some(reference) = self.target_reference_node(
+                target_id,
+                edge_label.clone(),
+                display_label.clone(),
+                source_range,
+            )
+        {
+            return reference;
+        }
         if depth >= MAX_DEPENDENCY_DEPTH {
+            if let Some(reference) =
+                self.target_reference_node(target_id, edge_label, display_label, source_range)
+            {
+                return reference;
+            }
             return PassDebugDependencyNode::target(
-                target
-                    .map(|target| format!("{} [depth limit]", target.label))
-                    .unwrap_or_else(|| format!("{target_id} [depth limit]")),
+                format!("{target_id} [depth limit]"),
                 target_id.to_string(),
                 Vec::new(),
-            )
-            .with_edge_label(edge_label)
-            .with_display_label(display_label)
-            .with_source_range(
-                source_range.or_else(|| target.and_then(|target| target.source_range)),
             );
         }
         if target_stack.iter().any(|id| id == target_id) {
@@ -1894,6 +1983,41 @@ impl<'a> DependencyAnalyzer<'a> {
         .with_edge_label(edge_label)
         .with_display_label(display_label)
         .with_source_range(source_range)
+    }
+
+    fn should_reference_target(&self, target_id: &str, target_stack: &[String]) -> bool {
+        target_stack
+            .first()
+            .is_some_and(|root_target_id| root_target_id != target_id)
+    }
+
+    fn is_root_target(&self, target_id: &str, target_stack: &[String]) -> bool {
+        target_stack
+            .first()
+            .is_some_and(|root_target_id| root_target_id == target_id)
+    }
+
+    fn target_reference_node(
+        &self,
+        target_id: &str,
+        edge_label: Option<String>,
+        display_label: Option<String>,
+        source_range: Option<PassDebugSourceRange>,
+    ) -> Option<PassDebugDependencyNode> {
+        let target = self.targets.iter().find(|target| target.id == target_id)?;
+        let node_source_range = source_range.or(target.source_range);
+        let definition_source_range =
+            distinct_definition_source_range(target.source_range, node_source_range);
+        Some(
+            PassDebugDependencyNode::target_reference(
+                dependency_target_node_label(target, display_label.as_deref()),
+                target.id.clone(),
+            )
+            .with_edge_label(edge_label)
+            .with_display_label(display_label)
+            .with_source_range(node_source_range)
+            .with_definition_source_range(definition_source_range),
+        )
     }
 
     fn definition_display_label(
@@ -2058,10 +2182,6 @@ impl<'a> DependencyAnalyzer<'a> {
         if projection.is_empty() {
             return Vec::new();
         }
-        if depth >= MAX_DEPENDENCY_DEPTH {
-            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
-        }
-
         let effective_env = env.or_else(|| self.expression_envs.get(&expr_ref.key()));
         if let Some(access_path) = self.access_path_target(&expr_ref) {
             let target_projection =
@@ -2115,6 +2235,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 definition_stack,
                 depth + 1,
             );
+        }
+
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
         }
 
         let expr_key = expr_ref.key();
@@ -2257,6 +2381,37 @@ impl<'a> DependencyAnalyzer<'a> {
                 ));
                 dependencies
             }
+            Expression::CallResult(_) => {
+                let ExprRef::Function { scope, handle } = &expr_ref else {
+                    seen_exprs.remove(&expr_key);
+                    return Vec::new();
+                };
+                let Some(call) = self.calls_by_result.get(&(scope.clone(), handle.index())) else {
+                    seen_exprs.remove(&expr_key);
+                    return Vec::new();
+                };
+                let call_edge = self
+                    .function_handles
+                    .get(&call.function)
+                    .cloned()
+                    .unwrap_or_else(|| "call".to_string());
+                let operands = call.arguments.iter().copied().map(|handle| {
+                    (
+                        handle,
+                        self.operand_projection(&expr_ref, handle, projection),
+                    )
+                });
+                self.projected_operand_dependencies(
+                    &expr_ref,
+                    operands,
+                    operation_edge(inherited_edge, call_edge),
+                    effective_env,
+                    target_stack,
+                    seen_exprs,
+                    definition_stack,
+                    depth + 1,
+                )
+            }
             _ => self.semantic_expr_dependencies_with_hint(
                 expr_ref.clone(),
                 inherited_edge,
@@ -2284,10 +2439,6 @@ impl<'a> DependencyAnalyzer<'a> {
         definition_stack: &mut Vec<DefinitionId>,
         depth: usize,
     ) -> Vec<PassDebugDependencyNode> {
-        if depth >= MAX_DEPENDENCY_DEPTH {
-            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
-        }
-
         let effective_env = env.or_else(|| self.expression_envs.get(&expr_ref.key()));
         if let Some(target_id) = self.named_expression_target_id(&expr_ref)
             && !target_stack.iter().any(|id| id == &target_id)
@@ -2340,6 +2491,10 @@ impl<'a> DependencyAnalyzer<'a> {
                 depth + 1,
             ));
             return dependencies;
+        }
+
+        if depth >= MAX_DEPENDENCY_DEPTH {
+            return vec![PassDebugDependencyNode::leaf("[depth limit]")];
         }
 
         let expr_key = expr_ref.key();
@@ -3355,6 +3510,13 @@ fn operation_edge(inherited_edge: Option<String>, operation: impl Into<String>) 
     inherited_edge.or_else(|| Some(operation.into()))
 }
 
+fn distinct_definition_source_range(
+    definition_source_range: Option<PassDebugSourceRange>,
+    source_range: Option<PassDebugSourceRange>,
+) -> Option<PassDebugSourceRange> {
+    definition_source_range.filter(|definition_range| Some(*definition_range) != source_range)
+}
+
 fn merge_definition_envs<I>(envs: I) -> DefinitionEnv
 where
     I: IntoIterator<Item = DefinitionEnv>,
@@ -3730,6 +3892,8 @@ fn build_dependency_debug(module: &Module, source: &str) -> DependencyDebugBuild
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::{PassDebugDependencyNode, PassDebugSource};
 
     fn target_id_by_name(doc: &PassDebugSource, name: &str) -> String {
@@ -3850,6 +4014,57 @@ mod tests {
         }
     }
 
+    fn collect_target_nodes_on_line<'a>(
+        node: &'a PassDebugDependencyNode,
+        target_id: &str,
+        line: u32,
+        out: &mut Vec<&'a PassDebugDependencyNode>,
+    ) {
+        if node.target_id.as_deref() == Some(target_id)
+            && node
+                .source_range
+                .is_some_and(|source_range| source_range.line == line)
+        {
+            out.push(node);
+        }
+        for child in &node.children {
+            collect_target_nodes_on_line(child, target_id, line, out);
+        }
+    }
+
+    fn dependency_graph_reaches_target(
+        doc: &PassDebugSource,
+        start_target_id: &str,
+        wanted_target_id: &str,
+    ) -> bool {
+        fn visit_node(
+            doc: &PassDebugSource,
+            node: &PassDebugDependencyNode,
+            wanted_target_id: &str,
+            seen_targets: &mut HashSet<String>,
+        ) -> bool {
+            if let Some(target_id) = node.target_id.as_deref() {
+                if target_id == wanted_target_id {
+                    return true;
+                }
+                if seen_targets.insert(target_id.to_string())
+                    && let Some(tree) = doc.dependency_trees.get(target_id)
+                    && visit_node(doc, tree, wanted_target_id, seen_targets)
+                {
+                    return true;
+                }
+            }
+            node.children
+                .iter()
+                .any(|child| visit_node(doc, child, wanted_target_id, seen_targets))
+        }
+
+        doc.dependency_trees
+            .get(start_target_id)
+            .map(|tree| visit_node(doc, tree, wanted_target_id, &mut HashSet::new()))
+            .unwrap_or(false)
+    }
+
     fn assert_node_range_selects(
         doc: &PassDebugSource,
         node: &PassDebugDependencyNode,
@@ -3942,9 +4157,11 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
 
         let x_labels = dependency_labels_for(&doc, "x");
         assert_labels_contain(&x_labels, "fs_main let y");
-        assert_labels_contain(&x_labels, "argument uv");
-        assert_labels_contain(&x_labels, "global threshold");
         assert_labels_do_not_contain(&x_labels, "[cycle]");
+
+        let y_labels = dependency_labels_for(&doc, "y");
+        assert_labels_contain(&y_labels, "argument uv");
+        assert_labels_contain(&y_labels, "global threshold");
     }
 
     #[test]
@@ -4028,8 +4245,13 @@ fn debug_main() -> f32 {
 
         let a = child_target(&doc, d, "a", Some("math_multiply"));
         child_target(&doc, d, "e", Some("math_multiply"));
-        child_target(&doc, a, "b", Some("foo"));
-        child_target(&doc, a, "c", Some("foo"));
+        assert!(a.reference);
+        let a_tree = doc
+            .dependency_trees
+            .get(a.target_id.as_ref().expect("missing a target id"))
+            .expect("missing dependency tree for a");
+        child_target(&doc, a_tree, "b", Some("foo"));
+        child_target(&doc, a_tree, "c", Some("foo"));
     }
 
     #[test]
@@ -4061,7 +4283,12 @@ fn debug_main() -> f32 {
             .get(&d_id)
             .expect("missing dependency tree for d");
         let a = child_target(&doc, d, "a", Some("bar"));
-        let b = child_target(&doc, a, "b", Some("foo"));
+        assert!(a.reference);
+        let a_tree = doc
+            .dependency_trees
+            .get(a.target_id.as_ref().expect("missing a target id"))
+            .expect("missing dependency tree for a");
+        let b = child_target(&doc, a_tree, "b", Some("foo"));
 
         let d_arg_start = doc.module_source.find("bar(a, c)").unwrap() + "bar(".len();
         assert_node_range_selects(&doc, a, d_arg_start, "a");
@@ -4138,13 +4365,19 @@ fn fs_main() -> @location(0) f32 {
         let occurrence_start =
             doc.module_source.find("0.5 * final_alpha").unwrap() + "0.5 * ".len();
         assert_node_range_selects(&doc, final_alpha, occurrence_start, "final_alpha");
-        assert!(
-            !final_alpha.children.is_empty(),
-            "final_alpha reference should expand to its definition dependencies"
-        );
+        assert!(final_alpha.reference);
 
         let mut labels = Vec::new();
-        flatten_dependency_labels(final_alpha, &mut labels);
+        let final_alpha_tree = doc
+            .dependency_trees
+            .get(
+                final_alpha
+                    .target_id
+                    .as_ref()
+                    .expect("missing final_alpha target id"),
+            )
+            .expect("missing dependency tree for final_alpha");
+        flatten_dependency_labels(final_alpha_tree, &mut labels);
         assert_labels_contain(&labels, "aa_depth");
         assert_labels_contain(&labels, "edge_sdf");
     }
@@ -4192,6 +4425,45 @@ fn fs_main() -> @location(0) vec4f {
     }
 
     #[test]
+    fn projected_self_assignment_through_call_reaches_previous_definition() {
+        let source = r#"
+fn adjust(v: vec4f) -> vec4f {
+    return v;
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4f {
+    let base = vec4f(0.25);
+    var x = base;
+    x = adjust(x);
+    x = vec4f(x.rgb, x.a);
+    return x;
+}
+"#;
+
+        let doc = PassDebugSource::from_wgsl("projected-self-call.pass", source);
+        assert!(doc.parse_error.is_none());
+
+        let x_labels = dependency_labels_for(&doc, "x");
+        assert_labels_contain(&x_labels, "base");
+        assert_labels_do_not_contain(&x_labels, "[source] no contributors");
+
+        let x_id = target_id_by_name(&doc, "x");
+        let x = doc
+            .dependency_trees
+            .get(&x_id)
+            .expect("missing dependency tree for x");
+        let mut x_occurrences = Vec::new();
+        collect_target_nodes_on_line(x, &x_id, 11, &mut x_occurrences);
+        assert!(
+            x_occurrences.iter().any(|node| node
+                .definition_source_range
+                .is_some_and(|source_range| source_range.line == 10)),
+            "line 11 x references should expose the previous definition on line 10"
+        );
+    }
+
+    #[test]
     fn glass_mat_dependency_tree_keeps_lighting_and_distinct_alpha_occurrences() {
         let source = std::fs::read_to_string(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4210,6 +4482,9 @@ fn fs_main() -> @location(0) vec4f {
             .dependency_trees
             .get(&glass_id)
             .expect("missing dependency tree for glass_mat");
+        let mut glass_labels = Vec::new();
+        flatten_dependency_labels(glass_mat, &mut glass_labels);
+        assert_labels_do_not_contain(&glass_labels, "[depth limit]");
 
         let mut lighting1_nodes = Vec::new();
         let mut lighting2_nodes = Vec::new();
@@ -4223,9 +4498,83 @@ fn fs_main() -> @location(0) vec4f {
             !lighting2_nodes.is_empty(),
             "glass_mat dependency tree should include lighting2"
         );
+        assert!(
+            lighting1_nodes
+                .iter()
+                .all(|node| !node.label.contains("[depth limit]")),
+            "lighting1 target references should not be labeled as depth-limited"
+        );
+        assert!(
+            lighting2_nodes
+                .iter()
+                .all(|node| !node.label.contains("[depth limit]")),
+            "lighting2 target references should not be labeled as depth-limited"
+        );
+        let lighting1_id = target_id_by_name(&doc, "lighting1");
+        let lighting1 = doc
+            .dependency_trees
+            .get(&lighting1_id)
+            .expect("missing dependency tree for lighting1");
+        let mut lighting1_labels = Vec::new();
+        flatten_dependency_labels(lighting1, &mut lighting1_labels);
+        assert_labels_do_not_contain(&lighting1_labels, "[depth limit]");
+        assert!(
+            !lighting1.children.is_empty(),
+            "lighting1 canonical dependency tree should remain expandable"
+        );
+
+        let lighting2_id = target_id_by_name(&doc, "lighting2");
+        let lighting2 = doc
+            .dependency_trees
+            .get(&lighting2_id)
+            .expect("missing dependency tree for lighting2");
+        let mut lighting2_labels = Vec::new();
+        flatten_dependency_labels(lighting2, &mut lighting2_labels);
+        assert_labels_do_not_contain(&lighting2_labels, "[depth limit]");
+        assert!(
+            !lighting2.children.is_empty(),
+            "lighting2 canonical dependency tree should remain expandable"
+        );
+
+        let root_id = doc
+            .dependency_root_target_id
+            .as_ref()
+            .expect("missing root dependency target");
+        let root = doc
+            .dependency_trees
+            .get(root_id)
+            .expect("missing root dependency tree");
+        let mut root_labels = Vec::new();
+        flatten_dependency_labels(root, &mut root_labels);
+        assert_labels_do_not_contain(&root_labels, "[depth limit]");
+        assert!(
+            dependency_graph_reaches_target(&doc, root_id, &lighting1_id),
+            "root dependency graph should reach lighting1 through target references"
+        );
+        assert!(
+            dependency_graph_reaches_target(&doc, root_id, &lighting2_id),
+            "root dependency graph should reach lighting2 through target references"
+        );
 
         let mut glass_nodes = Vec::new();
         collect_target_nodes_by_name(&doc, glass_mat, "glass_mat", &mut glass_nodes);
+        for line in [741, 740, 739] {
+            let mut line_nodes = Vec::new();
+            collect_target_nodes_on_line(glass_mat, &glass_id, line, &mut line_nodes);
+            assert!(
+                !line_nodes.is_empty(),
+                "expected glass_mat dependency tree to include line {line}"
+            );
+        }
+        let mut line_707_nodes = Vec::new();
+        collect_target_nodes_on_line(glass_mat, &glass_id, 707, &mut line_707_nodes);
+        assert!(
+            line_707_nodes.iter().any(|node| node
+                .definition_source_range
+                .is_some_and(|source_range| source_range.line == 706)),
+            "line 707 glass_mat references should expose the initial definition on line 706"
+        );
+
         let alpha_759_ranges = glass_nodes
             .iter()
             .filter_map(|node| node.source_range)
@@ -4274,8 +4623,8 @@ fn debug_main() -> f32 {
             .expect("missing dependency tree for a");
         let a_b = child_target(&doc, a, "b", Some("foo"));
         let a_c = child_target(&doc, a, "c", Some("foo"));
-        child_target(&doc, a_b, "source_b", Some("Add"));
-        child_target(&doc, a_c, "source_c", Some("Add"));
+        assert!(a_b.reference);
+        assert!(a_c.reference);
 
         let d_id = target_id_by_name(&doc, "d");
         let d = doc
@@ -4284,8 +4633,28 @@ fn debug_main() -> f32 {
             .expect("missing dependency tree for d");
         let d_b = child_target(&doc, d, "b", Some("bar"));
         let d_c = child_target(&doc, d, "c", Some("bar"));
-        child_target(&doc, d_b, "source_b", Some("Add"));
-        child_target(&doc, d_c, "source_c", Some("Add"));
+        assert!(d_b.reference);
+        assert!(d_c.reference);
+
+        let b_id = a_b
+            .target_id
+            .as_ref()
+            .expect("missing b reference target id");
+        let b = doc
+            .dependency_trees
+            .get(b_id)
+            .expect("missing dependency tree for b");
+        child_target(&doc, b, "source_b", Some("Add"));
+
+        let c_id = a_c
+            .target_id
+            .as_ref()
+            .expect("missing c reference target id");
+        let c = doc
+            .dependency_trees
+            .get(c_id)
+            .expect("missing dependency tree for c");
+        child_target(&doc, c, "source_c", Some("Add"));
     }
 
     #[test]
@@ -4430,12 +4799,12 @@ fn fs_main() -> @location(0) f32 {
         let labels = dependency_labels_for(&doc, "x");
         assert_labels_do_not_contain(&labels, "[cycle]");
 
-        let return_id = target_id_by_name(&doc, "return");
-        let return_tree = doc
+        let x_id = target_id_by_name(&doc, "x");
+        let x_tree = doc
             .dependency_trees
-            .get(&return_id)
-            .expect("missing dependency tree for return");
-        let latest_x = child_target(&doc, return_tree, "x", None);
+            .get(&x_id)
+            .expect("missing dependency tree for x");
+        let latest_x = child_target(&doc, x_tree, "x", None);
         let previous_x = child_target(&doc, latest_x, "x", Some("foo"));
         let initial_x = child_target(&doc, previous_x, "x", Some("foo"));
 

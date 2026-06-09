@@ -1805,6 +1805,7 @@ fn flatten_dependency_tree(
         None,
         &mut vec![0],
         &mut Vec::new(),
+        &mut HashSet::new(),
         &mut rows,
     );
     rows
@@ -1817,6 +1818,7 @@ fn push_dependency_rows(
     parent_row_key: Option<String>,
     path: &mut Vec<usize>,
     relation_path: &mut Vec<String>,
+    reference_stack: &mut HashSet<String>,
     rows: &mut Vec<PassDebugDependencyRow>,
 ) {
     if node.target_id.is_some() {
@@ -1842,12 +1844,30 @@ fn push_dependency_rows(
             parent_row_key,
             label,
             relation_path: relation_path_text,
-            target_id,
+            target_id: target_id.clone(),
             source_range,
             source_jump_range,
             selectable: true,
         });
-        for (index, child) in node.children.iter().enumerate() {
+        let reference_children = node
+            .reference
+            .then(|| target_id.as_deref())
+            .flatten()
+            .and_then(|target_id| {
+                if reference_stack.insert(target_id.to_string()) {
+                    source
+                        .dependency_trees
+                        .get(target_id)
+                        .map(|tree| (target_id.to_string(), tree.children.as_slice()))
+                } else {
+                    None
+                }
+            });
+        let children = reference_children
+            .as_ref()
+            .map(|(_, children)| *children)
+            .unwrap_or_else(|| node.children.as_slice());
+        for (index, child) in children.iter().enumerate() {
             path.push(index);
             let mut child_relation_path = Vec::new();
             push_dependency_rows(
@@ -1857,9 +1877,13 @@ fn push_dependency_rows(
                 Some(row_key.clone()),
                 path,
                 &mut child_relation_path,
+                reference_stack,
                 rows,
             );
             path.pop();
+        }
+        if let Some((target_id, _)) = reference_children {
+            reference_stack.remove(&target_id);
         }
     } else {
         let relation_label = compact_dependency_relation_label(&node.label);
@@ -1875,6 +1899,7 @@ fn push_dependency_rows(
                 parent_row_key.clone(),
                 path,
                 relation_path,
+                reference_stack,
                 rows,
             );
             path.pop();
@@ -2432,20 +2457,26 @@ mod tests {
                 edge_label: None,
                 display_label: None,
                 source_range: None,
+                definition_source_range: None,
                 target_id: Some("target::x".to_string()),
+                reference: false,
                 children: vec![PassDebugDependencyNode {
                     label: "[rhs] Binary Add".to_string(),
                     edge_label: None,
                     display_label: None,
                     source_range: None,
+                    definition_source_range: None,
                     target_id: None,
+                    reference: false,
                     children: vec![
                         PassDebugDependencyNode {
                             label: "[source] function argument fs_main::0".to_string(),
                             edge_label: None,
                             display_label: None,
                             source_range: None,
+                            definition_source_range: None,
                             target_id: None,
+                            reference: false,
                             children: Vec::new(),
                         },
                         PassDebugDependencyNode {
@@ -2453,7 +2484,9 @@ mod tests {
                             edge_label: None,
                             display_label: None,
                             source_range: None,
+                            definition_source_range: None,
                             target_id: Some("target::uv".to_string()),
+                            reference: false,
                             children: Vec::new(),
                         },
                     ],
@@ -2517,7 +2550,9 @@ mod tests {
                 edge_label: None,
                 display_label: None,
                 source_range: None,
+                definition_source_range: None,
                 target_id: Some("target::d".to_string()),
+                reference: false,
                 children: vec![PassDebugDependencyNode {
                     label: "debug_main let a (let)".to_string(),
                     edge_label: Some("math_multiply".to_string()),
@@ -2528,7 +2563,9 @@ mod tests {
                         line: 1,
                         column: 9,
                     }),
+                    definition_source_range: None,
                     target_id: Some("target::a".to_string()),
+                    reference: false,
                     children: Vec::new(),
                 }],
             },
@@ -2951,9 +2988,20 @@ fn fs_main() -> @location(0) f32 {
 "#,
         );
         let document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
-        let a_id = target_id_by_name(&document, "a");
-        let a_rows = document
-            .dependency_rows
+        let source = document
+            .analysis_source
+            .as_ref()
+            .expect("missing analysis source");
+        let d_id = source_target_id_by_name(source, "d");
+        let d_rows = flatten_dependency_tree(
+            source
+                .dependency_trees
+                .get(&d_id)
+                .expect("d dependency tree"),
+            source,
+        );
+        let a_id = source_target_id_by_name(source, "a");
+        let a_rows = d_rows
             .iter()
             .filter(|row| row.label == "a (bar)" && row.target_id.as_deref() == Some(&a_id))
             .collect::<Vec<_>>();
@@ -2986,31 +3034,41 @@ fn fs_main() -> @location(0) f32 {
                 edge_label: None,
                 display_label: None,
                 source_range: None,
+                definition_source_range: None,
                 target_id: Some("target::c".to_string()),
+                reference: false,
                 children: vec![PassDebugDependencyNode {
                     label: "[value] named expression".to_string(),
                     edge_label: None,
                     display_label: None,
                     source_range: None,
+                    definition_source_range: None,
                     target_id: None,
+                    reference: false,
                     children: vec![PassDebugDependencyNode {
                         label: "mid b (let)".to_string(),
                         edge_label: None,
                         display_label: None,
                         source_range: None,
+                        definition_source_range: None,
                         target_id: Some("target::b".to_string()),
+                        reference: false,
                         children: vec![PassDebugDependencyNode {
                             label: "[value] named expression".to_string(),
                             edge_label: None,
                             display_label: None,
                             source_range: None,
+                            definition_source_range: None,
                             target_id: None,
+                            reference: false,
                             children: vec![PassDebugDependencyNode {
                                 label: "leaf a (local)".to_string(),
                                 edge_label: None,
                                 display_label: None,
                                 source_range: None,
+                                definition_source_range: None,
                                 target_id: Some("target::a".to_string()),
+                                reference: false,
                                 children: Vec::new(),
                             }],
                         }],
