@@ -34,6 +34,12 @@ const PASS_DEBUG_WINDOW_MIN_HEIGHT: f32 = 360.0;
 const PASS_DEBUG_DRAFT_ANALYSIS_DEBOUNCE_SECS: f64 = 0.150;
 
 #[derive(Clone, Debug)]
+struct PendingAnalysisTask {
+    source_text: String,
+    result: Arc<Mutex<Option<PassDebugSource>>>,
+}
+
+#[derive(Clone, Debug)]
 pub enum PassDebugWindowAction {
     ApplyPatch { pass_name: String, source: String },
     ResetPatch { pass_name: String },
@@ -62,18 +68,13 @@ struct PassDebugTreeClick {
 }
 
 #[derive(Clone, Debug)]
-struct PassDebugHighlightCache {
-    draft_revision: u64,
-    source_text: Arc<str>,
-    base_layout_job: egui::text::LayoutJob,
-    galley: Option<PassDebugGalleyCache>,
-}
-
-#[derive(Clone, Debug)]
-struct PassDebugGalleyCache {
-    #[allow(dead_code)]
+struct LineGalleyCache {
     wrap_width: f32,
-    galley: std::sync::Arc<egui::Galley>,
+    pixels_per_point: f32,
+    line_hashes: Vec<u64>,
+    line_sections: Vec<Vec<egui::text::LayoutSection>>,
+    line_galleys: Vec<std::sync::Arc<egui::Galley>>,
+    merged: std::sync::Arc<egui::Galley>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,7 +201,8 @@ pub struct PassDebugWindowDocument {
     loaded_source: String,
     draft_revision: u64,
     draft_analysis_due_secs: Option<f64>,
-    highlight_cache: Option<PassDebugHighlightCache>,
+    pending_analysis_task: Option<PendingAnalysisTask>,
+    line_galley_cache: Option<LineGalleyCache>,
     dependency_rows_generation: u64,
     dependency_expansion_generation: u64,
     dependency_expandable_row_keys_cache: Option<PassDebugExpandableRowsCache>,
@@ -241,7 +243,8 @@ impl PassDebugWindowDocument {
             loaded_source,
             draft_revision: 0,
             draft_analysis_due_secs: None,
-            highlight_cache: None,
+            pending_analysis_task: None,
+            line_galley_cache: None,
             dependency_rows_generation: 0,
             dependency_expansion_generation: 0,
             dependency_expandable_row_keys_cache: None,
@@ -266,7 +269,6 @@ impl PassDebugWindowDocument {
 
     fn invalidate_draft_render_cache(&mut self) {
         self.draft_revision = self.draft_revision.wrapping_add(1);
-        self.highlight_cache = None;
     }
 
     fn mark_draft_edited(&mut self, now_secs: f64) {
@@ -280,59 +282,87 @@ impl PassDebugWindowDocument {
         self.draft_analysis_due_secs = Some(now_secs + PASS_DEBUG_DRAFT_ANALYSIS_DEBOUNCE_SECS);
     }
 
-    fn maybe_refresh_pending_draft_analysis(&mut self, now_secs: f64) {
+    fn maybe_refresh_pending_draft_analysis(&mut self, now_secs: f64, ctx: &egui::Context) {
+        self.poll_pending_analysis();
+
         let Some(due_secs) = self.draft_analysis_due_secs else {
             return;
         };
         if now_secs >= due_secs {
-            self.refresh_draft_analysis();
+            self.spawn_draft_analysis(ctx);
         }
     }
 
-    fn cached_base_layout_job(&mut self, ui: &egui::Ui) -> (Arc<str>, egui::text::LayoutJob) {
-        self.ensure_highlight_cache(ui);
-        let cache = self
-            .highlight_cache
-            .as_ref()
-            .expect("highlight cache must be initialized");
-        (
-            Arc::clone(&cache.source_text),
-            cache.base_layout_job.clone(),
-        )
-    }
-
-    fn store_galley(&mut self, wrap_width: f32, galley: std::sync::Arc<egui::Galley>) {
-        if let Some(ref mut cache) = self.highlight_cache {
-            cache.galley = Some(PassDebugGalleyCache { wrap_width, galley });
+    fn spawn_draft_analysis(&mut self, ctx: &egui::Context) {
+        if self.analysis_source_text == self.draft_source {
+            self.draft_analysis_due_secs = None;
+            return;
         }
+        if let Some(ref task) = self.pending_analysis_task {
+            if task.source_text == self.draft_source {
+                self.draft_analysis_due_secs = None;
+                return;
+            }
+        }
+        let source_text = self.draft_source.clone();
+        let pass_name = self.pass_name.clone();
+        let result: Arc<Mutex<Option<PassDebugSource>>> = Arc::new(Mutex::new(None));
+        let result_clone = Arc::clone(&result);
+        let ctx_clone = ctx.clone();
+        std::thread::spawn(move || {
+            let parsed = PassDebugSource::from_wgsl(pass_name, source_text);
+            *result_clone.lock().unwrap() = Some(parsed);
+            ctx_clone.request_repaint();
+        });
+        self.pending_analysis_task = Some(PendingAnalysisTask {
+            source_text: self.draft_source.clone(),
+            result,
+        });
+        self.draft_analysis_due_secs = None;
     }
 
-    fn ensure_highlight_cache(&mut self, ui: &egui::Ui) {
-        let cache_valid = self
-            .highlight_cache
+    fn poll_pending_analysis(&mut self) {
+        let dominated = self
+            .pending_analysis_task
             .as_ref()
-            .map(|cache| {
-                cache.draft_revision == self.draft_revision
-                    && cache.source_text.as_ref() == self.draft_source.as_str()
-            })
-            .unwrap_or(false);
-
-        if !cache_valid {
-            let theme =
-                egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
-            let base_layout_job = egui_extras::syntax_highlighting::highlight(
-                ui.ctx(),
-                ui.style(),
-                &theme,
-                self.draft_source.as_str(),
-                "rust",
-            );
-            self.highlight_cache = Some(PassDebugHighlightCache {
-                draft_revision: self.draft_revision,
-                source_text: Arc::from(self.draft_source.as_str()),
-                base_layout_job,
-                galley: None,
+            .and_then(|task| {
+                let lock = task.result.try_lock().ok()?;
+                if lock.is_some() {
+                    Some(task.source_text.clone())
+                } else {
+                    None
+                }
             });
+        let Some(completed_source_text) = dominated else {
+            return;
+        };
+        let task = self.pending_analysis_task.take().unwrap();
+        let source = task.result.lock().unwrap().take().unwrap();
+        if completed_source_text != self.draft_source {
+            return;
+        }
+        self.analysis_source = Some(source);
+        self.analysis_source_text = completed_source_text;
+        self.refresh_analysis_rows();
+    }
+
+    #[cfg(test)]
+    fn flush_pending_analysis(&mut self) {
+        let Some(task) = self.pending_analysis_task.take() else {
+            return;
+        };
+        loop {
+            let ready = task.result.lock().unwrap().is_some();
+            if ready {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let source = task.result.lock().unwrap().take().unwrap();
+        if task.source_text == self.draft_source {
+            self.analysis_source = Some(source);
+            self.analysis_source_text = task.source_text;
+            self.refresh_analysis_rows();
         }
     }
 
@@ -2047,36 +2077,254 @@ fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWin
     ui.advance_cursor_after_rect(full_rect);
 }
 
+fn layout_with_line_cache_incremental(
+    ui: &egui::Ui,
+    text: &str,
+    wrap_width: f32,
+    theme: &crate::ui::wgsl_highlight::WgslTheme,
+    cache_cell: &std::cell::RefCell<Option<LineGalleyCache>>,
+) -> std::sync::Arc<egui::Galley> {
+    let pixels_per_point = ui.ctx().pixels_per_point();
+    let rounded_wrap = wrap_width.round();
+    let hasher_state = ahash::RandomState::with_seeds(1, 2, 3, 4);
+
+    let cache_reusable = cache_cell.borrow().as_ref().is_some_and(|c| {
+        (c.wrap_width - rounded_wrap).abs() < 0.5
+            && (c.pixels_per_point - pixels_per_point).abs() < f32::EPSILON
+    });
+
+    let t_phase1 = Instant::now();
+    let mut line_hashes_new: Vec<u64> = Vec::with_capacity(800);
+    let mut line_boundaries: Vec<(usize, usize)> = Vec::with_capacity(800);
+    {
+        let mut start = 0usize;
+        while start < text.len() {
+            let mut end = text[start..]
+                .find('\n')
+                .map_or(text.len(), |i| start + i);
+            if end == text.len() - 1 && text.ends_with('\n') {
+                end += 1;
+            }
+            let hash = hasher_state.hash_one(&text[start..end]);
+            line_hashes_new.push(hash);
+            line_boundaries.push((start, end));
+            start = end + 1;
+        }
+    }
+    let phase1_ms = t_phase1.elapsed().as_secs_f64() * 1000.0;
+
+    if cache_reusable {
+        let cache_ref = cache_cell.borrow();
+        if let Some(ref c) = *cache_ref {
+            if c.line_hashes.len() == line_hashes_new.len()
+                && c.line_hashes == line_hashes_new
+            {
+                let merged = std::sync::Arc::clone(&c.merged);
+                drop(cache_ref);
+                metric_log!(
+                    "[pass-debug] line_cache lines={} all_hit (fast path)",
+                    line_hashes_new.len(),
+                );
+                return merged;
+            }
+        }
+    }
+
+    let t_phase3 = Instant::now();
+    let prev_cache = if cache_reusable {
+        cache_cell.borrow_mut().take()
+    } else {
+        None
+    };
+
+    struct PrevEntry<'a> {
+        galley: &'a std::sync::Arc<egui::Galley>,
+        sections: &'a Vec<egui::text::LayoutSection>,
+    }
+    let prev_lookup: HashMap<u64, PrevEntry<'_>> = prev_cache
+        .as_ref()
+        .map(|c| {
+            c.line_hashes
+                .iter()
+                .zip(c.line_galleys.iter().zip(c.line_sections.iter()))
+                .map(|(&h, (g, s))| (h, PrevEntry { galley: g, sections: s }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let phase3_setup_ms = t_phase3.elapsed().as_secs_f64() * 1000.0;
+
+    let num_lines = line_boundaries.len();
+    let mut line_galleys: Vec<std::sync::Arc<egui::Galley>> = Vec::with_capacity(num_lines);
+    let mut line_sections_vec: Vec<Vec<egui::text::LayoutSection>> = Vec::with_capacity(num_lines);
+    let mut cache_hits = 0usize;
+
+    for (i, &(start, end)) in line_boundaries.iter().enumerate() {
+        if let Some(entry) = prev_lookup.get(&line_hashes_new[i]) {
+            line_galleys.push(std::sync::Arc::clone(entry.galley));
+            line_sections_vec.push(entry.sections.clone());
+            cache_hits += 1;
+            continue;
+        }
+
+        let line_text = &text[start..end];
+        let sections = crate::ui::wgsl_highlight::highlight_wgsl_line(line_text, theme);
+
+        let paragraph_job = egui::text::LayoutJob {
+            text: line_text.to_owned(),
+            wrap: egui::text::TextWrapping {
+                max_width: rounded_wrap,
+                max_rows: usize::MAX,
+                ..Default::default()
+            },
+            sections: sections.clone(),
+            break_on_newline: true,
+            halign: egui::Align::LEFT,
+            justify: false,
+            first_row_min_height: 0.0,
+            round_output_to_gui: true,
+        };
+
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(paragraph_job));
+        line_galleys.push(galley);
+        line_sections_vec.push(sections);
+    }
+
+    let t_concat = Instant::now();
+    let full_job = build_full_layout_job(text, &line_boundaries, &line_sections_vec, rounded_wrap, theme);
+    let full_job_arc = Arc::new(full_job);
+
+    let merged = if cache_hits == num_lines {
+        if let Some(ref prev) = prev_cache {
+            if prev.merged.job.text == text {
+                std::sync::Arc::clone(&prev.merged)
+            } else {
+                std::sync::Arc::new(egui::Galley::concat(
+                    full_job_arc,
+                    &line_galleys,
+                    pixels_per_point,
+                ))
+            }
+        } else {
+            std::sync::Arc::new(egui::Galley::concat(
+                full_job_arc,
+                &line_galleys,
+                pixels_per_point,
+            ))
+        }
+    } else {
+        std::sync::Arc::new(egui::Galley::concat(
+            full_job_arc,
+            &line_galleys,
+            pixels_per_point,
+        ))
+    };
+    let concat_ms = t_concat.elapsed().as_secs_f64() * 1000.0;
+
+    metric_log!(
+        "[pass-debug] line_cache lines={} hits={} misses={} p1={:.2}ms p3s={:.2}ms concat={:.2}ms",
+        num_lines,
+        cache_hits,
+        num_lines - cache_hits,
+        phase1_ms,
+        phase3_setup_ms,
+        concat_ms,
+    );
+
+    *cache_cell.borrow_mut() = Some(LineGalleyCache {
+        wrap_width: rounded_wrap,
+        pixels_per_point,
+        line_hashes: line_hashes_new,
+        line_sections: line_sections_vec,
+        line_galleys,
+        merged: std::sync::Arc::clone(&merged),
+    });
+
+    merged
+}
+
+fn build_full_layout_job(
+    text: &str,
+    line_boundaries: &[(usize, usize)],
+    line_sections: &[Vec<egui::text::LayoutSection>],
+    wrap_width: f32,
+    theme: &crate::ui::wgsl_highlight::WgslTheme,
+) -> egui::text::LayoutJob {
+    let default_fmt = egui::text::TextFormat {
+        font_id: theme.font_id.clone(),
+        color: theme.default,
+        ..Default::default()
+    };
+    let mut all_sections = Vec::with_capacity(line_sections.iter().map(|s| s.len()).sum::<usize>() + line_boundaries.len());
+    for (line_idx, &(start, end)) in line_boundaries.iter().enumerate() {
+        for section in &line_sections[line_idx] {
+            all_sections.push(egui::text::LayoutSection {
+                leading_space: section.leading_space,
+                byte_range: (section.byte_range.start + start)..(section.byte_range.end + start),
+                format: section.format.clone(),
+            });
+        }
+        if end < text.len() {
+            all_sections.push(egui::text::LayoutSection {
+                leading_space: 0.0,
+                byte_range: end..end + 1,
+                format: default_fmt.clone(),
+            });
+        }
+    }
+    let last_covered = all_sections.last().map_or(0, |s| s.byte_range.end);
+    if last_covered < text.len() {
+        all_sections.push(egui::text::LayoutSection {
+            leading_space: 0.0,
+            byte_range: last_covered..text.len(),
+            format: default_fmt,
+        });
+    }
+    egui::text::LayoutJob {
+        text: text.to_owned(),
+        wrap: egui::text::TextWrapping {
+            max_width: wrap_width,
+            max_rows: usize::MAX,
+            ..Default::default()
+        },
+        sections: all_sections,
+        break_on_newline: true,
+        halign: egui::Align::LEFT,
+        justify: false,
+        first_row_min_height: 0.0,
+        round_output_to_gui: true,
+    }
+}
+
 fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
     let now_secs = ui.input(|input| input.time);
-    document.maybe_refresh_pending_draft_analysis(now_secs);
+    document.maybe_refresh_pending_draft_analysis(now_secs, ui.ctx());
     let focused_source_range = document.focused_source_range();
-    let t_highlight = Instant::now();
-    let (cached_source_text, cached_base_layout_job) = document.cached_base_layout_job(ui);
-    let highlight_dur = t_highlight.elapsed();
+
     metric_log!(
-        "[pass-debug] code_editor pass={} highlight_cache={:.2}ms source_len={}",
+        "[pass-debug] code_editor pass={} source_len={}",
         document.pass_name,
-        highlight_dur.as_secs_f64() * 1000.0,
         document.draft_source.len(),
     );
 
-    let existing_galley = document
-        .highlight_cache
-        .as_ref()
-        .and_then(|cache| cache.galley.as_ref())
-        .and_then(|gc| {
-            let cache = document.highlight_cache.as_ref()?;
-            if cache.draft_revision == document.draft_revision
-                && cache.source_text.as_ref() == document.draft_source.as_str()
-            {
-                Some(std::sync::Arc::clone(&gc.galley))
-            } else {
-                None
-            }
-        });
+    let existing_galley = document.line_galley_cache.as_ref().and_then(|c| {
+        if c.merged.job.text == document.draft_source {
+            Some(std::sync::Arc::clone(&c.merged))
+        } else {
+            None
+        }
+    });
     let precomputed_galley: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> =
         std::cell::RefCell::new(existing_galley);
+
+    let line_cache_cell: std::cell::RefCell<Option<LineGalleyCache>> =
+        std::cell::RefCell::new(document.line_galley_cache.take());
+
+    let font_id = pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE);
+    let wgsl_theme = if ui.visuals().dark_mode {
+        crate::ui::wgsl_highlight::WgslTheme::dark(font_id)
+    } else {
+        crate::ui::wgsl_highlight::WgslTheme::light(font_id)
+    };
 
     let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
         if let Some(ref galley) = *precomputed_galley.borrow() {
@@ -2088,24 +2336,17 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
         }
 
         let t_layouter = Instant::now();
-        let mut layout_job = if cached_source_text.as_ref() == buf.as_str() {
-            cached_base_layout_job.clone()
-        } else {
-            let theme =
-                egui_extras::syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
-            egui_extras::syntax_highlighting::highlight(
-                ui.ctx(),
-                ui.style(),
-                &theme,
-                buf.as_str(),
-                "rust",
-            )
-        };
-        layout_job.wrap.max_width = wrap_width;
-        let galley = ui.fonts_mut(|fonts| fonts.layout_job(layout_job));
+        let galley = layout_with_line_cache_incremental(
+            ui,
+            buf.as_str(),
+            wrap_width,
+            &wgsl_theme,
+            &line_cache_cell,
+        );
+
         let layouter_ms = t_layouter.elapsed().as_secs_f64() * 1000.0;
         metric_log!(
-            "[pass-debug] layouter_call={:.2}ms wrap_width={:.0} (cache miss)",
+            "[pass-debug] layouter_call={:.2}ms wrap_width={:.0} (incremental)",
             layouter_ms,
             wrap_width,
         );
@@ -2161,10 +2402,7 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
             });
     });
 
-    if let Some(galley) = precomputed_galley.into_inner() {
-        let wrap_width = galley.job.wrap.max_width;
-        document.store_galley(wrap_width, galley);
-    }
+    document.line_galley_cache = line_cache_cell.into_inner();
 }
 
 fn paint_focus_highlight_overlay(
@@ -2879,6 +3117,7 @@ mod tests {
 
     #[test]
     fn draft_analysis_refresh_is_debounced_until_due_time() {
+        let ctx = egui::Context::default();
         let source = PassDebugSource::from_wgsl(
             "p",
             "fn a() -> f32 { var before: f32 = 0.0; return before; }\n",
@@ -2889,12 +3128,14 @@ mod tests {
         );
         document.mark_draft_edited(10.0);
 
-        document.maybe_refresh_pending_draft_analysis(10.10);
+        document.maybe_refresh_pending_draft_analysis(10.10, &ctx);
         assert!(has_target_named(&document, "before"));
         assert!(!has_target_named(&document, "after"));
         assert!(document.draft_analysis_due_secs.is_some());
 
-        document.maybe_refresh_pending_draft_analysis(10.16);
+        document.maybe_refresh_pending_draft_analysis(10.16, &ctx);
+        // Analysis is now async — wait for thread to complete
+        document.flush_pending_analysis();
         assert!(!has_target_named(&document, "before"));
         assert!(has_target_named(&document, "after"));
         assert_eq!(document.draft_analysis_due_secs, None);

@@ -11,6 +11,7 @@ pub mod histogram;
 pub mod parade;
 pub mod pass_debug_window;
 pub mod qualifier_map;
+pub mod wgsl_highlight;
 pub mod resource_tree;
 pub mod state_machine_panel;
 pub mod timeline_panel;
