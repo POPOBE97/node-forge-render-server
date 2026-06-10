@@ -7,12 +7,16 @@ mod present;
 mod render_analysis;
 pub(super) mod request_keys;
 
+use std::time::Instant;
+
 use rust_wgpu_fiber::eframe::{self, egui};
 
 use crate::app::{
     matrix_render,
     types::{App, TestMode},
 };
+use crate::metric_log;
+use crate::perf_log::FrameTimer;
 
 fn apply_dark_visuals(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
@@ -21,6 +25,7 @@ fn apply_dark_visuals(ctx: &egui::Context) {
 }
 
 pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    let timer = FrameTimer::new();
     let ctx = ui.ctx().clone();
     apply_dark_visuals(&ctx);
 
@@ -28,7 +33,11 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     let render_state = frame.wgpu_render_state().unwrap();
     let mut renderer_guard = render_state.renderer.as_ref().write();
 
+    let t0 = Instant::now();
     let ingest = ingest::run(app, &ctx, render_state, &mut renderer_guard, frame_time);
+    let ingest_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+    let t1 = Instant::now();
     if app.shell.test_mode == TestMode::Matrix {
         let _ = matrix_render::poll_matrix_rebuild(
             &mut app.shell.matrix_state,
@@ -39,7 +48,29 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         );
     }
     let advance = advance::run(app);
+    let advance_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+    let t2 = Instant::now();
     render_analysis::run(app, render_state, &mut renderer_guard, &ingest, &advance);
+    let analysis_ms = t2.elapsed().as_secs_f64() * 1000.0;
+
+    let t3 = Instant::now();
     let present = present::run(app, ui, &ctx, render_state, &mut renderer_guard, &ingest);
+    let present_ms = t3.elapsed().as_secs_f64() * 1000.0;
+
+    let t4 = Instant::now();
     finalize::run(app, &ctx, &advance, &present);
+    let finalize_ms = t4.elapsed().as_secs_f64() * 1000.0;
+
+    let total_ms = timer.elapsed_ms();
+    metric_log!(
+        "[frame] #{} total={:.2}ms | ingest={:.2}ms advance={:.2}ms analysis={:.2}ms present={:.2}ms finalize={:.2}ms",
+        timer.frame_number(),
+        total_ms,
+        ingest_ms,
+        advance_ms,
+        analysis_ms,
+        present_ms,
+        finalize_ms,
+    );
 }

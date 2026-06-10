@@ -4,10 +4,12 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
 use rust_wgpu_fiber::eframe::egui;
 
+use crate::metric_log;
 use crate::renderer::{PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange};
 
 const SIDE_PANEL_DEFAULT_WIDTH: f32 = 340.0;
@@ -64,6 +66,14 @@ struct PassDebugHighlightCache {
     draft_revision: u64,
     source_text: Arc<str>,
     base_layout_job: egui::text::LayoutJob,
+    galley: Option<PassDebugGalleyCache>,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugGalleyCache {
+    #[allow(dead_code)]
+    wrap_width: f32,
+    galley: std::sync::Arc<egui::Galley>,
 }
 
 #[derive(Clone, Debug)]
@@ -280,6 +290,24 @@ impl PassDebugWindowDocument {
     }
 
     fn cached_base_layout_job(&mut self, ui: &egui::Ui) -> (Arc<str>, egui::text::LayoutJob) {
+        self.ensure_highlight_cache(ui);
+        let cache = self
+            .highlight_cache
+            .as_ref()
+            .expect("highlight cache must be initialized");
+        (
+            Arc::clone(&cache.source_text),
+            cache.base_layout_job.clone(),
+        )
+    }
+
+    fn store_galley(&mut self, wrap_width: f32, galley: std::sync::Arc<egui::Galley>) {
+        if let Some(ref mut cache) = self.highlight_cache {
+            cache.galley = Some(PassDebugGalleyCache { wrap_width, galley });
+        }
+    }
+
+    fn ensure_highlight_cache(&mut self, ui: &egui::Ui) {
         let cache_valid = self
             .highlight_cache
             .as_ref()
@@ -303,17 +331,9 @@ impl PassDebugWindowDocument {
                 draft_revision: self.draft_revision,
                 source_text: Arc::from(self.draft_source.as_str()),
                 base_layout_job,
+                galley: None,
             });
         }
-
-        let cache = self
-            .highlight_cache
-            .as_ref()
-            .expect("highlight cache must be initialized");
-        (
-            Arc::clone(&cache.source_text),
-            cache.base_layout_job.clone(),
-        )
     }
 
     fn update_source(
@@ -1073,16 +1093,20 @@ pub fn show_pass_debug_windows(
     pass_sources_revision: u64,
     pass_shader_overrides: &HashMap<String, String>,
 ) -> Vec<PassDebugWindowAction> {
+    let fn_start = Instant::now();
     windows.retain(|_, state| !state.close_requested.load(Ordering::Relaxed));
 
     let mut actions = Vec::new();
+    let window_count = windows.len();
     for state in windows.values_mut() {
+        let window_start = Instant::now();
         let patch_active = pass_shader_overrides.contains_key(state.pass_name.as_str());
         state.update_source(
             pass_sources.get(state.pass_name.as_str()),
             pass_sources_revision,
             patch_active,
         );
+        let update_source_dur = window_start.elapsed();
 
         let viewport_id = state.viewport_id;
         let document = Arc::clone(&state.document);
@@ -1094,37 +1118,53 @@ pub fn show_pass_debug_windows(
             pass_debug_viewport_builder(title.clone(), !state.viewport_initialized);
         state.viewport_initialized = true;
 
+        let pass_name_for_log = state.pass_name.clone();
         ctx.show_viewport_deferred(
             viewport_id,
             viewport_builder,
-            move |ui, class| match class {
-                egui::ViewportClass::EmbeddedWindow => {
-                    let mut open = true;
-                    egui::Window::new(title.as_str())
-                        .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
-                        .open(&mut open)
-                        .default_size(pass_debug_default_window_size())
-                        .show(ui.ctx(), |window_ui| {
-                            render_pass_debug_embedded_content(
-                                window_ui,
-                                &document,
-                                &pending_actions,
+            move |ui, class| {
+                let viewport_render_start = Instant::now();
+                match class {
+                    egui::ViewportClass::EmbeddedWindow => {
+                        let mut open = true;
+                        egui::Window::new(title.as_str())
+                            .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
+                            .open(&mut open)
+                            .default_size(pass_debug_default_window_size())
+                            .show(ui.ctx(), |window_ui| {
+                                render_pass_debug_embedded_content(
+                                    window_ui,
+                                    &document,
+                                    &pending_actions,
+                                );
+                            });
+                        if !open {
+                            close_requested.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    _ => {
+                        if handle_pass_debug_viewport_close_request(
+                            ui.ctx(),
+                            &close_requested,
+                            &last_viewport_snapshot,
+                        ) {
+                            let viewport_render_dur = viewport_render_start.elapsed();
+                            metric_log!(
+                                "[pass-debug] window={} viewport_render={:.2}ms (close-handled)",
+                                pass_name_for_log,
+                                viewport_render_dur.as_secs_f64() * 1000.0,
                             );
-                        });
-                    if !open {
-                        close_requested.store(true, Ordering::Relaxed);
+                            return;
+                        }
+                        render_pass_debug_viewport(ui, &document, &pending_actions);
                     }
                 }
-                _ => {
-                    if handle_pass_debug_viewport_close_request(
-                        ui.ctx(),
-                        &close_requested,
-                        &last_viewport_snapshot,
-                    ) {
-                        return;
-                    }
-                    render_pass_debug_viewport(ui, &document, &pending_actions);
-                }
+                let viewport_render_dur = viewport_render_start.elapsed();
+                metric_log!(
+                    "[pass-debug] window={} viewport_render={:.2}ms",
+                    pass_name_for_log,
+                    viewport_render_dur.as_secs_f64() * 1000.0,
+                );
             },
         );
 
@@ -1134,8 +1174,19 @@ pub fn show_pass_debug_windows(
         }
 
         state.drain_actions(&mut actions);
+        metric_log!(
+            "[pass-debug] window={} update_source={:.2}ms",
+            state.pass_name,
+            update_source_dur.as_secs_f64() * 1000.0,
+        );
     }
 
+    let total_dur = fn_start.elapsed();
+    metric_log!(
+        "[pass-debug] show_all total={:.2}ms window_count={}",
+        total_dur.as_secs_f64() * 1000.0,
+        window_count,
+    );
     actions
 }
 
@@ -1309,6 +1360,7 @@ fn render_pass_debug_viewport(
         .map(|document| document.pass_name.clone())
         .unwrap_or_else(|_| "unavailable".to_string());
 
+    let t_toolbar = Instant::now();
     egui::Panel::top(egui::Id::new(("pass-debug-toolbar", pass_name.as_str())))
         .resizable(false)
         .show_inside(ui, |ui| {
@@ -1319,7 +1371,9 @@ fn render_pass_debug_viewport(
             render_pass_debug_toolbar(ui, &mut document, pending_actions);
             render_patch_messages(ui, &document);
         });
+    let toolbar_dur = t_toolbar.elapsed();
 
+    let t_central = Instant::now();
     egui::CentralPanel::default().show_inside(ui, |ui| {
         let Ok(mut document) = document.lock() else {
             ui.label("Debug document unavailable");
@@ -1331,6 +1385,14 @@ fn render_pass_debug_viewport(
         }
         render_dependency_editor_split(ui, &mut document);
     });
+    let central_dur = t_central.elapsed();
+
+    metric_log!(
+        "[pass-debug] viewport-inner pass={} toolbar={:.2}ms central_panel={:.2}ms",
+        pass_name,
+        toolbar_dur.as_secs_f64() * 1000.0,
+        central_dur.as_secs_f64() * 1000.0,
+    );
 }
 
 fn render_pass_debug_embedded_content(
@@ -1953,6 +2015,7 @@ fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWin
         line_color,
     );
 
+    let t_dep = Instant::now();
     let mut panel_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(("pass-debug-side-child", document.pass_name.as_str()))
@@ -1961,7 +2024,9 @@ fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWin
     );
     panel_ui.set_clip_rect(panel_rect.intersect(ui.clip_rect()));
     render_side_panel(&mut panel_ui, document);
+    let dep_dur = t_dep.elapsed();
 
+    let t_editor = Instant::now();
     let mut editor_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt(("pass-debug-editor-child", document.pass_name.as_str()))
@@ -1970,6 +2035,14 @@ fn render_dependency_editor_split(ui: &mut egui::Ui, document: &mut PassDebugWin
     );
     editor_ui.set_clip_rect(editor_rect.intersect(ui.clip_rect()));
     render_code_editor(&mut editor_ui, document);
+    let editor_dur = t_editor.elapsed();
+
+    metric_log!(
+        "[pass-debug] split pass={} dependency_panel={:.2}ms code_editor={:.2}ms",
+        document.pass_name,
+        dep_dur.as_secs_f64() * 1000.0,
+        editor_dur.as_secs_f64() * 1000.0,
+    );
 
     ui.advance_cursor_after_rect(full_rect);
 }
@@ -1978,8 +2051,43 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
     let now_secs = ui.input(|input| input.time);
     document.maybe_refresh_pending_draft_analysis(now_secs);
     let focused_source_range = document.focused_source_range();
+    let t_highlight = Instant::now();
     let (cached_source_text, cached_base_layout_job) = document.cached_base_layout_job(ui);
-    let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+    let highlight_dur = t_highlight.elapsed();
+    metric_log!(
+        "[pass-debug] code_editor pass={} highlight_cache={:.2}ms source_len={}",
+        document.pass_name,
+        highlight_dur.as_secs_f64() * 1000.0,
+        document.draft_source.len(),
+    );
+
+    let existing_galley = document
+        .highlight_cache
+        .as_ref()
+        .and_then(|cache| cache.galley.as_ref())
+        .and_then(|gc| {
+            let cache = document.highlight_cache.as_ref()?;
+            if cache.draft_revision == document.draft_revision
+                && cache.source_text.as_ref() == document.draft_source.as_str()
+            {
+                Some(std::sync::Arc::clone(&gc.galley))
+            } else {
+                None
+            }
+        });
+    let precomputed_galley: std::cell::RefCell<Option<std::sync::Arc<egui::Galley>>> =
+        std::cell::RefCell::new(existing_galley);
+
+    let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+        if let Some(ref galley) = *precomputed_galley.borrow() {
+            if galley.job.text == buf.as_str()
+                && (galley.job.wrap.max_width - wrap_width).abs() < 0.5
+            {
+                return std::sync::Arc::clone(galley);
+            }
+        }
+
+        let t_layouter = Instant::now();
         let mut layout_job = if cached_source_text.as_ref() == buf.as_str() {
             cached_base_layout_job.clone()
         } else {
@@ -1993,16 +2101,16 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                 "rust",
             )
         };
-        if let Some(source_range) = focused_source_range {
-            apply_layout_job_highlight(
-                &mut layout_job,
-                buf.as_str(),
-                source_range,
-                egui::Color32::from_rgba_premultiplied(251, 191, 36, 56),
-            );
-        }
         layout_job.wrap.max_width = wrap_width;
-        ui.fonts_mut(|fonts| fonts.layout_job(layout_job))
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(layout_job));
+        let layouter_ms = t_layouter.elapsed().as_secs_f64() * 1000.0;
+        metric_log!(
+            "[pass-debug] layouter_call={:.2}ms wrap_width={:.0} (cache miss)",
+            layouter_ms,
+            wrap_width,
+        );
+        *precomputed_galley.borrow_mut() = Some(std::sync::Arc::clone(&galley));
+        galley
     };
 
     ui.scope(|ui| {
@@ -2021,7 +2129,23 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                     .lock_focus(true)
                     .layouter(&mut layouter);
 
+                let t_show = Instant::now();
                 let output = editor.show(ui);
+                let show_ms = t_show.elapsed().as_secs_f64() * 1000.0;
+                metric_log!(
+                    "[pass-debug] editor.show={:.2}ms",
+                    show_ms,
+                );
+
+                if let Some(source_range) = focused_source_range {
+                    paint_focus_highlight_overlay(
+                        ui,
+                        &output,
+                        &document.draft_source,
+                        source_range,
+                    );
+                }
+
                 if output.response.changed() {
                     document.mark_draft_edited(now_secs);
                 }
@@ -2036,13 +2160,18 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                 }
             });
     });
+
+    if let Some(galley) = precomputed_galley.into_inner() {
+        let wrap_width = galley.job.wrap.max_width;
+        document.store_galley(wrap_width, galley);
+    }
 }
 
-fn apply_layout_job_highlight(
-    layout_job: &mut egui::text::LayoutJob,
+fn paint_focus_highlight_overlay(
+    ui: &egui::Ui,
+    output: &egui::widgets::text_edit::TextEditOutput,
     source: &str,
     source_range: PassDebugSourceRange,
-    background: egui::Color32,
 ) {
     let highlight_start = source_range.start_byte;
     let highlight_end = source_range.end_byte;
@@ -2054,47 +2183,59 @@ fn apply_layout_job_highlight(
         return;
     }
 
-    let sections = std::mem::take(&mut layout_job.sections);
-    for section in sections {
-        let section_start = section.byte_range.start;
-        let section_end = section.byte_range.end;
-        let overlap_start = section_start.max(highlight_start);
-        let overlap_end = section_end.min(highlight_end);
+    let start_char = byte_index_to_char_index(source, highlight_start);
+    let end_char = byte_index_to_char_index(source, highlight_end);
+    let highlight_color = egui::Color32::from_rgba_premultiplied(251, 191, 36, 56);
+    let galley = &output.galley;
+    let galley_pos = output.galley_pos;
 
-        if overlap_start >= overlap_end {
-            layout_job.sections.push(section);
-            continue;
-        }
+    let start_cursor = galley.layout_from_cursor(egui::text::CCursor::new(start_char));
+    let end_cursor = galley.layout_from_cursor(egui::text::CCursor::new(end_char));
 
-        if section_start < overlap_start {
-            layout_job.sections.push(egui::text::LayoutSection {
-                leading_space: section.leading_space,
-                byte_range: section_start..overlap_start,
-                format: section.format.clone(),
-            });
-        }
+    if start_cursor.row == end_cursor.row {
+        let start_rect = galley.pos_from_layout_cursor(&start_cursor);
+        let end_rect = galley.pos_from_layout_cursor(&end_cursor);
+        let row = &galley.rows[start_cursor.row];
+        let rect = egui::Rect::from_min_max(
+            egui::pos2(start_rect.left() + galley_pos.x, row.pos.y + galley_pos.y),
+            egui::pos2(
+                end_rect.left() + galley_pos.x,
+                row.pos.y + row.row.size.y + galley_pos.y,
+            ),
+        );
+        ui.painter().rect_filled(rect, 0.0, highlight_color);
+    } else {
+        for row_idx in start_cursor.row..=end_cursor.row {
+            let Some(row) = galley.rows.get(row_idx) else {
+                break;
+            };
+            let row_top = row.pos.y + galley_pos.y;
+            let row_bottom = row_top + row.row.size.y;
 
-        let mut highlight_format = section.format.clone();
-        highlight_format.background = background;
-        layout_job.sections.push(egui::text::LayoutSection {
-            leading_space: if section_start == overlap_start {
-                section.leading_space
+            let left = if row_idx == start_cursor.row {
+                let cursor_rect = galley.pos_from_layout_cursor(&start_cursor);
+                cursor_rect.left() + galley_pos.x
             } else {
-                0.0
-            },
-            byte_range: overlap_start..overlap_end,
-            format: highlight_format,
-        });
+                row.pos.x + galley_pos.x
+            };
+            let right = if row_idx == end_cursor.row {
+                let cursor_rect = galley.pos_from_layout_cursor(&end_cursor);
+                cursor_rect.left() + galley_pos.x
+            } else {
+                row.pos.x + row.row.size.x + galley_pos.x
+            };
 
-        if overlap_end < section_end {
-            layout_job.sections.push(egui::text::LayoutSection {
-                leading_space: 0.0,
-                byte_range: overlap_end..section_end,
-                format: section.format,
-            });
+            if right > left {
+                let rect = egui::Rect::from_min_max(
+                    egui::pos2(left, row_top),
+                    egui::pos2(right, row_bottom),
+                );
+                ui.painter().rect_filled(rect, 0.0, highlight_color);
+            }
         }
     }
 }
+
 
 fn jump_editor_to_source_range(
     ui: &mut egui::Ui,

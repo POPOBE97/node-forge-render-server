@@ -3,6 +3,7 @@ pub mod app;
 pub mod asset_store;
 pub mod color;
 pub mod dsl;
+pub mod perf_log;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;
