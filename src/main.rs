@@ -819,7 +819,13 @@ fn main() -> Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_resizable(true)
-            .with_transparent(true)
+            .with_transparent(false)
+            .with_decorations(true)
+            .with_fullsize_content_view(false)
+            .with_titlebar_shown(true)
+            .with_title_shown(true)
+            .with_titlebar_buttons_shown(true)
+            .with_has_shadow(true)
             .with_inner_size(resolution_hint.map(|x| x as f32))
             // Keep the OS window non-resizable, but don't tie the minimum size to the scene
             // resolution; UI mode (sidebar/canvas toggle + one-shot startup sizing) is the source
