@@ -527,6 +527,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let report = dedup_identical_passes(&mut scene);
@@ -590,6 +591,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let report = dedup_identical_passes(&mut scene);
@@ -642,6 +644,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let report = dedup_identical_passes(&mut scene);

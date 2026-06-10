@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-02-27T11:27:46.343Z",
-    "modified": "2026-02-27T11:27:46.343Z"
+    "created": "2026-06-10T17:18:34.033Z",
+    "modified": "2026-06-10T17:18:34.033Z"
   },
   "nodes": [
     {
@@ -262,23 +262,12 @@
           "variableName": "t",
           "type": "float",
           "sourceBinding": {
-            "nodeId": "TimeInput_46",
-            "outputPortId": "time",
-            "outputLabel": "Time"
+            "nodeId": "FloatInput_48",
+            "outputPortId": "value",
+            "outputLabel": "Value"
           }
         }
       ]
-    },
-    {
-      "id": "TimeInput_46",
-      "type": "TimeInput",
-      "position": {
-        "x": -840,
-        "y": 400
-      },
-      "width": 160,
-      "label": "Time Input",
-      "params": {}
     },
     {
       "id": "PerspectiveCamera_47",
@@ -309,6 +298,19 @@
         "aspect": 0.45,
         "near": 700,
         "far": 4000
+      }
+    },
+    {
+      "id": "FloatInput_48",
+      "type": "FloatInput",
+      "position": {
+        "x": -860,
+        "y": 400
+      },
+      "width": 160,
+      "label": "Rotation",
+      "params": {
+        "value": 0
       }
     }
   ],
@@ -380,17 +382,6 @@
       }
     },
     {
-      "id": "edge_81",
-      "from": {
-        "nodeId": "TimeInput_46",
-        "portId": "time"
-      },
-      "to": {
-        "nodeId": "MathClosure_45",
-        "portId": "dynamic_1772173204036_1"
-      }
-    },
-    {
       "id": "edge_82",
       "from": {
         "nodeId": "MathClosure_45",
@@ -433,6 +424,17 @@
         "nodeId": "Composite_5",
         "portId": "pass"
       }
+    },
+    {
+      "id": "edge_86",
+      "from": {
+        "nodeId": "FloatInput_48",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_45",
+        "portId": "dynamic_1772173204036_1"
+      }
     }
   ],
   "outputs": {
@@ -452,5 +454,113 @@
       "size": 20946388
     }
   },
-  "groups": []
+  "groups": [],
+  "stateMachine": {
+    "id": "sm_mq8a97ph_b",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_mq8a9yv3_c",
+        "name": "Entry",
+        "position": {
+          "x": 20,
+          "y": 40
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_mq8a9yv3_d",
+        "name": "Any",
+        "position": {
+          "x": 20,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_mq8a9yv3_e",
+        "name": "Exit",
+        "position": {
+          "x": 20,
+          "y": 80
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      },
+      {
+        "id": "st_mq8aa1sy_g",
+        "name": "Mutation 1",
+        "position": {
+          "x": 240,
+          "y": 40
+        },
+        "parameterOverrides": {},
+        "type": "mutationNode",
+        "mutationId": "mutation_mq8aa1sy_f"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "tr_mq8aagq1_h",
+        "source": "st_mq8a9yv3_c",
+        "target": "st_mq8aa1sy_g",
+        "delay": 0,
+        "duration": 0.3,
+        "easing": "linear"
+      }
+    ],
+    "mutations": [
+      {
+        "id": "mutation_mq8aa1sy_f",
+        "name": "Mutation 1",
+        "inputs": [
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "Rotation.value",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "Rotation.value",
+            "type": "float"
+          }
+        ],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": [],
+        "passthroughBindings": [
+          {
+            "inputPortId": "localElapsedTime",
+            "outputPortId": "FloatInput_48:value"
+          }
+        ]
+      }
+    ],
+    "initialStateId": "st_mq8a9yv3_c"
+  }
 }

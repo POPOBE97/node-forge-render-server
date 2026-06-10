@@ -386,6 +386,7 @@ pub(super) struct AppShell {
     pub pass_debug_sources_revision: u64,
     pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
     pub pass_shader_overrides: std::collections::HashMap<String, String>,
+    pub debug_artifacts: crate::debug_artifacts::DebugArtifactStore,
     pub test_mode: TestMode,
     pub matrix_config: MatrixConfig,
     pub resource_pools: Vec<ResourcePoolInfo>,
@@ -569,6 +570,10 @@ impl App {
             .uniform_scene
             .as_ref()
             .and_then(scene_reference_image_alpha_mode);
+        let mut debug_artifacts = crate::debug_artifacts::DebugArtifactStore::default();
+        if let Some(scene) = init.uniform_scene.as_ref() {
+            let _ = debug_artifacts.sync_manifest(scene.debug_artifacts.clone());
+        }
         Self {
             core: AppCore {
                 shader_space: init.shader_space,
@@ -622,6 +627,7 @@ impl App {
                 pass_debug_sources_revision: 0,
                 pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),
                 pass_shader_overrides: std::collections::HashMap::new(),
+                debug_artifacts,
                 test_mode: TestMode::default(),
                 matrix_config: MatrixConfig::default(),
                 resource_pools: Vec::new(),
@@ -722,6 +728,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 
@@ -845,6 +852,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let pools = super::extract_resource_pools(&scene);

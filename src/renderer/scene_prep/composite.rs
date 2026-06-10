@@ -179,6 +179,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene

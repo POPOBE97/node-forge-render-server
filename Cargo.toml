@@ -33,6 +33,7 @@ core-graphics = "0.23"
 metal = "0.32"
 
 [patch.crates-io]
+eframe = { path = "3rd/eframe" }
 egui-wgpu = { path = "3rd/egui-wgpu" }
 block = { path = "3rd/block" }
 

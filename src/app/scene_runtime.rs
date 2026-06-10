@@ -535,6 +535,12 @@ pub fn apply_scene_update(
             request_id,
             source,
         } => {
+            let missing_debug_artifact_ids = app
+                .shell
+                .debug_artifacts
+                .sync_manifest(scene.debug_artifacts.clone());
+            ws::broadcast_debug_artifact_request(&app.core.ws_hub, missing_debug_artifact_ids);
+
             let previous_output_resolution = app.core.resolution;
             app.canvas.reference.scene_desired = scene_reference_desired_source(&scene);
             app.canvas.reference.scene_alpha_mode = scene_reference_image_alpha_mode(&scene);
@@ -716,6 +722,24 @@ pub fn apply_scene_update(
                         previous_output_hash: None,
                     }
                 }
+            }
+        }
+        ws::SceneUpdate::DebugArtifactUpsert { item, content_text } => {
+            app.shell.debug_artifacts.upsert(item, content_text);
+            SceneApplyResult {
+                did_rebuild_shader_space: false,
+                texture_filter_override: None,
+                reset_viewport: false,
+                previous_output_hash: None,
+            }
+        }
+        ws::SceneUpdate::DebugArtifactDelete { artifact_id } => {
+            app.shell.debug_artifacts.delete(artifact_id.as_str());
+            SceneApplyResult {
+                did_rebuild_shader_space: false,
+                texture_filter_override: None,
+                reset_viewport: false,
+                previous_output_hash: None,
             }
         }
         ws::SceneUpdate::ParseError {
@@ -961,6 +985,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let schema = GraphSchema {
@@ -1027,6 +1052,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let schema = GraphSchema {

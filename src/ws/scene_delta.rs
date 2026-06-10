@@ -27,6 +27,10 @@ pub struct SceneDelta {
     /// Asset ids removed by this delta.
     #[serde(rename = "assetsRemoved", default)]
     pub assets_removed: Option<Vec<String>>,
+    /// Optional debug artifact manifest replacement. Editor v1 sends this via
+    /// full scene updates, but keeping the delta field preserves future payloads.
+    #[serde(default, rename = "debugArtifacts", alias = "debug_artifacts")]
+    pub debug_artifacts: Option<Option<crate::dsl::DebugArtifacts>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -57,6 +61,7 @@ pub struct SceneCache {
     pub groups: Vec<GroupDSL>,
     pub assets: HashMap<String, crate::dsl::AssetEntry>,
     pub state_machine: Option<crate::state_machine::types::StateMachine>,
+    pub debug_artifacts: Option<crate::dsl::DebugArtifacts>,
 }
 
 impl SceneCache {
@@ -70,6 +75,7 @@ impl SceneCache {
             groups: scene.groups.clone(),
             assets: scene.assets.clone(),
             state_machine: scene.state_machine.clone(),
+            debug_artifacts: scene.debug_artifacts.clone(),
         };
         apply_scene_update(&mut cache, scene);
         cache
@@ -82,6 +88,7 @@ pub fn apply_scene_update(cache: &mut SceneCache, scene: &SceneDSL) {
     cache.groups = scene.groups.clone();
     cache.assets = scene.assets.clone();
     cache.state_machine = scene.state_machine.clone();
+    cache.debug_artifacts = scene.debug_artifacts.clone();
 
     cache.nodes_by_id.clear();
     for node in &scene.nodes {
@@ -168,6 +175,10 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
         for asset_id in asset_ids {
             cache.assets.remove(asset_id);
         }
+    }
+
+    if let Some(debug_artifacts) = delta.debug_artifacts.as_ref() {
+        cache.debug_artifacts = debug_artifacts.clone();
     }
 }
 
@@ -315,6 +326,7 @@ pub fn materialize_scene_dsl(cache: &SceneCache) -> SceneDSL {
         groups: cache.groups.clone(),
         assets: cache.assets.clone(),
         state_machine: cache.state_machine.clone(),
+        debug_artifacts: cache.debug_artifacts.clone(),
     }
 }
 
@@ -367,7 +379,42 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         }
+    }
+
+    #[test]
+    fn scene_cache_materialize_preserves_debug_artifacts() {
+        let mut scene = base_scene();
+        let item = crate::dsl::DebugArtifactItem {
+            id: "pass__Main__reference-code__default".to_string(),
+            anchor: crate::dsl::DebugArtifactAnchor::Pass {
+                pass_name: "Main".to_string(),
+            },
+            role: crate::dsl::DebugArtifactRole::ReferenceCode,
+            name: "Reference code".to_string(),
+            mime_type: "text/plain".to_string(),
+            path: "debug-artifacts/pass__Main__reference-code__default/Main.reference.txt"
+                .to_string(),
+            size: Some(12),
+            content_hash: Some("00000000".to_string()),
+            slot_key: Some("default".to_string()),
+        };
+        scene.debug_artifacts = Some(crate::dsl::DebugArtifacts {
+            version: 1,
+            items: HashMap::from([(item.id.clone(), item.clone())]),
+        });
+
+        let cache = SceneCache::from_scene_update(&scene);
+        let materialized = materialize_scene_dsl(&cache);
+        let items = materialized
+            .debug_artifacts
+            .expect("debug artifacts manifest")
+            .items;
+        assert_eq!(
+            items.get(item.id.as_str()).map(|entry| &entry.path),
+            Some(&item.path)
+        );
     }
 
     #[test]
@@ -393,6 +440,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -418,6 +466,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -457,6 +506,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -486,6 +536,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -511,6 +562,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: Some(None),
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -583,6 +635,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
         let cache = SceneCache::from_scene_update(&scene);
         let delta = SceneDelta {
@@ -600,6 +653,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };
@@ -695,6 +749,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
         let cache = SceneCache::from_scene_update(&scene);
         let delta = SceneDelta {
@@ -716,6 +771,7 @@ mod tests {
             outputs: None,
             groups: None,
             state_machine: None,
+            debug_artifacts: None,
             assets_added: None,
             assets_removed: None,
         };

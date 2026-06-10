@@ -382,6 +382,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 

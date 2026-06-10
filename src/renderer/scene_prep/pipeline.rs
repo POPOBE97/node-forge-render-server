@@ -88,6 +88,7 @@ pub(crate) fn prepare_scene_with_report(
         groups: expanded.groups.clone(),
         assets: expanded.assets.clone(),
         state_machine: expanded.state_machine.clone(),
+        debug_artifacts: expanded.debug_artifacts.clone(),
     };
 
     // Coerce primitive shader values into passes by synthesizing a fullscreen RenderPass.

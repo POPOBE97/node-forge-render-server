@@ -627,6 +627,10 @@ fn run_headless_ws_render_once(
             ws::SceneUpdate::AnimationControl { .. } => {
                 // Animation control is irrelevant in headless mode; ignore.
             }
+            ws::SceneUpdate::DebugArtifactUpsert { .. }
+            | ws::SceneUpdate::DebugArtifactDelete { .. } => {
+                // Debug artifacts do not affect headless render output.
+            }
             ws::SceneUpdate::ParseError {
                 message,
                 request_id,

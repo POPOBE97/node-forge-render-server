@@ -19,9 +19,16 @@ pub enum AppCommand {
     PickReferenceImage,
     ClearReference,
     OpenPassDebug(String),
-    ApplyPassShaderPatch { pass_name: String, source: String },
+    ApplyPassShaderPatch {
+        pass_name: String,
+        source: String,
+    },
     ResetPassShaderPatch(String),
     ResetAllPassShaderPatches,
+    UpsertDebugArtifact {
+        item: crate::dsl::DebugArtifactItem,
+        content_text: String,
+    },
     ToggleCanvasOnly,
     SetTestMode(crate::app::TestMode),
     ToggleMatrixPool(String),
@@ -137,6 +144,7 @@ pub fn dispatch(
                 &app.shell.pass_debug_sources,
                 app.shell.pass_debug_sources_revision,
                 &app.shell.pass_shader_overrides,
+                &app.shell.debug_artifacts,
                 pass_name,
             );
         }
@@ -209,6 +217,12 @@ pub fn dispatch(
                     );
                 }
             }
+        }
+        AppCommand::UpsertDebugArtifact { item, content_text } => {
+            app.shell
+                .debug_artifacts
+                .upsert(item.clone(), Some(content_text.clone()));
+            crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
         }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);

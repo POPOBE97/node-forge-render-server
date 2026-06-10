@@ -24,6 +24,93 @@ pub struct AssetEntry {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DebugArtifacts {
+    pub version: u32,
+    #[serde(default)]
+    pub items: HashMap<String, DebugArtifactItem>,
+}
+
+impl Default for DebugArtifacts {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            items: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DebugArtifactItem {
+    pub id: String,
+    pub anchor: DebugArtifactAnchor,
+    pub role: DebugArtifactRole,
+    pub name: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(
+        rename = "contentHash",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content_hash: Option<String>,
+    #[serde(rename = "slotKey", default, skip_serializing_if = "Option::is_none")]
+    pub slot_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DebugArtifactRole {
+    ReferenceCode,
+    Patch,
+    Note,
+    Image,
+    Attachment,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum DebugArtifactAnchor {
+    Pass {
+        #[serde(rename = "passName")]
+        pass_name: String,
+    },
+    DependencyTarget {
+        #[serde(rename = "passName")]
+        pass_name: String,
+        target: DebugTargetAnchor,
+    },
+    DependencyOccurrence {
+        #[serde(rename = "passName")]
+        pass_name: String,
+        target: DebugTargetAnchor,
+        #[serde(rename = "occurrenceKey")]
+        occurrence_key: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DebugTargetAnchor {
+    pub scope: String,
+    pub name: String,
+    pub kind: String,
+    #[serde(
+        rename = "sourceExcerptHash",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source_excerpt_hash: Option<String>,
+    #[serde(
+        rename = "targetIdHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub target_id_hint: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SceneDSL {
     pub version: String,
     pub metadata: Metadata,
@@ -36,6 +123,12 @@ pub struct SceneDSL {
     pub assets: HashMap<String, AssetEntry>,
     #[serde(default, rename = "stateMachine")]
     pub state_machine: Option<crate::state_machine::types::StateMachine>,
+    #[serde(
+        default,
+        rename = "debugArtifacts",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub debug_artifacts: Option<DebugArtifacts>,
 }
 
 /// A reusable subgraph definition referenced by `GroupInstance` nodes.
@@ -112,6 +205,7 @@ pub fn treeshake_unlinked_nodes(scene: &SceneDSL) -> SceneDSL {
         groups: scene.groups.clone(),
         assets: scene.assets.clone(),
         state_machine: scene.state_machine.clone(),
+        debug_artifacts: scene.debug_artifacts.clone(),
     }
 }
 

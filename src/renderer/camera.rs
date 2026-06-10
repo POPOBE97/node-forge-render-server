@@ -549,6 +549,7 @@ mod tests {
             groups: vec![],
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 

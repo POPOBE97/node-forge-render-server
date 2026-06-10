@@ -452,6 +452,7 @@ fn try_compile_pure_group_call(
         groups: Vec::new(),
         assets: scene.assets.clone(),
         state_machine: None,
+        debug_artifacts: None,
     };
     let helper_nodes_by_id: HashMap<String, Node> = helper_scene
         .nodes
@@ -1204,6 +1205,7 @@ pub mod test_utils {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 
@@ -1226,6 +1228,7 @@ pub mod test_utils {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 
@@ -1299,6 +1302,7 @@ mod readability_tests {
             groups,
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 

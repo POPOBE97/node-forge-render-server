@@ -595,6 +595,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         }
     }
 
@@ -635,6 +636,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let schema = GraphSchema {
@@ -695,6 +697,7 @@ mod tests {
             groups: Vec::new(),
             assets: Default::default(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let pass = PassBindings {

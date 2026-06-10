@@ -28,7 +28,7 @@ use tungstenite::{Error as WsError, Message, accept};
 use crate::{
     asset_store::AssetStore,
     dsl,
-    dsl::{Node, SceneDSL},
+    dsl::{DebugArtifactItem, Node, SceneDSL},
     protocol::{ErrorPayload, WSMessage, now_millis},
 };
 
@@ -99,7 +99,83 @@ pub enum SceneUpdate {
         request_id: Option<String>,
     },
     /// Animation play/stop control from the editor.
-    AnimationControl { action: AnimationControlAction },
+    AnimationControl {
+        action: AnimationControlAction,
+    },
+    DebugArtifactUpsert {
+        item: DebugArtifactItem,
+        content_text: Option<String>,
+    },
+    DebugArtifactDelete {
+        artifact_id: String,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct DebugArtifactRequestPayload {
+    #[serde(rename = "artifactId", skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(rename = "artifactIds", default, skip_serializing_if = "Vec::is_empty")]
+    pub artifact_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct DebugArtifactUpsertPayload {
+    pub item: DebugArtifactItem,
+    #[serde(rename = "contentText", skip_serializing_if = "Option::is_none")]
+    pub content_text: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct DebugArtifactDeletePayload {
+    #[serde(rename = "artifactId")]
+    pub artifact_id: String,
+}
+
+pub fn broadcast_debug_artifact_request(hub: &WsHub, artifact_ids: Vec<String>) {
+    if artifact_ids.is_empty() {
+        return;
+    }
+    let msg = WSMessage {
+        msg_type: "debug_artifact_request".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(DebugArtifactRequestPayload {
+            artifact_id: None,
+            artifact_ids,
+        }),
+    };
+    if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
+pub fn broadcast_debug_artifact_upsert(
+    hub: &WsHub,
+    item: DebugArtifactItem,
+    content_text: Option<String>,
+) {
+    let msg = WSMessage {
+        msg_type: "debug_artifact_upsert".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(DebugArtifactUpsertPayload { item, content_text }),
+    };
+    if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
+pub fn broadcast_debug_artifact_delete(hub: &WsHub, artifact_id: String) {
+    let msg = WSMessage {
+        msg_type: "debug_artifact_delete".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(DebugArtifactDeletePayload { artifact_id }),
+    };
+    if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -713,6 +789,89 @@ fn handle_text_message(
                 }
             }
         }
+        "debug_artifact_request" => {
+            // Renderer-side debug artifacts are surfaced through UI actions that
+            // broadcast upserts as they happen. The WS thread intentionally does
+            // not own artifact content state, so editor requests are accepted as
+            // a forward-compatible no-op in v1.
+        }
+        "debug_artifact_upsert" => {
+            let payload = match msg.payload {
+                Some(p) => p,
+                None => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        "debug_artifact_upsert missing payload",
+                    );
+                    return Ok(());
+                }
+            };
+            let payload: DebugArtifactUpsertPayload = match serde_json::from_value(payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        &format!("invalid debug_artifact_upsert payload: {e}"),
+                    );
+                    return Ok(());
+                }
+            };
+            send_scene_update(
+                scene_tx,
+                scene_drop_rx,
+                SceneUpdate::DebugArtifactUpsert {
+                    item: payload.item,
+                    content_text: payload.content_text,
+                },
+                ui_wake,
+            );
+        }
+        "debug_artifact_delete" => {
+            let payload = match msg.payload {
+                Some(p) => p,
+                None => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        "debug_artifact_delete missing payload",
+                    );
+                    return Ok(());
+                }
+            };
+            let payload: DebugArtifactDeletePayload = match serde_json::from_value(payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    send_error(
+                        ws,
+                        msg.request_id,
+                        "PARSE_ERROR",
+                        &format!("invalid debug_artifact_delete payload: {e}"),
+                    );
+                    return Ok(());
+                }
+            };
+            send_scene_update(
+                scene_tx,
+                scene_drop_rx,
+                SceneUpdate::DebugArtifactDelete {
+                    artifact_id: payload.artifact_id,
+                },
+                ui_wake,
+            );
+        }
+        "debug_artifact_upload_start" | "debug_artifact_upload_end" => {
+            send_error(
+                ws,
+                msg.request_id,
+                "UNSUPPORTED",
+                "debug artifact chunk upload is reserved for binary/large-file support",
+            );
+        }
         "animation_control" => {
             let payload = match msg.payload {
                 Some(p) => p,
@@ -867,6 +1026,12 @@ fn send_scene_update(
                 // Control messages are critical; flush the channel to deliver.
                 while scene_drop_rx.try_recv().is_ok() {}
                 scene_tx.try_send(update).is_ok()
+            }
+            SceneUpdate::DebugArtifactUpsert { .. } | SceneUpdate::DebugArtifactDelete { .. } => {
+                // Artifact messages are side-channel state for the debug UI.
+                // Keep an in-flight scene update if one exists; the editor can
+                // answer a later request if this update is skipped.
+                false
             }
         }
     } else {

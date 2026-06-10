@@ -407,6 +407,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -463,6 +464,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -545,6 +547,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -649,6 +652,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -744,6 +748,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -804,6 +809,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -847,6 +853,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
 
         let nodes_by_id: HashMap<String, Node> = scene
@@ -991,6 +998,7 @@ mod tests {
             groups: Vec::new(),
             assets: HashMap::new(),
             state_machine: None,
+            debug_artifacts: None,
         };
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes

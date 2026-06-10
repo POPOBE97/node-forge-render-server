@@ -256,6 +256,7 @@ pub(super) fn run(
         &app.shell.pass_debug_sources,
         app.shell.pass_debug_sources_revision,
         &app.shell.pass_shader_overrides,
+        &app.shell.debug_artifacts,
     ) {
         let command = match action {
             ui::pass_debug_window::PassDebugWindowAction::ApplyPatch { pass_name, source } => {
@@ -267,6 +268,10 @@ pub(super) fn run(
             ui::pass_debug_window::PassDebugWindowAction::ResetAllPatches => {
                 AppCommand::ResetAllPassShaderPatches
             }
+            ui::pass_debug_window::PassDebugWindowAction::UpsertDebugArtifact {
+                item,
+                content_text,
+            } => AppCommand::UpsertDebugArtifact { item, content_text },
         };
         if let Err(err) = commands::dispatch(app, ctx, render_state, renderer, now, command) {
             eprintln!("[app] pass debug command failed: {err:#}");
