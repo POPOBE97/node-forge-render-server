@@ -1,0 +1,1354 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-06-12T14:49:58.239Z",
+    "modified": "2026-06-12T14:49:58.239Z"
+  },
+  "nodes": [
+    {
+      "id": "InstancedGeometryStart_1",
+      "type": "InstancedGeometryStart",
+      "position": {
+        "x": -280,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Instanced Geometry (Start)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402",
+        "count": 18
+      }
+    },
+    {
+      "id": "InstancedGeometryEnd_2",
+      "type": "InstancedGeometryEnd",
+      "position": {
+        "x": 80,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Instanced Geometry (End)",
+      "params": {
+        "zoneId": "zone_1768669132574_76402"
+      }
+    },
+    {
+      "id": "Rect2DGeometry_3",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -460,
+        "y": -520
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "radius": 1,
+        "smooth": 1,
+        "size": {
+          "x": 100,
+          "y": 100
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    },
+    {
+      "id": "RenderPass_4",
+      "type": "RenderPass",
+      "position": {
+        "x": 260,
+        "y": -440
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Composite_7",
+      "type": "Composite",
+      "position": {
+        "x": 440,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "alpha": 1,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1779709935668_1",
+          "name": "pass2",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1779709943503_2",
+          "name": "pass3",
+          "type": "color"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1779709935668_1",
+          "label": "pass2",
+          "variableName": "pass2",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_4",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1779709943503_2",
+          "label": "pass3",
+          "variableName": "pass3",
+          "type": "color",
+          "sourceBinding": {
+            "nodeId": "ImageTexture_68",
+            "outputPortId": "color",
+            "outputLabel": "Color"
+          }
+        }
+      ]
+    },
+    {
+      "id": "RenderTexture_8",
+      "type": "RenderTexture",
+      "position": {
+        "x": 260,
+        "y": -180
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2345,
+        "format": "rgba16float"
+      }
+    },
+    {
+      "id": "Screen_9",
+      "type": "Screen",
+      "position": {
+        "x": 620,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 588,
+        "height": 1306
+      }
+    },
+    {
+      "id": "Index_14",
+      "type": "Index",
+      "position": {
+        "x": -700,
+        "y": -280
+      },
+      "width": 220,
+      "label": "Index",
+      "params": {}
+    },
+    {
+      "id": "DataNode_20",
+      "type": "DataNode",
+      "position": {
+        "x": -940,
+        "y": -520
+      },
+      "width": 219,
+      "label": "Data",
+      "params": {
+        "text": "{\n    \"rects\": [\n        {\n            \"x\": 85,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 376,\n            \"width\": 435,\n            \"height\": 198,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 615,\n            \"width\": 435,\n            \"height\": 435,\n            \"radius\": 66\n        },\n        {\n            \"x\": 559,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 796,\n            \"y\": 615,\n            \"width\": 198,\n            \"height\": 433,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1089,\n            \"width\": 909,\n            \"height\": 209,\n            \"radius\": 66\n        },\n        {\n            \"x\": 85,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1337,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1.0,\n                0.68,\n                0.09,\n                1\n            ]\n        },\n        {\n            \"x\": 85,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99,\n            \"drawBeforeColor\": [\n                1,\n                1,\n                1,\n                1\n            ]\n        },\n        {\n            \"x\": 559,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1574,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 85,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 322,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 559,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 796,\n            \"y\": 1811,\n            \"width\": 198,\n            \"height\": 198,\n            \"radius\": 99\n        },\n        {\n            \"x\": 465,\n            \"y\": 2103,\n            \"width\": 149,\n            \"height\": 78,\n            \"radius\": 39\n        }\n    ]\n}\n",
+        "syntax": "json",
+        "fileName": "",
+        "_uiCollapsedFields": [
+          "sec:text"
+        ]
+      }
+    },
+    {
+      "id": "DataParse_21",
+      "type": "DataParse",
+      "position": {
+        "x": -700,
+        "y": -220
+      },
+      "width": 217,
+      "label": "Data Parse",
+      "params": {
+        "source": "let size = [\n  data[\"rects\"][index].width,\n  data[\"rects\"][index].height\n] as vec2\n\nlet position = [\n  data[\"rects\"][index].x - size[0] / 2 + size[0],\n  2400 - (data[\"rects\"][index].y - size[1] / 2 + size[1])\n] as vec2\n\nconst radius = data[\"rects\"][index].radius as float\n\nconst scale = [\n  size[0] / 100.0,\n  size[1] / 100.0,\n] as vec2\n\nreturn { position, scale, size, radius }",
+        "_uiCollapsedFields": []
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768809771808_1",
+          "name": "data",
+          "type": "any"
+        },
+        {
+          "id": "dynamic_1768809897509_2",
+          "name": "index",
+          "type": "int"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_position",
+          "name": "position",
+          "type": "vector2"
+        },
+        {
+          "id": "out_scale",
+          "name": "scale",
+          "type": "vector2"
+        },
+        {
+          "id": "out_size",
+          "name": "size",
+          "type": "vector2"
+        },
+        {
+          "id": "out_radius",
+          "name": "radius",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768809771808_1",
+          "label": "data",
+          "variableName": "data",
+          "type": "any",
+          "sourceBinding": {
+            "nodeId": "DataNode_20",
+            "outputPortId": "data",
+            "outputLabel": "Data"
+          }
+        },
+        {
+          "portId": "dynamic_1768809897509_2",
+          "label": "index",
+          "variableName": "index",
+          "type": "int",
+          "sourceBinding": {
+            "nodeId": "Index_14",
+            "outputPortId": "index",
+            "outputLabel": "Index"
+          }
+        }
+      ]
+    },
+    {
+      "id": "DataParse_22",
+      "type": "DataParse",
+      "position": {
+        "x": -700,
+        "y": -520
+      },
+      "width": 217,
+      "label": "Data Parse",
+      "params": {
+        "source": "let count = data[\"rects\"].length as int\n\nreturn { count }"
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1768809771808_1",
+          "name": "data",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_count",
+          "name": "count",
+          "type": "int"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1768809771808_1",
+          "label": "data",
+          "variableName": "data",
+          "type": "any",
+          "sourceBinding": {
+            "nodeId": "DataNode_20",
+            "outputPortId": "data",
+            "outputLabel": "Data"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SetTransform_24",
+      "type": "SetTransform",
+      "position": {
+        "x": -100,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Set Transform",
+      "params": {
+        "mode": "Components",
+        "rotate": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    {
+      "id": "ReferenceImage_46",
+      "type": "ReferenceImage",
+      "position": {
+        "x": 620,
+        "y": -420
+      },
+      "width": 160,
+      "label": "Reference Image",
+      "params": {
+        "assetId": "762325f2042e",
+        "encoderSpace": "srgb",
+        "alphaMode": "premultiplied"
+      }
+    },
+    {
+      "id": "MathAdd_66",
+      "type": "MathAdd",
+      "position": {
+        "x": -280,
+        "y": -420
+      },
+      "width": 160,
+      "label": "Add",
+      "params": {},
+      "outputs": [
+        {
+          "id": "result",
+          "name": "Result",
+          "type": "vector3"
+        }
+      ]
+    },
+    {
+      "id": "Vector3Input_67",
+      "type": "Vector3Input",
+      "position": {
+        "x": -460,
+        "y": -380
+      },
+      "width": 160,
+      "label": "Vector3 Input",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "id": "ImageTexture_68",
+      "type": "ImageTexture",
+      "position": {
+        "x": 260,
+        "y": -240
+      },
+      "width": 160,
+      "label": "UI Texture",
+      "params": {
+        "assetId": "62d709c5c137",
+        "interpolation": "linear",
+        "extension": "repeat",
+        "addressModeU": "repeat",
+        "addressModeV": "repeat",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight",
+        "aspectCorrection": "off",
+        "_uiCollapsed": true
+      }
+    },
+    {
+      "id": "GroupInstance_70",
+      "type": "GroupInstance",
+      "position": {
+        "x": 260,
+        "y": -520
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "BackgroundPass"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "GroupInstance_71",
+      "type": "GroupInstance",
+      "position": {
+        "x": -180,
+        "y": -240
+      },
+      "width": 160,
+      "label": "Group 2",
+      "params": {
+        "groupId": "BackgroundPass"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": []
+    },
+    {
+      "id": "HyperOSGlassMaterial_72",
+      "type": "HyperOSGlassMaterial",
+      "position": {
+        "x": 0,
+        "y": -240
+      },
+      "width": 220,
+      "label": "HyperOS Glass Material",
+      "params": {
+        "uBlendLuminanceValues": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "uBlendLuminanceAmount": 0,
+        "uBlendSaturation": 1,
+        "uBlendBrightness": 0,
+        "uBlendDarker": 0.15,
+        "uBlendDarkerRangeX": 0.5,
+        "uBlendDarkerRangeY": 0.8,
+        "uDebugShapeExpand": 2.5,
+        "uInnerBottom": 0,
+        "uInnerGlassColor": [
+          1,
+          1,
+          1,
+          0
+        ],
+        "uInnerColorWhite": 0,
+        "uInnerColorPow": 1,
+        "uInnerColorMix": 0,
+        "uGeoPxRadius": 24,
+        "uShapeEdgePx": 30,
+        "uShapeEdgePow": 2,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uReflectLighten": 0.5,
+        "uReflectStrength": 0.5,
+        "uReflectionExtend": 0,
+        "uReflectionExtendColor": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "uDirectionalLightDirection": {
+          "x": 0.5,
+          "y": -0.7,
+          "z": 0.5
+        },
+        "uDirectionalLightIntensity": 1,
+        "uDirectionalLightOppositeIntensity": 0,
+        "uDirectionalLightAngleRange": 0.5,
+        "uRefractBlurScale": 1,
+        "uRefractIorIOR": 1.5,
+        "uBgColorSaturation": 1,
+        "uBgColorBrightness": 0,
+        "uBionicBurn": 1,
+        "uPressLightCenterFall": 0,
+        "uPressLightCenterStrength": 0,
+        "uPressLightCenterPeak": 0,
+        "uPressRingStrength": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "Rect2DGeometry_3",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "base"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "RenderTexture_8",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_9",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_22",
+      "from": {
+        "nodeId": "DataNode_20",
+        "portId": "data"
+      },
+      "to": {
+        "nodeId": "DataParse_21",
+        "portId": "dynamic_1768809771808_1"
+      }
+    },
+    {
+      "id": "edge_24",
+      "from": {
+        "nodeId": "Index_14",
+        "portId": "index"
+      },
+      "to": {
+        "nodeId": "DataParse_21",
+        "portId": "dynamic_1768809897509_2"
+      }
+    },
+    {
+      "id": "edge_26",
+      "from": {
+        "nodeId": "DataParse_22",
+        "portId": "out_count"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "count"
+      }
+    },
+    {
+      "id": "edge_27",
+      "from": {
+        "nodeId": "DataNode_20",
+        "portId": "data"
+      },
+      "to": {
+        "nodeId": "DataParse_22",
+        "portId": "dynamic_1768809771808_1"
+      }
+    },
+    {
+      "id": "edge_29",
+      "from": {
+        "nodeId": "InstancedGeometryStart_1",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_30",
+      "from": {
+        "nodeId": "SetTransform_24",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "InstancedGeometryEnd_2",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_32",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_scale"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "scale"
+      }
+    },
+    {
+      "id": "edge_120",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_position"
+      },
+      "to": {
+        "nodeId": "MathAdd_66",
+        "portId": "a"
+      }
+    },
+    {
+      "id": "edge_122",
+      "from": {
+        "nodeId": "Vector3Input_67",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MathAdd_66",
+        "portId": "b"
+      }
+    },
+    {
+      "id": "edge_123",
+      "from": {
+        "nodeId": "MathAdd_66",
+        "portId": "result"
+      },
+      "to": {
+        "nodeId": "SetTransform_24",
+        "portId": "translate"
+      }
+    },
+    {
+      "id": "edge_128",
+      "from": {
+        "nodeId": "RenderPass_4",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "dynamic_1779709935668_1"
+      }
+    },
+    {
+      "id": "edge_130",
+      "from": {
+        "nodeId": "ImageTexture_68",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "dynamic_1779709943503_2"
+      }
+    },
+    {
+      "id": "edge_138",
+      "from": {
+        "nodeId": "GroupInstance_70",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "Composite_7",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_139",
+      "from": {
+        "nodeId": "GroupInstance_71",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "HyperOSGlassMaterial_72",
+        "portId": "uBgTex"
+      }
+    },
+    {
+      "id": "edge_140",
+      "from": {
+        "nodeId": "HyperOSGlassMaterial_72",
+        "portId": "material"
+      },
+      "to": {
+        "nodeId": "RenderPass_4",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_141",
+      "from": {
+        "nodeId": "DataParse_21",
+        "portId": "out_radius"
+      },
+      "to": {
+        "nodeId": "HyperOSGlassMaterial_72",
+        "portId": "uGeoPxRadius"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_7"
+  },
+  "assets": {
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
+    },
+    "62d709c5c137": {
+      "path": "assets/62d709c5c137.png",
+      "originalName": "ui.png",
+      "mimeType": "image/png",
+      "size": 171096
+    },
+    "762325f2042e": {
+      "path": "assets/762325f2042e.png",
+      "originalName": "test.png",
+      "mimeType": "image/png",
+      "size": 1712450
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
+    }
+  },
+  "groups": [
+    {
+      "id": "Background Pass",
+      "name": "Group",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "BackgroundImage",
+          "type": "pass"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "GuassianBlurPass_42",
+          "type": "GuassianBlurPass",
+          "position": {
+            "x": 100,
+            "y": 80
+          },
+          "width": 200,
+          "label": "Gaussian Blur Pass",
+          "params": {
+            "mode": "standard",
+            "radius": 100,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "extend": false,
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "connections": [],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "id": "BackgroundPass",
+      "name": "Group 2",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ImageTexture_48",
+          "type": "ImageTexture",
+          "position": {
+            "x": 600,
+            "y": 60
+          },
+          "width": 192,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "61fea0e0acb1",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ColorMix_50",
+          "type": "ColorMix",
+          "position": {
+            "x": 1020,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Blend Color",
+          "params": {
+            "mode": "normal",
+            "color1": [
+              0,
+              0,
+              0,
+              0.6
+            ],
+            "color0": [
+              1,
+              0,
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "id": "ImageTexture_57",
+          "type": "ImageTexture",
+          "position": {
+            "x": 600,
+            "y": 0
+          },
+          "width": 192,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f2170557f733",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ResourcePool_69",
+          "type": "ResourcePool",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Resource Pool",
+          "params": {
+            "selectedIndex": 1
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1779794651875_1",
+              "name": "input1",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1779794654344_2",
+              "name": "input2",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "color"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1779794651875_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_57",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1779794654344_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_48",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "GuassianBlurPass_42",
+          "type": "GuassianBlurPass",
+          "position": {
+            "x": 1220,
+            "y": 0
+          },
+          "width": 200,
+          "label": "Gaussian Blur Pass",
+          "params": {
+            "mode": "standard",
+            "radius": 100,
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "extend": false,
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_131",
+          "from": {
+            "nodeId": "ImageTexture_57",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_69",
+            "portId": "dynamic_1779794651875_1"
+          }
+        },
+        {
+          "id": "edge_132",
+          "from": {
+            "nodeId": "ImageTexture_48",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_69",
+            "portId": "dynamic_1779794654344_2"
+          }
+        },
+        {
+          "id": "edge_133",
+          "from": {
+            "nodeId": "ResourcePool_69",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ColorMix_50",
+            "portId": "color0"
+          }
+        },
+        {
+          "id": "edge_134",
+          "from": {
+            "nodeId": "ColorMix_50",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ]
+    }
+  ],
+  "stateMachine": {
+    "id": "sm_moxsfuam_3",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_moxsija5_4",
+        "name": "Entry",
+        "position": {
+          "x": 0,
+          "y": -60
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_moxsija6_5",
+        "name": "Any",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_moxsija6_6",
+        "name": "Exit",
+        "position": {
+          "x": 0,
+          "y": 60
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      }
+    ],
+    "transitions": [],
+    "mutations": [
+      {
+        "id": "mutation_moxsjac9_9",
+        "name": "Mutation 1",
+        "inputs": [
+          {
+            "id": "ColorInput_62:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_55:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_61:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:x",
+            "name": "Offset.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:y",
+            "name": "Offset.y",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ColorInput_62:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_55:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_61:value",
+            "name": "Float Input.value",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_53:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:x",
+            "name": "Vector2 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_59:y",
+            "name": "Vector2 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:x",
+            "name": "Offset.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_65:y",
+            "name": "Offset.y",
+            "type": "float"
+          }
+        ],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": [],
+        "passthroughBindings": [
+          {
+            "inputPortId": "localElapsedTime",
+            "outputPortId": "Vector2Input_65:y"
+          }
+        ]
+      }
+    ],
+    "initialStateId": "st_moxsija5_4"
+  },
+  "debugArtifacts": {
+    "version": 1,
+    "items": {
+      "pass__rende.rpass4.pass__reference-workspace__reference-workspace": {
+        "id": "pass__rende.rpass4.pass__reference-workspace__reference-workspace",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "attachment",
+        "name": "Reference workspace",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-workspace__reference-workspace/rende.rpass4.pass.reference-workspace.json",
+        "size": 331,
+        "contentHash": "b22f6fc6",
+        "slotKey": "reference-workspace"
+      },
+      "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7": {
+        "id": "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "reference-code",
+        "name": "Reference: extract.js",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-bdc6e4a7/extract.js",
+        "size": 21908,
+        "contentHash": "335b2dee",
+        "slotKey": "file:bdc6e4a7"
+      },
+      "pass__rende.rpass4.pass__reference-code__file-3b095c1b": {
+        "id": "pass__rende.rpass4.pass__reference-code__file-3b095c1b",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "reference-code",
+        "name": "Reference: glass.frag",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-3b095c1b/glass.frag",
+        "size": 28380,
+        "contentHash": "f009ecba",
+        "slotKey": "file:3b095c1b"
+      },
+      "pass__rende.rpass4.pass__patch__default": {
+        "id": "pass__rende.rpass4.pass__patch__default",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "patch",
+        "name": "Shortwire patches",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__patch__default/rende.rpass4.pass.patches.json",
+        "size": 1595,
+        "contentHash": "c19762f3",
+        "slotKey": "default"
+      },
+      "pass__rende.rpass4.pass__patch__reference-patches": {
+        "id": "pass__rende.rpass4.pass__patch__reference-patches",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "patch",
+        "name": "Reference shortwire patches",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__patch__reference-patches/rende.rpass4.pass.reference-patches.json",
+        "size": 1105,
+        "contentHash": "8001944e",
+        "slotKey": "reference-patches"
+      }
+    }
+  }
+}
