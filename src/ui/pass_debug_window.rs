@@ -4731,6 +4731,12 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 }
 
 fn pass_shader_status(document: &PassDebugWindowDocument) -> String {
+    if let Some(error) = document.last_error.as_ref() {
+        return format!("Patch failed: {}", compact_patch_error(error));
+    }
+    if let Some(status) = document.last_status.as_ref() {
+        return status.clone();
+    }
     if let Some(active) = document.shortwire_active.as_ref() {
         if active.base_source_stale {
             "Shortwire stale".to_string()
@@ -4913,59 +4919,68 @@ fn render_pass_debug_titlebar(
         });
     });
 
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Deps Tree").strong());
-        ui.separator();
-        ui.label(egui::RichText::new("Pass Shader").strong());
-        render_status_badge(ui, pass_shader_status(document));
-        ui.separator();
-        ui.label(egui::RichText::new("Reference").strong());
-        render_status_badge(ui, reference_status(document));
-
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let now_secs = ui.input(|input| input.time);
-            let shortwire_active = document.reference_workspace.shortwire_active_key.is_some();
-            if ui
-                .add_enabled(
-                    !shortwire_active && document.reference_workspace.root_path.is_some(),
-                    egui::Button::new("Reload"),
-                )
-                .clicked()
-            {
-                document.reload_reference_workspace(now_secs);
-            }
-            if ui
-                .add_enabled(!shortwire_active, egui::Button::new("Open"))
-                .on_hover_text("Open reference folder")
-                .clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_folder()
-            {
-                document.import_reference_folder_from_path(&path, now_secs);
-            }
-            render_reference_file_selector(ui, document);
-        });
-    });
-
     if save_requested && pass_debug_save_enabled(document) {
         request_pass_debug_save(document, pending_actions);
     }
 }
 
-fn render_patch_messages(ui: &mut egui::Ui, document: &PassDebugWindowDocument) {
-    if let Some(error) = document.last_error.as_ref() {
-        let summary = compact_patch_error(error);
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.colored_label(egui::Color32::from_rgb(255, 118, 118), "Patch failed");
-            if document.shortwire_is_editor_interactive() {
-                ui.label(egui::RichText::new("Edit and Save again.").small());
-            }
-            ui.label(egui::RichText::new(summary).monospace().small());
-        });
-    } else if let Some(status) = document.last_status.as_ref() {
-        ui.add_space(6.0);
-        ui.label(egui::RichText::new(status.as_str()).monospace().small());
-    }
+fn render_pass_debug_column_headers(
+    ui: &mut egui::Ui,
+    document: &mut PassDebugWindowDocument,
+    panel_rect: egui::Rect,
+    current_rect: egui::Rect,
+    reference_rect: egui::Rect,
+) {
+    let mut panel_header_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(("pass-debug-side-header", document.pass_name.as_str()))
+            .max_rect(panel_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    panel_header_ui.set_clip_rect(panel_rect.intersect(ui.clip_rect()));
+    panel_header_ui.label(egui::RichText::new("Deps Tree").strong());
+
+    let mut current_header_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(("pass-debug-editor-header", document.pass_name.as_str()))
+            .max_rect(current_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    current_header_ui.set_clip_rect(current_rect.intersect(ui.clip_rect()));
+    current_header_ui.label(egui::RichText::new("Pass Shader").strong());
+    render_status_badge(&mut current_header_ui, pass_shader_status(document));
+
+    let mut reference_header_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(("pass-debug-reference-header", document.pass_name.as_str()))
+            .max_rect(reference_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    reference_header_ui.set_clip_rect(reference_rect.intersect(ui.clip_rect()));
+    reference_header_ui.label(egui::RichText::new("Reference").strong());
+    render_status_badge(&mut reference_header_ui, reference_status(document));
+    reference_header_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let now_secs = ui.input(|input| input.time);
+        let shortwire_active = document.reference_workspace.shortwire_active_key.is_some();
+        if ui
+            .add_enabled(
+                !shortwire_active && document.reference_workspace.root_path.is_some(),
+                egui::Button::new("Reload"),
+            )
+            .clicked()
+        {
+            document.reload_reference_workspace(now_secs);
+        }
+        if ui
+            .add_enabled(!shortwire_active, egui::Button::new("Open"))
+            .on_hover_text("Open reference folder")
+            .clicked()
+            && let Some(path) = rfd::FileDialog::new().pick_folder()
+        {
+            document.import_reference_folder_from_path(&path, now_secs);
+        }
+        render_reference_file_selector(ui, document);
+    });
 }
 
 fn render_shortwire_diff_editor(
@@ -5042,18 +5057,22 @@ fn render_dependency_editor_split(
         close_requested,
         send_viewport_close,
     );
-    render_patch_messages(ui, document);
     ui.separator();
 
     let full_rect = ui.available_rect_before_wrap();
-    if full_rect.width() <= 0.0 || full_rect.height() <= 0.0 {
+    if full_rect.width() <= 0.0 || full_rect.height() <= PASS_DEBUG_COLUMN_HEADER_HEIGHT {
         return;
     }
+    let header_height = PASS_DEBUG_COLUMN_HEADER_HEIGHT.min(full_rect.height());
+    let body_rect = egui::Rect::from_min_max(
+        egui::pos2(full_rect.left(), full_rect.top() + header_height),
+        full_rect.right_bottom(),
+    );
 
     let tree_split_id = egui::Id::new(("pass-debug-split-width", document.pass_name.as_str()));
     let editor_split_id =
         egui::Id::new(("pass-debug-editor-split-width", document.pass_name.as_str()));
-    let available_for_panel = (full_rect.width() - PASS_DEBUG_SPLIT_HANDLE_WIDTH * 2.0).max(0.0);
+    let available_for_panel = (body_rect.width() - PASS_DEBUG_SPLIT_HANDLE_WIDTH * 2.0).max(0.0);
     let max_panel_width = SIDE_PANEL_MAX_WIDTH
         .min(
             (available_for_panel - PASS_DEBUG_EDITOR_MIN_WIDTH * 2.0)
@@ -5071,8 +5090,8 @@ fn render_dependency_editor_split(
         .clamp(min_panel_width, max_panel_width);
 
     let panel_rect = egui::Rect::from_min_max(
-        full_rect.min,
-        egui::pos2(full_rect.left() + panel_width, full_rect.bottom()),
+        body_rect.min,
+        egui::pos2(body_rect.left() + panel_width, body_rect.bottom()),
     );
     let handle_rect = egui::Rect::from_min_max(
         egui::pos2(panel_rect.right(), full_rect.top()),
@@ -5082,8 +5101,8 @@ fn render_dependency_editor_split(
         ),
     );
     let editors_rect = egui::Rect::from_min_max(
-        egui::pos2(handle_rect.right(), full_rect.top()),
-        full_rect.right_bottom(),
+        egui::pos2(handle_rect.right(), body_rect.top()),
+        body_rect.right_bottom(),
     );
 
     let handle_response = ui.interact(
@@ -5135,15 +5154,34 @@ fn render_dependency_editor_split(
         egui::pos2(editors_rect.left() + current_width, editors_rect.bottom()),
     );
     let editor_handle_rect = egui::Rect::from_min_max(
-        egui::pos2(current_rect.right(), editors_rect.top()),
+        egui::pos2(current_rect.right(), full_rect.top()),
         egui::pos2(
             current_rect.right() + PASS_DEBUG_SPLIT_HANDLE_WIDTH,
-            editors_rect.bottom(),
+            full_rect.bottom(),
         ),
     );
     let reference_rect = egui::Rect::from_min_max(
         egui::pos2(editor_handle_rect.right(), editors_rect.top()),
         editors_rect.right_bottom(),
+    );
+
+    let header_top = full_rect.top();
+    let header_bottom = header_top + header_height;
+    render_pass_debug_column_headers(
+        ui,
+        document,
+        egui::Rect::from_min_max(
+            egui::pos2(panel_rect.left(), header_top),
+            egui::pos2(panel_rect.right(), header_bottom),
+        ),
+        egui::Rect::from_min_max(
+            egui::pos2(current_rect.left(), header_top),
+            egui::pos2(current_rect.right(), header_bottom),
+        ),
+        egui::Rect::from_min_max(
+            egui::pos2(reference_rect.left(), header_top),
+            egui::pos2(reference_rect.right(), header_bottom),
+        ),
     );
 
     let editor_handle_response = ui.interact(
@@ -5176,6 +5214,17 @@ fn render_dependency_editor_split(
         ),
         0.0,
         editor_line_color,
+    );
+    ui.painter().rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(full_rect.left(), header_bottom),
+            egui::pos2(
+                full_rect.right(),
+                header_bottom + PASS_DEBUG_SPLIT_LINE_WIDTH,
+            ),
+        ),
+        0.0,
+        ui.visuals().widgets.noninteractive.bg_stroke.color,
     );
 
     let t_dep = Instant::now();
