@@ -224,6 +224,17 @@ pub fn clear_reference(app: &mut App) {
     clear_reference_internal(app, true);
 }
 
+pub fn clear_shortwire_clipboard_reference(app: &mut App) -> bool {
+    if matches!(
+        app.canvas.reference.ref_image.as_ref().map(|r| &r.source),
+        Some(RefImageSource::ShortwireClipboard)
+    ) {
+        clear_reference_internal(app, true);
+        return true;
+    }
+    false
+}
+
 fn load_reference_image_from_decoded(
     app: &mut App,
     ctx: &egui::Context,
@@ -526,6 +537,42 @@ pub fn pick_reference_image_from_dialog(
         &path,
         RefImageSource::Manual,
         app.canvas.reference.alpha_mode,
+    )?;
+    app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
+    app.canvas.reference.last_attempt_key = None;
+    Ok(true)
+}
+
+pub fn paste_shortwire_reference_from_clipboard(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+) -> anyhow::Result<bool> {
+    let mut clipboard = arboard::Clipboard::new()?;
+    let clipboard_image = match clipboard.get_image() {
+        Ok(image) => image,
+        Err(arboard::Error::ContentNotAvailable) => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let width: u32 = clipboard_image
+        .width
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("clipboard image width too large"))?;
+    let height: u32 = clipboard_image
+        .height
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("clipboard image height too large"))?;
+    let rgba = image::RgbaImage::from_raw(width, height, clipboard_image.bytes.into_owned())
+        .ok_or_else(|| anyhow::anyhow!("clipboard image has invalid RGBA data"))?;
+    let alpha_mode = app.canvas.reference.alpha_mode;
+    load_reference_image_from_decoded(
+        app,
+        ctx,
+        render_state,
+        image::DynamicImage::ImageRgba8(rgba),
+        format!("Shortwire clipboard {width}x{height}"),
+        RefImageSource::ShortwireClipboard,
+        alpha_mode,
     )?;
     app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
     app.canvas.reference.last_attempt_key = None;

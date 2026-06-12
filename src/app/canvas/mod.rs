@@ -28,6 +28,10 @@ pub(super) fn clear_reference(app: &mut App) {
     reference::clear_reference(app);
 }
 
+pub(super) fn clear_shortwire_clipboard_reference(app: &mut App) -> bool {
+    reference::clear_shortwire_clipboard_reference(app)
+}
+
 pub(super) fn pick_reference_image_from_dialog(
     app: &mut App,
     ctx: &egui::Context,

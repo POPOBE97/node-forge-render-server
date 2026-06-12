@@ -12,6 +12,7 @@ use std::{
 use rust_wgpu_fiber::eframe::egui;
 use serde::{Deserialize, Serialize};
 
+use crate::app::DiffStats;
 use crate::dsl::{DebugArtifactAnchor, DebugArtifactItem, DebugArtifactRole};
 use crate::metric_log;
 use crate::renderer::{PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange};
@@ -84,6 +85,65 @@ struct ShortwireRowIdentity {
 struct ShortwireNodePatch {
     hunks: Vec<ShortwireHunk>,
     base_source_hash: u64,
+    #[serde(
+        rename = "diffResult",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    diff_result: Option<ShortwireDiffResult>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortwireDiffResult {
+    pub metric: String,
+    pub max_ae: f32,
+    pub min: f32,
+    pub avg: f32,
+    pub rms: f32,
+    pub p95_abs: f32,
+    pub sample_count: u64,
+    pub non_finite_count: u64,
+    pub render_size: [u32; 2],
+    pub reference_size: [u32; 2],
+    pub reference_offset: [i32; 2],
+}
+
+impl ShortwireDiffResult {
+    pub fn from_stats(
+        stats: DiffStats,
+        render_size: [u32; 2],
+        reference_size: [u32; 2],
+        reference_offset: [i32; 2],
+    ) -> Option<Self> {
+        if !stats.max.is_finite()
+            || !stats.min.is_finite()
+            || !stats.avg.is_finite()
+            || !stats.rms.is_finite()
+            || !stats.p95_abs.is_finite()
+        {
+            return None;
+        }
+        Some(Self {
+            metric: "AE".to_string(),
+            max_ae: stats.max,
+            min: stats.min,
+            avg: stats.avg,
+            rms: stats.rms,
+            p95_abs: stats.p95_abs,
+            sample_count: stats.sample_count,
+            non_finite_count: stats.non_finite_count,
+            render_size,
+            reference_size,
+            reference_offset,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShortwireDiffCaptureRequest {
+    pub pass_name: String,
+    pub patch_key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -99,6 +159,20 @@ struct ShortwireHunk {
 struct ShortwirePatchesPayload {
     version: u32,
     patches: HashMap<String, ShortwireNodePatch>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShortwireDotStatus {
+    PendingDiff,
+    Passing,
+    Failing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ShortwireDotInfo {
+    status: ShortwireDotStatus,
+    max_ae: Option<f32>,
+    sample_count: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -968,11 +1042,12 @@ impl PassDebugWindowDocument {
         source_revision: u64,
         draft_source: String,
         status: String,
-    ) {
+    ) -> Option<ShortwireDiffCaptureRequest> {
         let is_shortwire_completion = matches!(
             self.shortwire_active.as_ref().map(|a| &a.phase),
             Some(ShortwirePhase::PendingApply { .. })
         );
+        let mut diff_capture_request = None;
         let canonical_source_text = source
             .map(|s| s.module_source.as_str())
             .unwrap_or_default()
@@ -994,14 +1069,20 @@ impl PassDebugWindowDocument {
         if is_shortwire_completion {
             if let Some(ref mut active) = self.shortwire_active {
                 if let ShortwirePhase::PendingApply { ref pending_hunks } = active.phase {
+                    let patch_key = active.identity.patch_key.clone();
                     self.shortwire_patches.insert(
-                        active.identity.patch_key.clone(),
+                        patch_key.clone(),
                         ShortwireNodePatch {
                             hunks: pending_hunks.clone(),
                             base_source_hash: self.generated_base_source_hash,
+                            diff_result: None,
                         },
                     );
                     self.shortwire_patches_dirty = true;
+                    diff_capture_request = Some(ShortwireDiffCaptureRequest {
+                        pass_name: self.pass_name.clone(),
+                        patch_key,
+                    });
                 }
             }
             let should_exit_shortwire = self.shortwire_exit_on_apply;
@@ -1027,6 +1108,7 @@ impl PassDebugWindowDocument {
                         ShortwireNodePatch {
                             hunks: pending_hunks,
                             base_source_hash: self.generated_base_source_hash,
+                            diff_result: None,
                         },
                     );
                     self.shortwire_patches_dirty = true;
@@ -1038,6 +1120,7 @@ impl PassDebugWindowDocument {
         self.patch_active = true;
         self.last_error = None;
         self.last_status = Some(status);
+        diff_capture_request
     }
 
     fn mark_reset(
@@ -1652,6 +1735,7 @@ impl PassDebugWindowDocument {
                 ShortwireNodePatch {
                     hunks: next_hunks,
                     base_source_hash: hash_source(&pending.incoming_source),
+                    diff_result: None,
                 },
             );
         }
@@ -2095,6 +2179,7 @@ impl PassDebugWindowDocument {
                     ShortwireNodePatch {
                         hunks,
                         base_source_hash: base_hash,
+                        diff_result: None,
                     },
                 );
             }
@@ -2161,6 +2246,7 @@ impl PassDebugWindowDocument {
                     ShortwireNodePatch {
                         hunks,
                         base_source_hash: base_hash,
+                        diff_result: None,
                     },
                 );
                 self.reference_patches_dirty = true;
@@ -2384,6 +2470,7 @@ impl PassDebugWindowDocument {
                         ShortwireNodePatch {
                             hunks,
                             base_source_hash: self.generated_base_source_hash,
+                            diff_result: None,
                         },
                     );
                     self.shortwire_patches_dirty = true;
@@ -2854,7 +2941,7 @@ struct PassDebugTreeRenderState<'a> {
     expanded_row_keys: Option<&'a HashSet<String>>,
     shortwire_active_row_key: Option<&'a str>,
     shortwire_can_enter: bool,
-    shortwire_patch_keys: &'a HashSet<String>,
+    shortwire_dot_info: &'a HashMap<String, ShortwireDotInfo>,
 }
 
 struct ShortwireTreeResult {
@@ -2945,6 +3032,11 @@ impl PassDebugWindowState {
 }
 
 pub type PassDebugWindowMap = HashMap<String, PassDebugWindowState>;
+
+pub struct PassDebugPatchApplyResult {
+    pub artifacts: Vec<(DebugArtifactItem, String)>,
+    pub diff_capture: Option<ShortwireDiffCaptureRequest>,
+}
 
 fn pass_debug_default_window_size() -> egui::Vec2 {
     egui::vec2(
@@ -3147,11 +3239,11 @@ pub fn mark_patch_applied(
     source_revision: u64,
     draft_source: String,
     status: String,
-) -> Vec<(DebugArtifactItem, String)> {
+) -> PassDebugPatchApplyResult {
     if let Some(state) = windows.get(pass_name)
         && let Ok(mut document) = state.document.lock()
     {
-        document.mark_applied(source, source_revision, draft_source, status);
+        let diff_capture = document.mark_applied(source, source_revision, draft_source, status);
         let mut artifacts = Vec::new();
         if let Some(artifact) = document.take_patches_dirty_artifact() {
             artifacts.push(artifact);
@@ -3159,9 +3251,47 @@ pub fn mark_patch_applied(
         if let Some(artifact) = document.take_reference_patches_dirty_artifact() {
             artifacts.push(artifact);
         }
-        return artifacts;
+        return PassDebugPatchApplyResult {
+            artifacts,
+            diff_capture,
+        };
     }
-    Vec::new()
+    PassDebugPatchApplyResult {
+        artifacts: Vec::new(),
+        diff_capture: None,
+    }
+}
+
+pub fn record_shortwire_diff_result(
+    windows: &mut PassDebugWindowMap,
+    request: &ShortwireDiffCaptureRequest,
+    diff_result: ShortwireDiffResult,
+) -> Vec<(DebugArtifactItem, String)> {
+    let Some(state) = windows.get(request.pass_name.as_str()) else {
+        return Vec::new();
+    };
+    let Ok(mut document) = state.document.lock() else {
+        return Vec::new();
+    };
+    let Some(patch) = document
+        .shortwire_patches
+        .get_mut(request.patch_key.as_str())
+    else {
+        return Vec::new();
+    };
+    patch.diff_result = Some(diff_result);
+    document.shortwire_patches_dirty = true;
+    document.take_patches_dirty_artifact().into_iter().collect()
+}
+
+pub fn has_active_shortwire(windows: &PassDebugWindowMap) -> bool {
+    windows.values().any(|state| {
+        state
+            .document
+            .lock()
+            .map(|document| document.shortwire_active.is_some())
+            .unwrap_or(false)
+    })
 }
 
 pub fn mark_patch_reset(
@@ -3489,8 +3619,11 @@ fn render_dependency_rows(
     let shortwire_can_enter = document.shortwire_active.is_none()
         && document.merge_conflict.is_none()
         && !document.generated_base_source.is_empty();
-    let shortwire_patch_keys: HashSet<String> =
-        document.shortwire_patches.keys().cloned().collect();
+    let shortwire_dot_info: HashMap<String, ShortwireDotInfo> = document
+        .shortwire_patches
+        .iter()
+        .map(|(key, patch)| (key.clone(), shortwire_dot_info_for_patch(patch)))
+        .collect();
     let result = {
         let expandable_row_keys = &document
             .dependency_expandable_row_keys_cache
@@ -3506,7 +3639,7 @@ fn render_dependency_rows(
             expanded_row_keys: Some(&document.dependency_expanded_row_keys),
             shortwire_active_row_key,
             shortwire_can_enter,
-            shortwire_patch_keys: &shortwire_patch_keys,
+            shortwire_dot_info: &shortwire_dot_info,
         };
         render_scrollable_tree_rows(
             ui,
@@ -3663,10 +3796,23 @@ fn render_scrollable_tree_rows(
                     });
                 }
 
-                let response = if let Some(relation_path) = row.relation_path() {
-                    response.on_hover_text(format!("Path: {relation_path}"))
-                } else {
+                let row_patch_key = shortwire_patch_key(row);
+                let shortwire_dot_info = row
+                    .selectable()
+                    .then(|| tree_state.shortwire_dot_info.get(&row_patch_key))
+                    .flatten()
+                    .copied();
+                let mut hover_lines = Vec::new();
+                if let Some(relation_path) = row.relation_path() {
+                    hover_lines.push(format!("Path: {relation_path}"));
+                }
+                if let Some(dot_info) = shortwire_dot_info {
+                    hover_lines.push(shortwire_dot_hover_text(dot_info));
+                }
+                let response = if hover_lines.is_empty() {
                     response
+                } else {
+                    response.on_hover_text(hover_lines.join("\n"))
                 };
                 let indent = row.depth() as f32 * TREE_ROW_INDENT_WIDTH;
                 let toggle_slot = if tree_state.expandable_row_keys.is_some() && row_key.is_some() {
@@ -3780,17 +3926,13 @@ fn render_scrollable_tree_rows(
                         base_color
                     }
                 };
-                let has_stored_patch = row.selectable()
-                    && !tree_state.shortwire_patch_keys.is_empty()
-                    && tree_state
-                        .shortwire_patch_keys
-                        .contains(&shortwire_patch_key(row));
+                let has_stored_patch = shortwire_dot_info.is_some();
                 let dot_offset = if has_stored_patch { 8.0 } else { 0.0 };
 
-                if has_stored_patch {
+                if let Some(dot_info) = shortwire_dot_info {
                     let dot_radius = 3.0;
                     let dot_center = egui::pos2(text_x + dot_radius, row_rect.center().y);
-                    let dot_color = shortwire_dot_color(ui, row_alpha);
+                    let dot_color = shortwire_dot_color(ui, dot_info.status, row_alpha);
                     ui.painter()
                         .circle_filled(dot_center, dot_radius, dot_color);
                 }
@@ -3955,11 +4097,43 @@ fn tree_highlight_text_color(ui: &egui::Ui) -> egui::Color32 {
     }
 }
 
-fn shortwire_dot_color(ui: &egui::Ui, alpha: f32) -> egui::Color32 {
-    let base = if ui.visuals().dark_mode {
-        egui::Color32::from_rgb(250, 204, 21)
-    } else {
-        egui::Color32::from_rgb(202, 138, 4)
+fn shortwire_dot_info_for_patch(patch: &ShortwireNodePatch) -> ShortwireDotInfo {
+    match patch.diff_result.as_ref() {
+        Some(diff_result) if diff_result.max_ae < 2.0 => ShortwireDotInfo {
+            status: ShortwireDotStatus::Passing,
+            max_ae: Some(diff_result.max_ae),
+            sample_count: Some(diff_result.sample_count),
+        },
+        Some(diff_result) => ShortwireDotInfo {
+            status: ShortwireDotStatus::Failing,
+            max_ae: Some(diff_result.max_ae),
+            sample_count: Some(diff_result.sample_count),
+        },
+        None => ShortwireDotInfo {
+            status: ShortwireDotStatus::PendingDiff,
+            max_ae: None,
+            sample_count: None,
+        },
+    }
+}
+
+fn shortwire_dot_hover_text(dot_info: ShortwireDotInfo) -> String {
+    match (dot_info.max_ae, dot_info.sample_count) {
+        (Some(max_ae), Some(sample_count)) => {
+            format!("Shortwire diff: max AE {max_ae:.4}, n {sample_count}")
+        }
+        _ => "Shortwire diff: pending".to_string(),
+    }
+}
+
+fn shortwire_dot_color(ui: &egui::Ui, status: ShortwireDotStatus, alpha: f32) -> egui::Color32 {
+    let base = match (status, ui.visuals().dark_mode) {
+        (ShortwireDotStatus::PendingDiff, true) => egui::Color32::from_rgb(250, 204, 21),
+        (ShortwireDotStatus::PendingDiff, false) => egui::Color32::from_rgb(202, 138, 4),
+        (ShortwireDotStatus::Passing, true) => egui::Color32::from_rgb(74, 222, 128),
+        (ShortwireDotStatus::Passing, false) => egui::Color32::from_rgb(22, 163, 74),
+        (ShortwireDotStatus::Failing, true) => egui::Color32::from_rgb(248, 113, 113),
+        (ShortwireDotStatus::Failing, false) => egui::Color32::from_rgb(220, 38, 38),
     };
     let [r, g, b, _] = base.to_srgba_unmultiplied();
     egui::Color32::from_rgba_unmultiplied(r, g, b, (220.0 * alpha) as u8)
@@ -7674,6 +7848,86 @@ fn fs_main() -> @location(0) f32 {
 
     // --- Shortwire tests ---
 
+    fn test_diff_result(max_ae: f32) -> super::ShortwireDiffResult {
+        super::ShortwireDiffResult {
+            metric: "AE".to_string(),
+            max_ae,
+            min: 0.0,
+            avg: 0.5,
+            rms: 0.75,
+            p95_abs: 1.0,
+            sample_count: 16,
+            non_finite_count: 0,
+            render_size: [4, 4],
+            reference_size: [4, 4],
+            reference_offset: [0, 0],
+        }
+    }
+
+    fn test_patch_with_diff(max_ae: Option<f32>) -> super::ShortwireNodePatch {
+        super::ShortwireNodePatch {
+            hunks: Vec::new(),
+            base_source_hash: 1,
+            diff_result: max_ae.map(test_diff_result),
+        }
+    }
+
+    #[test]
+    fn legacy_shortwire_patch_json_restores_without_diff_result() {
+        let text = r#"{"version":1,"patches":{"k":{"hunks":[],"base_source_hash":42}}}"#;
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.restore_shortwire_patches_from_text(text);
+
+        let patch = document.shortwire_patches.get("k").unwrap();
+        assert_eq!(patch.base_source_hash, 42);
+        assert!(patch.diff_result.is_none());
+    }
+
+    #[test]
+    fn shortwire_diff_result_round_trips_in_patch_artifact() {
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        document
+            .shortwire_patches
+            .insert("k".to_string(), test_patch_with_diff(Some(1.25)));
+        document.shortwire_patches_dirty = true;
+
+        let (_item, content) = document.take_patches_dirty_artifact().unwrap();
+        assert!(content.contains("diffResult"));
+
+        let mut restored = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        restored.restore_shortwire_patches_from_text(&content);
+
+        assert_eq!(
+            restored
+                .shortwire_patches
+                .get("k")
+                .and_then(|patch| patch.diff_result.as_ref())
+                .map(|result| result.max_ae),
+            Some(1.25)
+        );
+    }
+
+    #[test]
+    fn shortwire_dot_status_uses_diff_result_threshold() {
+        assert_eq!(
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(None)).status,
+            super::ShortwireDotStatus::PendingDiff
+        );
+        assert_eq!(
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(1.99))).status,
+            super::ShortwireDotStatus::Passing
+        );
+        assert_eq!(
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(2.0))).status,
+            super::ShortwireDotStatus::Failing
+        );
+        assert_eq!(
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(3.0))).status,
+            super::ShortwireDotStatus::Failing
+        );
+    }
+
     #[test]
     fn legacy_default_reference_artifact_migrates_to_workspace() {
         let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
@@ -7783,6 +8037,7 @@ fn fs_main() -> @location(0) f32 {
             super::ShortwireNodePatch {
                 hunks: super::compute_hunks(base, "fn ref_a() {}\n"),
                 base_source_hash: super::hash_source(base),
+                diff_result: None,
             },
         );
         document.reference_patches.insert(
@@ -7790,6 +8045,7 @@ fn fs_main() -> @location(0) f32 {
             super::ShortwireNodePatch {
                 hunks: super::compute_hunks(base, "fn ref_b() {}\n"),
                 base_source_hash: super::hash_source(base),
+                diff_result: None,
             },
         );
 
@@ -8017,7 +8273,7 @@ fn fs_main() -> @location(0) f32 {
             document.exit_shortwire_done(&pending_actions);
         }
 
-        let artifacts = super::mark_patch_applied(
+        let result = super::mark_patch_applied(
             &mut windows,
             "p",
             Some(&source),
@@ -8025,8 +8281,10 @@ fn fs_main() -> @location(0) f32 {
             "fn patched_left() {}\n".to_string(),
             "Applied".to_string(),
         );
+        let artifacts = result.artifacts;
 
         assert_eq!(artifacts.len(), 2);
+        assert!(result.diff_capture.is_some());
         assert!(artifacts.iter().any(|(item, content)| {
             item.role == DebugArtifactRole::Patch
                 && item.slot_key.as_deref() == Some(super::DEBUG_ARTIFACT_DEFAULT_SLOT)

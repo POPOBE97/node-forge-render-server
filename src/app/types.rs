@@ -31,6 +31,7 @@ pub enum RefImageMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefImageSource {
     Manual,
+    ShortwireClipboard,
     SceneNodePath(String),
     SceneNodeDataUrl(String),
     SceneNodeAssetId(String),
@@ -386,6 +387,8 @@ pub(super) struct AppShell {
     pub pass_debug_sources_revision: u64,
     pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
     pub pass_shader_overrides: std::collections::HashMap<String, String>,
+    pub pending_shortwire_diff_capture:
+        Option<crate::ui::pass_debug_window::ShortwireDiffCaptureRequest>,
     pub debug_artifacts: crate::debug_artifacts::DebugArtifactStore,
     pub test_mode: TestMode,
     pub matrix_config: MatrixConfig,
@@ -627,6 +630,7 @@ impl App {
                 pass_debug_sources_revision: 0,
                 pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),
                 pass_shader_overrides: std::collections::HashMap::new(),
+                pending_shortwire_diff_capture: None,
                 debug_artifacts,
                 test_mode: TestMode::default(),
                 matrix_config: MatrixConfig::default(),

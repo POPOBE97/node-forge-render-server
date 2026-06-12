@@ -24,7 +24,7 @@ use crate::{
         window_mode::WindowModeFrame,
     },
     ui::{
-        design_tokens,
+        design_tokens, pass_debug_window,
         viewport_indicators::{
             ViewportIndicator, ViewportIndicatorEntry, ViewportIndicatorInteraction,
             ViewportIndicatorKind,
@@ -917,6 +917,8 @@ pub fn show_canvas(
     }
 
     let plain_shortcuts_enabled = !ctx.egui_wants_keyboard_input();
+    let shortwire_active_for_canvas =
+        pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows);
     if plain_shortcuts_enabled {
         if ctx.input(|i| i.key_pressed(egui::Key::F)) {
             frame_result.commands.push(AppCommand::ToggleCanvasOnly);
@@ -1064,6 +1066,28 @@ pub fn show_canvas(
         current_display_metrics,
     );
     let response = ui.allocate_rect(canvas_rect, egui::Sense::click_and_drag());
+
+    if response.clicked() {
+        app.canvas.interactions.canvas_event_focus_latched = true;
+    }
+    let canvas_accepts_keyboard_paste =
+        response.hovered() || app.canvas.interactions.canvas_event_focus_latched;
+    let shortwire_paste_requested = ctx.input(|i| {
+        (i.modifiers.command && i.key_pressed(egui::Key::V))
+            || i.events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Paste(_)))
+    });
+    if shortwire_active_for_canvas
+        && shortwire_paste_requested
+        && (canvas_accepts_keyboard_paste || plain_shortcuts_enabled)
+    {
+        match reference::paste_shortwire_reference_from_clipboard(app, ctx, render_state) {
+            Ok(true) => ctx.request_repaint(),
+            Ok(false) => {}
+            Err(error) => eprintln!("[reference-image] failed to paste clipboard image: {error:#}"),
+        }
+    }
 
     if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
         ui.painter().rect_filled(

@@ -278,6 +278,12 @@ pub(super) fn run(
         }
     }
 
+    if app.shell.pending_shortwire_diff_capture.is_none()
+        && !ui::pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows)
+    {
+        canvas::clear_shortwire_clipboard_reference(app);
+    }
+
     interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     app.shell.prev_window_mode = frame_state.mode;
 

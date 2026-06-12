@@ -158,7 +158,7 @@ pub fn dispatch(
                 Ok(result) => {
                     let status =
                         sync_after_shader_rebuild(app, ctx, render_state, renderer, result, now);
-                    let artifacts = ui::pass_debug_window::mark_patch_applied(
+                    let patch_result = ui::pass_debug_window::mark_patch_applied(
                         &mut app.shell.pass_debug_windows,
                         &pass_name,
                         app.shell.pass_debug_sources.get(&pass_name),
@@ -166,7 +166,11 @@ pub fn dispatch(
                         source,
                         status,
                     );
-                    for (item, content_text) in artifacts {
+                    if let Some(diff_capture) = patch_result.diff_capture {
+                        app.shell.pending_shortwire_diff_capture = Some(diff_capture);
+                        app.canvas.invalidation.mark_diff_dirty();
+                    }
+                    for (item, content_text) in patch_result.artifacts {
                         upsert_debug_artifact(app, item, content_text);
                     }
                 }

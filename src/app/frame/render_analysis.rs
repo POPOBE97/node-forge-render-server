@@ -3,7 +3,7 @@ use rust_wgpu_fiber::eframe::{egui_wgpu, wgpu};
 use crate::{
     app::{
         texture_bridge,
-        types::{AnalysisSourceDomain, App, DiffStats, RefImageMode, TestMode},
+        types::{AnalysisSourceDomain, App, DiffMetricMode, DiffStats, RefImageMode, TestMode},
     },
     renderer, ui,
 };
@@ -98,6 +98,10 @@ pub(super) fn run(
     let compare_source_key = display_source.as_ref().map(AnalysisSourceKey::from_source);
 
     let mut computed_diff_stats: Option<DiffStats> = None;
+    let pending_shortwire_diff_capture = app.shell.pending_shortwire_diff_capture.clone();
+    let mut computed_shortwire_diff_result = None;
+    let mut completed_shortwire_diff_capture = pending_shortwire_diff_capture.is_some()
+        && (app.canvas.reference.ref_image.is_none() || compare_source_key.is_none());
     let mut did_update_diff_output = false;
 
     if let Some(reference) = app.canvas.reference.ref_image.as_ref()
@@ -105,6 +109,17 @@ pub(super) fn run(
         && let Some(source_key) = compare_source_key
     {
         let reference_mode = reference.mode;
+        let capture_shortwire_diff = pending_shortwire_diff_capture.is_some();
+        let effective_reference_mode = if capture_shortwire_diff {
+            RefImageMode::Diff
+        } else {
+            reference_mode
+        };
+        let effective_metric_mode = if capture_shortwire_diff {
+            DiffMetricMode::AE
+        } else {
+            app.canvas.analysis.diff_metric_mode
+        };
         let reference_offset = [
             reference.offset.x.round() as i32,
             reference.offset.y.round() as i32,
@@ -134,13 +149,13 @@ pub(super) fn run(
                 source_key,
                 reference.size,
                 reference_offset,
-                reference_mode,
+                effective_reference_mode,
                 reference.opacity.to_bits(),
-                app.canvas.analysis.diff_metric_mode,
+                effective_metric_mode,
                 app.canvas.display.hdr_preview_clamp_enabled,
             );
             let stats_key = DiffStatsRequestKey::new(request_key);
-            let collect_stats = matches!(reference_mode, RefImageMode::Diff);
+            let collect_stats = matches!(effective_reference_mode, RefImageMode::Diff);
             let should_update_diff = app.canvas.invalidation.diff_dirty()
                 || advance.should_redraw_scene
                 || needs_recreate
@@ -158,9 +173,9 @@ pub(super) fn run(
                     &reference.wgpu_texture_view,
                     reference.size,
                     reference_offset,
-                    reference_mode,
+                    effective_reference_mode,
                     reference.opacity,
-                    app.canvas.analysis.diff_metric_mode,
+                    effective_metric_mode,
                     app.canvas.display.hdr_preview_clamp_enabled,
                     collect_stats,
                 );
@@ -168,7 +183,21 @@ pub(super) fn run(
                 app.canvas.analysis.last_diff_request_key = Some(request_key);
                 if collect_stats {
                     app.canvas.analysis.last_diff_stats_request_key = Some(stats_key);
-                    computed_diff_stats = diff_stats;
+                    if matches!(reference_mode, RefImageMode::Diff) {
+                        computed_diff_stats = diff_stats;
+                    }
+                    if let Some(capture) = pending_shortwire_diff_capture.clone() {
+                        completed_shortwire_diff_capture = true;
+                        computed_shortwire_diff_result = diff_stats.and_then(|stats| {
+                            ui::pass_debug_window::ShortwireDiffResult::from_stats(
+                                stats,
+                                source.size,
+                                reference.size,
+                                reference_offset,
+                            )
+                            .map(|diff_result| (capture, diff_result))
+                        });
+                    }
                 } else {
                     app.canvas.analysis.last_diff_stats_request_key = None;
                 }
@@ -242,6 +271,23 @@ pub(super) fn run(
     ) {
         app.canvas.analysis.diff_stats = None;
         app.canvas.analysis.last_diff_stats_request_key = None;
+    }
+
+    if let Some((capture, diff_result)) = computed_shortwire_diff_result {
+        let artifacts = ui::pass_debug_window::record_shortwire_diff_result(
+            &mut app.shell.pass_debug_windows,
+            &capture,
+            diff_result,
+        );
+        for (item, content_text) in artifacts {
+            app.shell
+                .debug_artifacts
+                .upsert(item.clone(), Some(content_text.clone()));
+            crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
+        }
+        app.shell.pending_shortwire_diff_capture = None;
+    } else if completed_shortwire_diff_capture {
+        app.shell.pending_shortwire_diff_capture = None;
     }
 
     if app.canvas.analysis.histogram_renderer.is_none() {
