@@ -7,7 +7,10 @@ mod present;
 mod render_analysis;
 pub(super) mod request_keys;
 
-use std::time::Instant;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 use rust_wgpu_fiber::eframe::{self, egui};
 
@@ -18,6 +21,8 @@ use crate::app::{
 use crate::metric_log;
 use crate::perf_log::FrameTimer;
 
+static SHORTWIRE_PASTE_DEBUG_MARKER_PRINTED: AtomicBool = AtomicBool::new(false);
+
 fn apply_dark_visuals(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
     visuals.override_text_color = Some(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 204));
@@ -25,6 +30,10 @@ fn apply_dark_visuals(ctx: &egui::Context) {
 }
 
 pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    if !SHORTWIRE_PASTE_DEBUG_MARKER_PRINTED.swap(true, Ordering::Relaxed) {
+        eprintln!("[shortwire-paste] debug instrumentation active");
+    }
+
     let timer = FrameTimer::new();
     let ctx = ui.ctx().clone();
     apply_dark_visuals(&ctx);

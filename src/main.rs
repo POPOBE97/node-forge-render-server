@@ -628,6 +628,7 @@ fn run_headless_ws_render_once(
                 // Animation control is irrelevant in headless mode; ignore.
             }
             ws::SceneUpdate::DebugArtifactUpsert { .. }
+            | ws::SceneUpdate::DebugArtifactBinaryUpsert { .. }
             | ws::SceneUpdate::DebugArtifactDelete { .. } => {
                 // Debug artifacts do not affect headless render output.
             }
@@ -805,13 +806,45 @@ fn main() -> Result<()> {
         );
     }
 
-    let scene = match dsl::load_scene_from_default_asset() {
-        Ok(s) => Some(s),
-        Err(e) => {
-            eprintln!(
-                "[startup] failed to load/parse default scene; showing error fallback screen: {e:#}"
-            );
-            None
+    let startup_nforge_path = cli.nforge.clone();
+    let (scene, startup_asset_store, startup_debug_artifacts) = if let Some(nforge_path) =
+        cli.nforge.as_deref()
+    {
+        match asset_store::load_from_nforge_with_debug_artifacts(nforge_path) {
+            Ok(loaded) => (
+                Some(loaded.scene),
+                loaded.asset_store,
+                loaded.debug_artifacts,
+            ),
+            Err(e) => {
+                eprintln!(
+                    "[startup] failed to load .nforge {}; showing error fallback screen: {e:#}",
+                    nforge_path.display()
+                );
+                (
+                    None,
+                    asset_store::AssetStore::new(),
+                    node_forge_render_server::debug_artifacts::DebugArtifactStore::default(),
+                )
+            }
+        }
+    } else {
+        match dsl::load_scene_from_default_asset() {
+            Ok(s) => (
+                Some(s),
+                asset_store::AssetStore::new(),
+                node_forge_render_server::debug_artifacts::DebugArtifactStore::default(),
+            ),
+            Err(e) => {
+                eprintln!(
+                    "[startup] failed to load/parse default scene; showing error fallback screen: {e:#}"
+                );
+                (
+                    None,
+                    asset_store::AssetStore::new(),
+                    node_forge_render_server::debug_artifacts::DebugArtifactStore::default(),
+                )
+            }
         }
     };
 
@@ -893,6 +926,7 @@ fn main() -> Result<()> {
                     Arc::new(render_state.queue.clone()),
                 )
                 .with_adapter(render_state.adapter.clone())
+                .with_asset_store(startup_asset_store.clone())
                 .with_options(renderer::ShaderSpaceBuildOptions {
                     presentation_mode: renderer::ShaderSpacePresentationMode::UiHdrNative,
                     debug_dump_wgsl_dir: None,
@@ -965,7 +999,7 @@ fn main() -> Result<()> {
 
             let last_good = Arc::new(Mutex::new(last_good_initial));
             let hub = ws::WsHub::default();
-            let asset_store = asset_store::AssetStore::new();
+            let asset_store = startup_asset_store.clone();
             let template_scene_tx = scene_tx.clone();
             let ui_repaint_ctx = cc.egui_ctx.clone();
             let ui_wake: ws::UiWakeCallback = Arc::new(move || ui_repaint_ctx.request_repaint());
@@ -1017,6 +1051,8 @@ fn main() -> Result<()> {
                 asset_store,
                 animation_session,
                 pass_debug_sources,
+                debug_artifacts: startup_debug_artifacts.clone(),
+                nforge_path: startup_nforge_path.clone(),
             })))
         }),
     )

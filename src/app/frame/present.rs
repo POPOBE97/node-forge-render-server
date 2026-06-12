@@ -259,9 +259,15 @@ pub(super) fn run(
         &app.shell.debug_artifacts,
     ) {
         let command = match action {
-            ui::pass_debug_window::PassDebugWindowAction::ApplyPatch { pass_name, source } => {
-                AppCommand::ApplyPassShaderPatch { pass_name, source }
-            }
+            ui::pass_debug_window::PassDebugWindowAction::ApplyPatch {
+                pass_name,
+                source,
+                reference_image,
+            } => AppCommand::ApplyPassShaderPatch {
+                pass_name,
+                source,
+                reference_image,
+            },
             ui::pass_debug_window::PassDebugWindowAction::ResetPatch { pass_name } => {
                 AppCommand::ResetPassShaderPatch(pass_name)
             }

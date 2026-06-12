@@ -166,6 +166,17 @@ fn install_keydown(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), J
 #[expect(clippy::needless_pass_by_value)] // So that we can pass it directly to `add_event_listener`
 pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
     let has_focus = runner.input.raw.focused;
+    let modifiers = modifiers_from_kb_event(&event);
+    let key = event.key();
+    if key.eq_ignore_ascii_case("v") || key.eq_ignore_ascii_case("paste") {
+        log::warn!(
+            "[shortwire-paste:web-key] keydown key={:?} focused={has_focus} text_agent_focused={} modifiers={modifiers:?} composing={} key_code={}",
+            key.as_str(),
+            runner.text_agent.has_focus(),
+            event.is_composing(),
+            event.key_code(),
+        );
+    }
     if !has_focus {
         return;
     }
@@ -175,10 +186,8 @@ pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) 
         return;
     }
 
-    let modifiers = modifiers_from_kb_event(&event);
     runner.input.raw.modifiers = modifiers;
 
-    let key = event.key();
     let egui_key = translate_key(&key);
 
     if let Some(egui_key) = egui_key {
@@ -316,33 +325,56 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
 
 fn install_copy_cut_paste(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
     runner_ref.add_event_listener(target, "paste", |event: web_sys::ClipboardEvent, runner| {
-        if !runner.input.raw.focused {
-            return; // The eframe app is not interested
-        }
+        let focused = runner.input.raw.focused;
+        let clipboard_data = event.clipboard_data();
+        if let Some(data) = clipboard_data {
+            let types = data
+                .types()
+                .iter()
+                .filter_map(|value| value.as_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            let items_len = data.items().length();
+            let files_len = data.files().map(|files| files.length()).unwrap_or(0);
+            let text_result = data.get_data("text");
+            let (text_status, text_len) = match text_result.as_ref() {
+                Ok(text) => ("ok", text.len()),
+                Err(_) => ("err", 0),
+            };
+            log::warn!(
+                "[shortwire-paste:web] paste event focused={focused} types=[{types}] items={items_len} files={files_len} text_status={text_status} text_len={text_len}"
+            );
 
-        if let Some(data) = event.clipboard_data()
-            && let Ok(text) = data.get_data("text")
-        {
-            let text = text.replace("\r\n", "\n");
-
-            let mut should_stop_propagation = true;
-            let mut should_prevent_default = true;
-            if !text.is_empty() {
-                let egui_event = egui::Event::Paste(text);
-                should_stop_propagation = (runner.web_options.should_stop_propagation)(&egui_event);
-                should_prevent_default = (runner.web_options.should_prevent_default)(&egui_event);
-                runner.input.raw.events.push(egui_event);
-                runner.needs_repaint.repaint_asap();
+            if !focused {
+                return; // The eframe app is not interested
             }
 
-            // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
-            if should_stop_propagation {
-                event.stop_propagation();
-            }
+            if let Ok(text) = text_result {
+                let text = text.replace("\r\n", "\n");
 
-            if should_prevent_default {
-                event.prevent_default();
+                let mut should_stop_propagation = true;
+                let mut should_prevent_default = true;
+                if !text.is_empty() {
+                    let egui_event = egui::Event::Paste(text);
+                    should_stop_propagation =
+                        (runner.web_options.should_stop_propagation)(&egui_event);
+                    should_prevent_default =
+                        (runner.web_options.should_prevent_default)(&egui_event);
+                    runner.input.raw.events.push(egui_event);
+                    runner.needs_repaint.repaint_asap();
+                }
+
+                // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
+                if should_stop_propagation {
+                    event.stop_propagation();
+                }
+
+                if should_prevent_default {
+                    event.prevent_default();
+                }
             }
+        } else {
+            log::warn!("[shortwire-paste:web] paste event focused={focused} clipboard_data=none");
         }
     })?;
 

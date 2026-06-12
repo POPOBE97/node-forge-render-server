@@ -3,6 +3,7 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 use crate::{
     app::{canvas, scene_runtime, texture_bridge, types::App},
     protocol,
+    ui::pass_debug_window,
 };
 
 use super::interaction_bridge;
@@ -13,6 +14,44 @@ pub(super) struct IngestPhase {
     pub did_rebuild_shader_space: bool,
 }
 
+fn log_shortwire_input_ingest(app: &App, ctx: &egui::Context) {
+    let (hits, raw_focused, modifiers) = ctx.input(|input| {
+        let mut hits = Vec::new();
+        for event in &input.events {
+            match event {
+                egui::Event::Key {
+                    key,
+                    physical_key,
+                    pressed,
+                    repeat,
+                    modifiers,
+                } if *key == egui::Key::V || *key == egui::Key::Paste => {
+                    hits.push(format!(
+                        "Key key={key:?} physical={physical_key:?} pressed={pressed} repeat={repeat} modifiers={modifiers:?}"
+                    ));
+                }
+                egui::Event::Paste(text) => {
+                    hits.push(format!("Paste text_len={}", text.len()));
+                }
+                _ => {}
+            }
+        }
+        (hits, input.raw.focused, input.modifiers)
+    });
+
+    if hits.is_empty() {
+        return;
+    }
+
+    eprintln!(
+        "[shortwire-paste:ingest] shortwire_active={} window_count={} egui_wants_keyboard={} raw_focused={raw_focused} modifiers={modifiers:?} events={}",
+        pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows),
+        app.shell.pass_debug_windows.len(),
+        ctx.egui_wants_keyboard_input(),
+        hits.join(" | "),
+    );
+}
+
 pub(super) fn run(
     app: &mut App,
     ctx: &egui::Context,
@@ -20,6 +59,8 @@ pub(super) fn run(
     renderer: &mut egui_wgpu::Renderer,
     frame_time: f64,
 ) -> IngestPhase {
+    log_shortwire_input_ingest(app, ctx);
+
     let mut latest_capture_state = None;
     if let Some(capture_state_rx) = app.runtime.capture_state_rx.as_ref() {
         while let Ok(capture_active) = capture_state_rx.try_recv() {

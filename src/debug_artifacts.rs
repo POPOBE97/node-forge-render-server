@@ -17,14 +17,29 @@ pub struct DebugArtifactTextSnapshot {
 pub struct DebugArtifactStore {
     manifest: DebugArtifacts,
     text_contents: HashMap<String, String>,
+    binary_contents: HashMap<String, Vec<u8>>,
 }
 
 impl DebugArtifactStore {
+    pub fn is_empty(&self) -> bool {
+        self.manifest.items.is_empty()
+    }
+
+    pub fn export_manifest(&self) -> Option<DebugArtifacts> {
+        if self.manifest.items.is_empty() {
+            None
+        } else {
+            Some(self.manifest.clone())
+        }
+    }
+
     pub fn sync_manifest(&mut self, manifest: Option<DebugArtifacts>) -> Vec<String> {
         self.manifest = manifest.unwrap_or_default();
         self.text_contents
             .retain(|artifact_id, _| self.manifest.items.contains_key(artifact_id));
-        self.missing_text_artifact_ids()
+        self.binary_contents
+            .retain(|artifact_id, _| self.manifest.items.contains_key(artifact_id));
+        self.missing_content_artifact_ids()
     }
 
     pub fn upsert(&mut self, item: DebugArtifactItem, content_text: Option<String>) {
@@ -32,17 +47,38 @@ impl DebugArtifactStore {
         self.manifest.version = 1;
         self.manifest.items.insert(artifact_id.clone(), item);
         if let Some(content) = content_text {
+            self.binary_contents.remove(artifact_id.as_str());
             self.text_contents.insert(artifact_id, content);
         }
+    }
+
+    pub fn upsert_bytes(&mut self, item: DebugArtifactItem, bytes: Vec<u8>) {
+        let artifact_id = item.id.clone();
+        self.manifest.version = 1;
+        self.manifest.items.insert(artifact_id.clone(), item);
+        self.text_contents.remove(artifact_id.as_str());
+        self.binary_contents.insert(artifact_id, bytes);
     }
 
     pub fn delete(&mut self, artifact_id: &str) {
         self.manifest.items.remove(artifact_id);
         self.text_contents.remove(artifact_id);
+        self.binary_contents.remove(artifact_id);
     }
 
     pub fn text(&self, artifact_id: &str) -> Option<&str> {
         self.text_contents.get(artifact_id).map(String::as_str)
+    }
+
+    pub fn bytes(&self, artifact_id: &str) -> Option<&[u8]> {
+        self.binary_contents
+            .get(artifact_id)
+            .map(Vec::as_slice)
+            .or_else(|| {
+                self.text_contents
+                    .get(artifact_id)
+                    .map(|text| text.as_bytes())
+            })
     }
 
     pub fn find_pass_reference_item(&self, pass_name: &str) -> Option<&DebugArtifactItem> {
@@ -145,13 +181,16 @@ impl DebugArtifactStore {
         self.text(item.id.as_str())
     }
 
-    fn missing_text_artifact_ids(&self) -> Vec<String> {
+    fn missing_content_artifact_ids(&self) -> Vec<String> {
         self.manifest
             .items
             .values()
             .filter(|item| {
-                item.mime_type.starts_with("text/")
-                    && !self.text_contents.contains_key(item.id.as_str())
+                if item.mime_type.starts_with("text/") {
+                    !self.text_contents.contains_key(item.id.as_str())
+                } else {
+                    !self.binary_contents.contains_key(item.id.as_str())
+                }
             })
             .map(|item| item.id.clone())
             .collect()

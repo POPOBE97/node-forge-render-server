@@ -38,6 +38,38 @@ use super::{epi_integration, event_loop_context, winit_integration, winit_integr
 // ----------------------------------------------------------------------------
 // Types:
 
+fn log_shortwire_paste_raw_input(stage: &str, raw_input: &egui::RawInput) {
+    let mut hits = Vec::new();
+    for event in &raw_input.events {
+        match event {
+            egui::Event::Key {
+                key,
+                physical_key,
+                pressed,
+                repeat,
+                modifiers,
+            } if *key == egui::Key::V || *key == egui::Key::Paste => {
+                hits.push(format!(
+                    "Key key={key:?} physical={physical_key:?} pressed={pressed} repeat={repeat} modifiers={modifiers:?}"
+                ));
+            }
+            egui::Event::Paste(text) => {
+                hits.push(format!("Paste text_len={}", text.len()));
+            }
+            _ => {}
+        }
+    }
+
+    if !hits.is_empty() {
+        eprintln!(
+            "[shortwire-paste:native-raw] stage={stage} focused={} raw_modifiers={:?} events={}",
+            raw_input.focused,
+            raw_input.modifiers,
+            hits.join(" | ")
+        );
+    }
+}
+
 pub struct WgpuWinitApp<'app> {
     repaint_proxy: Arc<Mutex<EventLoopProxy<UserEvent>>>,
     app_name: String,
@@ -652,6 +684,7 @@ impl WgpuWinitRunning<'_> {
                 .collect();
 
             painter.handle_screenshots(&mut raw_input.events);
+            log_shortwire_paste_raw_input("run_ui_and_paint", &raw_input);
 
             (viewport_ui_cb, raw_input, is_visible)
         };
@@ -739,7 +772,12 @@ impl WgpuWinitRunning<'_> {
                         egui_winit.egui_input_mut().events.push(egui::Event::Copy);
                     }
                     ActionRequested::Paste => {
-                        if let Some(contents) = egui_winit.clipboard_text() {
+                        let contents = egui_winit.clipboard_text();
+                        eprintln!(
+                            "[shortwire-paste:native-action] ActionRequested::Paste clipboard_text_len={}",
+                            contents.as_ref().map(|text| text.len()).unwrap_or(0)
+                        );
+                        if let Some(contents) = contents {
                             let contents = contents.replace("\r\n", "\n");
                             if !contents.is_empty() {
                                 egui_winit
@@ -845,6 +883,25 @@ impl WgpuWinitRunning<'_> {
         }
 
         match event {
+            winit::event::WindowEvent::KeyboardInput { event, .. } => {
+                let text = event.logical_key.to_text();
+                let is_v = text.is_some_and(|text| text.eq_ignore_ascii_case("v"));
+                let is_paste = matches!(
+                    event.logical_key,
+                    winit::keyboard::Key::Named(winit::keyboard::NamedKey::Paste)
+                );
+                if is_v || is_paste {
+                    eprintln!(
+                        "[shortwire-paste:native-window] keyboard_input state={:?} logical={:?} text={:?} repeat={} viewport_id={:?} focused_viewport={:?}",
+                        event.state,
+                        event.logical_key,
+                        text,
+                        event.repeat,
+                        viewport_id,
+                        shared.focused_viewport,
+                    );
+                }
+            }
             winit::event::WindowEvent::Focused(focused) => {
                 let focused = if cfg!(target_os = "macos")
                     && let Some(viewport_id) = viewport_id
@@ -1080,6 +1137,7 @@ fn render_immediate_viewport(
             .map(|(id, viewport)| (*id, viewport.info.clone()))
             .collect();
         input.time = Some(beginning.elapsed().as_secs_f64());
+        log_shortwire_paste_raw_input("run_ui", &input);
         input
     };
 

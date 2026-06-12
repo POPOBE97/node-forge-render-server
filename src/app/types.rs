@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -12,6 +13,7 @@ use rust_wgpu_fiber::{
     eframe::{egui, wgpu},
     shader_space::ShaderSpace,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{renderer, ws};
 
@@ -21,7 +23,7 @@ use crate::ui::resource_tree::{FileTreeNode, ResourceSnapshot};
 
 use super::canvas::state::{CanvasState, ReferenceDesiredSource};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RefImageMode {
     #[default]
     Overlay,
@@ -32,12 +34,13 @@ pub enum RefImageMode {
 pub enum RefImageSource {
     Manual,
     ShortwireClipboard,
+    ShortwirePatch,
     SceneNodePath(String),
     SceneNodeDataUrl(String),
     SceneNodeAssetId(String),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RefImageAlphaMode {
     #[default]
     Premultiplied,
@@ -51,6 +54,40 @@ impl RefImageAlphaMode {
             Self::Straight => "STR",
         }
     }
+}
+
+fn default_shortwire_reference_opacity() -> f32 {
+    0.5
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortwireReferenceImage {
+    #[serde(rename = "artifactId")]
+    pub artifact_id: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub alpha_mode: RefImageAlphaMode,
+    #[serde(default)]
+    pub mode: RefImageMode,
+    #[serde(default = "default_shortwire_reference_opacity")]
+    pub opacity: f32,
+    #[serde(default)]
+    pub offset: [f32; 2],
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShortwirePastedReferenceImage {
+    pub name: String,
+    pub png_bytes: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub alpha_mode: RefImageAlphaMode,
+    pub mode: RefImageMode,
+    pub opacity: f32,
+    pub offset: [f32; 2],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -281,6 +318,8 @@ pub struct AppInit {
     pub asset_store: crate::asset_store::AssetStore,
     pub animation_session: Option<crate::animation::AnimationSession>,
     pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
+    pub debug_artifacts: crate::debug_artifacts::DebugArtifactStore,
+    pub nforge_path: Option<PathBuf>,
 }
 
 pub(super) struct AppCore {
@@ -390,6 +429,7 @@ pub(super) struct AppShell {
     pub pending_shortwire_diff_capture:
         Option<crate::ui::pass_debug_window::ShortwireDiffCaptureRequest>,
     pub debug_artifacts: crate::debug_artifacts::DebugArtifactStore,
+    pub nforge_path: Option<PathBuf>,
     pub test_mode: TestMode,
     pub matrix_config: MatrixConfig,
     pub resource_pools: Vec<ResourcePoolInfo>,
@@ -573,8 +613,10 @@ impl App {
             .uniform_scene
             .as_ref()
             .and_then(scene_reference_image_alpha_mode);
-        let mut debug_artifacts = crate::debug_artifacts::DebugArtifactStore::default();
-        if let Some(scene) = init.uniform_scene.as_ref() {
+        let mut debug_artifacts = init.debug_artifacts;
+        if debug_artifacts.is_empty()
+            && let Some(scene) = init.uniform_scene.as_ref()
+        {
             let _ = debug_artifacts.sync_manifest(scene.debug_artifacts.clone());
         }
         Self {
@@ -632,6 +674,7 @@ impl App {
                 pass_shader_overrides: std::collections::HashMap::new(),
                 pending_shortwire_diff_capture: None,
                 debug_artifacts,
+                nforge_path: init.nforge_path,
                 test_mode: TestMode::default(),
                 matrix_config: MatrixConfig::default(),
                 resource_pools: Vec::new(),
@@ -642,6 +685,46 @@ impl App {
                 initial_scene_reference_desired,
                 initial_scene_reference_image_alpha_mode,
             ),
+        }
+    }
+
+    pub(super) fn persist_debug_artifacts_to_source_nforge(&mut self) {
+        let Some(nforge_path) = self.shell.nforge_path.clone() else {
+            return;
+        };
+        let manifest = self.shell.debug_artifacts.export_manifest();
+
+        let mut scene_for_archive = None;
+        if let Ok(mut guard) = self.runtime.last_good.lock()
+            && let Some(scene) = guard.as_mut()
+        {
+            scene.debug_artifacts = manifest.clone();
+            scene_for_archive = Some(scene.clone());
+        }
+        if scene_for_archive.is_none()
+            && let Some(scene) = self.runtime.uniform_scene.as_mut()
+        {
+            scene.debug_artifacts = manifest.clone();
+            scene_for_archive = Some(scene.clone());
+        }
+
+        let Some(scene) = scene_for_archive else {
+            eprintln!(
+                "[debug-artifacts] skipped .nforge persistence; no current scene for {}",
+                nforge_path.display()
+            );
+            return;
+        };
+
+        if let Err(error) = crate::asset_store::save_debug_artifacts_to_nforge(
+            nforge_path.as_path(),
+            &scene,
+            &self.shell.debug_artifacts,
+        ) {
+            eprintln!(
+                "[debug-artifacts] failed to persist {}: {error:#}",
+                nforge_path.display()
+            );
         }
     }
 }

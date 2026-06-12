@@ -12,7 +12,7 @@ use std::{
 use rust_wgpu_fiber::eframe::egui;
 use serde::{Deserialize, Serialize};
 
-use crate::app::DiffStats;
+use crate::app::{DiffStats, ShortwirePastedReferenceImage, ShortwireReferenceImage};
 use crate::dsl::{DebugArtifactAnchor, DebugArtifactItem, DebugArtifactRole};
 use crate::metric_log;
 use crate::renderer::{PassDebugDependencyNode, PassDebugSource, PassDebugSourceRange};
@@ -86,12 +86,20 @@ struct ShortwireNodePatch {
     hunks: Vec<ShortwireHunk>,
     base_source_hash: u64,
     #[serde(
+        rename = "referenceImage",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    reference_image: Option<ShortwireReferenceImage>,
+    #[serde(
         rename = "diffResult",
         default,
         skip_serializing_if = "Option::is_none"
     )]
     diff_result: Option<ShortwireDiffResult>,
 }
+
+const SHORTWIRE_DIFF_PASS_MAX_AE: f32 = 2.0 / 255.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -137,6 +145,49 @@ impl ShortwireDiffResult {
             reference_size,
             reference_offset,
         })
+    }
+}
+
+fn shortwire_diff_result_summary(diff_result: Option<&ShortwireDiffResult>) -> String {
+    match diff_result {
+        Some(result) => format!(
+            "diff=max_ae:{:.6},min:{:.6},avg:{:.6},rms:{:.6},p95:{:.6},n:{},nonfinite:{},render:{}x{},ref:{}x{},offset:{},{}",
+            result.max_ae,
+            result.min,
+            result.avg,
+            result.rms,
+            result.p95_abs,
+            result.sample_count,
+            result.non_finite_count,
+            result.render_size[0],
+            result.render_size[1],
+            result.reference_size[0],
+            result.reference_size[1],
+            result.reference_offset[0],
+            result.reference_offset[1],
+        ),
+        None => "diff:none".to_string(),
+    }
+}
+
+fn shortwire_patch_summary(patch: Option<&ShortwireNodePatch>) -> String {
+    match patch {
+        Some(patch) => format!(
+            "patch=hunks:{},base_hash:{},status:{:?},{}",
+            patch.hunks.len(),
+            patch.base_source_hash,
+            shortwire_dot_info_for_patch(patch).status,
+            shortwire_diff_result_summary(patch.diff_result.as_ref()),
+        ),
+        None => "patch:none".to_string(),
+    }
+}
+
+fn shortwire_diff_status(diff_result: &ShortwireDiffResult) -> ShortwireDotStatus {
+    if diff_result.max_ae < SHORTWIRE_DIFF_PASS_MAX_AE {
+        ShortwireDotStatus::Passing
+    } else {
+        ShortwireDotStatus::Failing
     }
 }
 
@@ -189,6 +240,7 @@ struct ShortwireActiveState {
     base_source_hash: u64,
     base_source_stale: bool,
     diff_view_enabled: bool,
+    reference_image: Option<ShortwireReferenceImage>,
     phase: ShortwirePhase,
 }
 
@@ -458,6 +510,7 @@ pub enum PassDebugWindowAction {
     ApplyPatch {
         pass_name: String,
         source: String,
+        reference_image: Option<ShortwireReferenceImage>,
     },
     ResetPatch {
         pass_name: String,
@@ -1009,6 +1062,7 @@ impl PassDebugWindowDocument {
                         PassDebugWindowAction::ApplyPatch {
                             pass_name: self.pass_name.clone(),
                             source: merged_source,
+                            reference_image: None,
                         },
                     );
                     self.last_status =
@@ -1075,10 +1129,19 @@ impl PassDebugWindowDocument {
                         ShortwireNodePatch {
                             hunks: pending_hunks.clone(),
                             base_source_hash: self.generated_base_source_hash,
+                            reference_image: active.reference_image.clone(),
                             diff_result: None,
                         },
                     );
                     self.shortwire_patches_dirty = true;
+                    eprintln!(
+                        "[shortwire-diff] apply_success_queue_capture pass={} patch_key={} hunks={} base_hash={} exit_on_apply={}",
+                        self.pass_name,
+                        patch_key,
+                        pending_hunks.len(),
+                        self.generated_base_source_hash,
+                        self.shortwire_exit_on_apply,
+                    );
                     diff_capture_request = Some(ShortwireDiffCaptureRequest {
                         pass_name: self.pass_name.clone(),
                         patch_key,
@@ -1108,10 +1171,15 @@ impl PassDebugWindowDocument {
                         ShortwireNodePatch {
                             hunks: pending_hunks,
                             base_source_hash: self.generated_base_source_hash,
+                            reference_image: active.reference_image,
                             diff_result: None,
                         },
                     );
                     self.shortwire_patches_dirty = true;
+                    eprintln!(
+                        "[shortwire-diff] apply_success_store_without_capture pass={} patch_key={} base_hash={}",
+                        self.pass_name, active.identity.patch_key, self.generated_base_source_hash,
+                    );
                 }
             }
         }
@@ -1730,11 +1798,16 @@ impl PassDebugWindowDocument {
         if next_hunks.is_empty() {
             self.shortwire_patches.remove(&key);
         } else {
+            let reference_image = self
+                .shortwire_patches
+                .get(&key)
+                .and_then(|patch| patch.reference_image.clone());
             self.shortwire_patches.insert(
                 key,
                 ShortwireNodePatch {
                     hunks: next_hunks,
                     base_source_hash: hash_source(&pending.incoming_source),
+                    reference_image,
                     diff_result: None,
                 },
             );
@@ -1764,6 +1837,7 @@ impl PassDebugWindowDocument {
             PassDebugWindowAction::ApplyPatch {
                 pass_name: self.pass_name.clone(),
                 source: conflict.resolved_source.clone(),
+                reference_image: None,
             },
         );
         self.last_error = None;
@@ -1805,6 +1879,7 @@ impl PassDebugWindowDocument {
             PassDebugWindowAction::ApplyPatch {
                 pass_name: self.pass_name.clone(),
                 source: conflict.local_source.clone(),
+                reference_image: None,
             },
         );
         self.last_error = None;
@@ -2179,6 +2254,7 @@ impl PassDebugWindowDocument {
                     ShortwireNodePatch {
                         hunks,
                         base_source_hash: base_hash,
+                        reference_image: None,
                         diff_result: None,
                     },
                 );
@@ -2246,6 +2322,7 @@ impl PassDebugWindowDocument {
                     ShortwireNodePatch {
                         hunks,
                         base_source_hash: base_hash,
+                        reference_image: None,
                         diff_result: None,
                     },
                 );
@@ -2294,6 +2371,20 @@ impl PassDebugWindowDocument {
             label: row.label.clone(),
             target_id: row.target_id.clone(),
         };
+        eprintln!(
+            "[shortwire-diff] enter_shortwire pass={} label={} target={:?} patch_key={} patch_active={} base_empty={} {}",
+            self.pass_name,
+            identity.label,
+            identity.target_id,
+            identity.patch_key,
+            self.patch_active,
+            self.generated_base_source.is_empty(),
+            shortwire_patch_summary(self.shortwire_patches.get(&identity.patch_key)),
+        );
+        let existing_reference_image = self
+            .shortwire_patches
+            .get(&identity.patch_key)
+            .and_then(|patch| patch.reference_image.clone());
 
         if self.patch_active {
             self.shortwire_active = Some(ShortwireActiveState {
@@ -2302,6 +2393,7 @@ impl PassDebugWindowDocument {
                 base_source_hash: 0,
                 base_source_stale: false,
                 diff_view_enabled: false,
+                reference_image: existing_reference_image,
                 phase: ShortwirePhase::PendingResetThenEnter {
                     next_identity: identity,
                 },
@@ -2320,6 +2412,7 @@ impl PassDebugWindowDocument {
                 base_source_hash: self.generated_base_source_hash,
                 base_source_stale: false,
                 diff_view_enabled: false,
+                reference_image: existing_reference_image,
                 phase: ShortwirePhase::Editing,
             });
             self.complete_shortwire_entry();
@@ -2348,6 +2441,13 @@ impl PassDebugWindowDocument {
         self.enter_reference_shortwire(&identity);
 
         let mut draft = self.generated_base_source.clone();
+        eprintln!(
+            "[shortwire-diff] complete_entry pass={} patch_key={} current_base_hash={} {}",
+            self.pass_name,
+            identity.patch_key,
+            self.generated_base_source_hash,
+            shortwire_patch_summary(self.shortwire_patches.get(&identity.patch_key)),
+        );
         if let Some(patch) = self.shortwire_patches.get(&identity.patch_key) {
             if patch.base_source_hash == self.generated_base_source_hash {
                 match apply_hunks(&self.generated_base_source, &patch.hunks) {
@@ -2386,6 +2486,15 @@ impl PassDebugWindowDocument {
         self.dirty = self.draft_source != self.loaded_source;
         self.draft_analysis_due_secs = None;
         self.last_status = None;
+        eprintln!(
+            "[shortwire-diff] active pass={} label={} target={:?} patch_key={} draft_len={} dirty={}",
+            self.pass_name,
+            identity.label,
+            identity.target_id,
+            identity.patch_key,
+            self.draft_source.len(),
+            self.dirty,
+        );
     }
 
     fn exit_shortwire_done(&mut self, pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>) {
@@ -2399,6 +2508,8 @@ impl PassDebugWindowDocument {
         let mut final_draft = self.draft_source.clone();
         let base_source_stale = active.base_source_stale;
         let base_source = active.base_source.clone();
+        let active_label = active.identity.label.clone();
+        let active_target_id = active.identity.target_id.clone();
 
         if base_source_stale {
             let user_hunks = compute_hunks(&base_source, &self.draft_source);
@@ -2421,6 +2532,19 @@ impl PassDebugWindowDocument {
         }
 
         let final_hunks = compute_hunks(&self.generated_base_source, &final_draft);
+        eprintln!(
+            "[shortwire-diff] save_apply pass={} label={} target={:?} hunks={} base_stale={} previous_{}",
+            self.pass_name,
+            active_label,
+            active_target_id,
+            final_hunks.len(),
+            base_source_stale,
+            shortwire_patch_summary(
+                self.shortwire_active
+                    .as_ref()
+                    .and_then(|active| self.shortwire_patches.get(&active.identity.patch_key)),
+            ),
+        );
         self.prepare_reference_shortwire_save();
         self.shortwire_exit_on_apply = false;
         if let Some(ref mut active) = self.shortwire_active {
@@ -2434,6 +2558,10 @@ impl PassDebugWindowDocument {
             PassDebugWindowAction::ApplyPatch {
                 pass_name: self.pass_name.clone(),
                 source: final_draft,
+                reference_image: self
+                    .shortwire_active
+                    .as_ref()
+                    .and_then(|active| active.reference_image.clone()),
             },
         );
         self.last_error = None;
@@ -2458,19 +2586,44 @@ impl PassDebugWindowDocument {
         let Some(active) = self.shortwire_active.clone() else {
             return;
         };
+        eprintln!(
+            "[shortwire-diff] close pass={} label={} target={:?} phase={:?}",
+            self.pass_name, active.identity.label, active.identity.target_id, active.phase,
+        );
 
         match &active.phase {
             ShortwirePhase::Editing => {
                 self.save_and_exit_reference_shortwire_without_left_apply();
                 let hunks = compute_hunks(&self.generated_base_source, &self.draft_source);
-                if !hunks.is_empty() {
+                if !hunks.is_empty() || active.reference_image.is_some() {
                     let patch_key = active.identity.patch_key.clone();
+                    let previous_patch = self.shortwire_patches.get(&patch_key);
+                    let preserved_diff_result = previous_patch
+                        .filter(|patch| {
+                            patch.base_source_hash == self.generated_base_source_hash
+                                && patch.hunks == hunks
+                        })
+                        .and_then(|patch| patch.diff_result.clone());
+                    let reference_image = active
+                        .reference_image
+                        .clone()
+                        .or_else(|| previous_patch.and_then(|patch| patch.reference_image.clone()));
+                    eprintln!(
+                        "[shortwire-diff] close_store_pending pass={} patch_key={} hunks={} base_hash={} preserved_diff={} previous_{}",
+                        self.pass_name,
+                        patch_key,
+                        hunks.len(),
+                        self.generated_base_source_hash,
+                        preserved_diff_result.is_some(),
+                        shortwire_patch_summary(self.shortwire_patches.get(&patch_key)),
+                    );
                     self.shortwire_patches.insert(
                         patch_key,
                         ShortwireNodePatch {
                             hunks,
                             base_source_hash: self.generated_base_source_hash,
-                            diff_result: None,
+                            reference_image,
+                            diff_result: preserved_diff_result,
                         },
                     );
                     self.shortwire_patches_dirty = true;
@@ -2549,6 +2702,12 @@ impl PassDebugWindowDocument {
                 return;
             }
         };
+        eprintln!(
+            "[shortwire-diff] enter_and_apply_stored pass={} patch_key={} {}",
+            self.pass_name,
+            patch_key,
+            shortwire_patch_summary(Some(&patch)),
+        );
 
         match apply_hunks(&self.generated_base_source, &patch.hunks) {
             Ok(patched) => {
@@ -2564,6 +2723,7 @@ impl PassDebugWindowDocument {
                     base_source_hash: self.generated_base_source_hash,
                     base_source_stale: false,
                     diff_view_enabled: false,
+                    reference_image: patch.reference_image.clone(),
                     phase: ShortwirePhase::PendingApply {
                         pending_hunks: patch.hunks.clone(),
                     },
@@ -2582,6 +2742,7 @@ impl PassDebugWindowDocument {
                     PassDebugWindowAction::ApplyPatch {
                         pass_name: self.pass_name.clone(),
                         source: patched,
+                        reference_image: patch.reference_image.clone(),
                     },
                 );
                 self.last_error = None;
@@ -2634,15 +2795,16 @@ impl PassDebugWindowDocument {
         Some((item, content_text))
     }
 
-    fn restore_shortwire_patches_from_text(&mut self, text: &str) {
+    fn restore_shortwire_patches_from_text(&mut self, text: &str) -> bool {
         let Ok(payload) = serde_json::from_str::<ShortwirePatchesPayload>(text) else {
-            return;
+            return false;
         };
         if payload.version != 1 {
-            return;
+            return false;
         }
         self.shortwire_patches = payload.patches;
         self.shortwire_patches_dirty = false;
+        true
     }
 
     fn take_patches_dirty_artifact(&mut self) -> Option<(DebugArtifactItem, String)> {
@@ -2956,6 +3118,7 @@ pub struct PassDebugWindowState {
     close_requested: Arc<AtomicBool>,
     pending_actions: Arc<Mutex<Vec<PassDebugWindowAction>>>,
     last_viewport_snapshot: Arc<Mutex<Option<PassDebugViewportSnapshot>>>,
+    loaded_shortwire_patches_artifact_hash: Option<u64>,
     viewport_initialized: bool,
     focus_requested: bool,
 }
@@ -2978,6 +3141,7 @@ impl PassDebugWindowState {
             close_requested: Arc::new(AtomicBool::new(false)),
             pending_actions: Arc::new(Mutex::new(Vec::new())),
             last_viewport_snapshot: Arc::new(Mutex::new(None)),
+            loaded_shortwire_patches_artifact_hash: None,
             viewport_initialized: false,
             pass_name,
             viewport_id,
@@ -3018,9 +3182,30 @@ impl PassDebugWindowState {
         }
     }
 
-    fn restore_shortwire_patches(&self, text: &str) {
+    fn sync_shortwire_patches_from_artifact(&mut self, text: Option<&str>) {
+        let Some(text) = text else {
+            return;
+        };
+        let artifact_hash = hash_source(text);
+        if self.loaded_shortwire_patches_artifact_hash == Some(artifact_hash) {
+            return;
+        }
         if let Ok(mut document) = self.document.lock() {
-            document.restore_shortwire_patches_from_text(text);
+            if document.shortwire_active.is_some()
+                || document.shortwire_patches_dirty
+                || document.dirty
+            {
+                return;
+            }
+            if document.restore_shortwire_patches_from_text(text) {
+                eprintln!(
+                    "[shortwire-diff] restore_patches_from_artifact pass={} artifact_hash={} patches={}",
+                    self.pass_name,
+                    artifact_hash,
+                    document.shortwire_patches.len(),
+                );
+                self.loaded_shortwire_patches_artifact_hash = Some(artifact_hash);
+            }
         }
     }
 
@@ -3035,6 +3220,7 @@ pub type PassDebugWindowMap = HashMap<String, PassDebugWindowState>;
 
 pub struct PassDebugPatchApplyResult {
     pub artifacts: Vec<(DebugArtifactItem, String)>,
+    pub binary_artifacts: Vec<(DebugArtifactItem, Vec<u8>)>,
     pub diff_capture: Option<ShortwireDiffCaptureRequest>,
 }
 
@@ -3086,12 +3272,15 @@ pub fn open_pass_debug_window(
             legacy_reference_source,
             reference_patches_text,
         );
+        existing.sync_shortwire_patches_from_artifact(
+            debug_artifacts.pass_patches_text(pass_name.as_str()),
+        );
         existing.focus_requested = true;
         existing.close_requested.store(false, Ordering::Relaxed);
         return;
     }
 
-    let state = PassDebugWindowState::new(
+    let mut state = PassDebugWindowState::new(
         pass_name.clone(),
         source.cloned(),
         pass_sources_revision,
@@ -3103,9 +3292,9 @@ pub fn open_pass_debug_window(
         legacy_reference_source,
         reference_patches_text,
     );
-    if let Some(patches_text) = debug_artifacts.pass_patches_text(pass_name.as_str()) {
-        state.restore_shortwire_patches(patches_text);
-    }
+    state.sync_shortwire_patches_from_artifact(
+        debug_artifacts.pass_patches_text(pass_name.as_str()),
+    );
     windows.insert(pass_name.clone(), state);
 }
 
@@ -3138,6 +3327,9 @@ pub fn show_pass_debug_windows(
             &reference_files,
             debug_artifacts.pass_reference_text(state.pass_name.as_str()),
             debug_artifacts.pass_reference_patches_text(state.pass_name.as_str()),
+        );
+        state.sync_shortwire_patches_from_artifact(
+            debug_artifacts.pass_patches_text(state.pass_name.as_str()),
         );
         let update_source_dur = window_start.elapsed();
 
@@ -3253,11 +3445,13 @@ pub fn mark_patch_applied(
         }
         return PassDebugPatchApplyResult {
             artifacts,
+            binary_artifacts: Vec::new(),
             diff_capture,
         };
     }
     PassDebugPatchApplyResult {
         artifacts: Vec::new(),
+        binary_artifacts: Vec::new(),
         diff_capture: None,
     }
 }
@@ -3277,11 +3471,171 @@ pub fn record_shortwire_diff_result(
         .shortwire_patches
         .get_mut(request.patch_key.as_str())
     else {
+        eprintln!(
+            "[shortwire-diff] record_result_missing_patch pass={} patch_key={} {}",
+            request.pass_name,
+            request.patch_key,
+            shortwire_diff_result_summary(Some(&diff_result)),
+        );
         return Vec::new();
     };
+    let status = shortwire_diff_status(&diff_result);
+    eprintln!(
+        "[shortwire-diff] record_result pass={} patch_key={} status={:?} pass_threshold={:.6} {}",
+        request.pass_name,
+        request.patch_key,
+        status,
+        SHORTWIRE_DIFF_PASS_MAX_AE,
+        shortwire_diff_result_summary(Some(&diff_result)),
+    );
     patch.diff_result = Some(diff_result);
     document.shortwire_patches_dirty = true;
     document.take_patches_dirty_artifact().into_iter().collect()
+}
+
+fn shortwire_reference_image_artifact_id(pass_name: &str, patch_key: &str) -> String {
+    format!(
+        "pass__{}__shortwire-reference-image__{}",
+        safe_debug_artifact_segment(pass_name, "pass"),
+        debug_artifact_content_hash(patch_key.as_bytes()),
+    )
+}
+
+fn shortwire_reference_image_artifact(
+    pass_name: &str,
+    patch_key: &str,
+    pasted: ShortwirePastedReferenceImage,
+) -> (ShortwireReferenceImage, DebugArtifactItem, Vec<u8>) {
+    let artifact_id = shortwire_reference_image_artifact_id(pass_name, patch_key);
+    let patch_key_hash = debug_artifact_content_hash(patch_key.as_bytes());
+    let file_name = format!(
+        "{}.shortwire-ref.{}.png",
+        safe_debug_artifact_segment(pass_name, "pass"),
+        patch_key_hash
+    );
+    let item = DebugArtifactItem {
+        id: artifact_id.clone(),
+        anchor: DebugArtifactAnchor::Pass {
+            pass_name: pass_name.to_string(),
+        },
+        role: DebugArtifactRole::Image,
+        name: "Shortwire reference image".to_string(),
+        mime_type: "image/png".to_string(),
+        path: format!(
+            "debug-artifacts/{}/{}",
+            safe_debug_artifact_segment(&artifact_id, "artifact"),
+            safe_debug_artifact_segment(&file_name, "shortwire-ref.png"),
+        ),
+        size: Some(pasted.png_bytes.len() as u64),
+        content_hash: Some(debug_artifact_content_hash(pasted.png_bytes.as_slice())),
+        slot_key: Some(format!("shortwire-reference:{patch_key_hash}")),
+    };
+    let image = ShortwireReferenceImage {
+        artifact_id,
+        name: pasted.name,
+        width: pasted.width,
+        height: pasted.height,
+        alpha_mode: pasted.alpha_mode,
+        mode: pasted.mode,
+        opacity: pasted.opacity,
+        offset: pasted.offset,
+    };
+    (image, item, pasted.png_bytes)
+}
+
+pub fn request_active_shortwire_diff_capture(
+    windows: &mut PassDebugWindowMap,
+    pasted_reference: Option<ShortwirePastedReferenceImage>,
+) -> PassDebugPatchApplyResult {
+    let mut active_count = 0usize;
+    let mut missing_patch_count = 0usize;
+    let mut pending_pasted_reference = pasted_reference;
+    for state in windows.values() {
+        let Ok(mut document) = state.document.lock() else {
+            continue;
+        };
+        let Some(active) = document.shortwire_active.as_ref() else {
+            continue;
+        };
+        active_count += 1;
+        let patch_key = active.identity.patch_key.clone();
+        let pass_name = document.pass_name.clone();
+        let mut binary_artifacts = Vec::new();
+        let reference_image = pending_pasted_reference.take().map(|pasted| {
+            let (image, item, bytes) =
+                shortwire_reference_image_artifact(&pass_name, &patch_key, pasted);
+            binary_artifacts.push((item, bytes));
+            image
+        });
+        if let Some(reference_image) = reference_image.clone()
+            && let Some(active) = document.shortwire_active.as_mut()
+        {
+            active.reference_image = Some(reference_image);
+        }
+        if !document.shortwire_patches.contains_key(patch_key.as_str()) && reference_image.is_some()
+        {
+            let hunks = compute_hunks(&document.generated_base_source, &document.draft_source);
+            let base_source_hash = document.generated_base_source_hash;
+            eprintln!(
+                "[shortwire-diff] request_capture_create_image_patch pass={} patch_key={} hunks={} has_image=true",
+                pass_name,
+                patch_key,
+                hunks.len(),
+            );
+            document.shortwire_patches.insert(
+                patch_key.clone(),
+                ShortwireNodePatch {
+                    hunks,
+                    base_source_hash,
+                    reference_image: reference_image.clone(),
+                    diff_result: None,
+                },
+            );
+        }
+        let Some(patch) = document.shortwire_patches.get_mut(patch_key.as_str()) else {
+            missing_patch_count += 1;
+            eprintln!(
+                "[shortwire-diff] request_capture_no_patch pass={} patch_key={}",
+                pass_name, patch_key,
+            );
+            continue;
+        };
+
+        eprintln!(
+            "[shortwire-diff] request_capture_clear_previous pass={} patch_key={} {}",
+            pass_name,
+            patch_key,
+            shortwire_patch_summary(Some(patch)),
+        );
+        if let Some(reference_image) = reference_image {
+            patch.reference_image = Some(reference_image);
+        }
+        patch.diff_result = None;
+        document.shortwire_patches_dirty = true;
+        let artifacts = document.take_patches_dirty_artifact().into_iter().collect();
+        eprintln!(
+            "[shortwire-diff] request_capture_queued pass={} patch_key={}",
+            pass_name, patch_key,
+        );
+        return PassDebugPatchApplyResult {
+            artifacts,
+            binary_artifacts,
+            diff_capture: Some(ShortwireDiffCaptureRequest {
+                pass_name,
+                patch_key,
+            }),
+        };
+    }
+
+    eprintln!(
+        "[shortwire-diff] request_capture_no_capturable_patch active_count={} missing_patch_count={}",
+        active_count, missing_patch_count,
+    );
+    PassDebugPatchApplyResult {
+        artifacts: Vec::new(),
+        binary_artifacts: Vec::new(),
+        diff_capture: None,
+    }
 }
 
 pub fn has_active_shortwire(windows: &PassDebugWindowMap) -> bool {
@@ -4099,13 +4453,8 @@ fn tree_highlight_text_color(ui: &egui::Ui) -> egui::Color32 {
 
 fn shortwire_dot_info_for_patch(patch: &ShortwireNodePatch) -> ShortwireDotInfo {
     match patch.diff_result.as_ref() {
-        Some(diff_result) if diff_result.max_ae < 2.0 => ShortwireDotInfo {
-            status: ShortwireDotStatus::Passing,
-            max_ae: Some(diff_result.max_ae),
-            sample_count: Some(diff_result.sample_count),
-        },
         Some(diff_result) => ShortwireDotInfo {
-            status: ShortwireDotStatus::Failing,
+            status: shortwire_diff_status(diff_result),
             max_ae: Some(diff_result.max_ae),
             sample_count: Some(diff_result.sample_count),
         },
@@ -4120,7 +4469,10 @@ fn shortwire_dot_info_for_patch(patch: &ShortwireNodePatch) -> ShortwireDotInfo 
 fn shortwire_dot_hover_text(dot_info: ShortwireDotInfo) -> String {
     match (dot_info.max_ae, dot_info.sample_count) {
         (Some(max_ae), Some(sample_count)) => {
-            format!("Shortwire diff: max AE {max_ae:.4}, n {sample_count}")
+            format!(
+                "Shortwire diff: max AE {max_ae:.6} ({:.2}/255), threshold < 2/255, n {sample_count}",
+                max_ae * 255.0
+            )
         }
         _ => "Shortwire diff: pending".to_string(),
     }
@@ -4217,6 +4569,7 @@ fn render_pass_debug_toolbar(
                     PassDebugWindowAction::ApplyPatch {
                         pass_name: document.pass_name.clone(),
                         source: document.draft_source.clone(),
+                        reference_image: None,
                     },
                 );
             }
@@ -6229,6 +6582,9 @@ mod tests {
         flatten_dependency_tree, is_close_request_during_large_viewport_resize,
         pass_debug_viewport_builder, shortwire_click_matches_active_row,
     };
+    use crate::app::{
+        RefImageAlphaMode, RefImageMode, ShortwirePastedReferenceImage, ShortwireReferenceImage,
+    };
     use crate::dsl::{DebugArtifactAnchor, DebugArtifactItem, DebugArtifactRole};
     use crate::renderer::{
         PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource, PassDebugSourceRange,
@@ -7868,7 +8224,34 @@ fn fs_main() -> @location(0) f32 {
         super::ShortwireNodePatch {
             hunks: Vec::new(),
             base_source_hash: 1,
+            reference_image: None,
             diff_result: max_ae.map(test_diff_result),
+        }
+    }
+
+    fn test_reference_image() -> ShortwireReferenceImage {
+        ShortwireReferenceImage {
+            artifact_id: "pass__p__shortwire-reference-image__k".to_string(),
+            name: "clip.png".to_string(),
+            width: 2,
+            height: 1,
+            alpha_mode: RefImageAlphaMode::Premultiplied,
+            mode: RefImageMode::Overlay,
+            opacity: 0.5,
+            offset: [1.0, -2.0],
+        }
+    }
+
+    fn test_pasted_reference_image() -> ShortwirePastedReferenceImage {
+        ShortwirePastedReferenceImage {
+            name: "clip.png".to_string(),
+            png_bytes: vec![137, 80, 78, 71, 13, 10, 26, 10],
+            width: 2,
+            height: 1,
+            alpha_mode: RefImageAlphaMode::Premultiplied,
+            mode: RefImageMode::Overlay,
+            opacity: 0.5,
+            offset: [0.0, 0.0],
         }
     }
 
@@ -7909,22 +8292,242 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
+    fn shortwire_reference_image_round_trips_in_patch_artifact() {
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        let reference_image = test_reference_image();
+        document.shortwire_patches.insert(
+            "k".to_string(),
+            super::ShortwireNodePatch {
+                hunks: Vec::new(),
+                base_source_hash: 1,
+                reference_image: Some(reference_image.clone()),
+                diff_result: None,
+            },
+        );
+        document.shortwire_patches_dirty = true;
+
+        let (_item, content) = document.take_patches_dirty_artifact().unwrap();
+        assert!(content.contains("referenceImage"));
+        assert!(content.contains(reference_image.artifact_id.as_str()));
+
+        let mut restored = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        restored.restore_shortwire_patches_from_text(&content);
+
+        assert_eq!(
+            restored
+                .shortwire_patches
+                .get("k")
+                .and_then(|patch| patch.reference_image.as_ref())
+                .map(|image| image.artifact_id.as_str()),
+            Some(reference_image.artifact_id.as_str())
+        );
+    }
+
+    #[test]
     fn shortwire_dot_status_uses_diff_result_threshold() {
         assert_eq!(
             super::shortwire_dot_info_for_patch(&test_patch_with_diff(None)).status,
             super::ShortwireDotStatus::PendingDiff
         );
         assert_eq!(
-            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(1.99))).status,
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(
+                super::SHORTWIRE_DIFF_PASS_MAX_AE * 0.99
+            )))
+            .status,
             super::ShortwireDotStatus::Passing
         );
         assert_eq!(
-            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(2.0))).status,
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(
+                super::SHORTWIRE_DIFF_PASS_MAX_AE
+            )))
+            .status,
             super::ShortwireDotStatus::Failing
         );
         assert_eq!(
-            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(3.0))).status,
+            super::shortwire_dot_info_for_patch(&test_patch_with_diff(Some(0.992458))).status,
             super::ShortwireDotStatus::Failing
+        );
+    }
+
+    #[test]
+    fn closing_shortwire_preserves_matching_diff_result() {
+        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let row = PassDebugDependencyRow {
+            depth: 0,
+            row_key: "0".to_string(),
+            parent_row_key: None,
+            label: "test".to_string(),
+            relation_path: String::new(),
+            target_id: Some("t".to_string()),
+            source_range: None,
+            source_jump_range: None,
+            selectable: true,
+        };
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.draft_source = "fn edited() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+        let patched_source = PassDebugSource::from_wgsl("p", "fn edited() {}\n");
+        document.mark_applied(
+            Some(&patched_source),
+            1,
+            "fn edited() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+
+        let patch_key = super::shortwire_patch_key(&row);
+        document
+            .shortwire_patches
+            .get_mut(&patch_key)
+            .unwrap()
+            .diff_result = Some(test_diff_result(0.25));
+
+        document.exit_shortwire_navigate(&pending_actions);
+
+        assert_eq!(
+            document
+                .shortwire_patches
+                .get(&patch_key)
+                .and_then(|patch| patch.diff_result.as_ref())
+                .map(|result| result.max_ae),
+            Some(0.25)
+        );
+    }
+
+    #[test]
+    fn active_shortwire_diff_capture_clears_stale_result() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut windows = super::PassDebugWindowMap::new();
+        windows.insert(
+            "p".to_string(),
+            super::PassDebugWindowState::new("p".to_string(), Some(source), 0, None),
+        );
+
+        let state = windows.get("p").unwrap();
+        let pending_actions = state.pending_actions.clone();
+        let patch_key = {
+            let mut document = state.document.lock().unwrap();
+            let row = document.dependency_rows.first().cloned().unwrap();
+            let patch_key = super::shortwire_patch_key(&row);
+            document.enter_shortwire(&row, &pending_actions);
+            document
+                .shortwire_patches
+                .insert(patch_key.clone(), test_patch_with_diff(Some(1.25)));
+            patch_key
+        };
+
+        let result = super::request_active_shortwire_diff_capture(&mut windows, None);
+
+        assert_eq!(
+            result.diff_capture,
+            Some(super::ShortwireDiffCaptureRequest {
+                pass_name: "p".to_string(),
+                patch_key: patch_key.clone(),
+            })
+        );
+        assert_eq!(result.artifacts.len(), 1);
+        let state = windows.get("p").unwrap();
+        let document = state.document.lock().unwrap();
+        assert!(
+            document
+                .shortwire_patches
+                .get(&patch_key)
+                .unwrap()
+                .diff_result
+                .is_none()
+        );
+        assert!(!document.shortwire_patches_dirty);
+    }
+
+    #[test]
+    fn pasted_shortwire_reference_creates_image_only_patch() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut windows = super::PassDebugWindowMap::new();
+        windows.insert(
+            "p".to_string(),
+            super::PassDebugWindowState::new("p".to_string(), Some(source), 0, None),
+        );
+
+        let state = windows.get("p").unwrap();
+        let pending_actions = state.pending_actions.clone();
+        let patch_key = {
+            let mut document = state.document.lock().unwrap();
+            let row = document.dependency_rows.first().cloned().unwrap();
+            let patch_key = super::shortwire_patch_key(&row);
+            document.enter_shortwire(&row, &pending_actions);
+            patch_key
+        };
+
+        let result = super::request_active_shortwire_diff_capture(
+            &mut windows,
+            Some(test_pasted_reference_image()),
+        );
+
+        assert_eq!(
+            result.diff_capture,
+            Some(super::ShortwireDiffCaptureRequest {
+                pass_name: "p".to_string(),
+                patch_key: patch_key.clone(),
+            })
+        );
+        assert_eq!(result.artifacts.len(), 1);
+        assert_eq!(result.binary_artifacts.len(), 1);
+        let (image_item, image_bytes) = &result.binary_artifacts[0];
+        assert_eq!(image_item.role, DebugArtifactRole::Image);
+        assert_eq!(image_item.mime_type, "image/png");
+        assert!(image_item.path.starts_with("debug-artifacts/"));
+        assert!(
+            image_item
+                .slot_key
+                .as_deref()
+                .is_some_and(|slot| slot.starts_with("shortwire-reference:"))
+        );
+        assert_eq!(image_bytes.as_slice(), &[137, 80, 78, 71, 13, 10, 26, 10]);
+        assert!(result.artifacts[0].1.contains(image_item.id.as_str()));
+
+        let state = windows.get("p").unwrap();
+        let document = state.document.lock().unwrap();
+        let patch = document.shortwire_patches.get(&patch_key).unwrap();
+        assert!(patch.hunks.is_empty());
+        assert_eq!(
+            patch
+                .reference_image
+                .as_ref()
+                .map(|image| image.artifact_id.as_str()),
+            Some(image_item.id.as_str())
+        );
+        assert!(patch.diff_result.is_none());
+        assert!(!document.shortwire_patches_dirty);
+    }
+
+    #[test]
+    fn window_state_restores_shortwire_patches_when_artifact_arrives_late() {
+        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
+        let mut state = super::PassDebugWindowState::new("p".to_string(), Some(source), 0, None);
+        let payload = super::ShortwirePatchesPayload {
+            version: 1,
+            patches: HashMap::from([(
+                "k".to_string(),
+                test_patch_with_diff(Some(super::SHORTWIRE_DIFF_PASS_MAX_AE * 0.5)),
+            )]),
+        };
+        let content = serde_json::to_string(&payload).unwrap();
+
+        state.sync_shortwire_patches_from_artifact(None);
+        assert!(state.document.lock().unwrap().shortwire_patches.is_empty());
+
+        state.sync_shortwire_patches_from_artifact(Some(&content));
+
+        let document = state.document.lock().unwrap();
+        assert_eq!(document.shortwire_patches.len(), 1);
+        assert_eq!(
+            super::shortwire_dot_info_for_patch(document.shortwire_patches.get("k").unwrap())
+                .status,
+            super::ShortwireDotStatus::Passing
         );
     }
 
@@ -8037,6 +8640,7 @@ fn fs_main() -> @location(0) f32 {
             super::ShortwireNodePatch {
                 hunks: super::compute_hunks(base, "fn ref_a() {}\n"),
                 base_source_hash: super::hash_source(base),
+                reference_image: None,
                 diff_result: None,
             },
         );
@@ -8045,6 +8649,7 @@ fn fs_main() -> @location(0) f32 {
             super::ShortwireNodePatch {
                 hunks: super::compute_hunks(base, "fn ref_b() {}\n"),
                 base_source_hash: super::hash_source(base),
+                reference_image: None,
                 diff_result: None,
             },
         );
@@ -9152,6 +9757,12 @@ fn fs_main() -> @location(0) f32 {
             "fn edited() {}\n".to_string(),
             "Applied".to_string(),
         );
+        let patch_key = super::shortwire_patch_key(&row);
+        document
+            .shortwire_patches
+            .get_mut(&patch_key)
+            .unwrap()
+            .reference_image = Some(test_reference_image());
         pending_actions.lock().unwrap().clear();
         document.exit_shortwire_navigate(&pending_actions);
         let reset_source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
@@ -9167,8 +9778,18 @@ fn fs_main() -> @location(0) f32 {
         let actions = pending_actions.lock().unwrap();
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            super::PassDebugWindowAction::ApplyPatch { source, .. } => {
+            super::PassDebugWindowAction::ApplyPatch {
+                source,
+                reference_image,
+                ..
+            } => {
                 assert_eq!(source, "fn edited() {}\n");
+                assert_eq!(
+                    reference_image
+                        .as_ref()
+                        .map(|image| image.artifact_id.as_str()),
+                    Some("pass__p__shortwire-reference-image__k")
+                );
             }
             _ => panic!("expected ApplyPatch action"),
         }

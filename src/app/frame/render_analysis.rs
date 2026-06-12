@@ -17,6 +17,13 @@ use super::{
     },
 };
 
+fn effective_diff_clamp_output(
+    capture_shortwire_diff: bool,
+    hdr_preview_clamp_enabled: bool,
+) -> bool {
+    !capture_shortwire_diff && hdr_preview_clamp_enabled
+}
+
 pub(super) fn run(
     app: &mut App,
     render_state: &egui_wgpu::RenderState,
@@ -103,6 +110,19 @@ pub(super) fn run(
     let mut completed_shortwire_diff_capture = pending_shortwire_diff_capture.is_some()
         && (app.canvas.reference.ref_image.is_none() || compare_source_key.is_none());
     let mut did_update_diff_output = false;
+    let mut should_persist_debug_artifacts = false;
+
+    if let Some(capture) = pending_shortwire_diff_capture.as_ref()
+        && (app.canvas.reference.ref_image.is_none() || compare_source_key.is_none())
+    {
+        eprintln!(
+            "[shortwire-diff] capture_missing_inputs pass={} patch_key={} has_ref={} has_source={}",
+            capture.pass_name,
+            capture.patch_key,
+            app.canvas.reference.ref_image.is_some(),
+            compare_source_key.is_some(),
+        );
+    }
 
     if let Some(reference) = app.canvas.reference.ref_image.as_ref()
         && let Some(source) = display_source.as_ref()
@@ -120,6 +140,10 @@ pub(super) fn run(
         } else {
             app.canvas.analysis.diff_metric_mode
         };
+        let effective_clamp_output = effective_diff_clamp_output(
+            capture_shortwire_diff,
+            app.canvas.display.hdr_preview_clamp_enabled,
+        );
         let reference_offset = [
             reference.offset.x.round() as i32,
             reference.offset.y.round() as i32,
@@ -152,17 +176,48 @@ pub(super) fn run(
                 effective_reference_mode,
                 reference.opacity.to_bits(),
                 effective_metric_mode,
-                app.canvas.display.hdr_preview_clamp_enabled,
+                effective_clamp_output,
             );
             let stats_key = DiffStatsRequestKey::new(request_key);
             let collect_stats = matches!(effective_reference_mode, RefImageMode::Diff);
-            let should_update_diff = app.canvas.invalidation.diff_dirty()
+            let diff_dirty = app.canvas.invalidation.diff_dirty();
+            let diff_texture_missing = app.canvas.analysis.diff_texture_id.is_none();
+            let request_key_matches =
+                app.canvas.analysis.last_diff_request_key == Some(request_key);
+            let stats_key_matches =
+                app.canvas.analysis.last_diff_stats_request_key == Some(stats_key);
+            let should_update_diff = diff_dirty
                 || advance.should_redraw_scene
                 || needs_recreate
-                || app.canvas.analysis.diff_texture_id.is_none()
-                || app.canvas.analysis.last_diff_request_key != Some(request_key)
-                || (collect_stats
-                    && app.canvas.analysis.last_diff_stats_request_key != Some(stats_key));
+                || diff_texture_missing
+                || !request_key_matches
+                || (collect_stats && !stats_key_matches);
+
+            if let Some(capture) = pending_shortwire_diff_capture.as_ref() {
+                eprintln!(
+                    "[shortwire-diff] capture_eval pass={} patch_key={} should_update={} diff_dirty={} redraw={} recreate={} diff_texture_missing={} request_key_matches={} stats_key_matches={} ref_mode={:?} effective_mode={:?} metric={:?} hdr_clamp={} effective_clamp={} render={}x{} ref={}x{} offset={},{}",
+                    capture.pass_name,
+                    capture.patch_key,
+                    should_update_diff,
+                    diff_dirty,
+                    advance.should_redraw_scene,
+                    needs_recreate,
+                    diff_texture_missing,
+                    request_key_matches,
+                    stats_key_matches,
+                    reference_mode,
+                    effective_reference_mode,
+                    effective_metric_mode,
+                    app.canvas.display.hdr_preview_clamp_enabled,
+                    effective_clamp_output,
+                    source.size[0],
+                    source.size[1],
+                    reference.size[0],
+                    reference.size[1],
+                    reference_offset[0],
+                    reference_offset[1],
+                );
+            }
 
             if should_update_diff {
                 let diff_stats = diff_renderer.update(
@@ -176,7 +231,7 @@ pub(super) fn run(
                     effective_reference_mode,
                     reference.opacity,
                     effective_metric_mode,
-                    app.canvas.display.hdr_preview_clamp_enabled,
+                    effective_clamp_output,
                     collect_stats,
                 );
                 did_update_diff_output = true;
@@ -188,6 +243,24 @@ pub(super) fn run(
                     }
                     if let Some(capture) = pending_shortwire_diff_capture.clone() {
                         completed_shortwire_diff_capture = true;
+                        match diff_stats {
+                            Some(stats) => eprintln!(
+                                "[shortwire-diff] capture_stats pass={} patch_key={} min={:.6} max={:.6} avg={:.6} rms={:.6} p95={:.6} n={} nonfinite={}",
+                                capture.pass_name,
+                                capture.patch_key,
+                                stats.min,
+                                stats.max,
+                                stats.avg,
+                                stats.rms,
+                                stats.p95_abs,
+                                stats.sample_count,
+                                stats.non_finite_count,
+                            ),
+                            None => eprintln!(
+                                "[shortwire-diff] capture_stats_none pass={} patch_key={}",
+                                capture.pass_name, capture.patch_key,
+                            ),
+                        }
                         computed_shortwire_diff_result = diff_stats.and_then(|stats| {
                             ui::pass_debug_window::ShortwireDiffResult::from_stats(
                                 stats,
@@ -283,6 +356,7 @@ pub(super) fn run(
             app.shell
                 .debug_artifacts
                 .upsert(item.clone(), Some(content_text.clone()));
+            should_persist_debug_artifacts = true;
             crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
         }
         app.shell.pending_shortwire_diff_capture = None;
@@ -559,6 +633,10 @@ pub(super) fn run(
     }
     if did_update_qualifier {
         app.canvas.invalidation.clear_qualifier();
+    }
+
+    if should_persist_debug_artifacts {
+        app.persist_debug_artifacts_to_source_nforge();
     }
 
     if ingest.did_rebuild_shader_space {
@@ -931,7 +1009,7 @@ fn update_matrix_cell_analysis(
 mod tests {
     use super::{
         AnalysisSourceKey, ClippingRequestKey, DiffRequestKey, HistogramRequestKey,
-        ParadeRequestKey, RefImageMode, VectorscopeRequestKey,
+        ParadeRequestKey, RefImageMode, VectorscopeRequestKey, effective_diff_clamp_output,
     };
     use crate::app::{ClippingSettings, DiffMetricMode};
 
@@ -1023,6 +1101,14 @@ mod tests {
         assert_ne!(key_1, key_4);
         assert_ne!(key_1, key_5);
         assert_ne!(key_1, key_6);
+    }
+
+    #[test]
+    fn shortwire_diff_capture_ignores_hdr_clamp() {
+        assert!(effective_diff_clamp_output(false, true));
+        assert!(!effective_diff_clamp_output(false, false));
+        assert!(!effective_diff_clamp_output(true, true));
+        assert!(!effective_diff_clamp_output(true, false));
     }
 
     #[test]

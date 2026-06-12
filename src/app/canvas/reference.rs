@@ -1,9 +1,11 @@
 use std::path::Path;
 
+use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
 use crate::app::types::{
     App, RefImageAlphaMode, RefImageMode, RefImageSource, RefImageState, RefImageTransferMode,
+    ShortwirePastedReferenceImage, ShortwireReferenceImage,
 };
 
 use super::state::{ReferenceAttemptKey, ReferenceDesiredSource};
@@ -227,8 +229,9 @@ pub fn clear_reference(app: &mut App) {
 pub fn clear_shortwire_clipboard_reference(app: &mut App) -> bool {
     if matches!(
         app.canvas.reference.ref_image.as_ref().map(|r| &r.source),
-        Some(RefImageSource::ShortwireClipboard)
+        Some(RefImageSource::ShortwireClipboard | RefImageSource::ShortwirePatch)
     ) {
+        eprintln!("[shortwire-paste] clearing shortwire clipboard reference");
         clear_reference_internal(app, true);
         return true;
     }
@@ -543,16 +546,101 @@ pub fn pick_reference_image_from_dialog(
     Ok(true)
 }
 
+fn encode_rgba8_png(rgba: &image::RgbaImage) -> anyhow::Result<Vec<u8>> {
+    let mut png_bytes = Vec::new();
+    PngEncoder::new(&mut png_bytes)
+        .write_image(
+            rgba.as_raw(),
+            rgba.width(),
+            rgba.height(),
+            ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| anyhow::anyhow!("failed to encode shortwire reference png: {error}"))?;
+    Ok(png_bytes)
+}
+
+pub fn load_shortwire_reference_image(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+    snapshot: &ShortwireReferenceImage,
+    bytes: &[u8],
+) -> anyhow::Result<()> {
+    let decoded = image::load_from_memory(bytes)
+        .map_err(|error| anyhow::anyhow!("failed to decode shortwire reference image: {error}"))?;
+    load_reference_image_from_decoded(
+        app,
+        ctx,
+        render_state,
+        decoded,
+        snapshot.name.clone(),
+        RefImageSource::ShortwirePatch,
+        snapshot.alpha_mode,
+    )?;
+    if let Some(reference) = app.canvas.reference.ref_image.as_mut() {
+        reference.mode = snapshot.mode;
+        reference.opacity = snapshot.opacity.clamp(0.0, 1.0);
+        reference.offset = egui::vec2(snapshot.offset[0], snapshot.offset[1]);
+    }
+    app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
+    app.canvas.reference.last_attempt_key = None;
+    app.canvas.invalidation.reference_mode_changed();
+    eprintln!(
+        "[shortwire-diff] loaded stored reference image name={} size={}x{} alpha_mode={:?} mode={:?} offset={:.2},{:.2}",
+        snapshot.name,
+        snapshot.width,
+        snapshot.height,
+        snapshot.alpha_mode,
+        snapshot.mode,
+        snapshot.offset[0],
+        snapshot.offset[1],
+    );
+    Ok(())
+}
+
 pub fn paste_shortwire_reference_from_clipboard(
     app: &mut App,
     ctx: &egui::Context,
     render_state: &egui_wgpu::RenderState,
-) -> anyhow::Result<bool> {
-    let mut clipboard = arboard::Clipboard::new()?;
+) -> anyhow::Result<Option<ShortwirePastedReferenceImage>> {
+    eprintln!(
+        "[shortwire-paste] arboard start alpha_mode={:?} existing_ref={}",
+        app.canvas.reference.alpha_mode,
+        app.canvas
+            .reference
+            .ref_image
+            .as_ref()
+            .map(|reference| format!(
+                "{} {:?} {}x{}",
+                reference.name, reference.source, reference.size[0], reference.size[1]
+            ))
+            .unwrap_or_else(|| "none".to_string())
+    );
+    let mut clipboard = match arboard::Clipboard::new() {
+        Ok(clipboard) => clipboard,
+        Err(error) => {
+            eprintln!("[shortwire-paste] arboard init failed: {error}");
+            return Err(error.into());
+        }
+    };
     let clipboard_image = match clipboard.get_image() {
-        Ok(image) => image,
-        Err(arboard::Error::ContentNotAvailable) => return Ok(false),
-        Err(error) => return Err(error.into()),
+        Ok(image) => {
+            eprintln!(
+                "[shortwire-paste] arboard image found width={} height={} bytes={}",
+                image.width,
+                image.height,
+                image.bytes.len()
+            );
+            image
+        }
+        Err(arboard::Error::ContentNotAvailable) => {
+            eprintln!("[shortwire-paste] arboard content not available");
+            return Ok(None);
+        }
+        Err(error) => {
+            eprintln!("[shortwire-paste] arboard get_image failed: {error}");
+            return Err(error.into());
+        }
     };
     let width: u32 = clipboard_image
         .width
@@ -564,19 +652,33 @@ pub fn paste_shortwire_reference_from_clipboard(
         .map_err(|_| anyhow::anyhow!("clipboard image height too large"))?;
     let rgba = image::RgbaImage::from_raw(width, height, clipboard_image.bytes.into_owned())
         .ok_or_else(|| anyhow::anyhow!("clipboard image has invalid RGBA data"))?;
+    let png_bytes = encode_rgba8_png(&rgba)?;
     let alpha_mode = app.canvas.reference.alpha_mode;
+    let name = format!("Shortwire clipboard {width}x{height}");
     load_reference_image_from_decoded(
         app,
         ctx,
         render_state,
         image::DynamicImage::ImageRgba8(rgba),
-        format!("Shortwire clipboard {width}x{height}"),
+        name.clone(),
         RefImageSource::ShortwireClipboard,
         alpha_mode,
     )?;
     app.canvas.reference.desired_override = Some(ReferenceDesiredSource::Manual);
     app.canvas.reference.last_attempt_key = None;
-    Ok(true)
+    eprintln!(
+        "[shortwire-paste] loaded shortwire clipboard reference width={width} height={height} alpha_mode={alpha_mode:?}"
+    );
+    Ok(Some(ShortwirePastedReferenceImage {
+        name,
+        png_bytes,
+        width,
+        height,
+        alpha_mode,
+        mode: RefImageMode::Overlay,
+        opacity: 0.5,
+        offset: [0.0, 0.0],
+    }))
 }
 
 pub fn maybe_handle_reference_drop(

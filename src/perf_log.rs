@@ -39,8 +39,7 @@ static FRAME_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU6
 
 impl FrameTimer {
     pub fn new() -> Self {
-        let frame_number =
-            FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let frame_number = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
             start: Instant::now(),
             frame_number,

@@ -1072,21 +1072,110 @@ pub fn show_canvas(
     }
     let canvas_accepts_keyboard_paste =
         response.hovered() || app.canvas.interactions.canvas_event_focus_latched;
-    let shortwire_paste_requested = ctx.input(|i| {
-        (i.modifiers.command && i.key_pressed(egui::Key::V))
-            || i.events
+    let (command_v_pressed, command_v_released, paste_event_count, paste_event_chars, raw_focused) =
+        ctx.input(|i| {
+            let paste_event_chars = i
+                .events
                 .iter()
-                .any(|event| matches!(event, egui::Event::Paste(_)))
-    });
+                .filter_map(|event| match event {
+                    egui::Event::Paste(text) => Some(text.len()),
+                    _ => None,
+                })
+                .sum::<usize>();
+            (
+                i.modifiers.command && i.key_pressed(egui::Key::V),
+                cfg!(not(target_arch = "wasm32"))
+                    && i.modifiers.command
+                    && i.key_released(egui::Key::V),
+                i.events
+                    .iter()
+                    .filter(|event| matches!(event, egui::Event::Paste(_)))
+                    .count(),
+                paste_event_chars,
+                i.raw.focused,
+            )
+        });
+    let shortwire_paste_requested =
+        command_v_pressed || command_v_released || paste_event_count > 0;
+    if shortwire_paste_requested {
+        let current_ref = app
+            .canvas
+            .reference
+            .ref_image
+            .as_ref()
+            .map(|reference| {
+                format!(
+                    "{} {:?} {}x{}",
+                    reference.name, reference.source, reference.size[0], reference.size[1]
+                )
+            })
+            .unwrap_or_else(|| "none".to_string());
+        eprintln!(
+            "[shortwire-paste] request command_v_pressed={command_v_pressed} command_v_released={command_v_released} paste_events={paste_event_count} paste_chars={paste_event_chars} shortwire_active={shortwire_active_for_canvas} canvas_accepts={canvas_accepts_keyboard_paste} response_hovered={} focus_latched={} plain_shortcuts_enabled={plain_shortcuts_enabled} raw_focused={raw_focused} current_ref={current_ref}",
+            response.hovered(),
+            app.canvas.interactions.canvas_event_focus_latched,
+        );
+    }
     if shortwire_active_for_canvas
         && shortwire_paste_requested
         && (canvas_accepts_keyboard_paste || plain_shortcuts_enabled)
     {
+        eprintln!("[shortwire-paste] invoking clipboard image read");
         match reference::paste_shortwire_reference_from_clipboard(app, ctx, render_state) {
-            Ok(true) => ctx.request_repaint(),
-            Ok(false) => {}
+            Ok(Some(pasted_reference)) => {
+                let patch_result = pass_debug_window::request_active_shortwire_diff_capture(
+                    &mut app.shell.pass_debug_windows,
+                    Some(pasted_reference),
+                );
+                if let Some(diff_capture) = patch_result.diff_capture {
+                    eprintln!(
+                        "[shortwire-diff] paste_queue_capture pass={} patch_key={}",
+                        diff_capture.pass_name, diff_capture.patch_key,
+                    );
+                    app.shell.pending_shortwire_diff_capture = Some(diff_capture);
+                    app.canvas.invalidation.mark_diff_dirty();
+                } else {
+                    eprintln!("[shortwire-diff] paste_no_capture_queued");
+                }
+                let mut should_persist_debug_artifacts = false;
+                for (item, content_text) in patch_result.artifacts {
+                    app.shell
+                        .debug_artifacts
+                        .upsert(item.clone(), Some(content_text.clone()));
+                    crate::ws::broadcast_debug_artifact_upsert(
+                        &app.core.ws_hub,
+                        item,
+                        Some(content_text),
+                    );
+                    should_persist_debug_artifacts = true;
+                }
+                for (item, bytes) in patch_result.binary_artifacts {
+                    app.shell
+                        .debug_artifacts
+                        .upsert_bytes(item.clone(), bytes.clone());
+                    crate::ws::broadcast_debug_artifact_binary_upload(
+                        &app.core.ws_hub,
+                        item,
+                        bytes,
+                    );
+                    should_persist_debug_artifacts = true;
+                }
+                if should_persist_debug_artifacts {
+                    app.persist_debug_artifacts_to_source_nforge();
+                }
+                eprintln!("[shortwire-paste] clipboard image applied; requesting repaint");
+                ctx.request_repaint();
+            }
+            Ok(None) => {
+                eprintln!("[shortwire-paste] clipboard image unavailable");
+            }
             Err(error) => eprintln!("[reference-image] failed to paste clipboard image: {error:#}"),
         }
+    } else if shortwire_paste_requested {
+        eprintln!(
+            "[shortwire-paste] request blocked shortwire_active={shortwire_active_for_canvas} canvas_gate={} shortcut_gate={plain_shortcuts_enabled}",
+            canvas_accepts_keyboard_paste || plain_shortcuts_enabled,
+        );
     }
 
     if ctx.input(|i| !i.raw.hovered_files.is_empty()) {

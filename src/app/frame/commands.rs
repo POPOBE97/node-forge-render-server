@@ -7,8 +7,11 @@ use rust_wgpu_fiber::{
 
 use crate::{
     app::{
-        canvas, canvas::actions::CanvasAction, display_metrics, matrix_render, scene_runtime,
-        texture_bridge, types::App, window_mode,
+        canvas,
+        canvas::actions::CanvasAction,
+        display_metrics, matrix_render, scene_runtime, texture_bridge,
+        types::{App, ShortwireReferenceImage},
+        window_mode,
     },
     ui,
 };
@@ -22,6 +25,7 @@ pub enum AppCommand {
     ApplyPassShaderPatch {
         pass_name: String,
         source: String,
+        reference_image: Option<ShortwireReferenceImage>,
     },
     ResetPassShaderPatch(String),
     ResetAllPassShaderPatches,
@@ -148,7 +152,11 @@ pub fn dispatch(
                 pass_name,
             );
         }
-        AppCommand::ApplyPassShaderPatch { pass_name, source } => {
+        AppCommand::ApplyPassShaderPatch {
+            pass_name,
+            source,
+            reference_image,
+        } => {
             match scene_runtime::apply_pass_shader_patch(
                 app,
                 render_state,
@@ -172,6 +180,43 @@ pub fn dispatch(
                     }
                     for (item, content_text) in patch_result.artifacts {
                         upsert_debug_artifact(app, item, content_text);
+                    }
+                    for (item, bytes) in patch_result.binary_artifacts {
+                        app.shell
+                            .debug_artifacts
+                            .upsert_bytes(item.clone(), bytes.clone());
+                        crate::ws::broadcast_debug_artifact_binary_upload(
+                            &app.core.ws_hub,
+                            item,
+                            bytes,
+                        );
+                        app.persist_debug_artifacts_to_source_nforge();
+                    }
+                    if let Some(reference_image) = reference_image.as_ref() {
+                        if let Some(bytes) = app
+                            .shell
+                            .debug_artifacts
+                            .bytes(reference_image.artifact_id.as_str())
+                            .map(|bytes| bytes.to_vec())
+                        {
+                            if let Err(error) = canvas::reference::load_shortwire_reference_image(
+                                app,
+                                ctx,
+                                render_state,
+                                reference_image,
+                                bytes.as_slice(),
+                            ) {
+                                eprintln!(
+                                    "[shortwire-diff] failed to load stored reference image artifact_id={}: {error:#}",
+                                    reference_image.artifact_id,
+                                );
+                            }
+                        } else {
+                            eprintln!(
+                                "[shortwire-diff] missing stored reference image artifact_id={}",
+                                reference_image.artifact_id,
+                            );
+                        }
                     }
                 }
                 Err(err) => {
@@ -323,6 +368,7 @@ fn upsert_debug_artifact(app: &mut App, item: crate::dsl::DebugArtifactItem, con
     app.shell
         .debug_artifacts
         .upsert(item.clone(), Some(content_text.clone()));
+    app.persist_debug_artifacts_to_source_nforge();
     crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
 }
 

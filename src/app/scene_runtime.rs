@@ -726,6 +726,17 @@ pub fn apply_scene_update(
         }
         ws::SceneUpdate::DebugArtifactUpsert { item, content_text } => {
             app.shell.debug_artifacts.upsert(item, content_text);
+            app.persist_debug_artifacts_to_source_nforge();
+            SceneApplyResult {
+                did_rebuild_shader_space: false,
+                texture_filter_override: None,
+                reset_viewport: false,
+                previous_output_hash: None,
+            }
+        }
+        ws::SceneUpdate::DebugArtifactBinaryUpsert { item, bytes } => {
+            app.shell.debug_artifacts.upsert_bytes(item, bytes);
+            app.persist_debug_artifacts_to_source_nforge();
             SceneApplyResult {
                 did_rebuild_shader_space: false,
                 texture_filter_override: None,
@@ -735,6 +746,7 @@ pub fn apply_scene_update(
         }
         ws::SceneUpdate::DebugArtifactDelete { artifact_id } => {
             app.shell.debug_artifacts.delete(artifact_id.as_str());
+            app.persist_debug_artifacts_to_source_nforge();
             SceneApplyResult {
                 did_rebuild_shader_space: false,
                 texture_filter_override: None,
