@@ -1,5 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -42,7 +44,13 @@ const PASS_DEBUG_WINDOW_MIN_WIDTH: f32 = 960.0;
 const PASS_DEBUG_WINDOW_MIN_HEIGHT: f32 = 360.0;
 const PASS_DEBUG_REFERENCE_SYNC_DEBOUNCE_SECS: f64 = 0.250;
 const PASS_DEBUG_PATCH_ERROR_SUMMARY_CHARS: usize = 140;
-const DEBUG_ARTIFACT_REFERENCE_SLOT: &str = "default";
+const PASS_DEBUG_REFERENCE_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const PASS_DEBUG_REFERENCE_MAX_FOLDER_FILES: usize = 512;
+const DEBUG_ARTIFACT_DEFAULT_SLOT: &str = "default";
+const DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT: &str = "reference-workspace";
+const DEBUG_ARTIFACT_REFERENCE_PATCHES_SLOT: &str = "reference-patches";
+const DEBUG_ARTIFACT_REFERENCE_FILE_SLOT_PREFIX: &str = "file:";
+const REFERENCE_WORKSPACE_VERSION: u32 = 1;
 
 // --- Shortwire mode types ---
 
@@ -108,6 +116,218 @@ struct ShortwireActiveState {
     base_source_stale: bool,
     diff_view_enabled: bool,
     phase: ShortwirePhase,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferenceWorkspaceManifest {
+    version: u32,
+    root_path: Option<String>,
+    root_label: String,
+    selected_file: Option<String>,
+    files: Vec<ReferenceWorkspaceManifestFile>,
+    #[serde(default)]
+    skipped_files: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferenceWorkspaceManifestFile {
+    relative_path: String,
+    artifact_id: String,
+    content_hash: String,
+    size: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ReferenceWorkspaceFile {
+    relative_path: String,
+    artifact_id: String,
+    source: String,
+    loaded_source: String,
+}
+
+#[derive(Clone, Debug)]
+struct ReferenceShortwireLocalFile {
+    path: PathBuf,
+    restore_source: String,
+    wrote_patch: bool,
+}
+
+impl ReferenceWorkspaceFile {
+    fn size(&self) -> u64 {
+        self.source.len() as u64
+    }
+
+    fn content_hash(&self) -> String {
+        debug_artifact_content_hash(self.source.as_bytes())
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.source != self.loaded_source
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ReferenceWorkspaceState {
+    root_path: Option<String>,
+    root_label: String,
+    selected_file: Option<String>,
+    files: Vec<ReferenceWorkspaceFile>,
+    editor_source: String,
+    sync_due_secs: Option<f64>,
+    last_status: Option<String>,
+    skipped_files: usize,
+    manifest_dirty: bool,
+    pre_shortwire_source: Option<String>,
+    shortwire_active_key: Option<String>,
+    shortwire_base_source: Option<String>,
+    pending_shortwire_patch: Option<(String, Vec<ShortwireHunk>)>,
+    local_shortwire_file: Option<ReferenceShortwireLocalFile>,
+}
+
+impl Default for ReferenceWorkspaceState {
+    fn default() -> Self {
+        Self {
+            root_path: None,
+            root_label: "Reference".to_string(),
+            selected_file: None,
+            files: Vec::new(),
+            editor_source: String::new(),
+            sync_due_secs: None,
+            last_status: None,
+            skipped_files: 0,
+            manifest_dirty: false,
+            pre_shortwire_source: None,
+            shortwire_active_key: None,
+            shortwire_base_source: None,
+            pending_shortwire_patch: None,
+            local_shortwire_file: None,
+        }
+    }
+}
+
+impl ReferenceWorkspaceState {
+    fn selected_file_index(&self) -> Option<usize> {
+        let selected = self.selected_file.as_deref()?;
+        self.files
+            .iter()
+            .position(|file| file.relative_path == selected)
+    }
+
+    fn selected_file(&self) -> Option<&ReferenceWorkspaceFile> {
+        self.selected_file_index()
+            .and_then(|index| self.files.get(index))
+    }
+
+    fn selected_file_mut(&mut self) -> Option<&mut ReferenceWorkspaceFile> {
+        let index = self.selected_file_index()?;
+        self.files.get_mut(index)
+    }
+
+    fn selected_local_path(&self) -> Option<PathBuf> {
+        let root_path = self.root_path.as_deref()?;
+        let selected_file = self.selected_file.as_deref()?;
+        Some(PathBuf::from(root_path).join(selected_file))
+    }
+
+    fn selected_file_dirty(&self) -> bool {
+        self.selected_file()
+            .is_some_and(ReferenceWorkspaceFile::is_dirty)
+    }
+
+    fn has_dirty_files(&self) -> bool {
+        self.files.iter().any(ReferenceWorkspaceFile::is_dirty)
+    }
+
+    fn has_content(&self) -> bool {
+        !self.files.is_empty()
+    }
+
+    fn commit_editor_to_selected(&mut self) {
+        let editor_source = self.editor_source.clone();
+        if let Some(file) = self.selected_file_mut() {
+            file.source = editor_source;
+        }
+    }
+
+    fn select_file(&mut self, relative_path: &str) -> bool {
+        if self.shortwire_active_key.is_some() {
+            return false;
+        }
+        self.commit_editor_to_selected();
+        let Some(file) = self
+            .files
+            .iter()
+            .find(|file| file.relative_path == relative_path)
+        else {
+            return false;
+        };
+        self.selected_file = Some(file.relative_path.clone());
+        self.editor_source = file.source.clone();
+        self.manifest_dirty = true;
+        true
+    }
+
+    fn replace_files(
+        &mut self,
+        root_path: Option<String>,
+        root_label: String,
+        files: Vec<ReferenceWorkspaceFile>,
+        selected_file: Option<String>,
+        skipped_files: usize,
+        mark_dirty: bool,
+    ) {
+        self.root_path = root_path;
+        self.root_label = root_label;
+        self.files = files;
+        self.files
+            .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        self.skipped_files = skipped_files;
+        self.selected_file = selected_file
+            .filter(|selected| {
+                self.files
+                    .iter()
+                    .any(|file| &file.relative_path == selected)
+            })
+            .or_else(|| self.files.first().map(|file| file.relative_path.clone()));
+        self.editor_source = self
+            .selected_file()
+            .map(|file| file.source.clone())
+            .unwrap_or_default();
+        self.sync_due_secs = None;
+        self.last_status = None;
+        self.manifest_dirty = mark_dirty;
+        self.pre_shortwire_source = None;
+        self.shortwire_active_key = None;
+        self.shortwire_base_source = None;
+        self.pending_shortwire_patch = None;
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ReferencePatchesPayload {
+    version: u32,
+    patches: HashMap<String, ShortwireNodePatch>,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugMergeConflict {
+    base_source: String,
+    incoming_source: String,
+    local_source: String,
+    resolved_source: String,
+    error: String,
+    choice_popup_open: bool,
+    resolver_window_open: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PassDebugPendingMergePatchUpdate {
+    base_source: String,
+    incoming_source: String,
+    local_source: String,
+    merged_source: String,
 }
 
 #[derive(Clone, Debug)]
@@ -328,12 +548,10 @@ pub struct PassDebugWindowDocument {
     pending_dependency_reveal_row_key: Option<String>,
     pub draft_source: String,
     loaded_source: String,
-    reference_source: String,
-    reference_loaded_source: String,
-    reference_dirty: bool,
-    reference_sync_due_secs: Option<f64>,
+    reference_workspace: ReferenceWorkspaceState,
+    reference_patches: HashMap<String, ShortwireNodePatch>,
+    reference_patches_dirty: bool,
     reference_line_galley_cache: Option<LineGalleyCache>,
-    reference_last_status: Option<String>,
     draft_revision: u64,
     draft_analysis_due_secs: Option<f64>,
     line_galley_cache: Option<LineGalleyCache>,
@@ -353,6 +571,8 @@ pub struct PassDebugWindowDocument {
     shortwire_exit_on_apply: bool,
     generated_base_source: String,
     generated_base_source_hash: u64,
+    merge_conflict: Option<PassDebugMergeConflict>,
+    pending_merge_patch_update: Option<PassDebugPendingMergePatchUpdate>,
     filter_text: String,
 }
 
@@ -391,12 +611,10 @@ impl PassDebugWindowDocument {
             pending_dependency_reveal_row_key: None,
             draft_source: loaded_source.clone(),
             loaded_source,
-            reference_source: String::new(),
-            reference_loaded_source: String::new(),
-            reference_dirty: false,
-            reference_sync_due_secs: None,
+            reference_workspace: ReferenceWorkspaceState::default(),
+            reference_patches: HashMap::new(),
+            reference_patches_dirty: false,
             reference_line_galley_cache: None,
-            reference_last_status: None,
             draft_revision: 0,
             draft_analysis_due_secs: None,
             line_galley_cache: None,
@@ -415,6 +633,8 @@ impl PassDebugWindowDocument {
             shortwire_exit_on_apply: false,
             generated_base_source,
             generated_base_source_hash,
+            merge_conflict: None,
+            pending_merge_patch_update: None,
             filter_text: String::new(),
         };
         document.refresh_analysis_rows();
@@ -440,30 +660,96 @@ impl PassDebugWindowDocument {
         self.draft_analysis_due_secs = None;
     }
 
-    fn update_reference_source(&mut self, reference_source: Option<&str>) {
-        let next_source = reference_source.unwrap_or_default();
-        if self.reference_dirty {
-            if next_source == self.reference_source {
-                self.reference_dirty = false;
-                self.reference_loaded_source = next_source.to_string();
-                self.reference_last_status = Some("Synced".to_string());
+    fn update_reference_workspace(
+        &mut self,
+        workspace_text: Option<&str>,
+        reference_files: &[crate::debug_artifacts::DebugArtifactTextSnapshot],
+        legacy_reference_source: Option<&str>,
+        reference_patches_text: Option<&str>,
+    ) {
+        self.restore_reference_patches_from_text(reference_patches_text);
+
+        let Some((incoming, migrated_legacy)) = load_reference_workspace_from_artifacts(
+            &self.pass_name,
+            workspace_text,
+            reference_files,
+            legacy_reference_source,
+        ) else {
+            if !self.reference_workspace.has_dirty_files()
+                && !self.reference_workspace.manifest_dirty
+                && self.reference_workspace.shortwire_active_key.is_none()
+                && self.reference_workspace.has_content()
+            {
+                self.reference_workspace = ReferenceWorkspaceState::default();
+                self.reference_line_galley_cache = None;
             }
             return;
-        }
-        if self.reference_source == next_source && self.reference_loaded_source == next_source {
+        };
+
+        if self.reference_workspace.shortwire_active_key.is_some()
+            || self.reference_workspace.has_dirty_files()
+            || self.reference_workspace.manifest_dirty
+        {
+            self.acknowledge_reference_workspace_sync(&incoming);
             return;
         }
-        self.reference_source = next_source.to_string();
-        self.reference_loaded_source = next_source.to_string();
-        self.reference_line_galley_cache = None;
-        self.reference_sync_due_secs = None;
-        self.reference_last_status = None;
+
+        if !reference_workspace_loaded_matches(&self.reference_workspace, &incoming) {
+            self.reference_workspace = incoming;
+            if migrated_legacy {
+                self.reference_workspace.manifest_dirty = true;
+                if let Some(file) = self.reference_workspace.selected_file_mut() {
+                    file.loaded_source.clear();
+                }
+                self.reference_workspace.sync_due_secs = Some(0.0);
+                self.reference_workspace.last_status =
+                    Some("Migrating legacy reference".to_string());
+            }
+            self.reference_line_galley_cache = None;
+        }
+    }
+
+    fn acknowledge_reference_workspace_sync(&mut self, incoming: &ReferenceWorkspaceState) {
+        let mut any_ack = false;
+        for incoming_file in &incoming.files {
+            if let Some(current_file) = self
+                .reference_workspace
+                .files
+                .iter_mut()
+                .find(|file| file.relative_path == incoming_file.relative_path)
+                && current_file.source == incoming_file.source
+            {
+                current_file.loaded_source = incoming_file.source.clone();
+                any_ack = true;
+            }
+        }
+
+        if self.reference_workspace.root_path == incoming.root_path
+            && self.reference_workspace.root_label == incoming.root_label
+            && self.reference_workspace.selected_file == incoming.selected_file
+            && self.reference_workspace.files.len() == incoming.files.len()
+        {
+            self.reference_workspace.manifest_dirty = false;
+        }
+
+        if any_ack && !self.reference_workspace.has_dirty_files() {
+            self.reference_workspace.sync_due_secs = None;
+            self.reference_workspace.last_status = Some("Synced".to_string());
+        }
     }
 
     fn mark_reference_edited(&mut self, now_secs: f64) {
-        self.reference_dirty = self.reference_source != self.reference_loaded_source;
-        self.reference_sync_due_secs = Some(now_secs + PASS_DEBUG_REFERENCE_SYNC_DEBOUNCE_SECS);
-        self.reference_last_status = Some("Sync pending".to_string());
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            self.reference_workspace.last_status = Some("Reference patch draft".to_string());
+            return;
+        }
+
+        self.reference_workspace.commit_editor_to_selected();
+        if self.reference_workspace.selected_file().is_some() {
+            self.reference_workspace.sync_due_secs =
+                Some(now_secs + PASS_DEBUG_REFERENCE_SYNC_DEBOUNCE_SECS);
+            self.reference_workspace.last_status = Some("Sync pending".to_string());
+        }
     }
 
     fn maybe_emit_reference_upsert(
@@ -471,38 +757,62 @@ impl PassDebugWindowDocument {
         now_secs: f64,
         pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
     ) {
-        let Some(due_secs) = self.reference_sync_due_secs else {
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            return;
+        }
+        let Some(due_secs) = self.reference_workspace.sync_due_secs else {
             return;
         };
         if now_secs < due_secs {
             return;
         }
-        self.reference_sync_due_secs = None;
-        if self.reference_source == self.reference_loaded_source {
-            self.reference_dirty = false;
-            self.reference_last_status = None;
+
+        self.reference_workspace.sync_due_secs = None;
+        let artifacts = self.take_reference_workspace_dirty_artifacts();
+        if artifacts.is_empty() {
+            self.reference_workspace.last_status = None;
             return;
         }
-        let item = pass_reference_artifact_item(&self.pass_name, &self.reference_source);
-        push_action(
-            pending_actions,
-            PassDebugWindowAction::UpsertDebugArtifact {
-                item,
-                content_text: self.reference_source.clone(),
-            },
-        );
-        self.reference_last_status = Some("Syncing...".to_string());
+
+        for (item, content_text) in artifacts {
+            push_action(
+                pending_actions,
+                PassDebugWindowAction::UpsertDebugArtifact { item, content_text },
+            );
+        }
+        self.reference_workspace.last_status = Some("Syncing...".to_string());
     }
 
     fn maybe_refresh_pending_draft_analysis(&mut self, _now_secs: f64, _ctx: &egui::Context) {
         self.draft_analysis_due_secs = None;
     }
 
+    #[cfg(test)]
     fn update_source(
         &mut self,
         source: Option<&PassDebugSource>,
         source_revision: u64,
         patch_source: impl PatchSourceArg,
+    ) {
+        self.update_source_inner(source, source_revision, patch_source, None);
+    }
+
+    fn update_source_with_actions(
+        &mut self,
+        source: Option<&PassDebugSource>,
+        source_revision: u64,
+        patch_source: impl PatchSourceArg,
+        pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    ) {
+        self.update_source_inner(source, source_revision, patch_source, Some(pending_actions));
+    }
+
+    fn update_source_inner(
+        &mut self,
+        source: Option<&PassDebugSource>,
+        source_revision: u64,
+        patch_source: impl PatchSourceArg,
+        pending_actions: Option<&Arc<Mutex<Vec<PassDebugWindowAction>>>>,
     ) {
         let patch_source = patch_source.into_patch_source();
         let patch_active = patch_source.is_some();
@@ -541,6 +851,20 @@ impl PassDebugWindowDocument {
             return;
         }
 
+        if patch_active
+            && pending_actions.is_some()
+            && canonical_source_text != self.generated_base_source
+        {
+            self.handle_patch_canonical_change(
+                source,
+                source_revision,
+                canonical_source_text,
+                patch_source.as_deref().unwrap_or_default(),
+                pending_actions.expect("pending actions checked above"),
+            );
+            return;
+        }
+
         if canonical_source_text != self.generated_base_source {
             self.generated_base_source = canonical_source_text.to_string();
             self.generated_base_source_hash = hash_source(&self.generated_base_source);
@@ -570,6 +894,74 @@ impl PassDebugWindowDocument {
         self.refresh_analysis_rows();
     }
 
+    fn handle_patch_canonical_change(
+        &mut self,
+        source: Option<&PassDebugSource>,
+        _source_revision: u64,
+        incoming_source: &str,
+        local_source: &str,
+        pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    ) {
+        let base_source = self.generated_base_source.clone();
+        self.generated_base_source = incoming_source.to_string();
+        self.generated_base_source_hash = hash_source(&self.generated_base_source);
+        self.analysis_source = source.cloned();
+        self.analysis_source_text = incoming_source.to_string();
+        self.draft_analysis_due_secs = None;
+        self.refresh_analysis_rows();
+
+        match three_way_merge_sources(&base_source, incoming_source, local_source) {
+            Ok(merged_source) => {
+                self.merge_conflict = None;
+                self.last_error = None;
+                self.pending_merge_patch_update = Some(PassDebugPendingMergePatchUpdate {
+                    base_source: base_source.clone(),
+                    incoming_source: incoming_source.to_string(),
+                    local_source: local_source.to_string(),
+                    merged_source: merged_source.clone(),
+                });
+                if merged_source == incoming_source {
+                    push_action(
+                        pending_actions,
+                        PassDebugWindowAction::ResetPatch {
+                            pass_name: self.pass_name.clone(),
+                        },
+                    );
+                    self.last_status =
+                        Some("Canonical source changed — clearing empty patch".to_string());
+                } else {
+                    push_action(
+                        pending_actions,
+                        PassDebugWindowAction::ApplyPatch {
+                            pass_name: self.pass_name.clone(),
+                            source: merged_source,
+                        },
+                    );
+                    self.last_status =
+                        Some("Canonical source changed — rebasing patch...".to_string());
+                }
+            }
+            Err(error) => {
+                self.merge_conflict = Some(PassDebugMergeConflict {
+                    base_source,
+                    incoming_source: incoming_source.to_string(),
+                    local_source: local_source.to_string(),
+                    resolved_source: local_source.to_string(),
+                    error: error.to_string(),
+                    choice_popup_open: true,
+                    resolver_window_open: false,
+                });
+                self.replace_draft_source(local_source.to_string());
+                self.loaded_source = local_source.to_string();
+                self.dirty = false;
+                self.last_error = Some(
+                    "Patch conflicts with updated generated shader — resolve merge".to_string(),
+                );
+                self.last_status = None;
+            }
+        }
+    }
+
     fn mark_applied(
         &mut self,
         source: Option<&PassDebugSource>,
@@ -595,6 +987,9 @@ impl PassDebugWindowDocument {
         self.generated_base_source = canonical_source_text;
         self.generated_base_source_hash = hash_source(&self.generated_base_source);
         self.draft_analysis_due_secs = None;
+        let applied_source = self.loaded_source.clone();
+        self.commit_pending_merge_patch_update(&applied_source);
+        self.merge_conflict = None;
 
         if is_shortwire_completion {
             if let Some(ref mut active) = self.shortwire_active {
@@ -609,12 +1004,17 @@ impl PassDebugWindowDocument {
                     self.shortwire_patches_dirty = true;
                 }
             }
+            let should_exit_shortwire = self.shortwire_exit_on_apply;
+            self.commit_reference_shortwire_after_left_apply(should_exit_shortwire);
             if self.shortwire_exit_on_apply {
                 self.shortwire_exit_on_apply = false;
                 self.shortwire_active = None;
                 self.refresh_analysis_rows();
             } else {
                 if let Some(ref mut active) = self.shortwire_active {
+                    active.base_source = self.generated_base_source.clone();
+                    active.base_source_hash = self.generated_base_source_hash;
+                    active.base_source_stale = false;
                     active.phase = ShortwirePhase::Editing;
                 }
             }
@@ -665,6 +1065,9 @@ impl PassDebugWindowDocument {
         self.refresh_analysis_rows();
         self.dirty = false;
         self.patch_active = false;
+        let reset_source = self.generated_base_source.clone();
+        self.commit_pending_merge_patch_update(&reset_source);
+        self.merge_conflict = None;
         self.last_error = None;
         self.last_status = Some(status);
 
@@ -1214,6 +1617,580 @@ impl PassDebugWindowDocument {
         self.last_status = None;
     }
 
+    fn commit_pending_merge_patch_update(&mut self, applied_source: &str) {
+        let Some(pending) = self.pending_merge_patch_update.take() else {
+            return;
+        };
+        if pending.merged_source != applied_source {
+            return;
+        }
+
+        let mut matching_keys = self
+            .shortwire_patches
+            .iter()
+            .filter_map(|(key, patch)| {
+                apply_hunks(&pending.base_source, &patch.hunks)
+                    .ok()
+                    .filter(|patched| patched == &pending.local_source)
+                    .map(|_| key.clone())
+            })
+            .collect::<Vec<_>>();
+        matching_keys.sort();
+        matching_keys.dedup();
+
+        if matching_keys.len() != 1 {
+            return;
+        }
+
+        let key = matching_keys.remove(0);
+        let next_hunks = compute_hunks(&pending.incoming_source, applied_source);
+        if next_hunks.is_empty() {
+            self.shortwire_patches.remove(&key);
+        } else {
+            self.shortwire_patches.insert(
+                key,
+                ShortwireNodePatch {
+                    hunks: next_hunks,
+                    base_source_hash: hash_source(&pending.incoming_source),
+                },
+            );
+        }
+        self.shortwire_patches_dirty = true;
+    }
+
+    fn open_merge_resolver(&mut self) {
+        if let Some(conflict) = self.merge_conflict.as_mut() {
+            conflict.choice_popup_open = false;
+            conflict.resolver_window_open = true;
+        }
+    }
+
+    fn apply_merge_resolved(&mut self, pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>) {
+        let Some(conflict) = self.merge_conflict.as_ref() else {
+            return;
+        };
+        self.pending_merge_patch_update = Some(PassDebugPendingMergePatchUpdate {
+            base_source: conflict.base_source.clone(),
+            incoming_source: conflict.incoming_source.clone(),
+            local_source: conflict.local_source.clone(),
+            merged_source: conflict.resolved_source.clone(),
+        });
+        push_action(
+            pending_actions,
+            PassDebugWindowAction::ApplyPatch {
+                pass_name: self.pass_name.clone(),
+                source: conflict.resolved_source.clone(),
+            },
+        );
+        self.last_error = None;
+        self.last_status = Some("Applying resolved shader...".to_string());
+    }
+
+    fn use_merge_incoming(&mut self, pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>) {
+        let Some(conflict) = self.merge_conflict.as_ref() else {
+            return;
+        };
+        self.pending_merge_patch_update = Some(PassDebugPendingMergePatchUpdate {
+            base_source: conflict.base_source.clone(),
+            incoming_source: conflict.incoming_source.clone(),
+            local_source: conflict.local_source.clone(),
+            merged_source: conflict.incoming_source.clone(),
+        });
+        push_action(
+            pending_actions,
+            PassDebugWindowAction::ResetPatch {
+                pass_name: self.pass_name.clone(),
+            },
+        );
+        self.last_error = None;
+        self.last_status = Some("Using incoming generated shader...".to_string());
+    }
+
+    fn keep_merge_local(&mut self, pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>) {
+        let Some(conflict) = self.merge_conflict.as_ref() else {
+            return;
+        };
+        self.pending_merge_patch_update = Some(PassDebugPendingMergePatchUpdate {
+            base_source: conflict.base_source.clone(),
+            incoming_source: conflict.incoming_source.clone(),
+            local_source: conflict.local_source.clone(),
+            merged_source: conflict.local_source.clone(),
+        });
+        push_action(
+            pending_actions,
+            PassDebugWindowAction::ApplyPatch {
+                pass_name: self.pass_name.clone(),
+                source: conflict.local_source.clone(),
+            },
+        );
+        self.last_error = None;
+        self.last_status = Some("Keeping local patch...".to_string());
+    }
+
+    fn cancel_merge_resolution(&mut self) {
+        let Some(conflict) = self.merge_conflict.take() else {
+            return;
+        };
+        self.loaded_source = conflict.local_source.clone();
+        self.replace_draft_source(conflict.local_source);
+        self.dirty = false;
+        self.pending_merge_patch_update = None;
+        self.last_error = None;
+        self.last_status = Some("Merge resolution cancelled".to_string());
+    }
+
+    fn import_reference_file_from_path(&mut self, path: &Path, now_secs: f64) {
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            self.reference_workspace.last_status =
+                Some("Close shortwire before opening a file".to_string());
+            return;
+        }
+        let Some(parent) = path.parent() else {
+            self.reference_workspace.last_status =
+                Some("Cannot open file without parent".to_string());
+            return;
+        };
+        match read_reference_file(path, parent, &self.pass_name, true) {
+            Ok(file) => {
+                let selected_file = Some(file.relative_path.clone());
+                self.reference_workspace.replace_files(
+                    Some(parent.to_string_lossy().to_string()),
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Reference file")
+                        .to_string(),
+                    vec![file],
+                    selected_file,
+                    0,
+                    true,
+                );
+                self.reference_workspace.sync_due_secs = Some(now_secs);
+                self.reference_workspace.last_status = Some("File imported".to_string());
+                self.reference_line_galley_cache = None;
+            }
+            Err(error) => {
+                self.reference_workspace.last_status = Some(error);
+            }
+        }
+    }
+
+    fn import_reference_folder_from_path(&mut self, path: &Path, now_secs: f64) {
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            self.reference_workspace.last_status =
+                Some("Close shortwire before opening a folder".to_string());
+            return;
+        }
+        match read_reference_folder(path, &self.pass_name, true) {
+            Ok((files, skipped_files)) => {
+                if files.is_empty() {
+                    self.reference_workspace.last_status =
+                        Some("No UTF-8 text files found".to_string());
+                    return;
+                }
+                self.reference_workspace.replace_files(
+                    Some(path.to_string_lossy().to_string()),
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Reference folder")
+                        .to_string(),
+                    files,
+                    None,
+                    skipped_files,
+                    true,
+                );
+                self.reference_workspace.sync_due_secs = Some(now_secs);
+                self.reference_workspace.last_status =
+                    Some(format!("Folder imported ({skipped_files} skipped)"));
+                self.reference_line_galley_cache = None;
+            }
+            Err(error) => {
+                self.reference_workspace.last_status = Some(error);
+            }
+        }
+    }
+
+    fn reload_reference_workspace(&mut self, now_secs: f64) {
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            self.reference_workspace.last_status =
+                Some("Close shortwire before reloading".to_string());
+            return;
+        }
+        let Some(root_path) = self.reference_workspace.root_path.clone() else {
+            self.reference_workspace.last_status = Some("No local path to reload".to_string());
+            return;
+        };
+        let root = PathBuf::from(root_path);
+        if !root.exists() {
+            self.reference_workspace.last_status =
+                Some("Local path missing — keeping archive snapshot".to_string());
+            return;
+        }
+
+        if self.reference_workspace.files.len() <= 1 {
+            let Some(relative_path) = self.reference_workspace.selected_file.clone() else {
+                self.reference_workspace.last_status =
+                    Some("No selected file to reload".to_string());
+                return;
+            };
+            let path = root.join(&relative_path);
+            match read_reference_file(&path, &root, &self.pass_name, true) {
+                Ok(file) => {
+                    self.reference_workspace.replace_files(
+                        Some(root.to_string_lossy().to_string()),
+                        self.reference_workspace.root_label.clone(),
+                        vec![file],
+                        Some(relative_path),
+                        0,
+                        true,
+                    );
+                    self.reference_workspace.sync_due_secs = Some(now_secs);
+                    self.reference_workspace.last_status = Some("File reloaded".to_string());
+                    self.reference_line_galley_cache = None;
+                }
+                Err(error) => {
+                    self.reference_workspace.last_status = Some(format!("Reload failed — {error}"));
+                }
+            }
+            return;
+        }
+
+        match read_reference_folder(&root, &self.pass_name, true) {
+            Ok((files, skipped_files)) => {
+                if files.is_empty() {
+                    self.reference_workspace.last_status =
+                        Some("Reload found no UTF-8 text files".to_string());
+                    return;
+                }
+                let selected_file = self.reference_workspace.selected_file.clone();
+                self.reference_workspace.replace_files(
+                    Some(root.to_string_lossy().to_string()),
+                    self.reference_workspace.root_label.clone(),
+                    files,
+                    selected_file,
+                    skipped_files,
+                    true,
+                );
+                self.reference_workspace.sync_due_secs = Some(now_secs);
+                self.reference_workspace.last_status =
+                    Some(format!("Folder reloaded ({skipped_files} skipped)"));
+                self.reference_line_galley_cache = None;
+            }
+            Err(error) => {
+                self.reference_workspace.last_status = Some(format!("Reload failed — {error}"));
+            }
+        }
+    }
+
+    fn take_reference_workspace_dirty_artifacts(&mut self) -> Vec<(DebugArtifactItem, String)> {
+        self.reference_workspace.commit_editor_to_selected();
+        let mut artifacts = Vec::new();
+
+        if self.reference_workspace.manifest_dirty {
+            if let Some((item, content_text)) = self.collect_reference_workspace_artifact() {
+                artifacts.push((item, content_text));
+            }
+            self.reference_workspace.manifest_dirty = false;
+        }
+
+        let pass_name = self.pass_name.clone();
+        for file in &mut self.reference_workspace.files {
+            if !file.is_dirty() {
+                continue;
+            }
+            let item = pass_reference_file_artifact_item(&pass_name, file);
+            let content_text = file.source.clone();
+            file.loaded_source = file.source.clone();
+            artifacts.push((item, content_text));
+        }
+
+        artifacts
+    }
+
+    fn collect_reference_workspace_artifact(&self) -> Option<(DebugArtifactItem, String)> {
+        let manifest = ReferenceWorkspaceManifest {
+            version: REFERENCE_WORKSPACE_VERSION,
+            root_path: self.reference_workspace.root_path.clone(),
+            root_label: self.reference_workspace.root_label.clone(),
+            selected_file: self.reference_workspace.selected_file.clone(),
+            files: self
+                .reference_workspace
+                .files
+                .iter()
+                .map(|file| ReferenceWorkspaceManifestFile {
+                    relative_path: file.relative_path.clone(),
+                    artifact_id: file.artifact_id.clone(),
+                    content_hash: file.content_hash(),
+                    size: file.size(),
+                })
+                .collect(),
+            skipped_files: self.reference_workspace.skipped_files,
+        };
+        let content_text = serde_json::to_string(&manifest).ok()?;
+        let artifact_id = pass_reference_workspace_artifact_id(&self.pass_name);
+        let file_name = format!(
+            "{}.reference-workspace.json",
+            safe_debug_artifact_segment(&self.pass_name, "pass")
+        );
+        let item = DebugArtifactItem {
+            id: artifact_id.clone(),
+            anchor: DebugArtifactAnchor::Pass {
+                pass_name: self.pass_name.clone(),
+            },
+            role: DebugArtifactRole::Attachment,
+            name: "Reference workspace".to_string(),
+            mime_type: "text/plain".to_string(),
+            path: format!(
+                "debug-artifacts/{}/{}",
+                safe_debug_artifact_segment(&artifact_id, "artifact"),
+                safe_debug_artifact_segment(&file_name, "artifact.json")
+            ),
+            size: Some(content_text.len() as u64),
+            content_hash: Some(debug_artifact_content_hash(content_text.as_bytes())),
+            slot_key: Some(DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT.to_string()),
+        };
+        Some((item, content_text))
+    }
+
+    fn restore_reference_patches_from_text(&mut self, text: Option<&str>) {
+        if self.reference_patches_dirty {
+            return;
+        }
+        let Some(text) = text else {
+            return;
+        };
+        let Ok(payload) = serde_json::from_str::<ReferencePatchesPayload>(text) else {
+            return;
+        };
+        if payload.version != REFERENCE_WORKSPACE_VERSION {
+            return;
+        }
+        self.reference_patches = payload.patches;
+    }
+
+    fn collect_reference_patches_artifact(&self) -> Option<(DebugArtifactItem, String)> {
+        let payload = ReferencePatchesPayload {
+            version: REFERENCE_WORKSPACE_VERSION,
+            patches: self.reference_patches.clone(),
+        };
+        let content_text = serde_json::to_string(&payload).ok()?;
+        let artifact_id = pass_reference_patches_artifact_id(&self.pass_name);
+        let file_name = format!(
+            "{}.reference-patches.json",
+            safe_debug_artifact_segment(&self.pass_name, "pass")
+        );
+        let item = DebugArtifactItem {
+            id: artifact_id.clone(),
+            anchor: DebugArtifactAnchor::Pass {
+                pass_name: self.pass_name.clone(),
+            },
+            role: DebugArtifactRole::Patch,
+            name: "Reference shortwire patches".to_string(),
+            mime_type: "text/plain".to_string(),
+            path: format!(
+                "debug-artifacts/{}/{}",
+                safe_debug_artifact_segment(&artifact_id, "artifact"),
+                safe_debug_artifact_segment(&file_name, "artifact.json")
+            ),
+            size: Some(content_text.len() as u64),
+            content_hash: Some(debug_artifact_content_hash(content_text.as_bytes())),
+            slot_key: Some(DEBUG_ARTIFACT_REFERENCE_PATCHES_SLOT.to_string()),
+        };
+        Some((item, content_text))
+    }
+
+    fn take_reference_patches_dirty_artifact(&mut self) -> Option<(DebugArtifactItem, String)> {
+        if !self.reference_patches_dirty {
+            return None;
+        }
+        self.reference_patches_dirty = false;
+        self.collect_reference_patches_artifact()
+    }
+
+    fn enter_reference_shortwire(&mut self, identity: &ShortwireRowIdentity) {
+        if self.reference_workspace.shortwire_active_key.is_some() {
+            return;
+        }
+        self.reference_workspace.commit_editor_to_selected();
+        let Some(file) = self.reference_workspace.selected_file() else {
+            return;
+        };
+        let relative_path = file.relative_path.clone();
+        let base_source = file.source.clone();
+        let patch_key = reference_shortwire_patch_key(&relative_path, &identity.patch_key);
+        let mut draft = base_source.clone();
+        let mut applied_stored_patch = false;
+
+        if let Some(patch) = self.reference_patches.get(&patch_key) {
+            match apply_hunks(&base_source, &patch.hunks) {
+                Ok(patched) => {
+                    draft = patched;
+                    applied_stored_patch = true;
+                }
+                Err(_) => {
+                    self.reference_patches.remove(&patch_key);
+                    self.reference_patches_dirty = true;
+                    self.reference_workspace.last_status =
+                        Some("Reference patch outdated — removed".to_string());
+                }
+            }
+        }
+
+        self.reference_workspace.pre_shortwire_source = Some(base_source.clone());
+        self.reference_workspace.shortwire_active_key = Some(patch_key);
+        self.reference_workspace.shortwire_base_source = Some(base_source);
+        self.reference_workspace.pending_shortwire_patch = None;
+        self.reference_workspace.local_shortwire_file = self
+            .reference_workspace
+            .selected_local_path()
+            .and_then(|path| match fs::read_to_string(&path) {
+                Ok(restore_source) => Some(ReferenceShortwireLocalFile {
+                    path,
+                    restore_source,
+                    wrote_patch: false,
+                }),
+                Err(error) => {
+                    self.reference_workspace.last_status =
+                        Some(format!("Reference local restore unavailable: {error}"));
+                    None
+                }
+            });
+        self.reference_workspace.editor_source = draft;
+        if applied_stored_patch {
+            self.write_reference_shortwire_to_local_file();
+        }
+        self.reference_line_galley_cache = None;
+    }
+
+    fn prepare_reference_shortwire_save(&mut self) {
+        let Some(patch_key) = self.reference_workspace.shortwire_active_key.clone() else {
+            return;
+        };
+        let Some(base_source) = self.reference_workspace.shortwire_base_source.clone() else {
+            return;
+        };
+        let hunks = compute_hunks(&base_source, &self.reference_workspace.editor_source);
+        self.reference_workspace.pending_shortwire_patch = Some((patch_key, hunks));
+    }
+
+    fn commit_reference_shortwire_after_left_apply(&mut self, restore_after: bool) {
+        let mut should_write_local_file = false;
+        if let Some((patch_key, hunks)) = self.reference_workspace.pending_shortwire_patch.take() {
+            should_write_local_file = !hunks.is_empty()
+                || self
+                    .reference_workspace
+                    .local_shortwire_file
+                    .as_ref()
+                    .is_some_and(|local| local.wrote_patch);
+            if hunks.is_empty() {
+                self.reference_patches.remove(&patch_key);
+            } else {
+                let base_hash = self
+                    .reference_workspace
+                    .shortwire_base_source
+                    .as_deref()
+                    .map(hash_source)
+                    .unwrap_or_else(|| hash_source(""));
+                self.reference_patches.insert(
+                    patch_key,
+                    ShortwireNodePatch {
+                        hunks,
+                        base_source_hash: base_hash,
+                    },
+                );
+            }
+            self.reference_patches_dirty = true;
+        }
+        if restore_after {
+            self.restore_reference_after_shortwire();
+        } else if should_write_local_file {
+            self.write_reference_shortwire_to_local_file();
+        }
+    }
+
+    fn write_reference_shortwire_to_local_file(&mut self) {
+        let Some(local_path) = self
+            .reference_workspace
+            .local_shortwire_file
+            .as_ref()
+            .map(|local| local.path.clone())
+        else {
+            return;
+        };
+        let content = self.reference_workspace.editor_source.clone();
+        match fs::write(&local_path, content) {
+            Ok(()) => {
+                if let Some(local) = self.reference_workspace.local_shortwire_file.as_mut() {
+                    local.wrote_patch = true;
+                }
+                self.reference_workspace.last_status =
+                    Some(format!("Wrote {}", local_path.display()));
+            }
+            Err(error) => {
+                self.reference_workspace.last_status =
+                    Some(format!("Reference file write failed: {error}"));
+            }
+        }
+    }
+
+    fn restore_reference_shortwire_local_file(&mut self) {
+        let Some(local) = self.reference_workspace.local_shortwire_file.take() else {
+            return;
+        };
+        if !local.wrote_patch {
+            return;
+        }
+        if let Err(error) = fs::write(&local.path, local.restore_source) {
+            let message = format!("Reference file restore failed: {error}");
+            eprintln!("[pass-debug] {message}");
+            self.reference_workspace.last_status = Some(message);
+        }
+    }
+
+    fn save_and_exit_reference_shortwire_without_left_apply(&mut self) {
+        self.prepare_reference_shortwire_save();
+        if let Some((patch_key, hunks)) = self.reference_workspace.pending_shortwire_patch.take() {
+            if !hunks.is_empty() {
+                let base_hash = self
+                    .reference_workspace
+                    .shortwire_base_source
+                    .as_deref()
+                    .map(hash_source)
+                    .unwrap_or_else(|| hash_source(""));
+                self.reference_patches.insert(
+                    patch_key,
+                    ShortwireNodePatch {
+                        hunks,
+                        base_source_hash: base_hash,
+                    },
+                );
+                self.reference_patches_dirty = true;
+            }
+        }
+        self.restore_reference_after_shortwire();
+    }
+
+    #[cfg(test)]
+    fn cancel_reference_shortwire_without_save(&mut self) {
+        self.reference_workspace.pending_shortwire_patch = None;
+        self.restore_reference_after_shortwire();
+    }
+
+    fn restore_reference_after_shortwire(&mut self) {
+        self.restore_reference_shortwire_local_file();
+        let Some(pre_shortwire_source) = self.reference_workspace.pre_shortwire_source.take()
+        else {
+            return;
+        };
+        self.reference_workspace.editor_source = pre_shortwire_source.clone();
+        if let Some(file) = self.reference_workspace.selected_file_mut() {
+            file.source = pre_shortwire_source;
+        }
+        self.reference_workspace.shortwire_active_key = None;
+        self.reference_workspace.shortwire_base_source = None;
+        self.reference_workspace.pending_shortwire_patch = None;
+        self.reference_line_galley_cache = None;
+    }
+
     // --- Shortwire methods ---
 
     fn enter_shortwire(
@@ -1264,21 +2241,25 @@ impl PassDebugWindowDocument {
     }
 
     fn complete_shortwire_entry(&mut self) {
-        let Some(ref mut active) = self.shortwire_active else {
-            return;
-        };
+        let identity = {
+            let Some(ref mut active) = self.shortwire_active else {
+                return;
+            };
 
-        let identity = match &active.phase {
-            ShortwirePhase::PendingResetThenEnter { next_identity } => next_identity.clone(),
-            ShortwirePhase::Editing => active.identity.clone(),
-            _ => return,
-        };
+            let identity = match &active.phase {
+                ShortwirePhase::PendingResetThenEnter { next_identity } => next_identity.clone(),
+                ShortwirePhase::Editing => active.identity.clone(),
+                _ => return,
+            };
 
-        active.identity = identity.clone();
-        active.base_source = self.generated_base_source.clone();
-        active.base_source_hash = self.generated_base_source_hash;
-        active.base_source_stale = false;
-        active.phase = ShortwirePhase::Editing;
+            active.identity = identity.clone();
+            active.base_source = self.generated_base_source.clone();
+            active.base_source_hash = self.generated_base_source_hash;
+            active.base_source_stale = false;
+            active.phase = ShortwirePhase::Editing;
+            identity
+        };
+        self.enter_reference_shortwire(&identity);
 
         let mut draft = self.generated_base_source.clone();
         if let Some(patch) = self.shortwire_patches.get(&identity.patch_key) {
@@ -1286,7 +2267,9 @@ impl PassDebugWindowDocument {
                 match apply_hunks(&self.generated_base_source, &patch.hunks) {
                     Ok(patched) => {
                         draft = patched;
-                        active.diff_view_enabled = true;
+                        if let Some(ref mut active) = self.shortwire_active {
+                            active.diff_view_enabled = true;
+                        }
                     }
                     Err(_) => {
                         self.shortwire_patches.remove(&identity.patch_key);
@@ -1299,7 +2282,9 @@ impl PassDebugWindowDocument {
                 match apply_hunks(&self.generated_base_source, &patch.hunks) {
                     Ok(patched) => {
                         draft = patched;
-                        active.diff_view_enabled = true;
+                        if let Some(ref mut active) = self.shortwire_active {
+                            active.diff_view_enabled = true;
+                        }
                     }
                     Err(_) => {
                         self.shortwire_patches.remove(&identity.patch_key);
@@ -1350,7 +2335,8 @@ impl PassDebugWindowDocument {
         }
 
         let final_hunks = compute_hunks(&self.generated_base_source, &final_draft);
-        self.shortwire_exit_on_apply = true;
+        self.prepare_reference_shortwire_save();
+        self.shortwire_exit_on_apply = false;
         if let Some(ref mut active) = self.shortwire_active {
             active.phase = ShortwirePhase::PendingApply {
                 pending_hunks: final_hunks,
@@ -1370,6 +2356,7 @@ impl PassDebugWindowDocument {
 
     #[cfg(test)]
     fn exit_shortwire_cancel(&mut self) {
+        self.cancel_reference_shortwire_without_save();
         self.shortwire_active = None;
         self.replace_draft_source(self.generated_base_source.clone());
         self.dirty = self.draft_source != self.loaded_source;
@@ -1382,12 +2369,13 @@ impl PassDebugWindowDocument {
         &mut self,
         pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
     ) {
-        let Some(ref active) = self.shortwire_active else {
+        let Some(active) = self.shortwire_active.clone() else {
             return;
         };
 
         match &active.phase {
             ShortwirePhase::Editing => {
+                self.save_and_exit_reference_shortwire_without_left_apply();
                 let hunks = compute_hunks(&self.generated_base_source, &self.draft_source);
                 if !hunks.is_empty() {
                     let patch_key = active.identity.patch_key.clone();
@@ -1448,6 +2436,15 @@ impl PassDebugWindowDocument {
         }
     }
 
+    fn prepare_debug_window_close(
+        &mut self,
+        pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    ) {
+        if self.shortwire_active.is_some() {
+            self.exit_shortwire_navigate(pending_actions);
+        }
+    }
+
     fn enter_shortwire_and_apply(
         &mut self,
         row: &PassDebugDependencyRow,
@@ -1484,6 +2481,13 @@ impl PassDebugWindowDocument {
                         pending_hunks: patch.hunks.clone(),
                     },
                 });
+                let identity = self
+                    .shortwire_active
+                    .as_ref()
+                    .map(|active| active.identity.clone());
+                if let Some(identity) = identity.as_ref() {
+                    self.enter_reference_shortwire(identity);
+                }
                 self.replace_draft_source(patched.clone());
                 self.dirty = true;
                 push_action(
@@ -1538,7 +2542,7 @@ impl PassDebugWindowDocument {
             ),
             size: Some(content_text.len() as u64),
             content_hash: Some(debug_artifact_content_hash(content_text.as_bytes())),
-            slot_key: Some(DEBUG_ARTIFACT_REFERENCE_SLOT.to_string()),
+            slot_key: Some(DEBUG_ARTIFACT_DEFAULT_SLOT.to_string()),
         };
         Some((item, content_text))
     }
@@ -1697,6 +2701,25 @@ fn apply_hunks(base: &str, hunks: &[ShortwireHunk]) -> Result<String, HunkApplyE
         result.push('\n');
     }
     Ok(result)
+}
+
+fn three_way_merge_sources(
+    base: &str,
+    incoming: &str,
+    local: &str,
+) -> Result<String, HunkApplyError> {
+    if local == base {
+        return Ok(incoming.to_string());
+    }
+    if incoming == base {
+        return Ok(local.to_string());
+    }
+
+    let local_hunks = compute_hunks(base, local);
+    if local_hunks.is_empty() {
+        return Ok(incoming.to_string());
+    }
+    apply_hunks(incoming, &local_hunks)
 }
 
 fn locate_hunk_position(
@@ -1882,13 +2905,29 @@ impl PassDebugWindowState {
         patch_source: Option<&str>,
     ) {
         if let Ok(mut document) = self.document.lock() {
-            document.update_source(source, source_revision, patch_source);
+            document.update_source_with_actions(
+                source,
+                source_revision,
+                patch_source,
+                &self.pending_actions,
+            );
         }
     }
 
-    fn update_reference_source(&self, reference_source: Option<&str>) {
+    fn update_reference_workspace(
+        &self,
+        workspace_text: Option<&str>,
+        reference_files: &[crate::debug_artifacts::DebugArtifactTextSnapshot],
+        legacy_reference_source: Option<&str>,
+        reference_patches_text: Option<&str>,
+    ) {
         if let Ok(mut document) = self.document.lock() {
-            document.update_reference_source(reference_source);
+            document.update_reference_workspace(
+                workspace_text,
+                reference_files,
+                legacy_reference_source,
+                reference_patches_text,
+            );
         }
     }
 
@@ -1942,10 +2981,19 @@ pub fn open_pass_debug_window(
     let patch_source = pass_shader_overrides
         .get(pass_name.as_str())
         .map(String::as_str);
-    let reference_source = debug_artifacts.pass_reference_text(pass_name.as_str());
+    let reference_workspace_text =
+        debug_artifacts.pass_reference_workspace_text(pass_name.as_str());
+    let reference_files = debug_artifacts.pass_reference_file_texts(pass_name.as_str());
+    let legacy_reference_source = debug_artifacts.pass_reference_text(pass_name.as_str());
+    let reference_patches_text = debug_artifacts.pass_reference_patches_text(pass_name.as_str());
     if let Some(existing) = windows.get_mut(pass_name.as_str()) {
         existing.update_source(source, pass_sources_revision, patch_source);
-        existing.update_reference_source(reference_source);
+        existing.update_reference_workspace(
+            reference_workspace_text,
+            &reference_files,
+            legacy_reference_source,
+            reference_patches_text,
+        );
         existing.focus_requested = true;
         existing.close_requested.store(false, Ordering::Relaxed);
         return;
@@ -1957,7 +3005,12 @@ pub fn open_pass_debug_window(
         pass_sources_revision,
         patch_source,
     );
-    state.update_reference_source(reference_source);
+    state.update_reference_workspace(
+        reference_workspace_text,
+        &reference_files,
+        legacy_reference_source,
+        reference_patches_text,
+    );
     if let Some(patches_text) = debug_artifacts.pass_patches_text(pass_name.as_str()) {
         state.restore_shortwire_patches(patches_text);
     }
@@ -1987,8 +3040,13 @@ pub fn show_pass_debug_windows(
             pass_sources_revision,
             patch_source,
         );
-        state
-            .update_reference_source(debug_artifacts.pass_reference_text(state.pass_name.as_str()));
+        let reference_files = debug_artifacts.pass_reference_file_texts(state.pass_name.as_str());
+        state.update_reference_workspace(
+            debug_artifacts.pass_reference_workspace_text(state.pass_name.as_str()),
+            &reference_files,
+            debug_artifacts.pass_reference_text(state.pass_name.as_str()),
+            debug_artifacts.pass_reference_patches_text(state.pass_name.as_str()),
+        );
         let update_source_dur = window_start.elapsed();
 
         let viewport_id = state.viewport_id;
@@ -2019,6 +3077,9 @@ pub fn show_pass_debug_windows(
                             );
                         });
                     if !open {
+                        if let Ok(mut document) = document.lock() {
+                            document.prepare_debug_window_close(&pending_actions);
+                        }
                         close_requested.store(true, Ordering::Relaxed);
                     }
                 }
@@ -2027,6 +3088,8 @@ pub fn show_pass_debug_windows(
                         ui.ctx(),
                         &close_requested,
                         &last_viewport_snapshot,
+                        &document,
+                        &pending_actions,
                     ) {
                         let viewport_render_dur = viewport_render_start.elapsed();
                         metric_log!(
@@ -2057,6 +3120,9 @@ pub fn show_pass_debug_windows(
             if let Some((item, content_text)) = document.take_patches_dirty_artifact() {
                 actions.push(PassDebugWindowAction::UpsertDebugArtifact { item, content_text });
             }
+            if let Some((item, content_text)) = document.take_reference_patches_dirty_artifact() {
+                actions.push(PassDebugWindowAction::UpsertDebugArtifact { item, content_text });
+            }
         }
         metric_log!(
             "[pass-debug] window={} update_source={:.2}ms",
@@ -2081,12 +3147,21 @@ pub fn mark_patch_applied(
     source_revision: u64,
     draft_source: String,
     status: String,
-) {
+) -> Vec<(DebugArtifactItem, String)> {
     if let Some(state) = windows.get(pass_name)
         && let Ok(mut document) = state.document.lock()
     {
         document.mark_applied(source, source_revision, draft_source, status);
+        let mut artifacts = Vec::new();
+        if let Some(artifact) = document.take_patches_dirty_artifact() {
+            artifacts.push(artifact);
+        }
+        if let Some(artifact) = document.take_reference_patches_dirty_artifact() {
+            artifacts.push(artifact);
+        }
+        return artifacts;
     }
+    Vec::new()
 }
 
 pub fn mark_patch_reset(
@@ -2140,6 +3215,8 @@ fn handle_pass_debug_viewport_close_request(
     ctx: &egui::Context,
     close_requested: &AtomicBool,
     last_snapshot: &Mutex<Option<PassDebugViewportSnapshot>>,
+    document: &Arc<Mutex<PassDebugWindowDocument>>,
+    pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) -> bool {
     let viewport = ctx.input(|input| input.viewport().clone());
     let current_snapshot = PassDebugViewportSnapshot::from_info(&viewport);
@@ -2154,6 +3231,9 @@ fn handle_pass_debug_viewport_close_request(
 
     match classify_pass_debug_close_request(previous_snapshot, current_snapshot) {
         PassDebugCloseDecision::Accept => {
+            if let Ok(mut document) = document.lock() {
+                document.prepare_debug_window_close(pending_actions);
+            }
             close_requested.store(true, Ordering::Relaxed);
             true
         }
@@ -2406,8 +3486,9 @@ fn render_dependency_rows(
         .shortwire_active
         .as_ref()
         .map(|a| a.identity.row_key_hint.as_str());
-    let shortwire_can_enter =
-        document.shortwire_active.is_none() && !document.generated_base_source.is_empty();
+    let shortwire_can_enter = document.shortwire_active.is_none()
+        && document.merge_conflict.is_none()
+        && !document.generated_base_source.is_empty();
     let shortwire_patch_keys: HashSet<String> =
         document.shortwire_patches.keys().cloned().collect();
     let result = {
@@ -2909,6 +3990,8 @@ fn render_pass_debug_toolbar(
         ui.heading("Current WGSL");
         let badge = if document.dirty {
             "Dirty"
+        } else if document.merge_conflict.is_some() {
+            "Conflict"
         } else if document.patch_active {
             "Patched"
         } else {
@@ -2944,9 +4027,14 @@ fn render_pass_debug_toolbar(
                 document.last_status = Some("Draft reverted".to_string());
             }
             let apply_clicked = ui
-                .add_enabled(document.dirty, egui::Button::new("Apply"))
+                .add_enabled(
+                    document.dirty && document.merge_conflict.is_none(),
+                    egui::Button::new("Apply"),
+                )
                 .clicked();
-            if apply_clicked || (save_requested && document.dirty) {
+            if apply_clicked
+                || (save_requested && document.dirty && document.merge_conflict.is_none())
+            {
                 document.refresh_draft_analysis();
                 document.last_error = None;
                 document.last_status = Some("Applying patch...".to_string());
@@ -3011,22 +4099,99 @@ fn render_shortwire_toolbar(
 }
 
 fn render_reference_toolbar(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
+    let now_secs = ui.input(|input| input.time);
+    let shortwire_active = document.reference_workspace.shortwire_active_key.is_some();
     ui.horizontal(|ui| {
         ui.heading("Reference");
-        let badge = if document.reference_dirty {
+        let badge = if shortwire_active {
+            "Shortwire"
+        } else if document.reference_workspace.selected_file_dirty()
+            || document.reference_workspace.has_dirty_files()
+            || document.reference_workspace.manifest_dirty
+        {
             "Syncing"
-        } else if document.reference_source.is_empty() {
+        } else if !document.reference_workspace.has_content() {
             "Empty"
         } else {
             "Saved"
         };
         ui.label(egui::RichText::new(badge).monospace().small());
-        if let Some(status) = document.reference_last_status.as_deref() {
+        if let Some(status) = document.reference_workspace.last_status.as_deref() {
             ui.label(egui::RichText::new(status).monospace().small());
         }
+        if document.reference_workspace.skipped_files > 0 {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} skipped",
+                    document.reference_workspace.skipped_files
+                ))
+                .monospace()
+                .small(),
+            );
+        }
+
+        let selected_label = document
+            .reference_workspace
+            .selected_file
+            .as_deref()
+            .unwrap_or("No file")
+            .to_string();
+        let file_choices = document
+            .reference_workspace
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>();
+        ui.add_enabled_ui(!shortwire_active && !file_choices.is_empty(), |ui| {
+            egui::ComboBox::from_id_salt((
+                "pass-debug-reference-file",
+                document.pass_name.as_str(),
+            ))
+            .selected_text(selected_label.as_str())
+            .width(220.0)
+            .show_ui(ui, |ui| {
+                for relative_path in file_choices {
+                    let selected = document.reference_workspace.selected_file.as_deref()
+                        == Some(relative_path.as_str());
+                    if ui
+                        .selectable_label(selected, relative_path.as_str())
+                        .clicked()
+                        && document.reference_workspace.select_file(&relative_path)
+                    {
+                        document.reference_workspace.sync_due_secs = Some(now_secs);
+                        document.reference_line_galley_cache = None;
+                    }
+                }
+            });
+        });
+
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Copy Reference").clicked() {
-                ui.ctx().copy_text(document.reference_source.clone());
+                ui.ctx()
+                    .copy_text(document.reference_workspace.editor_source.clone());
+            }
+            if ui
+                .add_enabled(
+                    !shortwire_active && document.reference_workspace.root_path.is_some(),
+                    egui::Button::new("Reload"),
+                )
+                .clicked()
+            {
+                document.reload_reference_workspace(now_secs);
+            }
+            if ui
+                .add_enabled(!shortwire_active, egui::Button::new("Open Folder"))
+                .clicked()
+                && let Some(path) = rfd::FileDialog::new().pick_folder()
+            {
+                document.import_reference_folder_from_path(&path, now_secs);
+            }
+            if ui
+                .add_enabled(!shortwire_active, egui::Button::new("Open File"))
+                .clicked()
+                && let Some(path) = rfd::FileDialog::new().pick_file()
+            {
+                document.import_reference_file_from_path(&path, now_secs);
             }
         });
     });
@@ -3081,6 +4246,12 @@ fn render_dependency_editor_split(
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
+    if document.shortwire_active.is_some() {
+        render_shortwire_toolbar(ui, document, pending_actions);
+        render_patch_messages(ui, document);
+        ui.separator();
+    }
+
     let full_rect = ui.available_rect_before_wrap();
     if full_rect.width() <= 0.0 || full_rect.height() <= 0.0 {
         return;
@@ -3263,10 +4434,13 @@ fn render_current_editor_column(
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
-    render_pass_debug_toolbar(ui, document, pending_actions);
-    render_patch_messages(ui, document);
-    ui.separator();
+    if document.shortwire_active.is_none() {
+        render_pass_debug_toolbar(ui, document, pending_actions);
+        render_patch_messages(ui, document);
+        ui.separator();
+    }
     render_code_editor(ui, document);
+    render_merge_conflict_popups(ui.ctx(), document, pending_actions);
 }
 
 fn render_reference_editor_column(
@@ -3612,8 +4786,9 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                     let gutter_top_left = ui.cursor().left_top();
                     ui.add_space(gutter_width);
 
-                    let editor_interactive = document.shortwire_is_editor_interactive()
-                        || document.shortwire_active.is_none();
+                    let editor_interactive = (document.shortwire_is_editor_interactive()
+                        || document.shortwire_active.is_none())
+                        && document.merge_conflict.is_none();
 
                     let editor = egui::TextEdit::multiline(&mut document.draft_source)
                         .id_salt(("pass-debug-source-text", document.pass_name.as_str()))
@@ -3700,10 +4875,162 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
     document.line_galley_cache = line_cache_cell.into_inner();
 }
 
+fn render_merge_conflict_popups(
+    ctx: &egui::Context,
+    document: &mut PassDebugWindowDocument,
+    pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+) {
+    let choice_popup_open = document
+        .merge_conflict
+        .as_ref()
+        .map(|conflict| conflict.choice_popup_open)
+        .unwrap_or(false);
+    if choice_popup_open {
+        egui::Window::new("Shader patch conflict")
+            .id(egui::Id::new((
+                "pass-debug-merge-choice",
+                document.pass_name.as_str(),
+            )))
+            .collapsible(false)
+            .resizable(false)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.label("Generated WGSL changed while a shortwire patch is applied.");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Discard Shortwire Patch").clicked() {
+                        document.use_merge_incoming(pending_actions);
+                        if let Some(conflict) = document.merge_conflict.as_mut() {
+                            conflict.choice_popup_open = false;
+                            conflict.resolver_window_open = false;
+                        }
+                    }
+                    if ui.button("Resolve Conflict").clicked() {
+                        document.open_merge_resolver();
+                    }
+                });
+            });
+    }
+
+    let resolver_open = document
+        .merge_conflict
+        .as_ref()
+        .map(|conflict| conflict.resolver_window_open)
+        .unwrap_or(false);
+    if resolver_open {
+        let mut open = true;
+        egui::Window::new(format!("Resolve Shader Conflict - {}", document.pass_name))
+            .id(egui::Id::new((
+                "pass-debug-merge-resolver",
+                document.pass_name.as_str(),
+            )))
+            .default_size(egui::vec2(1180.0, 720.0))
+            .min_size(egui::vec2(760.0, 420.0))
+            .open(&mut open)
+            .show(ctx, |ui| {
+                render_merge_conflict_resolver(ui, document, pending_actions);
+            });
+        if !open {
+            if let Some(conflict) = document.merge_conflict.as_mut() {
+                conflict.resolver_window_open = false;
+                conflict.choice_popup_open = true;
+            }
+        }
+    }
+}
+
+fn render_merge_conflict_resolver(
+    ui: &mut egui::Ui,
+    document: &mut PassDebugWindowDocument,
+    pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+) {
+    let Some(conflict) = document.merge_conflict.as_ref() else {
+        return;
+    };
+    let base_source = conflict.base_source.clone();
+    let incoming_source = conflict.incoming_source.clone();
+    let local_source = conflict.local_source.clone();
+    let conflict_error = conflict.error.clone();
+
+    ui.horizontal(|ui| {
+        ui.heading("Resolve conflict");
+        ui.label(
+            egui::RichText::new("Base / Incoming / Local")
+                .monospace()
+                .small(),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("Cancel").clicked() {
+                document.cancel_merge_resolution();
+            }
+            if ui.button("Keep Local").clicked() {
+                document.keep_merge_local(pending_actions);
+            }
+            if ui.button("Use Incoming").clicked() {
+                document.use_merge_incoming(pending_actions);
+            }
+            if ui.button("Apply Resolved").clicked() {
+                document.apply_merge_resolved(pending_actions);
+            }
+        });
+    });
+
+    ui.label(
+        egui::RichText::new(format!("Automatic merge failed: {conflict_error}"))
+            .monospace()
+            .small(),
+    );
+    ui.add_space(6.0);
+
+    ui.columns(3, |columns| {
+        render_readonly_merge_panel(&mut columns[0], "Base", &base_source);
+        render_readonly_merge_panel(&mut columns[1], "Incoming", &incoming_source);
+        render_readonly_merge_panel(&mut columns[2], "Local Patch", &local_source);
+    });
+
+    ui.separator();
+    ui.heading("Resolved");
+    if let Some(conflict) = document.merge_conflict.as_mut() {
+        let font_id = pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE);
+        ui.add(
+            egui::TextEdit::multiline(&mut conflict.resolved_source)
+                .id_salt(("pass-debug-merge-resolved", document.pass_name.as_str()))
+                .font(font_id)
+                .code_editor()
+                .desired_rows(16)
+                .desired_width(f32::INFINITY)
+                .lock_focus(true),
+        );
+    }
+}
+
+fn render_readonly_merge_panel(ui: &mut egui::Ui, title: &str, source: &str) {
+    ui.label(egui::RichText::new(title).monospace().strong());
+    let mut text = source.to_string();
+    ui.add(
+        egui::TextEdit::multiline(&mut text)
+            .font(pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE))
+            .code_editor()
+            .interactive(false)
+            .desired_rows(12)
+            .desired_width(f32::INFINITY),
+    );
+}
+
 fn render_reference_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
     let now_secs = ui.input(|input| input.time);
+    if document.reference_workspace.selected_file().is_none() {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Open a UTF-8 text file or folder to add reference code.")
+                .monospace()
+                .small(),
+        );
+        return;
+    }
+
     let existing_galley = document.reference_line_galley_cache.as_ref().and_then(|c| {
-        if c.merged.job.text == document.reference_source {
+        if c.merged.job.text == document.reference_workspace.editor_source {
             Some(std::sync::Arc::clone(&c.merged))
         } else {
             None
@@ -3749,7 +5076,7 @@ fn render_reference_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 let initial_line_count =
-                    line_boundaries_for_layout(&document.reference_source).len();
+                    line_boundaries_for_layout(&document.reference_workspace.editor_source).len();
                 let gutter_width = line_number_gutter_width(initial_line_count);
 
                 ui.horizontal(|ui| {
@@ -3757,21 +5084,22 @@ fn render_reference_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
                     let gutter_top_left = ui.cursor().left_top();
                     ui.add_space(gutter_width);
 
-                    let editor = egui::TextEdit::multiline(&mut document.reference_source)
-                        .id_salt(("pass-debug-reference-text", document.pass_name.as_str()))
-                        .font(pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE))
-                        .code_editor()
-                        .frame(egui::Frame::NONE)
-                        .margin(egui::Margin {
-                            left: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
-                            right: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
-                            top: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
-                            bottom: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
-                        })
-                        .desired_rows(24)
-                        .desired_width(f32::INFINITY)
-                        .lock_focus(true)
-                        .layouter(&mut layouter);
+                    let editor =
+                        egui::TextEdit::multiline(&mut document.reference_workspace.editor_source)
+                            .id_salt(("pass-debug-reference-text", document.pass_name.as_str()))
+                            .font(pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE))
+                            .code_editor()
+                            .frame(egui::Frame::NONE)
+                            .margin(egui::Margin {
+                                left: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
+                                right: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
+                                top: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
+                                bottom: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
+                            })
+                            .desired_rows(24)
+                            .desired_width(f32::INFINITY)
+                            .lock_focus(true)
+                            .layouter(&mut layouter);
 
                     let output = editor.show(ui);
                     let gutter_rect = egui::Rect::from_min_max(
@@ -3781,11 +5109,12 @@ fn render_reference_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
                             output.response.rect.bottom(),
                         ),
                     );
-                    let line_boundaries = line_boundaries_for_layout(&document.reference_source);
+                    let line_boundaries =
+                        line_boundaries_for_layout(&document.reference_workspace.editor_source);
                     paint_line_number_gutter(
                         ui,
                         &output,
-                        &document.reference_source,
+                        &document.reference_workspace.editor_source,
                         &line_boundaries,
                         gutter_rect,
                     );
@@ -4098,37 +5427,277 @@ fn jump_editor_to_source_range(
     ui.scroll_to_rect(cursor_rect, Some(egui::Align::Center));
 }
 
-fn pass_reference_artifact_item(pass_name: &str, content_text: &str) -> DebugArtifactItem {
-    let artifact_id = pass_reference_artifact_id(pass_name);
-    let file_name = format!(
-        "{}.reference.txt",
-        safe_debug_artifact_segment(pass_name, "pass")
-    );
-    DebugArtifactItem {
-        id: artifact_id.clone(),
-        anchor: DebugArtifactAnchor::Pass {
-            pass_name: pass_name.to_string(),
-        },
-        role: DebugArtifactRole::ReferenceCode,
-        name: "Reference code".to_string(),
-        mime_type: "text/plain".to_string(),
-        path: format!(
-            "debug-artifacts/{}/{}",
-            safe_debug_artifact_segment(&artifact_id, "artifact"),
-            safe_debug_artifact_segment(&file_name, "artifact.txt")
-        ),
-        size: Some(content_text.len() as u64),
-        content_hash: Some(debug_artifact_content_hash(content_text.as_bytes())),
-        slot_key: Some(DEBUG_ARTIFACT_REFERENCE_SLOT.to_string()),
-    }
+fn reference_workspace_loaded_matches(
+    current: &ReferenceWorkspaceState,
+    incoming: &ReferenceWorkspaceState,
+) -> bool {
+    current.root_path == incoming.root_path
+        && current.root_label == incoming.root_label
+        && current.selected_file == incoming.selected_file
+        && current.skipped_files == incoming.skipped_files
+        && current.files.len() == incoming.files.len()
+        && current
+            .files
+            .iter()
+            .zip(incoming.files.iter())
+            .all(|(a, b)| {
+                a.relative_path == b.relative_path
+                    && a.artifact_id == b.artifact_id
+                    && a.source == b.source
+                    && a.loaded_source == b.loaded_source
+            })
 }
 
-fn pass_reference_artifact_id(pass_name: &str) -> String {
+fn load_reference_workspace_from_artifacts(
+    pass_name: &str,
+    workspace_text: Option<&str>,
+    reference_files: &[crate::debug_artifacts::DebugArtifactTextSnapshot],
+    legacy_reference_source: Option<&str>,
+) -> Option<(ReferenceWorkspaceState, bool)> {
+    let file_text_by_id = reference_files
+        .iter()
+        .map(|snapshot| (snapshot.item.id.as_str(), snapshot.text.as_str()))
+        .collect::<HashMap<_, _>>();
+
+    if let Some(workspace_text) = workspace_text
+        && let Ok(manifest) = serde_json::from_str::<ReferenceWorkspaceManifest>(workspace_text)
+        && manifest.version == REFERENCE_WORKSPACE_VERSION
+    {
+        let mut files = Vec::new();
+        for manifest_file in manifest.files {
+            let Some(text) = file_text_by_id.get(manifest_file.artifact_id.as_str()) else {
+                continue;
+            };
+            files.push(ReferenceWorkspaceFile {
+                relative_path: manifest_file.relative_path,
+                artifact_id: manifest_file.artifact_id,
+                source: (*text).to_string(),
+                loaded_source: (*text).to_string(),
+            });
+        }
+
+        if !files.is_empty() {
+            let mut state = ReferenceWorkspaceState::default();
+            state.replace_files(
+                manifest.root_path,
+                manifest.root_label,
+                files,
+                manifest.selected_file,
+                manifest.skipped_files,
+                false,
+            );
+            return Some((state, false));
+        }
+    }
+
+    if !reference_files.is_empty() {
+        let mut files = reference_files
+            .iter()
+            .map(|snapshot| {
+                let relative_path = snapshot
+                    .item
+                    .name
+                    .strip_prefix("Reference: ")
+                    .unwrap_or(snapshot.item.name.as_str())
+                    .to_string();
+                ReferenceWorkspaceFile {
+                    relative_path,
+                    artifact_id: snapshot.item.id.clone(),
+                    source: snapshot.text.clone(),
+                    loaded_source: snapshot.text.clone(),
+                }
+            })
+            .collect::<Vec<_>>();
+        files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        let mut state = ReferenceWorkspaceState::default();
+        state.replace_files(None, "Reference archive".to_string(), files, None, 0, false);
+        return Some((state, false));
+    }
+
+    let legacy_reference_source = legacy_reference_source.unwrap_or_default();
+    if legacy_reference_source.is_empty() {
+        return None;
+    }
+
+    let relative_path = "reference.txt".to_string();
+    let file = ReferenceWorkspaceFile {
+        artifact_id: pass_reference_file_artifact_id(pass_name, &relative_path),
+        relative_path: relative_path.clone(),
+        source: legacy_reference_source.to_string(),
+        loaded_source: String::new(),
+    };
+    let mut state = ReferenceWorkspaceState::default();
+    state.replace_files(
+        None,
+        "Legacy reference".to_string(),
+        vec![file],
+        Some(relative_path),
+        0,
+        true,
+    );
+    Some((state, true))
+}
+
+fn read_reference_file(
+    path: &Path,
+    root: &Path,
+    pass_name: &str,
+    mark_dirty: bool,
+) -> Result<ReferenceWorkspaceFile, String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("Not a file: {}", path.display()));
+    }
+    if metadata.len() > PASS_DEBUG_REFERENCE_MAX_FILE_BYTES {
+        return Err(format!(
+            "File is larger than {} MB: {}",
+            PASS_DEBUG_REFERENCE_MAX_FILE_BYTES / (1024 * 1024),
+            path.display()
+        ));
+    }
+    let bytes =
+        fs::read(path).map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    let source = String::from_utf8(bytes)
+        .map_err(|_| format!("File is not UTF-8 text: {}", path.display()))?;
+    let relative_path = reference_relative_path(root, path);
+    Ok(ReferenceWorkspaceFile {
+        artifact_id: pass_reference_file_artifact_id(pass_name, &relative_path),
+        relative_path,
+        loaded_source: if mark_dirty {
+            String::new()
+        } else {
+            source.clone()
+        },
+        source,
+    })
+}
+
+fn read_reference_folder(
+    root: &Path,
+    pass_name: &str,
+    mark_dirty: bool,
+) -> Result<(Vec<ReferenceWorkspaceFile>, usize), String> {
+    if !root.is_dir() {
+        return Err(format!("Not a folder: {}", root.display()));
+    }
+
+    let mut files = Vec::new();
+    let mut skipped_files = 0usize;
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => {
+                skipped_files += 1;
+                continue;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                skipped_files += 1;
+                continue;
+            };
+            if file_type.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !file_type.is_file() {
+                skipped_files += 1;
+                continue;
+            }
+            if files.len() >= PASS_DEBUG_REFERENCE_MAX_FOLDER_FILES {
+                skipped_files += 1;
+                continue;
+            }
+            match read_reference_file(&path, root, pass_name, mark_dirty) {
+                Ok(file) => files.push(file),
+                Err(_) => skipped_files += 1,
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok((files, skipped_files))
+}
+
+fn reference_relative_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn reference_shortwire_patch_key(relative_path: &str, row_patch_key: &str) -> String {
+    format!("{relative_path}::{row_patch_key}")
+}
+
+fn pass_reference_workspace_artifact_id(pass_name: &str) -> String {
+    [
+        "pass".to_string(),
+        safe_debug_artifact_segment(pass_name, "unnamed"),
+        "reference-workspace".to_string(),
+        DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT.to_string(),
+    ]
+    .join("__")
+}
+
+fn pass_reference_file_artifact_id(pass_name: &str, relative_path: &str) -> String {
     [
         "pass".to_string(),
         safe_debug_artifact_segment(pass_name, "unnamed"),
         "reference-code".to_string(),
-        DEBUG_ARTIFACT_REFERENCE_SLOT.to_string(),
+        format!(
+            "file-{}",
+            debug_artifact_content_hash(relative_path.as_bytes())
+        ),
+    ]
+    .join("__")
+}
+
+fn pass_reference_file_slot_key(relative_path: &str) -> String {
+    format!(
+        "{}{}",
+        DEBUG_ARTIFACT_REFERENCE_FILE_SLOT_PREFIX,
+        debug_artifact_content_hash(relative_path.as_bytes())
+    )
+}
+
+fn pass_reference_file_artifact_item(
+    pass_name: &str,
+    file: &ReferenceWorkspaceFile,
+) -> DebugArtifactItem {
+    let file_name =
+        safe_debug_artifact_segment(&file.relative_path.replace('/', "__"), "reference");
+    DebugArtifactItem {
+        id: file.artifact_id.clone(),
+        anchor: DebugArtifactAnchor::Pass {
+            pass_name: pass_name.to_string(),
+        },
+        role: DebugArtifactRole::ReferenceCode,
+        name: format!("Reference: {}", file.relative_path),
+        mime_type: "text/plain".to_string(),
+        path: format!(
+            "debug-artifacts/{}/{}",
+            safe_debug_artifact_segment(&file.artifact_id, "artifact"),
+            file_name
+        ),
+        size: Some(file.size()),
+        content_hash: Some(file.content_hash()),
+        slot_key: Some(pass_reference_file_slot_key(&file.relative_path)),
+    }
+}
+
+fn pass_reference_patches_artifact_id(pass_name: &str) -> String {
+    [
+        "pass".to_string(),
+        safe_debug_artifact_segment(pass_name, "unnamed"),
+        "patch".to_string(),
+        DEBUG_ARTIFACT_REFERENCE_PATCHES_SLOT.to_string(),
     ]
     .join("__")
 }
@@ -4138,7 +5707,7 @@ fn pass_patches_artifact_id(pass_name: &str) -> String {
         "pass".to_string(),
         safe_debug_artifact_segment(pass_name, "unnamed"),
         "patch".to_string(),
-        DEBUG_ARTIFACT_REFERENCE_SLOT.to_string(),
+        DEBUG_ARTIFACT_DEFAULT_SLOT.to_string(),
     ]
     .join("__")
 }
@@ -4470,7 +6039,12 @@ fn is_wgsl_identifier_char(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use rust_wgpu_fiber::eframe::egui;
 
@@ -4481,6 +6055,7 @@ mod tests {
         flatten_dependency_tree, is_close_request_during_large_viewport_resize,
         pass_debug_viewport_builder, shortwire_click_matches_active_row,
     };
+    use crate::dsl::{DebugArtifactAnchor, DebugArtifactItem, DebugArtifactRole};
     use crate::renderer::{
         PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource, PassDebugSourceRange,
     };
@@ -4554,6 +6129,17 @@ mod tests {
             .unwrap_or_else(|| panic!("missing target named {name}"))
     }
 
+    fn unique_reference_temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        std::env::temp_dir().join(format!(
+            "node-forge-pass-debug-{label}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
     fn row_parent_label(rows: &[PassDebugDependencyRow], label: &str) -> Option<String> {
         let row = rows
             .iter()
@@ -4610,6 +6196,54 @@ mod tests {
                         .join("\n")
                 )
             })
+    }
+
+    fn seed_reference_file(
+        document: &mut PassDebugWindowDocument,
+        relative_path: &str,
+        source: &str,
+    ) {
+        let file = super::ReferenceWorkspaceFile {
+            relative_path: relative_path.to_string(),
+            artifact_id: super::pass_reference_file_artifact_id(&document.pass_name, relative_path),
+            source: source.to_string(),
+            loaded_source: source.to_string(),
+        };
+        document.reference_workspace.replace_files(
+            None,
+            "Reference test".to_string(),
+            vec![file],
+            Some(relative_path.to_string()),
+            0,
+            false,
+        );
+    }
+
+    fn reference_file_item(pass_name: &str, relative_path: &str) -> DebugArtifactItem {
+        DebugArtifactItem {
+            id: super::pass_reference_file_artifact_id(pass_name, relative_path),
+            anchor: DebugArtifactAnchor::Pass {
+                pass_name: pass_name.to_string(),
+            },
+            role: DebugArtifactRole::ReferenceCode,
+            name: format!("Reference: {relative_path}"),
+            mime_type: "text/plain".to_string(),
+            path: format!("debug-artifacts/test/{relative_path}"),
+            size: None,
+            content_hash: None,
+            slot_key: Some(super::pass_reference_file_slot_key(relative_path)),
+        }
+    }
+
+    fn reference_snapshot(
+        pass_name: &str,
+        relative_path: &str,
+        text: &str,
+    ) -> crate::debug_artifacts::DebugArtifactTextSnapshot {
+        crate::debug_artifacts::DebugArtifactTextSnapshot {
+            item: reference_file_item(pass_name, relative_path),
+            text: text.to_string(),
+        }
     }
 
     fn viewport_snapshot(
@@ -4797,7 +6431,7 @@ mod tests {
 
     #[test]
     fn dirty_draft_is_not_replaced_by_source_refresh() {
-        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
         let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
         document.draft_source = "fn edited() {}\n".to_string();
         document.dirty = true;
@@ -4811,7 +6445,7 @@ mod tests {
 
     #[test]
     fn clean_document_tracks_source_refresh() {
-        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
         let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
 
         let refreshed = PassDebugSource::from_wgsl("p", "fn generated() {}\n");
@@ -4825,7 +6459,7 @@ mod tests {
 
     #[test]
     fn same_source_revision_does_not_refresh_document() {
-        let source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
         let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 7, false);
 
         let refreshed = PassDebugSource::from_wgsl("p", "fn generated() {}\n");
@@ -6041,6 +7675,425 @@ fn fs_main() -> @location(0) f32 {
     // --- Shortwire tests ---
 
     #[test]
+    fn legacy_default_reference_artifact_migrates_to_workspace() {
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.update_reference_workspace(None, &[], Some("legacy reference\n"), None);
+
+        assert_eq!(
+            document.reference_workspace.selected_file.as_deref(),
+            Some("reference.txt")
+        );
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "legacy reference\n"
+        );
+        assert!(document.reference_workspace.manifest_dirty);
+        assert!(document.reference_workspace.selected_file_dirty());
+
+        let artifacts = document.take_reference_workspace_dirty_artifacts();
+        assert_eq!(artifacts.len(), 2);
+        assert!(artifacts.iter().any(|(item, _)| {
+            item.role == DebugArtifactRole::Attachment
+                && item.slot_key.as_deref() == Some(super::DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT)
+        }));
+        assert!(artifacts.iter().any(|(item, content)| {
+            item.role == DebugArtifactRole::ReferenceCode
+                && item
+                    .slot_key
+                    .as_deref()
+                    .is_some_and(|slot| slot.starts_with("file:"))
+                && content == "legacy reference\n"
+        }));
+    }
+
+    #[test]
+    fn reference_workspace_restores_multiple_files_from_artifacts() {
+        let manifest = serde_json::json!({
+            "version": 1,
+            "rootPath": "/tmp/reference",
+            "rootLabel": "reference",
+            "selectedFile": "metal/pass.metal",
+            "files": [
+                {
+                    "relativePath": "glsl/pass.frag",
+                    "artifactId": super::pass_reference_file_artifact_id("p", "glsl/pass.frag"),
+                    "contentHash": "aaa",
+                    "size": 12
+                },
+                {
+                    "relativePath": "metal/pass.metal",
+                    "artifactId": super::pass_reference_file_artifact_id("p", "metal/pass.metal"),
+                    "contentHash": "bbb",
+                    "size": 13
+                }
+            ],
+            "skippedFiles": 2
+        })
+        .to_string();
+        let files = vec![
+            reference_snapshot("p", "glsl/pass.frag", "glsl source\n"),
+            reference_snapshot("p", "metal/pass.metal", "metal source\n"),
+        ];
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.update_reference_workspace(Some(&manifest), &files, None, None);
+
+        assert_eq!(document.reference_workspace.files.len(), 2);
+        assert_eq!(
+            document.reference_workspace.selected_file.as_deref(),
+            Some("metal/pass.metal")
+        );
+        assert_eq!(document.reference_workspace.editor_source, "metal source\n");
+        assert_eq!(document.reference_workspace.skipped_files, 2);
+        assert!(!document.reference_workspace.has_dirty_files());
+    }
+
+    #[test]
+    fn reference_shortwire_patch_key_isolated_by_file() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+        let base = "fn ref() {}\n";
+        let file_a = super::ReferenceWorkspaceFile {
+            relative_path: "a.metal".to_string(),
+            artifact_id: super::pass_reference_file_artifact_id("p", "a.metal"),
+            source: base.to_string(),
+            loaded_source: base.to_string(),
+        };
+        let file_b = super::ReferenceWorkspaceFile {
+            relative_path: "b.metal".to_string(),
+            artifact_id: super::pass_reference_file_artifact_id("p", "b.metal"),
+            source: base.to_string(),
+            loaded_source: base.to_string(),
+        };
+        document.reference_workspace.replace_files(
+            None,
+            "Reference test".to_string(),
+            vec![file_a, file_b],
+            Some("a.metal".to_string()),
+            0,
+            false,
+        );
+        let row_patch_key = super::shortwire_patch_key(&row);
+        document.reference_patches.insert(
+            super::reference_shortwire_patch_key("a.metal", &row_patch_key),
+            super::ShortwireNodePatch {
+                hunks: super::compute_hunks(base, "fn ref_a() {}\n"),
+                base_source_hash: super::hash_source(base),
+            },
+        );
+        document.reference_patches.insert(
+            super::reference_shortwire_patch_key("b.metal", &row_patch_key),
+            super::ShortwireNodePatch {
+                hunks: super::compute_hunks(base, "fn ref_b() {}\n"),
+                base_source_hash: super::hash_source(base),
+            },
+        );
+
+        document.enter_shortwire(&row, &pending_actions);
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "fn ref_a() {}\n"
+        );
+        document.exit_shortwire_cancel();
+        assert!(document.reference_workspace.select_file("b.metal"));
+        document.enter_shortwire(&row, &pending_actions);
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "fn ref_b() {}\n"
+        );
+    }
+
+    #[test]
+    fn reference_shortwire_save_commits_after_left_apply_and_stays_active() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+        seed_reference_file(&mut document, "metal/pass.metal", "fn ref() {}\n");
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.reference_workspace.editor_source = "fn ref_patched() {}\n".to_string();
+        document.draft_source = "fn patched_left() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+
+        assert!(
+            document
+                .reference_workspace
+                .pending_shortwire_patch
+                .is_some()
+        );
+        document.mark_applied(
+            Some(&source),
+            1,
+            "fn patched_left() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "fn ref_patched() {}\n"
+        );
+        assert!(document.reference_workspace.shortwire_active_key.is_some());
+        assert_eq!(document.reference_patches.len(), 1);
+        assert!(document.reference_patches_dirty);
+        let patch = document.reference_patches.values().next().unwrap();
+        assert_eq!(
+            super::apply_hunks("fn ref() {}\n", &patch.hunks).unwrap(),
+            "fn ref_patched() {}\n"
+        );
+
+        document.exit_shortwire_navigate(&pending_actions);
+
+        assert_eq!(document.reference_workspace.editor_source, "fn ref() {}\n");
+        assert!(document.reference_workspace.shortwire_active_key.is_none());
+    }
+
+    #[test]
+    fn reference_shortwire_save_writes_local_file_and_exit_restores_original() {
+        let temp_dir = unique_reference_temp_dir("save-restore");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let reference_path = temp_dir.join("pass.metal");
+        fs::write(&reference_path, "fn original() {}\n").unwrap();
+
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        document.import_reference_file_from_path(&reference_path, 0.0);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.reference_workspace.editor_source = "fn patched_ref() {}\n".to_string();
+        document.draft_source = "fn patched_left() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn original() {}\n"
+        );
+
+        document.mark_applied(
+            Some(&source),
+            1,
+            "fn patched_left() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn patched_ref() {}\n"
+        );
+
+        document.exit_shortwire_navigate(&pending_actions);
+
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn original() {}\n"
+        );
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn reference_shortwire_reenter_writes_stored_patch_to_local_file() {
+        let temp_dir = unique_reference_temp_dir("reenter-write");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let reference_path = temp_dir.join("pass.metal");
+        fs::write(&reference_path, "fn original() {}\n").unwrap();
+
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        document.import_reference_file_from_path(&reference_path, 0.0);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.reference_workspace.editor_source = "fn patched_ref() {}\n".to_string();
+        document.draft_source = "fn patched_left() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+        document.mark_applied(
+            Some(&source),
+            1,
+            "fn patched_left() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+        document.exit_shortwire_navigate(&pending_actions);
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn original() {}\n"
+        );
+
+        document.mark_reset(Some(&source), 2, "Reset".to_string());
+        pending_actions.lock().unwrap().clear();
+        document.enter_shortwire(&row, &pending_actions);
+
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "fn patched_ref() {}\n"
+        );
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn patched_ref() {}\n"
+        );
+
+        document.exit_shortwire_navigate(&pending_actions);
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn original() {}\n"
+        );
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn reference_shortwire_close_restores_local_file() {
+        let temp_dir = unique_reference_temp_dir("close-restore");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let reference_path = temp_dir.join("pass.metal");
+        fs::write(&reference_path, "fn original() {}\n").unwrap();
+
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        document.import_reference_file_from_path(&reference_path, 0.0);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.reference_workspace.editor_source = "fn patched_ref() {}\n".to_string();
+        document.draft_source = "fn patched_left() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+        document.mark_applied(
+            Some(&source),
+            1,
+            "fn patched_left() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn patched_ref() {}\n"
+        );
+
+        pending_actions.lock().unwrap().clear();
+        document.prepare_debug_window_close(&pending_actions);
+
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn original() {}\n"
+        );
+        assert!(document.shortwire_active.is_none());
+        let actions = pending_actions.lock().unwrap();
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(
+            actions[0],
+            super::PassDebugWindowAction::ResetPatch { .. }
+        ));
+        drop(actions);
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn mark_patch_applied_returns_shortwire_artifacts_immediately() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut windows = super::PassDebugWindowMap::new();
+        windows.insert(
+            "p".to_string(),
+            super::PassDebugWindowState::new("p".to_string(), Some(source.clone()), 0, None),
+        );
+
+        let state = windows.get("p").unwrap();
+        let pending_actions = state.pending_actions.clone();
+        {
+            let mut document = state.document.lock().unwrap();
+            let row = document.dependency_rows.first().cloned().unwrap();
+            seed_reference_file(&mut document, "metal/pass.metal", "fn ref() {}\n");
+            document.enter_shortwire(&row, &pending_actions);
+            document.reference_workspace.editor_source = "fn ref_patched() {}\n".to_string();
+            document.draft_source = "fn patched_left() {}\n".to_string();
+            document.exit_shortwire_done(&pending_actions);
+        }
+
+        let artifacts = super::mark_patch_applied(
+            &mut windows,
+            "p",
+            Some(&source),
+            1,
+            "fn patched_left() {}\n".to_string(),
+            "Applied".to_string(),
+        );
+
+        assert_eq!(artifacts.len(), 2);
+        assert!(artifacts.iter().any(|(item, content)| {
+            item.role == DebugArtifactRole::Patch
+                && item.slot_key.as_deref() == Some(super::DEBUG_ARTIFACT_DEFAULT_SLOT)
+                && content.contains("patched_left")
+        }));
+        assert!(artifacts.iter().any(|(item, content)| {
+            item.role == DebugArtifactRole::Patch
+                && item.slot_key.as_deref() == Some(super::DEBUG_ARTIFACT_REFERENCE_PATCHES_SLOT)
+                && content.contains("ref_patched")
+        }));
+
+        let state = windows.get("p").unwrap();
+        let document = state.document.lock().unwrap();
+        assert!(!document.shortwire_patches_dirty);
+        assert!(!document.reference_patches_dirty);
+    }
+
+    #[test]
+    fn reference_shortwire_apply_error_keeps_patch_draft_uncommitted() {
+        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 0, false);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document.dependency_rows.first().cloned().unwrap();
+        seed_reference_file(&mut document, "metal/pass.metal", "fn ref() {}\n");
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.reference_workspace.editor_source = "fn ref_patched() {}\n".to_string();
+        document.draft_source = "fn patched_left() {}\n".to_string();
+        document.exit_shortwire_done(&pending_actions);
+        document.record_error("left apply failed".to_string());
+
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "fn ref_patched() {}\n"
+        );
+        assert!(
+            document
+                .reference_workspace
+                .pending_shortwire_patch
+                .is_some()
+        );
+        assert!(document.reference_patches.is_empty());
+        assert!(!document.reference_patches_dirty);
+        assert!(document.shortwire_is_editor_interactive());
+    }
+
+    #[test]
+    fn reference_reload_missing_path_keeps_archive_snapshot() {
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        seed_reference_file(&mut document, "metal/pass.metal", "fn ref() {}\n");
+        document.reference_workspace.root_path =
+            Some("/tmp/node-forge-missing-reference-root-for-test".to_string());
+
+        document.reload_reference_workspace(0.0);
+
+        assert_eq!(document.reference_workspace.editor_source, "fn ref() {}\n");
+        assert!(
+            document
+                .reference_workspace
+                .last_status
+                .as_deref()
+                .unwrap_or_default()
+                .contains("missing")
+        );
+    }
+
+    #[test]
     fn patch_source_updates_editor_but_dependency_tree_stays_canonical() {
         let canonical = root_return_shader("canonical_root", 1.0);
         let patched = root_return_shader("shortwire_root", 2.0);
@@ -6204,6 +8257,144 @@ fn fs_main() -> @location(0) f32 {
         assert_eq!(document.generated_base_source, "fn b() {}\n");
         assert_eq!(document.draft_source, "fn patched() {}\n");
         assert!(document.patch_active);
+    }
+
+    #[test]
+    fn canonical_change_with_applied_patch_auto_merges_cleanly() {
+        let base = "fn a() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let local = "fn a() {\n    let x = 99;\n    let y = 2;\n}\n";
+        let incoming = "fn a() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n";
+        let expected = "fn a() {\n    let x = 99;\n    let y = 2;\n    let z = 3;\n}\n";
+
+        let source = PassDebugSource::from_wgsl("p", base);
+        let incoming_source = PassDebugSource::from_wgsl("p", incoming);
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source), 0, Some(local));
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        document.update_source_with_actions(
+            Some(&incoming_source),
+            1,
+            Some(local),
+            &pending_actions,
+        );
+
+        assert!(document.merge_conflict.is_none());
+        assert_eq!(document.generated_base_source, incoming);
+        assert!(document.last_status.as_ref().unwrap().contains("rebasing"));
+        let actions = pending_actions.lock().unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            super::PassDebugWindowAction::ApplyPatch { source, .. } => {
+                assert_eq!(source, expected);
+            }
+            _ => panic!("expected ApplyPatch action"),
+        }
+    }
+
+    #[test]
+    fn auto_merge_rebases_matching_shortwire_patch_after_apply_success() {
+        let base = "fn a() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let local = "fn a() {\n    let x = 99;\n    let y = 2;\n}\n";
+        let incoming = "fn a() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n";
+        let expected = "fn a() {\n    let x = 99;\n    let y = 2;\n    let z = 3;\n}\n";
+
+        let source = PassDebugSource::from_wgsl("p", base);
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source.clone()), 0, false);
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let row = document
+            .dependency_rows
+            .first()
+            .cloned()
+            .expect("dependency root row");
+
+        document.enter_shortwire(&row, &pending_actions);
+        document.draft_source = local.to_string();
+        document.exit_shortwire_done(&pending_actions);
+        document.mark_applied(Some(&source), 1, local.to_string(), "Applied".to_string());
+        assert_eq!(document.shortwire_patches.len(), 1);
+
+        pending_actions.lock().unwrap().clear();
+        let incoming_source = PassDebugSource::from_wgsl("p", incoming);
+        document.update_source_with_actions(
+            Some(&incoming_source),
+            2,
+            Some(local),
+            &pending_actions,
+        );
+        assert!(
+            document
+                .shortwire_active
+                .as_ref()
+                .unwrap()
+                .base_source_stale
+        );
+        assert!(pending_actions.lock().unwrap().is_empty());
+
+        document.exit_shortwire_done(&pending_actions);
+        let actions = pending_actions.lock().unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            super::PassDebugWindowAction::ApplyPatch { source, .. } => {
+                assert_eq!(source, expected);
+            }
+            _ => panic!("expected ApplyPatch action"),
+        }
+        drop(actions);
+        document.mark_applied(
+            Some(&incoming_source),
+            3,
+            expected.to_string(),
+            "Applied".to_string(),
+        );
+
+        let patch = document
+            .shortwire_patches
+            .values()
+            .next()
+            .expect("rebased patch");
+        assert_eq!(patch.base_source_hash, super::hash_source(incoming));
+        assert_eq!(
+            super::apply_hunks(incoming, &patch.hunks).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn canonical_change_with_applied_patch_enters_merge_conflict() {
+        let base = "fn a() {\n    let x = 1;\n}\n";
+        let local = "fn a() {\n    let x = 99;\n}\n";
+        let incoming = "fn a() {\n    let x = 2;\n}\n";
+
+        let source = PassDebugSource::from_wgsl("p", base);
+        let incoming_source = PassDebugSource::from_wgsl("p", incoming);
+        let mut document =
+            PassDebugWindowDocument::new("p".to_string(), Some(source), 0, Some(local));
+        let pending_actions = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        document.update_source_with_actions(
+            Some(&incoming_source),
+            1,
+            Some(local),
+            &pending_actions,
+        );
+
+        assert!(pending_actions.lock().unwrap().is_empty());
+        let conflict = document.merge_conflict.as_ref().expect("merge conflict");
+        assert_eq!(conflict.base_source, base);
+        assert_eq!(conflict.incoming_source, incoming);
+        assert_eq!(conflict.local_source, local);
+        assert_eq!(conflict.resolved_source, local);
+        assert!(conflict.choice_popup_open);
+        assert!(!conflict.resolver_window_open);
+        assert_eq!(document.generated_base_source, incoming);
+        assert!(document.last_error.as_ref().unwrap().contains("conflicts"));
+
+        document.open_merge_resolver();
+        let conflict = document.merge_conflict.as_ref().expect("merge conflict");
+        assert!(!conflict.choice_popup_open);
+        assert!(conflict.resolver_window_open);
     }
 
     #[test]
@@ -6640,8 +8831,23 @@ fn fs_main() -> @location(0) f32 {
             "Applied".to_string(),
         );
 
-        assert!(document.shortwire_active.is_none());
+        assert!(document.shortwire_active.is_some());
+        assert!(document.shortwire_is_editor_interactive());
+        assert!(document.patch_active);
         assert!(!document.shortwire_patches.is_empty());
+
+        pending_actions.lock().unwrap().clear();
+        document.exit_shortwire_navigate(&pending_actions);
+        assert!(document.shortwire_active.is_none());
+        assert!(!document.patch_active);
+        {
+            let actions = pending_actions.lock().unwrap();
+            assert_eq!(actions.len(), 1);
+            assert!(matches!(
+                actions[0],
+                super::PassDebugWindowAction::ResetPatch { .. }
+            ));
+        }
 
         let reset_source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
         document.mark_reset(Some(&reset_source), 2, "Reset".to_string());
@@ -6688,6 +8894,8 @@ fn fs_main() -> @location(0) f32 {
             "fn edited() {}\n".to_string(),
             "Applied".to_string(),
         );
+        pending_actions.lock().unwrap().clear();
+        document.exit_shortwire_navigate(&pending_actions);
         let reset_source = PassDebugSource::from_wgsl("p", "fn a() {}\n");
         document.mark_reset(Some(&reset_source), 2, "Reset".to_string());
 
@@ -6737,6 +8945,8 @@ fn fs_main() -> @location(0) f32 {
             "fn edited() {}\n".to_string(),
             "Applied".to_string(),
         );
+        pending_actions.lock().unwrap().clear();
+        document.exit_shortwire_navigate(&pending_actions);
 
         let completely_different = PassDebugSource::from_wgsl(
             "p",

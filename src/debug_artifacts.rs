@@ -3,6 +3,15 @@ use std::collections::HashMap;
 use crate::dsl::{DebugArtifactAnchor, DebugArtifactItem, DebugArtifactRole, DebugArtifacts};
 
 const DEFAULT_SLOT_KEY: &str = "default";
+const REFERENCE_WORKSPACE_SLOT_KEY: &str = "reference-workspace";
+const REFERENCE_PATCHES_SLOT_KEY: &str = "reference-patches";
+const REFERENCE_FILE_SLOT_PREFIX: &str = "file:";
+
+#[derive(Clone, Debug)]
+pub struct DebugArtifactTextSnapshot {
+    pub item: DebugArtifactItem,
+    pub text: String,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct DebugArtifactStore {
@@ -53,6 +62,55 @@ impl DebugArtifactStore {
         self.text(item.id.as_str())
     }
 
+    pub fn find_pass_reference_workspace_item(
+        &self,
+        pass_name: &str,
+    ) -> Option<&DebugArtifactItem> {
+        self.manifest.items.values().find(|item| {
+            item.role == DebugArtifactRole::Attachment
+                && item.slot_key.as_deref() == Some(REFERENCE_WORKSPACE_SLOT_KEY)
+                && matches!(
+                    &item.anchor,
+                    DebugArtifactAnchor::Pass { pass_name: anchor_pass_name }
+                        if anchor_pass_name == pass_name
+                )
+        })
+    }
+
+    pub fn pass_reference_workspace_text(&self, pass_name: &str) -> Option<&str> {
+        let item = self.find_pass_reference_workspace_item(pass_name)?;
+        self.text(item.id.as_str())
+    }
+
+    pub fn pass_reference_file_texts(&self, pass_name: &str) -> Vec<DebugArtifactTextSnapshot> {
+        let mut snapshots = self
+            .manifest
+            .items
+            .values()
+            .filter(|item| {
+                item.role == DebugArtifactRole::ReferenceCode
+                    && item
+                        .slot_key
+                        .as_deref()
+                        .is_some_and(|slot| slot.starts_with(REFERENCE_FILE_SLOT_PREFIX))
+                    && matches!(
+                        &item.anchor,
+                        DebugArtifactAnchor::Pass { pass_name: anchor_pass_name }
+                            if anchor_pass_name == pass_name
+                    )
+            })
+            .filter_map(|item| {
+                self.text(item.id.as_str())
+                    .map(|text| DebugArtifactTextSnapshot {
+                        item: item.clone(),
+                        text: text.to_string(),
+                    })
+            })
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|a, b| a.item.id.cmp(&b.item.id));
+        snapshots
+    }
+
     pub fn find_pass_patches_item(&self, pass_name: &str) -> Option<&DebugArtifactItem> {
         self.manifest.items.values().find(|item| {
             item.role == DebugArtifactRole::Patch
@@ -67,6 +125,23 @@ impl DebugArtifactStore {
 
     pub fn pass_patches_text(&self, pass_name: &str) -> Option<&str> {
         let item = self.find_pass_patches_item(pass_name)?;
+        self.text(item.id.as_str())
+    }
+
+    pub fn find_pass_reference_patches_item(&self, pass_name: &str) -> Option<&DebugArtifactItem> {
+        self.manifest.items.values().find(|item| {
+            item.role == DebugArtifactRole::Patch
+                && item.slot_key.as_deref() == Some(REFERENCE_PATCHES_SLOT_KEY)
+                && matches!(
+                    &item.anchor,
+                    DebugArtifactAnchor::Pass { pass_name: anchor_pass_name }
+                        if anchor_pass_name == pass_name
+                )
+        })
+    }
+
+    pub fn pass_reference_patches_text(&self, pass_name: &str) -> Option<&str> {
+        let item = self.find_pass_reference_patches_item(pass_name)?;
         self.text(item.id.as_str())
     }
 

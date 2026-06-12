@@ -1,5 +1,5 @@
-use rust_wgpu_fiber::eframe::egui;
 use egui::text::{LayoutSection, TextFormat};
+use rust_wgpu_fiber::eframe::egui;
 
 #[derive(Clone)]
 pub struct WgslTheme {
@@ -53,7 +53,13 @@ pub fn highlight_wgsl_line(line: &str, theme: &WgslTheme) -> Vec<LayoutSection> 
         let b = bytes[pos];
 
         if b == b'/' && pos + 1 < bytes.len() && bytes[pos + 1] == b'/' {
-            push_section(&mut sections, pos, bytes.len(), &theme.comment, &theme.font_id);
+            push_section(
+                &mut sections,
+                pos,
+                bytes.len(),
+                &theme.comment,
+                &theme.font_id,
+            );
             break;
         }
 
@@ -83,9 +89,16 @@ pub fn highlight_wgsl_line(line: &str, theme: &WgslTheme) -> Vec<LayoutSection> 
             continue;
         }
 
-        if is_digit(b) || (b == b'0' && pos + 1 < bytes.len() && (bytes[pos + 1] == b'x' || bytes[pos + 1] == b'X')) {
+        if is_digit(b)
+            || (b == b'0'
+                && pos + 1 < bytes.len()
+                && (bytes[pos + 1] == b'x' || bytes[pos + 1] == b'X'))
+        {
             let start = pos;
-            if b == b'0' && pos + 1 < bytes.len() && (bytes[pos + 1] == b'x' || bytes[pos + 1] == b'X') {
+            if b == b'0'
+                && pos + 1 < bytes.len()
+                && (bytes[pos + 1] == b'x' || bytes[pos + 1] == b'X')
+            {
                 pos += 2;
                 while pos < bytes.len() && is_hex_digit(bytes[pos]) {
                     pos += 1;
@@ -145,8 +158,14 @@ pub fn highlight_wgsl_line(line: &str, theme: &WgslTheme) -> Vec<LayoutSection> 
         }
 
         let start = pos;
-        pos += 1;
-        push_section(&mut sections, start, pos, &theme.punctuation, &theme.font_id);
+        pos += line[pos..].chars().next().map(char::len_utf8).unwrap_or(1);
+        push_section(
+            &mut sections,
+            start,
+            pos,
+            &theme.punctuation,
+            &theme.font_id,
+        );
     }
 
     sections
@@ -189,30 +208,75 @@ fn is_hex_digit(b: u8) -> bool {
 fn is_keyword(word: &str) -> bool {
     matches!(
         word,
-        "fn" | "var" | "let" | "const" | "struct" | "if" | "else" | "for" | "while"
-            | "return" | "loop" | "break" | "continue" | "switch" | "case" | "default"
-            | "enable" | "alias" | "override" | "discard" | "true" | "false"
-            | "continuing" | "diagnostic" | "requires" | "const_assert"
+        "fn" | "var"
+            | "let"
+            | "const"
+            | "struct"
+            | "if"
+            | "else"
+            | "for"
+            | "while"
+            | "return"
+            | "loop"
+            | "break"
+            | "continue"
+            | "switch"
+            | "case"
+            | "default"
+            | "enable"
+            | "alias"
+            | "override"
+            | "discard"
+            | "true"
+            | "false"
+            | "continuing"
+            | "diagnostic"
+            | "requires"
+            | "const_assert"
     )
 }
 
 fn is_type_name(word: &str) -> bool {
     matches!(
         word,
-        "f32" | "f16" | "u32" | "i32" | "bool"
-            | "vec2" | "vec3" | "vec4"
-            | "mat2x2" | "mat2x3" | "mat2x4"
-            | "mat3x2" | "mat3x3" | "mat3x4"
-            | "mat4x2" | "mat4x3" | "mat4x4"
-            | "sampler" | "sampler_comparison"
-            | "texture_1d" | "texture_2d" | "texture_2d_array"
-            | "texture_3d" | "texture_cube" | "texture_cube_array"
-            | "texture_multisampled_2d" | "texture_depth_2d"
-            | "texture_depth_2d_array" | "texture_depth_cube"
-            | "texture_depth_cube_array" | "texture_depth_multisampled_2d"
-            | "texture_storage_1d" | "texture_storage_2d"
-            | "texture_storage_2d_array" | "texture_storage_3d"
-            | "array" | "ptr" | "atomic"
+        "f32"
+            | "f16"
+            | "u32"
+            | "i32"
+            | "bool"
+            | "vec2"
+            | "vec3"
+            | "vec4"
+            | "mat2x2"
+            | "mat2x3"
+            | "mat2x4"
+            | "mat3x2"
+            | "mat3x3"
+            | "mat3x4"
+            | "mat4x2"
+            | "mat4x3"
+            | "mat4x4"
+            | "sampler"
+            | "sampler_comparison"
+            | "texture_1d"
+            | "texture_2d"
+            | "texture_2d_array"
+            | "texture_3d"
+            | "texture_cube"
+            | "texture_cube_array"
+            | "texture_multisampled_2d"
+            | "texture_depth_2d"
+            | "texture_depth_2d_array"
+            | "texture_depth_cube"
+            | "texture_depth_cube_array"
+            | "texture_depth_multisampled_2d"
+            | "texture_storage_1d"
+            | "texture_storage_2d"
+            | "texture_storage_2d_array"
+            | "texture_storage_3d"
+            | "array"
+            | "ptr"
+            | "atomic"
     )
 }
 
@@ -221,7 +285,10 @@ mod tests {
     use super::*;
 
     fn section_texts<'a>(line: &'a str, sections: &[LayoutSection]) -> Vec<&'a str> {
-        sections.iter().map(|s| &line[s.byte_range.clone()]).collect()
+        sections
+            .iter()
+            .map(|s| &line[s.byte_range.clone()])
+            .collect()
     }
 
     fn test_theme() -> WgslTheme {
@@ -244,9 +311,15 @@ mod tests {
         let sections = highlight_wgsl_line(line, &theme);
         assert_eq!(sections[0].format.color, theme.keyword); // fn
         assert_eq!(&line[sections[0].byte_range.clone()], "fn");
-        let vec4_section = sections.iter().find(|s| &line[s.byte_range.clone()] == "vec4").unwrap();
+        let vec4_section = sections
+            .iter()
+            .find(|s| &line[s.byte_range.clone()] == "vec4")
+            .unwrap();
         assert_eq!(vec4_section.format.color, theme.type_name);
-        let f32_section = sections.iter().find(|s| &line[s.byte_range.clone()] == "f32").unwrap();
+        let f32_section = sections
+            .iter()
+            .find(|s| &line[s.byte_range.clone()] == "f32")
+            .unwrap();
         assert_eq!(f32_section.format.color, theme.type_name);
     }
 
@@ -264,7 +337,10 @@ mod tests {
         let line = "var x = 3.14f;";
         let theme = test_theme();
         let sections = highlight_wgsl_line(line, &theme);
-        let num_section = sections.iter().find(|s| line[s.byte_range.clone()].starts_with("3.14")).unwrap();
+        let num_section = sections
+            .iter()
+            .find(|s| line[s.byte_range.clone()].starts_with("3.14"))
+            .unwrap();
         assert_eq!(num_section.format.color, theme.number);
     }
 
@@ -273,12 +349,36 @@ mod tests {
         let line = "@vertex fn vs(@builtin(vertex_index) idx: u32) -> vec4<f32> {";
         let theme = test_theme();
         let sections = highlight_wgsl_line(line, &theme);
-        let total_covered: usize = sections.iter().map(|s| s.byte_range.end - s.byte_range.start).sum();
+        let total_covered: usize = sections
+            .iter()
+            .map(|s| s.byte_range.end - s.byte_range.start)
+            .sum();
         assert_eq!(total_covered, line.len());
         for (i, s) in sections.iter().enumerate() {
             if i > 0 {
                 assert_eq!(s.byte_range.start, sections[i - 1].byte_range.end);
             }
+        }
+    }
+
+    #[test]
+    fn unicode_fallback_sections_stay_on_char_boundaries() {
+        let line = "///方向";
+        let theme = test_theme();
+        let sections = highlight_wgsl_line(line, &theme);
+        let total_covered: usize = sections
+            .iter()
+            .map(|s| s.byte_range.end - s.byte_range.start)
+            .sum();
+
+        assert_eq!(total_covered, line.len());
+        for (i, section) in sections.iter().enumerate() {
+            assert!(line.is_char_boundary(section.byte_range.start));
+            assert!(line.is_char_boundary(section.byte_range.end));
+            if i > 0 {
+                assert_eq!(section.byte_range.start, sections[i - 1].byte_range.end);
+            }
+            let _ = &line[section.byte_range.clone()];
         }
     }
 }

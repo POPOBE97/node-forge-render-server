@@ -158,7 +158,7 @@ pub fn dispatch(
                 Ok(result) => {
                     let status =
                         sync_after_shader_rebuild(app, ctx, render_state, renderer, result, now);
-                    ui::pass_debug_window::mark_patch_applied(
+                    let artifacts = ui::pass_debug_window::mark_patch_applied(
                         &mut app.shell.pass_debug_windows,
                         &pass_name,
                         app.shell.pass_debug_sources.get(&pass_name),
@@ -166,6 +166,9 @@ pub fn dispatch(
                         source,
                         status,
                     );
+                    for (item, content_text) in artifacts {
+                        upsert_debug_artifact(app, item, content_text);
+                    }
                 }
                 Err(err) => {
                     ui::pass_debug_window::record_patch_error(
@@ -219,10 +222,7 @@ pub fn dispatch(
             }
         }
         AppCommand::UpsertDebugArtifact { item, content_text } => {
-            app.shell
-                .debug_artifacts
-                .upsert(item.clone(), Some(content_text.clone()));
-            crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
+            upsert_debug_artifact(app, item, content_text);
         }
         AppCommand::ToggleCanvasOnly => {
             window_mode::toggle_canvas_only(app, now);
@@ -313,6 +313,13 @@ fn sync_after_shader_rebuild(
         (Some(_), Some(_)) => "Shader rebuild applied; output texture unchanged".to_string(),
         _ => "Shader rebuild applied; output change not measured".to_string(),
     }
+}
+
+fn upsert_debug_artifact(app: &mut App, item: crate::dsl::DebugArtifactItem, content_text: String) {
+    app.shell
+        .debug_artifacts
+        .upsert(item.clone(), Some(content_text.clone()));
+    crate::ws::broadcast_debug_artifact_upsert(&app.core.ws_hub, item, Some(content_text));
 }
 
 fn render_current_shader_space(app: &mut App, now: f64) {
