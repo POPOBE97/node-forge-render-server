@@ -164,10 +164,6 @@ fn apply_pass_shader_overrides(
         let pass_name = spec.name.as_str();
         if let Some(source) = overrides.get(pass_name) {
             spec.shader_wgsl = source.clone();
-            plan.pass_debug_sources.insert(
-                pass_name.to_string(),
-                PassDebugSource::from_wgsl(pass_name, source.clone()),
-            );
             applied.insert(pass_name.to_string());
         }
     }
@@ -176,10 +172,6 @@ fn apply_pass_shader_overrides(
         let pass_name = spec.pass_name.as_str();
         if let Some(source) = overrides.get(pass_name) {
             spec.shader_wgsl = source.clone();
-            plan.pass_debug_sources.insert(
-                pass_name.to_string(),
-                PassDebugSource::from_wgsl(pass_name, source.clone()),
-            );
             applied.insert(pass_name.to_string());
         }
     }
@@ -188,10 +180,6 @@ fn apply_pass_shader_overrides(
         let pass_name = spec.pass_name.as_str();
         if let Some(source) = overrides.get(pass_name) {
             spec.shader_wgsl = source.clone();
-            plan.pass_debug_sources.insert(
-                pass_name.to_string(),
-                PassDebugSource::from_wgsl(pass_name, source.clone()),
-            );
             applied.insert(pass_name.to_string());
         }
     }
@@ -210,4 +198,86 @@ fn apply_pass_shader_overrides(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        path::{Path, PathBuf},
+    };
+
+    use anyhow::Result;
+
+    use super::apply_pass_shader_overrides;
+    use crate::{
+        asset_store, dsl,
+        renderer::{
+            ShaderSpacePresentationMode,
+            render_plan::{
+                planner::RenderPlanner,
+                types::{PlanBuildOptions, PlanningGpuCaps},
+            },
+        },
+    };
+
+    fn load_case(case_name: &str) -> Result<(dsl::SceneDSL, Option<asset_store::AssetStore>)> {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("cases")
+            .join(case_name);
+        let scene_path = base.join("scene.json");
+        let scene = dsl::load_scene_from_path(&scene_path)?;
+        let assets = if scene.assets.is_empty() {
+            None
+        } else {
+            Some(asset_store::load_from_scene_dir(&scene, Path::new(&base))?)
+        };
+        Ok((scene, assets))
+    }
+
+    #[test]
+    fn shader_overrides_do_not_replace_pass_debug_sources() -> Result<()> {
+        let (scene, assets) = load_case("graph-rectangle")?;
+        let mut plan = RenderPlanner::new(PlanBuildOptions {
+            gpu_caps: PlanningGpuCaps::default(),
+            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
+            debug_dump_wgsl_dir: None,
+        })
+        .plan(&scene, assets.as_ref(), None)?;
+
+        let pass_name = "node_2.pass";
+        let canonical_debug_source = plan
+            .pass_debug_sources
+            .get(pass_name)
+            .expect("canonical debug source")
+            .module_source
+            .clone();
+        let override_source = format!(
+            "{canonical_debug_source}\nfn shortwire_debug_root() -> f32 {{ return 1.0; }}\n"
+        );
+
+        apply_pass_shader_overrides(
+            &mut plan,
+            &HashMap::from([(pass_name.to_string(), override_source.clone())]),
+            true,
+        )?;
+
+        let render_spec = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .find(|spec| spec.name.as_str() == pass_name)
+            .expect("render pass spec");
+        assert_eq!(render_spec.shader_wgsl, override_source);
+
+        let debug_source = plan
+            .pass_debug_sources
+            .get(pass_name)
+            .expect("debug source after override");
+        assert_eq!(debug_source.module_source, canonical_debug_source);
+        assert!(!debug_source.module_source.contains("shortwire_debug_root"));
+
+        Ok(())
+    }
 }

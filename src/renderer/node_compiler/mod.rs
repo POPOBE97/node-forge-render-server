@@ -5,6 +5,7 @@ pub mod color_nodes;
 pub mod data_parse;
 pub mod geometry_nodes;
 pub mod glass_material;
+pub mod hyperos_glass_material;
 pub mod input_nodes;
 pub mod luminance_curve;
 pub mod math_closure;
@@ -970,6 +971,15 @@ fn compile_expr(
 
         // Material nodes
         "GlassMaterial" => glass_material::compile_glass_material(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+        "HyperOSGlassMaterial" => hyperos_glass_material::compile_hyperos_glass_material(
             scene,
             nodes_by_id,
             node,

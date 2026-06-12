@@ -117,6 +117,75 @@ fn draw_checkerboard(ui: &egui::Ui, ctx: &egui::Context, canvas_rect: Rect) {
     );
 }
 
+fn draw_construction_border(ui: &egui::Ui, ctx: &egui::Context, canvas_rect: Rect) {
+    const BORDER_W: f32 = 3.0;
+    const CELL: f32 = 8.0;
+
+    let tex = {
+        let cache_id = egui::Id::new("ui.canvas.construction_stripe_texture");
+        if let Some(tex) = ctx.memory(|mem| mem.data.get_temp::<egui::TextureHandle>(cache_id)) {
+            tex
+        } else {
+            let black = Color32::from_rgb(20, 20, 20);
+            let yellow = Color32::from_rgb(240, 200, 0);
+            let size = 8usize;
+            let mut pixels = vec![black; size * size];
+            for y in 0..size {
+                for x in 0..size {
+                    if (x + y) % size < size / 2 {
+                        pixels[y * size + x] = yellow;
+                    }
+                }
+            }
+            let img = egui::ColorImage {
+                size: [size, size],
+                pixels,
+                source_size: egui::Vec2::new(size as f32, size as f32),
+            };
+            let tex = ctx.load_texture(
+                "ui.canvas.construction_stripe",
+                img,
+                egui::TextureOptions::NEAREST_REPEAT,
+            );
+            ctx.memory_mut(|mem| mem.data.insert_temp(cache_id, tex.clone()));
+            tex
+        }
+    };
+
+    let rounding = egui::CornerRadius::ZERO;
+    let paint_rect = |rect: Rect| {
+        let uv_w = rect.width() / CELL;
+        let uv_h = rect.height() / CELL;
+        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(uv_w, uv_h));
+        ui.painter().add(
+            egui::epaint::RectShape::filled(rect, rounding, Color32::WHITE)
+                .with_texture(tex.id(), uv),
+        );
+    };
+
+    let top = Rect::from_min_max(
+        canvas_rect.min,
+        pos2(canvas_rect.max.x, canvas_rect.min.y + BORDER_W),
+    );
+    let bottom = Rect::from_min_max(
+        pos2(canvas_rect.min.x, canvas_rect.max.y - BORDER_W),
+        canvas_rect.max,
+    );
+    let left = Rect::from_min_max(
+        pos2(canvas_rect.min.x, canvas_rect.min.y + BORDER_W),
+        pos2(canvas_rect.min.x + BORDER_W, canvas_rect.max.y - BORDER_W),
+    );
+    let right = Rect::from_min_max(
+        pos2(canvas_rect.max.x - BORDER_W, canvas_rect.min.y + BORDER_W),
+        pos2(canvas_rect.max.x, canvas_rect.max.y - BORDER_W),
+    );
+
+    paint_rect(top);
+    paint_rect(bottom);
+    paint_rect(left);
+    paint_rect(right);
+}
+
 fn computed_uv(image_rect: Rect, canvas_rect: Rect) -> Rect {
     let image_rect_size = image_rect.size();
     let uv0_min = (canvas_rect.min - image_rect.min) / image_rect_size;
@@ -1260,6 +1329,10 @@ pub fn show_canvas(
             render_state,
             renderer,
         );
+    }
+
+    if !app.shell.pass_debug_windows.is_empty() {
+        draw_construction_border(ui, ctx, canvas_rect);
     }
 
     app.canvas.viewport.canvas_center_prev = Some(canvas_rect.center());

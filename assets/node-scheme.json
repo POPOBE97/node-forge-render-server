@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-10T18:16:15.446Z",
+  "generatedAt": "2026-06-11T05:29:12.954Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -40,6 +40,7 @@
     "GroupInstance",
     "GuassianBlurPass",
     "HSVAdjust",
+    "HyperOSGlassMaterial",
     "ImageFile",
     "ImageTexture",
     "Index",
@@ -1789,6 +1790,496 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "HyperOSGlassMaterial",
+      "label": "HyperOS Glass Material",
+      "category": "Material",
+      "description": "HyperOS glass material — independent algorithm fork of Glass Material",
+      "inputs": [
+        {
+          "id": "uBgTex",
+          "name": "Background",
+          "type": "pass"
+        },
+        {
+          "id": "uLightTex",
+          "name": "Light",
+          "type": "pass"
+        },
+        {
+          "id": "uSdfTex",
+          "name": "SDF",
+          "type": "pass"
+        },
+        {
+          "id": "uBlendLuminanceValues",
+          "name": "luminanceValues",
+          "type": "normalizedBezierCurve",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendLuminanceAmount",
+          "name": "luminanceAmount",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendSaturation",
+          "name": "saturation",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendBrightness",
+          "name": "brightness",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendDarker",
+          "name": "blendDarker",
+          "type": "float",
+          "default": 0.15,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendDarkerRangeX",
+          "name": "darkerRangeX",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBlendDarkerRangeY",
+          "name": "darkerRangeY",
+          "type": "float",
+          "default": 0.8,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uDebugShapeExpand",
+          "name": "shapeExpand",
+          "type": "float",
+          "default": 2.5,
+          "range": {
+            "min": 0,
+            "max": 10,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uInnerBottom",
+          "name": "bottom",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uInnerGlassColor",
+          "name": "glassColor",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            0
+          ]
+        },
+        {
+          "id": "uInnerColorWhite",
+          "name": "colorWhite",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uInnerColorPow",
+          "name": "colorPow",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0.1,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uInnerColorMix",
+          "name": "colorMix",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uGeoPxRadius",
+          "name": "radiusPx",
+          "type": "float",
+          "default": 24,
+          "range": {
+            "min": 0,
+            "max": 2048,
+            "step": 1
+          }
+        },
+        {
+          "id": "uShapeEdgePx",
+          "name": "edgePx",
+          "type": "float",
+          "default": 30,
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeEdgePow",
+          "name": "edgePow",
+          "type": "float",
+          "default": 2,
+          "range": {
+            "min": 1,
+            "max": 4,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeThicknessPx",
+          "name": "thicknessPx",
+          "type": "float",
+          "default": 50,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uShapeReflectOffsetPx",
+          "name": "reflectOffsetPx",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1000,
+            "step": 1
+          }
+        },
+        {
+          "id": "uReflectLighten",
+          "name": "lighten",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05
+          }
+        },
+        {
+          "id": "uReflectStrength",
+          "name": "strength",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uReflectionExtend",
+          "name": "extend",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1
+          }
+        },
+        {
+          "id": "uReflectionExtendColor",
+          "name": "extendColor",
+          "type": "color",
+          "default": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "uDirectionalLightDirection",
+          "name": "direction",
+          "type": "vector3",
+          "default": {
+            "x": 0.5,
+            "y": -0.7,
+            "z": 0.5
+          },
+          "range": {
+            "min": -2,
+            "max": 2,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uDirectionalLightIntensity",
+          "name": "intensity",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uDirectionalLightOppositeIntensity",
+          "name": "oppositeIntensity",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uDirectionalLightAngleRange",
+          "name": "angleRange",
+          "type": "float",
+          "default": 0.5,
+          "range": {
+            "min": 0.01,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uRefractBlurScale",
+          "name": "blur",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 200,
+            "step": 1
+          }
+        },
+        {
+          "id": "uRefractIorIOR",
+          "name": "refractIorIOR",
+          "type": "float",
+          "default": 1.5,
+          "range": {
+            "min": 1,
+            "max": 5,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBgColorSaturation",
+          "name": "bgColorSaturation",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 2,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBgColorBrightness",
+          "name": "bgColorBrightness",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": -1,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uBionicBurn",
+          "name": "burn",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0.1,
+            "max": 20,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "uPressLightCenterFall",
+          "name": "pressLightCenterFall",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uPressLightCenterStrength",
+          "name": "pressLightCenterStrength",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uPressLightCenterPeak",
+          "name": "pressLightCenterPeak",
+          "type": "float",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "uPressRingStrength",
+          "name": "pressRingStrength",
+          "type": "vector4",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "material",
+          "name": "Material",
+          "type": "material"
+        }
+      ],
+      "defaultParams": {
+        "uBlendLuminanceValues": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "uBlendLuminanceAmount": 0,
+        "uBlendSaturation": 1,
+        "uBlendBrightness": 0,
+        "uBlendDarker": 0.15,
+        "uBlendDarkerRangeX": 0.5,
+        "uBlendDarkerRangeY": 0.8,
+        "uDebugShapeExpand": 2.5,
+        "uInnerBottom": 0,
+        "uInnerGlassColor": [
+          1,
+          1,
+          1,
+          0
+        ],
+        "uInnerColorWhite": 0,
+        "uInnerColorPow": 1,
+        "uInnerColorMix": 0,
+        "uGeoPxRadius": 24,
+        "uShapeEdgePx": 30,
+        "uShapeEdgePow": 2,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uReflectLighten": 0.5,
+        "uReflectStrength": 0.5,
+        "uReflectionExtend": 0,
+        "uReflectionExtendColor": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "uDirectionalLightDirection": {
+          "x": 0.5,
+          "y": -0.7,
+          "z": 0.5
+        },
+        "uDirectionalLightIntensity": 1,
+        "uDirectionalLightOppositeIntensity": 0,
+        "uDirectionalLightAngleRange": 0.5,
+        "uRefractBlurScale": 1,
+        "uRefractIorIOR": 1.5,
+        "uBgColorSaturation": 1,
+        "uBgColorBrightness": 0,
+        "uBionicBurn": 1,
+        "uPressLightCenterFall": 0,
+        "uPressLightCenterStrength": 0,
+        "uPressLightCenterPeak": 0,
+        "uPressRingStrength": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
     },
     {
       "type": "ImageFile",

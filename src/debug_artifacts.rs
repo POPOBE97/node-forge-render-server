@@ -53,6 +53,23 @@ impl DebugArtifactStore {
         self.text(item.id.as_str())
     }
 
+    pub fn find_pass_patches_item(&self, pass_name: &str) -> Option<&DebugArtifactItem> {
+        self.manifest.items.values().find(|item| {
+            item.role == DebugArtifactRole::Patch
+                && item.slot_key.as_deref().unwrap_or(DEFAULT_SLOT_KEY) == DEFAULT_SLOT_KEY
+                && matches!(
+                    &item.anchor,
+                    DebugArtifactAnchor::Pass { pass_name: anchor_pass_name }
+                        if anchor_pass_name == pass_name
+                )
+        })
+    }
+
+    pub fn pass_patches_text(&self, pass_name: &str) -> Option<&str> {
+        let item = self.find_pass_patches_item(pass_name)?;
+        self.text(item.id.as_str())
+    }
+
     fn missing_text_artifact_ids(&self) -> Vec<String> {
         self.manifest
             .items
