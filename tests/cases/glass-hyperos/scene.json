@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-06-12T14:49:58.239Z",
-    "modified": "2026-06-12T14:49:58.239Z"
+    "created": "2026-06-12T15:57:42.856Z",
+    "modified": "2026-06-12T15:57:42.856Z"
   },
   "nodes": [
     {
@@ -1290,7 +1290,7 @@
         "mimeType": "text/plain",
         "path": "debug-artifacts/pass__rende.rpass4.pass__reference-workspace__reference-workspace/rende.rpass4.pass.reference-workspace.json",
         "size": 331,
-        "contentHash": "b22f6fc6",
+        "contentHash": "da8d916e",
         "slotKey": "reference-workspace"
       },
       "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7": {
@@ -1317,8 +1317,8 @@
         "name": "Reference: glass.frag",
         "mimeType": "text/plain",
         "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-3b095c1b/glass.frag",
-        "size": 28380,
-        "contentHash": "f009ecba",
+        "size": 28407,
+        "contentHash": "4841de2f",
         "slotKey": "file:3b095c1b"
       },
       "pass__rende.rpass4.pass__patch__default": {
@@ -1331,8 +1331,8 @@
         "name": "Shortwire patches",
         "mimeType": "text/plain",
         "path": "debug-artifacts/pass__rende.rpass4.pass__patch__default/rende.rpass4.pass.patches.json",
-        "size": 1595,
-        "contentHash": "c19762f3",
+        "size": 2073,
+        "contentHash": "c48356ec",
         "slotKey": "default"
       },
       "pass__rende.rpass4.pass__patch__reference-patches": {
@@ -1345,9 +1345,37 @@
         "name": "Reference shortwire patches",
         "mimeType": "text/plain",
         "path": "debug-artifacts/pass__rende.rpass4.pass__patch__reference-patches/rende.rpass4.pass.reference-patches.json",
-        "size": 1105,
-        "contentHash": "8001944e",
+        "size": 1001,
+        "contentHash": "047d3bf0",
         "slotKey": "reference-patches"
+      },
+      "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d": {
+        "id": "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "image",
+        "name": "Shortwire reference image",
+        "mimeType": "image/png",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d/rende.rpass4.pass.shortwire-ref.9db20f7d.png",
+        "size": 1037289,
+        "contentHash": "e133bdd6",
+        "slotKey": "shortwire-reference:9db20f7d"
+      },
+      "pass__rende.rpass4.pass__shortwire-reference-image__2438632c": {
+        "id": "pass__rende.rpass4.pass__shortwire-reference-image__2438632c",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "image",
+        "name": "Shortwire reference image",
+        "mimeType": "image/png",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__shortwire-reference-image__2438632c/rende.rpass4.pass.shortwire-ref.2438632c.png",
+        "size": 1084626,
+        "contentHash": "0acc5037",
+        "slotKey": "shortwire-reference:2438632c"
       }
     }
   }

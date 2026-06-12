@@ -24,6 +24,7 @@ const TREE_ROW_INDENT_WIDTH: f32 = 14.0;
 const PASS_DEBUG_SPLIT_HANDLE_WIDTH: f32 = 6.0;
 const PASS_DEBUG_SPLIT_LINE_WIDTH: f32 = 1.0;
 const PASS_DEBUG_EDITOR_MIN_WIDTH: f32 = 320.0;
+const PASS_DEBUG_COLUMN_HEADER_HEIGHT: f32 = 28.0;
 const TREE_ROW_TRAILING_PADDING: f32 = 24.0;
 const TREE_ROW_SOURCE_JUMP_GAP: f32 = 8.0;
 const TREE_ROW_SOURCE_JUMP_LABEL: &str = "src";
@@ -47,6 +48,7 @@ const PASS_DEBUG_REFERENCE_SYNC_DEBOUNCE_SECS: f64 = 0.250;
 const PASS_DEBUG_PATCH_ERROR_SUMMARY_CHARS: usize = 140;
 const PASS_DEBUG_REFERENCE_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const PASS_DEBUG_REFERENCE_MAX_FOLDER_FILES: usize = 512;
+const SHORTWIRE_DIFF_CONTEXT_LINES: usize = 3;
 const DEBUG_ARTIFACT_DEFAULT_SLOT: &str = "default";
 const DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT: &str = "reference-workspace";
 const DEBUG_ARTIFACT_REFERENCE_PATCHES_SLOT: &str = "reference-patches";
@@ -204,6 +206,75 @@ struct ShortwireHunk {
     new_lines: Vec<String>,
     context_before: Vec<String>,
     context_after: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShortwireDiffRowKind {
+    Context,
+    Added,
+    Removed,
+    Separator,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShortwireDiffRow {
+    kind: ShortwireDiffRowKind,
+    old_line: Option<usize>,
+    new_line: Option<usize>,
+    text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShortwireDiffView {
+    rows: Vec<ShortwireDiffRow>,
+    old_line_count: usize,
+    new_line_count: usize,
+}
+
+impl ShortwireDiffView {
+    fn to_display_text(&self) -> String {
+        if self.rows.is_empty() {
+            return "No changes\n".to_string();
+        }
+
+        let old_width = self.old_line_count.max(1).to_string().len();
+        let new_width = self.new_line_count.max(1).to_string().len();
+        let mut text = String::new();
+        for row in &self.rows {
+            if row.kind == ShortwireDiffRowKind::Separator {
+                text.push_str(&format!(
+                    "{:old_width$} {:new_width$}   ...\n",
+                    "",
+                    "",
+                    old_width = old_width,
+                    new_width = new_width
+                ));
+                continue;
+            }
+
+            let old_line = row
+                .old_line
+                .map(|line| line.to_string())
+                .unwrap_or_default();
+            let new_line = row
+                .new_line
+                .map(|line| line.to_string())
+                .unwrap_or_default();
+            let prefix = match row.kind {
+                ShortwireDiffRowKind::Context => " ",
+                ShortwireDiffRowKind::Added => "+",
+                ShortwireDiffRowKind::Removed => "-",
+                ShortwireDiffRowKind::Separator => unreachable!(),
+            };
+            text.push_str(&format!(
+                "{old_line:>old_width$} {new_line:>new_width$} {prefix} {}\n",
+                row.text,
+                old_width = old_width,
+                new_width = new_width
+            ));
+        }
+        text
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1898,6 +1969,7 @@ impl PassDebugWindowDocument {
         self.last_status = Some("Merge resolution cancelled".to_string());
     }
 
+    #[cfg(test)]
     fn import_reference_file_from_path(&mut self, path: &Path, now_secs: f64) {
         if self.reference_workspace.shortwire_active_key.is_some() {
             self.reference_workspace.last_status =
@@ -2043,6 +2115,38 @@ impl PassDebugWindowDocument {
     fn take_reference_workspace_dirty_artifacts(&mut self) -> Vec<(DebugArtifactItem, String)> {
         self.reference_workspace.commit_editor_to_selected();
         let mut artifacts = Vec::new();
+
+        if let Some(root_path) = self.reference_workspace.root_path.clone() {
+            let root = PathBuf::from(root_path);
+            let mut wrote_any_file = false;
+            let mut had_write_error = false;
+            for file in &mut self.reference_workspace.files {
+                if !file.is_dirty() {
+                    continue;
+                }
+                match write_reference_workspace_file(&root, file) {
+                    Ok(()) => {
+                        file.loaded_source = file.source.clone();
+                        wrote_any_file = true;
+                    }
+                    Err(error) => {
+                        had_write_error = true;
+                        self.reference_workspace.last_status = Some(error);
+                    }
+                }
+            }
+
+            if wrote_any_file {
+                self.reference_workspace.manifest_dirty = true;
+            }
+            if self.reference_workspace.manifest_dirty {
+                if let Some((item, content_text)) = self.collect_reference_workspace_artifact() {
+                    artifacts.push((item, content_text));
+                }
+                self.reference_workspace.manifest_dirty = had_write_error;
+            }
+            return artifacts;
+        }
 
         if self.reference_workspace.manifest_dirty {
             if let Some((item, content_text)) = self.collect_reference_workspace_artifact() {
@@ -2827,7 +2931,7 @@ fn compute_hunks(base: &str, edited: &str) -> Vec<ShortwireHunk> {
     let base_lines: Vec<&str> = base.lines().collect();
     let mut hunks = Vec::new();
 
-    for group in diff.grouped_ops(3) {
+    for group in diff.grouped_ops(SHORTWIRE_DIFF_CONTEXT_LINES) {
         for op in &group {
             match op {
                 similar::DiffOp::Equal { .. } => {}
@@ -2857,13 +2961,13 @@ fn compute_hunks(base: &str, edited: &str) -> Vec<ShortwireHunk> {
                     };
 
                     let context_before: Vec<String> = base_lines
-                        [old_start.saturating_sub(3)..old_start]
+                        [old_start.saturating_sub(SHORTWIRE_DIFF_CONTEXT_LINES)..old_start]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
                     let after_end = (old_start + old_len).min(base_lines.len());
-                    let context_after: Vec<String> = base_lines
-                        [after_end..(after_end + 3).min(base_lines.len())]
+                    let context_after: Vec<String> = base_lines[after_end
+                        ..(after_end + SHORTWIRE_DIFF_CONTEXT_LINES).min(base_lines.len())]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
@@ -2889,12 +2993,12 @@ fn compute_hunks(base: &str, edited: &str) -> Vec<ShortwireHunk> {
                         .collect();
 
                     let context_before: Vec<String> = base_lines
-                        [old_index.saturating_sub(3)..*old_index]
+                        [old_index.saturating_sub(SHORTWIRE_DIFF_CONTEXT_LINES)..*old_index]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
-                    let context_after: Vec<String> = base_lines
-                        [*old_index..(*old_index + 3).min(base_lines.len())]
+                    let context_after: Vec<String> = base_lines[*old_index
+                        ..(*old_index + SHORTWIRE_DIFF_CONTEXT_LINES).min(base_lines.len())]
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
@@ -2911,6 +3015,124 @@ fn compute_hunks(base: &str, edited: &str) -> Vec<ShortwireHunk> {
         }
     }
     hunks
+}
+
+fn build_shortwire_diff_view(base: &str, edited: &str) -> ShortwireDiffView {
+    use similar::TextDiff;
+
+    let old_lines: Vec<&str> = base.lines().collect();
+    let new_lines: Vec<&str> = edited.lines().collect();
+    let mut rows = Vec::new();
+
+    if base != edited {
+        let diff = TextDiff::from_lines(base, edited);
+        for (group_index, group) in diff
+            .grouped_ops(SHORTWIRE_DIFF_CONTEXT_LINES)
+            .into_iter()
+            .enumerate()
+        {
+            if group_index > 0 {
+                rows.push(ShortwireDiffRow {
+                    kind: ShortwireDiffRowKind::Separator,
+                    old_line: None,
+                    new_line: None,
+                    text: String::new(),
+                });
+            }
+
+            for op in group {
+                match op {
+                    similar::DiffOp::Equal {
+                        old_index,
+                        new_index,
+                        len,
+                    } => {
+                        for offset in 0..len {
+                            rows.push(ShortwireDiffRow {
+                                kind: ShortwireDiffRowKind::Context,
+                                old_line: Some(old_index + offset + 1),
+                                new_line: Some(new_index + offset + 1),
+                                text: old_lines
+                                    .get(old_index + offset)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                    }
+                    similar::DiffOp::Delete {
+                        old_index, old_len, ..
+                    } => {
+                        for offset in 0..old_len {
+                            rows.push(ShortwireDiffRow {
+                                kind: ShortwireDiffRowKind::Removed,
+                                old_line: Some(old_index + offset + 1),
+                                new_line: None,
+                                text: old_lines
+                                    .get(old_index + offset)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                    }
+                    similar::DiffOp::Insert {
+                        new_index, new_len, ..
+                    } => {
+                        for offset in 0..new_len {
+                            rows.push(ShortwireDiffRow {
+                                kind: ShortwireDiffRowKind::Added,
+                                old_line: None,
+                                new_line: Some(new_index + offset + 1),
+                                text: new_lines
+                                    .get(new_index + offset)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                    }
+                    similar::DiffOp::Replace {
+                        old_index,
+                        old_len,
+                        new_index,
+                        new_len,
+                    } => {
+                        for offset in 0..old_len {
+                            rows.push(ShortwireDiffRow {
+                                kind: ShortwireDiffRowKind::Removed,
+                                old_line: Some(old_index + offset + 1),
+                                new_line: None,
+                                text: old_lines
+                                    .get(old_index + offset)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                        for offset in 0..new_len {
+                            rows.push(ShortwireDiffRow {
+                                kind: ShortwireDiffRowKind::Added,
+                                old_line: None,
+                                new_line: Some(new_index + offset + 1),
+                                text: new_lines
+                                    .get(new_index + offset)
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ShortwireDiffView {
+        rows,
+        old_line_count: old_lines.len(),
+        new_line_count: new_lines.len(),
+    }
 }
 
 fn apply_hunks(base: &str, hunks: &[ShortwireHunk]) -> Result<String, HunkApplyError> {
@@ -3352,12 +3574,14 @@ pub fn show_pass_debug_windows(
                     egui::Window::new(title.as_str())
                         .id(egui::Id::new(("pass-debug-embedded", title.as_str())))
                         .open(&mut open)
+                        .title_bar(false)
                         .default_size(pass_debug_default_window_size())
                         .show(ui.ctx(), |window_ui| {
                             render_pass_debug_embedded_content(
                                 window_ui,
                                 &document,
                                 &pending_actions,
+                                close_requested.as_ref(),
                             );
                         });
                     if !open {
@@ -3383,7 +3607,12 @@ pub fn show_pass_debug_windows(
                         );
                         return;
                     }
-                    render_pass_debug_viewport(ui, &document, &pending_actions);
+                    render_pass_debug_viewport(
+                        ui,
+                        &document,
+                        &pending_actions,
+                        close_requested.as_ref(),
+                    );
                 }
             }
             let viewport_render_dur = viewport_render_start.elapsed();
@@ -3802,6 +4031,7 @@ fn render_pass_debug_viewport(
     ui: &mut egui::Ui,
     document: &Arc<Mutex<PassDebugWindowDocument>>,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    close_requested: &AtomicBool,
 ) {
     let pass_name = document
         .lock()
@@ -3818,7 +4048,7 @@ fn render_pass_debug_viewport(
             render_missing_source_message(ui);
             return;
         }
-        render_dependency_editor_split(ui, &mut document, pending_actions);
+        render_dependency_editor_split(ui, &mut document, pending_actions, close_requested, true);
     });
     let central_dur = t_central.elapsed();
 
@@ -3833,6 +4063,7 @@ fn render_pass_debug_embedded_content(
     ui: &mut egui::Ui,
     document: &Arc<Mutex<PassDebugWindowDocument>>,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    close_requested: &AtomicBool,
 ) {
     let Ok(mut document) = document.lock() else {
         ui.label("Debug document unavailable");
@@ -3845,7 +4076,7 @@ fn render_pass_debug_embedded_content(
         return;
     }
 
-    render_dependency_editor_split(ui, &mut document, pending_actions);
+    render_dependency_editor_split(ui, &mut document, pending_actions, close_requested, false);
 }
 
 fn render_side_panel(
@@ -4499,181 +4730,125 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(lerp(ar, br), lerp(ag, bg), lerp(ab, bb), lerp(aa, ba))
 }
 
-fn render_pass_debug_toolbar(
-    ui: &mut egui::Ui,
+fn pass_shader_status(document: &PassDebugWindowDocument) -> String {
+    if let Some(active) = document.shortwire_active.as_ref() {
+        if active.base_source_stale {
+            "Shortwire stale".to_string()
+        } else {
+            "Shortwire".to_string()
+        }
+    } else if document.dirty {
+        "Dirty".to_string()
+    } else if document.merge_conflict.is_some() {
+        "Conflict".to_string()
+    } else if document.patch_active {
+        "Patched".to_string()
+    } else {
+        "Generated".to_string()
+    }
+}
+
+fn reference_status(document: &PassDebugWindowDocument) -> String {
+    if let Some(status) = document.reference_workspace.last_status.as_deref() {
+        return status.to_string();
+    }
+    if document.reference_workspace.shortwire_active_key.is_some() {
+        "Shortwire".to_string()
+    } else if document.reference_workspace.selected_file_dirty()
+        || document.reference_workspace.has_dirty_files()
+        || document.reference_workspace.manifest_dirty
+    {
+        "Syncing".to_string()
+    } else if !document.reference_workspace.has_content() {
+        "Empty".to_string()
+    } else if document.reference_workspace.skipped_files > 0 {
+        format!(
+            "Saved, {} skipped",
+            document.reference_workspace.skipped_files
+        )
+    } else {
+        "Saved".to_string()
+    }
+}
+
+fn pass_debug_save_enabled(document: &PassDebugWindowDocument) -> bool {
+    if document.shortwire_active.is_some() {
+        document.shortwire_is_editor_interactive()
+    } else {
+        document.dirty && document.merge_conflict.is_none()
+    }
+}
+
+fn request_pass_debug_save(
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
     if document.shortwire_active.is_some() {
-        render_shortwire_toolbar(ui, document, pending_actions);
+        if document.shortwire_is_editor_interactive() {
+            document.exit_shortwire_done(pending_actions);
+        }
         return;
     }
 
-    let save_requested =
-        ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
+    if !document.dirty || document.merge_conflict.is_some() {
+        return;
+    }
 
-    ui.horizontal(|ui| {
-        ui.heading("Current WGSL");
-        let badge = if document.dirty {
-            "Dirty"
-        } else if document.merge_conflict.is_some() {
-            "Conflict"
-        } else if document.patch_active {
-            "Patched"
-        } else {
-            "Generated"
-        };
-        ui.label(egui::RichText::new(badge).monospace().small());
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Copy WGSL").clicked() {
-                ui.ctx().copy_text(document.draft_source.clone());
-            }
-            if ui.button("Reset All").clicked() {
-                push_action(pending_actions, PassDebugWindowAction::ResetAllPatches);
-            }
-            if ui
-                .add_enabled(document.patch_active, egui::Button::new("Reset Patch"))
-                .clicked()
-            {
-                push_action(
-                    pending_actions,
-                    PassDebugWindowAction::ResetPatch {
-                        pass_name: document.pass_name.clone(),
-                    },
-                );
-            }
-            if ui
-                .add_enabled(document.dirty, egui::Button::new("Revert Draft"))
-                .clicked()
-            {
-                document.replace_draft_source(document.loaded_source.clone());
-                document.dirty = false;
-                document.refresh_draft_analysis();
-                document.last_error = None;
-                document.last_status = Some("Draft reverted".to_string());
-            }
-            let apply_clicked = ui
-                .add_enabled(
-                    document.dirty && document.merge_conflict.is_none(),
-                    egui::Button::new("Apply"),
-                )
-                .clicked();
-            if apply_clicked
-                || (save_requested && document.dirty && document.merge_conflict.is_none())
-            {
-                document.refresh_draft_analysis();
-                document.last_error = None;
-                document.last_status = Some("Applying patch...".to_string());
-                push_action(
-                    pending_actions,
-                    PassDebugWindowAction::ApplyPatch {
-                        pass_name: document.pass_name.clone(),
-                        source: document.draft_source.clone(),
-                        reference_image: None,
-                    },
-                );
-            }
-        });
-    });
+    document.refresh_draft_analysis();
+    document.last_error = None;
+    document.last_status = Some("Applying patch...".to_string());
+    push_action(
+        pending_actions,
+        PassDebugWindowAction::ApplyPatch {
+            pass_name: document.pass_name.clone(),
+            source: document.draft_source.clone(),
+            reference_image: None,
+        },
+    );
 }
 
-fn render_shortwire_toolbar(
-    ui: &mut egui::Ui,
+fn request_pass_debug_close(
+    ui: &egui::Ui,
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    close_requested: &AtomicBool,
+    send_viewport_close: bool,
 ) {
-    let label = document
-        .shortwire_active
-        .as_ref()
-        .map(|a| a.identity.label.clone())
-        .unwrap_or_else(|| "???".to_string());
-    let is_editing = document.shortwire_is_editor_interactive();
-    let is_stale = document
-        .shortwire_active
-        .as_ref()
-        .map(|a| a.base_source_stale)
-        .unwrap_or(false);
+    if document.shortwire_active.is_some() {
+        document.exit_shortwire_navigate(pending_actions);
+        return;
+    }
 
-    ui.horizontal(|ui| {
-        ui.heading(format!("Shortwire: {label}"));
-        if is_stale {
-            ui.colored_label(
-                egui::Color32::from_rgb(251, 191, 36),
-                "Base shader updated — will rebase on Save",
-            );
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(ref mut active) = document.shortwire_active {
-                let was_enabled = active.diff_view_enabled;
-                if ui.selectable_label(was_enabled, "Diff").clicked() {
-                    active.diff_view_enabled = !was_enabled;
-                }
-            }
-            if ui
-                .add_enabled(is_editing, egui::Button::new("Close"))
-                .clicked()
-            {
-                document.exit_shortwire_navigate(pending_actions);
-            }
-            if ui
-                .add_enabled(is_editing, egui::Button::new("Save"))
-                .clicked()
-            {
-                document.exit_shortwire_done(pending_actions);
-            }
-        });
-    });
+    document.prepare_debug_window_close(pending_actions);
+    close_requested.store(true, Ordering::Relaxed);
+    if send_viewport_close {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+    }
 }
 
-fn render_reference_toolbar(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
+fn render_status_badge(ui: &mut egui::Ui, text: impl Into<String>) {
+    ui.label(egui::RichText::new(text.into()).monospace().small());
+}
+
+fn render_reference_file_selector(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument) {
     let now_secs = ui.input(|input| input.time);
     let shortwire_active = document.reference_workspace.shortwire_active_key.is_some();
-    ui.horizontal(|ui| {
-        ui.heading("Reference");
-        let badge = if shortwire_active {
-            "Shortwire"
-        } else if document.reference_workspace.selected_file_dirty()
-            || document.reference_workspace.has_dirty_files()
-            || document.reference_workspace.manifest_dirty
-        {
-            "Syncing"
-        } else if !document.reference_workspace.has_content() {
-            "Empty"
-        } else {
-            "Saved"
-        };
-        ui.label(egui::RichText::new(badge).monospace().small());
-        if let Some(status) = document.reference_workspace.last_status.as_deref() {
-            ui.label(egui::RichText::new(status).monospace().small());
-        }
-        if document.reference_workspace.skipped_files > 0 {
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} skipped",
-                    document.reference_workspace.skipped_files
-                ))
-                .monospace()
-                .small(),
-            );
-        }
+    let selected_label = document
+        .reference_workspace
+        .selected_file
+        .as_deref()
+        .unwrap_or("No file")
+        .to_string();
+    let file_choices = document
+        .reference_workspace
+        .files
+        .iter()
+        .map(|file| file.relative_path.clone())
+        .collect::<Vec<_>>();
+    let pass_name = document.pass_name.clone();
 
-        let selected_label = document
-            .reference_workspace
-            .selected_file
-            .as_deref()
-            .unwrap_or("No file")
-            .to_string();
-        let file_choices = document
-            .reference_workspace
-            .files
-            .iter()
-            .map(|file| file.relative_path.clone())
-            .collect::<Vec<_>>();
-        ui.add_enabled_ui(!shortwire_active && !file_choices.is_empty(), |ui| {
-            egui::ComboBox::from_id_salt((
-                "pass-debug-reference-file",
-                document.pass_name.as_str(),
-            ))
+    ui.add_enabled_ui(!shortwire_active && !file_choices.is_empty(), |ui| {
+        egui::ComboBox::from_id_salt(("pass-debug-reference-file", pass_name.as_str()))
             .selected_text(selected_label.as_str())
             .width(220.0)
             .show_ui(ui, |ui| {
@@ -4690,13 +4865,66 @@ fn render_reference_toolbar(ui: &mut egui::Ui, document: &mut PassDebugWindowDoc
                     }
                 }
             });
+    });
+}
+
+fn render_pass_debug_titlebar(
+    ui: &mut egui::Ui,
+    document: &mut PassDebugWindowDocument,
+    pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    close_requested: &AtomicBool,
+    send_viewport_close: bool,
+) {
+    let save_requested =
+        ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
+    ui.horizontal(|ui| {
+        ui.heading(format!("RenderPass Debug - {}", document.pass_name));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let diff_enabled = document.shortwire_active.is_some();
+            let diff_active = document
+                .shortwire_active
+                .as_ref()
+                .is_some_and(|active| active.diff_view_enabled);
+            ui.add_enabled_ui(diff_enabled, |ui| {
+                if ui.selectable_label(diff_active, "Diff").clicked()
+                    && let Some(active) = document.shortwire_active.as_mut()
+                {
+                    active.diff_view_enabled = !active.diff_view_enabled;
+                }
+            });
+
+            if ui.button("Close").clicked() {
+                request_pass_debug_close(
+                    ui,
+                    document,
+                    pending_actions,
+                    close_requested,
+                    send_viewport_close,
+                );
+            }
+
+            let save_enabled = pass_debug_save_enabled(document);
+            if ui
+                .add_enabled(save_enabled, egui::Button::new("Save"))
+                .clicked()
+            {
+                request_pass_debug_save(document, pending_actions);
+            }
         });
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Deps Tree").strong());
+        ui.separator();
+        ui.label(egui::RichText::new("Pass Shader").strong());
+        render_status_badge(ui, pass_shader_status(document));
+        ui.separator();
+        ui.label(egui::RichText::new("Reference").strong());
+        render_status_badge(ui, reference_status(document));
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Copy Reference").clicked() {
-                ui.ctx()
-                    .copy_text(document.reference_workspace.editor_source.clone());
-            }
+            let now_secs = ui.input(|input| input.time);
+            let shortwire_active = document.reference_workspace.shortwire_active_key.is_some();
             if ui
                 .add_enabled(
                     !shortwire_active && document.reference_workspace.root_path.is_some(),
@@ -4707,21 +4935,20 @@ fn render_reference_toolbar(ui: &mut egui::Ui, document: &mut PassDebugWindowDoc
                 document.reload_reference_workspace(now_secs);
             }
             if ui
-                .add_enabled(!shortwire_active, egui::Button::new("Open Folder"))
+                .add_enabled(!shortwire_active, egui::Button::new("Open"))
+                .on_hover_text("Open reference folder")
                 .clicked()
                 && let Some(path) = rfd::FileDialog::new().pick_folder()
             {
                 document.import_reference_folder_from_path(&path, now_secs);
             }
-            if ui
-                .add_enabled(!shortwire_active, egui::Button::new("Open File"))
-                .clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_file()
-            {
-                document.import_reference_file_from_path(&path, now_secs);
-            }
+            render_reference_file_selector(ui, document);
         });
     });
+
+    if save_requested && pass_debug_save_enabled(document) {
+        request_pass_debug_save(document, pending_actions);
+    }
 }
 
 fn render_patch_messages(ui: &mut egui::Ui, document: &PassDebugWindowDocument) {
@@ -4734,14 +4961,47 @@ fn render_patch_messages(ui: &mut egui::Ui, document: &PassDebugWindowDocument) 
                 ui.label(egui::RichText::new("Edit and Save again.").small());
             }
             ui.label(egui::RichText::new(summary).monospace().small());
-            if ui.small_button("Copy Error").clicked() {
-                ui.ctx().copy_text(error.clone());
-            }
         });
     } else if let Some(status) = document.last_status.as_ref() {
         ui.add_space(6.0);
         ui.label(egui::RichText::new(status.as_str()).monospace().small());
     }
+}
+
+fn render_shortwire_diff_editor(
+    ui: &mut egui::Ui,
+    id_salt: (&'static str, &str),
+    base_source: &str,
+    current_source: &str,
+) {
+    let view = build_shortwire_diff_view(base_source, current_source);
+    let mut diff_text = view.to_display_text();
+
+    ui.scope(|ui| {
+        ui.visuals_mut().text_cursor.preview = false;
+        egui::ScrollArea::both()
+            .id_salt(id_salt)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut diff_text)
+                        .id_salt((id_salt.0, "text", id_salt.1))
+                        .font(pass_debug_mono_font(PASS_DEBUG_CODE_FONT_SIZE))
+                        .code_editor()
+                        .interactive(false)
+                        .frame(egui::Frame::NONE)
+                        .margin(egui::Margin {
+                            left: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
+                            right: PASS_DEBUG_CODE_EDITOR_MARGIN_X,
+                            top: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
+                            bottom: PASS_DEBUG_CODE_EDITOR_MARGIN_Y,
+                        })
+                        .desired_rows(24)
+                        .desired_width(f32::INFINITY)
+                        .lock_focus(true),
+                );
+            });
+    });
 }
 
 fn compact_patch_error(error: &str) -> String {
@@ -4772,12 +5032,18 @@ fn render_dependency_editor_split(
     ui: &mut egui::Ui,
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
+    close_requested: &AtomicBool,
+    send_viewport_close: bool,
 ) {
-    if document.shortwire_active.is_some() {
-        render_shortwire_toolbar(ui, document, pending_actions);
-        render_patch_messages(ui, document);
-        ui.separator();
-    }
+    render_pass_debug_titlebar(
+        ui,
+        document,
+        pending_actions,
+        close_requested,
+        send_viewport_close,
+    );
+    render_patch_messages(ui, document);
+    ui.separator();
 
     let full_rect = ui.available_rect_before_wrap();
     if full_rect.width() <= 0.0 || full_rect.height() <= 0.0 {
@@ -4961,11 +5227,6 @@ fn render_current_editor_column(
     document: &mut PassDebugWindowDocument,
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
-    if document.shortwire_active.is_none() {
-        render_pass_debug_toolbar(ui, document, pending_actions);
-        render_patch_messages(ui, document);
-        ui.separator();
-    }
     render_code_editor(ui, document);
     render_merge_conflict_popups(ui.ctx(), document, pending_actions);
 }
@@ -4976,8 +5237,6 @@ fn render_reference_editor_column(
     pending_actions: &Arc<Mutex<Vec<PassDebugWindowAction>>>,
 ) {
     let now_secs = ui.input(|input| input.time);
-    render_reference_toolbar(ui, document);
-    ui.separator();
     render_reference_editor(ui, document);
     document.maybe_emit_reference_upsert(now_secs, pending_actions);
 }
@@ -5251,6 +5510,20 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
         document.draft_source.len(),
     );
 
+    if let Some(active) = document
+        .shortwire_active
+        .as_ref()
+        .filter(|active| active.diff_view_enabled)
+    {
+        render_shortwire_diff_editor(
+            ui,
+            ("pass-debug-source-diff", document.pass_name.as_str()),
+            &active.base_source,
+            &document.draft_source,
+        );
+        return;
+    }
+
     let existing_galley = document.line_galley_cache.as_ref().and_then(|c| {
         if c.merged.job.text == document.draft_source {
             Some(std::sync::Arc::clone(&c.merged))
@@ -5362,17 +5635,6 @@ fn render_code_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocument)
                                 &output,
                                 &document.draft_source,
                                 source_range,
-                            );
-                        }
-                    }
-
-                    if let Some(ref active) = document.shortwire_active {
-                        if active.diff_view_enabled {
-                            paint_shortwire_diff_overlay(
-                                ui,
-                                &output,
-                                &document.draft_source,
-                                &active.base_source,
                             );
                         }
                     }
@@ -5552,6 +5814,26 @@ fn render_reference_editor(ui: &mut egui::Ui, document: &mut PassDebugWindowDocu
             egui::RichText::new("Open a UTF-8 text file or folder to add reference code.")
                 .monospace()
                 .small(),
+        );
+        return;
+    }
+
+    if let Some(base_source) = document
+        .shortwire_active
+        .as_ref()
+        .filter(|active| active.diff_view_enabled)
+        .and_then(|_| {
+            document
+                .reference_workspace
+                .shortwire_base_source
+                .as_deref()
+        })
+    {
+        render_shortwire_diff_editor(
+            ui,
+            ("pass-debug-reference-diff", document.pass_name.as_str()),
+            base_source,
+            &document.reference_workspace.editor_source,
         );
         return;
     }
@@ -5848,83 +6130,6 @@ fn paint_focus_highlight_overlay(
     }
 }
 
-fn paint_shortwire_diff_overlay(
-    ui: &egui::Ui,
-    output: &egui::widgets::text_edit::TextEditOutput,
-    current_source: &str,
-    base_source: &str,
-) {
-    use similar::TextDiff;
-
-    if current_source == base_source {
-        return;
-    }
-
-    let diff = TextDiff::from_lines(base_source, current_source);
-    let galley = &output.galley;
-    let galley_pos = output.galley_pos;
-
-    let added_color = if ui.visuals().dark_mode {
-        egui::Color32::from_rgba_unmultiplied(34, 197, 94, 30)
-    } else {
-        egui::Color32::from_rgba_unmultiplied(22, 163, 74, 25)
-    };
-    let deleted_marker_color = if ui.visuals().dark_mode {
-        egui::Color32::from_rgba_unmultiplied(239, 68, 68, 100)
-    } else {
-        egui::Color32::from_rgba_unmultiplied(220, 38, 38, 80)
-    };
-
-    let mut new_line_idx: usize = 0;
-    for change in diff.iter_all_changes() {
-        match change.tag() {
-            similar::ChangeTag::Equal => {
-                new_line_idx += 1;
-            }
-            similar::ChangeTag::Insert => {
-                let line_char_start = current_source
-                    .lines()
-                    .take(new_line_idx)
-                    .map(|l| l.chars().count() + 1)
-                    .sum::<usize>();
-                let cursor = egui::text::CCursor::new(line_char_start);
-                let cursor_rect = galley
-                    .pos_from_cursor(cursor)
-                    .translate(galley_pos.to_vec2());
-                let row_rect = egui::Rect::from_min_max(
-                    egui::pos2(galley_pos.x, cursor_rect.top()),
-                    egui::pos2(
-                        galley_pos.x + output.response.rect.width(),
-                        cursor_rect.bottom(),
-                    ),
-                );
-                ui.painter().rect_filled(row_rect, 0.0, added_color);
-                new_line_idx += 1;
-            }
-            similar::ChangeTag::Delete => {
-                let line_char_start = current_source
-                    .lines()
-                    .take(new_line_idx)
-                    .map(|l| l.chars().count() + 1)
-                    .sum::<usize>();
-                let cursor = egui::text::CCursor::new(line_char_start);
-                let cursor_rect = galley
-                    .pos_from_cursor(cursor)
-                    .translate(galley_pos.to_vec2());
-                let marker_rect = egui::Rect::from_min_max(
-                    egui::pos2(galley_pos.x, cursor_rect.top() - 1.0),
-                    egui::pos2(
-                        galley_pos.x + output.response.rect.width(),
-                        cursor_rect.top() + 1.0,
-                    ),
-                );
-                ui.painter()
-                    .rect_filled(marker_rect, 0.0, deleted_marker_color);
-            }
-        }
-    }
-}
-
 fn jump_editor_to_source_range(
     ui: &mut egui::Ui,
     output: &egui::widgets::text_edit::TextEditOutput,
@@ -5991,28 +6196,67 @@ fn load_reference_workspace_from_artifacts(
         && manifest.version == REFERENCE_WORKSPACE_VERSION
     {
         let mut files = Vec::new();
+        let root_path = manifest.root_path.clone();
+        let root = root_path.as_deref().map(PathBuf::from);
+        let mut local_loaded_count = 0usize;
+        let mut archive_fallback_count = 0usize;
+        let mut missing_count = 0usize;
         for manifest_file in manifest.files {
-            let Some(text) = file_text_by_id.get(manifest_file.artifact_id.as_str()) else {
-                continue;
+            let (source, loaded_from_local) = if let Some(root) = root.as_deref() {
+                match read_manifest_reference_file(root, &manifest_file) {
+                    Ok(source) => (source, true),
+                    Err(_) => {
+                        missing_count += 1;
+                        continue;
+                    }
+                }
+            } else {
+                match file_text_by_id.get(manifest_file.artifact_id.as_str()) {
+                    Some(text) => ((*text).to_string(), false),
+                    None => {
+                        missing_count += 1;
+                        continue;
+                    }
+                }
             };
+            if loaded_from_local {
+                local_loaded_count += 1;
+            } else {
+                archive_fallback_count += 1;
+            }
             files.push(ReferenceWorkspaceFile {
                 relative_path: manifest_file.relative_path,
                 artifact_id: manifest_file.artifact_id,
-                source: (*text).to_string(),
-                loaded_source: (*text).to_string(),
+                source: source.clone(),
+                loaded_source: source,
             });
         }
 
-        if !files.is_empty() {
+        if !files.is_empty() || root.is_some() {
             let mut state = ReferenceWorkspaceState::default();
             state.replace_files(
-                manifest.root_path,
+                root_path,
                 manifest.root_label,
                 files,
                 manifest.selected_file,
-                manifest.skipped_files,
+                manifest.skipped_files + missing_count,
                 false,
             );
+            if root.is_some() {
+                state.last_status = if missing_count > 0 {
+                    Some(if local_loaded_count > 0 {
+                        format!("Loaded local reference ({missing_count} missing)")
+                    } else {
+                        format!("Local reference missing ({missing_count} missing)")
+                    })
+                } else if local_loaded_count > 0 {
+                    Some("Loaded local reference".to_string())
+                } else {
+                    None
+                };
+            } else if archive_fallback_count > 0 {
+                state.last_status = Some("Loaded archived reference".to_string());
+            }
             return Some((state, false));
         }
     }
@@ -6063,6 +6307,37 @@ fn load_reference_workspace_from_artifacts(
         true,
     );
     Some((state, true))
+}
+
+fn read_manifest_reference_file(
+    root: &Path,
+    manifest_file: &ReferenceWorkspaceManifestFile,
+) -> Result<String, String> {
+    let path = root.join(&manifest_file.relative_path);
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("Not a file: {}", path.display()));
+    }
+    if metadata.len() > PASS_DEBUG_REFERENCE_MAX_FILE_BYTES {
+        return Err(format!(
+            "File is larger than {} MB: {}",
+            PASS_DEBUG_REFERENCE_MAX_FILE_BYTES / (1024 * 1024),
+            path.display()
+        ));
+    }
+    let bytes =
+        fs::read(&path).map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    String::from_utf8(bytes).map_err(|_| format!("File is not UTF-8 text: {}", path.display()))
+}
+
+fn write_reference_workspace_file(
+    root: &Path,
+    file: &ReferenceWorkspaceFile,
+) -> Result<(), String> {
+    let path = root.join(&file.relative_path);
+    fs::write(&path, file.source.as_bytes())
+        .map_err(|error| format!("Failed to write {}: {error}", path.display()))
 }
 
 fn read_reference_file(
@@ -6989,13 +7264,14 @@ mod tests {
 
     #[test]
     fn same_source_revision_does_not_refresh_document() {
-        let source = PassDebugSource::from_wgsl("p", root_return_shader("a", 1.0));
+        let source_text = root_return_shader("a", 1.0);
+        let source = PassDebugSource::from_wgsl("p", source_text.clone());
         let mut document = PassDebugWindowDocument::new("p".to_string(), Some(source), 7, false);
 
         let refreshed = PassDebugSource::from_wgsl("p", "fn generated() {}\n");
         document.update_source(Some(&refreshed), 7, None);
 
-        assert_eq!(document.draft_source, "fn a() {}\n");
+        assert_eq!(document.draft_source, source_text);
         assert!(!document.patch_active);
     }
 
@@ -8256,6 +8532,104 @@ fn fs_main() -> @location(0) f32 {
     }
 
     #[test]
+    fn compact_diff_view_shows_only_changed_line_and_three_context_lines() {
+        let base = (1..=10)
+            .map(|line| format!("line{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let edited = (1..=10)
+            .map(|line| {
+                if line == 5 {
+                    "line5 edited".to_string()
+                } else {
+                    format!("line{line}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let view = super::build_shortwire_diff_view(&base, &edited);
+
+        assert_eq!(view.rows.first().unwrap().old_line, Some(2));
+        assert_eq!(view.rows.first().unwrap().new_line, Some(2));
+        assert_eq!(view.rows.last().unwrap().old_line, Some(8));
+        assert_eq!(view.rows.last().unwrap().new_line, Some(8));
+        assert!(view.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Removed
+                && row.old_line == Some(5)
+                && row.new_line.is_none()
+                && row.text == "line5"
+        }));
+        assert!(view.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Added
+                && row.old_line.is_none()
+                && row.new_line == Some(5)
+                && row.text == "line5 edited"
+        }));
+        assert!(!view.rows.iter().any(|row| row.old_line == Some(1)));
+        assert!(!view.rows.iter().any(|row| row.old_line == Some(9)));
+    }
+
+    #[test]
+    fn compact_diff_view_keeps_distant_hunks_separated() {
+        let base = (1..=18)
+            .map(|line| format!("line{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let edited = (1..=18)
+            .map(|line| match line {
+                2 => "line2 edited".to_string(),
+                17 => "line17 edited".to_string(),
+                _ => format!("line{line}"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let view = super::build_shortwire_diff_view(&base, &edited);
+
+        assert!(
+            view.rows
+                .iter()
+                .any(|row| row.kind == super::ShortwireDiffRowKind::Separator)
+        );
+        assert!(view.rows.iter().any(|row| row.text == "line2 edited"));
+        assert!(view.rows.iter().any(|row| row.text == "line17 edited"));
+    }
+
+    #[test]
+    fn compact_diff_view_records_insert_delete_and_replace_line_numbers() {
+        let replace = super::build_shortwire_diff_view("a\nold\nc\n", "a\nnew\nc\n");
+        assert!(replace.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Removed
+                && row.old_line == Some(2)
+                && row.new_line.is_none()
+                && row.text == "old"
+        }));
+        assert!(replace.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Added
+                && row.old_line.is_none()
+                && row.new_line == Some(2)
+                && row.text == "new"
+        }));
+
+        let insert = super::build_shortwire_diff_view("a\nb\n", "a\nx\nb\n");
+        assert!(insert.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Added
+                && row.old_line.is_none()
+                && row.new_line == Some(2)
+                && row.text == "x"
+        }));
+
+        let delete = super::build_shortwire_diff_view("a\nb\nc\n", "a\nc\n");
+        assert!(delete.rows.iter().any(|row| {
+            row.kind == super::ShortwireDiffRowKind::Removed
+                && row.old_line == Some(2)
+                && row.new_line.is_none()
+                && row.text == "b"
+        }));
+    }
+
+    #[test]
     fn legacy_shortwire_patch_json_restores_without_diff_result() {
         let text = r#"{"version":1,"patches":{"k":{"hunks":[],"base_source_hash":42}}}"#;
         let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
@@ -8568,7 +8942,7 @@ fn fs_main() -> @location(0) f32 {
     fn reference_workspace_restores_multiple_files_from_artifacts() {
         let manifest = serde_json::json!({
             "version": 1,
-            "rootPath": "/tmp/reference",
+            "rootPath": null,
             "rootLabel": "reference",
             "selectedFile": "metal/pass.metal",
             "files": [
@@ -8604,6 +8978,143 @@ fn fs_main() -> @location(0) f32 {
         assert_eq!(document.reference_workspace.editor_source, "metal source\n");
         assert_eq!(document.reference_workspace.skipped_files, 2);
         assert!(!document.reference_workspace.has_dirty_files());
+    }
+
+    #[test]
+    fn reference_workspace_with_root_path_loads_local_file_instead_of_artifact_text() {
+        let temp_dir = unique_reference_temp_dir("root-loads-local");
+        fs::create_dir_all(temp_dir.join("metal")).unwrap();
+        fs::write(temp_dir.join("metal/pass.metal"), "local source\n").unwrap();
+        let relative_path = "metal/pass.metal";
+        let artifact_id = super::pass_reference_file_artifact_id("p", relative_path);
+        let manifest = serde_json::json!({
+            "version": 1,
+            "rootPath": temp_dir.to_string_lossy(),
+            "rootLabel": "reference",
+            "selectedFile": relative_path,
+            "files": [
+                {
+                    "relativePath": relative_path,
+                    "artifactId": artifact_id,
+                    "contentHash": "archive",
+                    "size": 15
+                }
+            ],
+            "skippedFiles": 0
+        })
+        .to_string();
+        let files = vec![reference_snapshot("p", relative_path, "archive source\n")];
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.update_reference_workspace(Some(&manifest), &files, None, None);
+
+        assert_eq!(document.reference_workspace.editor_source, "local source\n");
+        assert_eq!(
+            document.reference_workspace.last_status.as_deref(),
+            Some("Loaded local reference")
+        );
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn reference_workspace_with_missing_root_path_file_does_not_fallback_to_artifact_text() {
+        let temp_dir = unique_reference_temp_dir("root-missing-no-fallback");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let relative_path = "metal/pass.metal";
+        let artifact_id = super::pass_reference_file_artifact_id("p", relative_path);
+        let manifest = serde_json::json!({
+            "version": 1,
+            "rootPath": temp_dir.to_string_lossy(),
+            "rootLabel": "reference",
+            "selectedFile": relative_path,
+            "files": [
+                {
+                    "relativePath": relative_path,
+                    "artifactId": artifact_id,
+                    "contentHash": "archive",
+                    "size": 15
+                }
+            ],
+            "skippedFiles": 0
+        })
+        .to_string();
+        let files = vec![reference_snapshot("p", relative_path, "archive source\n")];
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.update_reference_workspace(Some(&manifest), &files, None, None);
+
+        assert!(document.reference_workspace.files.is_empty());
+        assert!(document.reference_workspace.editor_source.is_empty());
+        assert_eq!(
+            document.reference_workspace.last_status.as_deref(),
+            Some("Local reference missing (1 missing)")
+        );
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn pathless_reference_workspace_still_restores_from_artifact_text() {
+        let relative_path = "metal/pass.metal";
+        let artifact_id = super::pass_reference_file_artifact_id("p", relative_path);
+        let manifest = serde_json::json!({
+            "version": 1,
+            "rootPath": null,
+            "rootLabel": "reference",
+            "selectedFile": relative_path,
+            "files": [
+                {
+                    "relativePath": relative_path,
+                    "artifactId": artifact_id,
+                    "contentHash": "archive",
+                    "size": 15
+                }
+            ],
+            "skippedFiles": 0
+        })
+        .to_string();
+        let files = vec![reference_snapshot("p", relative_path, "archive source\n")];
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+
+        document.update_reference_workspace(Some(&manifest), &files, None, None);
+
+        assert_eq!(
+            document.reference_workspace.editor_source,
+            "archive source\n"
+        );
+        assert_eq!(
+            document.reference_workspace.last_status.as_deref(),
+            Some("Loaded archived reference")
+        );
+    }
+
+    #[test]
+    fn rooted_reference_sync_writes_local_file_and_only_emits_manifest() {
+        let temp_dir = unique_reference_temp_dir("root-sync-writes-local");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let reference_path = temp_dir.join("pass.metal");
+        fs::write(&reference_path, "fn original() {}\n").unwrap();
+        let mut document = PassDebugWindowDocument::new("p".to_string(), None, 0, false);
+        document.import_reference_file_from_path(&reference_path, 0.0);
+        document.reference_workspace.editor_source = "fn edited() {}\n".to_string();
+
+        let artifacts = document.take_reference_workspace_dirty_artifacts();
+
+        assert_eq!(
+            fs::read_to_string(&reference_path).unwrap(),
+            "fn edited() {}\n"
+        );
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].0.role, DebugArtifactRole::Attachment);
+        assert_eq!(
+            artifacts[0].0.slot_key.as_deref(),
+            Some(super::DEBUG_ARTIFACT_REFERENCE_WORKSPACE_SLOT)
+        );
+        assert!(
+            !artifacts
+                .iter()
+                .any(|(item, _)| item.role == DebugArtifactRole::ReferenceCode)
+        );
+        let _ = fs::remove_dir_all(temp_dir);
     }
 
     #[test]
