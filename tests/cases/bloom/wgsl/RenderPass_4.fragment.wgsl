@@ -36,6 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: ColorInput_7
     color_input_7: vec4f,
+    // Node: FloatInput_48
+    node_FloatInput_48_b0fef320: vec4f,
 };
 
 @group(0) @binding(2)

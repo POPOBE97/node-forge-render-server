@@ -49,6 +49,7 @@ fn base_scene() -> SceneDSL {
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
+        debug_artifacts: None,
     }
 }
 
@@ -95,6 +96,7 @@ fn scene_update_replaces_cache() {
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
+        debug_artifacts: None,
     };
 
     apply_scene_update(&mut cache, &scene2);
@@ -129,6 +131,7 @@ fn scene_delta_applies_in_correct_order_and_preserves_outputs_when_missing() {
         state_machine: None,
         assets_added: None,
         assets_removed: None,
+        debug_artifacts: None,
     };
 
     apply_scene_delta(&mut cache, &delta);
@@ -184,6 +187,7 @@ fn scene_delta_applies_asset_manifest_add_update_and_remove() {
             ),
         ])),
         assets_removed: None,
+        debug_artifacts: None,
     };
 
     apply_scene_delta(&mut cache, &delta_add_update);
@@ -211,6 +215,7 @@ fn scene_delta_applies_asset_manifest_add_update_and_remove() {
         state_machine: None,
         assets_added: None,
         assets_removed: Some(vec!["asset-a".to_string()]),
+        debug_artifacts: None,
     };
 
     apply_scene_delta(&mut cache, &delta_remove);
@@ -253,6 +258,7 @@ fn scene_delta_updates_state_machine_and_supports_clear() {
         state_machine: Some(Some(state_machine("sm-next"))),
         assets_added: None,
         assets_removed: None,
+        debug_artifacts: None,
     };
 
     apply_scene_delta(&mut cache, &replace_delta);
@@ -285,6 +291,7 @@ fn scene_delta_updates_state_machine_and_supports_clear() {
         state_machine: Some(None),
         assets_added: None,
         assets_removed: None,
+        debug_artifacts: None,
     };
 
     apply_scene_delta(&mut cache, &clear_delta);

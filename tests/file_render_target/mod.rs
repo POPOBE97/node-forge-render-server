@@ -20,13 +20,14 @@ fn file_render_target_applies_scheme_defaults() {
             inputs: Vec::new(),
             input_bindings: Vec::new(),
             outputs: Vec::new(),
-                    wgsl_override: None,
+            wgsl_override: None,
         }],
         connections: Vec::new(),
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
-            state_machine: None,
+        state_machine: None,
+        debug_artifacts: None,
     };
 
     normalize_scene_defaults(&mut scene).unwrap();

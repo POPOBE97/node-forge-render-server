@@ -36,6 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: ColorInput_7
     color_input_7: vec4f,
+    // Node: FloatInput_48
+    node_FloatInput_48_b0fef320: vec4f,
 };
 
 @group(0) @binding(2)
@@ -87,7 +89,7 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
 
     var math_closure_out: vec3f;
     {
-        let t = params.time;
+        let t = (graph_inputs.node_FloatInput_48_b0fef320).x;
         var output: vec3f;
         output = mc_math_closure(uv, t);
         math_closure_out = output;

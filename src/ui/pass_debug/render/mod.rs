@@ -1,0 +1,9 @@
+pub(crate) mod code_layout;
+pub(crate) mod dependency_panel;
+pub(crate) mod editor;
+pub(crate) mod fonts;
+pub(crate) mod headers;
+pub(crate) mod merge_dialog;
+pub(crate) mod root;
+pub(crate) mod titlebar;
+pub(crate) mod tree_paint;

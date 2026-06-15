@@ -96,6 +96,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
         groups: vec![],
         assets: HashMap::new(),
         state_machine: Some(sm),
+        debug_artifacts: None,
     }
 }
 

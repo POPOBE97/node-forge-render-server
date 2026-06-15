@@ -28,6 +28,7 @@ fn make_render_pass_scene(msaa_sample_count: serde_json::Value) -> SceneDSL {
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
+        debug_artifacts: None,
     }
 }
 
@@ -61,6 +62,7 @@ fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
+        debug_artifacts: None,
     }
 }
 
@@ -106,6 +108,7 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
+        debug_artifacts: None,
     };
 
     normalize_scene_defaults(&mut scene).expect("normalize scene defaults");

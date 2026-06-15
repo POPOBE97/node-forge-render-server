@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -28,7 +28,7 @@ struct ShaderDependencyDump<'a> {
     pass_name: &'a str,
     dependency_root_target_id: Option<&'a str>,
     targets: Vec<&'a renderer::PassDebugDependencyTarget>,
-    dependency_trees: BTreeMap<&'a str, &'a renderer::PassDebugDependencyNode>,
+    dependency_trees: BTreeMap<String, renderer::PassDebugDependencyNode>,
     parse_error: Option<&'a str>,
     dependency_error: Option<&'a str>,
 }
@@ -367,21 +367,66 @@ fn pass_debug_source_for_scene(
     Ok(renderer::PassDebugSource::from_wgsl(pass_id, bundle.module))
 }
 
+fn expanded_dependency_trees_for_dump(
+    source: &renderer::PassDebugSource,
+) -> BTreeMap<String, renderer::PassDebugDependencyNode> {
+    source
+        .dependency_trees
+        .iter()
+        .map(|(target_id, tree)| {
+            (
+                target_id.clone(),
+                expand_dependency_node_for_dump(tree, source, &mut HashSet::new()),
+            )
+        })
+        .collect()
+}
+
+fn expand_dependency_node_for_dump(
+    node: &renderer::PassDebugDependencyNode,
+    source: &renderer::PassDebugSource,
+    reference_stack: &mut HashSet<String>,
+) -> renderer::PassDebugDependencyNode {
+    let mut expanded = node.clone();
+    let mut inserted_reference_target = None;
+    let source_children = node
+        .reference
+        .then(|| node.target_id.as_deref())
+        .flatten()
+        .and_then(|target_id| {
+            if reference_stack.insert(target_id.to_string()) {
+                inserted_reference_target = Some(target_id.to_string());
+                source
+                    .dependency_trees
+                    .get(target_id)
+                    .map(|tree| tree.children.as_slice())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| node.children.as_slice());
+
+    expanded.children = source_children
+        .iter()
+        .map(|child| expand_dependency_node_for_dump(child, source, reference_stack))
+        .collect();
+
+    if let Some(target_id) = inserted_reference_target {
+        reference_stack.remove(&target_id);
+    }
+
+    expanded
+}
+
 fn shader_dependency_dump_json(source: &renderer::PassDebugSource) -> Result<String> {
     let mut targets = source.dependency_targets.iter().collect::<Vec<_>>();
     targets.sort_by(|a, b| a.id.cmp(&b.id));
-
-    let dependency_trees = source
-        .dependency_trees
-        .iter()
-        .map(|(target_id, tree)| (target_id.as_str(), tree))
-        .collect::<BTreeMap<_, _>>();
 
     let dump = ShaderDependencyDump {
         pass_name: source.pass_name.as_str(),
         dependency_root_target_id: source.dependency_root_target_id.as_deref(),
         targets,
-        dependency_trees,
+        dependency_trees: expanded_dependency_trees_for_dump(source),
         parse_error: source.parse_error.as_deref(),
         dependency_error: source.dependency_error.as_deref(),
     };
@@ -1222,10 +1267,8 @@ mod tests {
             .dependency_root_target_id
             .as_deref()
             .expect("dependency root target");
-        let root = source
-            .dependency_trees
-            .get(root_id)
-            .expect("root dependency tree");
+        let dependency_trees = expanded_dependency_trees_for_dump(&source);
+        let root = dependency_trees.get(root_id).expect("root dependency tree");
 
         let declaration_start =
             source.module_source.find("var final_alpha").unwrap() + "var ".len();
