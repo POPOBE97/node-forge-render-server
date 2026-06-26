@@ -203,6 +203,7 @@ fn resolve_pass_binding(
             | "Downsample"
             | "Upsample"
             | "GradientBlur"
+            | "MeshGradient"
             | "Composite"
     ) {
         bail!(

@@ -597,6 +597,7 @@ pub(crate) fn assemble_render_pass(
             let nb_name: ResourceName = format!("{}.normals", main_pass_geometry_buffer).into();
             nb_name
         }),
+        vertex_layout: Default::default(),
         target_texture: pass_render_target_texture.clone(),
         resolve_target: pass_resolve_target,
         params_buffer: params_name,
@@ -717,6 +718,7 @@ pub(crate) fn assemble_render_pass(
                 geometry_buffer: compose_geo,
                 instance_buffer: None,
                 normals_buffer: None,
+                vertex_layout: Default::default(),
                 target_texture: comp_ctx.target_texture_name.clone(),
                 resolve_target: None,
                 params_buffer: compose_params_name,
@@ -912,6 +914,7 @@ pub(crate) fn assemble_render_pass(
                 geometry_buffer: compose_geometry_buffer,
                 instance_buffer: None,
                 normals_buffer: None,
+                vertex_layout: Default::default(),
                 target_texture: comp_ctx.target_texture_name.clone(),
                 resolve_target: None,
                 params_buffer: compose_params_name,

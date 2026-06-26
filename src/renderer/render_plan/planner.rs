@@ -476,6 +476,7 @@ impl RenderPlanner {
                 geometry_buffer: geo,
                 instance_buffer: None,
                 normals_buffer: None,
+                vertex_layout: Default::default(),
                 target_texture: encode_tex.clone(),
                 resolve_target: None,
                 params_buffer: params_name,

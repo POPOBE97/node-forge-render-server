@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-14T07:58:11.850Z",
+  "generatedAt": "2026-06-25T19:44:59.701Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -2992,88 +2992,86 @@
       "type": "MeshGradient",
       "label": "Mesh Gradient",
       "category": "Gradient",
-      "description": "A 3×3 mesh gradient with 9 color control points and per-point positions",
+      "description": "A 3×3 smooth mesh gradient with 9 color control points and pixel-space positions",
       "inputs": [
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "patchDivCount",
+          "name": "Patch Divisions",
+          "type": "int",
+          "default": 20,
+          "range": {
+            "min": 2,
+            "max": 96,
+            "step": 1
+          }
+        },
         {
           "id": "pos0",
           "name": "Pos 0",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 0
-          }
+          "type": "vector2"
         },
         {
           "id": "pos1",
           "name": "Pos 1",
-          "type": "vector2",
-          "default": {
-            "x": 0.5,
-            "y": 0
-          }
+          "type": "vector2"
         },
         {
           "id": "pos2",
           "name": "Pos 2",
-          "type": "vector2",
-          "default": {
-            "x": 1,
-            "y": 0
-          }
+          "type": "vector2"
         },
         {
           "id": "pos3",
           "name": "Pos 3",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 0.5
-          }
+          "type": "vector2"
         },
         {
           "id": "pos4",
           "name": "Pos 4",
-          "type": "vector2",
-          "default": {
-            "x": 0.5,
-            "y": 0.5
-          }
+          "type": "vector2"
         },
         {
           "id": "pos5",
           "name": "Pos 5",
-          "type": "vector2",
-          "default": {
-            "x": 1,
-            "y": 0.5
-          }
+          "type": "vector2"
         },
         {
           "id": "pos6",
           "name": "Pos 6",
-          "type": "vector2",
-          "default": {
-            "x": 0,
-            "y": 1
-          }
+          "type": "vector2"
         },
         {
           "id": "pos7",
           "name": "Pos 7",
-          "type": "vector2",
-          "default": {
-            "x": 0.5,
-            "y": 1
-          }
+          "type": "vector2"
         },
         {
           "id": "pos8",
           "name": "Pos 8",
-          "type": "vector2",
-          "default": {
-            "x": 1,
-            "y": 1
-          }
+          "type": "vector2"
         },
         {
           "id": "color0",
@@ -3146,7 +3144,7 @@
       "defaultParams": {
         "width": 3,
         "height": 3,
-        "smoothsColors": true
+        "patchDivCount": 20
       }
     },
     {

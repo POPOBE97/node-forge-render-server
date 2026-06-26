@@ -73,6 +73,7 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
                 | "Downsample"
                 | "Upsample"
                 | "GradientBlur"
+                | "MeshGradient"
                 | "Composite"
         )
     });
@@ -248,6 +249,7 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
             | "Downsample"
             | "Upsample"
             | "GradientBlur"
+            | "MeshGradient"
             | "Composite"
     ) {
         bail!(

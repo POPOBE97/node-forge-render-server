@@ -107,6 +107,7 @@ pub(crate) fn assemble_composite(
                 geometry_buffer: geo,
                 instance_buffer: None,
                 normals_buffer: None,
+                vertex_layout: Default::default(),
                 target_texture: dst_ctx.target_texture_name.clone(),
                 resolve_target: None,
                 params_buffer: params_name,

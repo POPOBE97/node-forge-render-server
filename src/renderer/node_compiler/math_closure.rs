@@ -477,6 +477,7 @@ where
                     | "Downsample"
                     | "Upsample"
                     | "GradientBlur"
+                    | "MeshGradient"
                     | "Composite"
             ) {
                 bail!(

@@ -463,7 +463,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     }
 }
 
-fn build_intelligent_light_bundle(combined_wgsl: String) -> WgslShaderBundle {
+fn build_static_vertex_fragment_bundle(combined_wgsl: String) -> WgslShaderBundle {
     let vertex_marker = "\n@vertex\n";
     let fragment_marker = "\n@fragment\n";
 
@@ -638,6 +638,7 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
                 | "Downsample"
                 | "Upsample"
                 | "GradientBlur"
+                | "MeshGradient"
                 | "Composite"
         )
     });
@@ -1538,11 +1539,16 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
             }
             "IntelligentLight" => {
                 let wgsl = crate::renderer::render_plan::pass_assemblers::intelligent_light::build_intelligent_light_wgsl();
-                let bundle = build_intelligent_light_bundle(wgsl);
+                let bundle = build_static_vertex_fragment_bundle(wgsl);
                 out.push((format!("sys.ilight.{layer_id}.pass"), bundle));
             }
+            "MeshGradient" => {
+                let wgsl = crate::renderer::render_plan::pass_assemblers::mesh_gradient::build_mesh_gradient_wgsl();
+                let bundle = build_static_vertex_fragment_bundle(wgsl);
+                out.push((format!("sys.mesh_gradient.{layer_id}.pass"), bundle));
+            }
             other => bail!(
-                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, GradientBlur, or IntelligentLight, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, GradientBlur, IntelligentLight, or MeshGradient, got {other} for {layer_id}"
             ),
         }
     }

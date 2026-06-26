@@ -2,7 +2,7 @@
 
 pub(crate) use crate::renderer::render_plan::types::{
     DepthResolvePass, PassTextureBinding, RenderPassSpec, SamplerKind,
-    TextureCapabilityRequirement, TextureDecl,
+    TextureCapabilityRequirement, TextureDecl, VertexLayoutKind,
 };
 
 use crate::renderer::types::Params;

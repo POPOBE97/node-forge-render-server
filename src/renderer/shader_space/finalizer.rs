@@ -23,7 +23,7 @@ use crate::renderer::{
 use super::texture_caps::{
     collect_texture_capability_requirements, validate_texture_capability_requirements,
 };
-use crate::renderer::render_plan::pass_spec::SamplerKind;
+use crate::renderer::render_plan::pass_spec::{SamplerKind, VertexLayoutKind};
 use crate::renderer::render_plan::types::RenderPlan;
 
 pub(crate) struct FinalizedShaderSpace {
@@ -351,11 +351,20 @@ impl ShaderSpaceFinalizer {
                     };
                 }
 
+                let vertex_attributes = match spec.vertex_layout {
+                    VertexLayoutKind::PositionUv => {
+                        vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec()
+                    }
+                    VertexLayoutKind::PositionUvColor => {
+                        vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x4].to_vec()
+                    }
+                };
+
                 pass_builder = pass_builder.bind_attribute_buffer(
                     0,
                     geometry_buffer,
                     wgpu::VertexStepMode::Vertex,
-                    vertex_attr_array![0 => Float32x3, 1 => Float32x2].to_vec(),
+                    vertex_attributes,
                 );
 
                 if let Some(instance_buffer) = spec.instance_buffer.clone() {

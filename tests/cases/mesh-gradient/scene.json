@@ -1,0 +1,124 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "mesh-gradient",
+    "created": "2026-06-26T00:00:00.000Z",
+    "modified": "2026-06-26T00:00:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "RenderTexture_1",
+      "type": "RenderTexture",
+      "params": {
+        "width": 128,
+        "height": 64,
+        "format": "rgba8unorm"
+      }
+    },
+    {
+      "id": "Screen_1",
+      "type": "Screen",
+      "params": {
+        "width": 128,
+        "height": 64
+      }
+    },
+    {
+      "id": "Composite_1",
+      "type": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "id": "CenterPos_1",
+      "type": "Vector2Input",
+      "params": {
+        "x": 80,
+        "y": 24
+      }
+    },
+    {
+      "id": "CenterColor_1",
+      "type": "ColorInput",
+      "params": {
+        "value": [0.08, 0.92, 0.78, 1]
+      }
+    },
+    {
+      "id": "MeshGradient_1",
+      "type": "MeshGradient",
+      "params": {
+        "patchDivCount": 6,
+        "background": "#05070c"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_render_texture",
+      "from": {
+        "nodeId": "RenderTexture_1",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "Composite_1",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_mesh_layer",
+      "from": {
+        "nodeId": "MeshGradient_1",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Composite_1",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_pos4",
+      "from": {
+        "nodeId": "CenterPos_1",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MeshGradient_1",
+        "portId": "pos4"
+      }
+    },
+    {
+      "id": "edge_color4",
+      "from": {
+        "nodeId": "CenterColor_1",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "MeshGradient_1",
+        "portId": "color4"
+      }
+    },
+    {
+      "id": "edge_screen",
+      "from": {
+        "nodeId": "Composite_1",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "Screen_1",
+        "portId": "pass"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "Composite_1"
+  },
+  "assets": {},
+  "groups": []
+}

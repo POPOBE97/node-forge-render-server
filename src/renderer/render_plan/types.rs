@@ -86,6 +86,7 @@ pub(crate) struct RenderPassSpec {
     pub geometry_buffer: ResourceName,
     pub instance_buffer: Option<ResourceName>,
     pub normals_buffer: Option<ResourceName>,
+    pub vertex_layout: VertexLayoutKind,
     pub target_texture: ResourceName,
     pub resolve_target: Option<ResourceName>,
     pub params_buffer: ResourceName,
@@ -99,6 +100,13 @@ pub(crate) struct RenderPassSpec {
     pub blend_state: BlendState,
     pub color_load_op: wgpu::LoadOp<Color>,
     pub sample_count: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum VertexLayoutKind {
+    #[default]
+    PositionUv,
+    PositionUvColor,
 }
 
 #[derive(Clone, Debug)]

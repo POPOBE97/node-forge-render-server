@@ -31,6 +31,7 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         "bloom" => None,
         "bloom-nodes" => None,
         "hdr-bloom-nodes" => None,
+        "mesh-gradient" => None,
         // This case previously validated output against the ImageTexture source.
         // It now uses baseline.png to avoid duplicating GPU sampling/interpolation details in tests.
         _ => Some("baseline.png"),

@@ -258,6 +258,7 @@ fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
             | ("RenderPass", "camera")
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
+            | ("MeshGradient", "camera")
             | ("Downsample", "targetSize")
             | ("Downsample", "camera")
             | ("Upsample", "camera")
