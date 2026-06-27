@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-25T19:44:59.701Z",
+  "generatedAt": "2026-06-27T06:07:39.643Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -3018,8 +3018,19 @@
           ]
         },
         {
-          "id": "patchDivCount",
-          "name": "Patch Divisions",
+          "id": "patchDivCountU",
+          "name": "Patch U Divisions",
+          "type": "int",
+          "default": 20,
+          "range": {
+            "min": 2,
+            "max": 96,
+            "step": 1
+          }
+        },
+        {
+          "id": "patchDivCountV",
+          "name": "Patch V Divisions",
           "type": "int",
           "default": 20,
           "range": {
@@ -3144,7 +3155,8 @@
       "defaultParams": {
         "width": 3,
         "height": 3,
-        "patchDivCount": 20
+        "patchDivCountU": 20,
+        "patchDivCountV": 20
       }
     },
     {

@@ -84,17 +84,38 @@ pub(crate) fn assemble_mesh_gradient(
     let background =
         resolve_color_input(sc, layer_node, layer_id, "background", [0.0, 0.0, 0.0, 1.0])?;
 
-    let patch_div_count = cpu_num_u32_min_1(
+    let legacy_patch_div_count = cpu_num_u32_min_1(
         scene,
         nodes_by_id,
         layer_node,
         "patchDivCount",
         DEFAULT_PATCH_DIV_COUNT,
+    )?;
+    let patch_div_count_u = cpu_num_u32_min_1(
+        scene,
+        nodes_by_id,
+        layer_node,
+        "patchDivCountU",
+        legacy_patch_div_count,
+    )?
+    .clamp(2, MAX_PATCH_DIV_COUNT) as usize;
+    let patch_div_count_v = cpu_num_u32_min_1(
+        scene,
+        nodes_by_id,
+        layer_node,
+        "patchDivCountV",
+        legacy_patch_div_count,
     )?
     .clamp(2, MAX_PATCH_DIV_COUNT) as usize;
 
     let points = resolve_mesh_points(sc, layer_node, layer_id, target_size)?;
-    let vertices = build_mesh_vertices(&points, patch_div_count, target_size, center);
+    let vertices = build_mesh_vertices(
+        &points,
+        patch_div_count_u,
+        patch_div_count_v,
+        target_size,
+        center,
+    );
     let geo: ResourceName = format!("sys.mesh_gradient.{layer_id}.geo").into();
     bs.geometry_buffers
         .push((geo.clone(), Arc::from(as_bytes_slice(&vertices).to_vec())));
@@ -345,27 +366,30 @@ fn resolve_color_input(
 
 fn build_mesh_vertices(
     points: &[MeshPoint; POINT_COUNT],
-    patch_div_count: usize,
+    patch_div_count_u: usize,
+    patch_div_count_v: usize,
     target_size: [f32; 2],
     center: [f32; 2],
 ) -> Vec<f32> {
-    let cells_per_patch = patch_div_count.saturating_sub(1);
-    let vertex_count = (GRID_ROWS - 1) * (GRID_COLS - 1) * cells_per_patch * cells_per_patch * 6;
+    let cells_per_patch_u = patch_div_count_u.saturating_sub(1);
+    let cells_per_patch_v = patch_div_count_v.saturating_sub(1);
+    let vertex_count =
+        (GRID_ROWS - 1) * (GRID_COLS - 1) * cells_per_patch_u * cells_per_patch_v * 6;
     let mut out = Vec::with_capacity(vertex_count * FLOATS_PER_VERTEX);
 
     for patch_row in 0..(GRID_ROWS - 1) {
         for patch_col in 0..(GRID_COLS - 1) {
-            for row in 0..cells_per_patch {
-                let r0 = row as f32 / cells_per_patch as f32;
-                let r1 = (row + 1) as f32 / cells_per_patch as f32;
-                for col in 0..cells_per_patch {
-                    let c0 = col as f32 / cells_per_patch as f32;
-                    let c1 = (col + 1) as f32 / cells_per_patch as f32;
+            for row in 0..cells_per_patch_v {
+                let v0 = row as f32 / cells_per_patch_v as f32;
+                let v1 = (row + 1) as f32 / cells_per_patch_v as f32;
+                for col in 0..cells_per_patch_u {
+                    let u0 = col as f32 / cells_per_patch_u as f32;
+                    let u1 = (col + 1) as f32 / cells_per_patch_u as f32;
 
-                    let p00 = sample_patch(points, patch_row, patch_col, r0, c0);
-                    let p01 = sample_patch(points, patch_row, patch_col, r0, c1);
-                    let p11 = sample_patch(points, patch_row, patch_col, r1, c1);
-                    let p10 = sample_patch(points, patch_row, patch_col, r1, c0);
+                    let p00 = sample_patch(points, patch_row, patch_col, v0, u0);
+                    let p01 = sample_patch(points, patch_row, patch_col, v0, u1);
+                    let p11 = sample_patch(points, patch_row, patch_col, v1, u1);
+                    let p10 = sample_patch(points, patch_row, patch_col, v1, u0);
 
                     push_vertex(&mut out, p00, target_size, center);
                     push_vertex(&mut out, p01, target_size, center);
@@ -737,8 +761,8 @@ mod tests {
     #[test]
     fn tessellation_expands_to_triangle_vertices() {
         let size = [300.0, 150.0];
-        let vertices = build_mesh_vertices(&default_points(size), 2, size, [150.0, 75.0]);
-        let expected_vertices = (GRID_ROWS - 1) * (GRID_COLS - 1) * 6;
+        let vertices = build_mesh_vertices(&default_points(size), 3, 2, size, [150.0, 75.0]);
+        let expected_vertices = (GRID_ROWS - 1) * (GRID_COLS - 1) * (3 - 1) * (2 - 1) * 6;
         assert_eq!(vertices.len(), expected_vertices * FLOATS_PER_VERTEX);
     }
 

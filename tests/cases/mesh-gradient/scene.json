@@ -1,123 +1,178 @@
 {
   "version": "2.0",
   "metadata": {
-    "name": "mesh-gradient",
-    "created": "2026-06-26T00:00:00.000Z",
-    "modified": "2026-06-26T00:00:00.000Z"
+    "name": "My Scene",
+    "created": "2026-06-25T17:18:54.431Z",
+    "modified": "2026-06-25T17:18:54.431Z"
   },
   "nodes": [
     {
-      "id": "RenderTexture_1",
+      "id": "node_default_render_texture",
       "type": "RenderTexture",
+      "position": {
+        "x": -180,
+        "y": -400
+      },
+      "width": 160,
+      "label": "Render Texture",
       "params": {
-        "width": 128,
-        "height": 64,
-        "format": "rgba8unorm"
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba8unorm",
+        "_uiCollapsed": false
       }
     },
     {
-      "id": "Screen_1",
-      "type": "Screen",
-      "params": {
-        "width": 128,
-        "height": 64
-      }
-    },
-    {
-      "id": "Composite_1",
+      "id": "node_default_composite",
       "type": "Composite",
+      "position": {
+        "x": -180,
+        "y": -280
+      },
+      "width": 160,
+      "label": "Composite",
       "params": {
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha"
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
       }
     },
     {
-      "id": "CenterPos_1",
-      "type": "Vector2Input",
+      "id": "node_default_screen",
+      "type": "Screen",
+      "position": {
+        "x": 0,
+        "y": -400
+      },
+      "width": 160,
+      "label": "Screen",
       "params": {
-        "x": 80,
-        "y": 24
-      }
-    },
-    {
-      "id": "CenterColor_1",
-      "type": "ColorInput",
-      "params": {
-        "value": [0.08, 0.92, 0.78, 1]
+        "width": 1080,
+        "height": 2400
       }
     },
     {
       "id": "MeshGradient_1",
       "type": "MeshGradient",
+      "position": {
+        "x": -360,
+        "y": -400
+      },
+      "width": 160,
+      "label": "Mesh Gradient",
       "params": {
-        "patchDivCount": 6,
-        "background": "#05070c"
+        "width": 3,
+        "height": 3,
+        "patchDivCountU": 20,
+        "patchDivCountV": 20,
+        "_uiCollapsedFields": [],
+        "pos0": {
+          "x": 0,
+          "y": 0
+        },
+        "pos1": {
+          "x": 540,
+          "y": 0
+        },
+        "pos2": {
+          "x": 1080,
+          "y": 0
+        },
+        "pos3": {
+          "x": 0,
+          "y": 1200
+        },
+        "pos4": {
+          "x": 540,
+          "y": 1200
+        },
+        "pos5": {
+          "x": 1080,
+          "y": 1200
+        },
+        "pos6": {
+          "x": 0,
+          "y": 2400
+        },
+        "pos7": {
+          "x": 540,
+          "y": 2400
+        },
+        "pos8": {
+          "x": 1080,
+          "y": 2400
+        },
+        "color0": "#ff6b6b",
+        "color1": "#ffa94d",
+        "color2": "#ffd43b",
+        "color3": "#69db7c",
+        "color4": "#ffffff",
+        "color5": "#74c0fc",
+        "color6": "#b197fc",
+        "color7": "#f783ac",
+        "color8": "#da77f2",
+        "background": "#000000"
       }
     }
   ],
   "connections": [
     {
-      "id": "edge_render_texture",
+      "id": "edge_default_rt_to_composite",
       "from": {
-        "nodeId": "RenderTexture_1",
+        "nodeId": "node_default_render_texture",
         "portId": "texture"
       },
       "to": {
-        "nodeId": "Composite_1",
+        "nodeId": "node_default_composite",
         "portId": "target"
       }
     },
     {
-      "id": "edge_mesh_layer",
+      "id": "edge_default_composite_to_screen",
+      "from": {
+        "nodeId": "node_default_composite",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_screen",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_1",
       "from": {
         "nodeId": "MeshGradient_1",
         "portId": "pass"
       },
       "to": {
-        "nodeId": "Composite_1",
-        "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_pos4",
-      "from": {
-        "nodeId": "CenterPos_1",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "MeshGradient_1",
-        "portId": "pos4"
-      }
-    },
-    {
-      "id": "edge_color4",
-      "from": {
-        "nodeId": "CenterColor_1",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "MeshGradient_1",
-        "portId": "color4"
-      }
-    },
-    {
-      "id": "edge_screen",
-      "from": {
-        "nodeId": "Composite_1",
-        "portId": "pass"
-      },
-      "to": {
-        "nodeId": "Screen_1",
+        "nodeId": "node_default_composite",
         "portId": "pass"
       }
     }
   ],
   "outputs": {
-    "composite": "Composite_1"
+    "composite": "node_default_composite"
   },
   "assets": {},
   "groups": []
