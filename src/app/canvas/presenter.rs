@@ -932,6 +932,15 @@ pub fn show_canvas(
                 CanvasAction::ToggleHdrClamp,
             );
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::W)) {
+            apply_action(
+                &mut frame_result,
+                app,
+                render_state,
+                renderer,
+                CanvasAction::ToggleWireframe,
+            );
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             apply_action(
                 &mut frame_result,

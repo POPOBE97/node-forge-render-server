@@ -75,6 +75,21 @@ pub fn apply_action(
                 app.canvas.display.texture_filter,
             );
         }
+        CanvasAction::ToggleWireframe => {
+            let requested_enabled = !app.canvas.display.wireframe_enabled;
+            let applied = app
+                .core
+                .shader_space
+                .set_wireframe_enabled(requested_enabled);
+            app.canvas.display.wireframe_enabled = requested_enabled && applied;
+            app.runtime.scene_redraw_pending = true;
+
+            if requested_enabled && !applied {
+                eprintln!(
+                    "[wireframe] wgpu device does not support POLYGON_MODE_LINE; keeping fill mode"
+                );
+            }
+        }
         CanvasAction::TogglePause => {
             app.runtime.time_updates_enabled = !app.runtime.time_updates_enabled;
             // Pause / resume the timeline presentation clock so that

@@ -929,6 +929,12 @@ fn main() -> Result<()> {
                     if adapter.features().contains(wgpu::Features::SHADER_F16) {
                         required_features |= wgpu::Features::SHADER_F16;
                     }
+                    if adapter
+                        .features()
+                        .contains(wgpu::Features::POLYGON_MODE_LINE)
+                    {
+                        required_features |= wgpu::Features::POLYGON_MODE_LINE;
+                    }
                     wgpu::DeviceDescriptor {
                         label: Some("eframe wgpu device"),
                         required_features,

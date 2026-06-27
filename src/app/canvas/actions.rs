@@ -10,6 +10,7 @@ pub enum CanvasAction {
     SetPreviewTexture(ResourceName),
     ClearPreviewTexture,
     ToggleHdrClamp,
+    ToggleWireframe,
     TogglePause,
     ResetView {
         current_display_ppi: Option<f32>,

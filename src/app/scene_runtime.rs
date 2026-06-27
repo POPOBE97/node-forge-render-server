@@ -256,6 +256,7 @@ fn commit_shader_space_rebuild(
     app.core.scene_output_texture_name = result.scene_output_texture;
     app.core.export_texture_name = result.export_output_texture;
     app.core.export_encode_pass_name = result.export_encode_pass_name;
+    sync_wireframe_mode(app);
     update_pass_debug_sources(app, result.pass_debug_sources);
     app.shell.pass_shader_overrides = pass_shader_overrides;
     let live_pass_names: std::collections::HashSet<String> =
@@ -283,6 +284,17 @@ fn update_pass_debug_sources(
 ) {
     app.shell.pass_debug_sources = sources;
     app.shell.pass_debug_sources_revision = app.shell.pass_debug_sources_revision.wrapping_add(1);
+}
+
+fn sync_wireframe_mode(app: &mut App) {
+    if !app.canvas.display.wireframe_enabled {
+        return;
+    }
+
+    if !app.core.shader_space.set_wireframe_enabled(true) {
+        app.canvas.display.wireframe_enabled = false;
+        eprintln!("[wireframe] wgpu device does not support POLYGON_MODE_LINE; keeping fill mode");
+    }
 }
 
 fn collect_graph_uniform_updates(
@@ -642,6 +654,7 @@ pub fn apply_scene_update(
                     app.core.scene_output_texture_name = result.scene_output_texture;
                     app.core.export_texture_name = result.export_output_texture;
                     app.core.export_encode_pass_name = result.export_encode_pass_name;
+                    sync_wireframe_mode(app);
                     update_pass_debug_sources(app, result.pass_debug_sources);
                     let live_pass_names: std::collections::HashSet<String> =
                         app.shell.pass_debug_sources.keys().cloned().collect();
@@ -877,6 +890,7 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         app.core.export_texture_name = result.export_output_texture;
         app.core.export_encode_pass_name = result.export_encode_pass_name;
         app.core.passes = result.pass_bindings;
+        sync_wireframe_mode(app);
         app.runtime.last_pipeline_signature = None;
     }
 }
