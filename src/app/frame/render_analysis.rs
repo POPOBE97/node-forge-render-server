@@ -49,7 +49,7 @@ pub(super) fn run(
             app.canvas.invalidation.mark_pixel_overlay_dirty();
         }
 
-        app.core.shader_space.render();
+        app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
         app.runtime.scene_redraw_pending = false;
         app.runtime
             .render_texture_fps_tracker

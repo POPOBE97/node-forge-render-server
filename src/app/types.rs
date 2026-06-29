@@ -11,7 +11,7 @@ use crossbeam_channel::Receiver;
 use rust_wgpu_fiber::{
     ResourceName,
     eframe::{egui, wgpu},
-    shader_space::ShaderSpace,
+    shader_space::{RenderProfile, ShaderSpace},
 };
 use serde::{Deserialize, Serialize};
 
@@ -377,6 +377,7 @@ pub(super) struct AppRuntime {
     pub time_updates_enabled_prev_frame: bool,
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
+    pub latest_render_profile: Option<RenderProfile>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -422,6 +423,7 @@ pub(super) struct AppShell {
     pub resource_snapshot: Option<ResourceSnapshot>,
     pub resource_tree_nodes: Vec<FileTreeNode>,
     pub resource_snapshot_generation: u64,
+    pub resource_snapshot_broadcast_generation: u64,
     pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
     pub pass_debug_sources_revision: u64,
     pub pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap,
@@ -657,6 +659,7 @@ impl App {
                 time_updates_enabled_prev_frame: true,
                 time_value_secs: 0.0,
                 time_last_raw_secs: 0.0,
+                latest_render_profile: None,
             },
             shell: AppShell {
                 window_mode: UiWindowMode::Sidebar,
@@ -668,6 +671,7 @@ impl App {
                 resource_snapshot: None,
                 resource_tree_nodes: Vec::new(),
                 resource_snapshot_generation: u64::MAX,
+                resource_snapshot_broadcast_generation: u64::MAX,
                 pass_debug_sources: init.pass_debug_sources,
                 pass_debug_sources_revision: 0,
                 pass_debug_windows: crate::ui::pass_debug_window::PassDebugWindowMap::default(),

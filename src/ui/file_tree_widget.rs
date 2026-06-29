@@ -6,7 +6,7 @@
 use rust_wgpu_fiber::eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
 use super::design_tokens::{self, TextRole};
-use super::resource_tree::{FileTreeNode, NodeKind, TreeIcon};
+use super::resource_tree::{FileTreeNode, NodeKind, PassDesignTarget, TreeIcon};
 
 // ---------------------------------------------------------------------------
 // Style constants
@@ -49,6 +49,7 @@ pub struct FileTreeResponse {
     pub clicked: Option<FileTreeNode>,
     pub copied_texture_name: Option<String>,
     pub open_pass_debug: Option<String>,
+    pub open_pass_design: Option<PassDesignTarget>,
 }
 
 struct VisibleTreeEntry {
@@ -71,6 +72,7 @@ pub fn show_file_tree(
         clicked: None,
         copied_texture_name: None,
         open_pass_debug: None,
+        open_pass_design: None,
     };
     let root_path = ui.id().with("file_tree_root");
     let mut visible_entries: Vec<VisibleTreeEntry> = Vec::new();
@@ -273,10 +275,29 @@ fn draw_node(
                 }
             });
         }
-        NodeKind::Pass { pass_name, .. } => {
+        NodeKind::Pass {
+            pass_name,
+            target_texture,
+            target_size,
+            source_node_id,
+            source_node_type,
+        } => {
             row_response.context_menu(|ui| {
                 if ui.button("Debug").clicked() {
                     response.open_pass_debug = Some(pass_name.clone());
+                    ui.close();
+                }
+                if source_node_type.as_deref() == Some("MeshGradient")
+                    && let Some(node_id) = source_node_id.as_ref()
+                    && ui.button("Design").clicked()
+                {
+                    response.open_pass_design = Some(PassDesignTarget {
+                        node_id: node_id.clone(),
+                        node_type: "MeshGradient".to_string(),
+                        pass_name: pass_name.clone(),
+                        target_texture: target_texture.clone(),
+                        target_size: *target_size,
+                    });
                     ui.close();
                 }
             });

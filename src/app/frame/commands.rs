@@ -13,6 +13,7 @@ use crate::{
         types::{App, ShortwireReferenceImage},
         window_mode,
     },
+    protocol::DesignParamPatchPayload,
     ui,
 };
 
@@ -22,6 +23,8 @@ pub enum AppCommand {
     PickReferenceImage,
     ClearReference,
     OpenPassDebug(String),
+    OpenPassDesign(ui::resource_tree::PassDesignTarget),
+    SendDesignParamPatch(DesignParamPatchPayload),
     ApplyPassShaderPatch {
         pass_name: String,
         source: String,
@@ -48,6 +51,9 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ),
         ui::debug_sidebar::SidebarAction::OpenPassDebug(pass_name) => {
             AppCommand::OpenPassDebug(pass_name)
+        }
+        ui::debug_sidebar::SidebarAction::OpenPassDesign(target) => {
+            AppCommand::OpenPassDesign(target)
         }
         ui::debug_sidebar::SidebarAction::ClearPreview => {
             AppCommand::Canvas(CanvasAction::ClearPreviewTexture)
@@ -151,6 +157,17 @@ pub fn dispatch(
                 &app.shell.debug_artifacts,
                 pass_name,
             );
+        }
+        AppCommand::OpenPassDesign(target) => {
+            let _ = canvas::reducer::apply_action(
+                app,
+                render_state,
+                renderer,
+                CanvasAction::EnterPassDesign(target),
+            )?;
+        }
+        AppCommand::SendDesignParamPatch(payload) => {
+            crate::ws::broadcast_design_param_patch(&app.core.ws_hub, payload);
         }
         AppCommand::ApplyPassShaderPatch {
             pass_name,
@@ -379,7 +396,7 @@ fn render_current_shader_space(app: &mut App, now: f64) {
         params.time = t;
         let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
     }
-    app.core.shader_space.render();
+    app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
     app.runtime
         .render_texture_fps_tracker
         .record_scene_redraw(now);

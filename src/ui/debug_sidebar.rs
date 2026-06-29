@@ -10,12 +10,12 @@ use crate::app::{
 use super::button::{
     self, ButtonGroupPosition, ButtonOptions, ButtonSize, ButtonVariant, ButtonVisualOverride,
 };
+use super::components::number_slider;
 use super::components::radio_button_group::{self, RadioButtonOption};
 use super::components::two_column_section;
-use super::components::value_slider;
 use super::design_tokens::{self, TextRole};
 use super::file_tree_widget::FileTreeState;
-use super::resource_tree::{FileTreeNode, NodeKind};
+use super::resource_tree::{FileTreeNode, NodeKind, PassDesignTarget};
 
 pub const SIDEBAR_WIDTH: f32 = 340.0;
 pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
@@ -34,9 +34,6 @@ const SIDEBAR_GRID_COLUMNS: usize = 4;
 const SIDEBAR_GRID_GAP: f32 = 8.0;
 const SIDEBAR_GRID_LABEL_GAP: f32 = 4.0;
 const SIDEBAR_GRID_ROW_GAP: f32 = 8.0;
-const SIDEBAR_SLIDER_VALUE_GAP: f32 = 0.0;
-const VALUE_LABEL_TEXT_PADDING_X: f32 = 4.0;
-const VALUE_LABEL_DIVIDER_WIDTH: f32 = 1.0;
 const SIDEBAR_CONTENT_SIDE_PADDING: i8 = 16;
 
 const SECTION_TOP_PADDING: f32 = 4.0;
@@ -70,28 +67,6 @@ fn with_sidebar_content_padding(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::
             bottom: 0,
         })
         .show(ui, body);
-}
-
-fn fixed_value_label_width(ui: &egui::Ui) -> f32 {
-    let text_style = design_tokens::text_style(TextRole::ValueLabel);
-    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
-    let text_width = ui
-        .painter()
-        .layout_no_wrap("100%".to_string(), label_font, text_style.color)
-        .size()
-        .x
-        .ceil();
-    text_width + VALUE_LABEL_TEXT_PADDING_X * 2.0 + VALUE_LABEL_DIVIDER_WIDTH
-}
-
-fn right_only_radius(px: u8) -> egui::CornerRadius {
-    let canonical = (px.clamp(2, 24) / 2) * 2;
-    egui::CornerRadius {
-        nw: 0,
-        ne: canonical,
-        sw: 0,
-        se: canonical,
-    }
 }
 
 fn sidebar_background_color() -> egui::Color32 {
@@ -174,98 +149,14 @@ fn slider_with_value(
     max: f32,
     formatter: Option<&dyn Fn(f32) -> String>,
 ) -> bool {
-    let mut changed = false;
-    let mut formatted_value = formatter
-        .map(|f| f(*value))
-        .unwrap_or_else(|| format!("{:.3}", *value));
-    let label_width = fixed_value_label_width(ui);
-    let slider_width = (ui.available_width() - SIDEBAR_SLIDER_VALUE_GAP - label_width).max(0.0);
-    let text_style = design_tokens::text_style(TextRole::ValueLabel);
-    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
-    let sidebar_bg = sidebar_background_color();
-
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), design_tokens::CONTROL_ROW_HEIGHT),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = SIDEBAR_SLIDER_VALUE_GAP;
-            ui.allocate_ui_with_layout(
-                egui::vec2(slider_width, design_tokens::CONTROL_ROW_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(slider_width, value_slider::VALUE_SLIDER_HEIGHT),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            let out = value_slider::value_slider(
-                                ui, id_source, value, min, max, formatter,
-                            );
-                            changed = out.changed;
-                            formatted_value = out.formatted_value;
-                        },
-                    );
-                },
-            );
-            ui.allocate_ui_with_layout(
-                egui::vec2(label_width, design_tokens::CONTROL_ROW_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    let (label_rect, label_response) = ui.allocate_exact_size(
-                        egui::vec2(label_width, value_slider::VALUE_SLIDER_HEIGHT),
-                        egui::Sense::hover(),
-                    );
-                    let label_border_stroke = if label_response.hovered() {
-                        egui::Stroke::new(
-                            design_tokens::LINE_THICKNESS_05,
-                            design_tokens::white(20),
-                        )
-                    } else {
-                        egui::Stroke::NONE
-                    };
-                    let painter = ui.painter_at(label_rect);
-                    painter.rect(
-                        label_rect,
-                        right_only_radius(design_tokens::BORDER_RADIUS_SMALL as u8),
-                        design_tokens::RESOURCE_ACTIVE_BG,
-                        label_border_stroke,
-                        egui::StrokeKind::Inside,
-                    );
-                    painter.line_segment(
-                        [
-                            egui::pos2(label_rect.left(), label_rect.top()),
-                            egui::pos2(label_rect.left(), label_rect.bottom()),
-                        ],
-                        egui::Stroke::new(VALUE_LABEL_DIVIDER_WIDTH, sidebar_bg),
-                    );
-
-                    let text_rect = egui::Rect::from_min_max(
-                        egui::pos2(
-                            label_rect.left()
-                                + VALUE_LABEL_DIVIDER_WIDTH
-                                + VALUE_LABEL_TEXT_PADDING_X,
-                            label_rect.top(),
-                        ),
-                        egui::pos2(
-                            label_rect.right() - VALUE_LABEL_TEXT_PADDING_X,
-                            label_rect.bottom(),
-                        ),
-                    );
-                    let galley = painter.layout_no_wrap(
-                        formatted_value.clone(),
-                        label_font.clone(),
-                        text_style.color,
-                    );
-                    let text_pos = egui::pos2(
-                        text_rect.center().x - galley.size().x * 0.5,
-                        text_rect.center().y - galley.size().y * 0.5 - 0.25,
-                    );
-                    painter.galley(text_pos, galley, text_style.color);
-                },
-            );
-        },
-    );
-
-    changed
+    number_slider::slider_with_value(
+        ui,
+        id_source,
+        value,
+        min,
+        max,
+        number_slider::NumberSliderConfig::new(sidebar_background_color()).formatter(formatter),
+    )
 }
 
 fn slider_with_editable_value(
@@ -277,152 +168,15 @@ fn slider_with_editable_value(
     step: f32,
     formatter: Option<&dyn Fn(f32) -> String>,
 ) -> bool {
-    let mut changed = false;
-    let mut formatted_value = formatter
-        .map(|f| f(*value))
-        .unwrap_or_else(|| format!("{:.3}", *value));
-    let label_width = fixed_value_label_width(ui);
-    let slider_width = (ui.available_width() - SIDEBAR_SLIDER_VALUE_GAP - label_width).max(0.0);
-    let text_style = design_tokens::text_style(TextRole::ValueLabel);
-    let label_font = design_tokens::font_id(text_style.size, text_style.weight);
-    let sidebar_bg = sidebar_background_color();
-    let text_id = ui.make_persistent_id((id_source.clone(), "editable_value"));
-
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), design_tokens::CONTROL_ROW_HEIGHT),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = SIDEBAR_SLIDER_VALUE_GAP;
-            ui.allocate_ui_with_layout(
-                egui::vec2(slider_width, design_tokens::CONTROL_ROW_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(slider_width, value_slider::VALUE_SLIDER_HEIGHT),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            let out = value_slider::value_slider(
-                                ui,
-                                id_source.clone(),
-                                value,
-                                min,
-                                max,
-                                formatter,
-                            );
-                            if out.changed {
-                                let next = quantize_value(*value, min, max, step);
-                                if (*value - next).abs() > f32::EPSILON {
-                                    *value = next;
-                                }
-                                changed = true;
-                            }
-                            formatted_value = formatter
-                                .map(|f| f(*value))
-                                .unwrap_or_else(|| out.formatted_value);
-                        },
-                    );
-                },
-            );
-            ui.allocate_ui_with_layout(
-                egui::vec2(label_width, design_tokens::CONTROL_ROW_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    let (label_rect, label_response) = ui.allocate_exact_size(
-                        egui::vec2(label_width, value_slider::VALUE_SLIDER_HEIGHT),
-                        egui::Sense::click(),
-                    );
-                    let text_focused = ui.memory(|mem| mem.has_focus(text_id));
-                    let mut text = ui
-                        .memory(|mem| mem.data.get_temp::<String>(text_id))
-                        .unwrap_or_else(|| formatted_value.clone());
-                    if !text_focused {
-                        text = formatted_value.clone();
-                    }
-
-                    let label_border_stroke = if label_response.hovered() || text_focused {
-                        egui::Stroke::new(
-                            design_tokens::LINE_THICKNESS_05,
-                            design_tokens::white(20),
-                        )
-                    } else {
-                        egui::Stroke::NONE
-                    };
-                    let painter = ui.painter_at(label_rect);
-                    painter.rect(
-                        label_rect,
-                        right_only_radius(design_tokens::BORDER_RADIUS_SMALL as u8),
-                        design_tokens::RESOURCE_ACTIVE_BG,
-                        label_border_stroke,
-                        egui::StrokeKind::Inside,
-                    );
-                    painter.line_segment(
-                        [
-                            egui::pos2(label_rect.left(), label_rect.top()),
-                            egui::pos2(label_rect.left(), label_rect.bottom()),
-                        ],
-                        egui::Stroke::new(VALUE_LABEL_DIVIDER_WIDTH, sidebar_bg),
-                    );
-
-                    let text_rect = egui::Rect::from_min_max(
-                        egui::pos2(
-                            label_rect.left()
-                                + VALUE_LABEL_DIVIDER_WIDTH
-                                + VALUE_LABEL_TEXT_PADDING_X,
-                            label_rect.top(),
-                        ),
-                        egui::pos2(
-                            label_rect.right() - VALUE_LABEL_TEXT_PADDING_X,
-                            label_rect.bottom(),
-                        ),
-                    );
-                    let edit_response = ui
-                        .scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
-                            ui.add_sized(
-                                text_rect.size(),
-                                egui::TextEdit::singleline(&mut text)
-                                    .id(text_id)
-                                    .font(label_font.clone())
-                                    .text_color(text_style.color)
-                                    .horizontal_align(egui::Align::Center)
-                                    .vertical_align(egui::Align::Center)
-                                    .desired_width(text_rect.width())
-                                    .margin(egui::Margin::same(0))
-                                    .frame(egui::Frame::NONE),
-                            )
-                        })
-                        .inner;
-
-                    if edit_response.changed()
-                        && let Ok(parsed) = text.trim().parse::<f32>()
-                    {
-                        let next = quantize_value(parsed, min, max, step);
-                        if (*value - next).abs() > f32::EPSILON {
-                            *value = next;
-                            changed = true;
-                        }
-                    }
-                    if edit_response.lost_focus() && text.trim().parse::<f32>().is_err() {
-                        text = formatter
-                            .map(|f| f(*value))
-                            .unwrap_or_else(|| format!("{:.3}", *value));
-                    }
-                    ui.memory_mut(|mem| mem.data.insert_temp(text_id, text));
-                },
-            );
-        },
-    );
-
-    changed
-}
-
-fn quantize_value(value: f32, min: f32, max: f32, step: f32) -> f32 {
-    let clamped = value_slider::clamp_to_range(value, min, max);
-    if step > 0.0 && step.is_finite() {
-        (clamped / step).round() * step
-    } else {
-        clamped
-    }
-    .clamp(min, max)
+    number_slider::slider_with_editable_value(
+        ui,
+        id_source,
+        value,
+        min,
+        max,
+        step,
+        number_slider::NumberSliderConfig::new(sidebar_background_color()).formatter(formatter),
+    )
 }
 
 fn mode_options() -> [RadioButtonOption<'static, RefImageMode>; 2] {
@@ -501,6 +255,8 @@ pub enum SidebarAction {
     PreviewTexture(String),
     /// Open a render pass shader debug window.
     OpenPassDebug(String),
+    /// Open a pass-specific design window.
+    OpenPassDesign(PassDesignTarget),
     /// Clear the preview (user clicked a non-texture node).
     ClearPreview,
     /// Update reference overlay opacity.
@@ -1304,6 +1060,11 @@ fn show_resource_tree_section(
 
         if let Some(pass_name) = tree_response.open_pass_debug {
             *sidebar_action = Some(SidebarAction::OpenPassDebug(pass_name));
+            return;
+        }
+
+        if let Some(target) = tree_response.open_pass_design {
+            *sidebar_action = Some(SidebarAction::OpenPassDesign(target));
             return;
         }
 

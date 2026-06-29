@@ -13,6 +13,8 @@ pub(crate) struct PassDebugRootView {
 
 pub(crate) struct PassDebugTitlebarView {
     pub(crate) pass_name: String,
+    pub(crate) target_size_label: Option<String>,
+    pub(crate) target_texture_label: Option<String>,
     pub(crate) diff_enabled: bool,
     pub(crate) diff_active: bool,
     pub(crate) save_enabled: bool,
@@ -102,8 +104,13 @@ pub(crate) fn root_view(document: &PassDebugWindowDocument) -> PassDebugRootView
 
 pub(crate) fn titlebar_view(document: &PassDebugWindowDocument) -> PassDebugTitlebarView {
     let active = document.store.shortwire.active.as_ref();
+    let source = document.store.shader.source.as_ref();
     PassDebugTitlebarView {
         pass_name: document.pass_name.clone(),
+        target_size_label: source
+            .and_then(|source| source.target_size)
+            .map(|[width, height]| format!("{width} x {height}")),
+        target_texture_label: source.and_then(|source| source.target_texture.clone()),
         diff_enabled: active.is_some(),
         diff_active: active.is_some_and(|active| active.diff_view_enabled),
         save_enabled: document.save_enabled(),

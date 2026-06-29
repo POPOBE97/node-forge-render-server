@@ -3,10 +3,12 @@ use std::path::Path;
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::HeadlessRenderer;
 use rust_wgpu_fiber::HeadlessRendererConfig;
-use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
+use rust_wgpu_fiber::eframe::wgpu::{Features, TextureFormat};
 
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
+use crate::profile::{self, ProfileAccumulator, ProfileRunConfig, ProfileWriter};
+use crate::ui::resource_tree::ResourceSnapshot;
 
 use super::api::{ShaderSpaceBuildOptions, ShaderSpaceBuilder, ShaderSpacePresentationMode};
 
@@ -87,6 +89,123 @@ pub fn render_scene_to_file_headless(
             .save_texture_exr(result.scene_output_texture.as_str(), output_path)
             .map_err(|e| anyhow!("failed to save exr: {e}"))?,
     }
+    Ok(())
+}
+
+pub fn render_scene_to_file_headless_profiled(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    profile_config: &ProfileRunConfig,
+    writer: &mut ProfileWriter,
+) -> Result<()> {
+    let output_path = output_path.as_ref();
+    let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
+        .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
+
+    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
+        .with_adapter(renderer.adapter.clone())
+        .with_options(ShaderSpaceBuildOptions {
+            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
+            ..Default::default()
+        });
+    if let Some(store) = asset_store {
+        builder = builder.with_asset_store(store.clone());
+    }
+    let result = builder.build(scene)?;
+    let snapshot = ResourceSnapshot::capture(
+        &result.shader_space,
+        &result.pass_bindings,
+        Some(result.present_output_texture.as_str()),
+        Some(scene),
+    );
+
+    let run_id = profile::run_id();
+    let output_path_text = output_path.display().to_string();
+    writer.emit(&profile::run_start_event(
+        &run_id,
+        profile_config,
+        &output_path_text,
+    ))?;
+    writer.emit(&profile::adapter_info_event(
+        &run_id,
+        &renderer.adapter,
+        &renderer.device,
+    ))?;
+    writer.emit(&profile::scene_info_event(
+        &run_id,
+        result.resolution,
+        result.present_output_texture.as_str(),
+        result.export_output_texture.as_str(),
+        &snapshot,
+    ))?;
+    if !renderer.device.features().contains(Features::TIMESTAMP_QUERY) {
+        writer.emit(&profile::warning_event(
+            &run_id,
+            "GPU_DURATION_UNAVAILABLE",
+            "This adapter/device does not expose wgpu TIMESTAMP_QUERY; gpu.duration.ms will be null.",
+        ))?;
+    }
+    writer.emit(&profile::warning_event(
+        &run_id,
+        "ADVANCED_COUNTERS_PUBLIC_RUNTIME_LIMITED",
+        "Occupancy, ALU limiter, and memory bandwidth are emitted only when exposed by wgpu or public Metal runtime counter sets; unsupported fields remain null with explicit capabilities.",
+    ))?;
+
+    for _ in 0..profile_config.warmup_frames {
+        let _ = result.shader_space.render_profiled(true);
+    }
+
+    let pass_info = profile::pass_info_by_name(&snapshot);
+    let mut accumulator = ProfileAccumulator::default();
+    let measured_frames = profile_config.frames.max(1);
+    for frame_index in 0..measured_frames {
+        let frame_profile = result.shader_space.render_profiled(true);
+        accumulator.observe_frame(&frame_profile);
+        writer.emit(&profile::frame_sample_event(
+            &run_id,
+            frame_index,
+            &frame_profile,
+        ))?;
+        for pass_sample in &frame_profile.passes {
+            writer.emit(&profile::pass_sample_event(
+                &run_id,
+                frame_index,
+                pass_sample,
+                pass_info.get(pass_sample.pass_name.as_str()).copied(),
+            ))?;
+        }
+    }
+
+    let output_info = result
+        .shader_space
+        .texture_info(result.scene_output_texture.as_str())
+        .ok_or_else(|| {
+            anyhow!(
+                "missing scene output texture info: {}",
+                result.scene_output_texture
+            )
+        })?;
+    match route_headless_output(output_info.format, output_path)? {
+        HeadlessOutputKind::Png => {
+            let tex_name = result.export_output_texture.as_str();
+            result
+                .shader_space
+                .save_texture_png(tex_name, output_path)
+                .map_err(|e| anyhow!("failed to save png: {e}"))?
+        }
+        HeadlessOutputKind::Exr => result
+            .shader_space
+            .save_texture_exr(result.scene_output_texture.as_str(), output_path)
+            .map_err(|e| anyhow!("failed to save exr: {e}"))?,
+    }
+
+    writer.emit(&profile::run_end_event(
+        &run_id,
+        &output_path_text,
+        &accumulator,
+    ))?;
+    writer.flush()?;
     Ok(())
 }
 

@@ -28,17 +28,24 @@ use super::super::pass_spec::{
 };
 use super::args::{BuilderState, SceneContext};
 
-const GRID_ROWS: usize = 3;
-const GRID_COLS: usize = 3;
-const POINT_COUNT: usize = GRID_ROWS * GRID_COLS;
+const DEFAULT_GRID_ROWS: usize = 3;
+const DEFAULT_GRID_COLS: usize = 3;
+const MIN_GRID_SIZE: u32 = 3;
+const MAX_GRID_SIZE: u32 = 10;
 const DEFAULT_PATCH_DIV_COUNT: u32 = 20;
-const MAX_PATCH_DIV_COUNT: u32 = 96;
+const MAX_PATCH_DIV_COUNT: u32 = 100;
 const FLOATS_PER_VERTEX: usize = 9;
 
-const DEFAULT_COLOR_HEX: [&str; POINT_COUNT] = [
-    "#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#ffffff", "#74c0fc", "#b197fc", "#f783ac",
-    "#da77f2",
+const DEFAULT_COLOR_HEX: [&str; 25] = [
+    "#ff6b6b", "#ffa94d", "#ffd43b", "#f4f46b", "#c0eb75", "#69db7c", "#38d9a9", "#66d9e8",
+    "#74c0fc", "#4dabf7", "#748ffc", "#91a7ff", "#ffffff", "#b197fc", "#9775fa", "#da77f2",
+    "#e599f7", "#f783ac", "#faa2c1", "#ff8787", "#ffc9c9", "#ffd8a8", "#fff3bf", "#d8f5a2",
+    "#b2f2bb",
 ];
+
+fn default_color_hex(index: usize) -> &'static str {
+    DEFAULT_COLOR_HEX[index % DEFAULT_COLOR_HEX.len()]
+}
 
 const HM: [[f32; 4]; 4] = [
     [2.0, -2.0, 1.0, 1.0],
@@ -83,6 +90,22 @@ pub(crate) fn assemble_mesh_gradient(
             .with_context(|| format!("failed to resolve camera for MeshGradient {layer_id}"))?;
     let background =
         resolve_color_input(sc, layer_node, layer_id, "background", [0.0, 0.0, 0.0, 1.0])?;
+    let grid_cols = cpu_num_u32_min_1(
+        scene,
+        nodes_by_id,
+        layer_node,
+        "width",
+        DEFAULT_GRID_COLS as u32,
+    )?
+    .clamp(MIN_GRID_SIZE, MAX_GRID_SIZE) as usize;
+    let grid_rows = cpu_num_u32_min_1(
+        scene,
+        nodes_by_id,
+        layer_node,
+        "height",
+        DEFAULT_GRID_ROWS as u32,
+    )?
+    .clamp(MIN_GRID_SIZE, MAX_GRID_SIZE) as usize;
 
     let legacy_patch_div_count = cpu_num_u32_min_1(
         scene,
@@ -108,9 +131,11 @@ pub(crate) fn assemble_mesh_gradient(
     )?
     .clamp(2, MAX_PATCH_DIV_COUNT) as usize;
 
-    let points = resolve_mesh_points(sc, layer_node, layer_id, target_size)?;
+    let points = resolve_mesh_points(sc, layer_node, layer_id, grid_cols, grid_rows, target_size)?;
     let vertices = build_mesh_vertices(
         &points,
+        grid_cols,
+        grid_rows,
         patch_div_count_u,
         patch_div_count_v,
         target_size,
@@ -259,33 +284,33 @@ fn resolve_mesh_points(
     sc: &SceneContext<'_>,
     layer_node: &Node,
     layer_id: &str,
+    grid_cols: usize,
+    grid_rows: usize,
     target_size: [f32; 2],
-) -> Result<[MeshPoint; POINT_COUNT]> {
-    let mut points = [MeshPoint {
-        position: [0.0, 0.0],
-        color: [1.0, 1.0, 1.0, 1.0],
-    }; POINT_COUNT];
+) -> Result<Vec<MeshPoint>> {
+    let point_count = grid_cols * grid_rows;
+    let mut points = Vec::with_capacity(point_count);
 
-    for index in 0..POINT_COUNT {
+    for index in 0..point_count {
         let pos_port = format!("pos{index}");
         let color_port = format!("color{index}");
-        points[index] = MeshPoint {
+        points.push(MeshPoint {
             position: resolve_position_input(
                 sc,
                 layer_node,
                 layer_id,
                 &pos_port,
-                default_position(index, target_size),
+                default_position(index, grid_cols, grid_rows, target_size),
             )?,
             color: resolve_color_input(
                 sc,
                 layer_node,
                 layer_id,
                 &color_port,
-                parse_hex_color(DEFAULT_COLOR_HEX[index])
+                parse_hex_color(default_color_hex(index))
                     .expect("bundled MeshGradient default color must be valid"),
             )?,
-        };
+        });
     }
 
     Ok(points)
@@ -365,7 +390,9 @@ fn resolve_color_input(
 }
 
 fn build_mesh_vertices(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
+    grid_rows: usize,
     patch_div_count_u: usize,
     patch_div_count_v: usize,
     target_size: [f32; 2],
@@ -374,11 +401,11 @@ fn build_mesh_vertices(
     let cells_per_patch_u = patch_div_count_u.saturating_sub(1);
     let cells_per_patch_v = patch_div_count_v.saturating_sub(1);
     let vertex_count =
-        (GRID_ROWS - 1) * (GRID_COLS - 1) * cells_per_patch_u * cells_per_patch_v * 6;
+        (grid_rows - 1) * (grid_cols - 1) * cells_per_patch_u * cells_per_patch_v * 6;
     let mut out = Vec::with_capacity(vertex_count * FLOATS_PER_VERTEX);
 
-    for patch_row in 0..(GRID_ROWS - 1) {
-        for patch_col in 0..(GRID_COLS - 1) {
+    for patch_row in 0..(grid_rows - 1) {
+        for patch_col in 0..(grid_cols - 1) {
             for row in 0..cells_per_patch_v {
                 let v0 = row as f32 / cells_per_patch_v as f32;
                 let v1 = (row + 1) as f32 / cells_per_patch_v as f32;
@@ -386,10 +413,14 @@ fn build_mesh_vertices(
                     let u0 = col as f32 / cells_per_patch_u as f32;
                     let u1 = (col + 1) as f32 / cells_per_patch_u as f32;
 
-                    let p00 = sample_patch(points, patch_row, patch_col, v0, u0);
-                    let p01 = sample_patch(points, patch_row, patch_col, v0, u1);
-                    let p11 = sample_patch(points, patch_row, patch_col, v1, u1);
-                    let p10 = sample_patch(points, patch_row, patch_col, v1, u0);
+                    let p00 =
+                        sample_patch(points, grid_cols, grid_rows, patch_row, patch_col, v0, u0);
+                    let p01 =
+                        sample_patch(points, grid_cols, grid_rows, patch_row, patch_col, v0, u1);
+                    let p11 =
+                        sample_patch(points, grid_cols, grid_rows, patch_row, patch_col, v1, u1);
+                    let p10 =
+                        sample_patch(points, grid_cols, grid_rows, patch_row, patch_col, v1, u0);
 
                     push_vertex(&mut out, p00, target_size, center);
                     push_vertex(&mut out, p01, target_size, center);
@@ -407,7 +438,9 @@ fn build_mesh_vertices(
 }
 
 fn sample_patch(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
+    grid_rows: usize,
     patch_row: usize,
     patch_col: usize,
     row_t: f32,
@@ -417,6 +450,8 @@ fn sample_patch(
         position: [
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -425,6 +460,8 @@ fn sample_patch(
             ),
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -435,6 +472,8 @@ fn sample_patch(
         color: [
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -443,6 +482,8 @@ fn sample_patch(
             ),
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -451,6 +492,8 @@ fn sample_patch(
             ),
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -459,6 +502,8 @@ fn sample_patch(
             ),
             sample_scalar(
                 points,
+                grid_cols,
+                grid_rows,
                 patch_row,
                 patch_col,
                 row_t,
@@ -480,27 +525,50 @@ enum ScalarField {
 }
 
 fn sample_scalar(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
+    grid_rows: usize,
     patch_row: usize,
     patch_col: usize,
     row_t: f32,
     col_t: f32,
     field: ScalarField,
 ) -> f32 {
-    let p00 = point_value(points, patch_row, patch_col, field);
-    let p10 = point_value(points, patch_row + 1, patch_col, field);
-    let p01 = point_value(points, patch_row, patch_col + 1, field);
-    let p11 = point_value(points, patch_row + 1, patch_col + 1, field);
+    let p00 = point_value(points, grid_cols, patch_row, patch_col, field);
+    let p10 = point_value(points, grid_cols, patch_row + 1, patch_col, field);
+    let p01 = point_value(points, grid_cols, patch_row, patch_col + 1, field);
+    let p11 = point_value(points, grid_cols, patch_row + 1, patch_col + 1, field);
 
-    let du00 = row_derivative(points, patch_row, patch_col, field);
-    let du10 = row_derivative(points, patch_row + 1, patch_col, field);
-    let du01 = row_derivative(points, patch_row, patch_col + 1, field);
-    let du11 = row_derivative(points, patch_row + 1, patch_col + 1, field);
+    let du00 = row_derivative(points, grid_cols, grid_rows, patch_row, patch_col, field);
+    let du10 = row_derivative(
+        points,
+        grid_cols,
+        grid_rows,
+        patch_row + 1,
+        patch_col,
+        field,
+    );
+    let du01 = row_derivative(
+        points,
+        grid_cols,
+        grid_rows,
+        patch_row,
+        patch_col + 1,
+        field,
+    );
+    let du11 = row_derivative(
+        points,
+        grid_cols,
+        grid_rows,
+        patch_row + 1,
+        patch_col + 1,
+        field,
+    );
 
-    let dv00 = col_derivative(points, patch_row, patch_col, field);
-    let dv10 = col_derivative(points, patch_row + 1, patch_col, field);
-    let dv01 = col_derivative(points, patch_row, patch_col + 1, field);
-    let dv11 = col_derivative(points, patch_row + 1, patch_col + 1, field);
+    let dv00 = col_derivative(points, grid_cols, patch_row, patch_col, field);
+    let dv10 = col_derivative(points, grid_cols, patch_row + 1, patch_col, field);
+    let dv01 = col_derivative(points, grid_cols, patch_row, patch_col + 1, field);
+    let dv11 = col_derivative(points, grid_cols, patch_row + 1, patch_col + 1, field);
 
     let patch = [
         [p00, p10, du00, du10],
@@ -537,42 +605,54 @@ fn hermite_basis(t: f32) -> [f32; 4] {
 }
 
 fn row_derivative(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
+    grid_rows: usize,
     row: usize,
     col: usize,
     field: ScalarField,
 ) -> f32 {
     if row == 0 {
-        point_value(points, 1, col, field) - point_value(points, 0, col, field)
-    } else if row + 1 == GRID_ROWS {
-        point_value(points, row, col, field) - point_value(points, row - 1, col, field)
+        point_value(points, grid_cols, 1, col, field)
+            - point_value(points, grid_cols, 0, col, field)
+    } else if row + 1 == grid_rows {
+        point_value(points, grid_cols, row, col, field)
+            - point_value(points, grid_cols, row - 1, col, field)
     } else {
-        (point_value(points, row + 1, col, field) - point_value(points, row - 1, col, field)) * 0.5
+        (point_value(points, grid_cols, row + 1, col, field)
+            - point_value(points, grid_cols, row - 1, col, field))
+            * 0.5
     }
 }
 
 fn col_derivative(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
     row: usize,
     col: usize,
     field: ScalarField,
 ) -> f32 {
     if col == 0 {
-        point_value(points, row, 1, field) - point_value(points, row, 0, field)
-    } else if col + 1 == GRID_COLS {
-        point_value(points, row, col, field) - point_value(points, row, col - 1, field)
+        point_value(points, grid_cols, row, 1, field)
+            - point_value(points, grid_cols, row, 0, field)
+    } else if col + 1 == grid_cols {
+        point_value(points, grid_cols, row, col, field)
+            - point_value(points, grid_cols, row, col - 1, field)
     } else {
-        (point_value(points, row, col + 1, field) - point_value(points, row, col - 1, field)) * 0.5
+        (point_value(points, grid_cols, row, col + 1, field)
+            - point_value(points, grid_cols, row, col - 1, field))
+            * 0.5
     }
 }
 
 fn point_value(
-    points: &[MeshPoint; POINT_COUNT],
+    points: &[MeshPoint],
+    grid_cols: usize,
     row: usize,
     col: usize,
     field: ScalarField,
 ) -> f32 {
-    let p = points[row * GRID_COLS + col];
+    let p = points[row * grid_cols + col];
     match field {
         ScalarField::PositionX => p.position[0],
         ScalarField::PositionY => p.position[1],
@@ -603,12 +683,17 @@ fn push_vertex(out: &mut Vec<f32>, sample: MeshSample, target_size: [f32; 2], ce
     ]);
 }
 
-fn default_position(index: usize, target_size: [f32; 2]) -> [f32; 2] {
-    let row = index / GRID_COLS;
-    let col = index % GRID_COLS;
+fn default_position(
+    index: usize,
+    grid_cols: usize,
+    grid_rows: usize,
+    target_size: [f32; 2],
+) -> [f32; 2] {
+    let row = index / grid_cols;
+    let col = index % grid_cols;
     [
-        col as f32 / (GRID_COLS - 1) as f32 * target_size[0],
-        row as f32 / (GRID_ROWS - 1) as f32 * target_size[1],
+        col as f32 / (grid_cols - 1) as f32 * target_size[0],
+        row as f32 / (grid_rows - 1) as f32 * target_size[1],
     ]
 }
 
@@ -739,13 +824,14 @@ fn wgpu_color(color: [f32; 4]) -> Color {
 mod tests {
     use super::*;
 
-    fn default_points(target_size: [f32; 2]) -> [MeshPoint; POINT_COUNT] {
-        let mut points = [MeshPoint {
-            position: [0.0, 0.0],
-            color: [1.0, 1.0, 1.0, 1.0],
-        }; POINT_COUNT];
-        for index in 0..POINT_COUNT {
-            points[index].position = default_position(index, target_size);
+    fn default_points(grid_cols: usize, grid_rows: usize, target_size: [f32; 2]) -> Vec<MeshPoint> {
+        let point_count = grid_cols * grid_rows;
+        let mut points = Vec::with_capacity(point_count);
+        for index in 0..point_count {
+            points.push(MeshPoint {
+                position: default_position(index, grid_cols, grid_rows, target_size),
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
         }
         points
     }
@@ -753,24 +839,38 @@ mod tests {
     #[test]
     fn default_positions_are_target_pixel_space() {
         let size = [300.0, 150.0];
-        assert_eq!(default_position(0, size), [0.0, 0.0]);
-        assert_eq!(default_position(4, size), [150.0, 75.0]);
-        assert_eq!(default_position(8, size), [300.0, 150.0]);
+        assert_eq!(default_position(0, 3, 3, size), [0.0, 0.0]);
+        assert_eq!(default_position(4, 3, 3, size), [150.0, 75.0]);
+        assert_eq!(default_position(8, 3, 3, size), [300.0, 150.0]);
+        assert_eq!(default_position(24, 5, 5, size), [300.0, 150.0]);
+        assert_eq!(default_position(99, 10, 10, size), [300.0, 150.0]);
+    }
+
+    #[test]
+    fn default_color_palette_wraps_for_large_grids() {
+        assert_eq!(default_color_hex(0), "#ff6b6b");
+        assert_eq!(default_color_hex(25), "#ff6b6b");
     }
 
     #[test]
     fn tessellation_expands_to_triangle_vertices() {
         let size = [300.0, 150.0];
-        let vertices = build_mesh_vertices(&default_points(size), 3, 2, size, [150.0, 75.0]);
-        let expected_vertices = (GRID_ROWS - 1) * (GRID_COLS - 1) * (3 - 1) * (2 - 1) * 6;
+        let points = default_points(3, 3, size);
+        let vertices = build_mesh_vertices(&points, 3, 3, 3, 2, size, [150.0, 75.0]);
+        let expected_vertices = (3 - 1) * (3 - 1) * (3 - 1) * (2 - 1) * 6;
+        assert_eq!(vertices.len(), expected_vertices * FLOATS_PER_VERTEX);
+
+        let points = default_points(5, 5, size);
+        let vertices = build_mesh_vertices(&points, 5, 5, 3, 2, size, [150.0, 75.0]);
+        let expected_vertices = (5 - 1) * (5 - 1) * (3 - 1) * (2 - 1) * 6;
         assert_eq!(vertices.len(), expected_vertices * FLOATS_PER_VERTEX);
     }
 
     #[test]
     fn hermite_patch_hits_control_point_corners() {
-        let points = default_points([300.0, 150.0]);
-        let p00 = sample_patch(&points, 0, 0, 0.0, 0.0);
-        let p11 = sample_patch(&points, 0, 0, 1.0, 1.0);
+        let points = default_points(3, 3, [300.0, 150.0]);
+        let p00 = sample_patch(&points, 3, 3, 0, 0, 0.0, 0.0);
+        let p11 = sample_patch(&points, 3, 3, 0, 0, 1.0, 1.0);
         assert!((p00.position[0] - 0.0).abs() < 1e-4);
         assert!((p00.position[1] - 0.0).abs() < 1e-4);
         assert!((p11.position[0] - 150.0).abs() < 1e-4);

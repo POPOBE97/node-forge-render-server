@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
-use rust_wgpu_fiber::eframe::{
-    egui::{self, Color32, Rect, pos2},
-    egui_wgpu, wgpu,
+use rust_wgpu_fiber::{
+    ResourceName,
+    eframe::{
+        egui::{self, Color32, Rect, pos2},
+        egui_wgpu, wgpu,
+    },
 };
 
 use crate::{
     app::{
         canvas::{
             actions::{CanvasAction, CanvasFrameResult},
+            design,
             display::{self, DisplayFrame},
             ops,
             pixel_overlay::{
@@ -701,6 +705,7 @@ fn draw_badges(
     ctx: &egui::Context,
     canvas_rect: Rect,
     using_preview: bool,
+    design_status: Option<&design::DesignOverlayStatus>,
 ) {
     let badge_font = egui::FontId::new(
         11.0,
@@ -764,10 +769,22 @@ fn draw_badges(
         badge_y += (badge_size.y + 6.0) * ref_tag_anim_t;
     }
 
-    if let Some(preview_name) = app.canvas.display.preview_texture_name.as_ref()
+    let preview_badge_text = if let Some(session) = app.canvas.design.active.as_ref() {
+        let pass_name = compact_pass_name(session.target.pass_name.as_str(), 42);
+        let status = match design_status {
+            Some(design::DesignOverlayStatus::Stale(reason)) => {
+                format!("Design stale • {reason}")
+            }
+            _ => "Design".to_string(),
+        };
+        Some(format!(
+            "{} • {} • {}",
+            status, session.target.node_id, pass_name
+        ))
+    } else if let Some(preview_name) = app.canvas.display.preview_texture_name.as_ref()
         && using_preview
     {
-        let badge_text =
+        Some(
             if let Some(info) = app.core.shader_space.texture_info(preview_name.as_str()) {
                 format!(
                     "Preview • {} • {}×{} • {:?}",
@@ -778,10 +795,15 @@ fn draw_badges(
                 )
             } else {
                 format!("Preview • {}", preview_name.as_str())
-            };
+            },
+        )
+    } else {
+        None
+    };
+    if let Some(badge_text) = preview_badge_text {
         let badge_galley =
             ui.painter()
-                .layout_no_wrap(badge_text, badge_font, Color32::from_gray(220));
+                .layout_no_wrap(badge_text, badge_font.clone(), Color32::from_gray(220));
         let badge_size = badge_galley.size() + egui::vec2(16.0, 8.0);
         let badge_rect = Rect::from_min_size(pos2(badge_x, badge_y), badge_size);
         ui.painter().rect(
@@ -796,11 +818,154 @@ fn draw_badges(
             badge_galley,
             Color32::PLACEHOLDER,
         );
+        badge_y += badge_size.y + 6.0;
     }
+
+    draw_profile_text(app, ui, &badge_font, badge_x, badge_y);
 
     if ref_tag_anim_t > 0.001 && ref_tag_anim_t < 0.999 {
         ctx.request_repaint();
     }
+}
+
+fn draw_profile_text(
+    app: &App,
+    ui: &egui::Ui,
+    badge_font: &egui::FontId,
+    badge_x: f32,
+    badge_y: f32,
+) {
+    let Some(profile) = app.runtime.latest_render_profile.as_ref() else {
+        return;
+    };
+    if profile.passes.is_empty() {
+        return;
+    }
+
+    let mut lines = vec![
+        format!("Frame CPU encode {:.2} ms", profile.frame_cpu_encode_ms),
+        format!(
+            "Frame GPU duration {}",
+            format_optional_ms(profile.frame_gpu_duration_ms)
+        ),
+        format!("Frame wall {:.2} ms", profile.frame_wall_ms),
+    ];
+    if let Some(wait_ms) = profile.queue_wait_ms {
+        lines.push(format!("Queue wait {:.2} ms", wait_ms));
+    }
+    let timestamp_status = if profile.timestamp_query_used {
+        "timestamp query active"
+    } else if profile.timestamp_query_supported {
+        "timestamp query available in headless wait mode"
+    } else {
+        "timestamp query unavailable"
+    };
+    lines.push(format!("GPU duration source {timestamp_status}"));
+    let pipeline_statistics_status = if profile.pipeline_statistics_used {
+        "pipeline statistics active"
+    } else if profile.pipeline_statistics_supported {
+        "pipeline statistics available in headless wait mode"
+    } else {
+        "pipeline statistics unavailable"
+    };
+    lines.push(format!(
+        "Pipeline statistics source {pipeline_statistics_status}"
+    ));
+
+    let mut passes = profile.passes.iter().collect::<Vec<_>>();
+    passes.sort_by(|a, b| match (a.gpu_duration_ms, b.gpu_duration_ms) {
+        (Some(a_ms), Some(b_ms)) => b_ms
+            .total_cmp(&a_ms)
+            .then_with(|| a.pass_name.cmp(&b.pass_name)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b
+            .cpu_encode_ms
+            .total_cmp(&a.cpu_encode_ms)
+            .then_with(|| a.pass_name.cmp(&b.pass_name)),
+    });
+    for pass in passes.into_iter().take(3) {
+        let pass_name = compact_pass_name(pass.pass_name.as_str(), 34);
+        lines.push(format!(
+            "Pass {} {} CPU encode {:.2} ms",
+            pass.order_index + 1,
+            pass_name,
+            pass.cpu_encode_ms,
+        ));
+        lines.push(format!(
+            "Pass {} {} GPU duration {}",
+            pass.order_index + 1,
+            pass_name,
+            format_optional_ms(pass.gpu_duration_ms),
+        ));
+        if pass.vertex_shader_invocations.is_some()
+            || pass.fragment_shader_invocations.is_some()
+            || pass.compute_shader_invocations.is_some()
+        {
+            lines.push(format!(
+                "Pass {} {} vertex invocations {}",
+                pass.order_index + 1,
+                pass_name,
+                format_optional_count(pass.vertex_shader_invocations),
+            ));
+            lines.push(format!(
+                "Pass {} {} fragment invocations {}",
+                pass.order_index + 1,
+                pass_name,
+                format_optional_count(pass.fragment_shader_invocations),
+            ));
+            lines.push(format!(
+                "Pass {} {} compute invocations {}",
+                pass.order_index + 1,
+                pass_name,
+                format_optional_count(pass.compute_shader_invocations),
+            ));
+        }
+    }
+
+    lines.push("Occupancy unsupported by public runtime API on this device".to_string());
+    lines.push("ALU limiter unsupported by public runtime API on this device".to_string());
+    lines.push("Memory bandwidth unsupported by public runtime API on this device".to_string());
+
+    let color = Color32::from_rgb(210, 224, 255);
+    let mut y = badge_y;
+    for line in lines {
+        let galley = ui.painter().layout_no_wrap(line, badge_font.clone(), color);
+        ui.painter()
+            .galley(pos2(badge_x, y), galley.clone(), Color32::PLACEHOLDER);
+        y += galley.size().y + 2.0;
+    }
+}
+
+fn format_optional_ms(value: Option<f64>) -> String {
+    value
+        .map(|ms| format!("{ms:.2} ms"))
+        .unwrap_or_else(|| "unavailable".to_string())
+}
+
+fn format_optional_count(value: Option<u64>) -> String {
+    value
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "unavailable".to_string())
+}
+
+fn compact_pass_name(name: &str, max_chars: usize) -> String {
+    let count = name.chars().count();
+    if count <= max_chars || max_chars < 8 {
+        return name.to_string();
+    }
+    let keep_head = (max_chars - 3) / 2;
+    let keep_tail = max_chars - 3 - keep_head;
+    let head = name.chars().take(keep_head).collect::<String>();
+    let tail = name
+        .chars()
+        .rev()
+        .take(keep_tail)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>();
+    format!("{head}...{tail}")
 }
 
 fn maybe_sample_clicked_pixel(
@@ -1028,9 +1193,33 @@ pub fn show_canvas(
 
     reference::maybe_handle_reference_drop(app, ctx, render_state);
 
+    let escape_pressed = plain_shortcuts_enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let design_escape_consumed = if escape_pressed {
+        if let Some(session) = app.canvas.design.active.as_mut() {
+            if design::handle_escape(session) {
+                true
+            } else {
+                apply_action(
+                    &mut frame_result,
+                    app,
+                    render_state,
+                    renderer,
+                    CanvasAction::ExitPassDesign,
+                );
+                true
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     if app.canvas.display.preview_texture_name.is_some()
+        && app.canvas.design.active.is_none()
         && plain_shortcuts_enabled
-        && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        && escape_pressed
+        && !design_escape_consumed
     {
         apply_action(
             &mut frame_result,
@@ -1041,9 +1230,29 @@ pub fn show_canvas(
         );
     }
 
+    if let Some(session) = app.canvas.design.active.as_mut() {
+        design::sync_session_target_from_snapshot(session, app.shell.resource_snapshot.as_ref());
+        if let Some(target_texture) = session.target.target_texture.as_ref() {
+            let needs_preview = app
+                .canvas
+                .display
+                .preview_texture_name
+                .as_ref()
+                .map(|name| name.as_str())
+                != Some(target_texture.as_str());
+            if needs_preview {
+                app.canvas.display.preview_texture_name =
+                    Some(ResourceName::from(target_texture.as_str()));
+                pixel_overlay::clear_cache(app);
+                app.canvas.invalidation.preview_source_changed();
+            }
+        }
+    }
+
     // ── Determine image_size: matrix grid or single scene ────────────
     let matrix_active = app.shell.test_mode == crate::app::types::TestMode::Matrix
-        && !app.shell.matrix_state.cells.is_empty();
+        && !app.shell.matrix_state.cells.is_empty()
+        && app.canvas.design.active.is_none();
 
     let (using_preview, display_frame, image_size) = if matrix_active {
         let ms = &app.shell.matrix_state;
@@ -1233,6 +1442,8 @@ pub fn show_canvas(
         }
     });
 
+    let design_active = app.canvas.design.active.is_some();
+
     if viewport_frame.pan_zoom_enabled {
         if response.drag_started_by(egui::PointerButton::Middle)
             && let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos())
@@ -1265,7 +1476,7 @@ pub fn show_canvas(
             );
         }
 
-        if app.canvas.reference.ref_image.is_some() {
+        if !design_active && app.canvas.reference.ref_image.is_some() {
             if response.drag_started_by(egui::PointerButton::Primary)
                 && let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos())
             {
@@ -1296,7 +1507,7 @@ pub fn show_canvas(
                     CanvasAction::EndReferenceDrag,
                 );
             }
-        } else {
+        } else if !design_active {
             if response.drag_started_by(egui::PointerButton::Primary)
                 && let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos())
             {
@@ -1406,7 +1617,35 @@ pub fn show_canvas(
         );
 
         let mut value_sample_cache = None;
-        if app.canvas.viewport.zoom >= 48.0
+        let mut design_claims = design::DesignInteractionClaims::default();
+        let mut design_status = None;
+        if let Some(session) = app.canvas.design.active.as_mut() {
+            let output = design::show_active_overlay(
+                ui,
+                ctx,
+                session,
+                design::DesignOverlayInput {
+                    scene: app.runtime.uniform_scene.as_ref(),
+                    resource_snapshot: app.shell.resource_snapshot.as_ref(),
+                    editor_connected: app.core.ws_hub.client_count() > 0,
+                    canvas_rect,
+                    image_rect: viewport_frame.image_rect,
+                    display_resolution: display_frame.effective_resolution,
+                    pointer_response: &response,
+                },
+            );
+            design_claims = output.claims;
+            design_status = Some(output.status);
+            frame_result.commands.extend(
+                output
+                    .patches
+                    .into_iter()
+                    .map(AppCommand::SendDesignParamPatch),
+            );
+        }
+
+        if !design_claims.suppress_analysis_overlays
+            && app.canvas.viewport.zoom >= 48.0
             && let Some(info) = app
                 .core
                 .shader_space
@@ -1438,19 +1677,31 @@ pub fn show_canvas(
         }
 
         draw_operation_indicators(app, ui, ctx, canvas_rect, now, display_frame);
-        draw_badges(app, ui, ctx, canvas_rect, using_preview);
-        maybe_sample_clicked_pixel(
+        draw_badges(
             app,
+            ui,
             ctx,
-            &response,
             canvas_rect,
-            viewport_frame.image_rect,
-            display_frame,
-            frame,
-            value_sample_cache.as_deref(),
-            render_state,
-            renderer,
+            using_preview,
+            design_status.as_ref(),
         );
+        let design_suppresses_sampling = design_claims.suppress_pixel_sampling
+            || design_claims.primary_pointer
+            || design_claims.suppress_reference_drag;
+        if !design_suppresses_sampling {
+            maybe_sample_clicked_pixel(
+                app,
+                ctx,
+                &response,
+                canvas_rect,
+                viewport_frame.image_rect,
+                display_frame,
+                frame,
+                value_sample_cache.as_deref(),
+                render_state,
+                renderer,
+            );
+        }
     }
 
     if !app.shell.pass_debug_windows.is_empty() {

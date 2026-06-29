@@ -42,8 +42,8 @@ pub use pass_debug::{
 pub use scene_prep::{PreparedScene, prepare_scene};
 pub use shader_space::{
     ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
-    ShaderSpacePresentationMode, render_scene_to_file_headless, render_scene_to_png_headless,
-    update_pass_params,
+    ShaderSpacePresentationMode, render_scene_to_file_headless,
+    render_scene_to_file_headless_profiled, render_scene_to_png_headless, update_pass_params,
 };
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};

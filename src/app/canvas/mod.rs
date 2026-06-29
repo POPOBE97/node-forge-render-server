@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod design;
 pub mod display;
 pub mod ops;
 pub mod pixel_overlay;

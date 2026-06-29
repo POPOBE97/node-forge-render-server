@@ -35,6 +35,17 @@ pub(crate) fn render_pass_debug_titlebar(
         ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
     ui.horizontal(|ui| {
         ui.heading(format!("RenderPass Debug - {}", view.pass_name));
+        if let Some(target_size) = view.target_size_label.as_deref() {
+            let response = ui.label(
+                egui::RichText::new(format!("RT {target_size}"))
+                    .monospace()
+                    .small()
+                    .color(egui::Color32::from_gray(185)),
+            );
+            if let Some(target_texture) = view.target_texture_label.as_deref() {
+                response.on_hover_text(target_texture);
+            }
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_enabled_ui(view.diff_enabled, |ui| {
                 if ui.selectable_label(view.diff_active, "Diff").clicked() {

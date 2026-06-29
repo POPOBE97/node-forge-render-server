@@ -589,9 +589,17 @@ fn collect_pass_debug_sources(
     for spec in render_pass_specs {
         sources.insert(
             spec.name.as_str().to_string(),
-            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl_with_render_target(
                 spec.name.as_str(),
                 spec.shader_wgsl.clone(),
+                Some(
+                    spec.resolve_target
+                        .as_ref()
+                        .unwrap_or(&spec.target_texture)
+                        .as_str()
+                        .to_string(),
+                ),
+                target_size_from_params(spec.params.target_size),
             ),
         );
     }
@@ -599,9 +607,11 @@ fn collect_pass_debug_sources(
     for spec in image_prepasses {
         sources.insert(
             spec.pass_name.as_str().to_string(),
-            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl_with_render_target(
                 spec.pass_name.as_str(),
                 spec.shader_wgsl.clone(),
+                Some(spec.dst_texture.as_str().to_string()),
+                target_size_from_params(spec.params.target_size),
             ),
         );
     }
@@ -609,14 +619,25 @@ fn collect_pass_debug_sources(
     for spec in depth_resolve_passes {
         sources.insert(
             spec.pass_name.as_str().to_string(),
-            crate::renderer::pass_debug::PassDebugSource::from_wgsl(
+            crate::renderer::pass_debug::PassDebugSource::from_wgsl_with_render_target(
                 spec.pass_name.as_str(),
                 spec.shader_wgsl.clone(),
+                Some(spec.dst_texture.as_str().to_string()),
+                target_size_from_params(spec.params.target_size),
             ),
         );
     }
 
     sources
+}
+
+fn target_size_from_params(target_size: [f32; 2]) -> Option<[u32; 2]> {
+    let [width, height] = target_size;
+    if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
+        Some([width.round() as u32, height.round() as u32])
+    } else {
+        None
+    }
 }
 
 fn collect_processing_source_pass_ids(

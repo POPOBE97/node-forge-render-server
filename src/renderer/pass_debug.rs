@@ -181,6 +181,8 @@ impl PassDebugDependencyNode {
 pub struct PassDebugSource {
     pub pass_name: String,
     pub module_source: String,
+    pub target_texture: Option<String>,
+    pub target_size: Option<[u32; 2]>,
     pub ast_tree: Vec<PassDebugAstNode>,
     pub dependency_targets: Vec<PassDebugDependencyTarget>,
     pub dependency_trees: HashMap<String, PassDebugDependencyNode>,
@@ -191,6 +193,15 @@ pub struct PassDebugSource {
 
 impl PassDebugSource {
     pub fn from_wgsl(pass_name: impl Into<String>, module_source: impl Into<String>) -> Self {
+        Self::from_wgsl_with_render_target(pass_name, module_source, None, None)
+    }
+
+    pub fn from_wgsl_with_render_target(
+        pass_name: impl Into<String>,
+        module_source: impl Into<String>,
+        target_texture: Option<String>,
+        target_size: Option<[u32; 2]>,
+    ) -> Self {
         let pass_name = pass_name.into();
         let module_source = module_source.into();
         match naga::front::wgsl::parse_str(&module_source) {
@@ -200,6 +211,8 @@ impl PassDebugSource {
                 Self {
                     pass_name,
                     module_source,
+                    target_texture,
+                    target_size,
                     ast_tree,
                     dependency_targets: dependencies.targets,
                     dependency_trees: dependencies.trees,
@@ -211,6 +224,8 @@ impl PassDebugSource {
             Err(error) => Self {
                 pass_name,
                 module_source,
+                target_texture,
+                target_size,
                 ast_tree: vec![PassDebugAstNode::branch(
                     "Parse Error",
                     vec![PassDebugAstNode::leaf(error.to_string())],
@@ -4411,6 +4426,22 @@ fn fs_main() -> @location(0) vec4f {
         assert_eq!(doc.module_source, source);
         assert!(doc.parse_error.is_some());
         assert_eq!(doc.ast_tree[0].label, "Parse Error");
+    }
+
+    #[test]
+    fn render_target_metadata_is_preserved() {
+        let source = "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(1.0); }";
+
+        let doc = PassDebugSource::from_wgsl_with_render_target(
+            "target.pass",
+            source,
+            Some("sys.output.rt".to_string()),
+            Some([640, 360]),
+        );
+
+        assert_eq!(doc.target_texture.as_deref(), Some("sys.output.rt"));
+        assert_eq!(doc.target_size, Some([640, 360]));
+        assert!(doc.parse_error.is_none());
     }
 
     #[test]

@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use rust_wgpu_fiber::{eframe::wgpu, shader_space::ShaderSpace};
 
-use crate::renderer::PassBindings;
+use crate::{dsl::SceneDSL, renderer::PassBindings};
 
 // ---------------------------------------------------------------------------
 // Snapshot types
@@ -22,6 +22,8 @@ use crate::renderer::PassBindings;
 #[derive(Clone, Debug)]
 pub struct PassInfo {
     pub name: String,
+    pub source_node_id: Option<String>,
+    pub source_node_type: Option<String>,
     /// Monotonic insertion order from ShaderSpace pass registry.
     pub order_index: usize,
     pub target_texture: Option<String>,
@@ -72,7 +74,9 @@ impl ResourceSnapshot {
         ss: &ShaderSpace,
         _pass_bindings: &[PassBindings],
         final_output_texture: Option<&str>,
+        scene: Option<&SceneDSL>,
     ) -> Self {
+        let pass_sources = scene.map(pass_source_metadata_by_pass).unwrap_or_default();
         // --- Passes ---
         let mut passes: Vec<PassInfo> = ss
             .passes
@@ -80,6 +84,10 @@ impl ResourceSnapshot {
             .iter()
             .enumerate()
             .map(|(order_index, (name, pass))| {
+                let (source_node_id, source_node_type) = pass_sources
+                    .get(name.as_str())
+                    .cloned()
+                    .unwrap_or((None, None));
                 let is_compute =
                     matches!(pass.pipeline, rust_wgpu_fiber::pass::Pipeline::Compute(_));
 
@@ -118,6 +126,8 @@ impl ResourceSnapshot {
 
                 PassInfo {
                     name: name.as_str().to_string(),
+                    source_node_id,
+                    source_node_type,
                     order_index,
                     target_texture,
                     target_size,
@@ -229,6 +239,21 @@ impl ResourceSnapshot {
     }
 }
 
+fn pass_source_metadata_by_pass(
+    scene: &SceneDSL,
+) -> HashMap<String, (Option<String>, Option<String>)> {
+    let mut out = HashMap::new();
+    for node in &scene.nodes {
+        if node.node_type == "MeshGradient" {
+            out.insert(
+                format!("sys.mesh_gradient.{}.pass", node.id),
+                (Some(node.id.clone()), Some(node.node_type.clone())),
+            );
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // File-tree model
 // ---------------------------------------------------------------------------
@@ -252,12 +277,24 @@ pub enum NodeKind {
     Pass {
         pass_name: String,
         target_texture: Option<String>,
+        target_size: Option<(u32, u32)>,
+        source_node_id: Option<String>,
+        source_node_type: Option<String>,
     },
     Texture {
         texture_name: String,
     },
     Buffer,
     Sampler,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PassDesignTarget {
+    pub node_id: String,
+    pub node_type: String,
+    pub pass_name: String,
+    pub target_texture: Option<String>,
+    pub target_size: Option<(u32, u32)>,
 }
 
 /// A single node in the file-tree.
@@ -414,6 +451,9 @@ fn build_dependency_tree(
                         kind: NodeKind::Pass {
                             pass_name: producer.name.clone(),
                             target_texture: producer.target_texture.clone(),
+                            target_size: producer.target_size,
+                            source_node_id: producer.source_node_id.clone(),
+                            source_node_type: producer.source_node_type.clone(),
                         },
                         detail: None,
                         children: vec![],
@@ -444,6 +484,9 @@ fn build_dependency_tree(
             kind: NodeKind::Pass {
                 pass_name: pass.name.clone(),
                 target_texture: pass.target_texture.clone(),
+                target_size: pass.target_size,
+                source_node_id: pass.source_node_id.clone(),
+                source_node_type: pass.source_node_type.clone(),
             },
             detail: None,
             children: texture_children,
@@ -520,7 +563,12 @@ fn format_buffer_usage(usage: wgpu::BufferUsages) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo};
+    use std::collections::HashMap;
+
+    use super::{
+        BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo, pass_source_metadata_by_pass,
+    };
+    use crate::dsl::{Metadata, Node, SceneDSL};
 
     #[test]
     fn long_root_target_label_is_preserved() {
@@ -544,6 +592,8 @@ mod tests {
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.compose.pass".to_string(),
+                source_node_id: None,
+                source_node_type: None,
                 order_index: 0,
                 target_texture: Some(root_target.to_string()),
                 target_size: None,
@@ -595,6 +645,8 @@ mod tests {
             passes: vec![
                 PassInfo {
                     name: "sys.compose.pass".to_string(),
+                    source_node_id: None,
+                    source_node_type: None,
                     order_index: 0,
                     target_texture: Some(root_target.to_string()),
                     target_size: None,
@@ -607,6 +659,8 @@ mod tests {
                 },
                 PassInfo {
                     name: "sys.grade.pass".to_string(),
+                    source_node_id: None,
+                    source_node_type: None,
                     order_index: 1,
                     target_texture: Some(root_target.to_string()),
                     target_size: None,
@@ -619,6 +673,8 @@ mod tests {
                 },
                 PassInfo {
                     name: "sys.compute.prepass".to_string(),
+                    source_node_id: None,
+                    source_node_type: None,
                     order_index: 2,
                     target_texture: None,
                     target_size: None,
@@ -645,6 +701,8 @@ mod tests {
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.render.pass.exact.name.pass".to_string(),
+                source_node_id: None,
+                source_node_type: None,
                 order_index: 0,
                 target_texture: Some(root_target.to_string()),
                 target_size: None,
@@ -667,5 +725,41 @@ mod tests {
             super::NodeKind::Pass { pass_name, .. }
                 if pass_name == "sys.render.pass.exact.name.pass"
         ));
+    }
+
+    #[test]
+    fn mesh_gradient_pass_source_metadata_maps_to_scene_node() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "metadata test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![Node {
+                id: "MeshGradient_12".to_string(),
+                node_type: "MeshGradient".to_string(),
+                params: HashMap::new(),
+                inputs: vec![],
+                outputs: vec![],
+                input_bindings: vec![],
+                wgsl_override: None,
+            }],
+            connections: vec![],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let sources = pass_source_metadata_by_pass(&scene);
+        assert_eq!(
+            sources.get("sys.mesh_gradient.MeshGradient_12.pass"),
+            Some(&(
+                Some("MeshGradient_12".to_string()),
+                Some("MeshGradient".to_string())
+            ))
+        );
     }
 }

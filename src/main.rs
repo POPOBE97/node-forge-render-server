@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use node_forge_render_server::{app, asset_store, dsl, renderer, ws};
+use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
 #[derive(Debug, Default, Clone)]
@@ -21,6 +21,17 @@ struct Cli {
     dump_shader_deps_output: Option<PathBuf>,
     render_to_file: bool,
     continuous_redraw: bool,
+    profile: bool,
+    profile_output: Option<PathBuf>,
+    profile_format: Option<String>,
+    profile_frames: u32,
+    profile_warmup_frames: u32,
+}
+
+#[derive(Debug, Clone)]
+struct HeadlessProfileOptions {
+    config: profile::ProfileRunConfig,
+    output: profile::ProfileOutputTarget,
 }
 
 #[derive(serde::Serialize)]
@@ -224,9 +235,47 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.continuous_redraw = true;
                 i += 1;
             }
+            "--profile" => {
+                cli.profile = true;
+                i += 1;
+            }
+            "--profile-output" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --profile-output"));
+                };
+                if v != "-" {
+                    cli.profile_output = Some(PathBuf::from(v));
+                }
+                i += 2;
+            }
+            "--profile-format" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --profile-format"));
+                };
+                cli.profile_format = Some(v.clone());
+                i += 2;
+            }
+            "--profile-frames" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --profile-frames"));
+                };
+                cli.profile_frames = v
+                    .parse::<u32>()
+                    .map_err(|_| anyhow!("--profile-frames must be a positive integer"))?;
+                i += 2;
+            }
+            "--profile-warmup-frames" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --profile-warmup-frames"));
+                };
+                cli.profile_warmup_frames = v
+                    .parse::<u32>()
+                    .map_err(|_| anyhow!("--profile-warmup-frames must be an integer"))?;
+                i += 2;
+            }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>)"
                 ));
             }
         }
@@ -247,8 +296,44 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             "--dump-shader-deps-output requires --dump-shader-deps <pass-name>"
         ));
     }
+    if let Some(format) = cli.profile_format.as_deref()
+        && format != "ndjson"
+    {
+        return Err(anyhow!(
+            "unsupported --profile-format {format:?}; currently supported: ndjson"
+        ));
+    }
+    if cli.profile && cli.profile_frames == 0 {
+        cli.profile_frames = 1;
+    }
+    if cli.profile_frames > 0 && !cli.profile {
+        return Err(anyhow!("--profile-frames requires --profile"));
+    }
+    if cli.profile_warmup_frames > 0 && !cli.profile {
+        return Err(anyhow!("--profile-warmup-frames requires --profile"));
+    }
+    if cli.profile_output.is_some() && !cli.profile {
+        return Err(anyhow!("--profile-output requires --profile"));
+    }
+    if cli.profile_format.is_some() && !cli.profile {
+        return Err(anyhow!("--profile-format requires --profile"));
+    }
 
     Ok(cli)
+}
+
+fn headless_profile_options(cli: &Cli) -> Option<HeadlessProfileOptions> {
+    cli.profile.then(|| HeadlessProfileOptions {
+        config: profile::ProfileRunConfig {
+            frames: cli.profile_frames.max(1),
+            warmup_frames: cli.profile_warmup_frames,
+        },
+        output: cli
+            .profile_output
+            .clone()
+            .map(profile::ProfileOutputTarget::File)
+            .unwrap_or(profile::ProfileOutputTarget::Stdout),
+    })
 }
 
 fn validate_absolute_output_path(path: &PathBuf) -> Result<()> {
@@ -317,7 +402,7 @@ fn dump_scene_wgsl(
         }
     }
 
-    println!("[headless] dumped wgsl: {}", dump_dir.display());
+    eprintln!("[headless] dumped wgsl: {}", dump_dir.display());
     Ok(())
 }
 
@@ -476,6 +561,7 @@ fn run_headless_json_render_once(
     output: Option<PathBuf>,
     dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
+    profile: Option<HeadlessProfileOptions>,
 ) -> Result<()> {
     let text = std::fs::read_to_string(dsl_json_path).map_err(|e| {
         anyhow!(
@@ -522,8 +608,24 @@ fn run_headless_json_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
-    println!("[headless] saved: {}", out_path.display());
+    if let Some(profile) = profile {
+        let stdout_profile = profile.output.is_stdout();
+        let mut writer = profile::ProfileWriter::new(&profile.output)?;
+        renderer::render_scene_to_file_headless_profiled(
+            &scene,
+            &out_path,
+            Some(&store),
+            &profile.config,
+            &mut writer,
+        )?;
+        eprintln!("[headless] saved: {}", out_path.display());
+        if !stdout_profile {
+            eprintln!("[headless] profile saved");
+        }
+    } else {
+        renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
+        println!("[headless] saved: {}", out_path.display());
+    }
     Ok(())
 }
 
@@ -533,6 +635,7 @@ fn run_headless_nforge_render_once(
     output: Option<PathBuf>,
     dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
+    profile: Option<HeadlessProfileOptions>,
 ) -> Result<()> {
     let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
     dump_scene_wgsl(&scene, Some(&store), dump_wgsl_dir.as_ref())?;
@@ -562,8 +665,24 @@ fn run_headless_nforge_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
-    println!("[headless] saved: {}", out_path.display());
+    if let Some(profile) = profile {
+        let stdout_profile = profile.output.is_stdout();
+        let mut writer = profile::ProfileWriter::new(&profile.output)?;
+        renderer::render_scene_to_file_headless_profiled(
+            &scene,
+            &out_path,
+            Some(&store),
+            &profile.config,
+            &mut writer,
+        )?;
+        eprintln!("[headless] saved: {}", out_path.display());
+        if !stdout_profile {
+            eprintln!("[headless] profile saved");
+        }
+    } else {
+        renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
+        println!("[headless] saved: {}", out_path.display());
+    }
     Ok(())
 }
 
@@ -572,6 +691,7 @@ fn run_headless_ws_render_once(
     output: Option<PathBuf>,
     dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
+    profile: Option<HeadlessProfileOptions>,
 ) -> Result<()> {
     use std::{thread, time::Duration};
 
@@ -627,7 +747,18 @@ fn run_headless_ws_render_once(
 
                 ensure_parent_dir_exists(&out_path)?;
 
-                let result = renderer::render_scene_to_file_headless(&scene, &out_path, None);
+                let result = if let Some(profile) = profile.as_ref() {
+                    let mut writer = profile::ProfileWriter::new(&profile.output)?;
+                    renderer::render_scene_to_file_headless_profiled(
+                        &scene,
+                        &out_path,
+                        None,
+                        &profile.config,
+                        &mut writer,
+                    )
+                } else {
+                    renderer::render_scene_to_file_headless(&scene, &out_path, None)
+                };
                 match result {
                     Ok(()) => {
                         let msg = node_forge_render_server::protocol::WSMessage {
@@ -639,8 +770,13 @@ fn run_headless_ws_render_once(
                             })),
                         };
                         if let Ok(text) = serde_json::to_string(&msg) {
-                            println!("Rendered to file at {}", out_path.display());
-                            println!("[headless]: {}", text);
+                            if profile.is_some() {
+                                eprintln!("Rendered to file at {}", out_path.display());
+                                eprintln!("[headless]: {}", text);
+                            } else {
+                                println!("Rendered to file at {}", out_path.display());
+                                println!("[headless]: {}", text);
+                            }
                             hub.broadcast(text);
                         }
                     }
@@ -655,7 +791,11 @@ fn run_headless_ws_render_once(
                             }),
                         };
                         if let Ok(text) = serde_json::to_string(&msg) {
-                            println!("[headless]: {}", text);
+                            if profile.is_some() {
+                                eprintln!("[headless]: {}", text);
+                            } else {
+                                println!("[headless]: {}", text);
+                            }
                             hub.broadcast(text);
                         }
                     }
@@ -823,6 +963,7 @@ fn main() -> Result<()> {
 
     // Script-friendly mode: pass DSL JSON directly.
     if cli.headless {
+        let profile_options = headless_profile_options(&cli);
         if let Some(nforge_path) = cli.nforge.as_deref() {
             return run_headless_nforge_render_once(
                 nforge_path,
@@ -830,6 +971,7 @@ fn main() -> Result<()> {
                 cli.output,
                 cli.dump_wgsl_dir,
                 cli.render_to_file,
+                profile_options.clone(),
             );
         }
         if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
@@ -839,6 +981,7 @@ fn main() -> Result<()> {
                 cli.output,
                 cli.dump_wgsl_dir,
                 cli.render_to_file,
+                profile_options.clone(),
             );
         }
 
@@ -848,6 +991,7 @@ fn main() -> Result<()> {
             cli.output,
             cli.dump_wgsl_dir,
             cli.render_to_file,
+            profile_options,
         );
     }
 
@@ -934,6 +1078,15 @@ fn main() -> Result<()> {
                         .contains(wgpu::Features::POLYGON_MODE_LINE)
                     {
                         required_features |= wgpu::Features::POLYGON_MODE_LINE;
+                    }
+                    if adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+                        required_features |= wgpu::Features::TIMESTAMP_QUERY;
+                    }
+                    if adapter
+                        .features()
+                        .contains(wgpu::Features::PIPELINE_STATISTICS_QUERY)
+                    {
+                        required_features |= wgpu::Features::PIPELINE_STATISTICS_QUERY;
                     }
                     wgpu::DeviceDescriptor {
                         label: Some("eframe wgpu device"),
@@ -1239,6 +1392,52 @@ mod tests {
         let args = vec!["--force-continuous-redraw".to_string()];
         let cli = parse_cli(&args).unwrap();
         assert!(cli.continuous_redraw);
+    }
+
+    #[test]
+    fn parse_cli_profile_defaults_to_stdout_ndjson() {
+        let args = vec![
+            "--headless".to_string(),
+            "--dsl-json".to_string(),
+            "scene.json".to_string(),
+            "--profile".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.profile);
+        assert_eq!(cli.profile_frames, 1);
+        assert_eq!(cli.profile_warmup_frames, 0);
+        assert!(cli.profile_output.is_none());
+    }
+
+    #[test]
+    fn parse_cli_profile_output_and_frames() {
+        let args = vec![
+            "--headless".to_string(),
+            "--dsl-json".to_string(),
+            "scene.json".to_string(),
+            "--profile".to_string(),
+            "--profile-output".to_string(),
+            "/tmp/profile.ndjson".to_string(),
+            "--profile-frames".to_string(),
+            "12".to_string(),
+            "--profile-warmup-frames".to_string(),
+            "3".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.profile);
+        assert_eq!(
+            cli.profile_output.as_ref().unwrap(),
+            &PathBuf::from("/tmp/profile.ndjson")
+        );
+        assert_eq!(cli.profile_frames, 12);
+        assert_eq!(cli.profile_warmup_frames, 3);
+    }
+
+    #[test]
+    fn parse_cli_profile_frames_requires_profile() {
+        let args = vec!["--profile-frames".to_string(), "2".to_string()];
+        let err = parse_cli(&args).unwrap_err().to_string();
+        assert!(err.contains("--profile-frames requires --profile"));
     }
 
     fn collect_target_nodes<'a>(

@@ -4,11 +4,14 @@ use crate::app::{
     frame::commands::AppCommand,
     types::{AnalysisTab, DiffMetricMode, QualifierChannel},
 };
+use crate::ui::resource_tree::PassDesignTarget;
 
 #[derive(Clone, Debug)]
 pub enum CanvasAction {
     SetPreviewTexture(ResourceName),
     ClearPreviewTexture,
+    EnterPassDesign(PassDesignTarget),
+    ExitPassDesign,
     ToggleHdrClamp,
     ToggleWireframe,
     TogglePause,

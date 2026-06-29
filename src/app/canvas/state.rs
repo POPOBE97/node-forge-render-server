@@ -17,7 +17,7 @@ use crate::{
     ui::{self, viewport_indicators::ViewportIndicatorManager},
 };
 
-use super::{ops::ClipboardCopyState, pixel_overlay::PixelOverlayCache};
+use super::{design::CanvasDesignState, ops::ClipboardCopyState, pixel_overlay::PixelOverlayCache};
 
 pub struct CanvasState {
     pub viewport: CanvasViewportState,
@@ -25,6 +25,7 @@ pub struct CanvasState {
     pub analysis: CanvasAnalysisState,
     pub reference: CanvasReferenceState,
     pub interactions: CanvasInteractionState,
+    pub design: CanvasDesignState,
     pub async_ops: CanvasAsyncOps,
     pub invalidation: CanvasInvalidation,
     pub viewport_indicator_manager: ViewportIndicatorManager,
@@ -46,6 +47,7 @@ impl CanvasState {
                 ..Default::default()
             },
             interactions: CanvasInteractionState::default(),
+            design: CanvasDesignState::default(),
             async_ops: CanvasAsyncOps::default(),
             invalidation: CanvasInvalidation::default(),
             viewport_indicator_manager: ViewportIndicatorManager::default(),

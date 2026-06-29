@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-27T06:07:39.643Z",
+  "generatedAt": "2026-06-27T17:36:45.419Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -2992,7 +2992,7 @@
       "type": "MeshGradient",
       "label": "Mesh Gradient",
       "category": "Gradient",
-      "description": "A 3×3 smooth mesh gradient with 9 color control points and pixel-space positions",
+      "description": "A 3-10 by 3-10 smooth mesh gradient with color control points and pixel-space positions",
       "inputs": [
         {
           "id": "camera",
@@ -3024,7 +3024,7 @@
           "default": 20,
           "range": {
             "min": 2,
-            "max": 96,
+            "max": 100,
             "step": 1
           }
         },
@@ -3035,7 +3035,7 @@
           "default": 20,
           "range": {
             "min": 2,
-            "max": 96,
+            "max": 100,
             "step": 1
           }
         },
@@ -3085,6 +3085,461 @@
           "type": "vector2"
         },
         {
+          "id": "pos9",
+          "name": "Pos 9",
+          "type": "vector2"
+        },
+        {
+          "id": "pos10",
+          "name": "Pos 10",
+          "type": "vector2"
+        },
+        {
+          "id": "pos11",
+          "name": "Pos 11",
+          "type": "vector2"
+        },
+        {
+          "id": "pos12",
+          "name": "Pos 12",
+          "type": "vector2"
+        },
+        {
+          "id": "pos13",
+          "name": "Pos 13",
+          "type": "vector2"
+        },
+        {
+          "id": "pos14",
+          "name": "Pos 14",
+          "type": "vector2"
+        },
+        {
+          "id": "pos15",
+          "name": "Pos 15",
+          "type": "vector2"
+        },
+        {
+          "id": "pos16",
+          "name": "Pos 16",
+          "type": "vector2"
+        },
+        {
+          "id": "pos17",
+          "name": "Pos 17",
+          "type": "vector2"
+        },
+        {
+          "id": "pos18",
+          "name": "Pos 18",
+          "type": "vector2"
+        },
+        {
+          "id": "pos19",
+          "name": "Pos 19",
+          "type": "vector2"
+        },
+        {
+          "id": "pos20",
+          "name": "Pos 20",
+          "type": "vector2"
+        },
+        {
+          "id": "pos21",
+          "name": "Pos 21",
+          "type": "vector2"
+        },
+        {
+          "id": "pos22",
+          "name": "Pos 22",
+          "type": "vector2"
+        },
+        {
+          "id": "pos23",
+          "name": "Pos 23",
+          "type": "vector2"
+        },
+        {
+          "id": "pos24",
+          "name": "Pos 24",
+          "type": "vector2"
+        },
+        {
+          "id": "pos25",
+          "name": "Pos 25",
+          "type": "vector2"
+        },
+        {
+          "id": "pos26",
+          "name": "Pos 26",
+          "type": "vector2"
+        },
+        {
+          "id": "pos27",
+          "name": "Pos 27",
+          "type": "vector2"
+        },
+        {
+          "id": "pos28",
+          "name": "Pos 28",
+          "type": "vector2"
+        },
+        {
+          "id": "pos29",
+          "name": "Pos 29",
+          "type": "vector2"
+        },
+        {
+          "id": "pos30",
+          "name": "Pos 30",
+          "type": "vector2"
+        },
+        {
+          "id": "pos31",
+          "name": "Pos 31",
+          "type": "vector2"
+        },
+        {
+          "id": "pos32",
+          "name": "Pos 32",
+          "type": "vector2"
+        },
+        {
+          "id": "pos33",
+          "name": "Pos 33",
+          "type": "vector2"
+        },
+        {
+          "id": "pos34",
+          "name": "Pos 34",
+          "type": "vector2"
+        },
+        {
+          "id": "pos35",
+          "name": "Pos 35",
+          "type": "vector2"
+        },
+        {
+          "id": "pos36",
+          "name": "Pos 36",
+          "type": "vector2"
+        },
+        {
+          "id": "pos37",
+          "name": "Pos 37",
+          "type": "vector2"
+        },
+        {
+          "id": "pos38",
+          "name": "Pos 38",
+          "type": "vector2"
+        },
+        {
+          "id": "pos39",
+          "name": "Pos 39",
+          "type": "vector2"
+        },
+        {
+          "id": "pos40",
+          "name": "Pos 40",
+          "type": "vector2"
+        },
+        {
+          "id": "pos41",
+          "name": "Pos 41",
+          "type": "vector2"
+        },
+        {
+          "id": "pos42",
+          "name": "Pos 42",
+          "type": "vector2"
+        },
+        {
+          "id": "pos43",
+          "name": "Pos 43",
+          "type": "vector2"
+        },
+        {
+          "id": "pos44",
+          "name": "Pos 44",
+          "type": "vector2"
+        },
+        {
+          "id": "pos45",
+          "name": "Pos 45",
+          "type": "vector2"
+        },
+        {
+          "id": "pos46",
+          "name": "Pos 46",
+          "type": "vector2"
+        },
+        {
+          "id": "pos47",
+          "name": "Pos 47",
+          "type": "vector2"
+        },
+        {
+          "id": "pos48",
+          "name": "Pos 48",
+          "type": "vector2"
+        },
+        {
+          "id": "pos49",
+          "name": "Pos 49",
+          "type": "vector2"
+        },
+        {
+          "id": "pos50",
+          "name": "Pos 50",
+          "type": "vector2"
+        },
+        {
+          "id": "pos51",
+          "name": "Pos 51",
+          "type": "vector2"
+        },
+        {
+          "id": "pos52",
+          "name": "Pos 52",
+          "type": "vector2"
+        },
+        {
+          "id": "pos53",
+          "name": "Pos 53",
+          "type": "vector2"
+        },
+        {
+          "id": "pos54",
+          "name": "Pos 54",
+          "type": "vector2"
+        },
+        {
+          "id": "pos55",
+          "name": "Pos 55",
+          "type": "vector2"
+        },
+        {
+          "id": "pos56",
+          "name": "Pos 56",
+          "type": "vector2"
+        },
+        {
+          "id": "pos57",
+          "name": "Pos 57",
+          "type": "vector2"
+        },
+        {
+          "id": "pos58",
+          "name": "Pos 58",
+          "type": "vector2"
+        },
+        {
+          "id": "pos59",
+          "name": "Pos 59",
+          "type": "vector2"
+        },
+        {
+          "id": "pos60",
+          "name": "Pos 60",
+          "type": "vector2"
+        },
+        {
+          "id": "pos61",
+          "name": "Pos 61",
+          "type": "vector2"
+        },
+        {
+          "id": "pos62",
+          "name": "Pos 62",
+          "type": "vector2"
+        },
+        {
+          "id": "pos63",
+          "name": "Pos 63",
+          "type": "vector2"
+        },
+        {
+          "id": "pos64",
+          "name": "Pos 64",
+          "type": "vector2"
+        },
+        {
+          "id": "pos65",
+          "name": "Pos 65",
+          "type": "vector2"
+        },
+        {
+          "id": "pos66",
+          "name": "Pos 66",
+          "type": "vector2"
+        },
+        {
+          "id": "pos67",
+          "name": "Pos 67",
+          "type": "vector2"
+        },
+        {
+          "id": "pos68",
+          "name": "Pos 68",
+          "type": "vector2"
+        },
+        {
+          "id": "pos69",
+          "name": "Pos 69",
+          "type": "vector2"
+        },
+        {
+          "id": "pos70",
+          "name": "Pos 70",
+          "type": "vector2"
+        },
+        {
+          "id": "pos71",
+          "name": "Pos 71",
+          "type": "vector2"
+        },
+        {
+          "id": "pos72",
+          "name": "Pos 72",
+          "type": "vector2"
+        },
+        {
+          "id": "pos73",
+          "name": "Pos 73",
+          "type": "vector2"
+        },
+        {
+          "id": "pos74",
+          "name": "Pos 74",
+          "type": "vector2"
+        },
+        {
+          "id": "pos75",
+          "name": "Pos 75",
+          "type": "vector2"
+        },
+        {
+          "id": "pos76",
+          "name": "Pos 76",
+          "type": "vector2"
+        },
+        {
+          "id": "pos77",
+          "name": "Pos 77",
+          "type": "vector2"
+        },
+        {
+          "id": "pos78",
+          "name": "Pos 78",
+          "type": "vector2"
+        },
+        {
+          "id": "pos79",
+          "name": "Pos 79",
+          "type": "vector2"
+        },
+        {
+          "id": "pos80",
+          "name": "Pos 80",
+          "type": "vector2"
+        },
+        {
+          "id": "pos81",
+          "name": "Pos 81",
+          "type": "vector2"
+        },
+        {
+          "id": "pos82",
+          "name": "Pos 82",
+          "type": "vector2"
+        },
+        {
+          "id": "pos83",
+          "name": "Pos 83",
+          "type": "vector2"
+        },
+        {
+          "id": "pos84",
+          "name": "Pos 84",
+          "type": "vector2"
+        },
+        {
+          "id": "pos85",
+          "name": "Pos 85",
+          "type": "vector2"
+        },
+        {
+          "id": "pos86",
+          "name": "Pos 86",
+          "type": "vector2"
+        },
+        {
+          "id": "pos87",
+          "name": "Pos 87",
+          "type": "vector2"
+        },
+        {
+          "id": "pos88",
+          "name": "Pos 88",
+          "type": "vector2"
+        },
+        {
+          "id": "pos89",
+          "name": "Pos 89",
+          "type": "vector2"
+        },
+        {
+          "id": "pos90",
+          "name": "Pos 90",
+          "type": "vector2"
+        },
+        {
+          "id": "pos91",
+          "name": "Pos 91",
+          "type": "vector2"
+        },
+        {
+          "id": "pos92",
+          "name": "Pos 92",
+          "type": "vector2"
+        },
+        {
+          "id": "pos93",
+          "name": "Pos 93",
+          "type": "vector2"
+        },
+        {
+          "id": "pos94",
+          "name": "Pos 94",
+          "type": "vector2"
+        },
+        {
+          "id": "pos95",
+          "name": "Pos 95",
+          "type": "vector2"
+        },
+        {
+          "id": "pos96",
+          "name": "Pos 96",
+          "type": "vector2"
+        },
+        {
+          "id": "pos97",
+          "name": "Pos 97",
+          "type": "vector2"
+        },
+        {
+          "id": "pos98",
+          "name": "Pos 98",
+          "type": "vector2"
+        },
+        {
+          "id": "pos99",
+          "name": "Pos 99",
+          "type": "vector2"
+        },
+        {
           "id": "color0",
           "name": "Color 0",
           "type": "color",
@@ -3106,37 +3561,583 @@
           "id": "color3",
           "name": "Color 3",
           "type": "color",
-          "default": "#69db7c"
+          "default": "#f4f46b"
         },
         {
           "id": "color4",
           "name": "Color 4",
           "type": "color",
-          "default": "#ffffff"
+          "default": "#c0eb75"
         },
         {
           "id": "color5",
           "name": "Color 5",
           "type": "color",
-          "default": "#74c0fc"
+          "default": "#69db7c"
         },
         {
           "id": "color6",
           "name": "Color 6",
           "type": "color",
-          "default": "#b197fc"
+          "default": "#38d9a9"
         },
         {
           "id": "color7",
           "name": "Color 7",
           "type": "color",
-          "default": "#f783ac"
+          "default": "#66d9e8"
         },
         {
           "id": "color8",
           "name": "Color 8",
           "type": "color",
+          "default": "#74c0fc"
+        },
+        {
+          "id": "color9",
+          "name": "Color 9",
+          "type": "color",
+          "default": "#4dabf7"
+        },
+        {
+          "id": "color10",
+          "name": "Color 10",
+          "type": "color",
+          "default": "#748ffc"
+        },
+        {
+          "id": "color11",
+          "name": "Color 11",
+          "type": "color",
+          "default": "#91a7ff"
+        },
+        {
+          "id": "color12",
+          "name": "Color 12",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color13",
+          "name": "Color 13",
+          "type": "color",
+          "default": "#b197fc"
+        },
+        {
+          "id": "color14",
+          "name": "Color 14",
+          "type": "color",
+          "default": "#9775fa"
+        },
+        {
+          "id": "color15",
+          "name": "Color 15",
+          "type": "color",
           "default": "#da77f2"
+        },
+        {
+          "id": "color16",
+          "name": "Color 16",
+          "type": "color",
+          "default": "#e599f7"
+        },
+        {
+          "id": "color17",
+          "name": "Color 17",
+          "type": "color",
+          "default": "#f783ac"
+        },
+        {
+          "id": "color18",
+          "name": "Color 18",
+          "type": "color",
+          "default": "#faa2c1"
+        },
+        {
+          "id": "color19",
+          "name": "Color 19",
+          "type": "color",
+          "default": "#ff8787"
+        },
+        {
+          "id": "color20",
+          "name": "Color 20",
+          "type": "color",
+          "default": "#ffc9c9"
+        },
+        {
+          "id": "color21",
+          "name": "Color 21",
+          "type": "color",
+          "default": "#ffd8a8"
+        },
+        {
+          "id": "color22",
+          "name": "Color 22",
+          "type": "color",
+          "default": "#fff3bf"
+        },
+        {
+          "id": "color23",
+          "name": "Color 23",
+          "type": "color",
+          "default": "#d8f5a2"
+        },
+        {
+          "id": "color24",
+          "name": "Color 24",
+          "type": "color",
+          "default": "#b2f2bb"
+        },
+        {
+          "id": "color25",
+          "name": "Color 25",
+          "type": "color",
+          "default": "#ff6b6b"
+        },
+        {
+          "id": "color26",
+          "name": "Color 26",
+          "type": "color",
+          "default": "#ffa94d"
+        },
+        {
+          "id": "color27",
+          "name": "Color 27",
+          "type": "color",
+          "default": "#ffd43b"
+        },
+        {
+          "id": "color28",
+          "name": "Color 28",
+          "type": "color",
+          "default": "#f4f46b"
+        },
+        {
+          "id": "color29",
+          "name": "Color 29",
+          "type": "color",
+          "default": "#c0eb75"
+        },
+        {
+          "id": "color30",
+          "name": "Color 30",
+          "type": "color",
+          "default": "#69db7c"
+        },
+        {
+          "id": "color31",
+          "name": "Color 31",
+          "type": "color",
+          "default": "#38d9a9"
+        },
+        {
+          "id": "color32",
+          "name": "Color 32",
+          "type": "color",
+          "default": "#66d9e8"
+        },
+        {
+          "id": "color33",
+          "name": "Color 33",
+          "type": "color",
+          "default": "#74c0fc"
+        },
+        {
+          "id": "color34",
+          "name": "Color 34",
+          "type": "color",
+          "default": "#4dabf7"
+        },
+        {
+          "id": "color35",
+          "name": "Color 35",
+          "type": "color",
+          "default": "#748ffc"
+        },
+        {
+          "id": "color36",
+          "name": "Color 36",
+          "type": "color",
+          "default": "#91a7ff"
+        },
+        {
+          "id": "color37",
+          "name": "Color 37",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color38",
+          "name": "Color 38",
+          "type": "color",
+          "default": "#b197fc"
+        },
+        {
+          "id": "color39",
+          "name": "Color 39",
+          "type": "color",
+          "default": "#9775fa"
+        },
+        {
+          "id": "color40",
+          "name": "Color 40",
+          "type": "color",
+          "default": "#da77f2"
+        },
+        {
+          "id": "color41",
+          "name": "Color 41",
+          "type": "color",
+          "default": "#e599f7"
+        },
+        {
+          "id": "color42",
+          "name": "Color 42",
+          "type": "color",
+          "default": "#f783ac"
+        },
+        {
+          "id": "color43",
+          "name": "Color 43",
+          "type": "color",
+          "default": "#faa2c1"
+        },
+        {
+          "id": "color44",
+          "name": "Color 44",
+          "type": "color",
+          "default": "#ff8787"
+        },
+        {
+          "id": "color45",
+          "name": "Color 45",
+          "type": "color",
+          "default": "#ffc9c9"
+        },
+        {
+          "id": "color46",
+          "name": "Color 46",
+          "type": "color",
+          "default": "#ffd8a8"
+        },
+        {
+          "id": "color47",
+          "name": "Color 47",
+          "type": "color",
+          "default": "#fff3bf"
+        },
+        {
+          "id": "color48",
+          "name": "Color 48",
+          "type": "color",
+          "default": "#d8f5a2"
+        },
+        {
+          "id": "color49",
+          "name": "Color 49",
+          "type": "color",
+          "default": "#b2f2bb"
+        },
+        {
+          "id": "color50",
+          "name": "Color 50",
+          "type": "color",
+          "default": "#ff6b6b"
+        },
+        {
+          "id": "color51",
+          "name": "Color 51",
+          "type": "color",
+          "default": "#ffa94d"
+        },
+        {
+          "id": "color52",
+          "name": "Color 52",
+          "type": "color",
+          "default": "#ffd43b"
+        },
+        {
+          "id": "color53",
+          "name": "Color 53",
+          "type": "color",
+          "default": "#f4f46b"
+        },
+        {
+          "id": "color54",
+          "name": "Color 54",
+          "type": "color",
+          "default": "#c0eb75"
+        },
+        {
+          "id": "color55",
+          "name": "Color 55",
+          "type": "color",
+          "default": "#69db7c"
+        },
+        {
+          "id": "color56",
+          "name": "Color 56",
+          "type": "color",
+          "default": "#38d9a9"
+        },
+        {
+          "id": "color57",
+          "name": "Color 57",
+          "type": "color",
+          "default": "#66d9e8"
+        },
+        {
+          "id": "color58",
+          "name": "Color 58",
+          "type": "color",
+          "default": "#74c0fc"
+        },
+        {
+          "id": "color59",
+          "name": "Color 59",
+          "type": "color",
+          "default": "#4dabf7"
+        },
+        {
+          "id": "color60",
+          "name": "Color 60",
+          "type": "color",
+          "default": "#748ffc"
+        },
+        {
+          "id": "color61",
+          "name": "Color 61",
+          "type": "color",
+          "default": "#91a7ff"
+        },
+        {
+          "id": "color62",
+          "name": "Color 62",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color63",
+          "name": "Color 63",
+          "type": "color",
+          "default": "#b197fc"
+        },
+        {
+          "id": "color64",
+          "name": "Color 64",
+          "type": "color",
+          "default": "#9775fa"
+        },
+        {
+          "id": "color65",
+          "name": "Color 65",
+          "type": "color",
+          "default": "#da77f2"
+        },
+        {
+          "id": "color66",
+          "name": "Color 66",
+          "type": "color",
+          "default": "#e599f7"
+        },
+        {
+          "id": "color67",
+          "name": "Color 67",
+          "type": "color",
+          "default": "#f783ac"
+        },
+        {
+          "id": "color68",
+          "name": "Color 68",
+          "type": "color",
+          "default": "#faa2c1"
+        },
+        {
+          "id": "color69",
+          "name": "Color 69",
+          "type": "color",
+          "default": "#ff8787"
+        },
+        {
+          "id": "color70",
+          "name": "Color 70",
+          "type": "color",
+          "default": "#ffc9c9"
+        },
+        {
+          "id": "color71",
+          "name": "Color 71",
+          "type": "color",
+          "default": "#ffd8a8"
+        },
+        {
+          "id": "color72",
+          "name": "Color 72",
+          "type": "color",
+          "default": "#fff3bf"
+        },
+        {
+          "id": "color73",
+          "name": "Color 73",
+          "type": "color",
+          "default": "#d8f5a2"
+        },
+        {
+          "id": "color74",
+          "name": "Color 74",
+          "type": "color",
+          "default": "#b2f2bb"
+        },
+        {
+          "id": "color75",
+          "name": "Color 75",
+          "type": "color",
+          "default": "#ff6b6b"
+        },
+        {
+          "id": "color76",
+          "name": "Color 76",
+          "type": "color",
+          "default": "#ffa94d"
+        },
+        {
+          "id": "color77",
+          "name": "Color 77",
+          "type": "color",
+          "default": "#ffd43b"
+        },
+        {
+          "id": "color78",
+          "name": "Color 78",
+          "type": "color",
+          "default": "#f4f46b"
+        },
+        {
+          "id": "color79",
+          "name": "Color 79",
+          "type": "color",
+          "default": "#c0eb75"
+        },
+        {
+          "id": "color80",
+          "name": "Color 80",
+          "type": "color",
+          "default": "#69db7c"
+        },
+        {
+          "id": "color81",
+          "name": "Color 81",
+          "type": "color",
+          "default": "#38d9a9"
+        },
+        {
+          "id": "color82",
+          "name": "Color 82",
+          "type": "color",
+          "default": "#66d9e8"
+        },
+        {
+          "id": "color83",
+          "name": "Color 83",
+          "type": "color",
+          "default": "#74c0fc"
+        },
+        {
+          "id": "color84",
+          "name": "Color 84",
+          "type": "color",
+          "default": "#4dabf7"
+        },
+        {
+          "id": "color85",
+          "name": "Color 85",
+          "type": "color",
+          "default": "#748ffc"
+        },
+        {
+          "id": "color86",
+          "name": "Color 86",
+          "type": "color",
+          "default": "#91a7ff"
+        },
+        {
+          "id": "color87",
+          "name": "Color 87",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "color88",
+          "name": "Color 88",
+          "type": "color",
+          "default": "#b197fc"
+        },
+        {
+          "id": "color89",
+          "name": "Color 89",
+          "type": "color",
+          "default": "#9775fa"
+        },
+        {
+          "id": "color90",
+          "name": "Color 90",
+          "type": "color",
+          "default": "#da77f2"
+        },
+        {
+          "id": "color91",
+          "name": "Color 91",
+          "type": "color",
+          "default": "#e599f7"
+        },
+        {
+          "id": "color92",
+          "name": "Color 92",
+          "type": "color",
+          "default": "#f783ac"
+        },
+        {
+          "id": "color93",
+          "name": "Color 93",
+          "type": "color",
+          "default": "#faa2c1"
+        },
+        {
+          "id": "color94",
+          "name": "Color 94",
+          "type": "color",
+          "default": "#ff8787"
+        },
+        {
+          "id": "color95",
+          "name": "Color 95",
+          "type": "color",
+          "default": "#ffc9c9"
+        },
+        {
+          "id": "color96",
+          "name": "Color 96",
+          "type": "color",
+          "default": "#ffd8a8"
+        },
+        {
+          "id": "color97",
+          "name": "Color 97",
+          "type": "color",
+          "default": "#fff3bf"
+        },
+        {
+          "id": "color98",
+          "name": "Color 98",
+          "type": "color",
+          "default": "#d8f5a2"
+        },
+        {
+          "id": "color99",
+          "name": "Color 99",
+          "type": "color",
+          "default": "#b2f2bb"
         },
         {
           "id": "background",

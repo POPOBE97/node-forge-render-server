@@ -30,7 +30,11 @@ use crate::{
     asset_store::AssetStore,
     dsl,
     dsl::{DebugArtifactItem, Node, SceneDSL},
-    protocol::{ErrorPayload, WSMessage, now_millis},
+    protocol::{
+        DesignParamPatchPayload, ErrorPayload, PassTargetSizeEntry, PassTargetSizesPayload,
+        WSMessage, now_millis,
+    },
+    ui::resource_tree::ResourceSnapshot,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -319,6 +323,56 @@ pub fn broadcast_debug_artifact_request(hub: &WsHub, artifact_ids: Vec<String>) 
     }
 }
 
+pub fn broadcast_design_param_patch(hub: &WsHub, payload: DesignParamPatchPayload) {
+    let msg = WSMessage {
+        msg_type: "design_param_patch".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(payload),
+    };
+    if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
+pub fn broadcast_pass_target_sizes(hub: &WsHub, snapshot: &ResourceSnapshot, scene: &SceneDSL) {
+    let pass_sizes: HashMap<&str, ([u32; 2], Option<String>)> = snapshot
+        .passes
+        .iter()
+        .filter_map(|pass| {
+            let (width, height) = pass.target_size?;
+            Some((pass.name.as_str(), ([width, height], pass.target_texture.clone())))
+        })
+        .collect();
+
+    let passes = scene
+        .nodes
+        .iter()
+        .filter(|node| node.node_type == "MeshGradient")
+        .filter_map(|node| {
+            let pass_name = format!("sys.mesh_gradient.{}.pass", node.id);
+            let (target_size, target_texture) = pass_sizes.get(pass_name.as_str())?;
+            Some(PassTargetSizeEntry {
+                pass_name,
+                node_id: node.id.clone(),
+                node_type: Some(node.node_type.clone()),
+                target_texture: target_texture.clone(),
+                target_size: *target_size,
+            })
+        })
+        .collect();
+
+    let msg = WSMessage {
+        msg_type: "pass_target_sizes".to_string(),
+        timestamp: now_millis(),
+        request_id: None,
+        payload: Some(PassTargetSizesPayload { passes }),
+    };
+    if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
 pub fn broadcast_debug_artifact_upsert(
     hub: &WsHub,
     item: DebugArtifactItem,
@@ -407,6 +461,13 @@ pub struct WsHub {
 }
 
 impl WsHub {
+    pub fn client_count(&self) -> usize {
+        self.clients
+            .lock()
+            .map(|clients| clients.len())
+            .unwrap_or_default()
+    }
+
     pub fn broadcast(&self, text: String) {
         self.broadcast_message(Message::Text(text));
     }

@@ -34,10 +34,23 @@ pub(super) fn run(
             &app.core.shader_space,
             &app.core.passes,
             Some(app.core.output_texture_name.as_str()),
+            app.runtime.uniform_scene.as_ref(),
         );
         app.shell.resource_tree_nodes = snapshot.to_tree();
         app.shell.resource_snapshot = Some(snapshot);
         app.shell.resource_snapshot_generation = app.runtime.pipeline_rebuild_count;
+    }
+    if app.core.ws_hub.client_count() == 0 {
+        app.shell.resource_snapshot_broadcast_generation = u64::MAX;
+    } else if app.shell.resource_snapshot_broadcast_generation
+        != app.shell.resource_snapshot_generation
+        && let (Some(snapshot), Some(scene)) = (
+            app.shell.resource_snapshot.as_ref(),
+            app.runtime.uniform_scene.as_ref(),
+        )
+    {
+        crate::ws::broadcast_pass_target_sizes(&app.core.ws_hub, snapshot, scene);
+        app.shell.resource_snapshot_broadcast_generation = app.shell.resource_snapshot_generation;
     }
 
     let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
@@ -197,7 +210,7 @@ pub(super) fn run(
                 params.time = app.runtime.time_value_secs;
                 let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
-            app.core.shader_space.render();
+            app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
             app.runtime.scene_redraw_pending = false;
         }
     } else if app.runtime.timeline_preview_was_active {
@@ -226,7 +239,7 @@ pub(super) fn run(
                 params.time = app.runtime.time_value_secs;
                 let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
-            app.core.shader_space.render();
+            app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
             app.runtime.scene_redraw_pending = false;
         }
         app.runtime.timeline_pre_hover_overrides = None;

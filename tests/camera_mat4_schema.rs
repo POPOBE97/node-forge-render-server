@@ -96,8 +96,8 @@ fn scheme_exposes_camera_nodes_and_camera_inputs() {
             .get(node_type)
             .unwrap_or_else(|| panic!("missing {node_type} in scheme"));
         match node_scheme.inputs.get("matrix") {
-            Some(PortTypeSpec::One(port_type)) => assert_eq!(port_type, "mat4"),
-            other => panic!("{node_type}.inputs.matrix must be mat4, got {other:?}"),
+            Some(PortTypeSpec::One(port_type)) => assert_eq!(port_type, "any"),
+            other => panic!("{node_type}.inputs.matrix must be any, got {other:?}"),
         }
     }
 }

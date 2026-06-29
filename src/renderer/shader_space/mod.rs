@@ -10,6 +10,9 @@ pub use api::{
     ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
     ShaderSpacePresentationMode,
 };
-pub use headless::{render_scene_to_file_headless, render_scene_to_png_headless};
+pub use headless::{
+    render_scene_to_file_headless, render_scene_to_file_headless_profiled,
+    render_scene_to_png_headless,
+};
 pub(crate) use image_utils::image_node_dimensions;
 pub use sampler::update_pass_params;

@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-06-25T17:18:54.431Z",
-    "modified": "2026-06-25T17:18:54.431Z"
+    "created": "2026-06-27T06:19:02.361Z",
+    "modified": "2026-06-27T06:19:02.361Z"
   },
   "nodes": [
     {
@@ -85,44 +85,25 @@
         "width": 3,
         "height": 3,
         "patchDivCountU": 20,
-        "patchDivCountV": 20,
-        "_uiCollapsedFields": [],
-        "pos0": {
-          "x": 0,
-          "y": 0
-        },
-        "pos1": {
-          "x": 540,
-          "y": 0
-        },
-        "pos2": {
-          "x": 1080,
-          "y": 0
-        },
-        "pos3": {
-          "x": 0,
-          "y": 1200
-        },
-        "pos4": {
-          "x": 540,
-          "y": 1200
-        },
-        "pos5": {
-          "x": 1080,
-          "y": 1200
-        },
-        "pos6": {
-          "x": 0,
-          "y": 2400
-        },
-        "pos7": {
-          "x": 540,
-          "y": 2400
-        },
-        "pos8": {
-          "x": 1080,
-          "y": 2400
-        },
+        "patchDivCountV": 10,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
         "color0": "#ff6b6b",
         "color1": "#ffa94d",
         "color2": "#ffd43b",
@@ -133,6 +114,20 @@
         "color7": "#f783ac",
         "color8": "#da77f2",
         "background": "#000000"
+      }
+    },
+    {
+      "id": "Vector2Input_2",
+      "type": "Vector2Input",
+      "position": {
+        "x": -540,
+        "y": -400
+      },
+      "width": 160,
+      "label": "Vector2 Input",
+      "params": {
+        "x": 0,
+        "y": 0
       }
     }
   ],
@@ -168,6 +163,17 @@
       "to": {
         "nodeId": "node_default_composite",
         "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "Vector2Input_2",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "MeshGradient_1",
+        "portId": "pos0"
       }
     }
   ],

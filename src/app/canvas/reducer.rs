@@ -1,5 +1,5 @@
-use rust_wgpu_fiber::eframe::wgpu;
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
+use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 
 use crate::app::{
     canvas::{
@@ -62,6 +62,41 @@ pub fn apply_action(
             }
             pixel_overlay::clear_cache(app);
             app.canvas.invalidation.preview_source_changed();
+        }
+        CanvasAction::EnterPassDesign(target) => {
+            let previous_preview_texture = app
+                .canvas
+                .design
+                .active
+                .as_ref()
+                .map(|session| session.previous_preview_texture.clone())
+                .unwrap_or_else(|| app.canvas.display.preview_texture_name.clone());
+            let target_texture = target.target_texture.clone();
+            app.canvas.design.active = crate::app::canvas::design::enter_session(
+                app.canvas.design.active.take(),
+                target,
+                previous_preview_texture,
+            );
+            if let Some(target_texture) = target_texture {
+                app.canvas.display.preview_texture_name =
+                    Some(ResourceName::from(target_texture.as_str()));
+                pixel_overlay::clear_cache(app);
+                app.canvas.invalidation.preview_source_changed();
+            }
+        }
+        CanvasAction::ExitPassDesign => {
+            if let Some(session) = app.canvas.design.active.take()
+                && session.owns_preview_texture
+            {
+                app.canvas.display.preview_texture_name = session.previous_preview_texture;
+                if app.canvas.display.preview_texture_name.is_none()
+                    && let Some(id) = app.canvas.display.preview_color_attachment.take()
+                {
+                    app.canvas.display.deferred_texture_frees.push(id);
+                }
+                pixel_overlay::clear_cache(app);
+                app.canvas.invalidation.preview_source_changed();
+            }
         }
         CanvasAction::ToggleHdrClamp => {
             app.canvas.display.hdr_preview_clamp_enabled =

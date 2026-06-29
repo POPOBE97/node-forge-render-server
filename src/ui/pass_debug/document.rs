@@ -2611,6 +2611,8 @@ mod tests {
         let source = PassDebugSource {
             pass_name: "p".to_string(),
             module_source: String::new(),
+            target_texture: None,
+            target_size: None,
             ast_tree: Vec::new(),
             dependency_targets: Vec::new(),
             dependency_trees: HashMap::new(),
@@ -2682,6 +2684,8 @@ mod tests {
         let source = PassDebugSource {
             pass_name: "p".to_string(),
             module_source: "let a = input.foo.bar.x;".to_string(),
+            target_texture: None,
+            target_size: None,
             ast_tree: Vec::new(),
             dependency_targets: vec![
                 PassDebugDependencyTarget {
@@ -3385,6 +3389,8 @@ fn fs_main() -> @location(0) f32 {
         let source = PassDebugSource {
             pass_name: "p".to_string(),
             module_source: String::new(),
+            target_texture: None,
+            target_size: None,
             ast_tree: Vec::new(),
             dependency_targets: Vec::new(),
             dependency_trees: HashMap::new(),
@@ -3462,6 +3468,8 @@ fn fs_main() -> @location(0) f32 {
         let source = PassDebugSource {
             pass_name: "p".to_string(),
             module_source: String::new(),
+            target_texture: None,
+            target_size: None,
             ast_tree: Vec::new(),
             dependency_targets: Vec::new(),
             dependency_trees: HashMap::new(),
@@ -3522,6 +3530,8 @@ fn fs_main() -> @location(0) f32 {
         let source = PassDebugSource {
             pass_name: "p".to_string(),
             module_source: "let a = input.foo.bar.x;".to_string(),
+            target_texture: None,
+            target_size: None,
             ast_tree: Vec::new(),
             dependency_targets: vec![PassDebugDependencyTarget {
                 id: "target::input".to_string(),
