@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-28T15:20:21.361Z",
-    "modified": "2026-05-28T15:20:21.361Z"
+    "created": "2026-06-29T10:18:34.249Z",
+    "modified": "2026-06-29T10:18:34.249Z"
   },
   "nodes": [
     {
@@ -136,11 +136,6 @@
           "id": "dynamic_1779709935668_1",
           "name": "pass2",
           "type": "pass"
-        },
-        {
-          "id": "dynamic_1779709943503_2",
-          "name": "pass3",
-          "type": "color"
         }
       ],
       "inputBindings": [
@@ -153,17 +148,6 @@
             "nodeId": "RenderPass_4",
             "outputPortId": "pass",
             "outputLabel": "Pass"
-          }
-        },
-        {
-          "portId": "dynamic_1779709943503_2",
-          "label": "pass3",
-          "variableName": "pass3",
-          "type": "color",
-          "sourceBinding": {
-            "nodeId": "ImageTexture_68",
-            "outputPortId": "color",
-            "outputLabel": "Color"
           }
         }
       ]
@@ -372,13 +356,13 @@
       "label": "Glass Material",
       "params": {
         "uBlendLuminanceValues": [
-          0,
-          0.7028672139807259,
-          0.8012928371943633,
-          0.9006408803409292
+          0.5271560740477392,
+          0.5828317145530619,
+          1.1983004061664668,
+          1.2515833671754963
         ],
         "uBlendLuminanceAmount": 1,
-        "uBlendSaturation": 1,
+        "uBlendSaturation": 1.2,
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
@@ -482,30 +466,6 @@
         "x": 0,
         "y": 0,
         "z": 0
-      }
-    },
-    {
-      "id": "ImageTexture_68",
-      "type": "ImageTexture",
-      "position": {
-        "x": 260,
-        "y": -240
-      },
-      "width": 160,
-      "label": "UI Texture",
-      "params": {
-        "assetId": "62d709c5c137",
-        "interpolation": "linear",
-        "extension": "repeat",
-        "addressModeU": "repeat",
-        "addressModeV": "repeat",
-        "magFilter": "linear",
-        "minFilter": "linear",
-        "mipmapFilter": "linear",
-        "encoderSpace": "srgb",
-        "alphaMode": "straight",
-        "aspectCorrection": "off",
-        "_uiCollapsed": true
       }
     },
     {
@@ -742,17 +702,6 @@
       }
     },
     {
-      "id": "edge_130",
-      "from": {
-        "nodeId": "ImageTexture_68",
-        "portId": "color"
-      },
-      "to": {
-        "nodeId": "Composite_7",
-        "portId": "dynamic_1779709943503_2"
-      }
-    },
-    {
       "id": "edge_138",
       "from": {
         "nodeId": "GroupInstance_70",
@@ -784,12 +733,6 @@
       "originalName": "_11_91去玩_来自小红书网页版.jpg",
       "mimeType": "image/jpeg",
       "size": 416604
-    },
-    "62d709c5c137": {
-      "path": "assets/62d709c5c137.png",
-      "originalName": "ui.png",
-      "mimeType": "image/png",
-      "size": 171096
     },
     "762325f2042e": {
       "path": "assets/762325f2042e.png",
@@ -1141,7 +1084,7 @@
         "name": "Any",
         "position": {
           "x": 0,
-          "y": 0
+          "y": 20
         },
         "parameterOverrides": {},
         "type": "anyState"
@@ -1155,9 +1098,33 @@
         },
         "parameterOverrides": {},
         "type": "exitState"
+      },
+      {
+        "id": "st_mqyzdqx1_3",
+        "name": "Mutation 2",
+        "position": {
+          "x": 260,
+          "y": 20
+        },
+        "parameterOverrides": {},
+        "type": "mutationNode",
+        "mutationId": "mutation_mqyzdqx1_2"
       }
     ],
-    "transitions": [],
+    "transitions": [
+      {
+        "id": "tr_mqz1r18b_b",
+        "source": "st_moxsija6_5",
+        "target": "st_mqyzdqx1_3",
+        "trigger": {
+          "type": "event",
+          "eventName": "mousedown"
+        },
+        "delay": 0,
+        "duration": 0.3,
+        "easing": "linear"
+      }
+    ],
     "mutations": [
       {
         "id": "mutation_moxsjac9_9",
@@ -1276,6 +1243,59 @@
             "outputPortId": "Vector2Input_65:y"
           }
         ]
+      },
+      {
+        "id": "mutation_mqyzdqx1_2",
+        "name": "Mutation 2",
+        "inputs": [
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          }
+        ],
+        "nodes": [],
+        "connections": [],
+        "inputBindings": [],
+        "outputBindings": [],
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_moxsija5_4"

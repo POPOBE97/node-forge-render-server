@@ -49,7 +49,7 @@ pub use trace::{
     canonicalize_json_value, generate_trace_for_scene, generate_trace_for_scene_with_events,
     round_f64, tracked_override_keys,
 };
-pub use types::{OverrideKey, StateMachine};
+pub use types::{MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine};
 pub use validation::validate;
 
 use std::collections::HashMap;

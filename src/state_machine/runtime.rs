@@ -50,6 +50,9 @@ pub struct StateMachineRuntime {
     /// Active transition (if any).
     active_transition: Option<ActiveTransition>,
 
+    /// Latest runtime input snapshot available to mutations.
+    runtime_input: RuntimeInputSnapshot,
+
     /// Whether the state machine has reached the exit state.
     pub finished: bool,
 }
@@ -145,6 +148,7 @@ impl StateMachineRuntime {
             scene_time: 0.0,
             state_local_times,
             active_transition: None,
+            runtime_input: RuntimeInputSnapshot::default(),
             finished: false,
         }
     }
@@ -171,7 +175,13 @@ impl StateMachineRuntime {
             *v = 0.0;
         }
         self.active_transition = None;
+        self.runtime_input = RuntimeInputSnapshot::default();
         self.finished = false;
+    }
+
+    /// Update the latest mouse position visible to mutation nodes.
+    pub fn set_mouse_position(&mut self, position: MousePosition) {
+        self.runtime_input.mouse_position = Some(position);
     }
 
     /// Advance the state machine by `dt` seconds and produce overrides.
@@ -571,6 +581,7 @@ impl StateMachineRuntime {
             values: input_values,
             scene_elapsed_time: self.scene_time,
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
+            mouse_position: self.runtime_input.mouse_position,
         };
 
         let outputs = mutation::evaluate_mutation(mutation, &ctx)?;
@@ -837,6 +848,145 @@ mod tests {
         // Fire event → transitions.
         let r2 = rt.tick(0.016, &HashMap::new(), &vec!["click".into()]);
         assert_eq!(r2.current_state_id, "s1");
+    }
+
+    #[test]
+    fn any_state_event_transition_can_start_from_entry_state() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "mutation".into(),
+            name: "Mutation".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::MutationNode),
+            mutation_id: Some("m1".into()),
+        });
+        sm.mutations.push(MutationDefinition {
+            id: "m1".into(),
+            name: "Mutation".into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![],
+            viewport: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "tr_any_mutation".into(),
+            source: "any".into(),
+            target: "mutation".into(),
+            trigger: Some(TransitionCondition::Event {
+                event_name: "mousedown".into(),
+            }),
+            condition: None,
+            delay: 0.0,
+            duration: 0.3,
+            easing: EasingKind::Linear,
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+
+        let idle = rt.tick(0.016, &HashMap::new(), &vec![]);
+        assert_eq!(idle.current_state_id, "entry");
+        assert_eq!(idle.active_transition_id, None);
+
+        let triggered = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
+        assert_eq!(triggered.current_state_id, "entry");
+        assert_eq!(
+            triggered.active_transition_id.as_deref(),
+            Some("tr_any_mutation")
+        );
+
+        let completed = rt.tick(0.4, &HashMap::new(), &vec![]);
+        assert_eq!(completed.current_state_id, "mutation");
+    }
+
+    #[test]
+    fn event_transition_mutation_reads_same_tick_mouse_position() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "mutation".into(),
+            name: "Mutation".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::MutationNode),
+            mutation_id: Some("m_mouse".into()),
+        });
+        sm.mutations.push(MutationDefinition {
+            id: "m_mouse".into(),
+            name: "Mouse Mutation".into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![MutationInnerNode {
+                id: "mouse".into(),
+                node_type: MutationInnerNodeType::SmMouse,
+                params: Default::default(),
+                inputs: vec![],
+                outputs: vec![
+                    MutationPort {
+                        id: "position.x".into(),
+                        name: Some("Position X".into()),
+                        port_type: Some("float".into()),
+                    },
+                    MutationPort {
+                        id: "position.y".into(),
+                        name: Some("Position Y".into()),
+                        port_type: Some("float".into()),
+                    },
+                ],
+            }],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![
+                MutationOutputBinding {
+                    port_id: "mouse_x".into(),
+                    from: MutationEndpoint {
+                        node_id: "mouse".into(),
+                        port_id: "position.x".into(),
+                    },
+                    target_ref: Some("MouseX:value".into()),
+                },
+                MutationOutputBinding {
+                    port_id: "mouse_y".into(),
+                    from: MutationEndpoint {
+                        node_id: "mouse".into(),
+                        port_id: "position.y".into(),
+                    },
+                    target_ref: Some("MouseY:value".into()),
+                },
+            ],
+            passthrough_bindings: vec![],
+            viewport: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_mouse".into(),
+            source: "entry".into(),
+            target: "mutation".into(),
+            trigger: Some(TransitionCondition::Event {
+                event_name: "mousedown".into(),
+            }),
+            condition: None,
+            delay: 0.0,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        rt.set_mouse_position(MousePosition { x: 321.0, y: 654.0 });
+
+        let result = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
+
+        assert_eq!(result.current_state_id, "mutation");
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("MouseX", "value")),
+            Some(&serde_json::json!(321.0))
+        );
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("MouseY", "value")),
+            Some(&serde_json::json!(654.0))
+        );
     }
 
     #[test]

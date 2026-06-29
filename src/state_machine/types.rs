@@ -221,6 +221,7 @@ pub enum MutationInnerNodeType {
     SmPassThrough,
     SmMathOp,
     SmLerp,
+    SmMouse,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -305,6 +306,21 @@ pub struct Viewport {
     pub x: f64,
     pub y: f64,
     pub zoom: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Runtime input snapshots
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MousePosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RuntimeInputSnapshot {
+    pub mouse_position: Option<MousePosition>,
 }
 
 // ---------------------------------------------------------------------------

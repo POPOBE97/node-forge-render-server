@@ -8,6 +8,7 @@
 //! - `smPassThrough` — forwards its single input unchanged.
 //! - `smMathOp`      — `add`, `sub`, `mul`, `div` on two inputs.
 //! - `smLerp`        — `mix(a, b, t)`.
+//! - `smMouse`       — exposes latest mouse frag-pixel position.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -67,6 +68,8 @@ pub struct MutationInputContext {
     pub scene_elapsed_time: f64,
     /// Time since the current state was entered, in seconds.
     pub local_elapsed_time: f64,
+    /// Latest mouse position in render-target frag pixel coordinates.
+    pub mouse_position: Option<MousePosition>,
 }
 
 /// Evaluate a mutation definition given its input context.
@@ -114,7 +117,7 @@ pub fn evaluate_mutation(
                 }
             }
 
-            evaluate_inner_node(node, &mut port_values)?;
+            evaluate_inner_node(node, &mut port_values, ctx)?;
         }
 
         for b in &mutation.output_bindings {
@@ -153,10 +156,8 @@ fn resolve_passthrough_input_value(
     ctx: &MutationInputContext,
 ) -> MutationValue {
     // Check well-known built-in ids.
-    match from_port_id {
-        "sceneElapsedTime" => return ctx.scene_elapsed_time,
-        "localElapsedTime" => return ctx.local_elapsed_time,
-        _ => {}
+    if let Some(value) = resolve_builtin_value(from_port_id, ctx) {
+        return value;
     }
 
     // Check if the from_port_id matches a mutation input port and there's
@@ -228,18 +229,24 @@ fn resolve_input_binding_value(
     binding: &MutationInputBinding,
     ctx: &MutationInputContext,
 ) -> MutationValue {
-    // Check well-known time inputs.
     if let Some(ref source_ref) = binding.source_ref {
-        if source_ref == "sceneElapsedTime" {
-            return ctx.scene_elapsed_time;
-        }
-        if source_ref == "localElapsedTime" {
-            return ctx.local_elapsed_time;
+        if let Some(value) = resolve_builtin_value(source_ref, ctx) {
+            return value;
         }
     }
 
     // Look up by port id in the provided values map.
     ctx.values.get(&binding.port_id).copied().unwrap_or(0.0)
+}
+
+fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<MutationValue> {
+    match name {
+        "sceneElapsedTime" => Some(ctx.scene_elapsed_time),
+        "localElapsedTime" => Some(ctx.local_elapsed_time),
+        "mouse.position.x" => Some(ctx.mouse_position.map(|p| p.x).unwrap_or(0.0)),
+        "mouse.position.y" => Some(ctx.mouse_position.map(|p| p.y).unwrap_or(0.0)),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +256,7 @@ fn resolve_input_binding_value(
 fn evaluate_inner_node<'a>(
     node: &'a MutationInnerNode,
     port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
+    ctx: &MutationInputContext,
 ) -> Result<()> {
     match node.node_type {
         MutationInnerNodeType::SmPassThrough => {
@@ -318,8 +326,24 @@ fn evaluate_inner_node<'a>(
                 .unwrap_or("result");
             port_values.insert((node.id.as_str(), out_port), result);
         }
+        MutationInnerNodeType::SmMouse => {
+            let position = ctx.mouse_position.unwrap_or_default();
+            write_output_if_declared_or_default(node, port_values, "position.x", position.x);
+            write_output_if_declared_or_default(node, port_values, "position.y", position.y);
+        }
     }
     Ok(())
+}
+
+fn write_output_if_declared_or_default<'a>(
+    node: &'a MutationInnerNode,
+    port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
+    port_id: &'a str,
+    value: MutationValue,
+) {
+    if node.outputs.is_empty() || node.outputs.iter().any(|p| p.id == port_id) {
+        port_values.insert((node.id.as_str(), port_id), value);
+    }
 }
 
 fn first_input_value<'a>(
@@ -449,6 +473,7 @@ mod tests {
             values: HashMap::new(),
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,
+            mouse_position: None,
         }
     }
 
@@ -673,6 +698,94 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!((result["time_out"] - 5.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn mouse_node_outputs_latest_frag_pixel_position() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "mouse".into(),
+            node_type: MutationInnerNodeType::SmMouse,
+            params: HashMap::new(),
+            inputs: vec![],
+            outputs: vec![
+                MutationPort {
+                    id: "position.x".into(),
+                    name: Some("Position X".into()),
+                    port_type: Some("float".into()),
+                },
+                MutationPort {
+                    id: "position.y".into(),
+                    name: Some("Position Y".into()),
+                    port_type: Some("float".into()),
+                },
+            ],
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out_x".into(),
+            from: MutationEndpoint {
+                node_id: "mouse".into(),
+                port_id: "position.x".into(),
+            },
+            target_ref: None,
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out_y".into(),
+            from: MutationEndpoint {
+                node_id: "mouse".into(),
+                port_id: "position.y".into(),
+            },
+            target_ref: None,
+        });
+
+        let mut ctx = empty_ctx();
+        ctx.mouse_position = Some(MousePosition { x: 123.0, y: 456.0 });
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!((result["out_x"] - 123.0).abs() < f64::EPSILON);
+        assert!((result["out_y"] - 456.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn mouse_source_ref_resolves_for_input_binding() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "pt".into(),
+            node_type: MutationInnerNodeType::SmPassThrough,
+            params: HashMap::new(),
+            inputs: vec![MutationPort {
+                id: "in".into(),
+                name: None,
+                port_type: None,
+            }],
+            outputs: vec![MutationPort {
+                id: "out".into(),
+                name: None,
+                port_type: None,
+            }],
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "mouse_x".into(),
+            to: MutationEndpoint {
+                node_id: "pt".into(),
+                port_id: "in".into(),
+            },
+            source_ref: Some("mouse.position.x".into()),
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out".into(),
+            from: MutationEndpoint {
+                node_id: "pt".into(),
+                port_id: "out".into(),
+            },
+            target_ref: None,
+        });
+
+        let mut ctx = empty_ctx();
+        ctx.mouse_position = Some(MousePosition { x: 88.0, y: 99.0 });
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!((result["out"] - 88.0).abs() < f64::EPSILON);
     }
 
     // ── Passthrough binding tests ──────────────────────────────────────

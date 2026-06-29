@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::HeadlessRenderer;
 use rust_wgpu_fiber::HeadlessRendererConfig;
-use rust_wgpu_fiber::eframe::wgpu::{Features, TextureFormat};
+use rust_wgpu_fiber::eframe::wgpu::TextureFormat;
 
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
@@ -139,19 +139,6 @@ pub fn render_scene_to_file_headless_profiled(
         result.export_output_texture.as_str(),
         &snapshot,
     ))?;
-    if !renderer.device.features().contains(Features::TIMESTAMP_QUERY) {
-        writer.emit(&profile::warning_event(
-            &run_id,
-            "GPU_DURATION_UNAVAILABLE",
-            "This adapter/device does not expose wgpu TIMESTAMP_QUERY; gpu.duration.ms will be null.",
-        ))?;
-    }
-    writer.emit(&profile::warning_event(
-        &run_id,
-        "ADVANCED_COUNTERS_PUBLIC_RUNTIME_LIMITED",
-        "Occupancy, ALU limiter, and memory bandwidth are emitted only when exposed by wgpu or public Metal runtime counter sets; unsupported fields remain null with explicit capabilities.",
-    ))?;
-
     for _ in 0..profile_config.warmup_frames {
         let _ = result.shader_space.render_profiled(true);
     }

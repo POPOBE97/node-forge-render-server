@@ -7,8 +7,8 @@ use crate::protocol::{
     InteractionPosition, InteractionTouchData, InteractionWheelData,
 };
 
-pub fn is_clean_rendering_state(has_preview_texture: bool, has_reference_compare: bool) -> bool {
-    !has_preview_texture && !has_reference_compare
+pub fn is_clean_rendering_state(_has_preview_texture: bool, _has_reference_image: bool) -> bool {
+    true
 }
 
 pub fn collect_interaction_payloads(
@@ -194,6 +194,8 @@ fn position_from_point(point: egui::Pos2, canvas_rect: Rect) -> InteractionPosit
         client_y: point.y,
         canvas_x: point.x - canvas_rect.min.x,
         canvas_y: point.y - canvas_rect.min.y,
+        frag_pixel_x: None,
+        frag_pixel_y: None,
     }
 }
 
@@ -284,6 +286,10 @@ fn key_to_w3c(key: egui::Key) -> String {
 #[cfg(test)]
 mod tests {
     use super::{collect_interaction_payloads, is_clean_rendering_state};
+    use crate::{
+        animation::AnimationSession,
+        state_machine::types::{AnimationStateType, TransitionCondition},
+    };
     use rust_wgpu_fiber::eframe::egui::{self, Pos2, Rect, vec2};
 
     fn canvas_rect() -> Rect {
@@ -295,10 +301,11 @@ mod tests {
     }
 
     #[test]
-    fn clean_state_requires_no_preview_and_no_reference() {
+    fn clean_state_allows_preview_and_reference_image() {
         assert!(is_clean_rendering_state(false, false));
-        assert!(!is_clean_rendering_state(true, false));
-        assert!(!is_clean_rendering_state(false, true));
+        assert!(is_clean_rendering_state(true, false));
+        assert!(is_clean_rendering_state(false, true));
+        assert!(is_clean_rendering_state(true, true));
     }
 
     #[test]
@@ -389,6 +396,87 @@ mod tests {
         let output = collect_interaction_payloads(&events, canvas_rect(), None, false, &mut focus);
         assert!(output.is_empty());
         assert!(focus);
+    }
+
+    #[test]
+    fn preview_canvas_mousedown_with_reference_drives_glass_transition() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("node-forge-editor")
+            .join("packages")
+            .join("editor")
+            .join("assets")
+            .join("examples")
+            .join("glass.nforge");
+        if !path.exists() {
+            eprintln!(
+                "Skipping preview interaction glass.nforge test; file not found at {}",
+                path.display()
+            );
+            return;
+        }
+
+        let (scene, _asset_store) = crate::asset_store::load_from_nforge(&path).unwrap();
+        let sm = scene
+            .state_machine
+            .as_ref()
+            .expect("glass.nforge should contain a stateMachine");
+        let mousedown_to_mutation = sm
+            .transitions
+            .iter()
+            .find(|transition| {
+                let source_type = sm
+                    .states
+                    .iter()
+                    .find(|state| state.id == transition.source)
+                    .map(|state| state.resolved_type());
+                let target_type = sm
+                    .states
+                    .iter()
+                    .find(|state| state.id == transition.target)
+                    .map(|state| state.resolved_type());
+                let trigger_matches = matches!(
+                    transition.trigger.as_ref(),
+                    Some(TransitionCondition::Event { event_name }) if event_name == "mousedown"
+                );
+
+                matches!(
+                    source_type,
+                    Some(AnimationStateType::AnyState | AnimationStateType::EntryState)
+                ) && target_type == Some(AnimationStateType::MutationNode)
+                    && trigger_matches
+            })
+            .expect("glass.nforge should have an Entry/Any -> Mutation mousedown transition");
+
+        let mut focus = false;
+        let clean_state = is_clean_rendering_state(true, true);
+        let payloads = collect_interaction_payloads(
+            &[egui::Event::PointerButton {
+                pos: Pos2::new(120.0, 120.0),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            canvas_rect(),
+            None,
+            clean_state,
+            &mut focus,
+        );
+        assert_eq!(event_types(&payloads), vec!["mousedown"]);
+
+        let mut session = AnimationSession::from_scene(&scene)
+            .expect("animation session should compile")
+            .expect("glass.nforge should have an animation session");
+        assert_eq!(session.step(0.0).active_transition_id, None);
+
+        for payload in &payloads {
+            session.fire_event(&payload.event_type);
+        }
+        let triggered = session.step(1.0 / 30.0);
+        assert_eq!(
+            triggered.active_transition_id.as_deref(),
+            Some(mousedown_to_mutation.id.as_str())
+        );
     }
 
     #[test]

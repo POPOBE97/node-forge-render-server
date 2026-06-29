@@ -8,7 +8,6 @@ use crate::{
 use super::{
     commands::{self, AppCommand},
     ingest::IngestPhase,
-    interaction_bridge,
 };
 
 pub(super) struct PresentPhase {
@@ -303,7 +302,6 @@ pub(super) fn run(
         canvas::clear_shortwire_clipboard_reference(app);
     }
 
-    interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     app.shell.prev_window_mode = frame_state.mode;
 
     PresentPhase {

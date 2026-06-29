@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::dsl::SceneDSL;
-use crate::state_machine::{self, OverrideKey, StateMachineRuntime};
+use crate::state_machine::{self, MousePosition, OverrideKey, StateMachineRuntime};
 
 use super::runloop::Runloop;
 use super::task::{AnimationTask, TaskKind};
@@ -315,6 +315,11 @@ impl AnimationSession {
     /// (e.g. `"mousedown"`, `"mouseup"`) into the state machine.
     pub fn fire_event(&mut self, event_name: impl Into<String>) {
         self.pending_events.push(event_name.into());
+    }
+
+    /// Update the latest mouse frag-pixel position visible to mutation nodes.
+    pub fn update_mouse_position(&mut self, position: MousePosition) {
+        self.runtime.set_mouse_position(position);
     }
 
     /// Get overrides that need to be restored (removed from active set).

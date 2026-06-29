@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-27T17:36:45.419Z",
+  "generatedAt": "2026-06-29T10:51:23.405Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -5676,6 +5676,26 @@
         "defaultParams": {
           "operation": "add"
         }
+      },
+      {
+        "type": "smMouse",
+        "label": "Mouse",
+        "category": "Core",
+        "description": "Reads the latest mouse position in frag pixel coordinates.",
+        "inputs": [],
+        "outputs": [
+          {
+            "id": "position.x",
+            "name": "Position X",
+            "type": "float"
+          },
+          {
+            "id": "position.y",
+            "name": "Position Y",
+            "type": "float"
+          }
+        ],
+        "defaultParams": {}
       },
       {
         "type": "smPassThrough",

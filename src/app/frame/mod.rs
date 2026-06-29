@@ -44,6 +44,7 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
 
     let t0 = Instant::now();
     let ingest = ingest::run(app, &ctx, render_state, &mut renderer_guard, frame_time);
+    interaction_bridge::broadcast_payloads(app, &ingest.queued_interaction_payloads);
     let ingest_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     let t1 = Instant::now();

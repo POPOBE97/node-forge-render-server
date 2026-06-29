@@ -1,6 +1,8 @@
 use crate::{
+    animation::AnimationStep,
     app::{scene_runtime, types::App},
     state_machine,
+    state_machine::types::{AnimationStateType, StateMachine},
 };
 
 use super::interaction_bridge;
@@ -35,8 +37,14 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     let mut animation_current_state_id: Option<String> = None;
     let mut animation_active_transition_id: Option<String> = None;
     if let Some(step) = anim_step {
-        animation_current_state_id = Some(step.current_state_id.clone());
         animation_active_transition_id = step.active_transition_id.clone();
+        animation_current_state_id = Some(interaction_sync_state_id(
+            &step,
+            app.runtime
+                .animation_session
+                .as_ref()
+                .map(|session| session.runtime().definition()),
+        ));
 
         // Force a full override re-apply when resuming from pause.
         // While paused the timeline hover preview may have dirtied
@@ -140,5 +148,132 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             || time_driven_scene
             || app.runtime.capture_redraw_active
             || app.runtime.force_continuous_redraw,
+    }
+}
+
+fn interaction_sync_state_id(step: &AnimationStep, sm: Option<&StateMachine>) -> String {
+    if let (Some(transition_id), Some(sm)) = (step.active_transition_id.as_deref(), sm)
+        && let Some(transition) = sm.transitions.iter().find(|t| t.id == transition_id)
+    {
+        let source_type = sm
+            .states
+            .iter()
+            .find(|s| s.id == transition.source)
+            .map(|s| s.resolved_type());
+        let target_type = sm
+            .states
+            .iter()
+            .find(|s| s.id == transition.target)
+            .map(|s| s.resolved_type());
+
+        if source_type == Some(AnimationStateType::AnyState)
+            && target_type == Some(AnimationStateType::MutationNode)
+        {
+            return transition.target.clone();
+        }
+    }
+
+    step.current_state_id.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::state_machine::types::{
+        AnimationState, AnimationTransition, EasingKind, Position, TransitionCondition,
+    };
+
+    fn state(id: &str, state_type: AnimationStateType) -> AnimationState {
+        AnimationState {
+            id: id.to_string(),
+            name: id.to_string(),
+            position: Some(Position { x: 0.0, y: 0.0 }),
+            parameter_overrides: HashMap::new(),
+            state_type: Some(state_type),
+            mutation_id: (state_type == AnimationStateType::MutationNode).then(|| "mut".into()),
+        }
+    }
+
+    fn base_step(active_transition_id: Option<&str>) -> AnimationStep {
+        AnimationStep {
+            active_overrides: HashMap::new(),
+            needs_redraw: false,
+            scene_time_secs: 0.0,
+            active: true,
+            diagnostics: Vec::new(),
+            current_state_id: "entry".into(),
+            active_transition_id: active_transition_id.map(str::to_string),
+            state_local_times: Default::default(),
+            transition_blend: None,
+            finished: false,
+        }
+    }
+
+    #[test]
+    fn any_state_to_mutation_reports_target_for_interaction_sync() {
+        let sm = StateMachine {
+            id: "sm".into(),
+            name: "State Machine".into(),
+            states: vec![
+                state("entry", AnimationStateType::EntryState),
+                state("any", AnimationStateType::AnyState),
+                state("exit", AnimationStateType::ExitState),
+                state("mutation", AnimationStateType::MutationNode),
+            ],
+            transitions: vec![AnimationTransition {
+                id: "tr_any_mutation".into(),
+                source: "any".into(),
+                target: "mutation".into(),
+                trigger: Some(TransitionCondition::Event {
+                    event_name: "mousedown".into(),
+                }),
+                condition: None,
+                delay: 0.0,
+                duration: 0.3,
+                easing: EasingKind::Linear,
+            }],
+            mutations: Vec::new(),
+            initial_state_id: Some("entry".into()),
+            viewport: None,
+        };
+
+        assert_eq!(
+            interaction_sync_state_id(&base_step(Some("tr_any_mutation")), Some(&sm)),
+            "mutation"
+        );
+    }
+
+    #[test]
+    fn non_any_transition_reports_runtime_current_state_for_interaction_sync() {
+        let sm = StateMachine {
+            id: "sm".into(),
+            name: "State Machine".into(),
+            states: vec![
+                state("entry", AnimationStateType::EntryState),
+                state("any", AnimationStateType::AnyState),
+                state("exit", AnimationStateType::ExitState),
+                state("mutation", AnimationStateType::MutationNode),
+            ],
+            transitions: vec![AnimationTransition {
+                id: "tr_entry_mutation".into(),
+                source: "entry".into(),
+                target: "mutation".into(),
+                trigger: None,
+                condition: None,
+                delay: 0.0,
+                duration: 0.3,
+                easing: EasingKind::Linear,
+            }],
+            mutations: Vec::new(),
+            initial_state_id: Some("entry".into()),
+            viewport: None,
+        };
+
+        assert_eq!(
+            interaction_sync_state_id(&base_step(Some("tr_entry_mutation")), Some(&sm)),
+            "entry"
+        );
     }
 }

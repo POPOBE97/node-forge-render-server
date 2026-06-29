@@ -233,6 +233,8 @@ pub struct CanvasReferenceState {
 pub struct CanvasInteractionState {
     pub canvas_event_focus_latched: bool,
     pub last_canvas_rect: Option<egui::Rect>,
+    pub last_image_rect: Option<egui::Rect>,
+    pub last_display_resolution: Option<[u32; 2]>,
 }
 
 #[derive(Default)]

@@ -74,6 +74,20 @@ fn temporary_output_active(app: &App) -> bool {
         .is_some_and(scene_has_temporary_output)
 }
 
+fn animation_consumes_canvas_input_state(
+    animation_playing: bool,
+    has_animation_session: bool,
+) -> bool {
+    animation_playing && has_animation_session
+}
+
+fn animation_consumes_canvas_input(app: &App) -> bool {
+    animation_consumes_canvas_input_state(
+        app.runtime.animation_playing,
+        app.runtime.animation_session.is_some(),
+    )
+}
+
 fn apply_action(
     result: &mut CanvasFrameResult,
     app: &mut App,
@@ -844,45 +858,17 @@ fn draw_profile_text(
 
     let mut lines = vec![
         format!("Frame CPU encode {:.2} ms", profile.frame_cpu_encode_ms),
-        format!(
-            "Frame GPU duration {}",
-            format_optional_ms(profile.frame_gpu_duration_ms)
-        ),
         format!("Frame wall {:.2} ms", profile.frame_wall_ms),
     ];
     if let Some(wait_ms) = profile.queue_wait_ms {
         lines.push(format!("Queue wait {:.2} ms", wait_ms));
     }
-    let timestamp_status = if profile.timestamp_query_used {
-        "timestamp query active"
-    } else if profile.timestamp_query_supported {
-        "timestamp query available in headless wait mode"
-    } else {
-        "timestamp query unavailable"
-    };
-    lines.push(format!("GPU duration source {timestamp_status}"));
-    let pipeline_statistics_status = if profile.pipeline_statistics_used {
-        "pipeline statistics active"
-    } else if profile.pipeline_statistics_supported {
-        "pipeline statistics available in headless wait mode"
-    } else {
-        "pipeline statistics unavailable"
-    };
-    lines.push(format!(
-        "Pipeline statistics source {pipeline_statistics_status}"
-    ));
 
     let mut passes = profile.passes.iter().collect::<Vec<_>>();
-    passes.sort_by(|a, b| match (a.gpu_duration_ms, b.gpu_duration_ms) {
-        (Some(a_ms), Some(b_ms)) => b_ms
-            .total_cmp(&a_ms)
-            .then_with(|| a.pass_name.cmp(&b.pass_name)),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => b
-            .cpu_encode_ms
+    passes.sort_by(|a, b| {
+        b.cpu_encode_ms
             .total_cmp(&a.cpu_encode_ms)
-            .then_with(|| a.pass_name.cmp(&b.pass_name)),
+            .then_with(|| a.pass_name.cmp(&b.pass_name))
     });
     for pass in passes.into_iter().take(3) {
         let pass_name = compact_pass_name(pass.pass_name.as_str(), 34);
@@ -892,40 +878,7 @@ fn draw_profile_text(
             pass_name,
             pass.cpu_encode_ms,
         ));
-        lines.push(format!(
-            "Pass {} {} GPU duration {}",
-            pass.order_index + 1,
-            pass_name,
-            format_optional_ms(pass.gpu_duration_ms),
-        ));
-        if pass.vertex_shader_invocations.is_some()
-            || pass.fragment_shader_invocations.is_some()
-            || pass.compute_shader_invocations.is_some()
-        {
-            lines.push(format!(
-                "Pass {} {} vertex invocations {}",
-                pass.order_index + 1,
-                pass_name,
-                format_optional_count(pass.vertex_shader_invocations),
-            ));
-            lines.push(format!(
-                "Pass {} {} fragment invocations {}",
-                pass.order_index + 1,
-                pass_name,
-                format_optional_count(pass.fragment_shader_invocations),
-            ));
-            lines.push(format!(
-                "Pass {} {} compute invocations {}",
-                pass.order_index + 1,
-                pass_name,
-                format_optional_count(pass.compute_shader_invocations),
-            ));
-        }
     }
-
-    lines.push("Occupancy unsupported by public runtime API on this device".to_string());
-    lines.push("ALU limiter unsupported by public runtime API on this device".to_string());
-    lines.push("Memory bandwidth unsupported by public runtime API on this device".to_string());
 
     let color = Color32::from_rgb(210, 224, 255);
     let mut y = badge_y;
@@ -935,18 +888,6 @@ fn draw_profile_text(
             .galley(pos2(badge_x, y), galley.clone(), Color32::PLACEHOLDER);
         y += galley.size().y + 2.0;
     }
-}
-
-fn format_optional_ms(value: Option<f64>) -> String {
-    value
-        .map(|ms| format!("{ms:.2} ms"))
-        .unwrap_or_else(|| "unavailable".to_string())
-}
-
-fn format_optional_count(value: Option<u64>) -> String {
-    value
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "unavailable".to_string())
 }
 
 fn compact_pass_name(name: &str, max_chars: usize) -> String {
@@ -1067,8 +1008,12 @@ pub fn show_canvas(
 ) -> CanvasFrameResult {
     let mut frame_result = CanvasFrameResult::default();
     let current_display_metrics = display_metrics::current_display_metrics(ctx);
+    let animation_input_active = animation_consumes_canvas_input(app);
+    let normal_canvas_interactions_enabled = !animation_input_active;
 
-    if ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command) {
+    if normal_canvas_interactions_enabled
+        && ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command)
+    {
         apply_action(
             &mut frame_result,
             app,
@@ -1081,7 +1026,8 @@ pub fn show_canvas(
         );
     }
 
-    let plain_shortcuts_enabled = !ctx.egui_wants_keyboard_input();
+    let plain_shortcuts_enabled =
+        normal_canvas_interactions_enabled && !ctx.egui_wants_keyboard_input();
     let shortwire_active_for_canvas =
         pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows);
     if plain_shortcuts_enabled {
@@ -1191,7 +1137,9 @@ pub fn show_canvas(
         }
     }
 
-    reference::maybe_handle_reference_drop(app, ctx, render_state);
+    if normal_canvas_interactions_enabled {
+        reference::maybe_handle_reference_drop(app, ctx, render_state);
+    }
 
     let escape_pressed = plain_shortcuts_enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let design_escape_consumed = if escape_pressed {
@@ -1288,8 +1236,24 @@ pub fn show_canvas(
     if response.clicked() {
         app.canvas.interactions.canvas_event_focus_latched = true;
     }
-    let canvas_accepts_keyboard_paste =
-        response.hovered() || app.canvas.interactions.canvas_event_focus_latched;
+    let canvas_accepts_keyboard_paste = normal_canvas_interactions_enabled
+        && (response.hovered() || app.canvas.interactions.canvas_event_focus_latched);
+    if animation_input_active {
+        apply_action(
+            &mut frame_result,
+            app,
+            render_state,
+            renderer,
+            CanvasAction::EndPanDrag,
+        );
+        apply_action(
+            &mut frame_result,
+            app,
+            render_state,
+            renderer,
+            CanvasAction::EndReferenceDrag,
+        );
+    }
     let (command_v_pressed, command_v_released, paste_event_count, paste_event_chars, raw_focused) =
         ctx.input(|i| {
             let paste_event_chars = i
@@ -1396,7 +1360,7 @@ pub fn show_canvas(
         );
     }
 
-    if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+    if normal_canvas_interactions_enabled && ctx.input(|i| !i.raw.hovered_files.is_empty()) {
         ui.painter().rect_filled(
             canvas_rect,
             egui::CornerRadius::same(design_tokens::BORDER_RADIUS_REGULAR as u8),
@@ -1417,34 +1381,37 @@ pub fn show_canvas(
         );
     }
 
-    let context_menu_opened_this_frame = response.secondary_clicked();
-    response.context_menu(|menu_ui| {
-        let copy_clicked = menu_ui.button("复制材质").clicked();
-        if copy_clicked && !context_menu_opened_this_frame {
-            if let Some(pass_name) = app.core.export_encode_pass_name.as_ref() {
-                app.core
-                    .shader_space
-                    .render_pass_by_name(pass_name.as_str());
+    let context_menu_opened_this_frame =
+        normal_canvas_interactions_enabled && response.secondary_clicked();
+    if normal_canvas_interactions_enabled {
+        response.context_menu(|menu_ui| {
+            let copy_clicked = menu_ui.button("复制材质").clicked();
+            if copy_clicked && !context_menu_opened_this_frame {
+                if let Some(pass_name) = app.core.export_encode_pass_name.as_ref() {
+                    app.core
+                        .shader_space
+                        .render_pass_by_name(pass_name.as_str());
+                }
+                let export_tex = app.core.export_texture_name.as_str();
+                if let Some(info) = app.core.shader_space.texture_info(export_tex)
+                    && let Ok(image) = app.core.shader_space.read_texture_rgba8(export_tex)
+                {
+                    ops::begin_clipboard_copy(
+                        &mut app.canvas.async_ops,
+                        now,
+                        info.size.width as usize,
+                        info.size.height as usize,
+                        image.bytes,
+                    );
+                }
+                menu_ui.close();
             }
-            let export_tex = app.core.export_texture_name.as_str();
-            if let Some(info) = app.core.shader_space.texture_info(export_tex)
-                && let Ok(image) = app.core.shader_space.read_texture_rgba8(export_tex)
-            {
-                ops::begin_clipboard_copy(
-                    &mut app.canvas.async_ops,
-                    now,
-                    info.size.width as usize,
-                    info.size.height as usize,
-                    image.bytes,
-                );
-            }
-            menu_ui.close();
-        }
-    });
+        });
+    }
 
     let design_active = app.canvas.design.active.is_some();
 
-    if viewport_frame.pan_zoom_enabled {
+    if normal_canvas_interactions_enabled && viewport_frame.pan_zoom_enabled {
         if response.drag_started_by(egui::PointerButton::Middle)
             && let Some(pointer_pos) = ctx.input(|i| i.pointer.hover_pos())
         {
@@ -1543,7 +1510,7 @@ pub fn show_canvas(
         }
     }
 
-    let canvas_hovered = response.hovered();
+    let canvas_hovered = normal_canvas_interactions_enabled && response.hovered();
     let zoom_delta = if canvas_hovered {
         ctx.input(|i| i.zoom_delta())
     } else {
@@ -1591,20 +1558,24 @@ pub fn show_canvas(
     draw_checkerboard(ui, ctx, canvas_rect);
 
     if matrix_active {
-        update_matrix_hover(app, ctx, canvas_rect, viewport_frame.image_rect);
+        if normal_canvas_interactions_enabled {
+            update_matrix_hover(app, ctx, canvas_rect, viewport_frame.image_rect);
+        }
         draw_matrix_grid_viewport(ui, app, canvas_rect, viewport_frame.image_rect);
         draw_matrix_pixel_overlays(ui, app, canvas_rect, viewport_frame.image_rect);
         draw_matrix_indicators(app, ui, ctx, canvas_rect, now);
-        maybe_sample_matrix_clicked_pixel(
-            app,
-            ctx,
-            &response,
-            canvas_rect,
-            viewport_frame.image_rect,
-            render_state,
-            renderer,
-            &mut frame_result,
-        );
+        if normal_canvas_interactions_enabled {
+            maybe_sample_matrix_clicked_pixel(
+                app,
+                ctx,
+                &response,
+                canvas_rect,
+                viewport_frame.image_rect,
+                render_state,
+                renderer,
+                &mut frame_result,
+            );
+        }
     } else if let Some(ref display_frame) = display_frame {
         let uv = computed_uv(viewport_frame.image_rect, canvas_rect);
         draw_display_layers(
@@ -1619,7 +1590,9 @@ pub fn show_canvas(
         let mut value_sample_cache = None;
         let mut design_claims = design::DesignInteractionClaims::default();
         let mut design_status = None;
-        if let Some(session) = app.canvas.design.active.as_mut() {
+        if normal_canvas_interactions_enabled
+            && let Some(session) = app.canvas.design.active.as_mut()
+        {
             let output = design::show_active_overlay(
                 ui,
                 ctx,
@@ -1687,7 +1660,8 @@ pub fn show_canvas(
         );
         let design_suppresses_sampling = design_claims.suppress_pixel_sampling
             || design_claims.primary_pointer
-            || design_claims.suppress_reference_drag;
+            || design_claims.suppress_reference_drag
+            || animation_input_active;
         if !design_suppresses_sampling {
             maybe_sample_clicked_pixel(
                 app,
@@ -1710,6 +1684,10 @@ pub fn show_canvas(
 
     app.canvas.viewport.canvas_center_prev = Some(canvas_rect.center());
     app.canvas.interactions.last_canvas_rect = Some(canvas_rect);
+    app.canvas.interactions.last_image_rect = Some(viewport_frame.image_rect);
+    app.canvas.interactions.last_display_resolution = display_frame
+        .as_ref()
+        .map(|frame| frame.effective_resolution);
 
     frame_result
 }
@@ -2150,4 +2128,17 @@ fn maybe_sample_matrix_clicked_pixel(
         renderer,
         CanvasAction::SamplePixel { x, y, rgba },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::animation_consumes_canvas_input_state;
+
+    #[test]
+    fn animation_canvas_input_gate_requires_playing_session() {
+        assert!(!animation_consumes_canvas_input_state(false, false));
+        assert!(!animation_consumes_canvas_input_state(true, false));
+        assert!(!animation_consumes_canvas_input_state(false, true));
+        assert!(animation_consumes_canvas_input_state(true, true));
+    }
 }

@@ -86,6 +86,18 @@ pub struct InteractionPosition {
     pub canvas_x: f32,
     #[serde(rename = "canvasY")]
     pub canvas_y: f32,
+    #[serde(
+        default,
+        rename = "fragPixelX",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub frag_pixel_x: Option<f32>,
+    #[serde(
+        default,
+        rename = "fragPixelY",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub frag_pixel_y: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -158,6 +170,8 @@ mod tests {
                     client_y: 40.0,
                     canvas_x: 12.0,
                     canvas_y: 8.0,
+                    frag_pixel_x: None,
+                    frag_pixel_y: None,
                 }),
                 key: Some(InteractionKeyData {
                     key: "a".to_string(),
@@ -237,7 +251,10 @@ mod tests {
         assert_eq!(pass["passName"], "sys.mesh_gradient.MeshGradient_12.pass");
         assert_eq!(pass["nodeId"], "MeshGradient_12");
         assert_eq!(pass["nodeType"], "MeshGradient");
-        assert_eq!(pass["targetTexture"], "sys.mesh_gradient.MeshGradient_12.out");
+        assert_eq!(
+            pass["targetTexture"],
+            "sys.mesh_gradient.MeshGradient_12.out"
+        );
         assert_eq!(pass["targetSize"], serde_json::json!([1080, 2400]));
         assert!(pass["pass_name"].is_null());
     }
