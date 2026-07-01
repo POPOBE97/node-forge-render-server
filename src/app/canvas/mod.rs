@@ -25,6 +25,14 @@ pub(super) fn sync_reference_from_scene(
     reference::sync_from_scene(app, ctx, render_state);
 }
 
+pub(super) fn sync_android_reference_frame(
+    app: &mut App,
+    ctx: &egui::Context,
+    render_state: &egui_wgpu::RenderState,
+) {
+    reference::sync_android_reference_frame(app, ctx, render_state);
+}
+
 pub(super) fn clear_reference(app: &mut App) {
     reference::clear_reference(app);
 }

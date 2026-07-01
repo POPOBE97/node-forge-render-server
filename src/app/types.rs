@@ -33,6 +33,7 @@ pub enum RefImageMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefImageSource {
     Manual,
+    AndroidScrcpyUsb(String),
     ShortwireClipboard,
     ShortwirePatch,
     SceneNodePath(String),
@@ -217,6 +218,7 @@ pub struct RefImageState {
     pub source_linear_rgba: Vec<f32>,
     pub linear_premul_rgba: Vec<f32>,
     pub texture: egui::TextureHandle,
+    pub native_texture_id: Option<egui::TextureId>,
     pub wgpu_texture: wgpu::Texture,
     pub wgpu_texture_view: wgpu::TextureView,
     pub size: [u32; 2],
@@ -436,6 +438,7 @@ pub(super) struct AppShell {
     pub matrix_config: MatrixConfig,
     pub resource_pools: Vec<ResourcePoolInfo>,
     pub matrix_state: super::matrix_render::MatrixRenderState,
+    pub android_reference: crate::android_reference::AndroidReferenceState,
 }
 
 #[derive(Default)]
@@ -553,6 +556,22 @@ pub(super) fn scene_reference_image_asset_id(scene: &crate::dsl::SceneDSL) -> Op
         .map(ToOwned::to_owned)
 }
 
+pub(super) fn scene_reference_image_source(scene: &crate::dsl::SceneDSL) -> Option<String> {
+    scene
+        .nodes
+        .iter()
+        .find(|node| node.node_type.as_str() == "ReferenceImage")
+        .and_then(|node| {
+            node.params
+                .get("source")
+                .or_else(|| node.params.get("sourceType"))
+        })
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .map(|source| source.to_ascii_lowercase())
+}
+
 pub(super) fn scene_reference_image_alpha_mode(
     scene: &crate::dsl::SceneDSL,
 ) -> Option<RefImageAlphaMode> {
@@ -587,6 +606,12 @@ pub(super) fn scene_reference_desired_source(
     scene: &crate::dsl::SceneDSL,
 ) -> Option<ReferenceDesiredSource> {
     let alpha_mode = scene_reference_image_alpha_mode(scene).unwrap_or_default();
+    if matches!(
+        scene_reference_image_source(scene).as_deref(),
+        Some("scrcpyusb" | "scrcpy_usb" | "scrcpy-usb" | "android")
+    ) {
+        return Some(ReferenceDesiredSource::AndroidScrcpyUsb { alpha_mode });
+    }
     if let Some(asset_id) = scene_reference_image_asset_id(scene) {
         return Some(ReferenceDesiredSource::SceneAsset {
             asset_id,
@@ -683,6 +708,7 @@ impl App {
                 matrix_config: MatrixConfig::default(),
                 resource_pools: Vec::new(),
                 matrix_state: super::matrix_render::MatrixRenderState::default(),
+                android_reference: crate::android_reference::AndroidReferenceState::default(),
             },
             interaction_bridge: InteractionBridgeState::default(),
             canvas: CanvasState::new(
@@ -871,6 +897,24 @@ mod tests {
             .params
             .insert("alphaMode".to_string(), serde_json::json!("unknown"));
         assert_eq!(super::scene_reference_image_alpha_mode(&scene), None);
+    }
+
+    #[test]
+    fn scene_reference_source_accepts_scrcpy_usb() {
+        let mut scene = scene_with_node_types(&["ReferenceImage"]);
+        scene.nodes[0]
+            .params
+            .insert("source".to_string(), serde_json::json!("scrcpyUsb"));
+        scene.nodes[0]
+            .params
+            .insert("alphaMode".to_string(), serde_json::json!("straight"));
+
+        assert!(matches!(
+            super::scene_reference_desired_source(&scene),
+            Some(super::ReferenceDesiredSource::AndroidScrcpyUsb {
+                alpha_mode: super::RefImageAlphaMode::Straight
+            })
+        ));
     }
 
     #[test]

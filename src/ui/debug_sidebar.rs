@@ -2,6 +2,7 @@ use rust_wgpu_fiber::eframe::egui;
 use std::cell::RefCell;
 use std::hash::Hash;
 
+use crate::android_reference::AndroidReferenceStatus;
 use crate::app::{
     AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel, QualifierSettings,
     RefImageMode, ResourcePoolInfo, TestMode, display_metrics,
@@ -267,6 +268,10 @@ pub enum SidebarAction {
     PickReferenceImage,
     /// Remove current reference image.
     RemoveReferenceImage,
+    /// Start Android USB mirroring as a live reference source.
+    StartAndroidReferenceUsb,
+    /// Stop Android USB reference mirroring.
+    StopAndroidReference,
     /// Set current diff metric mode.
     SetDiffMetricMode(DiffMetricMode),
     /// Switch current analysis tab.
@@ -354,6 +359,7 @@ pub fn show_in_rect(
     vectorscope_texture_id: Option<egui::TextureId>,
     analysis: AnalysisSidebarState,
     display: DisplaySidebarState,
+    android_reference: AndroidReferenceStatus,
     reference: Option<&ReferenceSidebarState>,
     test_mode_state: TestModeSidebarState<'_>,
     tree_nodes: &[FileTreeNode],
@@ -431,7 +437,12 @@ pub fn show_in_rect(
                             });
                             section_divider(ui);
                             with_sidebar_content_padding(ui, |ui| {
-                                show_ref_section(ui, reference, &mut sidebar_action);
+                                show_ref_section(
+                                    ui,
+                                    reference,
+                                    &android_reference,
+                                    &mut sidebar_action,
+                                );
                             });
                             section_divider(ui);
                             with_sidebar_content_padding(ui, |ui| {
@@ -500,6 +511,7 @@ fn show_display_section(
 fn show_ref_section(
     ui: &mut egui::Ui,
     reference: Option<&ReferenceSidebarState>,
+    android_reference: &AndroidReferenceStatus,
     sidebar_action: &mut Option<SidebarAction>,
 ) {
     let has_reference = reference.is_some();
@@ -568,6 +580,69 @@ fn show_ref_section(
         },
         |ui| {
             let row_action = RefCell::new(None);
+            sidebar_grid_row(ui, |row| {
+                row.place(1, 2, |ui| {
+                    sidebar_group_cell(ui, "Source", |ui| {
+                        let label = if android_reference.running { "Stop USB" } else { "USB" };
+                        let tooltip = if android_reference.running {
+                            "Stop Android USB reference"
+                        } else {
+                            "Use Android USB reference"
+                        };
+                        let response = button::button(
+                            ui,
+                            ButtonOptions {
+                                label,
+                                tooltip: Some(tooltip),
+                                variant: if android_reference.running {
+                                    ButtonVariant::Outline
+                                } else {
+                                    ButtonVariant::Ghost
+                                },
+                                size: ButtonSize::Small,
+                                enabled: true,
+                                icon: None,
+                                icon_kind: None,
+                                visual_override: None,
+                                group_position: ButtonGroupPosition::Single,
+                            },
+                        );
+                        if response.clicked() {
+                            *row_action.borrow_mut() = Some(if android_reference.running {
+                                SidebarAction::StopAndroidReference
+                            } else {
+                                SidebarAction::StartAndroidReferenceUsb
+                            });
+                        }
+                    });
+                });
+                row.place(3, 2, |ui| {
+                    sidebar_group_cell(ui, "Status", |ui| {
+                        let status = if let Some(size) = android_reference.size {
+                            format!(
+                                "{}x{} · {:.0} fps · {} frames",
+                                size[0],
+                                size[1],
+                                android_reference.fps,
+                                android_reference.frame_count
+                            )
+                        } else if let Some(error) = android_reference.last_error.as_ref() {
+                            error.clone()
+                        } else {
+                            android_reference.label.clone()
+                        };
+                        ui.label(design_tokens::rich_text(
+                            status.as_str(),
+                            if android_reference.running {
+                                TextRole::ActiveItemTitle
+                            } else {
+                                TextRole::InactiveItemTitle
+                            },
+                        ));
+                    });
+                });
+            });
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
             ui.add_enabled_ui(has_reference, |ui| {
                 sidebar_grid_row(ui, |row| {
                     row.place(1, 2, |ui| {

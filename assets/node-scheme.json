@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-30T02:46:12.681Z",
+  "generatedAt": "2026-07-01T03:57:43.646Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -4691,6 +4691,7 @@
       "inputs": [],
       "outputs": [],
       "defaultParams": {
+        "source": "image",
         "assetId": "",
         "encoderSpace": "srgb",
         "alphaMode": "straight"

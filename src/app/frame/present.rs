@@ -54,6 +54,7 @@ pub(super) fn run(
 
     let sidebar_full_w = ui::debug_sidebar::sidebar_width(ctx);
     let sidebar_w = sidebar_full_w * frame_state.sidebar_factor;
+    let android_reference_status = app.shell.android_reference.status();
     let reference_sidebar_state = app.canvas.reference.ref_image.as_ref().map(|reference| {
         ui::debug_sidebar::ReferenceSidebarState {
             name: reference.name.clone(),
@@ -130,6 +131,7 @@ pub(super) fn run(
                     app.canvas.analysis.vectorscope_texture_id,
                     analysis_sidebar_state,
                     display_sidebar_state,
+                    android_reference_status.clone(),
                     reference_sidebar_state.as_ref(),
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,

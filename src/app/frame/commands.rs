@@ -22,6 +22,8 @@ pub enum AppCommand {
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
+    StartAndroidReferenceUsb,
+    StopAndroidReference,
     OpenPassDebug(String),
     OpenPassDesign(ui::resource_tree::PassDesignTarget),
     SendDesignParamPatch(DesignParamPatchPayload),
@@ -66,6 +68,10 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         }
         ui::debug_sidebar::SidebarAction::PickReferenceImage => AppCommand::PickReferenceImage,
         ui::debug_sidebar::SidebarAction::RemoveReferenceImage => AppCommand::ClearReference,
+        ui::debug_sidebar::SidebarAction::StartAndroidReferenceUsb => {
+            AppCommand::StartAndroidReferenceUsb
+        }
+        ui::debug_sidebar::SidebarAction::StopAndroidReference => AppCommand::StopAndroidReference,
         ui::debug_sidebar::SidebarAction::SetDiffMetricMode(mode) => {
             AppCommand::Canvas(CanvasAction::SetDiffMetricMode(mode))
         }
@@ -141,12 +147,35 @@ pub fn dispatch(
             let _ = canvas::reducer::apply_action(app, render_state, renderer, action)?;
         }
         AppCommand::PickReferenceImage => {
-            let _ = canvas::pick_reference_image_from_dialog(app, ctx, render_state)?;
+            if canvas::pick_reference_image_from_dialog(app, ctx, render_state)? {
+                app.shell.android_reference.stop();
+            }
         }
         AppCommand::ClearReference => {
+            app.shell.android_reference.stop();
             if app.canvas.reference.ref_image.is_some() {
                 canvas::clear_reference(app);
             }
+        }
+        AppCommand::StartAndroidReferenceUsb => {
+            app.shell.android_reference.start_usb()?;
+            app.canvas.reference.desired_override =
+                Some(crate::app::canvas::state::ReferenceDesiredSource::Manual);
+            app.canvas.reference.last_attempt_key = None;
+            ctx.request_repaint();
+        }
+        AppCommand::StopAndroidReference => {
+            app.shell.android_reference.stop();
+            if matches!(
+                app.canvas.reference.ref_image.as_ref().map(|r| &r.source),
+                Some(crate::app::types::RefImageSource::AndroidScrcpyUsb(_))
+            ) {
+                canvas::clear_reference(app);
+            }
+            app.canvas.reference.desired_override =
+                Some(crate::app::canvas::state::ReferenceDesiredSource::Manual);
+            app.canvas.reference.last_attempt_key = None;
+            ctx.request_repaint();
         }
         AppCommand::OpenPassDebug(pass_name) => {
             ui::pass_debug_window::open_pass_debug_window(
@@ -426,6 +455,14 @@ mod tests {
     fn sidebar_reference_remove_maps_to_clear_reference_command() {
         let command = from_sidebar_action(SidebarAction::RemoveReferenceImage);
         assert!(matches!(command, AppCommand::ClearReference));
+    }
+
+    #[test]
+    fn sidebar_android_reference_maps_to_app_command() {
+        let start = from_sidebar_action(SidebarAction::StartAndroidReferenceUsb);
+        let stop = from_sidebar_action(SidebarAction::StopAndroidReference);
+        assert!(matches!(start, AppCommand::StartAndroidReferenceUsb));
+        assert!(matches!(stop, AppCommand::StopAndroidReference));
     }
 
     #[test]

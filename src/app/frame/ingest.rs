@@ -143,6 +143,7 @@ pub(super) fn run(
     }
 
     canvas::sync_reference_from_scene(app, ctx, render_state);
+    canvas::sync_android_reference_frame(app, ctx, render_state);
 
     IngestPhase {
         frame_time,

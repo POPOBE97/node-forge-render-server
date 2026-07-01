@@ -187,6 +187,9 @@ pub enum ReferenceDesiredSource {
         path: String,
         alpha_mode: RefImageAlphaMode,
     },
+    AndroidScrcpyUsb {
+        alpha_mode: RefImageAlphaMode,
+    },
     Manual,
 }
 
@@ -196,7 +199,8 @@ impl ReferenceDesiredSource {
         match self {
             Self::SceneAsset { alpha_mode, .. }
             | Self::SceneDataUrl { alpha_mode, .. }
-            | Self::ScenePath { alpha_mode, .. } => Some(*alpha_mode),
+            | Self::ScenePath { alpha_mode, .. }
+            | Self::AndroidScrcpyUsb { alpha_mode } => Some(*alpha_mode),
             Self::Manual => None,
         }
     }
@@ -215,6 +219,9 @@ pub enum ReferenceAttemptKey {
     },
     Path {
         path: String,
+        alpha_mode: RefImageAlphaMode,
+    },
+    AndroidScrcpyUsb {
         alpha_mode: RefImageAlphaMode,
     },
 }

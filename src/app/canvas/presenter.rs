@@ -24,7 +24,8 @@ use crate::{
         display_metrics,
         frame::commands::AppCommand,
         matrix_render,
-        types::{App, RefImageMode, ViewportOperationIndicatorVisual},
+        texture_bridge,
+        types::{App, RefImageMode, RefImageSource, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
     ui::{
@@ -211,9 +212,33 @@ fn computed_uv(image_rect: Rect, canvas_rect: Rect) -> Rect {
     Rect::from_min_max(pos2(uv0_min.x, uv0_min.y), pos2(uv0_max.x, uv0_max.y))
 }
 
+fn reference_display_texture_id(
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+) -> Option<egui::TextureId> {
+    let filter = app.canvas.display.texture_filter;
+    let reference = app.canvas.reference.ref_image.as_mut()?;
+    if matches!(reference.source, RefImageSource::AndroidScrcpyUsb(_)) {
+        if let Some(id) = reference.native_texture_id {
+            return Some(id);
+        }
+        let id = renderer.register_native_texture_with_sampler_options(
+            &render_state.device,
+            &reference.wgpu_texture_view,
+            texture_bridge::canvas_sampler_descriptor(filter),
+        );
+        reference.native_texture_id = Some(id);
+        return Some(id);
+    }
+    Some(reference.texture.id())
+}
+
 fn draw_display_layers(
     ui: &egui::Ui,
-    app: &App,
+    app: &mut App,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
     canvas_rect: Rect,
     image_rect: Rect,
     uv: Rect,
@@ -228,6 +253,8 @@ fn draw_display_layers(
     }
 
     if !display_frame.compare_output_active
+        && app.canvas.reference.ref_image.is_some()
+        && let Some(reference_texture_id) = reference_display_texture_id(app, render_state, renderer)
         && let Some(reference_image) = app.canvas.reference.ref_image.as_ref()
     {
         let reference_size = egui::vec2(
@@ -256,7 +283,7 @@ fn draw_display_layers(
             };
             ui.painter().add(
                 egui::epaint::RectShape::filled(visible_rect, rounding, tint)
-                    .with_texture(reference_image.texture.id(), reference_uv),
+                    .with_texture(reference_texture_id, reference_uv),
             );
         }
     }
@@ -1581,6 +1608,8 @@ pub fn show_canvas(
         draw_display_layers(
             ui,
             app,
+            render_state,
+            renderer,
             canvas_rect,
             viewport_frame.image_rect,
             uv,
