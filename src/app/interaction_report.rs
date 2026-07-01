@@ -442,11 +442,15 @@ mod tests {
 
                 matches!(
                     source_type,
-                    Some(AnimationStateType::AnyState | AnimationStateType::EntryState)
+                    Some(
+                        AnimationStateType::AnyState
+                            | AnimationStateType::EntryState
+                            | AnimationStateType::AnimationState
+                    )
                 ) && target_type == Some(AnimationStateType::MutationNode)
                     && trigger_matches
             })
-            .expect("glass.nforge should have an Entry/Any -> Mutation mousedown transition");
+            .expect("glass.nforge should have a mousedown transition to Mutation");
 
         let mut focus = false;
         let clean_state = is_clean_rendering_state(true, true);
@@ -473,10 +477,14 @@ mod tests {
             session.fire_event(&payload.event_type);
         }
         let triggered = session.step(1.0 / 30.0);
-        assert_eq!(
-            triggered.active_transition_id.as_deref(),
-            Some(mousedown_to_mutation.id.as_str())
-        );
+        if mousedown_to_mutation.delay + mousedown_to_mutation.duration <= 0.0 {
+            assert_eq!(triggered.current_state_id, mousedown_to_mutation.target);
+        } else {
+            assert_eq!(
+                triggered.active_transition_id.as_deref(),
+                Some(mousedown_to_mutation.id.as_str())
+            );
+        }
     }
 
     #[test]

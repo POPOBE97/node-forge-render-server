@@ -255,7 +255,7 @@ pub struct MutationEndpoint {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationInputBinding {
     /// Port on the mutation boundary.
-    #[serde(rename = "portId")]
+    #[serde(rename = "portId", alias = "mutationPortId")]
     pub port_id: String,
     /// Where the value is fed into the inner graph.
     pub to: MutationEndpoint,
@@ -267,7 +267,7 @@ pub struct MutationInputBinding {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationOutputBinding {
     /// Port on the mutation boundary.
-    #[serde(rename = "portId")]
+    #[serde(rename = "portId", alias = "mutationPortId")]
     pub port_id: String,
     /// Where the value comes from in the inner graph.
     pub from: MutationEndpoint,
@@ -360,7 +360,39 @@ impl OverrideKey {
 
 #[cfg(test)]
 mod tests {
-    use super::MutationPassthroughBinding;
+    use super::{MutationInputBinding, MutationOutputBinding, MutationPassthroughBinding};
+
+    #[test]
+    fn mutation_input_binding_parses_editor_port_name() {
+        let parsed: MutationInputBinding = serde_json::from_value(serde_json::json!({
+            "mutationPortId": "Vector2Input_74:x",
+            "to": {
+                "nodeId": "mouse",
+                "portId": "position.x",
+            },
+        }))
+        .expect("editor input binding should deserialize");
+
+        assert_eq!(parsed.port_id, "Vector2Input_74:x");
+        assert_eq!(parsed.to.node_id, "mouse");
+        assert_eq!(parsed.to.port_id, "position.x");
+    }
+
+    #[test]
+    fn mutation_output_binding_parses_editor_port_name() {
+        let parsed: MutationOutputBinding = serde_json::from_value(serde_json::json!({
+            "mutationPortId": "Vector2Input_74:x",
+            "from": {
+                "nodeId": "mouse",
+                "portId": "position.x",
+            },
+        }))
+        .expect("editor output binding should deserialize");
+
+        assert_eq!(parsed.port_id, "Vector2Input_74:x");
+        assert_eq!(parsed.from.node_id, "mouse");
+        assert_eq!(parsed.from.port_id, "position.x");
+    }
 
     #[test]
     fn mutation_passthrough_binding_parses_legacy_port_names() {

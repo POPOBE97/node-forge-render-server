@@ -69,7 +69,7 @@ fn back_pin_pin_compile_and_tick() {
 }
 
 #[test]
-fn editor_glass_nforge_mousedown_transition_fires_from_entry_state() {
+fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
     use node_forge_render_server::state_machine::types::{AnimationStateType, TransitionCondition};
 
     let path = editor_glass_nforge_path();
@@ -83,56 +83,105 @@ fn editor_glass_nforge_mousedown_transition_fires_from_entry_state() {
 
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
-    let sm = scene
-        .state_machine
-        .as_ref()
-        .expect("glass.nforge should contain a stateMachine");
+    let (transition_id, transition_source, transition_target, initial_state_id) = {
+        let sm = scene
+            .state_machine
+            .as_ref()
+            .expect("glass.nforge should contain a stateMachine");
 
-    let mousedown_to_mutation = sm
-        .transitions
-        .iter()
-        .find(|transition| {
-            let source_type = sm
-                .states
-                .iter()
-                .find(|state| state.id == transition.source)
-                .map(|state| state.resolved_type());
-            let target_type = sm
-                .states
-                .iter()
-                .find(|state| state.id == transition.target)
-                .map(|state| state.resolved_type());
-            let trigger_matches = matches!(
-                transition.trigger.as_ref(),
-                Some(TransitionCondition::Event { event_name }) if event_name == "mousedown"
+        let initial_state_id = sm
+            .initial_state_id
+            .clone()
+            .expect("glass.nforge should have an initial state");
+
+        let mousedown_to_mutation = sm
+            .transitions
+            .iter()
+            .find(|transition| {
+                let source_type = sm
+                    .states
+                    .iter()
+                    .find(|state| state.id == transition.source)
+                    .map(|state| state.resolved_type());
+                let target_type = sm
+                    .states
+                    .iter()
+                    .find(|state| state.id == transition.target)
+                    .map(|state| state.resolved_type());
+                let trigger_matches = matches!(
+                    transition.trigger.as_ref(),
+                    Some(TransitionCondition::Event { event_name }) if event_name == "mousedown"
+                );
+
+                source_type == Some(AnimationStateType::AnimationState)
+                    && target_type == Some(AnimationStateType::MutationNode)
+                    && trigger_matches
+            })
+            .expect(
+                "glass.nforge should have an animation state -> Mutation 2 mousedown transition",
             );
 
-            matches!(
-                source_type,
-                Some(AnimationStateType::AnyState | AnimationStateType::EntryState)
-            ) && target_type == Some(AnimationStateType::MutationNode)
-                && trigger_matches
-        })
-        .expect("glass.nforge should have an Entry/Any -> Mutation mousedown transition");
+        (
+            mousedown_to_mutation.id.clone(),
+            mousedown_to_mutation.source.clone(),
+            mousedown_to_mutation.target.clone(),
+            initial_state_id,
+        )
+    };
 
     let mut rt = state_machine::compile_from_scene(&scene)
         .expect("compile should succeed")
         .expect("runtime should be Some because glass.nforge has a state machine");
-    let initial_state_id = rt.current_state_id().to_string();
+    assert_eq!(rt.current_state_id(), initial_state_id);
 
     let idle = rt.tick(0.016, &Default::default(), &vec![]);
-    assert_eq!(idle.current_state_id, initial_state_id);
+    assert_eq!(idle.current_state_id, transition_source);
     assert_eq!(idle.active_transition_id, None);
 
     let triggered = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
-    assert_eq!(triggered.current_state_id, initial_state_id);
+    assert!(
+        triggered.current_state_id == transition_source
+            || triggered.current_state_id == transition_target,
+        "mousedown should either start or complete the transition"
+    );
+    if triggered.current_state_id == transition_source {
+        assert_eq!(
+            triggered.active_transition_id.as_deref(),
+            Some(transition_id.as_str())
+        );
+    }
+
+    rt.set_mouse_position(state_machine::MousePosition { x: 111.0, y: 222.0 });
+    let completed = rt.tick(0.4, &Default::default(), &vec![]);
+    assert_eq!(completed.current_state_id, transition_target);
     assert_eq!(
-        triggered.active_transition_id.as_deref(),
-        Some(mousedown_to_mutation.id.as_str())
+        completed
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_74", "x")),
+        Some(&serde_json::json!(111.0))
+    );
+    assert_eq!(
+        completed
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_74", "y")),
+        Some(&serde_json::json!(222.0))
     );
 
-    let completed = rt.tick(0.4, &Default::default(), &vec![]);
-    assert_eq!(completed.current_state_id, mousedown_to_mutation.target);
+    rt.set_mouse_position(state_machine::MousePosition { x: 333.0, y: 444.0 });
+    let dragged = rt.tick(0.016, &Default::default(), &vec!["mousemove".into()]);
+    assert_eq!(dragged.current_state_id, transition_target);
+    assert_eq!(
+        dragged
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_74", "x")),
+        Some(&serde_json::json!(333.0))
+    );
+    assert_eq!(
+        dragged
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_74", "y")),
+        Some(&serde_json::json!(444.0))
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ use anyhow::Result;
 use crate::dsl::SceneDSL;
 use crate::state_machine::{self, MousePosition, OverrideKey, StateMachineRuntime};
 
-use super::runloop::Runloop;
+use super::runloop::{Runloop, RunloopTickResult};
 use super::task::{AnimationTask, TaskKind};
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ pub struct AnimationSession {
     active_overrides: HashMap<OverrideKey, serde_json::Value>,
     /// Previous override key set — for detecting changes/removals.
     prev_override_keys: Vec<OverrideKey>,
-    /// Queued events to fire on the next tick (e.g. "mousedown").
+    /// Queued events to fire on the next step (e.g. "mousedown").
     pending_events: Vec<String>,
     /// Whether the initial dt=0 tick has been fired.
     /// The first call to `step()` always fires a single tick with dt=0
@@ -211,9 +211,7 @@ impl AnimationSession {
 
         let mut diagnostics = Vec::new();
         let mut last_tick_result = None;
-
-        // Drain pending events — fire them on the first tick only (they are
-        // instantaneous triggers, not sustained state).
+        let no_events = Vec::new();
         let events = std::mem::take(&mut self.pending_events);
 
         // On the very first step, fire a single dt=0 tick to establish
@@ -221,24 +219,24 @@ impl AnimationSession {
         // the test trace path where frame 0 has dt=0.
         if !self.first_tick_fired {
             self.first_tick_fired = true;
-            let result = self
-                .runloop
-                .tick(&mut self.runtime, 0.0, &HashMap::new(), &events);
-            diagnostics.extend(result.diagnostics.iter().cloned());
-            last_tick_result = Some(result);
-        } else {
-            let tick_count = self.clock.advance(real_dt);
+            last_tick_result = Some(self.runloop_tick(0.0, &no_events, &mut diagnostics));
+        }
 
-            for i in 0..tick_count {
-                let tick_events = if i == 0 { &events } else { &Vec::new() };
-                let result = self.runloop.tick(
-                    &mut self.runtime,
-                    self.clock.step_secs,
-                    &HashMap::new(),
-                    tick_events,
-                );
-                diagnostics.extend(result.diagnostics.iter().cloned());
-                last_tick_result = Some(result);
+        let tick_count = self.clock.advance(real_dt);
+        if tick_count > 0 {
+            last_tick_result =
+                Some(self.runloop_tick(self.clock.step_secs, &no_events, &mut diagnostics));
+        }
+
+        for event in events {
+            let event = vec![event];
+            last_tick_result = Some(self.runloop_tick(0.0, &event, &mut diagnostics));
+        }
+
+        if tick_count > 1 {
+            for _ in 1..tick_count {
+                last_tick_result =
+                    Some(self.runloop_tick(self.clock.step_secs, &no_events, &mut diagnostics));
             }
         }
 
@@ -308,11 +306,10 @@ impl AnimationSession {
         }
     }
 
-    /// Queue an event to fire on the next `step()` tick.
+    /// Queue an event to fire on the next `step()`.
     ///
-    /// Events are consumed on the first fixed-step tick of the next `step()`
-    /// call, then cleared. Use this to feed canvas interaction events
-    /// (e.g. `"mousedown"`, `"mouseup"`) into the state machine.
+    /// Events are consumed in order as dt=0 control updates so input edges are
+    /// not dropped on frames without a fixed-step animation tick.
     pub fn fire_event(&mut self, event_name: impl Into<String>) {
         self.pending_events.push(event_name.into());
     }
@@ -377,6 +374,19 @@ impl AnimationSession {
     /// Access the underlying runtime (for diagnostics/testing).
     pub fn runtime(&self) -> &StateMachineRuntime {
         &self.runtime
+    }
+
+    fn runloop_tick(
+        &mut self,
+        dt: f64,
+        events: &Vec<String>,
+        diagnostics: &mut Vec<String>,
+    ) -> RunloopTickResult {
+        let result = self
+            .runloop
+            .tick(&mut self.runtime, dt, &HashMap::new(), events);
+        diagnostics.extend(result.diagnostics.iter().cloned());
+        result
     }
 }
 

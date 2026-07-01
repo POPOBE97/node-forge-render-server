@@ -163,7 +163,9 @@ pub fn collect_early_canvas_interactions(
         app.canvas.interactions.last_display_resolution,
     );
 
-    if let Some(session) = app.runtime.animation_session.as_mut() {
+    if app.runtime.animation_playing
+        && let Some(session) = app.runtime.animation_session.as_mut()
+    {
         if let Some(mouse_position) = latest_mouse_position {
             session.update_mouse_position(mouse_position);
         }

@@ -22,8 +22,8 @@ use proptest::prelude::*;
 use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::dsl::{Metadata, SceneDSL};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EasingKind, StateMachine,
-    TransitionCondition,
+    AnimationState, AnimationStateType, AnimationTransition, EasingKind, MutationDefinition,
+    StateMachine, TransitionCondition,
 };
 
 /// Build a minimal scene with a state machine that transitions from "entry"
@@ -100,6 +100,121 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
     }
 }
 
+fn scene_with_press_release_transitions() -> SceneDSL {
+    let sm = StateMachine {
+        id: "sm_press_release".into(),
+        name: "Press Release SM".into(),
+        states: vec![
+            AnimationState {
+                id: "entry".into(),
+                name: "Entry".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: Some(AnimationStateType::EntryState),
+                mutation_id: None,
+            },
+            AnimationState {
+                id: "idle".into(),
+                name: "Idle".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: Some(AnimationStateType::AnimationState),
+                mutation_id: None,
+            },
+            AnimationState {
+                id: "any".into(),
+                name: "Any".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: Some(AnimationStateType::AnyState),
+                mutation_id: None,
+            },
+            AnimationState {
+                id: "mutation".into(),
+                name: "Mutation".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: Some(AnimationStateType::MutationNode),
+                mutation_id: Some("mut_press".into()),
+            },
+            AnimationState {
+                id: "exit".into(),
+                name: "Exit".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: Some(AnimationStateType::ExitState),
+                mutation_id: None,
+            },
+        ],
+        transitions: vec![
+            AnimationTransition {
+                id: "tr_entry_idle".into(),
+                source: "entry".into(),
+                target: "idle".into(),
+                trigger: None,
+                condition: None,
+                delay: 0.0,
+                duration: 0.0,
+                easing: EasingKind::Linear,
+            },
+            AnimationTransition {
+                id: "tr_down".into(),
+                source: "idle".into(),
+                target: "mutation".into(),
+                trigger: Some(TransitionCondition::Event {
+                    event_name: "mousedown".into(),
+                }),
+                condition: None,
+                delay: 0.0,
+                duration: 0.0,
+                easing: EasingKind::Linear,
+            },
+            AnimationTransition {
+                id: "tr_up".into(),
+                source: "mutation".into(),
+                target: "idle".into(),
+                trigger: Some(TransitionCondition::Event {
+                    event_name: "mouseup".into(),
+                }),
+                condition: None,
+                delay: 0.0,
+                duration: 0.0,
+                easing: EasingKind::Linear,
+            },
+        ],
+        mutations: vec![MutationDefinition {
+            id: "mut_press".into(),
+            name: "Press Mutation".into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![],
+            viewport: None,
+        }],
+        initial_state_id: Some("entry".into()),
+        viewport: None,
+    };
+
+    SceneDSL {
+        version: "2.0".into(),
+        metadata: Metadata {
+            name: "Press Release Scene".into(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![],
+        connections: vec![],
+        outputs: None,
+        groups: vec![],
+        assets: HashMap::new(),
+        state_machine: Some(sm),
+        debug_artifacts: None,
+    }
+}
+
 /// Strategy for generating valid interaction event names.
 fn event_name_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
@@ -111,6 +226,40 @@ fn event_name_strategy() -> impl Strategy<Value = String> {
         Just("touchstart".to_string()),
         Just("click".to_string()),
     ]
+}
+
+#[test]
+fn mouseup_exits_mutation_even_without_fixed_step_tick() {
+    let scene = scene_with_press_release_transitions();
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("session should build")
+        .expect("session should be Some");
+
+    assert_eq!(session.step(0.0).current_state_id, "idle");
+
+    session.fire_event("mousedown");
+    assert_eq!(session.step(1.0 / 30.0).current_state_id, "mutation");
+
+    session.fire_event("mouseup");
+    let result = session.step(0.001);
+
+    assert_eq!(result.current_state_id, "idle");
+}
+
+#[test]
+fn queued_press_and_release_are_processed_in_order() {
+    let scene = scene_with_press_release_transitions();
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("session should build")
+        .expect("session should be Some");
+
+    assert_eq!(session.step(0.0).current_state_id, "idle");
+
+    session.fire_event("mousedown");
+    session.fire_event("mouseup");
+    let result = session.step(1.0 / 30.0);
+
+    assert_eq!(result.current_state_id, "idle");
 }
 
 /// Strategy for generating dt values large enough to trigger at least one
