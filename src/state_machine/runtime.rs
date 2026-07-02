@@ -561,22 +561,13 @@ impl StateMachineRuntime {
         // Build input context.
         let mut input_values: HashMap<String, MutationValue> = HashMap::new();
         for input_port in &mutation.inputs {
-            // Try to resolve from external params via source_ref or port name.
+            // Try to resolve from external params via port name.
             if let Some(ref name) = input_port.name {
                 if let Some(val) = params.get(name).and_then(|v| v.as_f64()) {
                     input_values.insert(input_port.id.clone(), val);
                 }
             }
         }
-        // Also seed from input_bindings source_ref.
-        for b in &mutation.input_bindings {
-            if let Some(ref sr) = b.source_ref {
-                if let Some(val) = params.get(sr).and_then(|v| v.as_f64()) {
-                    input_values.insert(b.port_id.clone(), val);
-                }
-            }
-        }
-
         let ctx = MutationInputContext {
             values: input_values,
             scene_elapsed_time: self.scene_time,
@@ -592,9 +583,7 @@ impl StateMachineRuntime {
         // From output bindings.
         for b in &mutation.output_bindings {
             if let Some(&val) = outputs.get(&b.port_id) {
-                if let Some(key) =
-                    mutation::resolve_output_target(&b.port_id, b.target_ref.as_deref())
-                {
+                if let Some(key) = mutation::resolve_output_target(&b.port_id) {
                     overrides.insert(key, serde_json::json!(val));
                 }
             }
@@ -604,7 +593,7 @@ impl StateMachineRuntime {
         // in the outputs map keyed by to_port_id).
         for pt in &mutation.passthrough_bindings {
             if let Some(&val) = outputs.get(&pt.to_port_id) {
-                if let Some(key) = mutation::resolve_output_target(&pt.to_port_id, None) {
+                if let Some(key) = mutation::resolve_output_target(&pt.to_port_id) {
                     overrides
                         .entry(key)
                         .or_insert_with(|| serde_json::json!(val));
@@ -918,46 +907,32 @@ mod tests {
             id: "m_mouse".into(),
             name: "Mouse Mutation".into(),
             inputs: vec![],
-            outputs: vec![],
-            nodes: vec![MutationInnerNode {
-                id: "mouse".into(),
-                node_type: MutationInnerNodeType::SmMouse,
-                params: Default::default(),
-                inputs: vec![],
-                outputs: vec![
-                    MutationPort {
-                        id: "position.x".into(),
-                        name: Some("Position X".into()),
-                        port_type: Some("float".into()),
-                    },
-                    MutationPort {
-                        id: "position.y".into(),
-                        name: Some("Position Y".into()),
-                        port_type: Some("float".into()),
-                    },
-                ],
-            }],
-            connections: vec![],
-            input_bindings: vec![],
-            output_bindings: vec![
-                MutationOutputBinding {
-                    port_id: "mouse_x".into(),
-                    from: MutationEndpoint {
-                        node_id: "mouse".into(),
-                        port_id: "position.x".into(),
-                    },
-                    target_ref: Some("MouseX:value".into()),
+            outputs: vec![
+                MutationPort {
+                    id: "MouseX:value".into(),
+                    name: Some("MouseX.value".into()),
+                    port_type: Some("float".into()),
                 },
-                MutationOutputBinding {
-                    port_id: "mouse_y".into(),
-                    from: MutationEndpoint {
-                        node_id: "mouse".into(),
-                        port_id: "position.y".into(),
-                    },
-                    target_ref: Some("MouseY:value".into()),
+                MutationPort {
+                    id: "MouseY:value".into(),
+                    name: Some("MouseY.value".into()),
+                    port_type: Some("float".into()),
                 },
             ],
-            passthrough_bindings: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![
+                MutationPassthroughBinding {
+                    from_port_id: "mouse.position.x".into(),
+                    to_port_id: "MouseX:value".into(),
+                },
+                MutationPassthroughBinding {
+                    from_port_id: "mouse.position.y".into(),
+                    to_port_id: "MouseY:value".into(),
+                },
+            ],
             viewport: None,
         });
         sm.transitions.push(AnimationTransition {

@@ -290,7 +290,7 @@ fn validate_mutation_bindings(m: &MutationDefinition) -> Result<()> {
 ///
 /// An output port may be written by at most one of:
 /// - An `outputBinding` (via `portId`)
-/// - A `passthroughBinding` (via `toPortId`)
+/// - A `passthroughBinding` (via `outputPortId`)
 ///
 /// Duplicates are validation errors.
 fn validate_mutation_output_uniqueness(m: &MutationDefinition) -> Result<()> {
@@ -498,15 +498,13 @@ mod tests {
             }],
             nodes: vec![MutationInnerNode {
                 id: "n".into(),
-                node_type: MutationInnerNodeType::SmPassThrough,
-                params: Default::default(),
-                inputs: vec![MutationPort {
-                    id: "in".into(),
-                    name: None,
-                    port_type: None,
-                }],
+                node_type: MutationInnerNodeType::FloatInput,
+                params: [("value".into(), serde_json::json!(42.0))]
+                    .into_iter()
+                    .collect(),
+                inputs: vec![],
                 outputs: vec![MutationPort {
-                    id: "o".into(),
+                    id: "value".into(),
                     name: None,
                     port_type: None,
                 }],
@@ -517,9 +515,8 @@ mod tests {
                 port_id: "X:value".into(),
                 from: MutationEndpoint {
                     node_id: "n".into(),
-                    port_id: "o".into(),
+                    port_id: "value".into(),
                 },
-                target_ref: None,
             }],
             passthrough_bindings: vec![MutationPassthroughBinding {
                 from_port_id: "sceneElapsedTime".into(),

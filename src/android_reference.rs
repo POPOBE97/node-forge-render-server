@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     env, fs,
     io::{self, BufRead, BufReader, Read},
@@ -36,6 +37,14 @@ pub struct AndroidReferenceStatus {
     pub size: Option<[u32; 2]>,
     pub fps: f32,
     pub last_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AndroidScreencapClipboardResult {
+    pub serial: String,
+    pub width: u32,
+    pub height: u32,
+    pub png_byte_len: usize,
 }
 
 #[derive(Default)]
@@ -217,9 +226,9 @@ impl AndroidReferenceState {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        let mut server_process = server_command
-            .spawn()
-            .map_err(|error| anyhow::anyhow!("failed to start scrcpy-server through adb: {error}"))?;
+        let mut server_process = server_command.spawn().map_err(|error| {
+            anyhow::anyhow!("failed to start scrcpy-server through adb: {error}")
+        })?;
 
         // Give app_process enough time to publish the forwarded socket and video config packet.
         thread::sleep(Duration::from_millis(800));
@@ -256,7 +265,13 @@ impl AndroidReferenceState {
         {
             Ok(process) => process,
             Err(error) => {
-                cleanup_start_failure(&adb_path, device.serial.as_str(), port, &mut server_process, None);
+                cleanup_start_failure(
+                    &adb_path,
+                    device.serial.as_str(),
+                    port,
+                    &mut server_process,
+                    None,
+                );
                 return Err(anyhow::anyhow!(
                     "failed to start ffmpeg for scrcpy reference: {error}"
                 ));
@@ -396,7 +411,10 @@ fn resolve_scrcpy_server_jar() -> anyhow::Result<PathBuf> {
             if path.exists() {
                 return Ok(path);
             }
-            anyhow::bail!("{env_key} points to missing scrcpy-server jar: {}", path.display());
+            anyhow::bail!(
+                "{env_key} points to missing scrcpy-server jar: {}",
+                path.display()
+            );
         }
     }
 
@@ -408,8 +426,12 @@ fn resolve_scrcpy_server_jar() -> anyhow::Result<PathBuf> {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/scrcpy-server.jar"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/scrcpy-server-v4.0"),
     ];
-    candidates.extend(homebrew_scrcpy_server_candidates("/opt/homebrew/Cellar/scrcpy"));
-    candidates.extend(homebrew_scrcpy_server_candidates("/usr/local/Cellar/scrcpy"));
+    candidates.extend(homebrew_scrcpy_server_candidates(
+        "/opt/homebrew/Cellar/scrcpy",
+    ));
+    candidates.extend(homebrew_scrcpy_server_candidates(
+        "/usr/local/Cellar/scrcpy",
+    ));
 
     candidates
         .into_iter()
@@ -425,7 +447,9 @@ fn homebrew_scrcpy_server_candidates(root: &str) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(root) else {
         return Vec::new();
     };
-    let mut versions: Vec<PathBuf> = entries.filter_map(|entry| entry.ok().map(|e| e.path())).collect();
+    let mut versions: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .collect();
     versions.sort();
     versions
         .into_iter()
@@ -522,8 +546,13 @@ pub fn select_single_ready_usb_device(devices: &[AndroidDevice]) -> anyhow::Resu
     match ready_usb.as_slice() {
         [device] => Ok((*device).clone()),
         [] => {
-            if devices.iter().any(|device| device.usb && device.state == "unauthorized") {
-                anyhow::bail!("USB Android device is unauthorized; accept the debugging prompt on the device");
+            if devices
+                .iter()
+                .any(|device| device.usb && device.state == "unauthorized")
+            {
+                anyhow::bail!(
+                    "USB Android device is unauthorized; accept the debugging prompt on the device"
+                );
             }
             anyhow::bail!("no ready USB Android device found");
         }
@@ -535,6 +564,50 @@ pub fn select_single_ready_usb_device(devices: &[AndroidDevice]) -> anyhow::Resu
                 .join(", ")
         ),
     }
+}
+
+pub fn copy_screencap_png_to_clipboard() -> anyhow::Result<AndroidScreencapClipboardResult> {
+    let adb_path = resolve_command_path("NODE_FORGE_ADB_BIN", "adb");
+    let devices = android_devices_with_adb(&adb_path)?;
+    let device = select_single_ready_usb_device(&devices)?;
+    let output = Command::new(&adb_path)
+        .args(["-s", device.serial.as_str(), "exec-out", "screencap", "-p"])
+        .output()
+        .map_err(|error| anyhow::anyhow!("failed to run adb screencap: {error}"))?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "adb screencap failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    if output.stdout.is_empty() {
+        anyhow::bail!("adb screencap returned no PNG data");
+    }
+
+    let png_byte_len = output.stdout.len();
+    let rgba = image::load_from_memory(output.stdout.as_slice())
+        .map_err(|error| anyhow::anyhow!("failed to decode adb screencap PNG: {error}"))?
+        .to_rgba8();
+    let width = rgba.width();
+    let height = rgba.height();
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| {
+            clipboard.set_image(arboard::ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: Cow::Owned(rgba.into_raw()),
+            })
+        })
+        .map_err(|error| anyhow::anyhow!("failed to copy adb screencap to clipboard: {error}"))?;
+
+    Ok(AndroidScreencapClipboardResult {
+        serial: device.serial,
+        width,
+        height,
+        png_byte_len,
+    })
 }
 
 fn spawn_pam_reader(
@@ -581,7 +654,14 @@ fn spawn_pam_reader(
                     } else {
                         break;
                     }
-                    perf.record(now, frame_id, size, frame_bytes, read_elapsed, overwrote_pending);
+                    perf.record(
+                        now,
+                        frame_id,
+                        size,
+                        frame_bytes,
+                        read_elapsed,
+                        overwrote_pending,
+                    );
                 }
                 Ok(None) => {
                     if let Ok(mut shared) = shared.lock() {
@@ -776,7 +856,10 @@ mod tests {
 
     #[test]
     fn parse_number_with_suffix_accepts_video_option_units() {
-        assert_eq!(parse_number_with_suffix("128M", "bitrate").unwrap(), 128_000_000);
+        assert_eq!(
+            parse_number_with_suffix("128M", "bitrate").unwrap(),
+            128_000_000
+        );
         assert_eq!(parse_number_with_suffix("60", "fps").unwrap(), 60);
     }
 }

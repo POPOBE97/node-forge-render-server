@@ -52,6 +52,29 @@ fn log_shortwire_input_ingest(app: &App, ctx: &egui::Context) {
     );
 }
 
+fn android_screencap_clipboard_shortcut_pressed(ctx: &egui::Context) -> bool {
+    ctx.input(|input| {
+        input.events.iter().any(|event| match event {
+            egui::Event::Key {
+                key,
+                physical_key,
+                pressed,
+                repeat,
+                modifiers,
+            } => {
+                *pressed
+                    && !*repeat
+                    && modifiers.command
+                    && modifiers.alt
+                    && !modifiers.shift
+                    && !modifiers.ctrl
+                    && (*key == egui::Key::Num3 || *physical_key == Some(egui::Key::Num3))
+            }
+            _ => false,
+        })
+    })
+}
+
 pub(super) fn run(
     app: &mut App,
     ctx: &egui::Context,
@@ -60,6 +83,11 @@ pub(super) fn run(
     frame_time: f64,
 ) -> IngestPhase {
     log_shortwire_input_ingest(app, ctx);
+
+    if android_screencap_clipboard_shortcut_pressed(ctx) {
+        canvas::ops::begin_android_screencap_clipboard_copy(&mut app.canvas.async_ops, frame_time);
+        ctx.request_repaint();
+    }
 
     let mut latest_capture_state = None;
     if let Some(capture_state_rx) = app.runtime.capture_state_rx.as_ref() {

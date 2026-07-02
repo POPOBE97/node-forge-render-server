@@ -496,7 +496,13 @@ fn glass_texture_map(
 
     if (add_foreground) {
         let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
+        let curve_value = mix(
+            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
+            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
+            lighten
+        );
+        col = glass_luminance_curve_lab(col, curve_value, 1.0);
+        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
     }
 
     return col;

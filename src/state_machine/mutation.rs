@@ -5,10 +5,12 @@
 //! via output bindings.
 //!
 //! Supported inner-node types (v1):
-//! - `smPassThrough` — forwards its single input unchanged.
-//! - `smMathOp`      — `add`, `sub`, `mul`, `div` on two inputs.
-//! - `smLerp`        — `mix(a, b, t)`.
-//! - `smMouse`       — exposes latest mouse frag-pixel position.
+//! - `FloatInput`     — emits its constant `value` parameter.
+//! - `MathAdd`        — adds connected inputs.
+//! - `MathSubtract`   — subtracts connected inputs in order.
+//! - `MathMultiply`   — multiplies connected inputs in order.
+//! - `MathDivide`     — divides connected inputs in order.
+//! - `Lerp`           — `mix(a, b, t)`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -117,7 +119,7 @@ pub fn evaluate_mutation(
                 }
             }
 
-            evaluate_inner_node(node, &mut port_values, ctx)?;
+            evaluate_inner_node(node, &mut port_values)?;
         }
 
         for b in &mutation.output_bindings {
@@ -160,8 +162,8 @@ fn resolve_passthrough_input_value(
         return value;
     }
 
-    // Check if the from_port_id matches a mutation input port and there's
-    // a corresponding input binding with a source_ref.
+    // Check if the from_port_id matches a mutation input port and a
+    // corresponding input binding.
     for b in &mutation.input_bindings {
         if b.port_id == from_port_id {
             return resolve_input_binding_value(b, ctx);
@@ -178,15 +180,9 @@ fn resolve_passthrough_input_value(
 
 /// Resolve the override target for an output port id.
 ///
-/// Rules (in priority order):
-/// 1. If `target_ref` is `Some`, use it.
-/// 2. Otherwise, try to parse `port_id` itself as `"nodeId:paramName"`.
-///
-/// Returns `None` if neither produces a valid `OverrideKey`.
-pub fn resolve_output_target(port_id: &str, target_ref: Option<&str>) -> Option<OverrideKey> {
-    if let Some(tr) = target_ref {
-        return OverrideKey::parse(tr);
-    }
+/// The latest mutation format uses the mutation output port id itself as
+/// `"nodeId:paramName"`.
+pub fn resolve_output_target(port_id: &str) -> Option<OverrideKey> {
     OverrideKey::parse(port_id)
 }
 
@@ -200,7 +196,7 @@ pub fn all_output_target_keys(mutation: &MutationDefinition) -> Vec<OverrideKey>
 
     // From output bindings.
     for b in &mutation.output_bindings {
-        if let Some(key) = resolve_output_target(&b.port_id, b.target_ref.as_deref()) {
+        if let Some(key) = resolve_output_target(&b.port_id) {
             let s = format!("{}:{}", key.node_id, key.param_name);
             if seen.insert(s) {
                 keys.push(key);
@@ -210,7 +206,7 @@ pub fn all_output_target_keys(mutation: &MutationDefinition) -> Vec<OverrideKey>
 
     // From passthrough bindings.
     for pt in &mutation.passthrough_bindings {
-        if let Some(key) = resolve_output_target(&pt.to_port_id, None) {
+        if let Some(key) = resolve_output_target(&pt.to_port_id) {
             let s = format!("{}:{}", key.node_id, key.param_name);
             if seen.insert(s) {
                 keys.push(key);
@@ -229,12 +225,6 @@ fn resolve_input_binding_value(
     binding: &MutationInputBinding,
     ctx: &MutationInputContext,
 ) -> MutationValue {
-    if let Some(ref source_ref) = binding.source_ref {
-        if let Some(value) = resolve_builtin_value(source_ref, ctx) {
-            return value;
-        }
-    }
-
     // Look up by port id in the provided values map.
     ctx.values.get(&binding.port_id).copied().unwrap_or(0.0)
 }
@@ -256,80 +246,59 @@ fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<Mutat
 fn evaluate_inner_node<'a>(
     node: &'a MutationInnerNode,
     port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
-    ctx: &MutationInputContext,
 ) -> Result<()> {
     match node.node_type {
-        MutationInnerNodeType::SmPassThrough => {
-            // Forward first input port to first output port.
-            let in_val = first_input_value(node, port_values);
-            if let Some(out_port) = node.outputs.first() {
-                port_values.insert((node.id.as_str(), out_port.id.as_str()), in_val);
-            }
-        }
-        MutationInnerNodeType::SmMathOp => {
-            let op = node
+        MutationInnerNodeType::FloatInput => {
+            let value = node
                 .params
-                .get("op")
-                .and_then(|v| v.as_str())
-                .unwrap_or("add");
-
-            let a = get_port_value(node, "a", port_values)
-                .or_else(|| nth_input_value(node, 0, port_values))
+                .get("value")
+                .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            let b = get_port_value(node, "b", port_values)
-                .or_else(|| nth_input_value(node, 1, port_values))
-                .unwrap_or(0.0);
-
-            let result = match op {
-                "add" => a + b,
-                "sub" => a - b,
-                "mul" => a * b,
-                "div" => {
-                    if b.abs() < f64::EPSILON {
-                        0.0
-                    } else {
-                        a / b
-                    }
-                }
-                other => {
-                    bail!(
-                        "mutation inner node '{}': unknown smMathOp op '{other}'",
-                        node.id
-                    );
-                }
+            write_output_if_declared_or_default(node, port_values, "value", value);
+        }
+        MutationInnerNodeType::MathAdd => {
+            let inputs = ordered_input_values(node, port_values, &["a", "b"]);
+            let result = inputs.into_iter().sum();
+            write_output_if_declared_or_default(node, port_values, "result", result);
+        }
+        MutationInnerNodeType::MathSubtract => {
+            let inputs = ordered_input_values(node, port_values, &[]);
+            let first = inputs.first().copied().unwrap_or(0.0);
+            let rest = inputs.iter().skip(1).sum::<f64>();
+            write_output_if_declared_or_default(node, port_values, "result", first - rest);
+        }
+        MutationInnerNodeType::MathMultiply => {
+            let inputs = ordered_input_values(node, port_values, &[]);
+            let result = if inputs.is_empty() {
+                0.0
+            } else {
+                inputs.into_iter().fold(1.0, |acc, value| acc * value)
             };
-
-            let out_port = node
-                .outputs
-                .first()
-                .map(|p| p.id.as_str())
-                .unwrap_or("result");
-            port_values.insert((node.id.as_str(), out_port), result);
+            write_output_if_declared_or_default(node, port_values, "result", result);
         }
-        MutationInnerNodeType::SmLerp => {
-            let a = get_port_value(node, "a", port_values)
-                .or_else(|| nth_input_value(node, 0, port_values))
-                .unwrap_or(0.0);
-            let b = get_port_value(node, "b", port_values)
-                .or_else(|| nth_input_value(node, 1, port_values))
-                .unwrap_or(1.0);
-            let t = get_port_value(node, "t", port_values)
-                .or_else(|| nth_input_value(node, 2, port_values))
-                .unwrap_or(0.5);
-
-            let result = a + (b - a) * t.clamp(0.0, 1.0);
-
-            let out_port = node
-                .outputs
-                .first()
-                .map(|p| p.id.as_str())
-                .unwrap_or("result");
-            port_values.insert((node.id.as_str(), out_port), result);
+        MutationInnerNodeType::MathDivide => {
+            let inputs = ordered_input_values(node, port_values, &[]);
+            let mut iter = inputs.into_iter();
+            let mut result = iter.next().unwrap_or(0.0);
+            for divisor in iter {
+                if divisor.abs() < f64::EPSILON {
+                    result = 0.0;
+                    break;
+                }
+                result /= divisor;
+            }
+            write_output_if_declared_or_default(node, port_values, "result", result);
         }
-        MutationInnerNodeType::SmMouse => {
-            let position = ctx.mouse_position.unwrap_or_default();
-            write_output_if_declared_or_default(node, port_values, "position.x", position.x);
-            write_output_if_declared_or_default(node, port_values, "position.y", position.y);
+        MutationInnerNodeType::Lerp => {
+            let a = input_value_by_id_or_index(node, port_values, "a", 1).unwrap_or(0.0);
+            let b = input_value_by_id_or_index(node, port_values, "b", 2).unwrap_or(1.0);
+            let t = input_value_by_id_or_index(node, port_values, "t", 0).unwrap_or(0.5);
+            write_output_if_declared_or_default(
+                node,
+                port_values,
+                "result",
+                a + (b - a) * t.clamp(0.0, 1.0),
+            );
         }
     }
     Ok(())
@@ -346,24 +315,41 @@ fn write_output_if_declared_or_default<'a>(
     }
 }
 
-fn first_input_value<'a>(
+fn input_value_by_id_or_index<'a>(
     node: &'a MutationInnerNode,
     port_values: &HashMap<(&'a str, &'a str), MutationValue>,
-) -> MutationValue {
-    node.inputs
-        .first()
-        .and_then(|p| port_values.get(&(node.id.as_str(), p.id.as_str())).copied())
-        .unwrap_or(0.0)
+    port_id: &'a str,
+    index: usize,
+) -> Option<MutationValue> {
+    get_port_value(node, port_id, port_values).or_else(|| {
+        node.inputs
+            .get(index)
+            .and_then(|p| port_values.get(&(node.id.as_str(), p.id.as_str())).copied())
+    })
 }
 
-fn nth_input_value<'a>(
+fn ordered_input_values<'a>(
     node: &'a MutationInnerNode,
-    index: usize,
     port_values: &HashMap<(&'a str, &'a str), MutationValue>,
-) -> Option<MutationValue> {
-    node.inputs
-        .get(index)
-        .and_then(|p| port_values.get(&(node.id.as_str(), p.id.as_str())).copied())
+    fallback_port_ids: &[&'a str],
+) -> Vec<MutationValue> {
+    if !node.inputs.is_empty() {
+        return node
+            .inputs
+            .iter()
+            .map(|p| {
+                port_values
+                    .get(&(node.id.as_str(), p.id.as_str()))
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .collect();
+    }
+
+    fallback_port_ids
+        .iter()
+        .map(|port_id| get_port_value(node, port_id, port_values).unwrap_or(0.0))
+        .collect()
 }
 
 fn get_port_value<'a>(
@@ -485,56 +471,40 @@ mod tests {
     }
 
     #[test]
-    fn pass_through_node() {
+    fn float_input_node_outputs_constant_value() {
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
-            id: "n1".into(),
-            node_type: MutationInnerNodeType::SmPassThrough,
-            params: HashMap::new(),
-            inputs: vec![MutationPort {
-                id: "in".into(),
-                name: None,
-                port_type: None,
-            }],
+            id: "float".into(),
+            node_type: MutationInnerNodeType::FloatInput,
+            params: [("value".into(), serde_json::json!(2.5))]
+                .into_iter()
+                .collect(),
+            inputs: vec![],
             outputs: vec![MutationPort {
-                id: "out".into(),
-                name: None,
-                port_type: None,
+                id: "value".into(),
+                name: Some("Value".into()),
+                port_type: Some("float".into()),
             }],
-        });
-        m.input_bindings.push(MutationInputBinding {
-            port_id: "p_in".into(),
-            to: MutationEndpoint {
-                node_id: "n1".into(),
-                port_id: "in".into(),
-            },
-            source_ref: None,
         });
         m.output_bindings.push(MutationOutputBinding {
-            port_id: "p_out".into(),
+            port_id: "out".into(),
             from: MutationEndpoint {
-                node_id: "n1".into(),
-                port_id: "out".into(),
+                node_id: "float".into(),
+                port_id: "value".into(),
             },
-            target_ref: None,
         });
 
-        let mut ctx = empty_ctx();
-        ctx.values.insert("p_in".into(), 42.0);
-
-        let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["p_out"] - 42.0).abs() < f64::EPSILON);
+        let result = evaluate_mutation(&m, &empty_ctx()).unwrap();
+        assert!((result["out"] - 2.5).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn math_op_add() {
+    fn math_add_node() {
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
             id: "add".into(),
-            node_type: MutationInnerNodeType::SmMathOp,
-            params: [("op".into(), serde_json::json!("add"))]
-                .into_iter()
-                .collect(),
+            node_type: MutationInnerNodeType::MathAdd,
+            params: HashMap::new(),
             inputs: vec![
                 MutationPort {
                     id: "a".into(),
@@ -559,7 +529,6 @@ mod tests {
                 node_id: "add".into(),
                 port_id: "a".into(),
             },
-            source_ref: None,
         });
         m.input_bindings.push(MutationInputBinding {
             port_id: "pb".into(),
@@ -567,15 +536,68 @@ mod tests {
                 node_id: "add".into(),
                 port_id: "b".into(),
             },
-            source_ref: None,
         });
         m.output_bindings.push(MutationOutputBinding {
-            port_id: "out".into(),
+            port_id: "p_out".into(),
             from: MutationEndpoint {
                 node_id: "add".into(),
                 port_id: "result".into(),
             },
-            target_ref: None,
+        });
+
+        let mut ctx = empty_ctx();
+        ctx.values.insert("pa".into(), 40.0);
+        ctx.values.insert("pb".into(), 2.0);
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!((result["p_out"] - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn math_multiply_dynamic_inputs() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "mul".into(),
+            node_type: MutationInnerNodeType::MathMultiply,
+            params: HashMap::new(),
+            inputs: vec![
+                MutationPort {
+                    id: "dynamic_fixed_1".into(),
+                    name: None,
+                    port_type: None,
+                },
+                MutationPort {
+                    id: "dynamic_fixed_2".into(),
+                    name: None,
+                    port_type: None,
+                },
+            ],
+            outputs: vec![MutationPort {
+                id: "result".into(),
+                name: None,
+                port_type: None,
+            }],
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "pa".into(),
+            to: MutationEndpoint {
+                node_id: "mul".into(),
+                port_id: "dynamic_fixed_1".into(),
+            },
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "pb".into(),
+            to: MutationEndpoint {
+                node_id: "mul".into(),
+                port_id: "dynamic_fixed_2".into(),
+            },
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out".into(),
+            from: MutationEndpoint {
+                node_id: "mul".into(),
+                port_id: "result".into(),
+            },
         });
 
         let mut ctx = empty_ctx();
@@ -583,7 +605,7 @@ mod tests {
         ctx.values.insert("pb".into(), 7.0);
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 10.0).abs() < f64::EPSILON);
+        assert!((result["out"] - 21.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -591,9 +613,14 @@ mod tests {
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
             id: "lerp".into(),
-            node_type: MutationInnerNodeType::SmLerp,
+            node_type: MutationInnerNodeType::Lerp,
             params: HashMap::new(),
             inputs: vec![
+                MutationPort {
+                    id: "t".into(),
+                    name: None,
+                    port_type: None,
+                },
                 MutationPort {
                     id: "a".into(),
                     name: None,
@@ -601,11 +628,6 @@ mod tests {
                 },
                 MutationPort {
                     id: "b".into(),
-                    name: None,
-                    port_type: None,
-                },
-                MutationPort {
-                    id: "t".into(),
                     name: None,
                     port_type: None,
                 },
@@ -622,7 +644,6 @@ mod tests {
                 node_id: "lerp".into(),
                 port_id: "a".into(),
             },
-            source_ref: None,
         });
         m.input_bindings.push(MutationInputBinding {
             port_id: "pb".into(),
@@ -630,7 +651,6 @@ mod tests {
                 node_id: "lerp".into(),
                 port_id: "b".into(),
             },
-            source_ref: None,
         });
         m.input_bindings.push(MutationInputBinding {
             port_id: "pt".into(),
@@ -638,7 +658,6 @@ mod tests {
                 node_id: "lerp".into(),
                 port_id: "t".into(),
             },
-            source_ref: None,
         });
         m.output_bindings.push(MutationOutputBinding {
             port_id: "out".into(),
@@ -646,7 +665,6 @@ mod tests {
                 node_id: "lerp".into(),
                 port_id: "result".into(),
             },
-            target_ref: None,
         });
 
         let mut ctx = empty_ctx();
@@ -659,84 +677,73 @@ mod tests {
     }
 
     #[test]
-    fn scene_elapsed_time_input() {
+    fn math_divide_by_zero_outputs_zero() {
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
-            id: "pt".into(),
-            node_type: MutationInnerNodeType::SmPassThrough,
+            id: "div".into(),
+            node_type: MutationInnerNodeType::MathDivide,
             params: HashMap::new(),
-            inputs: vec![MutationPort {
-                id: "in".into(),
-                name: None,
-                port_type: None,
-            }],
+            inputs: vec![
+                MutationPort {
+                    id: "dynamic_fixed_1".into(),
+                    name: None,
+                    port_type: None,
+                },
+                MutationPort {
+                    id: "dynamic_fixed_2".into(),
+                    name: None,
+                    port_type: None,
+                },
+            ],
             outputs: vec![MutationPort {
-                id: "out".into(),
+                id: "result".into(),
                 name: None,
                 port_type: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
-            port_id: "time_in".into(),
+            port_id: "num".into(),
             to: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "in".into(),
+                node_id: "div".into(),
+                port_id: "dynamic_fixed_1".into(),
             },
-            source_ref: Some("sceneElapsedTime".into()),
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "den".into(),
+            to: MutationEndpoint {
+                node_id: "div".into(),
+                port_id: "dynamic_fixed_2".into(),
+            },
         });
         m.output_bindings.push(MutationOutputBinding {
-            port_id: "time_out".into(),
+            port_id: "out".into(),
             from: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "out".into(),
+                node_id: "div".into(),
+                port_id: "result".into(),
             },
-            target_ref: None,
         });
 
         let mut ctx = empty_ctx();
-        ctx.scene_elapsed_time = 5.5;
+        ctx.values.insert("num".into(), 5.5);
+        ctx.values.insert("den".into(), 0.0);
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["time_out"] - 5.5).abs() < f64::EPSILON);
+        assert!((result["out"] - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn mouse_node_outputs_latest_frag_pixel_position() {
+    fn passthrough_mouse_position_outputs_latest_frag_pixel_position() {
         let mut m = empty_mutation();
-        m.nodes.push(MutationInnerNode {
-            id: "mouse".into(),
-            node_type: MutationInnerNodeType::SmMouse,
-            params: HashMap::new(),
-            inputs: vec![],
-            outputs: vec![
-                MutationPort {
-                    id: "position.x".into(),
-                    name: Some("Position X".into()),
-                    port_type: Some("float".into()),
-                },
-                MutationPort {
-                    id: "position.y".into(),
-                    name: Some("Position Y".into()),
-                    port_type: Some("float".into()),
-                },
-            ],
-        });
-        m.output_bindings.push(MutationOutputBinding {
-            port_id: "out_x".into(),
-            from: MutationEndpoint {
-                node_id: "mouse".into(),
-                port_id: "position.x".into(),
-            },
-            target_ref: None,
-        });
-        m.output_bindings.push(MutationOutputBinding {
-            port_id: "out_y".into(),
-            from: MutationEndpoint {
-                node_id: "mouse".into(),
-                port_id: "position.y".into(),
-            },
-            target_ref: None,
-        });
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "mouse.position.x".into(),
+                to_port_id: "out_x".into(),
+            });
+        m.passthrough_bindings
+            .push(super::MutationPassthroughBinding {
+                from_port_id: "mouse.position.y".into(),
+                to_port_id: "out_y".into(),
+            });
 
         let mut ctx = empty_ctx();
         ctx.mouse_position = Some(MousePosition { x: 123.0, y: 456.0 });
@@ -747,45 +754,58 @@ mod tests {
     }
 
     #[test]
-    fn mouse_source_ref_resolves_for_input_binding() {
+    fn math_subtract_dynamic_inputs() {
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
-            id: "pt".into(),
-            node_type: MutationInnerNodeType::SmPassThrough,
+            id: "sub".into(),
+            node_type: MutationInnerNodeType::MathSubtract,
             params: HashMap::new(),
-            inputs: vec![MutationPort {
-                id: "in".into(),
-                name: None,
-                port_type: None,
-            }],
+            inputs: vec![
+                MutationPort {
+                    id: "dynamic_fixed_1".into(),
+                    name: None,
+                    port_type: None,
+                },
+                MutationPort {
+                    id: "dynamic_fixed_2".into(),
+                    name: None,
+                    port_type: None,
+                },
+            ],
             outputs: vec![MutationPort {
-                id: "out".into(),
+                id: "result".into(),
                 name: None,
                 port_type: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
-            port_id: "mouse_x".into(),
+            port_id: "a".into(),
             to: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "in".into(),
+                node_id: "sub".into(),
+                port_id: "dynamic_fixed_1".into(),
             },
-            source_ref: Some("mouse.position.x".into()),
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "b".into(),
+            to: MutationEndpoint {
+                node_id: "sub".into(),
+                port_id: "dynamic_fixed_2".into(),
+            },
         });
         m.output_bindings.push(MutationOutputBinding {
             port_id: "out".into(),
             from: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "out".into(),
+                node_id: "sub".into(),
+                port_id: "result".into(),
             },
-            target_ref: None,
         });
 
         let mut ctx = empty_ctx();
-        ctx.mouse_position = Some(MousePosition { x: 88.0, y: 99.0 });
+        ctx.values.insert("a".into(), 88.0);
+        ctx.values.insert("b".into(), 9.0);
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 88.0).abs() < f64::EPSILON);
+        assert!((result["out"] - 79.0).abs() < f64::EPSILON);
     }
 
     // ── Passthrough binding tests ──────────────────────────────────────
@@ -849,7 +869,6 @@ mod tests {
                 node_id: "unused_node".into(),
                 port_id: "unused_port".into(),
             },
-            source_ref: None,
         });
         m.passthrough_bindings
             .push(super::MutationPassthroughBinding {
@@ -873,36 +892,25 @@ mod tests {
         // should be skipped (output binding wins).
         let mut m = empty_mutation();
         m.nodes.push(MutationInnerNode {
-            id: "pt".into(),
-            node_type: MutationInnerNodeType::SmPassThrough,
-            params: HashMap::new(),
-            inputs: vec![MutationPort {
-                id: "in".into(),
-                name: None,
-                port_type: None,
-            }],
+            id: "float".into(),
+            node_type: MutationInnerNodeType::FloatInput,
+            params: [("value".into(), serde_json::json!(42.0))]
+                .into_iter()
+                .collect(),
+            inputs: vec![],
             outputs: vec![MutationPort {
-                id: "out".into(),
+                id: "value".into(),
                 name: None,
                 port_type: None,
             }],
-        });
-        m.input_bindings.push(MutationInputBinding {
-            port_id: "graph_in".into(),
-            to: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "in".into(),
-            },
-            source_ref: None,
         });
         // Output binding writes to "Result:value" via inner graph.
         m.output_bindings.push(MutationOutputBinding {
             port_id: "Result:value".into(),
             from: MutationEndpoint {
-                node_id: "pt".into(),
-                port_id: "out".into(),
+                node_id: "float".into(),
+                port_id: "value".into(),
             },
-            target_ref: None,
         });
         // Passthrough also targets the same port — should be skipped.
         m.passthrough_bindings
@@ -912,7 +920,6 @@ mod tests {
             });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("graph_in".into(), 42.0);
         ctx.scene_elapsed_time = 999.0;
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
@@ -931,7 +938,6 @@ mod tests {
                 node_id: "n".into(),
                 port_id: "o".into(),
             },
-            target_ref: None,
         });
         m.passthrough_bindings
             .push(super::MutationPassthroughBinding {

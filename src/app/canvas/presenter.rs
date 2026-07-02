@@ -23,8 +23,7 @@ use crate::{
         },
         display_metrics,
         frame::commands::AppCommand,
-        matrix_render,
-        texture_bridge,
+        matrix_render, texture_bridge,
         types::{App, RefImageMode, RefImageSource, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
@@ -254,7 +253,8 @@ fn draw_display_layers(
 
     if !display_frame.compare_output_active
         && app.canvas.reference.ref_image.is_some()
-        && let Some(reference_texture_id) = reference_display_texture_id(app, render_state, renderer)
+        && let Some(reference_texture_id) =
+            reference_display_texture_id(app, render_state, renderer)
         && let Some(reference_image) = app.canvas.reference.ref_image.as_ref()
     {
         let reference_size = egui::vec2(
@@ -358,7 +358,7 @@ fn draw_operation_indicators(
         let operation_indicator = match visual {
             ViewportOperationIndicatorVisual::InProgress => ViewportIndicator {
                 icon: "",
-                tooltip: "正在复制材质到剪贴板...",
+                tooltip: "正在复制到剪贴板...",
                 kind: ViewportIndicatorKind::Spinner,
                 strikethrough: false,
             },
@@ -581,7 +581,7 @@ fn draw_matrix_indicators(
         let operation_indicator = match visual {
             ViewportOperationIndicatorVisual::InProgress => ViewportIndicator {
                 icon: "",
-                tooltip: "正在复制材质到剪贴板...",
+                tooltip: "正在复制到剪贴板...",
                 kind: ViewportIndicatorKind::Spinner,
                 strikethrough: false,
             },

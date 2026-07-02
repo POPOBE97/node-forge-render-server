@@ -3,12 +3,14 @@ use std::{borrow::Cow, sync::mpsc, thread};
 use crate::app::{canvas::state::CanvasAsyncOps, types::ViewportOperationIndicatorVisual};
 
 pub const VIEWPORT_OPERATION_TIMEOUT_SECS: f64 = 5.0;
+const ANDROID_SCREENCAP_TIMEOUT_SECS: f64 = 15.0;
 
 pub enum ClipboardCopyState {
     Idle,
     Running {
         request_id: u64,
         started_at: f64,
+        timeout_secs: f64,
         rx: mpsc::Receiver<(u64, bool)>,
     },
     Succeeded {
@@ -32,18 +34,8 @@ pub fn begin_clipboard_copy(
     height: usize,
     bytes: Vec<u8>,
 ) {
-    async_ops.next_request_id = async_ops.next_request_id.wrapping_add(1);
-    let request_id = async_ops.next_request_id;
-    let (tx, rx) = mpsc::channel::<(u64, bool)>();
-    async_ops.clipboard_copy = ClipboardCopyState::Running {
-        request_id,
-        started_at: now,
-        rx,
-    };
-    async_ops.last_visual = Some(ViewportOperationIndicatorVisual::InProgress);
-
-    thread::spawn(move || {
-        let copied = arboard::Clipboard::new()
+    begin_async_clipboard_copy(async_ops, now, VIEWPORT_OPERATION_TIMEOUT_SECS, move || {
+        arboard::Clipboard::new()
             .and_then(|mut clipboard| {
                 clipboard.set_image(arboard::ImageData {
                     width,
@@ -51,7 +43,47 @@ pub fn begin_clipboard_copy(
                     bytes: Cow::Owned(bytes),
                 })
             })
-            .is_ok();
+            .is_ok()
+    });
+}
+
+pub fn begin_android_screencap_clipboard_copy(async_ops: &mut CanvasAsyncOps, now: f64) {
+    begin_async_clipboard_copy(async_ops, now, ANDROID_SCREENCAP_TIMEOUT_SECS, move || {
+        match crate::android_reference::copy_screencap_png_to_clipboard() {
+            Ok(result) => {
+                eprintln!(
+                    "[android-screencap] copied {}x{} PNG from {} to clipboard ({} bytes)",
+                    result.width, result.height, result.serial, result.png_byte_len
+                );
+                true
+            }
+            Err(error) => {
+                eprintln!("[android-screencap] failed: {error:#}");
+                false
+            }
+        }
+    });
+}
+
+fn begin_async_clipboard_copy(
+    async_ops: &mut CanvasAsyncOps,
+    now: f64,
+    timeout_secs: f64,
+    copy: impl FnOnce() -> bool + Send + 'static,
+) {
+    async_ops.next_request_id = async_ops.next_request_id.wrapping_add(1);
+    let request_id = async_ops.next_request_id;
+    let (tx, rx) = mpsc::channel::<(u64, bool)>();
+    async_ops.clipboard_copy = ClipboardCopyState::Running {
+        request_id,
+        started_at: now,
+        timeout_secs,
+        rx,
+    };
+    async_ops.last_visual = Some(ViewportOperationIndicatorVisual::InProgress);
+
+    thread::spawn(move || {
+        let copied = copy();
         let _ = tx.send((request_id, copied));
     });
 }
@@ -61,6 +93,7 @@ pub fn poll(async_ops: &mut CanvasAsyncOps, now: f64) {
         ClipboardCopyState::Running {
             request_id,
             started_at,
+            timeout_secs,
             rx,
         } => match rx.try_recv() {
             Ok((completed_request_id, success)) if completed_request_id == *request_id => {
@@ -76,9 +109,7 @@ pub fn poll(async_ops: &mut CanvasAsyncOps, now: f64) {
                 async_ops.clipboard_copy = ClipboardCopyState::Failed { hide_at: now + 1.0 };
                 async_ops.last_visual = Some(ViewportOperationIndicatorVisual::Failure);
             }
-            Err(mpsc::TryRecvError::Empty)
-                if now - started_at >= VIEWPORT_OPERATION_TIMEOUT_SECS =>
-            {
+            Err(mpsc::TryRecvError::Empty) if now - started_at >= *timeout_secs => {
                 async_ops.clipboard_copy = ClipboardCopyState::Failed { hide_at: now + 1.0 };
                 async_ops.last_visual = Some(ViewportOperationIndicatorVisual::Failure);
             }
@@ -124,6 +155,7 @@ mod tests {
             clipboard_copy: ClipboardCopyState::Running {
                 request_id: 7,
                 started_at: 10.0,
+                timeout_secs: VIEWPORT_OPERATION_TIMEOUT_SECS,
                 rx,
             },
             last_visual: None,
@@ -151,6 +183,7 @@ mod tests {
             clipboard_copy: ClipboardCopyState::Running {
                 request_id: 7,
                 started_at: 10.0,
+                timeout_secs: VIEWPORT_OPERATION_TIMEOUT_SECS,
                 rx,
             },
             last_visual: None,
@@ -177,6 +210,7 @@ mod tests {
             clipboard_copy: ClipboardCopyState::Running {
                 request_id: 3,
                 started_at: 10.0,
+                timeout_secs: VIEWPORT_OPERATION_TIMEOUT_SECS,
                 rx,
             },
             last_visual: None,

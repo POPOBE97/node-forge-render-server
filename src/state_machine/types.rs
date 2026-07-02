@@ -218,10 +218,18 @@ pub struct MutationPort {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum MutationInnerNodeType {
-    SmPassThrough,
-    SmMathOp,
-    SmLerp,
-    SmMouse,
+    #[serde(rename = "FloatInput")]
+    FloatInput,
+    #[serde(rename = "MathAdd")]
+    MathAdd,
+    #[serde(rename = "MathSubtract")]
+    MathSubtract,
+    #[serde(rename = "MathMultiply")]
+    MathMultiply,
+    #[serde(rename = "MathDivide")]
+    MathDivide,
+    #[serde(rename = "Lerp")]
+    Lerp,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -255,25 +263,19 @@ pub struct MutationEndpoint {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationInputBinding {
     /// Port on the mutation boundary.
-    #[serde(rename = "portId", alias = "mutationPortId")]
+    #[serde(rename = "mutationPortId")]
     pub port_id: String,
     /// Where the value is fed into the inner graph.
     pub to: MutationEndpoint,
-    /// Optional external reference key (e.g. `"nodeId:paramName"`).
-    #[serde(default, rename = "sourceRef")]
-    pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationOutputBinding {
     /// Port on the mutation boundary.
-    #[serde(rename = "portId", alias = "mutationPortId")]
+    #[serde(rename = "mutationPortId")]
     pub port_id: String,
     /// Where the value comes from in the inner graph.
     pub from: MutationEndpoint,
-    /// Optional external target key (e.g. `"nodeId:paramName"`).
-    #[serde(default, rename = "targetRef")]
-    pub target_ref: Option<String>,
 }
 
 /// A direct boundary-to-boundary passthrough binding.
@@ -284,10 +286,10 @@ pub struct MutationOutputBinding {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MutationPassthroughBinding {
     /// Input port id on the mutation boundary (source of value).
-    #[serde(rename = "fromPortId", alias = "inputPortId")]
+    #[serde(rename = "inputPortId")]
     pub from_port_id: String,
     /// Output port id on the mutation boundary (destination).
-    #[serde(rename = "toPortId", alias = "outputPortId")]
+    #[serde(rename = "outputPortId")]
     pub to_port_id: String,
 }
 
@@ -395,24 +397,12 @@ mod tests {
     }
 
     #[test]
-    fn mutation_passthrough_binding_parses_legacy_port_names() {
+    fn mutation_passthrough_binding_parses_editor_port_names() {
         let parsed: MutationPassthroughBinding = serde_json::from_value(serde_json::json!({
             "inputPortId": "sceneElapsedTime",
             "outputPortId": "FloatInput_53:value",
         }))
-        .expect("legacy passthrough binding should deserialize");
-
-        assert_eq!(parsed.from_port_id, "sceneElapsedTime");
-        assert_eq!(parsed.to_port_id, "FloatInput_53:value");
-    }
-
-    #[test]
-    fn mutation_passthrough_binding_parses_canonical_port_names() {
-        let parsed: MutationPassthroughBinding = serde_json::from_value(serde_json::json!({
-            "fromPortId": "sceneElapsedTime",
-            "toPortId": "FloatInput_53:value",
-        }))
-        .expect("canonical passthrough binding should deserialize");
+        .expect("editor passthrough binding should deserialize");
 
         assert_eq!(parsed.from_port_id, "sceneElapsedTime");
         assert_eq!(parsed.to_port_id, "FloatInput_53:value");
