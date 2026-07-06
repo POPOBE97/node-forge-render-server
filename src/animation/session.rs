@@ -88,7 +88,7 @@ impl FixedStepClock {
 /// Result of a single `AnimationSession::step()` call.
 #[derive(Debug, Clone)]
 pub struct AnimationStep {
-    /// All currently active overrides (full set, not deltas).
+    /// Current animation parameter state (full sticky set, not per-state deltas).
     pub active_overrides: HashMap<OverrideKey, serde_json::Value>,
     /// True if any override values changed since last step.
     pub needs_redraw: bool,
@@ -118,7 +118,7 @@ pub struct AnimationStep {
 /// with a deterministic fixed-step clock.
 ///
 /// The session tracks baseline scene values for overridden params so it can
-/// restore them when the state machine stops overriding a key.
+/// restore them when playback is reset or stopped.
 #[derive(Debug, Clone)]
 pub struct AnimationSession {
     /// The state machine runtime.
@@ -128,12 +128,10 @@ pub struct AnimationSession {
     /// Runloop orchestrator (owns ValuePool + TaskPool).
     runloop: Runloop,
     /// Baseline values for tracked keys (from scene at compile time).
-    /// Used to restore params when the runtime stops overriding them.
+    /// Used to restore params when playback is reset.
     base_values: HashMap<OverrideKey, serde_json::Value>,
-    /// Currently active overrides (last tick result).
+    /// Current animation parameter state (last runloop flush).
     active_overrides: HashMap<OverrideKey, serde_json::Value>,
-    /// Previous override key set — for detecting changes/removals.
-    prev_override_keys: Vec<OverrideKey>,
     /// Queued events to fire on the next step (e.g. "mousedown").
     pending_events: Vec<String>,
     /// Whether the initial dt=0 tick has been fired.
@@ -180,7 +178,6 @@ impl AnimationSession {
             runloop,
             base_values,
             active_overrides: HashMap::new(),
-            prev_override_keys: Vec::new(),
             pending_events: Vec::new(),
             first_tick_fired: false,
             cached_state_local_times: std::collections::BTreeMap::new(),
@@ -250,17 +247,7 @@ impl AnimationSession {
             let new_overrides = result.overrides.clone();
             needs_redraw = new_overrides != self.active_overrides;
 
-            // Track removed keys for base-value restoration.
-            let new_keys: Vec<OverrideKey> = new_overrides.keys().cloned().collect();
-            let _removed: Vec<OverrideKey> = self
-                .prev_override_keys
-                .iter()
-                .filter(|k| !new_overrides.contains_key(k))
-                .cloned()
-                .collect();
-
             self.active_overrides = new_overrides;
-            self.prev_override_keys = new_keys;
         } else {
             // No tick this frame — keep existing overrides, nothing changed.
             needs_redraw = false;
@@ -319,22 +306,6 @@ impl AnimationSession {
         self.runtime.set_mouse_position(position);
     }
 
-    /// Get overrides that need to be restored (removed from active set).
-    ///
-    /// Call this after `step()` to find keys whose overrides were dropped
-    /// and that need their base values written back to the scene.
-    pub fn restoration_overrides(&self) -> HashMap<OverrideKey, serde_json::Value> {
-        let mut restores = HashMap::new();
-        for key in &self.prev_override_keys {
-            if !self.active_overrides.contains_key(key)
-                && let Some(base) = self.base_values.get(key)
-            {
-                restores.insert(key.clone(), base.clone());
-            }
-        }
-        restores
-    }
-
     /// Whether the session is still active (runtime not finished).
     pub fn is_active(&self) -> bool {
         !self.runtime.finished
@@ -346,7 +317,7 @@ impl AnimationSession {
     }
 
     /// Reset the session: rewind the clock, reset the runtime to its initial
-    /// state, and clear all active overrides.  Returns the set of overrides
+    /// state, and clear all active overrides. Returns the set of active keys
     /// that should be restored to their base values.
     pub fn reset(&mut self) -> HashMap<OverrideKey, serde_json::Value> {
         // Collect restoration overrides for all currently active keys.
@@ -361,7 +332,6 @@ impl AnimationSession {
         self.clock.reset();
         self.runloop.reset();
         self.active_overrides.clear();
-        self.prev_override_keys.clear();
         self.pending_events.clear();
         self.first_tick_fired = false;
         self.cached_state_local_times.clear();

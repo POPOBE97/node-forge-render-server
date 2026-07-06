@@ -1,7 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use node_forge_render_server::animation::AnimationSession;
+use node_forge_render_server::state_machine::types::{
+    AnimationState, AnimationStateType, AnimationTransition, EasingKind, StateMachine,
+    TransitionCondition,
+};
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, TickSchedule,
     build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
@@ -273,6 +277,147 @@ fn generate_trace_via_session(
         tracked_keys,
         frames,
     }
+}
+
+fn sticky_override_test_scene() -> dsl::SceneDSL {
+    dsl::SceneDSL {
+        version: "1.0".into(),
+        metadata: dsl::Metadata {
+            name: "Sticky Override Test".into(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![dsl::Node {
+            id: "Target".into(),
+            node_type: "FloatInput".into(),
+            params: [("value".into(), serde_json::json!(0.0))]
+                .into_iter()
+                .collect(),
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        }],
+        connections: vec![],
+        outputs: None,
+        groups: vec![],
+        assets: HashMap::new(),
+        state_machine: Some(StateMachine {
+            id: "sm_sticky".into(),
+            name: "Sticky".into(),
+            states: vec![
+                AnimationState {
+                    id: "entry".into(),
+                    name: "Entry".into(),
+                    position: None,
+                    parameter_overrides: Default::default(),
+                    state_type: Some(AnimationStateType::EntryState),
+                    mutation_id: None,
+                },
+                AnimationState {
+                    id: "any".into(),
+                    name: "Any".into(),
+                    position: None,
+                    parameter_overrides: Default::default(),
+                    state_type: Some(AnimationStateType::AnyState),
+                    mutation_id: None,
+                },
+                AnimationState {
+                    id: "exit".into(),
+                    name: "Exit".into(),
+                    position: None,
+                    parameter_overrides: Default::default(),
+                    state_type: Some(AnimationStateType::ExitState),
+                    mutation_id: None,
+                },
+                AnimationState {
+                    id: "a".into(),
+                    name: "A".into(),
+                    position: None,
+                    parameter_overrides: [("Target:value".into(), serde_json::json!(5.0))]
+                        .into_iter()
+                        .collect(),
+                    state_type: Some(AnimationStateType::AnimationState),
+                    mutation_id: None,
+                },
+                AnimationState {
+                    id: "b".into(),
+                    name: "B".into(),
+                    position: None,
+                    parameter_overrides: Default::default(),
+                    state_type: Some(AnimationStateType::AnimationState),
+                    mutation_id: None,
+                },
+            ],
+            transitions: vec![
+                AnimationTransition {
+                    id: "entry_to_a".into(),
+                    source: "entry".into(),
+                    target: "a".into(),
+                    trigger: None,
+                    condition: None,
+                    delay: 0.0,
+                    duration: 0.0,
+                    easing: EasingKind::Linear,
+                },
+                AnimationTransition {
+                    id: "a_to_b".into(),
+                    source: "a".into(),
+                    target: "b".into(),
+                    trigger: Some(TransitionCondition::Event {
+                        event_name: "go".into(),
+                    }),
+                    condition: None,
+                    delay: 0.0,
+                    duration: 0.0,
+                    easing: EasingKind::Linear,
+                },
+            ],
+            mutations: vec![],
+            initial_state_id: Some("entry".into()),
+            viewport: None,
+        }),
+        debug_artifacts: None,
+    }
+}
+
+#[test]
+fn animation_session_keeps_values_when_next_state_omits_override() {
+    let scene = sticky_override_test_scene();
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("animation session should compile")
+        .expect("scene should have a stateMachine");
+
+    let first = session.step(0.0);
+    assert_eq!(first.current_state_id, "a");
+    assert_eq!(
+        first
+            .active_overrides
+            .get(&node_forge_render_server::state_machine::OverrideKey::new(
+                "Target", "value"
+            )),
+        Some(&serde_json::json!(5.0))
+    );
+
+    session.fire_event("go");
+    let second = session.step(1.0 / 60.0);
+    assert_eq!(second.current_state_id, "b");
+    assert_eq!(
+        second
+            .active_overrides
+            .get(&node_forge_render_server::state_machine::OverrideKey::new(
+                "Target", "value"
+            )),
+        Some(&serde_json::json!(5.0))
+    );
+
+    let restores = session.reset();
+    assert_eq!(
+        restores.get(&node_forge_render_server::state_machine::OverrideKey::new(
+            "Target", "value"
+        )),
+        Some(&serde_json::json!(0.0))
+    );
 }
 
 #[test]

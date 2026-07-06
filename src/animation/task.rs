@@ -4,8 +4,6 @@
 //! Tasks read from and write to the `ValuePool`, enabling composable
 //! animation strategies (state-machine delegation, direct drive, physics).
 
-use std::collections::HashSet;
-
 use crate::state_machine::runtime::{ExternalParams, FiredEvents, StateMachineRuntime, TickResult};
 use crate::state_machine::types::OverrideKey;
 
@@ -59,9 +57,6 @@ pub struct AnimationTask {
     pub id: String,
     /// The update strategy.
     pub kind: TaskKind,
-    /// Keys that were actively overridden on the previous tick
-    /// (used by `StateMachineDriven` to detect removed overrides).
-    prev_active_keys: HashSet<OverrideKey>,
 }
 
 impl AnimationTask {
@@ -70,14 +65,11 @@ impl AnimationTask {
         Self {
             id: id.into(),
             kind,
-            prev_active_keys: HashSet::new(),
         }
     }
 
     /// Clear task-internal tracking state so the next tick starts fresh.
-    pub fn reset(&mut self) {
-        self.prev_active_keys.clear();
-    }
+    pub fn reset(&mut self) {}
 
     /// Execute this task for one tick, reading/writing the ValuePool.
     ///
@@ -112,8 +104,8 @@ impl AnimationTask {
         }
     }
 
-    /// StateMachineDriven: delegate to runtime, write overrides into pool,
-    /// detect removed keys and transition them to Completed.
+    /// StateMachineDriven: delegate to runtime and write the current animation
+    /// override state into the pool.
     fn execute_state_machine_driven(
         &mut self,
         pool: &mut ValuePool,
@@ -134,12 +126,7 @@ impl AnimationTask {
 
         let tick_result = runtime.tick(dt, params, events);
 
-        // Track which keys are active this tick.
-        let mut current_active_keys = HashSet::new();
-
         for (key, value) in &tick_result.overrides {
-            current_active_keys.insert(key.clone());
-
             // Update the AnimationValue.current for numeric values (so physics
             // tasks can read it), and always store the raw JSON in json_overrides
             // so flush() returns the exact original serde_json::Value (preserving
@@ -158,26 +145,6 @@ impl AnimationTask {
             // Always store raw JSON override for exact pass-through in flush().
             pool.set_json_override(key.clone(), value.clone());
         }
-
-        // Detect removed keys: previously Running but no longer in overrides.
-        for key in &self.prev_active_keys {
-            if !current_active_keys.contains(key) {
-                // Transition to Completed and restore current to baseline.
-                if let Some(anim) = pool.get(key)
-                    && anim.status == ValueStatus::Running
-                {
-                    let baseline = anim.baseline();
-                    pool.transition_status(key, ValueStatus::Completed);
-                    if let Some(anim) = pool.get_mut(key) {
-                        anim.current = baseline;
-                    }
-                }
-                // Also remove any json override for this key.
-                pool.remove_json_override(key);
-            }
-        }
-
-        self.prev_active_keys = current_active_keys;
 
         diagnostics.extend(tick_result.diagnostics.clone());
 

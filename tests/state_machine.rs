@@ -157,13 +157,13 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
     assert_eq!(
         completed
             .overrides
-            .get(&state_machine::OverrideKey::new("Vector2Input_74", "x")),
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "x")),
         Some(&serde_json::json!(111.0))
     );
     assert_eq!(
         completed
             .overrides
-            .get(&state_machine::OverrideKey::new("Vector2Input_74", "y")),
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
         Some(&serde_json::json!(222.0))
     );
 
@@ -173,14 +173,35 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
     assert_eq!(
         dragged
             .overrides
-            .get(&state_machine::OverrideKey::new("Vector2Input_74", "x")),
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "x")),
         Some(&serde_json::json!(333.0))
     );
     assert_eq!(
         dragged
             .overrides
-            .get(&state_machine::OverrideKey::new("Vector2Input_74", "y")),
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
         Some(&serde_json::json!(444.0))
+    );
+
+    let returned = rt.tick(0.016, &Default::default(), &vec!["mouseup".into()]);
+    assert_eq!(returned.current_state_id, transition_source);
+    assert_eq!(
+        returned
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "x")),
+        Some(&serde_json::json!(333.0))
+    );
+    assert_eq!(
+        returned
+            .overrides
+            .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
+        Some(&serde_json::json!(444.0))
+    );
+    assert_eq!(
+        returned
+            .overrides
+            .get(&state_machine::OverrideKey::new("FloatInput_81", "value")),
+        Some(&serde_json::json!(0))
     );
 }
 

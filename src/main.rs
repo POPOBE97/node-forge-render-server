@@ -1052,7 +1052,9 @@ fn main() -> Result<()> {
             .with_title_shown(true)
             .with_titlebar_buttons_shown(true)
             .with_has_shadow(true)
-            .with_inner_size(resolution_hint.map(|x| x as f32))
+            // Include the default sidebar width up front so the first canvas fit
+            // uses the same viewport geometry as a manual reset.
+            .with_inner_size(app::default_main_window_size(resolution_hint))
             // Keep the OS window non-resizable, but don't tie the minimum size to the scene
             // resolution; UI mode (sidebar/canvas toggle + one-shot startup sizing) is the source
             // of truth and may need to grow/shrink the viewport independently.

@@ -53,6 +53,13 @@ pub struct StateMachineRuntime {
     /// Latest runtime input snapshot available to mutations.
     runtime_input: RuntimeInputSnapshot,
 
+    /// Current animation parameter values emitted by the state machine.
+    ///
+    /// State `parameter_overrides` and mutation outputs are patches: if a state
+    /// does not write a key, the last written value stays active until reset or
+    /// until another state/mutation writes that key.
+    current_overrides: HashMap<OverrideKey, serde_json::Value>,
+
     /// Whether the state machine has reached the exit state.
     pub finished: bool,
 }
@@ -74,7 +81,7 @@ struct ActiveTransition {
 /// The result of a single `tick` call.
 #[derive(Debug, Clone, Default)]
 pub struct TickResult {
-    /// Parameter overrides to apply to the scene.
+    /// Current animation parameter state to apply to the scene.
     /// Keyed by `OverrideKey` (nodeId + paramName).
     pub overrides: HashMap<OverrideKey, serde_json::Value>,
 
@@ -149,6 +156,7 @@ impl StateMachineRuntime {
             state_local_times,
             active_transition: None,
             runtime_input: RuntimeInputSnapshot::default(),
+            current_overrides: HashMap::new(),
             finished: false,
         }
     }
@@ -176,6 +184,7 @@ impl StateMachineRuntime {
         }
         self.active_transition = None;
         self.runtime_input = RuntimeInputSnapshot::default();
+        self.current_overrides.clear();
         self.finished = false;
     }
 
@@ -188,6 +197,7 @@ impl StateMachineRuntime {
     pub fn tick(&mut self, dt: f64, params: &ExternalParams, events: &FiredEvents) -> TickResult {
         if self.finished {
             return TickResult {
+                overrides: self.current_overrides.clone(),
                 finished: true,
                 current_state_id: self.current_state_id.clone(),
                 scene_time_secs: self.scene_time,
@@ -295,37 +305,9 @@ impl StateMachineRuntime {
             }
         }
 
-        // ── Build override map ─────────────────────────────────────────
-        let mut overrides: HashMap<OverrideKey, serde_json::Value> = HashMap::new();
-
-        // 1. Active state's parameterOverrides.
-        if let Some(state) = self.find_state(&self.current_state_id) {
-            for (key_str, value) in &state.parameter_overrides {
-                if let Some(key) = OverrideKey::parse(key_str) {
-                    overrides.insert(key, value.clone());
-                }
-            }
-        }
-
-        // 2. Mutation computed outputs (when active state is mutationNode).
-        if let Some(state) = self.find_state(&self.current_state_id) {
-            if state.resolved_type() == AnimationStateType::MutationNode {
-                if let Some(ref mid) = state.mutation_id {
-                    let sid = self.current_state_id.clone();
-                    match self.evaluate_mutation_state(mid, &sid, params) {
-                        Ok(mutation_overrides) => {
-                            overrides.extend(mutation_overrides);
-                        }
-                        Err(e) => {
-                            diagnostics.push(format!(
-                                "mutation evaluation error (state={}, mutation={}): {e}",
-                                self.current_state_id, mid
-                            ));
-                        }
-                    }
-                }
-            }
-        }
+        // ── Build explicit state patch ─────────────────────────────────
+        let source_patch =
+            self.evaluate_state_patch(&self.current_state_id, params, &mut diagnostics);
 
         // 3. If in-transition, compute blend factor.
         //    - During delay phase (elapsed < delay): blend = 0 (source-state output).
@@ -346,50 +328,21 @@ impl StateMachineRuntime {
             None
         };
 
-        // 4. Blend source→target overrides when in the blend phase.
-        if let (Some(at), Some(blend)) = (&self.active_transition, transition_blend) {
+        // 4. Blend source→target patches when in the blend phase.
+        let patch = if let (Some(at), Some(blend)) = (&self.active_transition, transition_blend) {
             if blend > 0.0 {
-                // Evaluate target state overrides.
-                let mut target_overrides: HashMap<OverrideKey, serde_json::Value> = HashMap::new();
-                if let Some(target_state) = self.find_state(&at.target_state_id) {
-                    for (key_str, value) in &target_state.parameter_overrides {
-                        if let Some(key) = OverrideKey::parse(key_str) {
-                            target_overrides.insert(key, value.clone());
-                        }
-                    }
-                    if target_state.resolved_type() == AnimationStateType::MutationNode {
-                        if let Some(ref mid) = target_state.mutation_id {
-                            let tid = at.target_state_id.clone();
-                            match self.evaluate_mutation_state(mid, &tid, params) {
-                                Ok(mutation_overrides) => {
-                                    target_overrides.extend(mutation_overrides);
-                                }
-                                Err(e) => {
-                                    diagnostics.push(format!(
-                                        "mutation evaluation error (target state={}, mutation={}): {e}",
-                                        at.target_state_id, mid
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Merge: for each key present in either source or target,
-                // lerp numeric values by blend factor.
-                let all_keys: HashSet<OverrideKey> = overrides
-                    .keys()
-                    .chain(target_overrides.keys())
-                    .cloned()
-                    .collect();
-                let source_overrides = std::mem::take(&mut overrides);
-                for key in all_keys {
-                    let src = source_overrides.get(&key);
-                    let tgt = target_overrides.get(&key);
-                    let blended = blend_json_values(src, tgt, blend);
-                    overrides.insert(key, blended);
-                }
+                let target_patch =
+                    self.evaluate_state_patch(&at.target_state_id, params, &mut diagnostics);
+                self.blend_state_patches(&source_patch, &target_patch, blend)
+            } else {
+                source_patch
             }
+        } else {
+            source_patch
+        };
+
+        for (key, value) in patch {
+            self.current_overrides.insert(key, value);
         }
 
         // Check if current state is exit.
@@ -400,7 +353,7 @@ impl StateMachineRuntime {
         }
 
         TickResult {
-            overrides,
+            overrides: self.current_overrides.clone(),
             diagnostics,
             finished: self.finished,
             current_state_id: self.current_state_id.clone(),
@@ -449,6 +402,70 @@ impl StateMachineRuntime {
 
     fn find_state(&self, state_id: &str) -> Option<&AnimationState> {
         self.definition.states.iter().find(|s| s.id == state_id)
+    }
+
+    fn evaluate_state_patch(
+        &self,
+        state_id: &str,
+        params: &ExternalParams,
+        diagnostics: &mut Vec<String>,
+    ) -> HashMap<OverrideKey, serde_json::Value> {
+        let mut patch = HashMap::new();
+        let Some(state) = self.find_state(state_id) else {
+            return patch;
+        };
+
+        for (key_str, value) in &state.parameter_overrides {
+            if let Some(key) = OverrideKey::parse(key_str) {
+                patch.insert(key, value.clone());
+            }
+        }
+
+        if state.resolved_type() == AnimationStateType::MutationNode
+            && let Some(ref mid) = state.mutation_id
+        {
+            match self.evaluate_mutation_state(mid, state_id, params) {
+                Ok(mutation_overrides) => {
+                    patch.extend(mutation_overrides);
+                }
+                Err(e) => {
+                    diagnostics.push(format!(
+                        "mutation evaluation error (state={state_id}, mutation={mid}): {e}"
+                    ));
+                }
+            }
+        }
+
+        patch
+    }
+
+    fn blend_state_patches(
+        &self,
+        source_patch: &HashMap<OverrideKey, serde_json::Value>,
+        target_patch: &HashMap<OverrideKey, serde_json::Value>,
+        blend: f64,
+    ) -> HashMap<OverrideKey, serde_json::Value> {
+        let all_keys: HashSet<OverrideKey> = source_patch
+            .keys()
+            .chain(target_patch.keys())
+            .cloned()
+            .collect();
+        let mut patch = HashMap::new();
+
+        for key in all_keys {
+            let value = match (source_patch.get(&key), target_patch.get(&key)) {
+                (Some(source), Some(target)) => blend_json_values(source, target, blend),
+                (Some(source), None) => source.clone(),
+                (None, Some(target)) => match self.current_overrides.get(&key) {
+                    Some(current) => blend_json_values(current, target, blend),
+                    None => target.clone(),
+                },
+                (None, None) => continue,
+            };
+            patch.insert(key, value);
+        }
+
+        patch
     }
 
     /// Pick the highest-priority satisfied transition from the current state
@@ -608,15 +625,11 @@ impl StateMachineRuntime {
 /// Linearly interpolate two JSON values by blend factor `t` (0→1).
 /// Falls back to the target value for non-numeric types.
 fn blend_json_values(
-    src: Option<&serde_json::Value>,
-    tgt: Option<&serde_json::Value>,
+    source: &serde_json::Value,
+    target: &serde_json::Value,
     t: f64,
 ) -> serde_json::Value {
-    let zero = serde_json::json!(0.0);
-    let s = src.unwrap_or(&zero);
-    let g = tgt.unwrap_or(&zero);
-
-    match (s, g) {
+    match (source, target) {
         (serde_json::Value::Number(sn), serde_json::Value::Number(gn)) => {
             let sv = sn.as_f64().unwrap_or(0.0);
             let gv = gn.as_f64().unwrap_or(0.0);
@@ -635,7 +648,11 @@ fn blend_json_values(
         }
         _ => {
             // Non-numeric: snap to target when blend > 0.5.
-            if t >= 0.5 { g.clone() } else { s.clone() }
+            if t >= 0.5 {
+                target.clone()
+            } else {
+                source.clone()
+            }
         }
     }
 }
@@ -729,6 +746,136 @@ mod tests {
             result
                 .overrides
                 .contains_key(&OverrideKey::new("Node1", "color"))
+        );
+    }
+
+    #[test]
+    fn missing_override_keeps_previous_value_after_instant_transition() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "a".into(),
+            name: "A".into(),
+            position: None,
+            parameter_overrides: [("Node:x".into(), serde_json::json!(5.0))]
+                .into_iter()
+                .collect(),
+            state_type: Some(AnimationStateType::AnimationState),
+            mutation_id: None,
+        });
+        sm.states.push(AnimationState {
+            id: "b".into(),
+            name: "B".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::AnimationState),
+            mutation_id: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_a".into(),
+            source: "entry".into(),
+            target: "a".into(),
+            trigger: None,
+            condition: None,
+            delay: 0.0,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "a_to_b".into(),
+            source: "a".into(),
+            target: "b".into(),
+            trigger: Some(TransitionCondition::Event {
+                event_name: "go".into(),
+            }),
+            condition: None,
+            delay: 0.0,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        let a = rt.tick(0.016, &HashMap::new(), &vec![]);
+        assert_eq!(a.current_state_id, "a");
+        assert_eq!(
+            a.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(5.0))
+        );
+
+        let b = rt.tick(0.016, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(b.current_state_id, "b");
+        assert_eq!(
+            b.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(5.0))
+        );
+    }
+
+    #[test]
+    fn timed_transition_source_only_key_does_not_blend_to_zero() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "a".into(),
+            name: "A".into(),
+            position: None,
+            parameter_overrides: [("Node:x".into(), serde_json::json!(5.0))]
+                .into_iter()
+                .collect(),
+            state_type: Some(AnimationStateType::AnimationState),
+            mutation_id: None,
+        });
+        sm.states.push(AnimationState {
+            id: "b".into(),
+            name: "B".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::AnimationState),
+            mutation_id: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_a".into(),
+            source: "entry".into(),
+            target: "a".into(),
+            trigger: None,
+            condition: None,
+            delay: 0.0,
+            duration: 0.0,
+            easing: EasingKind::Linear,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "a_to_b".into(),
+            source: "a".into(),
+            target: "b".into(),
+            trigger: Some(TransitionCondition::Event {
+                event_name: "go".into(),
+            }),
+            condition: None,
+            delay: 0.0,
+            duration: 1.0,
+            easing: EasingKind::Linear,
+        });
+
+        let mut rt = StateMachineRuntime::new(sm);
+        let a = rt.tick(0.016, &HashMap::new(), &vec![]);
+        assert_eq!(a.current_state_id, "a");
+
+        let triggered = rt.tick(0.016, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(triggered.current_state_id, "a");
+        assert_eq!(
+            triggered.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(5.0))
+        );
+
+        let blending = rt.tick(0.5, &HashMap::new(), &vec![]);
+        assert_eq!(blending.current_state_id, "a");
+        assert_eq!(
+            blending.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(5.0))
+        );
+
+        let completed = rt.tick(0.6, &HashMap::new(), &vec![]);
+        assert_eq!(completed.current_state_id, "b");
+        assert_eq!(
+            completed.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(5.0))
         );
     }
 

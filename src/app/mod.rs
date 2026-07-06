@@ -17,6 +17,10 @@ pub use types::{
 
 use rust_wgpu_fiber::eframe::{self, egui};
 
+pub fn default_main_window_size(window_resolution: [u32; 2]) -> egui::Vec2 {
+    window_mode::sidebar_window_size(window_resolution, crate::ui::debug_sidebar::SIDEBAR_WIDTH)
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         frame::run(self, ui, frame);

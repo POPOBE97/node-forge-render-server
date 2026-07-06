@@ -14,6 +14,13 @@ pub struct WindowModeFrame {
     pub animation_just_finished_opening: bool,
 }
 
+pub(crate) fn sidebar_window_size(window_resolution: [u32; 2], sidebar_w: f32) -> egui::Vec2 {
+    egui::vec2(
+        window_resolution[0] as f32 + sidebar_w + 2.0 * OUTER_MARGIN,
+        window_resolution[1] as f32,
+    )
+}
+
 pub fn toggle_canvas_only(app: &mut App, now: f64) {
     app.shell.window_mode = match app.shell.window_mode {
         UiWindowMode::Sidebar => UiWindowMode::CanvasOnly,
@@ -77,9 +84,7 @@ pub fn maybe_apply_startup_sidebar_sizing(app: &mut App, ctx: &egui::Context) {
     }
 
     let sidebar_w = crate::ui::debug_sidebar::sidebar_width(ctx);
-    let target_width = app.core.window_resolution[0] as f32 + sidebar_w + 2.0 * OUTER_MARGIN;
-    let target_height = app.core.window_resolution[1] as f32;
-    let mut target = egui::vec2(target_width, target_height);
+    let mut target = sidebar_window_size(app.core.window_resolution, sidebar_w);
 
     if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
         target.x = target.x.min(monitor_size.x);
@@ -97,4 +102,17 @@ pub fn maybe_apply_startup_sidebar_sizing(app: &mut App, ctx: &egui::Context) {
     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target));
     ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
     app.shell.did_startup_sidebar_size = true;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{egui, sidebar_window_size};
+
+    #[test]
+    fn sidebar_window_size_includes_sidebar_and_outer_margin() {
+        assert_eq!(
+            sidebar_window_size([1024, 768], 340.0),
+            egui::vec2(1372.0, 768.0)
+        );
+    }
 }
