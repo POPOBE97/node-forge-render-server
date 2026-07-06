@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
+    time::Instant,
 };
 
 use anyhow::Result;
@@ -39,7 +40,10 @@ pub struct MatrixCellCoord {
 pub struct MatrixCell {
     pub coord: MatrixCellCoord,
     pub display_coord: MatrixCellCoord,
+    pub variant_scene: SceneDSL,
     pub shader_space: ShaderSpace,
+    pub pass_bindings: Vec<renderer::PassBindings>,
+    pub pipeline_signature: [u8; 32],
     pub output_texture_name: ResourceName,
     pub egui_texture_id: Option<egui::TextureId>,
     pub hdr_clamp_renderer: Option<HdrClampRenderer>,
@@ -72,6 +76,9 @@ pub struct MatrixRenderState {
     pub base_pipeline_signature: Option<[u8; 32]>,
     pub hovered_coord: Option<MatrixCellCoord>,
     pub sticky_stats_coord: Option<MatrixCellCoord>,
+    pub matrix_uniform_refresh_count: u64,
+    pub matrix_full_rebuild_count: u64,
+    pub matrix_uniform_refresh_ms: f64,
     build_generation: u64,
     build_job: Option<MatrixBuildJob>,
 }
@@ -92,6 +99,9 @@ impl Default for MatrixRenderState {
             base_pipeline_signature: None,
             hovered_coord: None,
             sticky_stats_coord: None,
+            matrix_uniform_refresh_count: 0,
+            matrix_full_rebuild_count: 0,
+            matrix_uniform_refresh_ms: 0.0,
             build_generation: 0,
             build_job: None,
         }
@@ -100,24 +110,12 @@ impl Default for MatrixRenderState {
 
 impl MatrixRenderState {
     pub fn clear(&mut self, renderer: &mut egui_wgpu::Renderer) {
-        self.cancel_build();
-        for cell in self.cells.drain(..) {
-            if let Some(id) = cell.egui_texture_id {
-                renderer.free_texture(&id);
-            }
-            if let Some(id) = cell.hdr_clamped_egui_id {
-                renderer.free_texture(&id);
-            }
-            if let Some(id) = cell.diff_texture_id {
-                renderer.free_texture(&id);
-            }
-            if let Some(id) = cell.clipping_texture_id {
-                renderer.free_texture(&id);
-            }
-            if let Some(id) = cell.qualifier_texture_id {
-                renderer.free_texture(&id);
-            }
-        }
+        self.cancel_build(renderer);
+        free_matrix_cells(renderer, &mut self.cells);
+        self.reset_visible_state();
+    }
+
+    fn reset_visible_state(&mut self) {
         self.logical_rows = 0;
         self.logical_cols = 0;
         self.grid_rows = 0;
@@ -132,7 +130,7 @@ impl MatrixRenderState {
         self.sticky_stats_coord = None;
     }
 
-    fn cancel_build(&mut self) {
+    fn cancel_build(&mut self, _renderer: &mut egui_wgpu::Renderer) {
         if let Some(job) = self.build_job.take() {
             job.cancel.store(true, Ordering::Relaxed);
         }
@@ -158,12 +156,29 @@ struct MatrixBuildJob {
     expected_cells: usize,
     completed_cells: usize,
     failed_cells: usize,
+    pending: PendingMatrixState,
 }
 
 struct BuiltCell {
     coord: MatrixCellCoord,
+    variant_scene: SceneDSL,
     shader_space: ShaderSpace,
+    pass_bindings: Vec<renderer::PassBindings>,
+    pipeline_signature: [u8; 32],
     output_texture_name: ResourceName,
+}
+
+struct PendingMatrixState {
+    logical_rows: usize,
+    logical_cols: usize,
+    grid_rows: usize,
+    grid_cols: usize,
+    row_chunks_per_logical_row: usize,
+    show_labels: bool,
+    cell_resolution: [u32; 2],
+    row_pool_id: Option<String>,
+    col_pool_id: Option<String>,
+    base_pipeline_signature: Option<[u8; 32]>,
 }
 
 enum MatrixBuildMessage {
@@ -185,6 +200,11 @@ pub struct MatrixPollResult {
     pub added_cells: usize,
     pub failed_cells: usize,
     pub finished: bool,
+}
+
+pub enum MatrixUniformRefreshResult {
+    Refreshed,
+    NeedsFullRebuild,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,15 +256,49 @@ fn matrix_display_coord(coord: MatrixCellCoord, layout: MatrixDisplayLayout) -> 
     }
 }
 
-pub fn relayout_matrix(config: &MatrixConfig, state: &mut MatrixRenderState) {
-    let layout = matrix_display_layout(state.logical_rows, state.logical_cols, config.max_row_cols);
-    state.grid_rows = layout.display_rows;
-    state.grid_cols = layout.display_cols;
-    state.row_chunks_per_logical_row = layout.row_chunks_per_logical_row;
-    state.show_labels = config.show_labels;
+fn apply_layout_to_matrix_cells(
+    logical_rows: usize,
+    logical_cols: usize,
+    config: &MatrixConfig,
+    grid_rows: &mut usize,
+    grid_cols: &mut usize,
+    row_chunks_per_logical_row: &mut usize,
+    show_labels: &mut bool,
+    cells: &mut [MatrixCell],
+) {
+    let layout = matrix_display_layout(logical_rows, logical_cols, config.max_row_cols);
+    *grid_rows = layout.display_rows;
+    *grid_cols = layout.display_cols;
+    *row_chunks_per_logical_row = layout.row_chunks_per_logical_row;
+    *show_labels = config.show_labels;
 
-    for cell in &mut state.cells {
+    for cell in cells {
         cell.display_coord = matrix_display_coord(cell.coord, layout);
+    }
+}
+
+pub fn relayout_matrix(config: &MatrixConfig, state: &mut MatrixRenderState) {
+    apply_layout_to_matrix_cells(
+        state.logical_rows,
+        state.logical_cols,
+        config,
+        &mut state.grid_rows,
+        &mut state.grid_cols,
+        &mut state.row_chunks_per_logical_row,
+        &mut state.show_labels,
+        &mut state.cells,
+    );
+
+    if let Some(job) = state.build_job.as_mut() {
+        let layout = matrix_display_layout(
+            job.pending.logical_rows,
+            job.pending.logical_cols,
+            config.max_row_cols,
+        );
+        job.pending.grid_rows = layout.display_rows;
+        job.pending.grid_cols = layout.display_cols;
+        job.pending.row_chunks_per_logical_row = layout.row_chunks_per_logical_row;
+        job.pending.show_labels = config.show_labels;
     }
 }
 
@@ -258,12 +312,108 @@ pub struct MatrixBuildParams<'a> {
     pub asset_store: &'a AssetStore,
 }
 
+fn free_matrix_cell(renderer: &mut egui_wgpu::Renderer, cell: MatrixCell) {
+    if let Some(id) = cell.egui_texture_id {
+        renderer.free_texture(&id);
+    }
+    if let Some(id) = cell.hdr_clamped_egui_id {
+        renderer.free_texture(&id);
+    }
+    if let Some(id) = cell.diff_texture_id {
+        renderer.free_texture(&id);
+    }
+    if let Some(id) = cell.clipping_texture_id {
+        renderer.free_texture(&id);
+    }
+    if let Some(id) = cell.qualifier_texture_id {
+        renderer.free_texture(&id);
+    }
+}
+
+fn free_matrix_cells(renderer: &mut egui_wgpu::Renderer, cells: &mut Vec<MatrixCell>) {
+    for cell in cells.drain(..) {
+        free_matrix_cell(renderer, cell);
+    }
+}
+
+fn visible_coord_within_bounds(
+    coord: MatrixCellCoord,
+    logical_rows: usize,
+    logical_cols: usize,
+) -> bool {
+    coord.row < logical_rows && coord.col < logical_cols
+}
+
+fn prune_visible_cells_outside_bounds(
+    renderer: &mut egui_wgpu::Renderer,
+    cells: &mut Vec<MatrixCell>,
+    logical_rows: usize,
+    logical_cols: usize,
+) {
+    let mut retained = Vec::with_capacity(cells.len());
+    for cell in cells.drain(..) {
+        if visible_coord_within_bounds(cell.coord, logical_rows, logical_cols) {
+            retained.push(cell);
+        } else {
+            free_matrix_cell(renderer, cell);
+        }
+    }
+    *cells = retained;
+}
+
+fn apply_pending_visible_state(
+    state: &mut MatrixRenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    pending: &PendingMatrixState,
+    config: &MatrixConfig,
+) {
+    prune_visible_cells_outside_bounds(
+        renderer,
+        &mut state.cells,
+        pending.logical_rows,
+        pending.logical_cols,
+    );
+    state.logical_rows = pending.logical_rows;
+    state.logical_cols = pending.logical_cols;
+    state.grid_rows = pending.grid_rows;
+    state.grid_cols = pending.grid_cols;
+    state.row_chunks_per_logical_row = pending.row_chunks_per_logical_row;
+    state.show_labels = pending.show_labels;
+    state.row_pool_id = pending.row_pool_id.clone();
+    state.col_pool_id = pending.col_pool_id.clone();
+    state.base_pipeline_signature = pending.base_pipeline_signature;
+    if state.cells.is_empty() {
+        state.cell_resolution = pending.cell_resolution;
+    }
+    apply_layout_to_matrix_cells(
+        state.logical_rows,
+        state.logical_cols,
+        config,
+        &mut state.grid_rows,
+        &mut state.grid_cols,
+        &mut state.row_chunks_per_logical_row,
+        &mut state.show_labels,
+        &mut state.cells,
+    );
+
+    if let Some(coord) = state.hovered_coord
+        && !state.cells.iter().any(|cell| cell.coord == coord)
+    {
+        state.hovered_coord = None;
+    }
+    if let Some(coord) = state.sticky_stats_coord
+        && !state.cells.iter().any(|cell| cell.coord == coord)
+    {
+        state.sticky_stats_coord = None;
+    }
+}
+
 pub fn start_matrix_rebuild(
     params: MatrixBuildParams<'_>,
     renderer: &mut egui_wgpu::Renderer,
     state: &mut MatrixRenderState,
 ) -> Result<()> {
-    state.clear(renderer);
+    state.cancel_build(renderer);
 
     let selected_pools: Vec<&ResourcePoolInfo> = params
         .config
@@ -289,10 +439,8 @@ pub fn start_matrix_rebuild(
         _ => return Ok(()),
     };
 
-    state.logical_rows = logical_rows;
-    state.logical_cols = logical_cols;
-    state.row_pool_id = row_pool.map(|p| p.node_id.clone());
-    state.col_pool_id = col_pool.map(|p| p.node_id.clone());
+    let pending_row_pool_id = row_pool.map(|p| p.node_id.clone());
+    let pending_col_pool_id = col_pool.map(|p| p.node_id.clone());
 
     let row_pool_id = row_pool.map(|p| &p.node_id);
     let col_pool_id = col_pool.map(|p| &p.node_id);
@@ -304,8 +452,24 @@ pub fn start_matrix_rebuild(
     relayout_matrix(params.config, state);
 
     if coords.is_empty() {
+        state.clear(renderer);
         return Ok(());
     }
+
+    let layout = matrix_display_layout(logical_rows, logical_cols, params.config.max_row_cols);
+    let pending = PendingMatrixState {
+        logical_rows,
+        logical_cols,
+        grid_rows: layout.display_rows,
+        grid_cols: layout.display_cols,
+        row_chunks_per_logical_row: layout.row_chunks_per_logical_row,
+        show_labels: params.config.show_labels,
+        cell_resolution: [0, 0],
+        row_pool_id: pending_row_pool_id,
+        col_pool_id: pending_col_pool_id,
+        base_pipeline_signature: None,
+    };
+    apply_pending_visible_state(state, renderer, &pending, params.config);
 
     let generation = state.build_generation.wrapping_add(1);
     state.build_generation = generation;
@@ -363,7 +527,9 @@ pub fn start_matrix_rebuild(
         expected_cells,
         completed_cells: 0,
         failed_cells: 0,
+        pending,
     });
+    state.matrix_full_rebuild_count = state.matrix_full_rebuild_count.saturating_add(1);
 
     Ok(())
 }
@@ -401,7 +567,10 @@ fn build_matrix_cell(
     result.shader_space.render();
     Ok(BuiltCell {
         coord,
+        variant_scene,
         shader_space: result.shader_space,
+        pass_bindings: result.pass_bindings,
+        pipeline_signature: result.pipeline_signature,
         output_texture_name: result.present_output_texture,
     })
 }
@@ -452,13 +621,38 @@ pub fn poll_matrix_rebuild(
             MatrixBuildMessage::CellReady { generation, cell }
                 if generation == active_generation =>
             {
-                if let Some(matrix_cell) =
-                    register_built_cell(state, render_state, renderer, cell, filter)
+                let mut ready_cell = None;
+                let mut ready_resolution = None;
+                if let Some(job) = state.build_job.as_mut()
+                    && job.generation == active_generation
                 {
-                    insert_cell_sorted(&mut state.cells, matrix_cell);
+                    if let Some(matrix_cell) = register_built_cell(
+                        &mut job.pending.cell_resolution,
+                        job.pending.grid_rows,
+                        job.pending.grid_cols,
+                        job.pending.row_chunks_per_logical_row,
+                        render_state,
+                        renderer,
+                        cell,
+                        filter,
+                    ) {
+                        ready_resolution = Some(job.pending.cell_resolution);
+                        ready_cell = Some(matrix_cell);
+                    } else {
+                        result.failed_cells += 1;
+                    }
+                }
+                if let Some(matrix_cell) = ready_cell {
+                    if let Some(resolution) = ready_resolution
+                        && resolution != [0, 0]
+                    {
+                        state.cell_resolution = resolution;
+                    }
+                    if state.base_pipeline_signature.is_none() {
+                        state.base_pipeline_signature = Some(matrix_cell.pipeline_signature);
+                    }
+                    upsert_visible_cell(renderer, &mut state.cells, matrix_cell);
                     result.added_cells += 1;
-                } else {
-                    result.failed_cells += 1;
                 }
             }
             MatrixBuildMessage::CellFailed { generation, coord }
@@ -485,11 +679,11 @@ pub fn poll_matrix_rebuild(
         clear_job = saw_finished || job.completed_cells + job.failed_cells >= job.expected_cells;
     }
     if clear_job {
-        state.build_job = None;
+        let _ = state.build_job.take();
         result.finished = true;
     }
 
-    if result.added_cells > 0 && hdr_clamp_enabled {
+    if (result.added_cells > 0 || result.finished) && hdr_clamp_enabled {
         sync_matrix_hdr_clamp(state, render_state, renderer, true, filter);
     }
 
@@ -497,7 +691,10 @@ pub fn poll_matrix_rebuild(
 }
 
 fn register_built_cell(
-    state: &mut MatrixRenderState,
+    cell_resolution: &mut [u32; 2],
+    grid_rows: usize,
+    grid_cols: usize,
+    row_chunks_per_logical_row: usize,
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
     cell: BuiltCell,
@@ -507,12 +704,12 @@ fn register_built_cell(
         .shader_space
         .textures
         .get(cell.output_texture_name.as_str())?;
-    if state.cell_resolution == [0, 0] {
+    if *cell_resolution == [0, 0] {
         if let Some(info) = cell
             .shader_space
             .texture_info(cell.output_texture_name.as_str())
         {
-            state.cell_resolution = [info.size.width, info.size.height];
+            *cell_resolution = [info.size.width, info.size.height];
         }
     }
     let view = tex.wgpu_texture_view.as_ref()?;
@@ -523,15 +720,18 @@ fn register_built_cell(
     );
 
     let layout = MatrixDisplayLayout {
-        display_rows: state.grid_rows,
-        display_cols: state.grid_cols,
-        row_chunks_per_logical_row: state.row_chunks_per_logical_row,
+        display_rows: grid_rows,
+        display_cols: grid_cols,
+        row_chunks_per_logical_row,
     };
 
     Some(MatrixCell {
         coord: cell.coord,
         display_coord: matrix_display_coord(cell.coord, layout),
+        variant_scene: cell.variant_scene,
         shader_space: cell.shader_space,
+        pass_bindings: cell.pass_bindings,
+        pipeline_signature: cell.pipeline_signature,
         output_texture_name: cell.output_texture_name,
         egui_texture_id: Some(egui_id),
         hdr_clamp_renderer: None,
@@ -551,13 +751,78 @@ fn register_built_cell(
     })
 }
 
-fn insert_cell_sorted(cells: &mut Vec<MatrixCell>, cell: MatrixCell) {
+fn upsert_visible_cell(
+    renderer: &mut egui_wgpu::Renderer,
+    cells: &mut Vec<MatrixCell>,
+    cell: MatrixCell,
+) {
     match cells.binary_search_by_key(&cell.coord, |existing| existing.coord) {
         Ok(pos) => {
-            cells[pos] = cell;
+            let previous = std::mem::replace(&mut cells[pos], cell);
+            free_matrix_cell(renderer, previous);
         }
         Err(pos) => cells.insert(pos, cell),
     }
+}
+
+fn invalidate_matrix_cell_outputs(cell: &mut MatrixCell) {
+    cell.pixel_cache = None;
+    cell.last_diff_request_key = None;
+    cell.last_diff_stats_request_key = None;
+    cell.diff_stats = None;
+    cell.last_clipping_request_key = None;
+    cell.last_qualifier_request_key = None;
+}
+
+pub fn refresh_matrix_cells_uniform_only(
+    state: &mut MatrixRenderState,
+    updated_nodes: &[crate::dsl::Node],
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    filter: wgpu::FilterMode,
+    hdr_clamp_enabled: bool,
+) -> Result<MatrixUniformRefreshResult> {
+    if state.cells.is_empty() || state.is_building() {
+        return Ok(MatrixUniformRefreshResult::NeedsFullRebuild);
+    }
+
+    let started = Instant::now();
+    for cell in &mut state.cells {
+        super::scene_runtime::apply_uniform_node_param_updates(
+            &mut cell.variant_scene,
+            updated_nodes,
+            true,
+        )?;
+
+        let next_signature = renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
+            &cell.variant_scene,
+            &cell.pass_bindings,
+        );
+        if next_signature != cell.pipeline_signature {
+            anyhow::bail!(
+                "matrix cell [{}, {}] pipeline signature changed during uniform refresh",
+                cell.coord.row,
+                cell.coord.col
+            );
+        }
+
+        let _ = super::scene_runtime::apply_graph_uniform_updates_parts(
+            &mut cell.pass_bindings,
+            &mut cell.shader_space,
+            &cell.variant_scene,
+        )?;
+        cell.shader_space.render();
+        invalidate_matrix_cell_outputs(cell);
+    }
+
+    if hdr_clamp_enabled {
+        sync_matrix_hdr_clamp(state, render_state, renderer, true, filter);
+    }
+
+    state.matrix_uniform_refresh_count = state.matrix_uniform_refresh_count.saturating_add(1);
+    state.matrix_uniform_refresh_ms += started.elapsed().as_secs_f64() * 1000.0;
+
+    Ok(MatrixUniformRefreshResult::Refreshed)
 }
 
 pub fn ensure_cell_pixel_cache(cell: &mut MatrixCell) {

@@ -13,11 +13,21 @@ use super::types::{
     App, scene_reference_desired_source, scene_reference_image_alpha_mode, scene_uses_time,
 };
 
+#[derive(Clone, Debug)]
+pub enum MatrixSceneUpdate {
+    None,
+    UniformOnly {
+        updated_nodes: Vec<crate::dsl::Node>,
+    },
+    FullRebuild,
+}
+
 pub struct SceneApplyResult {
     pub did_rebuild_shader_space: bool,
     pub texture_filter_override: Option<wgpu::FilterMode>,
     pub reset_viewport: bool,
     pub previous_output_hash: Option<u64>,
+    pub matrix_update: MatrixSceneUpdate,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +82,7 @@ pub fn apply_pass_shader_patch(
         texture_filter_override: None,
         reset_viewport: false,
         previous_output_hash,
+        matrix_update: MatrixSceneUpdate::None,
     })
 }
 
@@ -86,6 +97,7 @@ pub fn reset_pass_shader_patch(
             texture_filter_override: None,
             reset_viewport: false,
             previous_output_hash: None,
+            matrix_update: MatrixSceneUpdate::None,
         });
     }
 
@@ -102,6 +114,7 @@ pub fn reset_pass_shader_patch(
         texture_filter_override: None,
         reset_viewport: false,
         previous_output_hash,
+        matrix_update: MatrixSceneUpdate::None,
     })
 }
 
@@ -115,6 +128,7 @@ pub fn reset_all_pass_shader_patches(
             texture_filter_override: None,
             reset_viewport: false,
             previous_output_hash: None,
+            matrix_update: MatrixSceneUpdate::None,
         });
     }
 
@@ -132,6 +146,7 @@ pub fn reset_all_pass_shader_patches(
         texture_filter_override: None,
         reset_viewport: false,
         previous_output_hash,
+        matrix_update: MatrixSceneUpdate::None,
     })
 }
 
@@ -371,7 +386,7 @@ fn apply_graph_uniform_updates_inner(
     Ok(updates.len())
 }
 
-fn apply_uniform_node_param_updates(
+pub(crate) fn apply_uniform_node_param_updates(
     scene: &mut crate::dsl::SceneDSL,
     updated_nodes: &[crate::dsl::Node],
     allow_suffix_match: bool,
@@ -478,6 +493,7 @@ pub fn apply_scene_update(
                     texture_filter_override: None,
                     reset_viewport: false,
                     previous_output_hash: None,
+                    matrix_update: MatrixSceneUpdate::None,
                 };
             };
 
@@ -520,6 +536,7 @@ pub fn apply_scene_update(
                         texture_filter_override: None,
                         reset_viewport: false,
                         previous_output_hash: None,
+                        matrix_update: MatrixSceneUpdate::UniformOnly { updated_nodes },
                     }
                 }
                 Err(e) => {
@@ -538,6 +555,7 @@ pub fn apply_scene_update(
                         texture_filter_override: None,
                         reset_viewport: false,
                         previous_output_hash: None,
+                        matrix_update: MatrixSceneUpdate::None,
                     }
                 }
             }
@@ -618,6 +636,7 @@ pub fn apply_scene_update(
                                     prepared_for_fast_path.resolution,
                                 ),
                                 previous_output_hash: None,
+                                matrix_update: MatrixSceneUpdate::FullRebuild,
                             };
                         }
                         Err(e) => {
@@ -692,6 +711,7 @@ pub fn apply_scene_update(
                             result.resolution,
                         ),
                         previous_output_hash: None,
+                        matrix_update: MatrixSceneUpdate::FullRebuild,
                     }
                 }
                 Ok(Err(e)) => {
@@ -711,6 +731,7 @@ pub fn apply_scene_update(
                         texture_filter_override: None,
                         reset_viewport: false,
                         previous_output_hash: None,
+                        matrix_update: MatrixSceneUpdate::None,
                     }
                 }
                 Err(panic_payload) => {
@@ -733,6 +754,7 @@ pub fn apply_scene_update(
                         texture_filter_override: Some(wgpu::FilterMode::Linear),
                         reset_viewport: false,
                         previous_output_hash: None,
+                        matrix_update: MatrixSceneUpdate::None,
                     }
                 }
             }
@@ -745,6 +767,7 @@ pub fn apply_scene_update(
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,
+                matrix_update: MatrixSceneUpdate::None,
             }
         }
         ws::SceneUpdate::DebugArtifactBinaryUpsert { item, bytes } => {
@@ -755,6 +778,7 @@ pub fn apply_scene_update(
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,
+                matrix_update: MatrixSceneUpdate::None,
             }
         }
         ws::SceneUpdate::DebugArtifactDelete { artifact_id } => {
@@ -765,6 +789,7 @@ pub fn apply_scene_update(
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,
+                matrix_update: MatrixSceneUpdate::None,
             }
         }
         ws::SceneUpdate::ParseError {
@@ -782,6 +807,7 @@ pub fn apply_scene_update(
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,
+                matrix_update: MatrixSceneUpdate::None,
             }
         }
         ws::SceneUpdate::AnimationControl { action } => {
@@ -856,6 +882,7 @@ pub fn apply_scene_update(
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,
+                matrix_update: MatrixSceneUpdate::None,
             }
         }
     }
@@ -1120,5 +1147,131 @@ mod tests {
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].pass_index, 0);
         assert_eq!(updates[0].bytes.len(), 16);
+    }
+
+    #[test]
+    fn apply_uniform_node_param_updates_updates_direct_matches() {
+        let mut scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "MidiInput_1".to_string(),
+                node_type: "MidiInput".to_string(),
+                params: HashMap::from([("rawValue".to_string(), serde_json::json!(0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+                wgsl_override: None,
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let updated = crate::dsl::Node {
+            id: "MidiInput_1".to_string(),
+            node_type: "MidiInput".to_string(),
+            params: HashMap::from([("rawValue".to_string(), serde_json::json!(64))]),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+            wgsl_override: None,
+        };
+
+        apply_uniform_node_param_updates(&mut scene, &[updated], false).unwrap();
+        assert_eq!(
+            scene.nodes[0].params.get("rawValue"),
+            Some(&serde_json::json!(64))
+        );
+    }
+
+    #[test]
+    fn apply_uniform_node_param_updates_updates_suffix_matches_when_enabled() {
+        let mut scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "GroupInstance_1/MidiInput_1".to_string(),
+                node_type: "MidiInput".to_string(),
+                params: HashMap::from([("rawValue".to_string(), serde_json::json!(0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+                wgsl_override: None,
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let updated = crate::dsl::Node {
+            id: "MidiInput_1".to_string(),
+            node_type: "MidiInput".to_string(),
+            params: HashMap::from([("rawValue".to_string(), serde_json::json!(96))]),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+            wgsl_override: None,
+        };
+
+        apply_uniform_node_param_updates(&mut scene, &[updated], true).unwrap();
+        assert_eq!(
+            scene.nodes[0].params.get("rawValue"),
+            Some(&serde_json::json!(96))
+        );
+    }
+
+    #[test]
+    fn apply_uniform_node_param_updates_rejects_missing_suffix_match_when_disabled() {
+        let mut scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "GroupInstance_1/MidiInput_1".to_string(),
+                node_type: "MidiInput".to_string(),
+                params: HashMap::from([("rawValue".to_string(), serde_json::json!(0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+                wgsl_override: None,
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let updated = crate::dsl::Node {
+            id: "MidiInput_1".to_string(),
+            node_type: "MidiInput".to_string(),
+            params: HashMap::from([("rawValue".to_string(), serde_json::json!(127))]),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+            wgsl_override: None,
+        };
+
+        let error = apply_uniform_node_param_updates(&mut scene, &[updated], false).unwrap_err();
+        assert!(error.to_string().contains("missing node"));
     }
 }

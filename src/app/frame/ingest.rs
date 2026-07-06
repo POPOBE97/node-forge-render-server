@@ -124,6 +124,7 @@ pub(super) fn run(
     let mut did_rebuild_shader_space = false;
     if let Some(update) = scene_runtime::drain_latest_scene_update(app) {
         let apply_result = scene_runtime::apply_scene_update(app, ctx, render_state, update);
+        let matrix_update = apply_result.matrix_update.clone();
         app.runtime.scene_redraw_pending = true;
         app.canvas.invalidation.preview_source_changed();
         if apply_result.did_rebuild_shader_space {
@@ -159,11 +160,39 @@ pub(super) fn run(
                     adapter: Some(&render_state.adapter),
                     asset_store: &app.core.asset_store,
                 };
-                if let Err(e) = crate::app::matrix_render::start_matrix_rebuild(
-                    params,
-                    renderer,
-                    &mut app.shell.matrix_state,
-                ) {
+                let refresh_failed = match matrix_update {
+                    scene_runtime::MatrixSceneUpdate::UniformOnly { updated_nodes } => {
+                        match crate::app::matrix_render::refresh_matrix_cells_uniform_only(
+                            &mut app.shell.matrix_state,
+                            &updated_nodes,
+                            render_state,
+                            renderer,
+                            app.canvas.display.texture_filter,
+                            app.canvas.display.hdr_preview_clamp_enabled,
+                        ) {
+                            Ok(crate::app::matrix_render::MatrixUniformRefreshResult::Refreshed) => {
+                                false
+                            }
+                            Ok(crate::app::matrix_render::MatrixUniformRefreshResult::NeedsFullRebuild) => true,
+                            Err(e) => {
+                                eprintln!(
+                                    "[matrix] uniform-only refresh failed; falling back to rebuild: {e:#}"
+                                );
+                                true
+                            }
+                        }
+                    }
+                    scene_runtime::MatrixSceneUpdate::FullRebuild => true,
+                    scene_runtime::MatrixSceneUpdate::None => false,
+                };
+
+                if refresh_failed
+                    && let Err(e) = crate::app::matrix_render::start_matrix_rebuild(
+                        params,
+                        renderer,
+                        &mut app.shell.matrix_state,
+                    )
+                {
                     eprintln!("[matrix] rebuild on scene update failed: {e:#}");
                 }
             }

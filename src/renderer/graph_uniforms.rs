@@ -319,6 +319,193 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
     )
 }
 
+fn collect_ignored_input_value_node_ids_for_pass_bindings(
+    scene: &SceneDSL,
+    pass_bindings: &[PassBindings],
+) -> BTreeSet<String> {
+    let nodes_by_id: HashMap<String, Node> = scene
+        .nodes
+        .iter()
+        .cloned()
+        .map(|node| (node.id.clone(), node))
+        .collect();
+    let mut ignored_input_value_node_ids: BTreeSet<String> = BTreeSet::new();
+
+    for pass in pass_bindings {
+        let Some(binding) = pass.graph_binding.as_ref() else {
+            continue;
+        };
+
+        for field in &binding.schema.fields {
+            ignored_input_value_node_ids.insert(field.node_id.clone());
+
+            let component_ports: &[&str] = match nodes_by_id
+                .get(field.node_id.as_str())
+                .map(|node| node.node_type.as_str())
+            {
+                Some("Vector2Input") => &["x", "y"],
+                Some("Vector3Input") => &["x", "y", "z"],
+                Some("Vector4Input") => &["x", "y", "z", "w"],
+                _ => &[],
+            };
+
+            let mut visiting_outputs: BTreeSet<(String, String)> = BTreeSet::new();
+            for port_id in component_ports {
+                collect_scalar_input_dependencies_for_input_port(
+                    scene,
+                    &nodes_by_id,
+                    field.node_id.as_str(),
+                    port_id,
+                    &mut ignored_input_value_node_ids,
+                    &mut visiting_outputs,
+                );
+            }
+        }
+    }
+
+    ignored_input_value_node_ids
+}
+
+fn collect_scalar_input_dependencies_for_input_port(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    port_id: &str,
+    ignored_input_value_node_ids: &mut BTreeSet<String>,
+    visiting_outputs: &mut BTreeSet<(String, String)>,
+) {
+    let Some(conn) = crate::dsl::incoming_connection(scene, node_id, port_id) else {
+        return;
+    };
+
+    collect_scalar_input_dependencies_for_output_port(
+        scene,
+        nodes_by_id,
+        conn.from.node_id.as_str(),
+        conn.from.port_id.as_str(),
+        ignored_input_value_node_ids,
+        visiting_outputs,
+    );
+}
+
+fn collect_scalar_input_dependencies_for_output_port(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node_id: &str,
+    out_port: &str,
+    ignored_input_value_node_ids: &mut BTreeSet<String>,
+    visiting_outputs: &mut BTreeSet<(String, String)>,
+) {
+    let visit_key = (node_id.to_string(), out_port.to_string());
+    if !visiting_outputs.insert(visit_key.clone()) {
+        return;
+    }
+
+    let Some(node) = nodes_by_id.get(node_id) else {
+        let _ = visiting_outputs.remove(&visit_key);
+        return;
+    };
+
+    match node.node_type.as_str() {
+        "BoolInput" | "FloatInput" | "IntInput" | "MidiInput" if out_port == "value" => {
+            ignored_input_value_node_ids.insert(node.id.clone());
+        }
+        "MathAdd" | "MathSubtract" | "MathMultiply" | "MathDivide" if out_port == "result" => {
+            if node.inputs.is_empty() {
+                for input_port in ["a", "b"] {
+                    collect_scalar_input_dependencies_for_input_port(
+                        scene,
+                        nodes_by_id,
+                        node_id,
+                        input_port,
+                        ignored_input_value_node_ids,
+                        visiting_outputs,
+                    );
+                }
+            } else {
+                for input_port in &node.inputs {
+                    collect_scalar_input_dependencies_for_input_port(
+                        scene,
+                        nodes_by_id,
+                        node_id,
+                        input_port.id.as_str(),
+                        ignored_input_value_node_ids,
+                        visiting_outputs,
+                    );
+                }
+            }
+        }
+        "MathClamp" if out_port == "result" => {
+            for input_port in ["value", "min", "max"] {
+                collect_scalar_input_dependencies_for_input_port(
+                    scene,
+                    nodes_by_id,
+                    node_id,
+                    input_port,
+                    ignored_input_value_node_ids,
+                    visiting_outputs,
+                );
+            }
+        }
+        "MathPower" if out_port == "result" => {
+            for input_port in ["base", "exponent"] {
+                collect_scalar_input_dependencies_for_input_port(
+                    scene,
+                    nodes_by_id,
+                    node_id,
+                    input_port,
+                    ignored_input_value_node_ids,
+                    visiting_outputs,
+                );
+            }
+        }
+        "ResourcePool" => {
+            let dynamic_inputs: Vec<&str> = node
+                .inputs
+                .iter()
+                .filter(|port| port.id != "selectedIndex")
+                .map(|port| port.id.as_str())
+                .collect();
+            let selected_index =
+                crate::dsl::resolve_input_i64(scene, nodes_by_id, node_id, "selectedIndex")
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0)
+                    .max(0) as usize;
+            let selected_index = selected_index.min(dynamic_inputs.len().saturating_sub(1));
+            if let Some(selected_port) = dynamic_inputs.get(selected_index) {
+                collect_scalar_input_dependencies_for_input_port(
+                    scene,
+                    nodes_by_id,
+                    node_id,
+                    selected_port,
+                    ignored_input_value_node_ids,
+                    visiting_outputs,
+                );
+            }
+        }
+        "DataParse" => {
+            for conn in scene
+                .connections
+                .iter()
+                .filter(|conn| conn.to.node_id == node_id)
+            {
+                collect_scalar_input_dependencies_for_output_port(
+                    scene,
+                    nodes_by_id,
+                    conn.from.node_id.as_str(),
+                    conn.from.port_id.as_str(),
+                    ignored_input_value_node_ids,
+                    visiting_outputs,
+                );
+            }
+        }
+        _ => {}
+    }
+
+    let _ = visiting_outputs.remove(&visit_key);
+}
+
 fn canonicalized_params(
     node: &Node,
     ignored_input_value_node_ids: &BTreeSet<String>,
@@ -607,15 +794,8 @@ pub fn compute_pipeline_signature_for_pass_bindings(
     scene: &SceneDSL,
     pass_bindings: &[PassBindings],
 ) -> [u8; 32] {
-    let mut ignored_input_value_node_ids: BTreeSet<String> = BTreeSet::new();
-    for p in pass_bindings {
-        let Some(binding) = p.graph_binding.as_ref() else {
-            continue;
-        };
-        for field in &binding.schema.fields {
-            ignored_input_value_node_ids.insert(field.node_id.clone());
-        }
-    }
+    let ignored_input_value_node_ids =
+        collect_ignored_input_value_node_ids_for_pass_bindings(scene, pass_bindings);
 
     let payload = json!({
         "scene": canonical_scene_value(scene, &ignored_input_value_node_ids),
@@ -973,6 +1153,120 @@ mod tests {
             .insert("value".to_string(), json!(10.0));
         let h3 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass]);
         assert_ne!(h2, h3, "unbound input value must force rebuild");
+    }
+
+    #[test]
+    fn signature_for_pass_bindings_ignores_upstream_values_of_bound_vector_inputs() {
+        let mut scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "sig-vec4-bind".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                make_node(
+                    "midi_a",
+                    "MidiInput",
+                    json!({"rawValue": 0, "defaultValue": 0.0, "minValue": 0.0, "maxValue": 1.0}),
+                ),
+                make_node(
+                    "midi_b",
+                    "MidiInput",
+                    json!({"rawValue": 0, "defaultValue": 0.0, "minValue": 0.0, "maxValue": 1.0}),
+                ),
+                make_node(
+                    "vec4",
+                    "Vector4Input",
+                    json!({"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}),
+                ),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "midi_a".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "vec4".to_string(),
+                        port_id: "x".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "midi_b".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "vec4".to_string(),
+                        port_id: "y".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let pass = PassBindings {
+            pass_id: "passA".to_string(),
+            params_buffer: ResourceName::from("params.passA"),
+            base_params: Params {
+                target_size: [1.0, 1.0],
+                geo_size: [1.0, 1.0],
+                center: [0.5, 0.5],
+                geo_translate: [0.0, 0.0],
+                geo_scale: [1.0, 1.0],
+                time: 0.0,
+                _pad0: 0.0,
+                color: [1.0, 1.0, 1.0, 1.0],
+                camera: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                camera_position: [0.0, 0.0, 0.0, 0.0],
+            },
+            graph_binding: Some(GraphBinding {
+                buffer_name: ResourceName::from("params.passA.graph"),
+                kind: GraphBindingKind::Uniform,
+                schema: GraphSchema {
+                    fields: vec![GraphField {
+                        node_id: "vec4".to_string(),
+                        field_name: graph_field_name("vec4"),
+                        kind: GraphFieldKind::Vec4,
+                    }],
+                    size_bytes: 16,
+                },
+            }),
+            last_graph_hash: None,
+            extension: None,
+        };
+
+        let h1 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+        scene.nodes[0]
+            .params
+            .insert("rawValue".to_string(), json!(127));
+        let h2 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+        assert_eq!(
+            h1, h2,
+            "upstream MidiInput feeding a bound Vector4Input should stay on the uniform-only path"
+        );
+
+        scene
+            .nodes
+            .push(make_node("free", "FloatInput", json!({"value": 1.0})));
+        let h3 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass.clone()]);
+        scene
+            .nodes
+            .last_mut()
+            .expect("free input node")
+            .params
+            .insert("value".to_string(), json!(2.0));
+        let h4 = compute_pipeline_signature_for_pass_bindings(&scene, &[pass]);
+        assert_ne!(h3, h4, "still must rebuild for unrelated unbound inputs");
     }
 
     #[test]
