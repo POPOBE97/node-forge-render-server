@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-07-06T05:50:45.451Z",
-    "modified": "2026-07-06T05:50:45.451Z"
+    "created": "2026-07-06T09:33:42.918Z",
+    "modified": "2026-07-06T09:33:42.918Z"
   },
   "nodes": [
     {
@@ -185,7 +185,7 @@
       "id": "Index_14",
       "type": "Index",
       "position": {
-        "x": -700,
+        "x": -940,
         "y": -280
       },
       "width": 220,
@@ -207,7 +207,8 @@
         "fileName": "",
         "_uiCollapsedFields": [
           "sec:text"
-        ]
+        ],
+        "_uiCollapsed": false
       }
     },
     {
@@ -215,7 +216,7 @@
       "type": "DataParse",
       "position": {
         "x": -700,
-        "y": -220
+        "y": -280
       },
       "width": 217,
       "label": "Data Parse",
@@ -362,13 +363,13 @@
           1.0029220622089756
         ],
         "uBlendLuminanceAmount": 1,
-        "uBlendSaturation": 1.2,
+        "uBlendSaturation": 1,
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
-          0,
-          0,
-          0.8
+          1,
+          1,
+          1
         ],
         "uInnerColorWhite": 0,
         "uInnerColorPow": 1,
@@ -2566,22 +2567,6 @@
             "aspectCorrection": "fill",
             "_uiCollapsed": true
           }
-        },
-        {
-          "id": "MidiInput_102",
-          "type": "MidiInput",
-          "position": {
-            "x": 660,
-            "y": -200
-          },
-          "width": 160,
-          "label": "MIDI Input",
-          "params": {
-            "knob": "12",
-            "defaultValue": 0,
-            "minValue": 0,
-            "maxValue": 31
-          }
         }
       ],
       "connections": [
@@ -2947,17 +2932,6 @@
             "nodeId": "ColorMix_50",
             "portId": "color0"
           }
-        },
-        {
-          "id": "edge_167",
-          "from": {
-            "nodeId": "MidiInput_102",
-            "portId": "value"
-          },
-          "to": {
-            "nodeId": "ResourcePool_70",
-            "portId": "selectedIndex"
-          }
         }
       ],
       "inputBindings": [],
@@ -3318,8 +3292,8 @@
           "eventName": "mouseup"
         },
         "delay": 0,
-        "duration": 0,
-        "easing": "linear"
+        "duration": 0.1,
+        "easing": "ease-out"
       },
       {
         "id": "tr_mr0cao6x_f",

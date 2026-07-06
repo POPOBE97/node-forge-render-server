@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-05-15T11:36:02.105Z",
-    "modified": "2026-05-15T11:36:02.105Z"
+    "created": "2026-07-06T14:41:41.397Z",
+    "modified": "2026-07-06T14:41:41.397Z"
   },
   "nodes": [
     {
@@ -94,8 +94,8 @@
       "width": 160,
       "label": "Intelligent Light",
       "params": {
-        "width": 37,
-        "height": 60,
+        "width": 14,
+        "height": 30,
         "power": 0,
         "lightness": 0.75,
         "color0": "#8086ff",
