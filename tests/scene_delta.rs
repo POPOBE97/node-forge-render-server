@@ -8,12 +8,25 @@ use node_forge_render_server::{
         apply_scene_update, materialize_scene_dsl, prune_invalid_connections,
     },
 };
+use serde_json::json;
 
 fn node(id: &str) -> Node {
     Node {
         id: id.to_string(),
         node_type: "Test".to_string(),
         params: HashMap::new(),
+        inputs: vec![],
+        input_bindings: Vec::new(),
+        outputs: Vec::new(),
+        wgsl_override: None,
+    }
+}
+
+fn intelligent_light_node(id: &str, params: HashMap<String, serde_json::Value>) -> Node {
+    Node {
+        id: id.to_string(),
+        node_type: "IntelligentLight".to_string(),
+        params,
         inputs: vec![],
         input_bindings: Vec::new(),
         outputs: Vec::new(),
@@ -316,4 +329,74 @@ fn materialize_scene_dsl_roundtrips_cache() {
             .map(String::as_str),
         Some("b")
     );
+}
+
+#[test]
+fn scene_delta_updates_intelligent_light_design_params() {
+    let scene = SceneDSL {
+        version: "1.0".to_string(),
+        metadata: Metadata {
+            name: "ilight".to_string(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![intelligent_light_node(
+            "ilight",
+            HashMap::from([
+                ("layoutMode".to_string(), json!("procedural")),
+                ("color0".to_string(), json!("#111111")),
+            ]),
+        )],
+        connections: vec![],
+        outputs: None,
+        groups: Vec::new(),
+        assets: Default::default(),
+        state_machine: None,
+        debug_artifacts: None,
+    };
+    let mut cache = SceneCache::from_scene_update(&scene);
+
+    let delta = SceneDelta {
+        version: "1.0".to_string(),
+        nodes: SceneDeltaNodes {
+            added: vec![],
+            updated: vec![intelligent_light_node(
+                "ilight",
+                HashMap::from([
+                    ("layoutMode".to_string(), json!("manual")),
+                    ("pos0".to_string(), json!([0.42, 0.58])),
+                    ("color0".to_string(), json!("#44cc88")),
+                ]),
+            )],
+            removed: vec![],
+        },
+        connections: SceneDeltaConnections {
+            added: vec![],
+            updated: vec![],
+            removed: vec![],
+        },
+        outputs: None,
+        groups: None,
+        state_machine: None,
+        assets_added: None,
+        assets_removed: None,
+        debug_artifacts: None,
+    };
+
+    apply_scene_delta(&mut cache, &delta);
+
+    let cached = cache.nodes_by_id.get("ilight").expect("ilight cached node");
+    assert_eq!(cached.params.get("layoutMode"), Some(&json!("manual")));
+    assert_eq!(cached.params.get("pos0"), Some(&json!([0.42, 0.58])));
+    assert_eq!(cached.params.get("color0"), Some(&json!("#44cc88")));
+
+    let materialized = materialize_scene_dsl(&cache);
+    let node = materialized
+        .nodes
+        .iter()
+        .find(|candidate| candidate.id == "ilight")
+        .expect("ilight materialized node");
+    assert_eq!(node.params.get("layoutMode"), Some(&json!("manual")));
+    assert_eq!(node.params.get("pos0"), Some(&json!([0.42, 0.58])));
+    assert_eq!(node.params.get("color0"), Some(&json!("#44cc88")));
 }

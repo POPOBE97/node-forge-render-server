@@ -287,13 +287,15 @@ fn draw_node(
                     response.open_pass_debug = Some(pass_name.clone());
                     ui.close();
                 }
-                if source_node_type.as_deref() == Some("MeshGradient")
-                    && let Some(node_id) = source_node_id.as_ref()
+                if matches!(
+                    source_node_type.as_deref(),
+                    Some("MeshGradient" | "IntelligentLight")
+                ) && let Some(node_id) = source_node_id.as_ref()
                     && ui.button("Design").clicked()
                 {
                     response.open_pass_design = Some(PassDesignTarget {
                         node_id: node_id.clone(),
-                        node_type: "MeshGradient".to_string(),
+                        node_type: source_node_type.clone().unwrap_or_default(),
                         pass_name: pass_name.clone(),
                         target_texture: target_texture.clone(),
                         target_size: *target_size,

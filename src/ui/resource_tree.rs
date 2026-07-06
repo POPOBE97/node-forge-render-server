@@ -249,6 +249,11 @@ fn pass_source_metadata_by_pass(
                 format!("sys.mesh_gradient.{}.pass", node.id),
                 (Some(node.id.clone()), Some(node.node_type.clone())),
             );
+        } else if node.node_type == "IntelligentLight" {
+            out.insert(
+                format!("sys.ilight.{}.upsample.pass", node.id),
+                (Some(node.id.clone()), Some(node.node_type.clone())),
+            );
         }
     }
     out
@@ -566,7 +571,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo, pass_source_metadata_by_pass,
+        pass_source_metadata_by_pass, BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo,
     };
     use crate::dsl::{Metadata, Node, SceneDSL};
 
@@ -759,6 +764,42 @@ mod tests {
             Some(&(
                 Some("MeshGradient_12".to_string()),
                 Some("MeshGradient".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn intelligent_light_pass_source_metadata_maps_upsample_pass_to_scene_node() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "metadata test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![Node {
+                id: "IntelligentLight_7".to_string(),
+                node_type: "IntelligentLight".to_string(),
+                params: HashMap::new(),
+                inputs: vec![],
+                outputs: vec![],
+                input_bindings: vec![],
+                wgsl_override: None,
+            }],
+            connections: vec![],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let sources = pass_source_metadata_by_pass(&scene);
+        assert_eq!(
+            sources.get("sys.ilight.IntelligentLight_7.upsample.pass"),
+            Some(&(
+                Some("IntelligentLight_7".to_string()),
+                Some("IntelligentLight".to_string())
             ))
         );
     }

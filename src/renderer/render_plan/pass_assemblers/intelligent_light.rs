@@ -37,12 +37,48 @@ pub struct ILightUpdateConfig {
     pub lightness_fallback: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IntelligentLightLayoutMode {
+    Procedural,
+    Manual,
+}
+
+pub(crate) const INTELLIGENT_LIGHT_ZONE_COUNT: usize = 11;
+
+pub(crate) const DEFAULT_INTELLIGENT_LIGHT_LAYOUT: [[f32; 2]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
+    [0.217379, 0.225445],
+    [0.999951, 0.506354],
+    [0.999348, 0.494061],
+    [0.997807, 0.5],
+    [0.692605, 0.503775],
+    [0.445673, 0.989289],
+    [0.238211, 0.881737],
+    [0.052889, 0.467308],
+    [0.462529, 0.05155],
+    [0.428177, 0.015989],
+    [0.272295, 0.061244],
+];
+
+const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
+    [0.5019608, 0.5254902, 1.0],
+    [1.0, 0.827451, 0.7019608],
+    [1.0, 0.5254902, 0.20784314],
+    [0.5176471, 0.49411765, 1.0],
+    [0.07058824, 0.4117647, 0.9490196],
+    [0.5019608, 0.5254902, 1.0],
+    [1.0, 0.827451, 0.7019608],
+    [1.0, 0.5254902, 0.20784314],
+    [1.0, 0.5254902, 0.20784314],
+    [0.07058824, 0.4117647, 0.9490196],
+    [0.5176471, 0.49411765, 1.0],
+];
+
 impl ILightUpdateConfig {
     pub fn pack_buffer(&self, scene: &crate::dsl::SceneDSL) -> Vec<u8> {
         let nodes_by_id: std::collections::HashMap<&str, &crate::dsl::Node> =
             scene.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-        let layer_node = nodes_by_id.get(self.layer_id.as_str());
+        let layer_node = nodes_by_id.get(self.layer_id.as_str()).copied();
 
         let driver = self
             .driver_node_id
@@ -64,15 +100,98 @@ impl ILightUpdateConfig {
             .map(|v| v as f32)
             .unwrap_or(self.lightness_fallback);
 
-        let mut colors = [[1.0f32; 3]; 11];
-        for i in 0..11 {
+        let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
+        for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
             let port_id = format!("color{i}");
             colors[i] = resolve_color_runtime(scene, &nodes_by_id, &self.layer_id, &port_id)
-                .unwrap_or([1.0, 1.0, 1.0]);
+                .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_COLORS[i]);
         }
 
-        pack_ilight_buffer(driver, power, lightness, &colors)
+        let positions = layer_node
+            .map(|node| {
+                resolve_light_positions(node, driver, |port_id| {
+                    incoming_connection(scene, &self.layer_id, port_id).and_then(|conn| {
+                        nodes_by_id
+                            .get(conn.from.node_id.as_str())
+                            .and_then(|upstream| {
+                                resolve_connected_vec2_source(upstream, &conn.from.port_id)
+                            })
+                    })
+                })
+            })
+            .unwrap_or_else(|| procedural_positions(driver));
+
+        pack_ilight_buffer(&positions, power, lightness, &colors)
     }
+}
+
+fn resolve_layout_mode(layer_node: &Node) -> IntelligentLightLayoutMode {
+    match layer_node
+        .params
+        .get("layoutMode")
+        .and_then(|value| value.as_str())
+    {
+        Some("manual") => IntelligentLightLayoutMode::Manual,
+        _ => IntelligentLightLayoutMode::Procedural,
+    }
+}
+
+fn clamp_normalized_vec2(position: [f32; 2]) -> [f32; 2] {
+    [position[0].clamp(0.0, 1.0), position[1].clamp(0.0, 1.0)]
+}
+
+pub(crate) fn normalized_to_light_space(position: [f32; 2]) -> (f32, f32) {
+    let [u, v] = clamp_normalized_vec2(position);
+    ((u * 1.8) - 0.9, (v * 1.8) - 0.9)
+}
+
+pub(crate) fn light_space_to_normalized(position: (f32, f32)) -> [f32; 2] {
+    [
+        ((position.0 + 0.9) / 1.8).clamp(0.0, 1.0),
+        ((position.1 + 0.9) / 1.8).clamp(0.0, 1.0),
+    ]
+}
+
+pub(crate) fn procedural_positions(driver: f64) -> [(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT] {
+    let positions = compute_light_positions(driver);
+    positions
+        .map(|(x, y)| [x as f32, y as f32])
+        .map(|[x, y]| (x, y))
+}
+
+fn resolve_connected_vec2_source(node: &Node, output_port_id: &str) -> Option<[f32; 2]> {
+    if node.node_type == "Vector2Input" {
+        return Some([
+            node.params.get("x").and_then(json_f32).unwrap_or(0.0),
+            node.params.get("y").and_then(json_f32).unwrap_or(0.0),
+        ]);
+    }
+
+    parse_vec2_from_params(&node.params, "value")
+        .or_else(|| parse_vec2_from_params(&node.params, output_port_id))
+}
+
+fn resolve_light_positions<F>(
+    layer_node: &Node,
+    driver: f64,
+    mut resolve_connected_position: F,
+) -> [(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT]
+where
+    F: FnMut(&str) -> Option<[f32; 2]>,
+{
+    if resolve_layout_mode(layer_node) == IntelligentLightLayoutMode::Procedural {
+        return procedural_positions(driver);
+    }
+
+    let mut positions = [(0.0f32, 0.0f32); INTELLIGENT_LIGHT_ZONE_COUNT];
+    for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
+        let port_id = format!("pos{index}");
+        let normalized = resolve_connected_position(port_id.as_str())
+            .or_else(|| parse_vec2_from_params(&layer_node.params, port_id.as_str()))
+            .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[index]);
+        positions[index] = normalized_to_light_space(normalized);
+    }
+    positions
 }
 
 fn resolve_color_runtime(
@@ -95,7 +214,10 @@ fn resolve_color_runtime(
             return Some(c);
         }
     }
-    None
+    port_id
+        .strip_prefix("color")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .and_then(|index| DEFAULT_INTELLIGENT_LIGHT_COLORS.get(index).copied())
 }
 
 /// Assemble an `"IntelligentLight"` layer.
@@ -125,11 +247,18 @@ pub(crate) fn assemble_intelligent_light(
     let driver_node_id =
         incoming_connection(scene, layer_id, "driver").map(|conn| conn.from.node_id.clone());
 
-    let mut colors: [[f32; 3]; 11] = [[1.0, 1.0, 1.0]; 11];
-    for i in 0..11 {
+    let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
+    for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
         let port_id = format!("color{i}");
         colors[i] = resolve_color_input(sc, layer_node, layer_id, &port_id);
     }
+    let positions = resolve_light_positions(layer_node, driver as f64, |port_id| {
+        incoming_connection(scene, layer_id, port_id).and_then(|conn| {
+            nodes_by_id
+                .get(conn.from.node_id.as_str())
+                .and_then(|upstream| resolve_connected_vec2_source(upstream, &conn.from.port_id))
+        })
+    });
 
     // ── Intermediate texture (low-res render) ─────────────────────────
 
@@ -166,7 +295,7 @@ pub(crate) fn assemble_intelligent_light(
 
     // Build ilight uniform buffer (CPU-computed light positions + params).
     let ilight_buffer_name: ResourceName = format!("params.sys.ilight.{layer_id}.graph").into();
-    let ilight_values = pack_ilight_buffer(driver as f64, power, lightness, &colors);
+    let ilight_values = pack_ilight_buffer(&positions, power, lightness, &colors);
     let ilight_config = ILightUpdateConfig {
         layer_id: layer_id.to_string(),
         driver_node_id,
@@ -368,7 +497,7 @@ pub(crate) fn assemble_intelligent_light(
 
 /// Resolve a color input for the IntelligentLight node.
 ///
-/// Precedence: incoming connection → node params → white default.
+/// Precedence: incoming connection → node params → node default.
 fn resolve_color_input(
     sc: &SceneContext<'_>,
     layer_node: &Node,
@@ -395,8 +524,11 @@ fn resolve_color_input(
         return c;
     }
 
-    // 3. Default: white.
-    [1.0, 1.0, 1.0]
+    port_id
+        .strip_prefix("color")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .and_then(|index| DEFAULT_INTELLIGENT_LIGHT_COLORS.get(index).copied())
+        .unwrap_or([1.0, 1.0, 1.0])
 }
 
 /// Parse a color value from a params map. Supports:
@@ -432,6 +564,26 @@ fn parse_color_from_params(
         }
     }
 
+    None
+}
+
+fn parse_vec2_from_params(
+    params: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Option<[f32; 2]> {
+    let value = params.get(key)?;
+    if let Some(arr) = value.as_array() {
+        return Some([
+            arr.first().and_then(json_f32).unwrap_or(0.0),
+            arr.get(1).and_then(json_f32).unwrap_or(0.0),
+        ]);
+    }
+    if let Some(obj) = value.as_object() {
+        return Some([
+            obj.get("x").and_then(json_f32).unwrap_or(0.0),
+            obj.get("y").and_then(json_f32).unwrap_or(0.0),
+        ]);
+    }
     None
 }
 
@@ -726,18 +878,17 @@ fn compute_light_positions(chip_rotation: f64) -> [(f64, f64); 11] {
 pub(crate) const ILIGHT_BUFFER_SIZE: u64 = 368;
 
 pub(crate) fn pack_ilight_buffer(
-    driver: f64,
+    positions: &[(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT],
     power: f32,
     lightness: f32,
-    colors: &[[f32; 3]; 11],
+    colors: &[[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT],
 ) -> Vec<u8> {
-    let positions = compute_light_positions(driver);
     let mut bytes = vec![0u8; ILIGHT_BUFFER_SIZE as usize];
     // lights: offset 0, 11 × vec4f
     for (i, &(x, y)) in positions.iter().enumerate() {
         let base = i * 16;
-        bytes[base..base + 4].copy_from_slice(&(x as f32).to_ne_bytes());
-        bytes[base + 4..base + 8].copy_from_slice(&(y as f32).to_ne_bytes());
+        bytes[base..base + 4].copy_from_slice(&x.to_ne_bytes());
+        bytes[base + 4..base + 8].copy_from_slice(&y.to_ne_bytes());
     }
     // params: offset 176, vec4f
     let params_base = 11 * 16;
@@ -760,6 +911,9 @@ pub(crate) fn pack_ilight_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
 
     // ── Spring physics ─────────────────────────────────────────────
 
@@ -933,6 +1087,54 @@ mod tests {
         );
     }
 
+    fn read_light_xy(bytes: &[u8], index: usize) -> (f32, f32) {
+        let base = index * 16;
+        let x = f32::from_ne_bytes(bytes[base..base + 4].try_into().unwrap());
+        let y = f32::from_ne_bytes(bytes[base + 4..base + 8].try_into().unwrap());
+        (x, y)
+    }
+
+    fn read_light_color(bytes: &[u8], index: usize) -> (f32, f32, f32) {
+        let base = (12 * 16) + index * 16;
+        let r = f32::from_ne_bytes(bytes[base..base + 4].try_into().unwrap());
+        let g = f32::from_ne_bytes(bytes[base + 4..base + 8].try_into().unwrap());
+        let b = f32::from_ne_bytes(bytes[base + 8..base + 12].try_into().unwrap());
+        (r, g, b)
+    }
+
+    fn make_test_scene(
+        layer_params: serde_json::Map<String, serde_json::Value>,
+        extra_nodes: Vec<Node>,
+        connections: Vec<Connection>,
+    ) -> SceneDSL {
+        let mut nodes = vec![Node {
+            id: "ilight".to_string(),
+            node_type: "IntelligentLight".to_string(),
+            params: layer_params.into_iter().collect(),
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        }];
+        nodes.extend(extra_nodes);
+
+        SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "ilight".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections,
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        }
+    }
+
     #[test]
     fn test_light_positions_frame1() {
         let mut p = init_physics();
@@ -1012,5 +1214,212 @@ mod tests {
         assert_near(p.flame_spring.value, 0.6999960176188991, 1e-6, "flame@60");
         assert_near(p.on_spring.value, 0.9999928881963317, 1e-6, "onSpring@60");
         assert_near(p.lightness_spring.value, 5.0, 1e-6, "lightness@60");
+    }
+
+    #[test]
+    fn pack_buffer_uses_manual_layout_positions() {
+        let scene = make_test_scene(
+            serde_json::json!({
+                "layoutMode": "manual",
+                "pos0": [0.25, 0.75],
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            driver_node_id: None,
+            driver_fallback: 0.0,
+            power_fallback: 0.0,
+            lightness_fallback: 0.75,
+        };
+
+        let bytes = cfg.pack_buffer(&scene);
+        let (x0, y0) = read_light_xy(&bytes, 0);
+        let (x1, y1) = read_light_xy(&bytes, 1);
+
+        assert_near(x0 as f64, -0.45, 1e-6, "manual light[0].x");
+        assert_near(y0 as f64, 0.45, 1e-6, "manual light[0].y");
+
+        let (expected_x1, expected_y1) =
+            normalized_to_light_space(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[1]);
+        assert_near(x1 as f64, expected_x1 as f64, 1e-6, "default light[1].x");
+        assert_near(y1 as f64, expected_y1 as f64, 1e-6, "default light[1].y");
+    }
+
+    #[test]
+    fn pack_buffer_manual_layout_uses_connected_vector2_input() {
+        let vector_node = Node {
+            id: "vec".to_string(),
+            node_type: "Vector2Input".to_string(),
+            params: serde_json::json!({
+                "x": 0.1,
+                "y": 0.9,
+            })
+            .as_object()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect(),
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        };
+        let scene = make_test_scene(
+            serde_json::json!({
+                "layoutMode": "manual",
+                "pos0": [0.25, 0.75],
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            vec![vector_node],
+            vec![Connection {
+                id: "vec-to-ilight".to_string(),
+                from: Endpoint {
+                    node_id: "vec".to_string(),
+                    port_id: "vector".to_string(),
+                },
+                to: Endpoint {
+                    node_id: "ilight".to_string(),
+                    port_id: "pos0".to_string(),
+                },
+            }],
+        );
+
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            driver_node_id: None,
+            driver_fallback: 0.0,
+            power_fallback: 0.0,
+            lightness_fallback: 0.75,
+        };
+
+        let bytes = cfg.pack_buffer(&scene);
+        let (x0, y0) = read_light_xy(&bytes, 0);
+
+        assert_near(x0 as f64, -0.72, 1e-6, "connected manual light[0].x");
+        assert_near(y0 as f64, 0.72, 1e-6, "connected manual light[0].y");
+    }
+
+    #[test]
+    fn pack_buffer_uses_local_color_params() {
+        let scene = make_test_scene(
+            serde_json::json!({
+                "layoutMode": "manual",
+                "color0": "#44cc88",
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            driver_node_id: None,
+            driver_fallback: 0.0,
+            power_fallback: 0.0,
+            lightness_fallback: 0.75,
+        };
+
+        let bytes = cfg.pack_buffer(&scene);
+        let (r0, g0, b0) = read_light_color(&bytes, 0);
+
+        assert_near(r0 as f64, 0x44 as f64 / 255.0, 1e-6, "local color0.r");
+        assert_near(g0 as f64, 0xcc as f64 / 255.0, 1e-6, "local color0.g");
+        assert_near(b0 as f64, 0x88 as f64 / 255.0, 1e-6, "local color0.b");
+    }
+
+    #[test]
+    fn pack_buffer_uses_connected_color_input() {
+        let color_node = Node {
+            id: "color".to_string(),
+            node_type: "ColorInput".to_string(),
+            params: serde_json::json!({
+                "value": "#abcdef",
+            })
+            .as_object()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect(),
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        };
+        let scene = make_test_scene(
+            serde_json::json!({
+                "layoutMode": "manual",
+                "color0": "#44cc88",
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            vec![color_node],
+            vec![Connection {
+                id: "color-to-ilight".to_string(),
+                from: Endpoint {
+                    node_id: "color".to_string(),
+                    port_id: "color".to_string(),
+                },
+                to: Endpoint {
+                    node_id: "ilight".to_string(),
+                    port_id: "color0".to_string(),
+                },
+            }],
+        );
+
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            driver_node_id: None,
+            driver_fallback: 0.0,
+            power_fallback: 0.0,
+            lightness_fallback: 0.75,
+        };
+
+        let bytes = cfg.pack_buffer(&scene);
+        let (r0, g0, b0) = read_light_color(&bytes, 0);
+
+        assert_near(r0 as f64, 0xab as f64 / 255.0, 1e-6, "connected color0.r");
+        assert_near(g0 as f64, 0xcd as f64 / 255.0, 1e-6, "connected color0.g");
+        assert_near(b0 as f64, 0xef as f64 / 255.0, 1e-6, "connected color0.b");
+    }
+
+    #[test]
+    fn pack_buffer_procedural_layout_ignores_manual_positions() {
+        let scene = make_test_scene(
+            serde_json::json!({
+                "layoutMode": "procedural",
+                "pos0": [0.25, 0.75],
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            driver_node_id: None,
+            driver_fallback: 0.0,
+            power_fallback: 0.0,
+            lightness_fallback: 0.75,
+        };
+
+        let bytes = cfg.pack_buffer(&scene);
+        let (x0, y0) = read_light_xy(&bytes, 0);
+        let expected = compute_light_positions(0.0)[0];
+
+        assert_near(x0 as f64, expected.0, 1e-6, "procedural light[0].x");
+        assert_near(y0 as f64, expected.1, 1e-6, "procedural light[0].y");
     }
 }

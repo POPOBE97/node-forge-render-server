@@ -1171,7 +1171,14 @@ pub fn show_canvas(
     let escape_pressed = plain_shortcuts_enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let design_escape_consumed = if escape_pressed {
         if let Some(session) = app.canvas.design.active.as_mut() {
-            if design::handle_escape(session) {
+            let escape_result = design::handle_escape(session);
+            if escape_result.consumed {
+                frame_result.commands.extend(
+                    escape_result
+                        .patches
+                        .into_iter()
+                        .map(AppCommand::SendDesignParamPatch),
+                );
                 true
             } else {
                 apply_action(

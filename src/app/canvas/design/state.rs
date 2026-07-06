@@ -22,6 +22,7 @@ pub struct CanvasDesignSession {
 #[derive(Clone, Debug)]
 pub enum CanvasDesignToolState {
     MeshGradient(MeshGradientDesignState),
+    IntelligentLight(IntelligentLightDesignState),
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +42,29 @@ impl Default for MeshGradientDesignState {
             color_popover_point: None,
             color_popover_state: ColorPopoverState::default(),
             optimistic_params: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntelligentLightDesignState {
+    pub selected_zone: usize,
+    pub active_drag_zone: Option<usize>,
+    pub color_popover_zone: Option<usize>,
+    pub color_popover_state: ColorPopoverState,
+    pub optimistic_params: HashMap<String, Value>,
+    pub color_edit_original_hex: Option<String>,
+}
+
+impl Default for IntelligentLightDesignState {
+    fn default() -> Self {
+        Self {
+            selected_zone: 0,
+            active_drag_zone: None,
+            color_popover_zone: None,
+            color_popover_state: ColorPopoverState::default(),
+            optimistic_params: HashMap::new(),
+            color_edit_original_hex: None,
         }
     }
 }

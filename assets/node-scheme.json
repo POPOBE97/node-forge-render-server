@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-06T14:59:28.376Z",
+  "generatedAt": "2026-07-06T16:45:34.722Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -2452,6 +2452,61 @@
           }
         },
         {
+          "id": "pos0",
+          "name": "Pos 0",
+          "type": "vector2"
+        },
+        {
+          "id": "pos1",
+          "name": "Pos 1",
+          "type": "vector2"
+        },
+        {
+          "id": "pos2",
+          "name": "Pos 2",
+          "type": "vector2"
+        },
+        {
+          "id": "pos3",
+          "name": "Pos 3",
+          "type": "vector2"
+        },
+        {
+          "id": "pos4",
+          "name": "Pos 4",
+          "type": "vector2"
+        },
+        {
+          "id": "pos5",
+          "name": "Pos 5",
+          "type": "vector2"
+        },
+        {
+          "id": "pos6",
+          "name": "Pos 6",
+          "type": "vector2"
+        },
+        {
+          "id": "pos7",
+          "name": "Pos 7",
+          "type": "vector2"
+        },
+        {
+          "id": "pos8",
+          "name": "Pos 8",
+          "type": "vector2"
+        },
+        {
+          "id": "pos9",
+          "name": "Pos 9",
+          "type": "vector2"
+        },
+        {
+          "id": "pos10",
+          "name": "Pos 10",
+          "type": "vector2"
+        },
+        {
           "id": "color0",
           "name": "Color 0",
           "type": "color",
@@ -2525,7 +2580,9 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {}
+      "defaultParams": {
+        "layoutMode": "procedural"
+      }
     },
     {
       "type": "IntInput",

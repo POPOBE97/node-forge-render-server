@@ -1,4 +1,5 @@
 pub mod interaction;
+pub mod intelligent_light;
 pub mod mesh_gradient;
 pub mod registry;
 pub mod state;
@@ -9,7 +10,7 @@ pub use interaction::{
     DesignInteractionClaims, DesignOverlayInput, DesignOverlayOutput, DesignOverlayStatus,
 };
 use registry::{CanvasDesignToolKind, tool_kind_for_target};
-use state::MeshGradientDesignState;
+use state::{IntelligentLightDesignState, MeshGradientDesignState};
 pub use state::{CanvasDesignSession, CanvasDesignState, CanvasDesignToolState};
 
 use crate::ui::resource_tree::PassDesignTarget;
@@ -34,6 +35,9 @@ pub fn enter_session(
         CanvasDesignToolKind::MeshGradient => {
             CanvasDesignToolState::MeshGradient(MeshGradientDesignState::default())
         }
+        CanvasDesignToolKind::IntelligentLight => {
+            CanvasDesignToolState::IntelligentLight(IntelligentLightDesignState::default())
+        }
     };
 
     Some(CanvasDesignSession {
@@ -45,14 +49,43 @@ pub fn enter_session(
     })
 }
 
-pub fn handle_escape(session: &mut CanvasDesignSession) -> bool {
+pub struct HandleEscapeResult {
+    pub consumed: bool,
+    pub patches: Vec<crate::protocol::DesignParamPatchPayload>,
+}
+
+pub fn handle_escape(session: &mut CanvasDesignSession) -> HandleEscapeResult {
     match &mut session.tool {
         CanvasDesignToolState::MeshGradient(state) => {
             if state.color_popover_point.is_some() {
                 state.color_popover_point = None;
-                true
+                HandleEscapeResult {
+                    consumed: true,
+                    patches: Vec::new(),
+                }
             } else {
-                false
+                HandleEscapeResult {
+                    consumed: false,
+                    patches: Vec::new(),
+                }
+            }
+        }
+        CanvasDesignToolState::IntelligentLight(state) => {
+            if state.color_popover_zone.is_some() {
+                let patch = intelligent_light::cancel_color_edit(
+                    &session.target,
+                    session.session_id.as_str(),
+                    state,
+                );
+                HandleEscapeResult {
+                    consumed: true,
+                    patches: patch.into_iter().collect(),
+                }
+            } else {
+                HandleEscapeResult {
+                    consumed: false,
+                    patches: Vec::new(),
+                }
             }
         }
     }
@@ -90,6 +123,14 @@ pub fn show_active_overlay(
 ) -> DesignOverlayOutput {
     match &mut session.tool {
         CanvasDesignToolState::MeshGradient(state) => mesh_gradient::show_overlay(
+            ui,
+            ctx,
+            &session.target,
+            session.session_id.as_str(),
+            state,
+            input,
+        ),
+        CanvasDesignToolState::IntelligentLight(state) => intelligent_light::show_overlay(
             ui,
             ctx,
             &session.target,
@@ -176,5 +217,22 @@ mod tests {
             Some("before.design")
         );
         assert!(second.owns_preview_texture);
+    }
+
+    #[test]
+    fn intelligent_light_targets_open_design_session() {
+        let target = PassDesignTarget {
+            node_id: "ilight".to_string(),
+            node_type: "IntelligentLight".to_string(),
+            pass_name: "sys.ilight.ilight.upsample.pass".to_string(),
+            target_texture: Some("rt.ilight".to_string()),
+            target_size: Some((640, 480)),
+        };
+        let session = enter_session(None, target, None).expect("ilight design session");
+
+        assert!(matches!(
+            session.tool,
+            CanvasDesignToolState::IntelligentLight(_)
+        ));
     }
 }
