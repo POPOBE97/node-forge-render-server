@@ -418,7 +418,15 @@ fn load_reference_image_from_decoded(
     alpha_mode: RefImageAlphaMode,
 ) -> anyhow::Result<()> {
     let decoded = decode_reference_image(decoded, alpha_mode);
-    load_reference_image_from_decoded_reference(app, ctx, render_state, decoded, name, source, alpha_mode)
+    load_reference_image_from_decoded_reference(
+        app,
+        ctx,
+        render_state,
+        decoded,
+        name,
+        source,
+        alpha_mode,
+    )
 }
 
 fn load_reference_image_from_decoded_reference(
@@ -518,9 +526,7 @@ pub fn load_or_update_android_reference_frame(
     let name = format!("Scrcpy USB {serial} {frame_width}x{frame_height}");
     let source = RefImageSource::AndroidScrcpyUsb(serial.clone());
 
-    if can_update_existing
-        && let Some(reference) = app.canvas.reference.ref_image.as_mut()
-    {
+    if can_update_existing && let Some(reference) = app.canvas.reference.ref_image.as_mut() {
         let gpu_upload_start = Instant::now();
         upload_reference_rgba8(
             app.core.shader_space.queue.as_ref(),
@@ -552,8 +558,11 @@ pub fn load_or_update_android_reference_frame(
         .ref_image
         .as_ref()
         .and_then(|reference| {
-            matches!(&reference.source, RefImageSource::AndroidScrcpyUsb(_))
-                .then_some((reference.mode, reference.opacity, reference.offset))
+            matches!(&reference.source, RefImageSource::AndroidScrcpyUsb(_)).then_some((
+                reference.mode,
+                reference.opacity,
+                reference.offset,
+            ))
         });
 
     let egui_start = Instant::now();
@@ -705,7 +714,9 @@ pub fn sync_from_scene(app: &mut App, ctx: &egui::Context, render_state: &egui_w
                     ctx.request_repaint();
                 }
                 Err(error) => {
-                    eprintln!("[android-reference] failed to start from ReferenceImage source: {error:#}");
+                    eprintln!(
+                        "[android-reference] failed to start from ReferenceImage source: {error:#}"
+                    );
                 }
             }
         }

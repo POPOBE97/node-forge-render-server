@@ -198,7 +198,15 @@ fn is_value_driven_input_node_type(node_type: &str) -> bool {
 fn is_uniform_param_key(key: &str) -> bool {
     matches!(
         key,
-        "value" | "x" | "y" | "z" | "w" | "v" | "rawValue" | "defaultValue" | "minValue"
+        "value"
+            | "x"
+            | "y"
+            | "z"
+            | "w"
+            | "v"
+            | "rawValue"
+            | "defaultValue"
+            | "minValue"
             | "maxValue"
     )
 }

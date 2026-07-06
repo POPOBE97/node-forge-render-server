@@ -341,7 +341,10 @@ pub fn broadcast_pass_target_sizes(hub: &WsHub, snapshot: &ResourceSnapshot, sce
         .iter()
         .filter_map(|pass| {
             let (width, height) = pass.target_size?;
-            Some((pass.name.as_str(), ([width, height], pass.target_texture.clone())))
+            Some((
+                pass.name.as_str(),
+                ([width, height], pass.target_texture.clone()),
+            ))
         })
         .collect();
 

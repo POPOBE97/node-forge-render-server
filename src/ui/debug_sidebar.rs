@@ -583,7 +583,11 @@ fn show_ref_section(
             sidebar_grid_row(ui, |row| {
                 row.place(1, 2, |ui| {
                     sidebar_group_cell(ui, "Source", |ui| {
-                        let label = if android_reference.running { "Stop USB" } else { "USB" };
+                        let label = if android_reference.running {
+                            "Stop USB"
+                        } else {
+                            "USB"
+                        };
                         let tooltip = if android_reference.running {
                             "Stop Android USB reference"
                         } else {

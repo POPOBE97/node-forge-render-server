@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-07-03T09:23:09.466Z",
-    "modified": "2026-07-03T09:23:09.466Z"
+    "created": "2026-07-06T05:50:45.451Z",
+    "modified": "2026-07-06T05:50:45.451Z"
   },
   "nodes": [
     {
@@ -366,9 +366,9 @@
         "uInnerBottom": 0,
         "uInnerGlassColor": [
           1,
-          1,
-          1,
-          1
+          0,
+          0,
+          0.8
         ],
         "uInnerColorWhite": 0,
         "uInnerColorPow": 1,
@@ -944,23 +944,208 @@
         "nodeId": "Vector4Input_82",
         "portId": "w"
       }
+    },
+    {
+      "id": "edge_155",
+      "from": {
+        "nodeId": "Vector4Input_82",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "GlassMaterial_40",
+        "portId": "uBlendLuminanceValues"
+      }
     }
   ],
   "outputs": {
     "composite": "Composite_7"
   },
   "assets": {
+    "0c76d6ca6136": {
+      "path": "assets/0c76d6ca6136.jpg",
+      "originalName": "0c76d6ca6136.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71504
+    },
+    "0e9d07a28d20": {
+      "path": "assets/0e9d07a28d20.jpg",
+      "originalName": "0e9d07a28d20.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "1a123e792811": {
+      "path": "assets/1a123e792811.jpg",
+      "originalName": "1a123e792811.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242956
+    },
+    "1df96118da1e": {
+      "path": "assets/1df96118da1e.jpg",
+      "originalName": "1df96118da1e.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242988
+    },
+    "260525613beb": {
+      "path": "assets/260525613beb.jpg",
+      "originalName": "260525613beb.jpg",
+      "mimeType": "image/jpeg",
+      "size": 253684
+    },
+    "378d49611c97": {
+      "path": "assets/378d49611c97.jpg",
+      "originalName": "378d49611c97.jpg",
+      "mimeType": "image/jpeg",
+      "size": 371922
+    },
+    "44c2808d8d05": {
+      "path": "assets/44c2808d8d05.jpg",
+      "originalName": "44c2808d8d05.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71502
+    },
+    "550377046ca4": {
+      "path": "assets/550377046ca4.jpg",
+      "originalName": "550377046ca4.jpg",
+      "mimeType": "image/jpeg",
+      "size": 404844
+    },
+    "569810770e32": {
+      "path": "assets/569810770e32.jpg",
+      "originalName": "569810770e32.jpg",
+      "mimeType": "image/jpeg",
+      "size": 369225
+    },
+    "5c8685a3cd6c": {
+      "path": "assets/5c8685a3cd6c.jpg",
+      "originalName": "5c8685a3cd6c.jpg",
+      "mimeType": "image/jpeg",
+      "size": 475231
+    },
     "61fea0e0acb1": {
       "path": "assets/61fea0e0acb1.jpg",
       "originalName": "_11_91去玩_来自小红书网页版.jpg",
       "mimeType": "image/jpeg",
       "size": 416604
     },
+    "63ec9114e1db": {
+      "path": "assets/63ec9114e1db.jpg",
+      "originalName": "63ec9114e1db.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "709ef12a1d12": {
+      "path": "assets/709ef12a1d12.jpg",
+      "originalName": "709ef12a1d12.jpg",
+      "mimeType": "image/jpeg",
+      "size": 355910
+    },
+    "73560afcb7a7": {
+      "path": "assets/73560afcb7a7.jpg",
+      "originalName": "73560afcb7a7.jpg",
+      "mimeType": "image/jpeg",
+      "size": 489395
+    },
+    "7fb4ec5608c3": {
+      "path": "assets/7fb4ec5608c3.jpg",
+      "originalName": "7fb4ec5608c3.jpg",
+      "mimeType": "image/jpeg",
+      "size": 411289
+    },
+    "83fd614913be": {
+      "path": "assets/83fd614913be.jpg",
+      "originalName": "83fd614913be.jpg",
+      "mimeType": "image/jpeg",
+      "size": 166112
+    },
+    "86020510ff0c": {
+      "path": "assets/86020510ff0c.jpg",
+      "originalName": "86020510ff0c.jpg",
+      "mimeType": "image/jpeg",
+      "size": 367314
+    },
+    "88ebde91c0d0": {
+      "path": "assets/88ebde91c0d0.jpg",
+      "originalName": "88ebde91c0d0.jpg",
+      "mimeType": "image/jpeg",
+      "size": 454470
+    },
+    "95ff5c034fe8": {
+      "path": "assets/95ff5c034fe8.jpg",
+      "originalName": "95ff5c034fe8.jpg",
+      "mimeType": "image/jpeg",
+      "size": 306154
+    },
+    "9730b5e822cc": {
+      "path": "assets/9730b5e822cc.jpg",
+      "originalName": "9730b5e822cc.jpg",
+      "mimeType": "image/jpeg",
+      "size": 350752
+    },
+    "a3a9888574c6": {
+      "path": "assets/a3a9888574c6.jpg",
+      "originalName": "a3a9888574c6.jpg",
+      "mimeType": "image/jpeg",
+      "size": 447911
+    },
+    "aa92a21563f3": {
+      "path": "assets/aa92a21563f3.jpg",
+      "originalName": "aa92a21563f3.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "ab333f28da2f": {
+      "path": "assets/ab333f28da2f.jpg",
+      "originalName": "ab333f28da2f.jpg",
+      "mimeType": "image/jpeg",
+      "size": 401158
+    },
+    "cc771ac4115d": {
+      "path": "assets/cc771ac4115d.jpg",
+      "originalName": "cc771ac4115d.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71506
+    },
+    "d56092b9a9ea": {
+      "path": "assets/d56092b9a9ea.jpg",
+      "originalName": "d56092b9a9ea.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "d710ffa828a9": {
+      "path": "assets/d710ffa828a9.jpg",
+      "originalName": "d710ffa828a9.jpg",
+      "mimeType": "image/jpeg",
+      "size": 674306
+    },
+    "e22319c35c54": {
+      "path": "assets/e22319c35c54.jpg",
+      "originalName": "e22319c35c54.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "e8f18ab7d8df": {
+      "path": "assets/e8f18ab7d8df.jpg",
+      "originalName": "e8f18ab7d8df.jpg",
+      "mimeType": "image/jpeg",
+      "size": 297819
+    },
+    "ed44674b5f51": {
+      "path": "assets/ed44674b5f51.jpg",
+      "originalName": "ed44674b5f51.jpg",
+      "mimeType": "image/jpeg",
+      "size": 506432
+    },
     "f2170557f733": {
       "path": "assets/f2170557f733.jpg",
       "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
       "mimeType": "image/jpeg",
       "size": 111465
+    },
+    "f3f2d92632a4": {
+      "path": "assets/f3f2d92632a4.jpg",
+      "originalName": "f3f2d92632a4.jpg",
+      "mimeType": "image/jpeg",
+      "size": 337556
     }
   },
   "groups": [
@@ -1055,30 +1240,6 @@
       ],
       "nodes": [
         {
-          "id": "ImageTexture_48",
-          "type": "ImageTexture",
-          "position": {
-            "x": 600,
-            "y": 60
-          },
-          "width": 192,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "61fea0e0acb1",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
-        },
-        {
           "id": "ColorMix_50",
           "type": "ColorMix",
           "position": {
@@ -1102,86 +1263,6 @@
               1
             ]
           }
-        },
-        {
-          "id": "ImageTexture_57",
-          "type": "ImageTexture",
-          "position": {
-            "x": 600,
-            "y": 0
-          },
-          "width": 192,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "f2170557f733",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
-        },
-        {
-          "id": "ResourcePool_69",
-          "type": "ResourcePool",
-          "position": {
-            "x": 820,
-            "y": 0
-          },
-          "width": 160,
-          "label": "Resource Pool",
-          "params": {
-            "selectedIndex": 1
-          },
-          "inputs": [
-            {
-              "id": "dynamic_1779794651875_1",
-              "name": "input1",
-              "type": "color"
-            },
-            {
-              "id": "dynamic_1779794654344_2",
-              "name": "input2",
-              "type": "color"
-            }
-          ],
-          "outputs": [
-            {
-              "id": "output",
-              "name": "Output",
-              "type": "color"
-            }
-          ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1779794651875_1",
-              "label": "input1",
-              "variableName": "input1",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_57",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1779794654344_2",
-              "label": "input2",
-              "variableName": "input2",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_48",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            }
-          ]
         },
         {
           "id": "GuassianBlurPass_42",
@@ -1221,42 +1302,1289 @@
               1
             ]
           }
+        },
+        {
+          "id": "ResourcePool_70",
+          "type": "ResourcePool",
+          "position": {
+            "x": 840,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Resource Pool",
+          "params": {
+            "selectedIndex": 1
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1783316924086_1",
+              "name": "input1",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924130_2",
+              "name": "input2",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924158_3",
+              "name": "input3",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924201_4",
+              "name": "input4",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924271_5",
+              "name": "input5",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924295_6",
+              "name": "input6",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924313_7",
+              "name": "input7",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924389_8",
+              "name": "input8",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924411_9",
+              "name": "input9",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924425_10",
+              "name": "input10",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924440_11",
+              "name": "input11",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924464_12",
+              "name": "input12",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924524_13",
+              "name": "input13",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924601_14",
+              "name": "input14",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924618_15",
+              "name": "input15",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924636_16",
+              "name": "input16",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924654_17",
+              "name": "input17",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924695_18",
+              "name": "input18",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924854_19",
+              "name": "input19",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924878_20",
+              "name": "input20",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924894_21",
+              "name": "input21",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924920_22",
+              "name": "input22",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924939_23",
+              "name": "input23",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316924957_24",
+              "name": "input24",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925014_25",
+              "name": "input25",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925121_26",
+              "name": "input26",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925145_27",
+              "name": "input27",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925168_28",
+              "name": "input28",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925197_29",
+              "name": "input29",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925370_30",
+              "name": "input30",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783316925404_31",
+              "name": "input31",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "color"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1783316924086_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_71",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924130_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_72",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924158_3",
+              "label": "input3",
+              "variableName": "input3",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_73",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924201_4",
+              "label": "input4",
+              "variableName": "input4",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_74",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924271_5",
+              "label": "input5",
+              "variableName": "input5",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_75",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924295_6",
+              "label": "input6",
+              "variableName": "input6",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_76",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924313_7",
+              "label": "input7",
+              "variableName": "input7",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_77",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924389_8",
+              "label": "input8",
+              "variableName": "input8",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_78",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924411_9",
+              "label": "input9",
+              "variableName": "input9",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_79",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924425_10",
+              "label": "input10",
+              "variableName": "input10",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_80",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924440_11",
+              "label": "input11",
+              "variableName": "input11",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_81",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924464_12",
+              "label": "input12",
+              "variableName": "input12",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_82",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924524_13",
+              "label": "input13",
+              "variableName": "input13",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_83",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924601_14",
+              "label": "input14",
+              "variableName": "input14",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_84",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924618_15",
+              "label": "input15",
+              "variableName": "input15",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_85",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924636_16",
+              "label": "input16",
+              "variableName": "input16",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_86",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924654_17",
+              "label": "input17",
+              "variableName": "input17",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_87",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924695_18",
+              "label": "input18",
+              "variableName": "input18",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_88",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924854_19",
+              "label": "input19",
+              "variableName": "input19",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_89",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924878_20",
+              "label": "input20",
+              "variableName": "input20",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_90",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924894_21",
+              "label": "input21",
+              "variableName": "input21",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_91",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924920_22",
+              "label": "input22",
+              "variableName": "input22",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_92",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924939_23",
+              "label": "input23",
+              "variableName": "input23",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_93",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316924957_24",
+              "label": "input24",
+              "variableName": "input24",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_94",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925014_25",
+              "label": "input25",
+              "variableName": "input25",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_95",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925121_26",
+              "label": "input26",
+              "variableName": "input26",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_96",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925145_27",
+              "label": "input27",
+              "variableName": "input27",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_97",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925168_28",
+              "label": "input28",
+              "variableName": "input28",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_98",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925197_29",
+              "label": "input29",
+              "variableName": "input29",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_99",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925370_30",
+              "label": "input30",
+              "variableName": "input30",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_100",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783316925404_31",
+              "label": "input31",
+              "variableName": "input31",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_101",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "ImageTexture_71",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "0c76d6ca6136",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_72",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 60
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "0e9d07a28d20",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_73",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 120
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "1a123e792811",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_74",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 180
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "1df96118da1e",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_75",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 240
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "5c8685a3cd6c",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_76",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 300
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "7fb4ec5608c3",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_77",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 360
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "44c2808d8d05",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_78",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 420
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "61fea0e0acb1",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_79",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 480
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "63ec9114e1db",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_80",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 540
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "83fd614913be",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_81",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 600
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "88ebde91c0d0",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_82",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 660
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "95ff5c034fe8",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_83",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 720
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "378d49611c97",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_84",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 780
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "709ef12a1d12",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_85",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 840
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "9730b5e822cc",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_86",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 900
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "73560afcb7a7",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_87",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 960
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "86020510ff0c",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_88",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1020
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "260525613beb",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_89",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1080
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "550377046ca4",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_90",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1140
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "569810770e32",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_91",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1200
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "a3a9888574c6",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_92",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1260
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "aa92a21563f3",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_93",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1320
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "ab333f28da2f",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_94",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1380
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "cc771ac4115d",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_95",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1440
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "d710ffa828a9",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_96",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1500
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "d56092b9a9ea",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_97",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1560
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "e8f18ab7d8df",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_98",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1620
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "e22319c35c54",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_99",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1680
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "ed44674b5f51",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_100",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1740
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f3f2d92632a4",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_101",
+          "type": "ImageTexture",
+          "position": {
+            "x": 660,
+            "y": 1800
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "f2170557f733",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "MidiInput_102",
+          "type": "MidiInput",
+          "position": {
+            "x": 660,
+            "y": -200
+          },
+          "width": 160,
+          "label": "MIDI Input",
+          "params": {
+            "knob": "12",
+            "defaultValue": 0,
+            "minValue": 0,
+            "maxValue": 31
+          }
         }
       ],
       "connections": [
-        {
-          "id": "edge_131",
-          "from": {
-            "nodeId": "ImageTexture_57",
-            "portId": "color"
-          },
-          "to": {
-            "nodeId": "ResourcePool_69",
-            "portId": "dynamic_1779794651875_1"
-          }
-        },
-        {
-          "id": "edge_132",
-          "from": {
-            "nodeId": "ImageTexture_48",
-            "portId": "color"
-          },
-          "to": {
-            "nodeId": "ResourcePool_69",
-            "portId": "dynamic_1779794654344_2"
-          }
-        },
-        {
-          "id": "edge_133",
-          "from": {
-            "nodeId": "ResourcePool_69",
-            "portId": "output"
-          },
-          "to": {
-            "nodeId": "ColorMix_50",
-            "portId": "color0"
-          }
-        },
         {
           "id": "edge_134",
           "from": {
@@ -1266,6 +2594,369 @@
           "to": {
             "nodeId": "GuassianBlurPass_42",
             "portId": "pass"
+          }
+        },
+        {
+          "id": "edge_135",
+          "from": {
+            "nodeId": "ImageTexture_71",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924086_1"
+          }
+        },
+        {
+          "id": "edge_136",
+          "from": {
+            "nodeId": "ImageTexture_72",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924130_2"
+          }
+        },
+        {
+          "id": "edge_137",
+          "from": {
+            "nodeId": "ImageTexture_73",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924158_3"
+          }
+        },
+        {
+          "id": "edge_138",
+          "from": {
+            "nodeId": "ImageTexture_74",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924201_4"
+          }
+        },
+        {
+          "id": "edge_139",
+          "from": {
+            "nodeId": "ImageTexture_75",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924271_5"
+          }
+        },
+        {
+          "id": "edge_140",
+          "from": {
+            "nodeId": "ImageTexture_76",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924295_6"
+          }
+        },
+        {
+          "id": "edge_141",
+          "from": {
+            "nodeId": "ImageTexture_77",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924313_7"
+          }
+        },
+        {
+          "id": "edge_142",
+          "from": {
+            "nodeId": "ImageTexture_78",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924389_8"
+          }
+        },
+        {
+          "id": "edge_143",
+          "from": {
+            "nodeId": "ImageTexture_79",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924411_9"
+          }
+        },
+        {
+          "id": "edge_144",
+          "from": {
+            "nodeId": "ImageTexture_80",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924425_10"
+          }
+        },
+        {
+          "id": "edge_145",
+          "from": {
+            "nodeId": "ImageTexture_81",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924440_11"
+          }
+        },
+        {
+          "id": "edge_146",
+          "from": {
+            "nodeId": "ImageTexture_82",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924464_12"
+          }
+        },
+        {
+          "id": "edge_147",
+          "from": {
+            "nodeId": "ImageTexture_83",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924524_13"
+          }
+        },
+        {
+          "id": "edge_148",
+          "from": {
+            "nodeId": "ImageTexture_84",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924601_14"
+          }
+        },
+        {
+          "id": "edge_149",
+          "from": {
+            "nodeId": "ImageTexture_85",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924618_15"
+          }
+        },
+        {
+          "id": "edge_150",
+          "from": {
+            "nodeId": "ImageTexture_86",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924636_16"
+          }
+        },
+        {
+          "id": "edge_151",
+          "from": {
+            "nodeId": "ImageTexture_87",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924654_17"
+          }
+        },
+        {
+          "id": "edge_152",
+          "from": {
+            "nodeId": "ImageTexture_88",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924695_18"
+          }
+        },
+        {
+          "id": "edge_153",
+          "from": {
+            "nodeId": "ImageTexture_89",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924854_19"
+          }
+        },
+        {
+          "id": "edge_154",
+          "from": {
+            "nodeId": "ImageTexture_90",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924878_20"
+          }
+        },
+        {
+          "id": "edge_155",
+          "from": {
+            "nodeId": "ImageTexture_91",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924894_21"
+          }
+        },
+        {
+          "id": "edge_156",
+          "from": {
+            "nodeId": "ImageTexture_92",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924920_22"
+          }
+        },
+        {
+          "id": "edge_157",
+          "from": {
+            "nodeId": "ImageTexture_93",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924939_23"
+          }
+        },
+        {
+          "id": "edge_158",
+          "from": {
+            "nodeId": "ImageTexture_94",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316924957_24"
+          }
+        },
+        {
+          "id": "edge_159",
+          "from": {
+            "nodeId": "ImageTexture_95",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925014_25"
+          }
+        },
+        {
+          "id": "edge_160",
+          "from": {
+            "nodeId": "ImageTexture_96",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925121_26"
+          }
+        },
+        {
+          "id": "edge_161",
+          "from": {
+            "nodeId": "ImageTexture_97",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925145_27"
+          }
+        },
+        {
+          "id": "edge_162",
+          "from": {
+            "nodeId": "ImageTexture_98",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925168_28"
+          }
+        },
+        {
+          "id": "edge_163",
+          "from": {
+            "nodeId": "ImageTexture_99",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925197_29"
+          }
+        },
+        {
+          "id": "edge_164",
+          "from": {
+            "nodeId": "ImageTexture_100",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925370_30"
+          }
+        },
+        {
+          "id": "edge_165",
+          "from": {
+            "nodeId": "ImageTexture_101",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "dynamic_1783316925404_31"
+          }
+        },
+        {
+          "id": "edge_166",
+          "from": {
+            "nodeId": "ResourcePool_70",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ColorMix_50",
+            "portId": "color0"
+          }
+        },
+        {
+          "id": "edge_167",
+          "from": {
+            "nodeId": "MidiInput_102",
+            "portId": "value"
+          },
+          "to": {
+            "nodeId": "ResourcePool_70",
+            "portId": "selectedIndex"
           }
         }
       ],

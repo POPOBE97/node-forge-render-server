@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use anyhow::{anyhow, bail, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow, bail};
+use serde_json::{Value, json};
 
-use crate::dsl::{resolve_input_f32, Connection, GroupDSL, InputBinding, Node, NodePort, SceneDSL};
+use crate::dsl::{Connection, GroupDSL, InputBinding, Node, NodePort, SceneDSL, resolve_input_f32};
 use crate::renderer::types::{
     GraphBindingKind, GraphField, GraphFieldKind, GraphSchema, PassBindings,
 };
