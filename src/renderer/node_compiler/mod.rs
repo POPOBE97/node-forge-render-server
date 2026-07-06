@@ -110,8 +110,9 @@ fn meaningful_node_label(node: &Node) -> Option<&str> {
     match readable_label.as_str() {
         "multiply" | "add" | "subtract" | "divide" | "math" | "math_closure" | "image_texture"
         | "pass_texture" | "vector_math" | "remap" | "luminance" | "normalize" | "refract"
-        | "dot_product" | "cross_product" | "color_mix" | "float_input" | "vector2_input"
-        | "vector3_input" | "vector4_input" | "color_input" | "bool_input" | "int_input" => None,
+        | "dot_product" | "cross_product" | "color_mix" | "float_input" | "midi_input"
+        | "vector2_input" | "vector3_input" | "vector4_input" | "color_input" | "bool_input"
+        | "int_input" => None,
         _ => Some(label),
     }
 }
@@ -168,6 +169,7 @@ fn is_input_like_node(node_type: &str) -> bool {
         "BoolInput"
             | "ColorInput"
             | "FloatInput"
+            | "MidiInput"
             | "IntInput"
             | "Vector2Input"
             | "Vector3Input"
@@ -243,6 +245,7 @@ fn is_pure_group_node_type(node_type: &str) -> bool {
         "BoolInput"
             | "ColorInput"
             | "FloatInput"
+            | "MidiInput"
             | "IntInput"
             | "Vector2Input"
             | "Vector3Input"
@@ -836,7 +839,9 @@ fn compile_expr(
         // Input nodes
         "BoolInput" => input_nodes::compile_bool_input(node, out_port, ctx)?,
         "ColorInput" => input_nodes::compile_color_input(node, out_port, ctx)?,
-        "FloatInput" | "IntInput" => input_nodes::compile_float_or_int_input(node, out_port, ctx)?,
+        "FloatInput" | "MidiInput" | "IntInput" => {
+            input_nodes::compile_float_or_int_input(node, out_port, ctx)?
+        }
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,

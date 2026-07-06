@@ -592,6 +592,21 @@ fn parse_f64(params: &HashMap<String, serde_json::Value>, key: &str) -> Option<f
     }
 }
 
+fn resolve_midi_input_f64(params: &HashMap<String, serde_json::Value>) -> f64 {
+    let default = parse_f64(params, "defaultValue")
+        .or_else(|| parse_f64(params, "value"))
+        .unwrap_or(0.0);
+
+    let Some(raw) = parse_f64(params, "rawValue") else {
+        return default;
+    };
+
+    let min = parse_f64(params, "minValue").unwrap_or(0.0);
+    let max = parse_f64(params, "maxValue").unwrap_or(1.0);
+    let t = raw.clamp(0.0, 127.0) / 127.0;
+    min + (max - min) * t
+}
+
 fn f64_to_u32_floor(v: f64) -> Option<u32> {
     if !v.is_finite() {
         return None;
@@ -840,6 +855,12 @@ fn resolve_output_f64_inner(
             }
         }
         "FloatInput" | "IntInput" => parse_f64(&node.params, "value").unwrap_or(0.0),
+        "MidiInput" => {
+            if out_port != "value" {
+                bail!("unsupported MidiInput output port: {out_port}");
+            }
+            resolve_midi_input_f64(&node.params)
+        }
         "MathAdd" => {
             if out_port != "result" {
                 bail!("unsupported MathAdd output port: {out_port}");

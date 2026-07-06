@@ -185,12 +185,22 @@ pub fn apply_scene_delta(cache: &mut SceneCache, delta: &SceneDelta) {
 fn is_value_driven_input_node_type(node_type: &str) -> bool {
     matches!(
         node_type,
-        "BoolInput" | "FloatInput" | "IntInput" | "Vector2Input" | "Vector3Input" | "ColorInput"
+        "BoolInput"
+            | "FloatInput"
+            | "MidiInput"
+            | "IntInput"
+            | "Vector2Input"
+            | "Vector3Input"
+            | "ColorInput"
     )
 }
 
 fn is_uniform_param_key(key: &str) -> bool {
-    matches!(key, "value" | "x" | "y" | "z" | "w" | "v")
+    matches!(
+        key,
+        "value" | "x" | "y" | "z" | "w" | "v" | "rawValue" | "defaultValue" | "minValue"
+            | "maxValue"
+    )
 }
 
 fn node_params_changed_only_uniform_keys(
@@ -431,6 +441,38 @@ mod tests {
                     "FloatInput",
                     json!({"value": 0.75, "min": 0.0}),
                 )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            state_machine: None,
+            debug_artifacts: None,
+            assets_added: None,
+            assets_removed: None,
+        };
+        assert!(delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_accepts_midi_raw_value_change() {
+        let mut scene = base_scene();
+        scene.nodes[0] = node(
+            "MidiInput_1",
+            "MidiInput",
+            json!({"knob": "0", "defaultValue": 0.0, "minValue": 0.0, "maxValue": 1.0}),
+        );
+        scene.connections[0].from.node_id = "MidiInput_1".to_string();
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node("MidiInput_1", "MidiInput", json!({"rawValue": 64}))],
                 removed: Vec::new(),
             },
             connections: SceneDeltaConnections {

@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-07-02T08:56:53.356Z",
-    "modified": "2026-07-02T08:56:53.356Z"
+    "created": "2026-07-03T09:23:09.466Z",
+    "modified": "2026-07-03T09:23:09.466Z"
   },
   "nodes": [
     {
@@ -572,6 +572,90 @@
       "params": {
         "value": 0
       }
+    },
+    {
+      "id": "Vector4Input_82",
+      "type": "Vector4Input",
+      "position": {
+        "x": -200,
+        "y": 100
+      },
+      "width": 160,
+      "label": "Vector4 Input",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 0
+      }
+    },
+    {
+      "id": "MidiInput_83",
+      "type": "MidiInput",
+      "position": {
+        "x": -420,
+        "y": 100
+      },
+      "width": 160,
+      "label": "MIDI Input",
+      "params": {
+        "knob": "0",
+        "defaultValue": 0,
+        "minValue": 0,
+        "maxValue": 2,
+        "_uiCollapsed": false
+      }
+    },
+    {
+      "id": "MidiInput_84",
+      "type": "MidiInput",
+      "position": {
+        "x": -420,
+        "y": 300
+      },
+      "width": 160,
+      "label": "MIDI Input",
+      "params": {
+        "knob": "1",
+        "defaultValue": 0.333,
+        "minValue": 0,
+        "maxValue": 2,
+        "_uiCollapsed": false
+      }
+    },
+    {
+      "id": "MidiInput_85",
+      "type": "MidiInput",
+      "position": {
+        "x": -420,
+        "y": 500
+      },
+      "width": 160,
+      "label": "MIDI Input",
+      "params": {
+        "knob": "2",
+        "defaultValue": 0.666666667,
+        "minValue": 0,
+        "maxValue": 2,
+        "_uiCollapsed": false
+      }
+    },
+    {
+      "id": "MidiInput_86",
+      "type": "MidiInput",
+      "position": {
+        "x": -420,
+        "y": 700
+      },
+      "width": 160,
+      "label": "MIDI Input",
+      "params": {
+        "knob": "3",
+        "defaultValue": 1,
+        "minValue": 0,
+        "maxValue": 2,
+        "_uiCollapsed": false
+      }
     }
   ],
   "connections": [
@@ -816,6 +900,50 @@
         "nodeId": "GroupInstance_79",
         "portId": "in_1"
       }
+    },
+    {
+      "id": "edge_150",
+      "from": {
+        "nodeId": "MidiInput_83",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Vector4Input_82",
+        "portId": "x"
+      }
+    },
+    {
+      "id": "edge_152",
+      "from": {
+        "nodeId": "MidiInput_84",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Vector4Input_82",
+        "portId": "y"
+      }
+    },
+    {
+      "id": "edge_153",
+      "from": {
+        "nodeId": "MidiInput_85",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Vector4Input_82",
+        "portId": "z"
+      }
+    },
+    {
+      "id": "edge_154",
+      "from": {
+        "nodeId": "MidiInput_86",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "Vector4Input_82",
+        "portId": "w"
+      }
     }
   ],
   "outputs": {
@@ -827,12 +955,6 @@
       "originalName": "_11_91去玩_来自小红书网页版.jpg",
       "mimeType": "image/jpeg",
       "size": 416604
-    },
-    "762325f2042e": {
-      "path": "assets/762325f2042e.png",
-      "originalName": "test.png",
-      "mimeType": "image/png",
-      "size": 1712450
     },
     "f2170557f733": {
       "path": "assets/f2170557f733.jpg",
@@ -1555,6 +1677,16 @@
             "type": "float"
           },
           {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
+          },
+          {
             "id": "sceneElapsedTime",
             "name": "Scene Elapsed Time",
             "type": "float"
@@ -1587,16 +1719,6 @@
           {
             "id": "Vector2Input_65:y",
             "name": "Offset.y",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.x",
-            "name": "Mouse Position X",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.y",
-            "name": "Mouse Position Y",
             "type": "float"
           }
         ],
@@ -1673,6 +1795,16 @@
             "type": "float"
           },
           {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
+          },
+          {
             "id": "sceneElapsedTime",
             "name": "Scene Elapsed Time",
             "type": "float"
@@ -1703,13 +1835,23 @@
             "type": "float"
           },
           {
-            "id": "mouse.position.x",
-            "name": "Mouse Position X",
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
             "type": "float"
           },
           {
-            "id": "mouse.position.y",
-            "name": "Mouse Position Y",
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
             "type": "float"
           }
         ],
@@ -1743,6 +1885,26 @@
             "id": "Vector3Input_67:z",
             "name": "Vector3 Input.z",
             "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
+            "type": "float"
           }
         ],
         "nodes": [
@@ -1755,7 +1917,7 @@
             },
             "label": "Float Input",
             "params": {
-              "value": 1
+              "value": 1.5
             },
             "inputs": [],
             "outputs": [

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use anyhow::{Result, anyhow, bail};
-use serde_json::{Value, json};
+use anyhow::{anyhow, bail, Result};
+use serde_json::{json, Value};
 
-use crate::dsl::{Connection, GroupDSL, InputBinding, Node, NodePort, SceneDSL};
+use crate::dsl::{resolve_input_f32, Connection, GroupDSL, InputBinding, Node, NodePort, SceneDSL};
 use crate::renderer::types::{
     GraphBindingKind, GraphField, GraphFieldKind, GraphSchema, PassBindings,
 };
@@ -12,6 +12,7 @@ use crate::renderer::utils::sanitize_wgsl_ident;
 pub fn graph_field_kind_for_node_type(node_type: &str) -> Option<GraphFieldKind> {
     match node_type {
         "FloatInput" => Some(GraphFieldKind::F32),
+        "MidiInput" => Some(GraphFieldKind::F32),
         "IntInput" => Some(GraphFieldKind::I32),
         "BoolInput" => Some(GraphFieldKind::Bool),
         "Vector2Input" => Some(GraphFieldKind::Vec2),
@@ -97,6 +98,32 @@ fn parse_const_f32(node: &Node) -> Option<f32> {
         .or_else(|| parse_json_number_f32(node.params.get("v")?))
 }
 
+fn parse_midi_input_f32(node: &Node) -> f32 {
+    let default = node
+        .params
+        .get("defaultValue")
+        .and_then(parse_json_number_f32)
+        .or_else(|| node.params.get("value").and_then(parse_json_number_f32))
+        .unwrap_or(0.0);
+
+    let Some(raw) = node.params.get("rawValue").and_then(parse_json_number_f32) else {
+        return default;
+    };
+
+    let min = node
+        .params
+        .get("minValue")
+        .and_then(parse_json_number_f32)
+        .unwrap_or(0.0);
+    let max = node
+        .params
+        .get("maxValue")
+        .and_then(parse_json_number_f32)
+        .unwrap_or(1.0);
+    let t = raw.clamp(0.0, 127.0) / 127.0;
+    min + (max - min) * t
+}
+
 fn parse_const_bool(node: &Node) -> Option<bool> {
     node.params.get("value")?.as_bool()
 }
@@ -144,6 +171,19 @@ fn parse_vec4_xyzw(node: &Node) -> Option<[f32; 4]> {
     Some([read("x"), read("y"), read("z"), read("w")])
 }
 
+fn resolve_graph_input_component(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    node: &Node,
+    port_id: &str,
+    fallback: f32,
+) -> f32 {
+    resolve_input_f32(scene, nodes_by_id, &node.id, port_id)
+        .ok()
+        .flatten()
+        .unwrap_or(fallback)
+}
+
 fn write_f32_slot(dst: &mut [u8], slot_index: usize, values: [f32; 4]) {
     let base = slot_index * 16;
     for (i, v) in values.into_iter().enumerate() {
@@ -168,6 +208,20 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
         .iter()
         .map(|n| (n.id.as_str(), n))
         .collect::<HashMap<_, _>>();
+    let needs_resolved_inputs = schema.fields.iter().any(|field| {
+        matches!(
+            field.kind,
+            GraphFieldKind::Vec2 | GraphFieldKind::Vec3 | GraphFieldKind::Vec4
+        )
+    });
+    let resolved_nodes_by_id = needs_resolved_inputs.then(|| {
+        scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect::<HashMap<_, _>>()
+    });
 
     let mut bytes = vec![0_u8; schema.size_bytes as usize];
     for (slot_index, field) in schema.fields.iter().enumerate() {
@@ -178,7 +232,11 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
 
         match field.kind {
             GraphFieldKind::F32 => {
-                let v = parse_const_f32(node).unwrap_or(0.0);
+                let v = if node.node_type == "MidiInput" {
+                    parse_midi_input_f32(node)
+                } else {
+                    parse_const_f32(node).unwrap_or(0.0)
+                };
                 write_f32_slot(&mut bytes, slot_index, [v, 0.0, 0.0, 0.0]);
             }
             GraphFieldKind::I32 => {
@@ -194,15 +252,47 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_i32_slot(&mut bytes, slot_index, [v, 0, 0, 0]);
             }
             GraphFieldKind::Vec2 => {
-                let v = parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let fallback =
+                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                    [
+                        resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
+                        resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
+                        0.0,
+                        0.0,
+                    ]
+                } else {
+                    fallback
+                };
                 write_f32_slot(&mut bytes, slot_index, [v[0], v[1], 0.0, 0.0]);
             }
             GraphFieldKind::Vec3 => {
-                let v = parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let fallback =
+                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                    [
+                        resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
+                        resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
+                        resolve_graph_input_component(scene, resolved, node, "z", fallback[2]),
+                        0.0,
+                    ]
+                } else {
+                    fallback
+                };
                 write_f32_slot(&mut bytes, slot_index, [v[0], v[1], v[2], 0.0]);
             }
             GraphFieldKind::Vec4 => {
-                let v = parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let fallback = parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                    [
+                        resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
+                        resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
+                        resolve_graph_input_component(scene, resolved, node, "z", fallback[2]),
+                        resolve_graph_input_component(scene, resolved, node, "w", fallback[3]),
+                    ]
+                } else {
+                    fallback
+                };
                 write_f32_slot(&mut bytes, slot_index, v);
             }
             GraphFieldKind::Vec4Color => {
@@ -220,6 +310,7 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
         node_type,
         "BoolInput"
             | "FloatInput"
+            | "MidiInput"
             | "IntInput"
             | "Vector2Input"
             | "Vector3Input"
@@ -239,7 +330,19 @@ fn canonicalized_params(
         }
         if ignored_input_value_node_ids.contains(node.id.as_str())
             && is_value_driven_input_node(node.node_type.as_str())
-            && matches!(k.as_str(), "value" | "x" | "y" | "z" | "w" | "v")
+            && matches!(
+                k.as_str(),
+                "value"
+                    | "x"
+                    | "y"
+                    | "z"
+                    | "w"
+                    | "v"
+                    | "rawValue"
+                    | "defaultValue"
+                    | "minValue"
+                    | "maxValue"
+            )
         {
             continue;
         }
@@ -662,6 +765,130 @@ mod tests {
         assert_eq!(f0, 3.0);
         let b0 = i32::from_ne_bytes(bytes[16..20].try_into().unwrap());
         assert_eq!(b0, 1);
+    }
+
+    #[test]
+    fn pack_graph_values_maps_midi_raw_value_to_range() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "midi".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                make_node(
+                    "MidiInput_1",
+                    "MidiInput",
+                    json!({"rawValue": 127, "defaultValue": 0.25, "minValue": -1.0, "maxValue": 1.0}),
+                ),
+                make_node("MidiInput_2", "MidiInput", json!({"defaultValue": 0.25})),
+            ],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let schema = GraphSchema {
+            fields: vec![
+                GraphField {
+                    node_id: "MidiInput_1".to_string(),
+                    field_name: "midi_one".to_string(),
+                    kind: GraphFieldKind::F32,
+                },
+                GraphField {
+                    node_id: "MidiInput_2".to_string(),
+                    field_name: "midi_two".to_string(),
+                    kind: GraphFieldKind::F32,
+                },
+            ],
+            size_bytes: 32,
+        };
+
+        let bytes = pack_graph_values(&scene, &schema).unwrap();
+        let mapped = f32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+        let fallback = f32::from_ne_bytes(bytes[16..20].try_into().unwrap());
+        assert_eq!(mapped, 1.0);
+        assert_eq!(fallback, 0.25);
+    }
+
+    #[test]
+    fn pack_graph_values_resolves_vector4_input_component_connections() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "midi-vector".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                make_node(
+                    "MidiInput_1",
+                    "MidiInput",
+                    json!({"rawValue": 127, "defaultValue": 0.0, "minValue": 0.0, "maxValue": 2.0}),
+                ),
+                make_node(
+                    "MidiInput_2",
+                    "MidiInput",
+                    json!({"defaultValue": 0.75, "minValue": 0.0, "maxValue": 2.0}),
+                ),
+                make_node(
+                    "Vector4Input_1",
+                    "Vector4Input",
+                    json!({"x": 9.0, "y": 9.0, "z": 0.25, "w": 0.5}),
+                ),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "MidiInput_1".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "Vector4Input_1".to_string(),
+                        port_id: "x".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "MidiInput_2".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "Vector4Input_1".to_string(),
+                        port_id: "y".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let schema = GraphSchema {
+            fields: vec![GraphField {
+                node_id: "Vector4Input_1".to_string(),
+                field_name: "vec".to_string(),
+                kind: GraphFieldKind::Vec4,
+            }],
+            size_bytes: 16,
+        };
+
+        let bytes = pack_graph_values(&scene, &schema).unwrap();
+        let values = [
+            f32::from_ne_bytes(bytes[0..4].try_into().unwrap()),
+            f32::from_ne_bytes(bytes[4..8].try_into().unwrap()),
+            f32::from_ne_bytes(bytes[8..12].try_into().unwrap()),
+            f32::from_ne_bytes(bytes[12..16].try_into().unwrap()),
+        ];
+        assert_eq!(values, [2.0, 0.75, 0.25, 0.5]);
     }
 
     #[test]

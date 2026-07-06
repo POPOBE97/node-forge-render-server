@@ -1,4 +1,4 @@
-//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, IntInput, Vector2Input, Vector3Input, TextureInput, TimeInput, ResourcePool).
+//! Compilers for input nodes (BoolInput, ColorInput, FloatInput, MidiInput, IntInput, Vector2Input, Vector3Input, TextureInput, TimeInput, ResourcePool).
 
 use anyhow::{Result, bail};
 use std::collections::HashMap;
@@ -64,7 +64,7 @@ pub fn compile_color_input(
     ))
 }
 
-/// Compile a FloatInput or IntInput node to WGSL.
+/// Compile a FloatInput, MidiInput, or IntInput node to WGSL.
 ///
 /// These nodes provide a constant scalar value.
 ///
