@@ -135,6 +135,7 @@ pub fn collect_early_canvas_interactions(
     let interaction_clean_state = interaction_report::is_clean_rendering_state(
         app.canvas.display.preview_texture_name.is_some(),
         app.canvas.reference.ref_image.is_some(),
+        app.canvas.design.active.is_some(),
     );
     let canvas_rect = app
         .canvas

@@ -77,14 +77,16 @@ fn temporary_output_active(app: &App) -> bool {
 fn animation_consumes_canvas_input_state(
     animation_playing: bool,
     has_animation_session: bool,
+    design_active: bool,
 ) -> bool {
-    animation_playing && has_animation_session
+    animation_playing && has_animation_session && !design_active
 }
 
 fn animation_consumes_canvas_input(app: &App) -> bool {
     animation_consumes_canvas_input_state(
         app.runtime.animation_playing,
         app.runtime.animation_session.is_some(),
+        app.canvas.design.active.is_some(),
     )
 }
 
@@ -1637,6 +1639,7 @@ pub fn show_canvas(
                     scene: app.runtime.uniform_scene.as_ref(),
                     resource_snapshot: app.shell.resource_snapshot.as_ref(),
                     editor_connected: app.core.ws_hub.client_count() > 0,
+                    animation_playing: app.runtime.animation_playing,
                     canvas_rect,
                     image_rect: viewport_frame.image_rect,
                     display_resolution: display_frame.effective_resolution,
@@ -2171,10 +2174,11 @@ mod tests {
     use super::animation_consumes_canvas_input_state;
 
     #[test]
-    fn animation_canvas_input_gate_requires_playing_session() {
-        assert!(!animation_consumes_canvas_input_state(false, false));
-        assert!(!animation_consumes_canvas_input_state(true, false));
-        assert!(!animation_consumes_canvas_input_state(false, true));
-        assert!(animation_consumes_canvas_input_state(true, true));
+    fn animation_canvas_input_gate_skips_design_sessions() {
+        assert!(!animation_consumes_canvas_input_state(false, false, false));
+        assert!(!animation_consumes_canvas_input_state(true, false, false));
+        assert!(!animation_consumes_canvas_input_state(false, true, false));
+        assert!(animation_consumes_canvas_input_state(true, true, false));
+        assert!(!animation_consumes_canvas_input_state(true, true, true));
     }
 }

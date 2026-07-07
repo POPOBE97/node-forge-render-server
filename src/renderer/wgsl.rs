@@ -1538,7 +1538,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 ));
             }
             "IntelligentLight" => {
-                let wgsl = crate::renderer::render_plan::pass_assemblers::intelligent_light::build_intelligent_light_wgsl();
+                let wgsl = crate::renderer::render_plan::pass_assemblers::intelligent_light::build_intelligent_light_wgsl(node);
                 let bundle = build_static_vertex_fragment_bundle(wgsl);
                 out.push((format!("sys.ilight.{layer_id}.pass"), bundle));
             }

@@ -220,6 +220,10 @@ pub struct MutationPort {
 pub enum MutationInnerNodeType {
     #[serde(rename = "FloatInput")]
     FloatInput,
+    #[serde(rename = "IntelligentLightDefaultDriver")]
+    IntelligentLightDefaultDriver,
+    #[serde(rename = "PackArray")]
+    PackArray,
     #[serde(rename = "MathAdd")]
     MathAdd,
     #[serde(rename = "MathSubtract")]
@@ -362,7 +366,10 @@ impl OverrideKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{MutationInputBinding, MutationOutputBinding, MutationPassthroughBinding};
+    use super::{
+        MutationInnerNodeType, MutationInputBinding, MutationOutputBinding,
+        MutationPassthroughBinding, MutationPort,
+    };
 
     #[test]
     fn mutation_input_binding_parses_editor_port_name() {
@@ -406,5 +413,25 @@ mod tests {
 
         assert_eq!(parsed.from_port_id, "sceneElapsedTime");
         assert_eq!(parsed.to_port_id, "FloatInput_53:value");
+    }
+
+    #[test]
+    fn pack_array_inner_node_type_deserializes() {
+        let parsed: MutationInnerNodeType = serde_json::from_value(serde_json::json!("PackArray"))
+            .expect("PackArray inner node type should deserialize");
+
+        assert_eq!(parsed, MutationInnerNodeType::PackArray);
+    }
+
+    #[test]
+    fn packed_port_type_deserializes() {
+        let parsed: MutationPort = serde_json::from_value(serde_json::json!({
+            "id": "packed",
+            "name": "Packed",
+            "type": "packed<float>",
+        }))
+        .expect("packed mutation port should deserialize");
+
+        assert_eq!(parsed.port_type.as_deref(), Some("packed<float>"));
     }
 }

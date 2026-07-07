@@ -35,6 +35,7 @@ pub struct DesignOverlayInput<'a> {
     pub scene: Option<&'a SceneDSL>,
     pub resource_snapshot: Option<&'a ResourceSnapshot>,
     pub editor_connected: bool,
+    pub animation_playing: bool,
     pub canvas_rect: egui::Rect,
     pub image_rect: egui::Rect,
     pub display_resolution: [u32; 2],

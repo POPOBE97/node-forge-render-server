@@ -44,6 +44,7 @@ enum IntelligentLightLayoutMode {
 }
 
 pub(crate) const INTELLIGENT_LIGHT_ZONE_COUNT: usize = 11;
+const INTELLIGENT_LIGHT_TEMPLATE_NAME: &str = "intelligent_light.wgsl";
 
 pub(crate) const DEFAULT_INTELLIGENT_LIGHT_LAYOUT: [[f32; 2]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
     [0.217379, 0.225445],
@@ -59,7 +60,9 @@ pub(crate) const DEFAULT_INTELLIGENT_LIGHT_LAYOUT: [[f32; 2]; INTELLIGENT_LIGHT_
     [0.272295, 0.061244],
 ];
 
-const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
+const DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE: [f32; 2] = [60.0, 37.0];
+
+pub(crate) const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
     [0.5019608, 0.5254902, 1.0],
     [1.0, 0.827451, 0.7019608],
     [1.0, 0.5254902, 0.20784314],
@@ -109,7 +112,19 @@ impl ILightUpdateConfig {
 
         let positions = layer_node
             .map(|node| {
-                resolve_light_positions(node, driver, |port_id| {
+                let target_size = [
+                    node.params
+                        .get("width")
+                        .and_then(json_f32)
+                        .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE[0])
+                        .max(1.0),
+                    node.params
+                        .get("height")
+                        .and_then(json_f32)
+                        .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE[1])
+                        .max(1.0),
+                ];
+                resolve_light_positions(node, driver, target_size, |port_id| {
                     incoming_connection(scene, &self.layer_id, port_id).and_then(|conn| {
                         nodes_by_id
                             .get(conn.from.node_id.as_str())
@@ -125,31 +140,44 @@ impl ILightUpdateConfig {
     }
 }
 
-fn resolve_layout_mode(layer_node: &Node) -> IntelligentLightLayoutMode {
-    match layer_node
-        .params
-        .get("layoutMode")
-        .and_then(|value| value.as_str())
-    {
-        Some("manual") => IntelligentLightLayoutMode::Manual,
-        _ => IntelligentLightLayoutMode::Procedural,
-    }
+fn resolve_layout_mode(_layer_node: &Node) -> IntelligentLightLayoutMode {
+    // Intelligent Light now edits and renders in manual mode only.
+    IntelligentLightLayoutMode::Manual
 }
 
-fn clamp_normalized_vec2(position: [f32; 2]) -> [f32; 2] {
-    [position[0].clamp(0.0, 1.0), position[1].clamp(0.0, 1.0)]
-}
-
-pub(crate) fn normalized_to_light_space(position: [f32; 2]) -> (f32, f32) {
-    let [u, v] = clamp_normalized_vec2(position);
-    ((u * 1.8) - 0.9, (v * 1.8) - 0.9)
-}
-
-pub(crate) fn light_space_to_normalized(position: (f32, f32)) -> [f32; 2] {
+fn clamp_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
     [
-        ((position.0 + 0.9) / 1.8).clamp(0.0, 1.0),
-        ((position.1 + 0.9) / 1.8).clamp(0.0, 1.0),
+        position[0].clamp(0.0, target_size[0].max(1.0)),
+        position[1].clamp(0.0, target_size[1].max(1.0)),
     ]
+}
+
+fn is_legacy_normalized_position(position: [f32; 2]) -> bool {
+    (0.0..=1.0).contains(&position[0]) && (0.0..=1.0).contains(&position[1])
+}
+
+fn normalized_position_to_pixel_space(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
+    [
+        position[0].clamp(0.0, 1.0) * target_size[0].max(1.0),
+        (1.0 - position[1].clamp(0.0, 1.0)) * target_size[1].max(1.0),
+    ]
+}
+
+fn resolve_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
+    let pixel = if is_legacy_normalized_position(position) {
+        normalized_position_to_pixel_space(position, target_size)
+    } else {
+        position
+    };
+    clamp_pixel_position(pixel, target_size)
+}
+
+pub(crate) fn default_light_position(index: usize, target_size: [f32; 2]) -> [f32; 2] {
+    let source = DEFAULT_INTELLIGENT_LIGHT_LAYOUT
+        .get(index)
+        .copied()
+        .unwrap_or([0.5, 0.5]);
+    normalized_position_to_pixel_space(source, target_size)
 }
 
 pub(crate) fn procedural_positions(driver: f64) -> [(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT] {
@@ -174,6 +202,7 @@ fn resolve_connected_vec2_source(node: &Node, output_port_id: &str) -> Option<[f
 fn resolve_light_positions<F>(
     layer_node: &Node,
     driver: f64,
+    target_size: [f32; 2],
     mut resolve_connected_position: F,
 ) -> [(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT]
 where
@@ -186,10 +215,11 @@ where
     let mut positions = [(0.0f32, 0.0f32); INTELLIGENT_LIGHT_ZONE_COUNT];
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
         let port_id = format!("pos{index}");
-        let normalized = resolve_connected_position(port_id.as_str())
+        let pixel = resolve_connected_position(port_id.as_str())
             .or_else(|| parse_vec2_from_params(&layer_node.params, port_id.as_str()))
-            .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[index]);
-        positions[index] = normalized_to_light_space(normalized);
+            .map(|position| resolve_pixel_position(position, target_size))
+            .unwrap_or_else(|| default_light_position(index, target_size));
+        positions[index] = (pixel[0], pixel[1]);
     }
     positions
 }
@@ -247,25 +277,32 @@ pub(crate) fn assemble_intelligent_light(
     let driver_node_id =
         incoming_connection(scene, layer_id, "driver").map(|conn| conn.from.node_id.clone());
 
+    let inter_w = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "width", 60)?;
+    let inter_h = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "height", 37)?;
+    let inter_w_f = inter_w as f32;
+    let inter_h_f = inter_h as f32;
+
     let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
     for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
         let port_id = format!("color{i}");
         colors[i] = resolve_color_input(sc, layer_node, layer_id, &port_id);
     }
-    let positions = resolve_light_positions(layer_node, driver as f64, |port_id| {
-        incoming_connection(scene, layer_id, port_id).and_then(|conn| {
-            nodes_by_id
-                .get(conn.from.node_id.as_str())
-                .and_then(|upstream| resolve_connected_vec2_source(upstream, &conn.from.port_id))
-        })
-    });
+    let positions = resolve_light_positions(
+        layer_node,
+        driver as f64,
+        [inter_w_f, inter_h_f],
+        |port_id| {
+            incoming_connection(scene, layer_id, port_id).and_then(|conn| {
+                nodes_by_id
+                    .get(conn.from.node_id.as_str())
+                    .and_then(|upstream| {
+                        resolve_connected_vec2_source(upstream, &conn.from.port_id)
+                    })
+            })
+        },
+    );
 
     // ── Intermediate texture (low-res render) ─────────────────────────
-
-    let inter_w = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "width", 60)?;
-    let inter_h = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "height", 37)?;
-    let inter_w_f = inter_w as f32;
-    let inter_h_f = inter_h as f32;
 
     let inter_tex: ResourceName = format!("sys.ilight.{layer_id}.inter").into();
     bs.textures.push(TextureDecl {
@@ -312,7 +349,7 @@ pub(crate) fn assemble_intelligent_light(
         },
     };
 
-    let shader_wgsl = build_intelligent_light_wgsl();
+    let shader_wgsl = build_intelligent_light_wgsl(layer_node);
 
     bs.render_pass_specs.push(RenderPassSpec {
         pass_id: pass_name.as_str().to_string(),
@@ -616,96 +653,18 @@ fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
 
 // ── WGSL shader generation ──────────────────────────────────────────────
 
-pub(crate) fn build_intelligent_light_wgsl() -> String {
-    r#"//── IntelligentLight pass (CPU-driven uniforms) ─────────────────────
-
-struct Params {
-    target_size: vec2f,
-    geo_size: vec2f,
-    center: vec2f,
-    geo_translate: vec2f,
-    geo_scale: vec2f,
-    time: f32,
-    _pad0: f32,
-    color: vec4f,
-    camera: mat4x4f,
-    camera_position: vec4f,
-};
-
-struct ILightData {
-    lights: array<vec4f, 11>,
-    params: vec4f,
-    colors: array<vec4f, 11>,
-};
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-@group(0) @binding(2)
-var<uniform> ilight_data: ILightData;
-
-struct VSOut {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    @location(1) frag_coord_gl: vec2f,
-    @location(2) local_px: vec3f,
-    @location(3) geo_size_px: vec2f,
-};
-
-@vertex
-fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
-    var out: VSOut;
-
-    let _unused_geo_size = params.geo_size;
-    let _unused_geo_translate = params.geo_translate;
-    let _unused_geo_scale = params.geo_scale;
-
-    out.uv = uv;
-    out.geo_size_px = params.geo_size;
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
-
-    let p_px = params.center + position.xy;
-    out.position = params.camera * vec4f(p_px, position.z, 1.0);
-    out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
-    return out;
+fn intelligent_light_override_path(node: &Node) -> Option<std::path::PathBuf> {
+    node.wgsl_override
+        .as_deref()
+        .and_then(crate::renderer::node_compiler::template_loader::resolve_override_path)
 }
 
-// ── Constants ────────────────────────────────────────────────────────
-
-const NUM_LIGHTS: u32 = 11u;
-const BASE_COLOR: vec3f = vec3f(0.0, 0.5884, 1.0);
-
-// ── Fragment shader ──────────────────────────────────────────────────
-
-@fragment
-fn fs_main(in: VSOut) -> @location(0) vec4f {
-    let aspect = params.target_size.x / params.target_size.y;
-    var uv = in.uv * 2.0 - 1.0;
-    uv.x *= aspect;
-
-    var current_color = BASE_COLOR;
-
-    for (var i = 0u; i < NUM_LIGHTS; i = i + 1u) {
-        let lpos = ilight_data.lights[i].xy;
-        let d = distance(uv, lpos);
-        let factor = clamp(1.0 - d, 0.0, 1.0);
-        let s = smoothstep(0.0, 1.0, factor);
-        let light_color = ilight_data.colors[i].xyz * s;
-        current_color = current_color * (1.0 - s) + light_color;
-    }
-
-    current_color = min(vec3f(1.0), current_color);
-
-    let power = ilight_data.params.x;
-    let lightness = ilight_data.params.y;
-    let brightness = 1.0 + power * 0.2;
-    let luminance = dot(current_color, vec3f(0.2126, 0.7153, 0.0722));
-    let scale = mix(0.75, 0.775, lightness);
-    let result = mix(vec3f(luminance), current_color, vec3f(brightness)) * scale;
-
-    return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
-}
-"#
-    .to_string()
+pub(crate) fn build_intelligent_light_wgsl(node: &Node) -> String {
+    let path = intelligent_light_override_path(node);
+    crate::renderer::node_compiler::template_loader::load_template_with_override(
+        path.as_deref(),
+        INTELLIGENT_LIGHT_TEMPLATE_NAME,
+    )
 }
 
 // ── CPU-side noise and light position computation ──────────────────────
@@ -874,6 +833,222 @@ fn compute_light_positions(chip_rotation: f64) -> [(f64, f64); 11] {
     lights
 }
 
+fn centered_position_to_legacy_normalized(position: (f64, f64)) -> [f64; 2] {
+    [
+        ((position.0 * 0.5) + 0.5).clamp(0.0, 1.0),
+        ((position.1 * 0.5) + 0.5).clamp(0.0, 1.0),
+    ]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct IntelligentLightDefaultDriverFrame {
+    pub positions: [[f64; 2]; INTELLIGENT_LIGHT_ZONE_COUNT],
+    pub colors: [[f64; 4]; INTELLIGENT_LIGHT_ZONE_COUNT],
+    pub chip_rotation: f64,
+}
+
+#[derive(Clone, Debug)]
+struct IntelligentLightDriverSpring {
+    value: f64,
+    cur_velocity: f64,
+    max_acceleration: f64,
+    spring_amount: f64,
+}
+
+#[derive(Clone, Debug)]
+struct IntelligentLightDriverPhysics {
+    flame_spring: IntelligentLightDriverSpring,
+    on_spring: IntelligentLightDriverSpring,
+    volume_spring: IntelligentLightDriverSpring,
+    glow_spring: IntelligentLightDriverSpring,
+    energy_spring: IntelligentLightDriverSpring,
+    lightness_spring: IntelligentLightDriverSpring,
+    chip_rotation: f64,
+    physics_tick_delta: f64,
+    framerate_energy_modifier: f64,
+    is_buddy: bool,
+    flame_drawn_size: f64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct IntelligentLightDefaultDriverState {
+    physics: IntelligentLightDriverPhysics,
+}
+
+impl Default for IntelligentLightDefaultDriverState {
+    fn default() -> Self {
+        Self {
+            physics: init_default_driver_physics(),
+        }
+    }
+}
+
+impl IntelligentLightDefaultDriverState {
+    #[allow(dead_code)]
+    pub(crate) fn reset(&mut self) {
+        self.physics = init_default_driver_physics();
+    }
+
+    pub(crate) fn current_frame(&self) -> IntelligentLightDefaultDriverFrame {
+        build_default_driver_frame(self.physics.chip_rotation)
+    }
+
+    pub(crate) fn advance(&mut self) -> IntelligentLightDefaultDriverFrame {
+        update_default_driver_physics(&mut self.physics);
+        self.current_frame()
+    }
+}
+
+fn build_default_driver_frame(chip_rotation: f64) -> IntelligentLightDefaultDriverFrame {
+    IntelligentLightDefaultDriverFrame {
+        positions: compute_light_positions(chip_rotation)
+            .map(centered_position_to_legacy_normalized),
+        colors: DEFAULT_INTELLIGENT_LIGHT_COLORS
+            .map(|[r, g, b]| [r as f64, g as f64, b as f64, 1.0]),
+        chip_rotation,
+    }
+}
+
+fn update_default_driver_spring(spring: &mut IntelligentLightDriverSpring, target_value: f64) {
+    let current_value = spring.value;
+    let mut spring_value =
+        current_value * (1.0 - spring.spring_amount) + target_value * spring.spring_amount;
+    spring_value -= current_value;
+
+    if spring_value != 0.0 {
+        let mut velocity = spring.cur_velocity;
+        let max_accel = spring.max_acceleration;
+        let velocity_diff = spring_value - velocity;
+
+        if velocity_diff <= max_accel {
+            if -max_accel <= velocity_diff {
+                velocity += velocity_diff;
+            } else {
+                velocity -= max_accel;
+            }
+        } else {
+            velocity += max_accel;
+        }
+
+        spring.cur_velocity = velocity;
+
+        if spring_value >= 0.0 {
+            if spring_value < velocity {
+                spring.cur_velocity = spring_value;
+                velocity = spring_value;
+            }
+        } else if velocity < spring_value {
+            spring.cur_velocity = spring_value;
+            velocity = spring_value;
+        }
+
+        spring.value = current_value + velocity;
+    }
+}
+
+fn init_default_driver_physics() -> IntelligentLightDriverPhysics {
+    IntelligentLightDriverPhysics {
+        flame_spring: IntelligentLightDriverSpring {
+            value: 0.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.017999999225139618,
+            spring_amount: 0.19000005722045898,
+        },
+        on_spring: IntelligentLightDriverSpring {
+            value: 0.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.017999999225139618,
+            spring_amount: 0.19000005722045898,
+        },
+        volume_spring: IntelligentLightDriverSpring {
+            value: 0.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.026999998837709427,
+            spring_amount: 0.31937503814697266,
+        },
+        glow_spring: IntelligentLightDriverSpring {
+            value: 0.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.026999998837709427,
+            spring_amount: 0.31937503814697266,
+        },
+        energy_spring: IntelligentLightDriverSpring {
+            value: 0.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.012000000104308128,
+            spring_amount: 0.0975000262260437,
+        },
+        lightness_spring: IntelligentLightDriverSpring {
+            value: 5.0,
+            cur_velocity: 0.0,
+            max_acceleration: 0.008999999612569809,
+            spring_amount: 0.05909997224807739,
+        },
+        chip_rotation: 0.0,
+        physics_tick_delta: 0.01666666753590107,
+        framerate_energy_modifier: 0.30000001192092896,
+        is_buddy: false,
+        flame_drawn_size: 0.0,
+    }
+}
+
+fn update_default_driver_physics_tick(p: &mut IntelligentLightDriverPhysics) {
+    let mic_power_level: f64 = 0.0;
+    let reduce_motion = false;
+    let mut target_value = mic_power_level * mic_power_level * 0.7 + 0.7;
+    if reduce_motion {
+        target_value = 0.7;
+    }
+
+    update_default_driver_spring(&mut p.flame_spring, target_value);
+    update_default_driver_spring(&mut p.on_spring, 1.0);
+
+    let physics_delta = p.physics_tick_delta;
+    p.flame_drawn_size = p.flame_spring.value * 0.07;
+
+    update_default_driver_spring(&mut p.volume_spring, mic_power_level);
+
+    if p.is_buddy {
+        update_default_driver_spring(&mut p.energy_spring, 0.0);
+        update_default_driver_spring(&mut p.lightness_spring, p.energy_spring.value);
+        return;
+    }
+
+    let mut mic_pl = 2.5_f64;
+    if reduce_motion {
+        mic_pl = 0.3;
+    }
+    let tv = p.on_spring.cur_velocity;
+    mic_pl = physics_delta * mic_pl * p.volume_spring.value;
+    let mut energy = tv * 20.0;
+    if tv < 0.0 {
+        energy = 0.0;
+    }
+    target_value = physics_delta * 25.0;
+    if mic_pl <= physics_delta * 25.0 {
+        target_value = mic_pl;
+    }
+    energy = energy * p.framerate_energy_modifier + p.volume_spring.value;
+    mic_pl = energy.min(1.3);
+
+    update_default_driver_spring(&mut p.glow_spring, mic_pl);
+
+    target_value = target_value * 0.5 + physics_delta * 0.7;
+    if reduce_motion {
+        mic_pl = target_value * 0.4;
+        target_value = physics_delta * 0.6;
+        if mic_pl <= physics_delta * 0.6 {
+            target_value = mic_pl;
+        }
+    }
+
+    p.chip_rotation += target_value;
+}
+
+fn update_default_driver_physics(p: &mut IntelligentLightDriverPhysics) {
+    update_default_driver_physics_tick(p);
+}
+
 // lights: array<vec4f, 11> (176) + params: vec4f (16) + colors: array<vec4f, 11> (176) = 368
 pub(crate) const ILIGHT_BUFFER_SIZE: u64 = 368;
 
@@ -914,6 +1089,33 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+
+    fn test_node(
+        node_id: &str,
+        node_type: &str,
+        params: HashMap<String, serde_json::Value>,
+    ) -> Node {
+        Node {
+            id: node_id.to_string(),
+            node_type: node_type.to_string(),
+            params,
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        }
+    }
+
+    #[test]
+    fn intelligent_light_shader_uses_template_file() {
+        let shader =
+            build_intelligent_light_wgsl(&test_node("ilight", "IntelligentLight", HashMap::new()));
+        let template = crate::renderer::node_compiler::template_loader::load_template(
+            INTELLIGENT_LIGHT_TEMPLATE_NAME,
+        );
+
+        assert_eq!(shader, template);
+    }
 
     // ── Spring physics ─────────────────────────────────────────────
 
@@ -1242,11 +1444,10 @@ mod tests {
         let (x0, y0) = read_light_xy(&bytes, 0);
         let (x1, y1) = read_light_xy(&bytes, 1);
 
-        assert_near(x0 as f64, -0.45, 1e-6, "manual light[0].x");
-        assert_near(y0 as f64, 0.45, 1e-6, "manual light[0].y");
+        assert_near(x0 as f64, 15.0, 1e-6, "manual light[0].x");
+        assert_near(y0 as f64, 9.25, 1e-6, "manual light[0].y");
 
-        let (expected_x1, expected_y1) =
-            normalized_to_light_space(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[1]);
+        let [expected_x1, expected_y1] = default_light_position(1, [60.0, 37.0]);
         assert_near(x1 as f64, expected_x1 as f64, 1e-6, "default light[1].x");
         assert_near(y1 as f64, expected_y1 as f64, 1e-6, "default light[1].y");
     }
@@ -1303,8 +1504,8 @@ mod tests {
         let bytes = cfg.pack_buffer(&scene);
         let (x0, y0) = read_light_xy(&bytes, 0);
 
-        assert_near(x0 as f64, -0.72, 1e-6, "connected manual light[0].x");
-        assert_near(y0 as f64, 0.72, 1e-6, "connected manual light[0].y");
+        assert_near(x0 as f64, 6.0, 1e-6, "connected manual light[0].x");
+        assert_near(y0 as f64, 3.7, 1e-6, "connected manual light[0].y");
     }
 
     #[test]
@@ -1394,7 +1595,7 @@ mod tests {
     }
 
     #[test]
-    fn pack_buffer_procedural_layout_ignores_manual_positions() {
+    fn pack_buffer_legacy_procedural_layout_uses_manual_positions() {
         let scene = make_test_scene(
             serde_json::json!({
                 "layoutMode": "procedural",
@@ -1417,9 +1618,8 @@ mod tests {
 
         let bytes = cfg.pack_buffer(&scene);
         let (x0, y0) = read_light_xy(&bytes, 0);
-        let expected = compute_light_positions(0.0)[0];
 
-        assert_near(x0 as f64, expected.0, 1e-6, "procedural light[0].x");
-        assert_near(y0 as f64, expected.1, 1e-6, "procedural light[0].y");
+        assert_near(x0 as f64, 15.0, 1e-6, "legacy manual light[0].x");
+        assert_near(y0 as f64, 9.25, 1e-6, "legacy manual light[0].y");
     }
 }

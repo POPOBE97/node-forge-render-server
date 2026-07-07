@@ -5,8 +5,7 @@ use crate::{
     dsl::{Node, SceneDSL, incoming_connection},
     protocol::DesignParamPatchPayload,
     renderer::render_plan::pass_assemblers::intelligent_light::{
-        DEFAULT_INTELLIGENT_LIGHT_LAYOUT, INTELLIGENT_LIGHT_ZONE_COUNT, light_space_to_normalized,
-        procedural_positions,
+        INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position, procedural_positions,
     },
     ui::{
         color_popover::{ColorPopoverConfig, show_color_popover},
@@ -42,7 +41,7 @@ struct IntelligentLightValues {
     colors: [Color32; INTELLIGENT_LIGHT_ZONE_COUNT],
     position_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
     color_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
-    _target_size: [f32; 2],
+    position_space: [f32; 2],
 }
 
 pub fn is_intelligent_light_design_param(key: &str) -> bool {
@@ -117,17 +116,19 @@ pub fn show_overlay(
         );
     }
 
-    let values = read_intelligent_light_values(scene, node, target, state);
-    handle_interaction(
-        ctx,
-        input.pointer_response,
-        input.image_rect,
-        target,
-        session_id,
-        state,
-        &values,
-        &mut output.patches,
-    );
+    let values = read_intelligent_light_values(scene, node, target, state, input.animation_playing);
+    if !input.animation_playing {
+        handle_interaction(
+            ctx,
+            input.pointer_response,
+            input.image_rect,
+            target,
+            session_id,
+            state,
+            &values,
+            &mut output.patches,
+        );
+    }
     draw_preview_handles(
         &ui.painter_at(input.canvas_rect),
         input.image_rect,
@@ -350,7 +351,7 @@ fn emit_position_patch(
         return;
     }
 
-    let position = screen_to_point(pointer_pos, rect);
+    let position = screen_to_point(pointer_pos, rect, values.position_space);
     let mut params = Map::new();
     if phase == "begin" && values.layout_mode == IntelligentLightLayoutMode::Procedural {
         params.insert(
@@ -476,7 +477,7 @@ fn show_selected_color_popover(
         return;
     }
 
-    let point = point_to_screen(values.positions[index], rect);
+    let point = point_to_screen(values.positions[index], rect, values.position_space);
     let anchor_rect = Rect::from_center_size(point, Vec2::splat(HANDLE_PICK_RADIUS));
     let mut color = values.colors[index];
     let response = show_color_popover(
@@ -521,7 +522,7 @@ fn draw_preview_handles(
     }
 
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
-        let center = point_to_screen(values.positions[index], rect);
+        let center = point_to_screen(values.positions[index], rect, values.position_space);
         let fill = values.colors[index];
         let stroke = if index == selected_zone {
             Stroke::new(2.0, design_tokens::white(100))
@@ -566,11 +567,22 @@ fn draw_preview_handles(
 fn read_intelligent_light_values(
     scene: &SceneDSL,
     node: &Node,
-    target: &PassDesignTarget,
+    _target: &PassDesignTarget,
     state: &IntelligentLightDesignState,
+    animation_playing: bool,
 ) -> IntelligentLightValues {
-    let target_size = target.target_size.unwrap_or(DEFAULT_TARGET_SIZE);
-    let target_size = [target_size.0 as f32, target_size.1 as f32];
+    let position_space = [
+        node.params
+            .get("width")
+            .and_then(json_f32)
+            .unwrap_or(DEFAULT_TARGET_SIZE.0 as f32)
+            .max(1.0),
+        node.params
+            .get("height")
+            .and_then(json_f32)
+            .unwrap_or(DEFAULT_TARGET_SIZE.1 as f32)
+            .max(1.0),
+    ];
     let layout_mode = read_layout_mode(node, state);
     let driver = resolve_driver_value(scene, node);
     let mut positions = [[0.0; 2]; INTELLIGENT_LIGHT_ZONE_COUNT];
@@ -589,16 +601,25 @@ fn read_intelligent_light_values(
         let position_connection = incoming_connection(scene, node.id.as_str(), pos_key.as_str());
         position_locks[index] = position_connection.is_some();
         positions[index] = if let Some(live_positions) = procedural_positions.as_ref() {
-            light_space_to_normalized(live_positions[index])
+            clamp_pixel_position(
+                [live_positions[index].0, live_positions[index].1],
+                position_space,
+            )
         } else {
             position_connection
                 .and_then(|conn| {
-                    resolve_connected_position_value(scene, &conn.from.node_id, &conn.from.port_id)
+                    resolve_connected_position_value(
+                        scene,
+                        &conn.from.node_id,
+                        &conn.from.port_id,
+                        position_space,
+                    )
                 })
                 .or_else(|| {
-                    param_value(node, state, pos_key.as_str()).and_then(parse_normalized_vec2_value)
+                    param_value(node, state, pos_key.as_str(), animation_playing)
+                        .and_then(|value| parse_pixel_vec2_value(value, position_space))
                 })
-                .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[index])
+                .unwrap_or_else(|| default_light_position(index, position_space))
         };
 
         let color_key = color_key(index);
@@ -608,7 +629,10 @@ fn read_intelligent_light_values(
             .and_then(|conn| {
                 resolve_connected_color_value(scene, &conn.from.node_id, &conn.from.port_id)
             })
-            .or_else(|| param_value(node, state, color_key.as_str()).and_then(parse_color_value))
+            .or_else(|| {
+                param_value(node, state, color_key.as_str(), animation_playing)
+                    .and_then(parse_color_value)
+            })
             .unwrap_or_else(|| {
                 parse_hex_color(DEFAULT_COLOR_HEXES[index]).unwrap_or(Color32::WHITE)
             });
@@ -620,7 +644,7 @@ fn read_intelligent_light_values(
         colors,
         position_locks,
         color_locks,
-        _target_size: target_size,
+        position_space,
     }
 }
 
@@ -628,23 +652,28 @@ fn resolve_connected_position_value(
     scene: &SceneDSL,
     node_id: &str,
     port_id: &str,
+    position_space: [f32; 2],
 ) -> Option<[f32; 2]> {
     let upstream = scene
         .nodes
         .iter()
         .find(|candidate| candidate.id == node_id)?;
     if upstream.node_type == "Vector2Input" {
-        return Some([
-            round_normalized(upstream.params.get("x").and_then(json_f32).unwrap_or(0.0)),
-            round_normalized(upstream.params.get("y").and_then(json_f32).unwrap_or(0.0)),
-        ]);
+        return Some(resolve_pixel_position(
+            [
+                upstream.params.get("x").and_then(json_f32).unwrap_or(0.0),
+                upstream.params.get("y").and_then(json_f32).unwrap_or(0.0),
+            ],
+            position_space,
+        ));
     }
 
-    parse_normalized_vec2_value(
+    parse_pixel_vec2_value(
         upstream
             .params
             .get("value")
             .or_else(|| upstream.params.get(port_id))?,
+        position_space,
     )
 }
 
@@ -666,13 +695,11 @@ fn resolve_connected_color_value(
 }
 
 fn read_layout_mode(
-    node: &Node,
-    state: &IntelligentLightDesignState,
+    _node: &Node,
+    _state: &IntelligentLightDesignState,
 ) -> IntelligentLightLayoutMode {
-    match param_value(node, state, "layoutMode").and_then(Value::as_str) {
-        Some("manual") => IntelligentLightLayoutMode::Manual,
-        _ => IntelligentLightLayoutMode::Procedural,
-    }
+    // Intelligent Light now edits in manual mode only.
+    IntelligentLightLayoutMode::Manual
 }
 
 fn resolve_driver_value(scene: &SceneDSL, node: &Node) -> f64 {
@@ -696,7 +723,14 @@ fn param_value<'a>(
     node: &'a Node,
     state: &'a IntelligentLightDesignState,
     key: &str,
+    animation_playing: bool,
 ) -> Option<&'a Value> {
+    if animation_playing {
+        return node
+            .params
+            .get(key)
+            .or_else(|| state.optimistic_params.get(key));
+    }
     state
         .optimistic_params
         .get(key)
@@ -706,7 +740,7 @@ fn param_value<'a>(
 fn nearest_zone(pointer_pos: Pos2, rect: Rect, values: &IntelligentLightValues) -> Option<usize> {
     let mut best: Option<(usize, f32)> = None;
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
-        let point = point_to_screen(values.positions[index], rect);
+        let point = point_to_screen(values.positions[index], rect, values.position_space);
         let distance = point.distance(pointer_pos);
         if distance <= HANDLE_PICK_RADIUS
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
@@ -717,21 +751,21 @@ fn nearest_zone(pointer_pos: Pos2, rect: Rect, values: &IntelligentLightValues) 
     best.map(|(index, _)| index)
 }
 
-fn point_to_screen(position: [f32; 2], rect: Rect) -> Pos2 {
+fn point_to_screen(position: [f32; 2], rect: Rect, position_space: [f32; 2]) -> Pos2 {
     Pos2::new(
-        rect.left() + position[0].clamp(0.0, 1.0) * rect.width(),
-        rect.bottom() - position[1].clamp(0.0, 1.0) * rect.height(),
+        rect.left() + position[0] / position_space[0].max(1.0) * rect.width(),
+        rect.bottom() - position[1] / position_space[1].max(1.0) * rect.height(),
     )
 }
 
-fn screen_to_point(pos: Pos2, rect: Rect) -> [f32; 2] {
-    let x = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-    let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0);
-    [round_normalized(x), round_normalized(y)]
+fn screen_to_point(pos: Pos2, rect: Rect, position_space: [f32; 2]) -> [f32; 2] {
+    let x = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) * position_space[0].max(1.0);
+    let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0) * position_space[1].max(1.0);
+    [round_position_value(x), round_position_value(y)]
 }
 
-fn round_normalized(value: f32) -> f32 {
-    (value.clamp(0.0, 1.0) * 1000.0).round() / 1000.0
+fn round_position_value(value: f32) -> f32 {
+    (value * 10.0).round() / 10.0
 }
 
 fn position_key(index: usize) -> String {
@@ -742,18 +776,47 @@ fn color_key(index: usize) -> String {
     format!("color{index}")
 }
 
-fn parse_normalized_vec2_value(value: &Value) -> Option<[f32; 2]> {
+fn clamp_pixel_position(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
+    [
+        position[0].clamp(0.0, position_space[0].max(1.0)),
+        position[1].clamp(0.0, position_space[1].max(1.0)),
+    ]
+}
+
+fn is_legacy_normalized_position(position: [f32; 2]) -> bool {
+    (0.0..=1.0).contains(&position[0]) && (0.0..=1.0).contains(&position[1])
+}
+
+fn resolve_pixel_position(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
+    let pixel = if is_legacy_normalized_position(position) {
+        [
+            position[0].clamp(0.0, 1.0) * position_space[0].max(1.0),
+            (1.0 - position[1].clamp(0.0, 1.0)) * position_space[1].max(1.0),
+        ]
+    } else {
+        position
+    };
+    clamp_pixel_position(pixel, position_space)
+}
+
+fn parse_pixel_vec2_value(value: &Value, position_space: [f32; 2]) -> Option<[f32; 2]> {
     if let Some(arr) = value.as_array() {
-        return Some([
-            round_normalized(arr.first().and_then(json_f32).unwrap_or(0.0)),
-            round_normalized(arr.get(1).and_then(json_f32).unwrap_or(0.0)),
-        ]);
+        return Some(resolve_pixel_position(
+            [
+                arr.first().and_then(json_f32).unwrap_or(0.0),
+                arr.get(1).and_then(json_f32).unwrap_or(0.0),
+            ],
+            position_space,
+        ));
     }
     if let Some(obj) = value.as_object() {
-        return Some([
-            round_normalized(obj.get("x").and_then(json_f32).unwrap_or(0.0)),
-            round_normalized(obj.get("y").and_then(json_f32).unwrap_or(0.0)),
-        ]);
+        return Some(resolve_pixel_position(
+            [
+                obj.get("x").and_then(json_f32).unwrap_or(0.0),
+                obj.get("y").and_then(json_f32).unwrap_or(0.0),
+            ],
+            position_space,
+        ));
     }
     None
 }
@@ -854,11 +917,11 @@ mod tests {
     fn test_values(layout_mode: IntelligentLightLayoutMode) -> IntelligentLightValues {
         IntelligentLightValues {
             layout_mode,
-            positions: DEFAULT_INTELLIGENT_LIGHT_LAYOUT,
+            positions: std::array::from_fn(|index| default_light_position(index, [60.0, 37.0])),
             colors: [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT],
             position_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
             color_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
-            _target_size: [60.0, 37.0],
+            position_space: [60.0, 37.0],
         }
     }
 
@@ -875,13 +938,26 @@ mod tests {
     }
 
     #[test]
-    fn normalized_mapping_uses_bottom_origin() {
+    fn pixel_mapping_uses_render_bottom_origin() {
         let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 200.0));
+        let position_space = [400.0, 200.0];
 
-        assert_eq!(point_to_screen([0.0, 0.0], rect), Pos2::new(10.0, 220.0));
-        assert_eq!(point_to_screen([1.0, 1.0], rect), Pos2::new(410.0, 20.0));
-        assert_eq!(screen_to_point(Pos2::new(10.0, 20.0), rect), [0.0, 1.0]);
-        assert_eq!(screen_to_point(Pos2::new(410.0, 220.0), rect), [1.0, 0.0]);
+        assert_eq!(
+            point_to_screen([0.0, 0.0], rect, position_space),
+            Pos2::new(10.0, 220.0)
+        );
+        assert_eq!(
+            point_to_screen([400.0, 200.0], rect, position_space),
+            Pos2::new(410.0, 20.0)
+        );
+        assert_eq!(
+            screen_to_point(Pos2::new(10.0, 20.0), rect, position_space),
+            [0.0, 200.0]
+        );
+        assert_eq!(
+            screen_to_point(Pos2::new(410.0, 220.0), rect, position_space),
+            [400.0, 0.0]
+        );
     }
 
     #[test]
@@ -994,10 +1070,10 @@ mod tests {
             Some(&Value::String("manual".to_string()))
         );
         assert_eq!(patch.params.len(), 1 + INTELLIGENT_LIGHT_ZONE_COUNT);
-        assert_eq!(patch.params.get("pos0"), Some(&json!([1.0, 1.0])));
+        assert_eq!(patch.params.get("pos0"), Some(&json!([60.0, 37.0])));
         assert_eq!(
             patch.params.get("pos1"),
-            Some(&json!(DEFAULT_INTELLIGENT_LIGHT_LAYOUT[1]))
+            Some(&json!(default_light_position(1, [60.0, 37.0])))
         );
     }
 
@@ -1057,6 +1133,7 @@ mod tests {
             node,
             &target,
             &IntelligentLightDesignState::default(),
+            false,
         );
 
         assert!(values.position_locks[0]);
@@ -1140,10 +1217,11 @@ mod tests {
             node,
             &target,
             &IntelligentLightDesignState::default(),
+            false,
         );
 
         assert_eq!(values.layout_mode, IntelligentLightLayoutMode::Manual);
-        assert_eq!(values.positions[0], [0.75, 0.25]);
+        assert_eq!(values.positions[0], [45.0, 27.75]);
         assert_eq!(
             values.colors[0],
             parse_hex_color("#abcdef").expect("hex color")
@@ -1151,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn procedural_overlay_values_ignore_manual_positions() {
+    fn legacy_procedural_overlay_values_use_manual_positions() {
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
@@ -1187,13 +1265,47 @@ mod tests {
             node,
             &target,
             &IntelligentLightDesignState::default(),
+            false,
         );
 
-        assert_eq!(values.layout_mode, IntelligentLightLayoutMode::Procedural);
-        assert_eq!(
-            values.positions[0],
-            light_space_to_normalized(procedural_positions(0.0)[0])
-        );
-        assert_ne!(values.positions[0], [0.0, 0.0]);
+        assert_eq!(values.layout_mode, IntelligentLightLayoutMode::Manual);
+        assert_eq!(values.positions[0], [0.0, 37.0]);
+    }
+
+    #[test]
+    fn animation_playing_prefers_scene_params_over_optimistic_params() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "ilight animated".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![test_node(
+                "ilight",
+                "IntelligentLight",
+                HashMap::from([("pos0".to_string(), json!([42.0, 24.0]))]),
+            )],
+            connections: vec![],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let target = test_target();
+        let node = scene
+            .nodes
+            .iter()
+            .find(|candidate| candidate.id == "ilight")
+            .expect("ilight node");
+        let mut state = IntelligentLightDesignState::default();
+        state
+            .optimistic_params
+            .insert("pos0".to_string(), json!([3.0, 4.0]));
+
+        let values = read_intelligent_light_values(&scene, node, &target, &state, true);
+
+        assert_eq!(values.positions[0], [42.0, 24.0]);
     }
 }

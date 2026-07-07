@@ -6,6 +6,7 @@
 //!
 //! Supported inner-node types (v1):
 //! - `FloatInput`     — emits its constant `value` parameter.
+//! - `PackArray`      — packs connected input values into `Packed<T>`.
 //! - `MathAdd`        — adds connected inputs.
 //! - `MathSubtract`   — subtracts connected inputs in order.
 //! - `MathMultiply`   — multiplies connected inputs in order.
@@ -16,33 +17,44 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::{Result, bail};
 
+use crate::renderer::render_plan::pass_assemblers::intelligent_light::{
+    INTELLIGENT_LIGHT_ZONE_COUNT, IntelligentLightDefaultDriverState,
+};
+
 use super::types::*;
 
 // ---------------------------------------------------------------------------
-// Typed animation value (v1 — Float only, stub for future expansion)
+// Typed animation value
 // ---------------------------------------------------------------------------
 
 /// A typed value flowing through the mutation graph.
 ///
-/// v1 supports only `Float`.  Future expansions: `Int`, `Bool`,
-/// `Vec2`, `Vec3`, `Vec4`, `Color`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnimValue {
     Float(f64),
+    Vec2([f64; 2]),
+    Color([f64; 4]),
+    Packed(Vec<AnimValue>),
 }
 
 impl AnimValue {
     /// Extract as `f64`, converting if possible.
-    pub fn as_f64(self) -> f64 {
+    pub fn as_f64(self) -> Option<f64> {
         match self {
-            AnimValue::Float(v) => v,
+            AnimValue::Float(v) => Some(v),
+            AnimValue::Vec2(_) | AnimValue::Color(_) | AnimValue::Packed(_) => None,
         }
     }
 
     /// Convert to `serde_json::Value` for the override boundary.
-    pub fn to_json(self) -> serde_json::Value {
+    pub fn to_json(&self) -> serde_json::Value {
         match self {
             AnimValue::Float(v) => serde_json::json!(v),
+            AnimValue::Vec2(v) => serde_json::json!([v[0], v[1]]),
+            AnimValue::Color(v) => serde_json::json!([v[0], v[1], v[2], v[3]]),
+            AnimValue::Packed(values) => {
+                serde_json::Value::Array(values.iter().map(AnimValue::to_json).collect())
+            }
         }
     }
 }
@@ -59,8 +71,24 @@ impl From<f64> for AnimValue {
     }
 }
 
-/// Legacy alias kept for backward compatibility with internal callers.
-pub type MutationValue = f64;
+impl From<[f64; 2]> for AnimValue {
+    fn from(v: [f64; 2]) -> Self {
+        AnimValue::Vec2(v)
+    }
+}
+
+impl From<[f64; 4]> for AnimValue {
+    fn from(v: [f64; 4]) -> Self {
+        AnimValue::Color(v)
+    }
+}
+
+pub type MutationValue = AnimValue;
+
+#[derive(Debug, Default, Clone)]
+pub struct MutationRuntimeState {
+    intelligent_light_default_drivers: HashMap<String, IntelligentLightDefaultDriverState>,
+}
 
 /// Input context supplied to mutation evaluation.
 pub struct MutationInputContext {
@@ -72,6 +100,8 @@ pub struct MutationInputContext {
     pub local_elapsed_time: f64,
     /// Latest mouse position in render-target frag pixel coordinates.
     pub mouse_position: Option<MousePosition>,
+    /// Whether stateful nodes should advance by one fixed frame this evaluation.
+    pub advance_frame: bool,
 }
 
 /// Evaluate a mutation definition given its input context.
@@ -80,6 +110,15 @@ pub struct MutationInputContext {
 pub fn evaluate_mutation(
     mutation: &MutationDefinition,
     ctx: &MutationInputContext,
+) -> Result<HashMap<String, MutationValue>> {
+    let mut runtime_state = MutationRuntimeState::default();
+    evaluate_mutation_with_state(mutation, ctx, &mut runtime_state)
+}
+
+pub fn evaluate_mutation_with_state(
+    mutation: &MutationDefinition,
+    ctx: &MutationInputContext,
+    runtime_state: &mut MutationRuntimeState,
 ) -> Result<HashMap<String, MutationValue>> {
     let has_inner_graph = !mutation.nodes.is_empty() || !mutation.connections.is_empty();
     let has_passthroughs = !mutation.passthrough_bindings.is_empty();
@@ -110,23 +149,25 @@ pub fn evaluate_mutation(
 
             for conn in &mutation.connections {
                 if conn.to.node_id == *node_id {
-                    if let Some(&val) =
+                    if let Some(val) =
                         port_values.get(&(conn.from.node_id.as_str(), conn.from.port_id.as_str()))
                     {
-                        port_values
-                            .insert((conn.to.node_id.as_str(), conn.to.port_id.as_str()), val);
+                        port_values.insert(
+                            (conn.to.node_id.as_str(), conn.to.port_id.as_str()),
+                            val.clone(),
+                        );
                     }
                 }
             }
 
-            evaluate_inner_node(node, &mut port_values)?;
+            evaluate_inner_node(node, &mut port_values, runtime_state, ctx.advance_frame)?;
         }
 
         for b in &mutation.output_bindings {
             let val = port_values
                 .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
-                .copied()
-                .unwrap_or(0.0);
+                .cloned()
+                .unwrap_or_default();
             outputs.insert(b.port_id.clone(), val);
         }
     }
@@ -171,7 +212,7 @@ fn resolve_passthrough_input_value(
     }
 
     // Fall back to the values map.
-    ctx.values.get(from_port_id).copied().unwrap_or(0.0)
+    ctx.values.get(from_port_id).cloned().unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +227,70 @@ pub fn resolve_output_target(port_id: &str) -> Option<OverrideKey> {
     OverrideKey::parse(port_id)
 }
 
+fn grouped_intelligent_light_target(port_id: &str) -> Option<(&str, &str)> {
+    let (node_id, param_name) = port_id.split_once(':')?;
+    match param_name {
+        "positions" | "colors" => Some((node_id, param_name)),
+        _ => None,
+    }
+}
+
+pub fn expand_output_target_keys(port_id: &str) -> Vec<OverrideKey> {
+    if let Some((node_id, param_name)) = grouped_intelligent_light_target(port_id) {
+        let prefix = if param_name == "positions" {
+            "pos"
+        } else {
+            "color"
+        };
+        return (0..INTELLIGENT_LIGHT_ZONE_COUNT)
+            .map(|index| OverrideKey::new(node_id, format!("{prefix}{index}")))
+            .collect();
+    }
+
+    resolve_output_target(port_id).into_iter().collect()
+}
+
+pub fn expand_output_overrides(
+    port_id: &str,
+    value: &MutationValue,
+) -> Vec<(OverrideKey, serde_json::Value)> {
+    if let Some((node_id, param_name)) = grouped_intelligent_light_target(port_id) {
+        let expected_prefix = if param_name == "positions" {
+            "pos"
+        } else {
+            "color"
+        };
+        let expected_kind_is_positions = param_name == "positions";
+
+        if let AnimValue::Packed(values) = value {
+            return values
+                .iter()
+                .take(INTELLIGENT_LIGHT_ZONE_COUNT)
+                .enumerate()
+                .filter_map(|(index, packed_value)| {
+                    match (expected_kind_is_positions, packed_value) {
+                        (true, AnimValue::Vec2(v)) => Some((
+                            OverrideKey::new(node_id, format!("{expected_prefix}{index}")),
+                            AnimValue::Vec2(*v).to_json(),
+                        )),
+                        (false, AnimValue::Color(v)) => Some((
+                            OverrideKey::new(node_id, format!("{expected_prefix}{index}")),
+                            AnimValue::Color(*v).to_json(),
+                        )),
+                        _ => None,
+                    }
+                })
+                .collect();
+        }
+
+        return Vec::new();
+    }
+
+    resolve_output_target(port_id)
+        .map(|key| vec![(key, value.to_json())])
+        .unwrap_or_default()
+}
+
 /// Collect all override target keys that a mutation can produce.
 ///
 /// This is the single source of truth for both runtime override mapping
@@ -196,7 +301,7 @@ pub fn all_output_target_keys(mutation: &MutationDefinition) -> Vec<OverrideKey>
 
     // From output bindings.
     for b in &mutation.output_bindings {
-        if let Some(key) = resolve_output_target(&b.port_id) {
+        for key in expand_output_target_keys(&b.port_id) {
             let s = format!("{}:{}", key.node_id, key.param_name);
             if seen.insert(s) {
                 keys.push(key);
@@ -206,7 +311,7 @@ pub fn all_output_target_keys(mutation: &MutationDefinition) -> Vec<OverrideKey>
 
     // From passthrough bindings.
     for pt in &mutation.passthrough_bindings {
-        if let Some(key) = resolve_output_target(&pt.to_port_id) {
+        for key in expand_output_target_keys(&pt.to_port_id) {
             let s = format!("{}:{}", key.node_id, key.param_name);
             if seen.insert(s) {
                 keys.push(key);
@@ -226,15 +331,18 @@ fn resolve_input_binding_value(
     ctx: &MutationInputContext,
 ) -> MutationValue {
     // Look up by port id in the provided values map.
-    ctx.values.get(&binding.port_id).copied().unwrap_or(0.0)
+    ctx.values
+        .get(&binding.port_id)
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<MutationValue> {
     match name {
-        "sceneElapsedTime" => Some(ctx.scene_elapsed_time),
-        "localElapsedTime" => Some(ctx.local_elapsed_time),
-        "mouse.position.x" => Some(ctx.mouse_position.map(|p| p.x).unwrap_or(0.0)),
-        "mouse.position.y" => Some(ctx.mouse_position.map(|p| p.y).unwrap_or(0.0)),
+        "sceneElapsedTime" => Some(ctx.scene_elapsed_time.into()),
+        "localElapsedTime" => Some(ctx.local_elapsed_time.into()),
+        "mouse.position.x" => Some(ctx.mouse_position.map(|p| p.x).unwrap_or(0.0).into()),
+        "mouse.position.y" => Some(ctx.mouse_position.map(|p| p.y).unwrap_or(0.0).into()),
         _ => None,
     }
 }
@@ -246,6 +354,8 @@ fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<Mutat
 fn evaluate_inner_node<'a>(
     node: &'a MutationInnerNode,
     port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
+    runtime_state: &mut MutationRuntimeState,
+    advance_frame: bool,
 ) -> Result<()> {
     match node.node_type {
         MutationInnerNodeType::FloatInput => {
@@ -254,18 +364,102 @@ fn evaluate_inner_node<'a>(
                 .get("value")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            write_output_if_declared_or_default(node, port_values, "value", value);
+            write_output_if_declared_or_default(node, port_values, "value", value.into());
+        }
+        MutationInnerNodeType::PackArray => {
+            let packed = node
+                .inputs
+                .iter()
+                .filter_map(|input| get_port_value(node, input.id.as_str(), port_values))
+                .collect();
+            write_output_if_declared_or_default(
+                node,
+                port_values,
+                "packed",
+                AnimValue::Packed(packed),
+            );
+        }
+        MutationInnerNodeType::IntelligentLightDefaultDriver => {
+            let driver_state = runtime_state
+                .intelligent_light_default_drivers
+                .entry(node.id.clone())
+                .or_default();
+            let frame = if advance_frame {
+                driver_state.advance()
+            } else {
+                driver_state.current_frame()
+            };
+
+            for output in &node.outputs {
+                if output.id == "positions" {
+                    write_output_if_declared_or_default(
+                        node,
+                        port_values,
+                        output.id.as_str(),
+                        AnimValue::Packed(
+                            frame
+                                .positions
+                                .iter()
+                                .copied()
+                                .map(AnimValue::Vec2)
+                                .collect(),
+                        ),
+                    );
+                    continue;
+                }
+
+                if output.id == "colors" {
+                    write_output_if_declared_or_default(
+                        node,
+                        port_values,
+                        output.id.as_str(),
+                        AnimValue::Packed(
+                            frame.colors.iter().copied().map(AnimValue::Color).collect(),
+                        ),
+                    );
+                    continue;
+                }
+
+                if let Some(index) = output
+                    .id
+                    .strip_prefix("pos")
+                    .and_then(|suffix| suffix.parse::<usize>().ok())
+                    .filter(|index| *index < INTELLIGENT_LIGHT_ZONE_COUNT)
+                {
+                    write_output_if_declared_or_default(
+                        node,
+                        port_values,
+                        output.id.as_str(),
+                        AnimValue::Vec2(frame.positions[index]),
+                    );
+                    continue;
+                }
+
+                if let Some(index) = output
+                    .id
+                    .strip_prefix("color")
+                    .and_then(|suffix| suffix.parse::<usize>().ok())
+                    .filter(|index| *index < INTELLIGENT_LIGHT_ZONE_COUNT)
+                {
+                    write_output_if_declared_or_default(
+                        node,
+                        port_values,
+                        output.id.as_str(),
+                        AnimValue::Color(frame.colors[index]),
+                    );
+                }
+            }
         }
         MutationInnerNodeType::MathAdd => {
             let inputs = ordered_input_values(node, port_values, &["a", "b"]);
-            let result = inputs.into_iter().sum();
-            write_output_if_declared_or_default(node, port_values, "result", result);
+            let result: f64 = inputs.into_iter().sum();
+            write_output_if_declared_or_default(node, port_values, "result", result.into());
         }
         MutationInnerNodeType::MathSubtract => {
             let inputs = ordered_input_values(node, port_values, &[]);
             let first = inputs.first().copied().unwrap_or(0.0);
             let rest = inputs.iter().skip(1).sum::<f64>();
-            write_output_if_declared_or_default(node, port_values, "result", first - rest);
+            write_output_if_declared_or_default(node, port_values, "result", (first - rest).into());
         }
         MutationInnerNodeType::MathMultiply => {
             let inputs = ordered_input_values(node, port_values, &[]);
@@ -274,7 +468,7 @@ fn evaluate_inner_node<'a>(
             } else {
                 inputs.into_iter().fold(1.0, |acc, value| acc * value)
             };
-            write_output_if_declared_or_default(node, port_values, "result", result);
+            write_output_if_declared_or_default(node, port_values, "result", result.into());
         }
         MutationInnerNodeType::MathDivide => {
             let inputs = ordered_input_values(node, port_values, &[]);
@@ -287,7 +481,7 @@ fn evaluate_inner_node<'a>(
                 }
                 result /= divisor;
             }
-            write_output_if_declared_or_default(node, port_values, "result", result);
+            write_output_if_declared_or_default(node, port_values, "result", result.into());
         }
         MutationInnerNodeType::Lerp => {
             let a = input_value_by_id_or_index(node, port_values, "a", 1).unwrap_or(0.0);
@@ -297,7 +491,7 @@ fn evaluate_inner_node<'a>(
                 node,
                 port_values,
                 "result",
-                a + (b - a) * t.clamp(0.0, 1.0),
+                (a + (b - a) * t.clamp(0.0, 1.0)).into(),
             );
         }
     }
@@ -320,19 +514,22 @@ fn input_value_by_id_or_index<'a>(
     port_values: &HashMap<(&'a str, &'a str), MutationValue>,
     port_id: &'a str,
     index: usize,
-) -> Option<MutationValue> {
-    get_port_value(node, port_id, port_values).or_else(|| {
-        node.inputs
-            .get(index)
-            .and_then(|p| port_values.get(&(node.id.as_str(), p.id.as_str())).copied())
-    })
+) -> Option<f64> {
+    get_port_value(node, port_id, port_values)
+        .and_then(AnimValue::as_f64)
+        .or_else(|| {
+            node.inputs
+                .get(index)
+                .and_then(|p| port_values.get(&(node.id.as_str(), p.id.as_str())).cloned())
+                .and_then(AnimValue::as_f64)
+        })
 }
 
 fn ordered_input_values<'a>(
     node: &'a MutationInnerNode,
     port_values: &HashMap<(&'a str, &'a str), MutationValue>,
     fallback_port_ids: &[&'a str],
-) -> Vec<MutationValue> {
+) -> Vec<f64> {
     if !node.inputs.is_empty() {
         return node
             .inputs
@@ -340,7 +537,8 @@ fn ordered_input_values<'a>(
             .map(|p| {
                 port_values
                     .get(&(node.id.as_str(), p.id.as_str()))
-                    .copied()
+                    .cloned()
+                    .and_then(AnimValue::as_f64)
                     .unwrap_or(0.0)
             })
             .collect();
@@ -348,7 +546,11 @@ fn ordered_input_values<'a>(
 
     fallback_port_ids
         .iter()
-        .map(|port_id| get_port_value(node, port_id, port_values).unwrap_or(0.0))
+        .map(|port_id| {
+            get_port_value(node, port_id, port_values)
+                .and_then(AnimValue::as_f64)
+                .unwrap_or(0.0)
+        })
         .collect()
 }
 
@@ -357,7 +559,7 @@ fn get_port_value<'a>(
     port_id: &'a str,
     port_values: &HashMap<(&'a str, &'a str), MutationValue>,
 ) -> Option<MutationValue> {
-    port_values.get(&(node.id.as_str(), port_id)).copied()
+    port_values.get(&(node.id.as_str(), port_id)).cloned()
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +662,50 @@ mod tests {
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,
             mouse_position: None,
+            advance_frame: true,
+        }
+    }
+
+    fn output_f64(outputs: &HashMap<String, MutationValue>, key: &str) -> f64 {
+        outputs
+            .get(key)
+            .cloned()
+            .and_then(AnimValue::as_f64)
+            .unwrap_or(f64::NAN)
+    }
+
+    fn output_packed_len(outputs: &HashMap<String, MutationValue>, key: &str) -> usize {
+        match outputs.get(key).cloned() {
+            Some(AnimValue::Packed(values)) => values.len(),
+            other => panic!("expected packed output for {key}, got {other:?}"),
+        }
+    }
+
+    fn output_packed_vec2(
+        outputs: &HashMap<String, MutationValue>,
+        key: &str,
+        index: usize,
+    ) -> [f64; 2] {
+        match outputs.get(key).cloned() {
+            Some(AnimValue::Packed(values)) => match values.get(index).cloned() {
+                Some(AnimValue::Vec2(value)) => value,
+                other => panic!("expected vec2 packed output for {key}[{index}], got {other:?}"),
+            },
+            other => panic!("expected packed output for {key}, got {other:?}"),
+        }
+    }
+
+    fn output_packed_color(
+        outputs: &HashMap<String, MutationValue>,
+        key: &str,
+        index: usize,
+    ) -> [f64; 4] {
+        match outputs.get(key).cloned() {
+            Some(AnimValue::Packed(values)) => match values.get(index).cloned() {
+                Some(AnimValue::Color(value)) => value,
+                other => panic!("expected color packed output for {key}[{index}], got {other:?}"),
+            },
+            other => panic!("expected packed output for {key}, got {other:?}"),
         }
     }
 
@@ -495,7 +741,70 @@ mod tests {
         });
 
         let result = evaluate_mutation(&m, &empty_ctx()).unwrap();
-        assert!((result["out"] - 2.5).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out") - 2.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn pack_array_node_preserves_input_order() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "pack".into(),
+            node_type: MutationInnerNodeType::PackArray,
+            params: HashMap::new(),
+            inputs: vec![
+                MutationPort {
+                    id: "input1".into(),
+                    name: None,
+                    port_type: Some("float".into()),
+                },
+                MutationPort {
+                    id: "input2".into(),
+                    name: None,
+                    port_type: Some("float".into()),
+                },
+            ],
+            outputs: vec![MutationPort {
+                id: "packed".into(),
+                name: None,
+                port_type: Some("packed<float>".into()),
+            }],
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "pa".into(),
+            to: MutationEndpoint {
+                node_id: "pack".into(),
+                port_id: "input1".into(),
+            },
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "pb".into(),
+            to: MutationEndpoint {
+                node_id: "pack".into(),
+                port_id: "input2".into(),
+            },
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "packed_out".into(),
+            from: MutationEndpoint {
+                node_id: "pack".into(),
+                port_id: "packed".into(),
+            },
+        });
+
+        let mut ctx = empty_ctx();
+        ctx.values.insert("pa".into(), 3.0.into());
+        ctx.values.insert("pb".into(), 7.0.into());
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert_eq!(output_packed_len(&result, "packed_out"), 2);
+
+        match result.get("packed_out").cloned() {
+            Some(AnimValue::Packed(values)) => {
+                assert_eq!(values[0], AnimValue::Float(3.0));
+                assert_eq!(values[1], AnimValue::Float(7.0));
+            }
+            other => panic!("expected packed output, got {other:?}"),
+        }
     }
 
     #[test]
@@ -546,11 +855,11 @@ mod tests {
         });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("pa".into(), 40.0);
-        ctx.values.insert("pb".into(), 2.0);
+        ctx.values.insert("pa".into(), 40.0.into());
+        ctx.values.insert("pb".into(), 2.0.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["p_out"] - 42.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "p_out") - 42.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -601,11 +910,11 @@ mod tests {
         });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("pa".into(), 3.0);
-        ctx.values.insert("pb".into(), 7.0);
+        ctx.values.insert("pa".into(), 3.0.into());
+        ctx.values.insert("pb".into(), 7.0.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 21.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out") - 21.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -668,12 +977,12 @@ mod tests {
         });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("pa".into(), 0.0);
-        ctx.values.insert("pb".into(), 100.0);
-        ctx.values.insert("pt".into(), 0.25);
+        ctx.values.insert("pa".into(), 0.0.into());
+        ctx.values.insert("pb".into(), 100.0.into());
+        ctx.values.insert("pt".into(), 0.25.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 25.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out") - 25.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -724,11 +1033,11 @@ mod tests {
         });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("num".into(), 5.5);
-        ctx.values.insert("den".into(), 0.0);
+        ctx.values.insert("num".into(), 5.5.into());
+        ctx.values.insert("den".into(), 0.0.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 0.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out") - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -749,8 +1058,8 @@ mod tests {
         ctx.mouse_position = Some(MousePosition { x: 123.0, y: 456.0 });
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out_x"] - 123.0).abs() < f64::EPSILON);
-        assert!((result["out_y"] - 456.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out_x") - 123.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out_y") - 456.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -801,11 +1110,87 @@ mod tests {
         });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("a".into(), 88.0);
-        ctx.values.insert("b".into(), 9.0);
+        ctx.values.insert("a".into(), 88.0.into());
+        ctx.values.insert("b".into(), 9.0.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
-        assert!((result["out"] - 79.0).abs() < f64::EPSILON);
+        assert!((output_f64(&result, "out") - 79.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn intelligent_light_default_driver_emits_typed_outputs_and_persists_state() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "driver".into(),
+            node_type: MutationInnerNodeType::IntelligentLightDefaultDriver,
+            params: HashMap::new(),
+            inputs: vec![],
+            outputs: vec![
+                MutationPort {
+                    id: "positions".into(),
+                    name: Some("Positions".into()),
+                    port_type: Some("packed<vector2>".into()),
+                },
+                MutationPort {
+                    id: "colors".into(),
+                    name: Some("Colors".into()),
+                    port_type: Some("packed<color>".into()),
+                },
+            ],
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out_positions".into(),
+            from: MutationEndpoint {
+                node_id: "driver".into(),
+                port_id: "positions".into(),
+            },
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "out_colors".into(),
+            from: MutationEndpoint {
+                node_id: "driver".into(),
+                port_id: "colors".into(),
+            },
+        });
+
+        let mut runtime_state = MutationRuntimeState::default();
+        let mut ctx = empty_ctx();
+        ctx.advance_frame = false;
+
+        let initial = evaluate_mutation_with_state(&m, &ctx, &mut runtime_state).unwrap();
+        let initial_pos = output_packed_vec2(&initial, "out_positions", 0);
+        let initial_color = output_packed_color(&initial, "out_colors", 0);
+
+        ctx.advance_frame = true;
+        let advanced = evaluate_mutation_with_state(&m, &ctx, &mut runtime_state).unwrap();
+        let advanced_pos = output_packed_vec2(&advanced, "out_positions", 0);
+        let advanced_color = output_packed_color(&advanced, "out_colors", 0);
+
+        assert_eq!(
+            output_packed_len(&advanced, "out_positions"),
+            INTELLIGENT_LIGHT_ZONE_COUNT
+        );
+        assert_eq!(
+            output_packed_len(&advanced, "out_colors"),
+            INTELLIGENT_LIGHT_ZONE_COUNT
+        );
+        assert_ne!(
+            initial_pos, advanced_pos,
+            "driver should advance positions between frames"
+        );
+        assert_eq!(
+            initial_color, advanced_color,
+            "driver colors should stay constant"
+        );
+        assert!((advanced_pos[0] - 0.3540362174764879).abs() < 1e-6);
+        assert!((advanced_pos[1] - 0.27569746078678015).abs() < 1e-6);
+        let expected_color = [0.5019608, 0.5254902, 1.0, 1.0];
+        for (actual, expected) in advanced_color.into_iter().zip(expected_color) {
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "color0 should match the legacy default constant"
+            );
+        }
     }
 
     // ── Passthrough binding tests ──────────────────────────────────────
@@ -830,7 +1215,7 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!(
-            (result["FloatInput_53:value"] - 3.14).abs() < f64::EPSILON,
+            (output_f64(&result, "FloatInput_53:value") - 3.14).abs() < f64::EPSILON,
             "passthrough should wire sceneElapsedTime → output"
         );
     }
@@ -849,7 +1234,7 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!(
-            (result["Foo_1:value"] - 7.77).abs() < f64::EPSILON,
+            (output_f64(&result, "Foo_1:value") - 7.77).abs() < f64::EPSILON,
             "passthrough should wire localElapsedTime → output"
         );
     }
@@ -877,11 +1262,11 @@ mod tests {
             });
 
         let mut ctx = empty_ctx();
-        ctx.values.insert("ColorInput_7:value".into(), 99.0);
+        ctx.values.insert("ColorInput_7:value".into(), 99.0.into());
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!(
-            (result["Out_1:value"] - 99.0).abs() < f64::EPSILON,
+            (output_f64(&result, "Out_1:value") - 99.0).abs() < f64::EPSILON,
             "passthrough should resolve through input binding"
         );
     }
@@ -924,7 +1309,7 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!(
-            (result["Result:value"] - 42.0).abs() < f64::EPSILON,
+            (output_f64(&result, "Result:value") - 42.0).abs() < f64::EPSILON,
             "output binding should win over passthrough"
         );
     }

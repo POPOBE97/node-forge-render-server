@@ -571,7 +571,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        pass_source_metadata_by_pass, BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo,
+        BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo, pass_source_metadata_by_pass,
     };
     use crate::dsl::{Metadata, Node, SceneDSL};
 

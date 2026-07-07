@@ -16,6 +16,21 @@ pub(super) struct PresentPhase {
     pub operation_indicator_visible: bool,
 }
 
+fn timeline_toggle_shortcut_requested(
+    egui_wants_keyboard_input: bool,
+    command_pressed: bool,
+    j_pressed: bool,
+) -> bool {
+    !egui_wants_keyboard_input && command_pressed && j_pressed
+}
+
+fn timeline_toggle_shortcut_pressed(ctx: &egui::Context) -> bool {
+    let egui_wants_keyboard_input = ctx.egui_wants_keyboard_input();
+    let (command_pressed, j_pressed) =
+        ctx.input(|input| (input.modifiers.command, input.key_pressed(egui::Key::J)));
+    timeline_toggle_shortcut_requested(egui_wants_keyboard_input, command_pressed, j_pressed)
+}
+
 pub(super) fn run(
     app: &mut App,
     ui: &mut egui::Ui,
@@ -27,6 +42,9 @@ pub(super) fn run(
     let now = ingest.frame_time;
     let frame_state = window_mode::update_window_mode_frame(app, now);
     window_mode::maybe_apply_startup_sidebar_sizing(app, ctx);
+    if timeline_toggle_shortcut_pressed(ctx) {
+        app.shell.timeline_visible = !app.shell.timeline_visible;
+    }
 
     if app.shell.resource_snapshot_generation != app.runtime.pipeline_rebuild_count {
         let snapshot = ui::resource_tree::ResourceSnapshot::capture(
@@ -89,7 +107,9 @@ pub(super) fn run(
     // the bottom first. The hover result feeds into the canvas render for
     // live preview.
     let mut timeline_hover: Option<ui::debug_sidebar::TimelineHover> = None;
-    if let Some(ref buf) = app.runtime.timeline_buffer {
+    if app.shell.timeline_visible
+        && let Some(ref buf) = app.runtime.timeline_buffer
+    {
         egui::Panel::bottom("timeline_panel")
             .resizable(false)
             .frame(
@@ -313,5 +333,18 @@ pub(super) fn run(
             .is_active(window_mode::ANIM_KEY_SIDEBAR_FACTOR),
         pan_zoom_animating: canvas::is_pan_zoom_animating(app),
         operation_indicator_visible: canvas::ops::is_visible(&app.canvas.async_ops),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timeline_toggle_shortcut_requested;
+
+    #[test]
+    fn timeline_toggle_shortcut_requires_command_and_no_text_focus() {
+        assert!(timeline_toggle_shortcut_requested(false, true, true));
+        assert!(!timeline_toggle_shortcut_requested(true, true, true));
+        assert!(!timeline_toggle_shortcut_requested(false, false, true));
+        assert!(!timeline_toggle_shortcut_requested(false, true, false));
     }
 }

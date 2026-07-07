@@ -7,8 +7,12 @@ use crate::protocol::{
     InteractionPosition, InteractionTouchData, InteractionWheelData,
 };
 
-pub fn is_clean_rendering_state(_has_preview_texture: bool, _has_reference_image: bool) -> bool {
-    true
+pub fn is_clean_rendering_state(
+    _has_preview_texture: bool,
+    _has_reference_image: bool,
+    design_session_active: bool,
+) -> bool {
+    !design_session_active
 }
 
 pub fn collect_interaction_payloads(
@@ -301,11 +305,12 @@ mod tests {
     }
 
     #[test]
-    fn clean_state_allows_preview_and_reference_image() {
-        assert!(is_clean_rendering_state(false, false));
-        assert!(is_clean_rendering_state(true, false));
-        assert!(is_clean_rendering_state(false, true));
-        assert!(is_clean_rendering_state(true, true));
+    fn design_session_disables_clean_state() {
+        assert!(is_clean_rendering_state(false, false, false));
+        assert!(is_clean_rendering_state(true, false, false));
+        assert!(is_clean_rendering_state(false, true, false));
+        assert!(is_clean_rendering_state(true, true, false));
+        assert!(!is_clean_rendering_state(false, false, true));
     }
 
     #[test]
@@ -453,7 +458,7 @@ mod tests {
             .expect("glass.nforge should have a mousedown transition to Mutation");
 
         let mut focus = false;
-        let clean_state = is_clean_rendering_state(true, true);
+        let clean_state = is_clean_rendering_state(true, true, false);
         let payloads = collect_interaction_payloads(
             &[egui::Event::PointerButton {
                 pos: Pos2::new(120.0, 120.0),

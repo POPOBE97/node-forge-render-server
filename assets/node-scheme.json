@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-06T16:45:34.722Z",
+  "generatedAt": "2026-07-07T12:12:51.459Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -112,6 +112,13 @@
     "mat4",
     "material",
     "normalizedBezierCurve",
+    "packed<bool>",
+    "packed<color>",
+    "packed<float>",
+    "packed<int>",
+    "packed<vector2>",
+    "packed<vector3>",
+    "packed<vector4>",
     "pass",
     "renderTexture",
     "shader",
@@ -229,6 +236,13 @@
       "vector4",
       "mat4",
       "color",
+      "packed<float>",
+      "packed<int>",
+      "packed<bool>",
+      "packed<vector2>",
+      "packed<vector3>",
+      "packed<vector4>",
+      "packed<color>",
       "float[]",
       "vector2[]",
       "vector3[]",
@@ -298,6 +312,27 @@
     ],
     "mat4": [
       "mat4"
+    ],
+    "packed<float>": [
+      "packed<float>"
+    ],
+    "packed<int>": [
+      "packed<int>"
+    ],
+    "packed<bool>": [
+      "packed<bool>"
+    ],
+    "packed<vector2>": [
+      "packed<vector2>"
+    ],
+    "packed<vector3>": [
+      "packed<vector3>"
+    ],
+    "packed<vector4>": [
+      "packed<vector4>"
+    ],
+    "packed<color>": [
+      "packed<color>"
     ],
     "float[]": [
       "float[]"
@@ -2581,7 +2616,7 @@
         }
       ],
       "defaultParams": {
-        "layoutMode": "procedural"
+        "layoutMode": "manual"
       }
     },
     {
@@ -5713,6 +5748,26 @@
         }
       },
       {
+        "type": "IntelligentLightDefaultDriver",
+        "label": "Intelligent Light Default Driver",
+        "category": "Core",
+        "description": "Emit the legacy 11-zone Intelligent Light default motion and default colors",
+        "inputs": [],
+        "outputs": [
+          {
+            "id": "positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "defaultParams": {}
+      },
+      {
         "type": "Lerp",
         "label": "Lerp",
         "category": "Math",
@@ -5815,6 +5870,21 @@
           {
             "id": "result",
             "name": "Result",
+            "type": "any"
+          }
+        ],
+        "defaultParams": {}
+      },
+      {
+        "type": "PackArray",
+        "label": "Pack Array",
+        "category": "Core",
+        "description": "Pack connected values into a typed Packed<T> container",
+        "inputs": [],
+        "outputs": [
+          {
+            "id": "packed",
+            "name": "Packed",
             "type": "any"
           }
         ],

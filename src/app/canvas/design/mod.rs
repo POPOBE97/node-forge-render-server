@@ -1,5 +1,5 @@
-pub mod interaction;
 pub mod intelligent_light;
+pub mod interaction;
 pub mod mesh_gradient;
 pub mod registry;
 pub mod state;
@@ -10,8 +10,8 @@ pub use interaction::{
     DesignInteractionClaims, DesignOverlayInput, DesignOverlayOutput, DesignOverlayStatus,
 };
 use registry::{CanvasDesignToolKind, tool_kind_for_target};
-use state::{IntelligentLightDesignState, MeshGradientDesignState};
 pub use state::{CanvasDesignSession, CanvasDesignState, CanvasDesignToolState};
+use state::{IntelligentLightDesignState, MeshGradientDesignState};
 
 use crate::ui::resource_tree::PassDesignTarget;
 
