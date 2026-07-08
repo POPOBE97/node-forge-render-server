@@ -2,8 +2,8 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-07-07T11:38:05.072Z",
-    "modified": "2026-07-07T11:38:05.072Z"
+    "created": "2026-07-07T12:24:58.608Z",
+    "modified": "2026-07-07T12:24:58.608Z"
   },
   "nodes": [
     {
@@ -275,125 +275,25 @@
         "name": "Mutation 1",
         "nodes": [
           {
-            "id": "min_mrakkshw_2",
+            "id": "min_mram1jtb_5",
             "inputs": [],
             "label": "Intelligent Light Default Driver",
             "outputs": [
               {
-                "id": "color0",
-                "name": "Color 0",
-                "type": "color"
+                "id": "colors",
+                "name": "Colors",
+                "type": "packed<color>"
               },
               {
-                "id": "color1",
-                "name": "Color 1",
-                "type": "color"
-              },
-              {
-                "id": "color10",
-                "name": "Color 10",
-                "type": "color"
-              },
-              {
-                "id": "color2",
-                "name": "Color 2",
-                "type": "color"
-              },
-              {
-                "id": "color3",
-                "name": "Color 3",
-                "type": "color"
-              },
-              {
-                "id": "color4",
-                "name": "Color 4",
-                "type": "color"
-              },
-              {
-                "id": "color5",
-                "name": "Color 5",
-                "type": "color"
-              },
-              {
-                "id": "color6",
-                "name": "Color 6",
-                "type": "color"
-              },
-              {
-                "id": "color7",
-                "name": "Color 7",
-                "type": "color"
-              },
-              {
-                "id": "color8",
-                "name": "Color 8",
-                "type": "color"
-              },
-              {
-                "id": "color9",
-                "name": "Color 9",
-                "type": "color"
-              },
-              {
-                "id": "pos0",
-                "name": "Pos 0",
-                "type": "vector2"
-              },
-              {
-                "id": "pos1",
-                "name": "Pos 1",
-                "type": "vector2"
-              },
-              {
-                "id": "pos10",
-                "name": "Pos 10",
-                "type": "vector2"
-              },
-              {
-                "id": "pos2",
-                "name": "Pos 2",
-                "type": "vector2"
-              },
-              {
-                "id": "pos3",
-                "name": "Pos 3",
-                "type": "vector2"
-              },
-              {
-                "id": "pos4",
-                "name": "Pos 4",
-                "type": "vector2"
-              },
-              {
-                "id": "pos5",
-                "name": "Pos 5",
-                "type": "vector2"
-              },
-              {
-                "id": "pos6",
-                "name": "Pos 6",
-                "type": "vector2"
-              },
-              {
-                "id": "pos7",
-                "name": "Pos 7",
-                "type": "vector2"
-              },
-              {
-                "id": "pos8",
-                "name": "Pos 8",
-                "type": "vector2"
-              },
-              {
-                "id": "pos9",
-                "name": "Pos 9",
-                "type": "vector2"
+                "id": "positions",
+                "name": "Positions",
+                "type": "packed<vector2>"
               }
             ],
             "params": {},
             "position": {
-              "x": 200,
-              "y": 220
+              "x": -60,
+              "y": 360
             },
             "type": "IntelligentLightDefaultDriver"
           }
@@ -401,80 +301,17 @@
         "outputBindings": [
           {
             "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos0"
+              "nodeId": "min_mram1jtb_5",
+              "portId": "colors"
             },
-            "mutationPortId": "IntelligentLight_8:pos0"
+            "mutationPortId": "IntelligentLight_8:colors"
           },
           {
             "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos1"
+              "nodeId": "min_mram1jtb_5",
+              "portId": "positions"
             },
-            "mutationPortId": "IntelligentLight_8:pos1"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos2"
-            },
-            "mutationPortId": "IntelligentLight_8:pos10"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos3"
-            },
-            "mutationPortId": "IntelligentLight_8:pos2"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos4"
-            },
-            "mutationPortId": "IntelligentLight_8:pos3"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos5"
-            },
-            "mutationPortId": "IntelligentLight_8:pos4"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos6"
-            },
-            "mutationPortId": "IntelligentLight_8:pos5"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos7"
-            },
-            "mutationPortId": "IntelligentLight_8:pos6"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos8"
-            },
-            "mutationPortId": "IntelligentLight_8:pos7"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos9"
-            },
-            "mutationPortId": "IntelligentLight_8:pos8"
-          },
-          {
-            "from": {
-              "nodeId": "min_mrakkshw_2",
-              "portId": "pos10"
-            },
-            "mutationPortId": "IntelligentLight_8:pos9"
+            "mutationPortId": "IntelligentLight_8:positions"
           }
         ],
         "outputs": [
@@ -484,114 +321,14 @@
             "type": "float"
           },
           {
-            "id": "IntelligentLight_8:color0",
-            "name": "Intelligent Light.color0",
-            "type": "color"
+            "id": "IntelligentLight_8:colors",
+            "name": "Intelligent Light.colors",
+            "type": "packed<color>"
           },
           {
-            "id": "IntelligentLight_8:color1",
-            "name": "Intelligent Light.color1",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color10",
-            "name": "Intelligent Light.color10",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color2",
-            "name": "Intelligent Light.color2",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color3",
-            "name": "Intelligent Light.color3",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color4",
-            "name": "Intelligent Light.color4",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color5",
-            "name": "Intelligent Light.color5",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color6",
-            "name": "Intelligent Light.color6",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color7",
-            "name": "Intelligent Light.color7",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color8",
-            "name": "Intelligent Light.color8",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:color9",
-            "name": "Intelligent Light.color9",
-            "type": "color"
-          },
-          {
-            "id": "IntelligentLight_8:pos0",
-            "name": "Intelligent Light.pos0",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos1",
-            "name": "Intelligent Light.pos1",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos10",
-            "name": "Intelligent Light.pos10",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos2",
-            "name": "Intelligent Light.pos2",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos3",
-            "name": "Intelligent Light.pos3",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos4",
-            "name": "Intelligent Light.pos4",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos5",
-            "name": "Intelligent Light.pos5",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos6",
-            "name": "Intelligent Light.pos6",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos7",
-            "name": "Intelligent Light.pos7",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos8",
-            "name": "Intelligent Light.pos8",
-            "type": "vector2"
-          },
-          {
-            "id": "IntelligentLight_8:pos9",
-            "name": "Intelligent Light.pos9",
-            "type": "vector2"
+            "id": "IntelligentLight_8:positions",
+            "name": "Intelligent Light.positions",
+            "type": "packed<vector2>"
           }
         ],
         "passthroughBindings": [
