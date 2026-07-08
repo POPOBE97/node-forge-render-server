@@ -2,16 +2,16 @@
   "version": "2.0",
   "metadata": {
     "name": "My Scene",
-    "created": "2026-07-07T12:24:58.608Z",
-    "modified": "2026-07-07T12:24:58.608Z"
+    "created": "2026-07-07T17:46:51.908Z",
+    "modified": "2026-07-07T17:46:51.908Z"
   },
   "nodes": [
     {
       "id": "RenderTexture_1",
       "type": "RenderTexture",
       "position": {
-        "x": 480,
-        "y": 680
+        "x": 360,
+        "y": 300
       },
       "width": 160,
       "label": "Render Texture",
@@ -25,8 +25,8 @@
       "id": "Screen_3",
       "type": "Screen",
       "position": {
-        "x": 880,
-        "y": 480
+        "x": 560,
+        "y": 360
       },
       "width": 160,
       "label": "Screen",
@@ -39,8 +39,8 @@
       "id": "Composite_4",
       "type": "Composite",
       "position": {
-        "x": 680,
-        "y": 480
+        "x": 380,
+        "y": 600
       },
       "width": 160,
       "label": "Composite",
@@ -72,24 +72,11 @@
       }
     },
     {
-      "id": "FloatInput_7",
-      "type": "FloatInput",
-      "position": {
-        "x": 20,
-        "y": 480
-      },
-      "width": 160,
-      "label": "Float Input",
-      "params": {
-        "value": 0
-      }
-    },
-    {
       "id": "IntelligentLight_8",
       "type": "IntelligentLight",
       "position": {
-        "x": 280,
-        "y": 480
+        "x": -120,
+        "y": 440
       },
       "width": 160,
       "label": "Intelligent Light",
@@ -129,7 +116,8 @@
           9.100000381469728
         ],
         "power": 0,
-        "width": 14
+        "width": 14,
+        "driver": 0
       }
     }
   ],
@@ -165,17 +153,6 @@
       "to": {
         "nodeId": "Composite_4",
         "portId": "pass"
-      }
-    },
-    {
-      "id": "edge_5",
-      "from": {
-        "nodeId": "FloatInput_7",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "IntelligentLight_8",
-        "portId": "driver"
       }
     }
   ],
@@ -236,7 +213,7 @@
         "source": "st_mp6nhg2s_6",
         "target": "st_mp6nhknz_a",
         "delay": 0,
-        "duration": 0.3,
+        "duration": 0,
         "easing": "linear"
       }
     ],
@@ -246,11 +223,6 @@
         "id": "mutation_mp6nhknz_9",
         "inputBindings": [],
         "inputs": [
-          {
-            "id": "FloatInput_7:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
           {
             "id": "localElapsedTime",
             "name": "Local Elapsed Time",
@@ -276,8 +248,14 @@
         "nodes": [
           {
             "id": "min_mram1jtb_5",
-            "inputs": [],
+            "type": "IntelligentLightDefaultDriver",
+            "position": {
+              "x": -300,
+              "y": 600
+            },
             "label": "Intelligent Light Default Driver",
+            "params": {},
+            "inputs": [],
             "outputs": [
               {
                 "id": "colors",
@@ -289,37 +267,26 @@
                 "name": "Positions",
                 "type": "packed<vector2>"
               }
-            ],
-            "params": {},
-            "position": {
-              "x": -60,
-              "y": 360
-            },
-            "type": "IntelligentLightDefaultDriver"
+            ]
           }
         ],
         "outputBindings": [
           {
+            "mutationPortId": "IntelligentLight_8:colors",
             "from": {
               "nodeId": "min_mram1jtb_5",
               "portId": "colors"
-            },
-            "mutationPortId": "IntelligentLight_8:colors"
+            }
           },
           {
+            "mutationPortId": "IntelligentLight_8:positions",
             "from": {
               "nodeId": "min_mram1jtb_5",
               "portId": "positions"
-            },
-            "mutationPortId": "IntelligentLight_8:positions"
+            }
           }
         ],
         "outputs": [
-          {
-            "id": "FloatInput_7:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
           {
             "id": "IntelligentLight_8:colors",
             "name": "Intelligent Light.colors",
@@ -331,12 +298,7 @@
             "type": "packed<vector2>"
           }
         ],
-        "passthroughBindings": [
-          {
-            "inputPortId": "localElapsedTime",
-            "outputPortId": "FloatInput_7:value"
-          }
-        ]
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_mp6nhg2s_6"
