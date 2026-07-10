@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow, bail};
 
 use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
+use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::glsl_snippet::{GlslParam, GlslSnippetSpec, compile_glsl_snippet};
 use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
@@ -469,17 +470,7 @@ where
             })?;
 
             // Validate that upstream is a pass-producing node.
-            if !matches!(
-                upstream_node.node_type.as_str(),
-                "RenderPass"
-                    | "BloomNode"
-                    | "GuassianBlurPass"
-                    | "Downsample"
-                    | "Upsample"
-                    | "GradientBlur"
-                    | "MeshGradient"
-                    | "Composite"
-            ) {
+            if !is_pass_like_node_type(&upstream_node.node_type) {
                 bail!(
                     "MathClosure pass input '{}' must be connected to a pass node, got {}",
                     param_name,

@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
+use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::utils::fmt_f32;
 
 fn substitute_template(template: &str, vars: &[(&str, String)]) -> String {
@@ -208,17 +209,7 @@ fn resolve_pass_binding(
     })?;
 
     // Only pass-producing nodes are valid.
-    if !matches!(
-        upstream.node_type.as_str(),
-        "RenderPass"
-            | "BloomNode"
-            | "GuassianBlurPass"
-            | "Downsample"
-            | "Upsample"
-            | "GradientBlur"
-            | "MeshGradient"
-            | "Composite"
-    ) {
+    if !is_pass_like_node_type(&upstream.node_type) {
         bail!(
             "GlassMaterial.{port_id} must be connected to a pass node, got {}",
             upstream.node_type

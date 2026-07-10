@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
+use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::utils::{coerce_to_type, fmt_f32};
 
 /// Stable key for the aspect-correction WGSL helpers in `extra_wgsl_decls`.
@@ -627,17 +628,7 @@ where
     })?;
 
     // Validate that upstream is a pass-producing node.
-    if !matches!(
-        upstream_node.node_type.as_str(),
-        "RenderPass"
-            | "BloomNode"
-            | "GuassianBlurPass"
-            | "Downsample"
-            | "Upsample"
-            | "GradientBlur"
-            | "MeshGradient"
-            | "Composite"
-    ) {
+    if !is_pass_like_node_type(&upstream_node.node_type) {
         bail!(
             "PassTexture.pass must be connected to a pass node, got {}",
             upstream_node.node_type
@@ -705,11 +696,13 @@ mod pass_texture_tests {
         Ok(TypedExpr::new("in.uv".to_string(), ValueType::Vec2))
     }
 
-    fn scene_with_pass_texture() -> (SceneDSL, HashMap<String, Node>, Node) {
+    fn scene_with_pass_texture(
+        upstream_node_type: &str,
+    ) -> (SceneDSL, HashMap<String, Node>, Node) {
         let nodes = vec![
             Node {
                 id: "up".to_string(),
-                node_type: "RenderPass".to_string(),
+                node_type: upstream_node_type.to_string(),
                 params: HashMap::new(),
                 inputs: Vec::new(),
                 input_bindings: Vec::new(),
@@ -741,8 +734,8 @@ mod pass_texture_tests {
     }
 
     #[test]
-    fn test_pass_texture_color_sampling_uses_uv() {
-        let (scene, nodes_by_id, node) = scene_with_pass_texture();
+    fn test_pass_texture_accepts_intelligent_light() {
+        let (scene, nodes_by_id, node) = scene_with_pass_texture("IntelligentLight");
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
 
@@ -841,7 +834,7 @@ mod pass_texture_tests {
 
     #[test]
     fn test_pass_texture_alpha_output() {
-        let (scene, nodes_by_id, node) = scene_with_pass_texture();
+        let (scene, nodes_by_id, node) = scene_with_pass_texture("RenderPass");
         let mut ctx = MaterialCompileContext::default();
         let mut cache = HashMap::new();
 
