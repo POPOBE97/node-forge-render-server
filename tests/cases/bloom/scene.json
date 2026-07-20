@@ -454,7 +454,6 @@
       "size": 20946388
     }
   },
-  "groups": [],
   "stateMachine": {
     "id": "sm_mq8a97ph_b",
     "name": "State Machine",
@@ -511,6 +510,7 @@
         "easing": "linear"
       }
     ],
+    "initialStateId": "st_mq8a9yv3_c",
     "mutations": [
       {
         "id": "mutation_mq8aa1sy_f",
@@ -559,8 +559,6 @@
             "type": "float"
           }
         ],
-        "nodes": [],
-        "connections": [],
         "inputBindings": [],
         "outputBindings": [],
         "passthroughBindings": [
@@ -568,9 +566,10 @@
             "inputPortId": "localElapsedTime",
             "outputPortId": "FloatInput_48:value"
           }
-        ]
+        ],
+        "nodes": [],
+        "connections": []
       }
-    ],
-    "initialStateId": "st_mq8a9yv3_c"
+    ]
   }
 }

@@ -336,18 +336,17 @@
     "composite": "node_1"
   },
   "assets": {
-    "eea2468df096": {
-      "path": "assets/eea2468df096.png",
-      "originalName": "baseline-test.png",
-      "mimeType": "image/png",
-      "size": 284985
-    },
     "d7d367951854": {
       "path": "assets/d7d367951854.png",
       "originalName": "baseline.png",
       "mimeType": "image/png",
       "size": 1540299
+    },
+    "eea2468df096": {
+      "path": "assets/eea2468df096.png",
+      "originalName": "baseline-test.png",
+      "mimeType": "image/png",
+      "size": 284985
     }
-  },
-  "groups": []
+  }
 }

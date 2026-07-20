@@ -276,149 +276,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "node_default_composite"
-  },
-  "assets": {
-    "1a123e792811": {
-      "path": "assets/1a123e792811.jpg",
-      "originalName": "_1_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 242956
-    },
-    "1df96118da1e": {
-      "path": "assets/1df96118da1e.jpg",
-      "originalName": "18张图怎么放得下我的普吉岛7天_1_酷儿喜_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 242988
-    },
-    "260525613beb": {
-      "path": "assets/260525613beb.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_6_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 253684
-    },
-    "378d49611c97": {
-      "path": "assets/378d49611c97.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_8_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 371922
-    },
-    "550377046ca4": {
-      "path": "assets/550377046ca4.jpg",
-      "originalName": "_4_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 404844
-    },
-    "569810770e32": {
-      "path": "assets/569810770e32.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_5_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 369225
-    },
-    "5c8685a3cd6c": {
-      "path": "assets/5c8685a3cd6c.jpg",
-      "originalName": "_7_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 475231
-    },
-    "61fea0e0acb1": {
-      "path": "assets/61fea0e0acb1.jpg",
-      "originalName": "_11_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 416604
-    },
-    "709ef12a1d12": {
-      "path": "assets/709ef12a1d12.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_1_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 355910
-    },
-    "73560afcb7a7": {
-      "path": "assets/73560afcb7a7.jpg",
-      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_2_HY-HLJDQZZ_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 489395
-    },
-    "7fb4ec5608c3": {
-      "path": "assets/7fb4ec5608c3.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_9_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 411289
-    },
-    "83fd614913be": {
-      "path": "assets/83fd614913be.jpg",
-      "originalName": "对对对就是这种感觉_3_雪松Oceana_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 166112
-    },
-    "86020510ff0c": {
-      "path": "assets/86020510ff0c.jpg",
-      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_3_HY-HLJDQZZ_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 367314
-    },
-    "88ebde91c0d0": {
-      "path": "assets/88ebde91c0d0.jpg",
-      "originalName": "_6_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 454470
-    },
-    "95ff5c034fe8": {
-      "path": "assets/95ff5c034fe8.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_4_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 306154
-    },
-    "9730b5e822cc": {
-      "path": "assets/9730b5e822cc.jpg",
-      "originalName": "对对对就是这种感觉_1_雪松Oceana_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 350752
-    },
-    "a3a9888574c6": {
-      "path": "assets/a3a9888574c6.jpg",
-      "originalName": "_5_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 447911
-    },
-    "ab333f28da2f": {
-      "path": "assets/ab333f28da2f.jpg",
-      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_4_HY-HLJDQZZ_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 401158
-    },
-    "d710ffa828a9": {
-      "path": "assets/d710ffa828a9.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_3_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 674306
-    },
-    "e8f18ab7d8df": {
-      "path": "assets/e8f18ab7d8df.jpg",
-      "originalName": "再看这组还是很感动_1_乘以加_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 297819
-    },
-    "ed44674b5f51": {
-      "path": "assets/ed44674b5f51.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_7_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 506432
-    },
-    "f2170557f733": {
-      "path": "assets/f2170557f733.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 111465
-    },
-    "f3f2d92632a4": {
-      "path": "assets/f3f2d92632a4.jpg",
-      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_1_HY-HLJDQZZ_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 337556
-    }
-  },
   "groups": [
     {
       "id": "Test Images",
@@ -429,6 +286,16 @@
           "id": "out_0",
           "name": "Output",
           "type": "color"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_1",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -1992,16 +1859,6 @@
             "portId": "dynamic_1780071551519_31"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "ResourcePool_1",
-            "portId": "output"
-          }
-        }
       ]
     },
     {
@@ -2013,6 +1870,16 @@
           "id": "out_0",
           "name": "Output",
           "type": "vector4"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_28",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -2512,17 +2379,150 @@
             "portId": "dynamic_1779983318934_10"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "ResourcePool_28",
-            "portId": "output"
-          }
-        }
       ]
     }
-  ]
+  ],
+  "outputs": {
+    "composite": "node_default_composite"
+  },
+  "assets": {
+    "1a123e792811": {
+      "path": "assets/1a123e792811.jpg",
+      "originalName": "_1_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242956
+    },
+    "1df96118da1e": {
+      "path": "assets/1df96118da1e.jpg",
+      "originalName": "18张图怎么放得下我的普吉岛7天_1_酷儿喜_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242988
+    },
+    "260525613beb": {
+      "path": "assets/260525613beb.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_6_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 253684
+    },
+    "378d49611c97": {
+      "path": "assets/378d49611c97.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_8_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 371922
+    },
+    "550377046ca4": {
+      "path": "assets/550377046ca4.jpg",
+      "originalName": "_4_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 404844
+    },
+    "569810770e32": {
+      "path": "assets/569810770e32.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_5_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 369225
+    },
+    "5c8685a3cd6c": {
+      "path": "assets/5c8685a3cd6c.jpg",
+      "originalName": "_7_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 475231
+    },
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
+    },
+    "709ef12a1d12": {
+      "path": "assets/709ef12a1d12.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_1_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 355910
+    },
+    "73560afcb7a7": {
+      "path": "assets/73560afcb7a7.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_2_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 489395
+    },
+    "7fb4ec5608c3": {
+      "path": "assets/7fb4ec5608c3.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_9_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 411289
+    },
+    "83fd614913be": {
+      "path": "assets/83fd614913be.jpg",
+      "originalName": "对对对就是这种感觉_3_雪松Oceana_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 166112
+    },
+    "86020510ff0c": {
+      "path": "assets/86020510ff0c.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_3_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 367314
+    },
+    "88ebde91c0d0": {
+      "path": "assets/88ebde91c0d0.jpg",
+      "originalName": "_6_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 454470
+    },
+    "95ff5c034fe8": {
+      "path": "assets/95ff5c034fe8.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_4_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 306154
+    },
+    "9730b5e822cc": {
+      "path": "assets/9730b5e822cc.jpg",
+      "originalName": "对对对就是这种感觉_1_雪松Oceana_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 350752
+    },
+    "a3a9888574c6": {
+      "path": "assets/a3a9888574c6.jpg",
+      "originalName": "_5_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 447911
+    },
+    "ab333f28da2f": {
+      "path": "assets/ab333f28da2f.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_4_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 401158
+    },
+    "d710ffa828a9": {
+      "path": "assets/d710ffa828a9.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_3_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 674306
+    },
+    "e8f18ab7d8df": {
+      "path": "assets/e8f18ab7d8df.jpg",
+      "originalName": "再看这组还是很感动_1_乘以加_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 297819
+    },
+    "ed44674b5f51": {
+      "path": "assets/ed44674b5f51.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_7_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 506432
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
+    },
+    "f3f2d92632a4": {
+      "path": "assets/f3f2d92632a4.jpg",
+      "originalName": "被她的审美水平狠狠惊艳-112-Gizem akdag_1_HY-HLJDQZZ_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 337556
+    }
+  }
 }

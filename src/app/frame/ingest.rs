@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
@@ -123,7 +125,25 @@ pub(super) fn run(
 
     let mut did_rebuild_shader_space = false;
     if let Some(update) = scene_runtime::drain_latest_scene_update(app) {
+        let perf_trace = update.perf_trace().cloned();
+        let perf_update_kind = update.perf_update_kind();
+        let renderer_queue_ms = perf_trace
+            .as_ref()
+            .map(|trace| trace.enqueued_at.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+        let apply_started_at = Instant::now();
         let apply_result = scene_runtime::apply_scene_update(app, ctx, render_state, update);
+        let renderer_apply_ms = apply_started_at.elapsed().as_secs_f64() * 1000.0;
+        if let Some(trace) = perf_trace {
+            crate::ws::broadcast_scene_perf_trace(
+                &app.core.ws_hub,
+                trace,
+                renderer_queue_ms,
+                renderer_apply_ms,
+                apply_result.did_rebuild_shader_space,
+                perf_update_kind,
+            );
+        }
         let matrix_update = apply_result.matrix_update.clone();
         app.runtime.scene_redraw_pending = true;
         app.canvas.invalidation.preview_source_changed();

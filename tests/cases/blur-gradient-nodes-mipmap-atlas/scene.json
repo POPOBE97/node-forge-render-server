@@ -2114,23 +2114,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "Composite_2"
-  },
-  "assets": {
-    "eea2468df096": {
-      "path": "assets/eea2468df096.png",
-      "originalName": "baseline-test.png",
-      "mimeType": "image/png",
-      "size": 284985
-    },
-    "3111ea5e8e03": {
-      "path": "assets/3111ea5e8e03.png",
-      "originalName": "baseline.png",
-      "mimeType": "image/png",
-      "size": 1372955
-    }
-  },
   "groups": [
     {
       "id": "Geo UV",
@@ -2141,6 +2124,16 @@
           "id": "out_0",
           "name": "Output",
           "type": "vector2"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_30",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -2246,17 +2239,24 @@
             "portId": "dynamic_1770282293236_2"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_30",
-            "portId": "output"
-          }
-        }
       ]
     }
-  ]
+  ],
+  "outputs": {
+    "composite": "Composite_2"
+  },
+  "assets": {
+    "3111ea5e8e03": {
+      "path": "assets/3111ea5e8e03.png",
+      "originalName": "baseline.png",
+      "mimeType": "image/png",
+      "size": 1372955
+    },
+    "eea2468df096": {
+      "path": "assets/eea2468df096.png",
+      "originalName": "baseline-test.png",
+      "mimeType": "image/png",
+      "size": 284985
+    }
+  }
 }

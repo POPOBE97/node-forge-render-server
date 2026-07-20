@@ -476,6 +476,7 @@ pub fn apply_scene_update(
         ws::SceneUpdate::UniformDelta {
             updated_nodes,
             request_id,
+            perf_trace: _,
         } => {
             let scene = match app.runtime.last_good.lock() {
                 Ok(mut guard) => guard.take(),
@@ -564,6 +565,7 @@ pub fn apply_scene_update(
             scene,
             request_id,
             source,
+            perf_trace: _,
         } => {
             let missing_debug_artifact_ids = app
                 .shell

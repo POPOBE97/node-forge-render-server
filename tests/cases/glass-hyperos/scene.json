@@ -771,35 +771,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "Composite_7"
-  },
-  "assets": {
-    "61fea0e0acb1": {
-      "path": "assets/61fea0e0acb1.jpg",
-      "originalName": "_11_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 416604
-    },
-    "62d709c5c137": {
-      "path": "assets/62d709c5c137.png",
-      "originalName": "ui.png",
-      "mimeType": "image/png",
-      "size": 171096
-    },
-    "762325f2042e": {
-      "path": "assets/762325f2042e.png",
-      "originalName": "test.png",
-      "mimeType": "image/png",
-      "size": 1712450
-    },
-    "f2170557f733": {
-      "path": "assets/f2170557f733.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 111465
-    }
-  },
   "groups": [
     {
       "id": "Background Pass",
@@ -816,6 +787,24 @@
           "id": "out_0",
           "name": "Pass",
           "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
         }
       ],
       "nodes": [
@@ -859,25 +848,7 @@
           }
         }
       ],
-      "connections": [],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
-      ]
+      "connections": []
     },
     {
       "id": "BackgroundPass",
@@ -888,6 +859,16 @@
           "id": "out_0",
           "name": "Pass",
           "type": "pass"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
         }
       ],
       "nodes": [
@@ -1105,19 +1086,38 @@
             "portId": "pass"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
       ]
     }
   ],
+  "outputs": {
+    "composite": "Composite_7"
+  },
+  "assets": {
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
+    },
+    "62d709c5c137": {
+      "path": "assets/62d709c5c137.png",
+      "originalName": "ui.png",
+      "mimeType": "image/png",
+      "size": 171096
+    },
+    "762325f2042e": {
+      "path": "assets/762325f2042e.png",
+      "originalName": "test.png",
+      "mimeType": "image/png",
+      "size": 1712450
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
+    }
+  },
   "stateMachine": {
     "id": "sm_moxsfuam_3",
     "name": "State Machine",
@@ -1154,6 +1154,7 @@
       }
     ],
     "transitions": [],
+    "initialStateId": "st_moxsija5_4",
     "mutations": [
       {
         "id": "mutation_moxsjac9_9",
@@ -1272,8 +1273,6 @@
             "type": "float"
           }
         ],
-        "nodes": [],
-        "connections": [],
         "inputBindings": [],
         "outputBindings": [],
         "passthroughBindings": [
@@ -1281,56 +1280,15 @@
             "inputPortId": "localElapsedTime",
             "outputPortId": "Vector2Input_65:y"
           }
-        ]
+        ],
+        "nodes": [],
+        "connections": []
       }
-    ],
-    "initialStateId": "st_moxsija5_4"
+    ]
   },
   "debugArtifacts": {
     "version": 1,
     "items": {
-      "pass__rende.rpass4.pass__reference-workspace__reference-workspace": {
-        "id": "pass__rende.rpass4.pass__reference-workspace__reference-workspace",
-        "anchor": {
-          "kind": "pass",
-          "passName": "rende.rpass4.pass"
-        },
-        "role": "attachment",
-        "name": "Reference workspace",
-        "mimeType": "text/plain",
-        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-workspace__reference-workspace/rende.rpass4.pass.reference-workspace.json",
-        "size": 331,
-        "contentHash": "da8d916e",
-        "slotKey": "reference-workspace"
-      },
-      "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7": {
-        "id": "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7",
-        "anchor": {
-          "kind": "pass",
-          "passName": "rende.rpass4.pass"
-        },
-        "role": "reference-code",
-        "name": "Reference: extract.js",
-        "mimeType": "text/plain",
-        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-bdc6e4a7/extract.js",
-        "size": 21908,
-        "contentHash": "335b2dee",
-        "slotKey": "file:bdc6e4a7"
-      },
-      "pass__rende.rpass4.pass__reference-code__file-3b095c1b": {
-        "id": "pass__rende.rpass4.pass__reference-code__file-3b095c1b",
-        "anchor": {
-          "kind": "pass",
-          "passName": "rende.rpass4.pass"
-        },
-        "role": "reference-code",
-        "name": "Reference: glass.frag",
-        "mimeType": "text/plain",
-        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-3b095c1b/glass.frag",
-        "size": 28407,
-        "contentHash": "4841de2f",
-        "slotKey": "file:3b095c1b"
-      },
       "pass__rende.rpass4.pass__patch__default": {
         "id": "pass__rende.rpass4.pass__patch__default",
         "anchor": {
@@ -1359,19 +1317,47 @@
         "contentHash": "047d3bf0",
         "slotKey": "reference-patches"
       },
-      "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d": {
-        "id": "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d",
+      "pass__rende.rpass4.pass__reference-code__file-3b095c1b": {
+        "id": "pass__rende.rpass4.pass__reference-code__file-3b095c1b",
         "anchor": {
           "kind": "pass",
           "passName": "rende.rpass4.pass"
         },
-        "role": "image",
-        "name": "Shortwire reference image",
-        "mimeType": "image/png",
-        "path": "debug-artifacts/pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d/rende.rpass4.pass.shortwire-ref.9db20f7d.png",
-        "size": 1037289,
-        "contentHash": "e133bdd6",
-        "slotKey": "shortwire-reference:9db20f7d"
+        "role": "reference-code",
+        "name": "Reference: glass.frag",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-3b095c1b/glass.frag",
+        "size": 28407,
+        "contentHash": "4841de2f",
+        "slotKey": "file:3b095c1b"
+      },
+      "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7": {
+        "id": "pass__rende.rpass4.pass__reference-code__file-bdc6e4a7",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "reference-code",
+        "name": "Reference: extract.js",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-code__file-bdc6e4a7/extract.js",
+        "size": 21908,
+        "contentHash": "335b2dee",
+        "slotKey": "file:bdc6e4a7"
+      },
+      "pass__rende.rpass4.pass__reference-workspace__reference-workspace": {
+        "id": "pass__rende.rpass4.pass__reference-workspace__reference-workspace",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "attachment",
+        "name": "Reference workspace",
+        "mimeType": "text/plain",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__reference-workspace__reference-workspace/rende.rpass4.pass.reference-workspace.json",
+        "size": 331,
+        "contentHash": "da8d916e",
+        "slotKey": "reference-workspace"
       },
       "pass__rende.rpass4.pass__shortwire-reference-image__2438632c": {
         "id": "pass__rende.rpass4.pass__shortwire-reference-image__2438632c",
@@ -1386,6 +1372,20 @@
         "size": 1084626,
         "contentHash": "0acc5037",
         "slotKey": "shortwire-reference:2438632c"
+      },
+      "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d": {
+        "id": "pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d",
+        "anchor": {
+          "kind": "pass",
+          "passName": "rende.rpass4.pass"
+        },
+        "role": "image",
+        "name": "Shortwire reference image",
+        "mimeType": "image/png",
+        "path": "debug-artifacts/pass__rende.rpass4.pass__shortwire-reference-image__9db20f7d/rende.rpass4.pass.shortwire-ref.9db20f7d.png",
+        "size": 1037289,
+        "contentHash": "e133bdd6",
+        "slotKey": "shortwire-reference:9db20f7d"
       }
     }
   }

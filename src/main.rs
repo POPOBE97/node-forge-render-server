@@ -159,6 +159,7 @@ fn spawn_template_watcher(
                             scene,
                             request_id: None,
                             source: ws::ParsedSceneSource::SceneDelta,
+                            perf_trace: None,
                         });
                         egui_ctx.request_repaint();
                     }
@@ -724,6 +725,7 @@ fn run_headless_ws_render_once(
                 scene,
                 request_id,
                 source: _,
+                perf_trace: _,
             } => {
                 dump_scene_wgsl(&scene, None, dump_wgsl_dir.as_ref())?;
 

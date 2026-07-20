@@ -1010,35 +1010,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "Composite_3"
-  },
-  "assets": {
-    "1b93ac358949": {
-      "path": "assets/1b93ac358949.png",
-      "originalName": "紫外线.png",
-      "mimeType": "image/png",
-      "size": 8572
-    },
-    "413e06c19e71": {
-      "path": "assets/413e06c19e71.png",
-      "originalName": "background.png",
-      "mimeType": "image/png",
-      "size": 1885427
-    },
-    "a29ce0a4e6c1": {
-      "path": "assets/a29ce0a4e6c1.png",
-      "originalName": "体感.png",
-      "mimeType": "image/png",
-      "size": 6939
-    },
-    "c9f1efc02e6a": {
-      "path": "assets/c9f1efc02e6a.png",
-      "originalName": "湿度.png",
-      "mimeType": "image/png",
-      "size": 2300
-    }
-  },
   "groups": [
     {
       "id": "Refract Glass Material",
@@ -1065,6 +1036,45 @@
           "id": "out_0",
           "name": "Output",
           "type": "color"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "ImageTexture_76",
+            "portId": "image"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "MathClosure_108",
+            "portId": "dynamic_1769588965657_1"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "MathClosure_111",
+            "portId": "dynamic_1769716330120_4"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "MathClosure_115",
+            "portId": "dynamic_1769717559148_2"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ColorMix_142",
+            "portId": "color"
+          }
         }
       ],
       "nodes": [
@@ -2557,45 +2567,6 @@
             "portId": "dynamic_1769531971718_1"
           }
         }
-      ],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "ImageTexture_76",
-            "portId": "image"
-          }
-        },
-        {
-          "groupPortId": "in_1",
-          "to": {
-            "nodeId": "MathClosure_108",
-            "portId": "dynamic_1769588965657_1"
-          }
-        },
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_111",
-            "portId": "dynamic_1769716330120_4"
-          }
-        },
-        {
-          "groupPortId": "in_2",
-          "to": {
-            "nodeId": "MathClosure_115",
-            "portId": "dynamic_1769717559148_2"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "ColorMix_142",
-            "portId": "color"
-          }
-        }
       ]
     },
     {
@@ -2613,6 +2584,24 @@
           "id": "out_0",
           "name": "Output",
           "type": "vector4"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "MathClosure_102",
+            "portId": "dynamic_1769581759936_1"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_102",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -2657,31 +2646,15 @@
           ]
         }
       ],
-      "connections": [],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "MathClosure_102",
-            "portId": "dynamic_1769581759936_1"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_102",
-            "portId": "output"
-          }
-        }
-      ]
+      "connections": []
     },
     {
       "id": "Blend Alpha Premultiplied",
       "name": "Group 5",
       "inputs": [],
       "outputs": [],
+      "inputBindings": [],
+      "outputBindings": [],
       "nodes": [
         {
           "id": "MathClosure_125",
@@ -2740,9 +2713,7 @@
           ]
         }
       ],
-      "connections": [],
-      "inputBindings": [],
-      "outputBindings": []
+      "connections": []
     },
     {
       "id": "Geo UV",
@@ -2753,6 +2724,16 @@
           "id": "out_0",
           "name": "Output",
           "type": "vector2"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_99",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -2858,17 +2839,36 @@
             "portId": "dynamic_1769533770118_2"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_99",
-            "portId": "output"
-          }
-        }
       ]
     }
-  ]
+  ],
+  "outputs": {
+    "composite": "Composite_3"
+  },
+  "assets": {
+    "1b93ac358949": {
+      "path": "assets/1b93ac358949.png",
+      "originalName": "紫外线.png",
+      "mimeType": "image/png",
+      "size": 8572
+    },
+    "413e06c19e71": {
+      "path": "assets/413e06c19e71.png",
+      "originalName": "background.png",
+      "mimeType": "image/png",
+      "size": 1885427
+    },
+    "a29ce0a4e6c1": {
+      "path": "assets/a29ce0a4e6c1.png",
+      "originalName": "体感.png",
+      "mimeType": "image/png",
+      "size": 6939
+    },
+    "c9f1efc02e6a": {
+      "path": "assets/c9f1efc02e6a.png",
+      "originalName": "湿度.png",
+      "mimeType": "image/png",
+      "size": 2300
+    }
+  }
 }

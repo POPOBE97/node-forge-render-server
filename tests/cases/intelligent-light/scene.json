@@ -160,7 +160,6 @@
     "composite": "Composite_4"
   },
   "assets": {},
-  "groups": [],
   "stateMachine": {
     "id": "sm_mp6n8upf_5",
     "name": "State Machine",
@@ -217,9 +216,9 @@
         "easing": "linear"
       }
     ],
+    "initialStateId": "st_mp6nhg2s_6",
     "mutations": [
       {
-        "connections": [],
         "id": "mutation_mp6nhknz_9",
         "inputBindings": [],
         "inputs": [
@@ -245,31 +244,6 @@
           }
         ],
         "name": "Mutation 1",
-        "nodes": [
-          {
-            "id": "min_mram1jtb_5",
-            "type": "IntelligentLightDefaultDriver",
-            "position": {
-              "x": -300,
-              "y": 600
-            },
-            "label": "Intelligent Light Default Driver",
-            "params": {},
-            "inputs": [],
-            "outputs": [
-              {
-                "id": "colors",
-                "name": "Colors",
-                "type": "packed<color>"
-              },
-              {
-                "id": "positions",
-                "name": "Positions",
-                "type": "packed<vector2>"
-              }
-            ]
-          }
-        ],
         "outputBindings": [
           {
             "mutationPortId": "IntelligentLight_8:colors",
@@ -298,10 +272,35 @@
             "type": "packed<vector2>"
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "min_mram1jtb_5",
+            "type": "IntelligentLightDefaultDriver",
+            "position": {
+              "x": -300,
+              "y": 600
+            },
+            "label": "Intelligent Light Default Driver",
+            "params": {},
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "colors",
+                "name": "Colors",
+                "type": "packed<color>"
+              },
+              {
+                "id": "positions",
+                "name": "Positions",
+                "type": "packed<vector2>"
+              }
+            ]
+          }
+        ],
+        "connections": []
       }
-    ],
-    "initialStateId": "st_mp6nhg2s_6"
+    ]
   },
   "passTargetSizes": {
     "IntelligentLight_8": {

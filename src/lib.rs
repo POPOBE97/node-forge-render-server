@@ -5,6 +5,7 @@ pub mod asset_store;
 pub mod color;
 pub mod debug_artifacts;
 pub mod dsl;
+pub mod nforge;
 pub mod perf_log;
 pub mod profile;
 pub mod protocol;

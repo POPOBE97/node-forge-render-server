@@ -818,41 +818,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "Composite_5"
-  },
-  "assets": {
-    "31207536d3bc": {
-      "path": "assets/31207536d3bc.jpg",
-      "originalName": "background-blurred.jpg",
-      "mimeType": "image/jpeg",
-      "size": 414863
-    },
-    "5d62e74275be": {
-      "path": "assets/5d62e74275be.png",
-      "originalName": "env-blur-3.png",
-      "mimeType": "image/png",
-      "size": 938898
-    },
-    "6f0eab81da37": {
-      "path": "assets/6f0eab81da37.png",
-      "originalName": "512_512.png",
-      "mimeType": "image/png",
-      "size": 4641
-    },
-    "8907aee82146": {
-      "path": "assets/8907aee82146.glb",
-      "originalName": "card-edge-mesh.glb",
-      "mimeType": "model/gltf-binary",
-      "size": 67864
-    },
-    "8da9e93bf7dd": {
-      "path": "assets/8da9e93bf7dd.glb",
-      "originalName": "card-mesh-rounded.glb",
-      "mimeType": "model/gltf-binary",
-      "size": 372352
-    }
-  },
   "groups": [
     {
       "id": "Camera",
@@ -863,6 +828,16 @@
           "id": "out_0",
           "name": "Camera",
           "type": "mat4"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "PerspectiveCamera_45",
+            "portId": "camera"
+          }
         }
       ],
       "nodes": [
@@ -898,17 +873,7 @@
           }
         }
       ],
-      "connections": [],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "PerspectiveCamera_45",
-            "portId": "camera"
-          }
-        }
-      ]
+      "connections": []
     },
     {
       "id": "ModelRotation",
@@ -919,6 +884,16 @@
           "id": "out_0",
           "name": "Output",
           "type": "vector3"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_43",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -988,16 +963,6 @@
             "portId": "dynamic_1772071983449_1"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_43",
-            "portId": "output"
-          }
-        }
       ]
     },
     {
@@ -1009,6 +974,16 @@
           "id": "out_0",
           "name": "Color",
           "type": "color"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "MathClosure_63",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -1227,19 +1202,44 @@
             "portId": "dynamic_1773336433500_3"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "MathClosure_63",
-            "portId": "output"
-          }
-        }
       ]
     }
   ],
+  "outputs": {
+    "composite": "Composite_5"
+  },
+  "assets": {
+    "31207536d3bc": {
+      "path": "assets/31207536d3bc.jpg",
+      "originalName": "background-blurred.jpg",
+      "mimeType": "image/jpeg",
+      "size": 414863
+    },
+    "5d62e74275be": {
+      "path": "assets/5d62e74275be.png",
+      "originalName": "env-blur-3.png",
+      "mimeType": "image/png",
+      "size": 938898
+    },
+    "6f0eab81da37": {
+      "path": "assets/6f0eab81da37.png",
+      "originalName": "512_512.png",
+      "mimeType": "image/png",
+      "size": 4641
+    },
+    "8907aee82146": {
+      "path": "assets/8907aee82146.glb",
+      "originalName": "card-edge-mesh.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 67864
+    },
+    "8da9e93bf7dd": {
+      "path": "assets/8da9e93bf7dd.glb",
+      "originalName": "card-mesh-rounded.glb",
+      "mimeType": "model/gltf-binary",
+      "size": 372352
+    }
+  },
   "stateMachine": {
     "id": "sm_mmamfug8_2",
     "name": "State Machine",
@@ -1330,6 +1330,7 @@
         "easing": "linear"
       }
     ],
+    "initialStateId": "st_mmamj2am_3",
     "mutations": [
       {
         "id": "mutation_mmamj4me_6",
@@ -1388,8 +1389,6 @@
             "type": "float"
           }
         ],
-        "nodes": [],
-        "connections": [],
         "inputBindings": [],
         "outputBindings": [],
         "passthroughBindings": [
@@ -1397,9 +1396,10 @@
             "inputPortId": "localElapsedTime",
             "outputPortId": "FloatInput_53:value"
           }
-        ]
+        ],
+        "nodes": [],
+        "connections": []
       }
-    ],
-    "initialStateId": "st_mmamj2am_3"
+    ]
   }
 }

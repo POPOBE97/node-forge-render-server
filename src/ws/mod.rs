@@ -18,7 +18,7 @@ use std::{
     net::TcpListener,
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -94,10 +94,12 @@ pub enum SceneUpdate {
         scene: SceneDSL,
         request_id: Option<String>,
         source: ParsedSceneSource,
+        perf_trace: Option<ScenePerfTrace>,
     },
     UniformDelta {
         updated_nodes: Vec<Node>,
         request_id: Option<String>,
+        perf_trace: Option<ScenePerfTrace>,
     },
     ParseError {
         message: String,
@@ -118,6 +120,63 @@ pub enum SceneUpdate {
     DebugArtifactDelete {
         artifact_id: String,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct ScenePerfTrace {
+    pub trace_id: String,
+    pub client_sent_at_ms: u64,
+    pub server_received_at_ms: u64,
+    pub message_bytes: usize,
+    pub ws_parse_ms: f64,
+    pub enqueued_at: Instant,
+}
+
+impl SceneUpdate {
+    pub fn perf_trace(&self) -> Option<&ScenePerfTrace> {
+        match self {
+            Self::Parsed { perf_trace, .. } | Self::UniformDelta { perf_trace, .. } => {
+                perf_trace.as_ref()
+            }
+            _ => None,
+        }
+    }
+
+    pub fn perf_update_kind(&self) -> &'static str {
+        match self {
+            Self::Parsed {
+                source: ParsedSceneSource::SceneUpdate,
+                ..
+            } => "scene_update",
+            Self::Parsed {
+                source: ParsedSceneSource::SceneDelta,
+                ..
+            } => "scene_delta",
+            Self::UniformDelta { .. } => "uniform_delta",
+            _ => "other",
+        }
+    }
+}
+
+fn create_scene_perf_trace(
+    request_id: &Option<String>,
+    client_sent_at_ms: u64,
+    server_received_at_ms: u64,
+    message_bytes: usize,
+    receive_started_at: Instant,
+) -> Option<ScenePerfTrace> {
+    let trace_id = request_id
+        .as_deref()
+        .filter(|value| value.starts_with("nforge-perf-"))?
+        .to_string();
+    Some(ScenePerfTrace {
+        trace_id,
+        client_sent_at_ms,
+        server_received_at_ms,
+        message_bytes,
+        ws_parse_ms: receive_started_at.elapsed().as_secs_f64() * 1000.0,
+        enqueued_at: Instant::now(),
+    })
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -375,6 +434,52 @@ pub fn broadcast_pass_target_sizes(hub: &WsHub, snapshot: &ResourceSnapshot, sce
         payload: Some(PassTargetSizesPayload { passes }),
     };
     if let Ok(text) = serde_json::to_string(&msg) {
+        hub.broadcast(text);
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScenePerfTracePayload {
+    trace_id: String,
+    message_bytes: usize,
+    transport_to_server_ms: f64,
+    ws_parse_ms: f64,
+    renderer_queue_ms: f64,
+    renderer_apply_ms: f64,
+    end_to_end_ms: f64,
+    did_rebuild_shader_space: bool,
+    update_kind: String,
+}
+
+pub fn broadcast_scene_perf_trace(
+    hub: &WsHub,
+    trace: ScenePerfTrace,
+    renderer_queue_ms: f64,
+    renderer_apply_ms: f64,
+    did_rebuild_shader_space: bool,
+    update_kind: &str,
+) {
+    let end_to_end_ms = now_millis().saturating_sub(trace.client_sent_at_ms) as f64;
+    let message = WSMessage {
+        msg_type: "perf_trace".to_string(),
+        timestamp: now_millis(),
+        request_id: Some(trace.trace_id.clone()),
+        payload: Some(ScenePerfTracePayload {
+            trace_id: trace.trace_id,
+            message_bytes: trace.message_bytes,
+            transport_to_server_ms: trace
+                .server_received_at_ms
+                .saturating_sub(trace.client_sent_at_ms) as f64,
+            ws_parse_ms: trace.ws_parse_ms,
+            renderer_queue_ms,
+            renderer_apply_ms,
+            end_to_end_ms,
+            did_rebuild_shader_space,
+            update_kind: update_kind.to_string(),
+        }),
+    };
+    if let Ok(text) = serde_json::to_string(&message) {
         hub.broadcast(text);
     }
 }
@@ -721,6 +826,9 @@ fn handle_text_message(
     debug_artifact_transfer_state: &mut DebugArtifactTransferState,
     ui_wake: Option<&UiWakeCallback>,
 ) -> Result<()> {
+    let receive_started_at = Instant::now();
+    let server_received_at_ms = now_millis();
+    let message_bytes = text.len();
     let msg: WSMessage<Value> = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
@@ -738,6 +846,8 @@ fn handle_text_message(
             return Ok(());
         }
     };
+    let perf_request_id = msg.request_id.clone();
+    let perf_client_sent_at_ms = msg.timestamp;
 
     match msg.msg_type.as_str() {
         "ping" => {
@@ -851,6 +961,13 @@ fn handle_text_message(
                         scene,
                         request_id: msg.request_id,
                         source: ParsedSceneSource::SceneUpdate,
+                        perf_trace: create_scene_perf_trace(
+                            &perf_request_id,
+                            perf_client_sent_at_ms,
+                            server_received_at_ms,
+                            message_bytes,
+                            receive_started_at,
+                        ),
                     },
                     ui_wake,
                 );
@@ -948,6 +1065,13 @@ fn handle_text_message(
                         SceneUpdate::UniformDelta {
                             updated_nodes: delta.nodes.updated.clone(),
                             request_id: msg.request_id,
+                            perf_trace: create_scene_perf_trace(
+                                &perf_request_id,
+                                perf_client_sent_at_ms,
+                                server_received_at_ms,
+                                message_bytes,
+                                receive_started_at,
+                            ),
                         },
                         ui_wake,
                     );
@@ -979,6 +1103,13 @@ fn handle_text_message(
                         scene,
                         request_id: msg.request_id,
                         source: ParsedSceneSource::SceneDelta,
+                        perf_trace: create_scene_perf_trace(
+                            &perf_request_id,
+                            perf_client_sent_at_ms,
+                            server_received_at_ms,
+                            message_bytes,
+                            receive_started_at,
+                        ),
                     },
                     ui_wake,
                 );
@@ -1388,6 +1519,7 @@ fn trigger_rerender_for_asset(
                 scene,
                 request_id: None,
                 source: ParsedSceneSource::SceneUpdate,
+                perf_trace: None,
             },
             ui_wake,
         );

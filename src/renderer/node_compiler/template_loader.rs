@@ -5,6 +5,7 @@ use std::sync::{OnceLock, RwLock};
 
 static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static OVERRIDE_CACHE: OnceLock<RwLock<HashMap<PathBuf, String>>> = OnceLock::new();
+static DOCUMENT_OVERRIDES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static MATERIALS_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -24,11 +25,26 @@ pub fn materials_root() -> Option<&'static Path> {
 /// an absolute path under the materials root, if one is configured. The
 /// returned path may not yet exist on disk.
 pub fn resolve_override_path(rel: &str) -> Option<PathBuf> {
-    let root = materials_root()?;
+    let Some(root) = materials_root() else {
+        return Some(PathBuf::from(rel));
+    };
     // The DSL stores `materials/<id>.wgsl`; strip the leading prefix so we
     // don't end up at `<materials_root>/materials/<id>.wgsl`.
     let stripped = rel.strip_prefix("materials/").unwrap_or(rel);
     Some(root.join(stripped))
+}
+
+fn document_overrides() -> &'static RwLock<HashMap<String, String>> {
+    DOCUMENT_OVERRIDES.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+pub fn install_document_overrides(overrides: impl IntoIterator<Item = (String, String)>) {
+    let Ok(mut current) = document_overrides().write() else {
+        return;
+    };
+    current.clear();
+    current.extend(overrides);
+    GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
 fn cache() -> &'static RwLock<HashMap<String, String>> {
@@ -75,6 +91,12 @@ pub fn load_template_with_override(
     template_name: &str,
 ) -> String {
     if let Some(path) = override_abs_path {
+        if let Some(node_id) = path.file_stem().and_then(|value| value.to_str())
+            && let Ok(overrides) = document_overrides().read()
+            && let Some(content) = overrides.get(node_id)
+        {
+            return content.clone();
+        }
         {
             let c = override_cache().read().unwrap();
             if let Some(content) = c.get(path) {

@@ -958,197 +958,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "Composite_7"
-  },
-  "assets": {
-    "0c76d6ca6136": {
-      "path": "assets/0c76d6ca6136.jpg",
-      "originalName": "0c76d6ca6136.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71504
-    },
-    "0e9d07a28d20": {
-      "path": "assets/0e9d07a28d20.jpg",
-      "originalName": "0e9d07a28d20.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71507
-    },
-    "1a123e792811": {
-      "path": "assets/1a123e792811.jpg",
-      "originalName": "1a123e792811.jpg",
-      "mimeType": "image/jpeg",
-      "size": 242956
-    },
-    "1df96118da1e": {
-      "path": "assets/1df96118da1e.jpg",
-      "originalName": "1df96118da1e.jpg",
-      "mimeType": "image/jpeg",
-      "size": 242988
-    },
-    "260525613beb": {
-      "path": "assets/260525613beb.jpg",
-      "originalName": "260525613beb.jpg",
-      "mimeType": "image/jpeg",
-      "size": 253684
-    },
-    "378d49611c97": {
-      "path": "assets/378d49611c97.jpg",
-      "originalName": "378d49611c97.jpg",
-      "mimeType": "image/jpeg",
-      "size": 371922
-    },
-    "44c2808d8d05": {
-      "path": "assets/44c2808d8d05.jpg",
-      "originalName": "44c2808d8d05.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71502
-    },
-    "550377046ca4": {
-      "path": "assets/550377046ca4.jpg",
-      "originalName": "550377046ca4.jpg",
-      "mimeType": "image/jpeg",
-      "size": 404844
-    },
-    "569810770e32": {
-      "path": "assets/569810770e32.jpg",
-      "originalName": "569810770e32.jpg",
-      "mimeType": "image/jpeg",
-      "size": 369225
-    },
-    "5c8685a3cd6c": {
-      "path": "assets/5c8685a3cd6c.jpg",
-      "originalName": "5c8685a3cd6c.jpg",
-      "mimeType": "image/jpeg",
-      "size": 475231
-    },
-    "61fea0e0acb1": {
-      "path": "assets/61fea0e0acb1.jpg",
-      "originalName": "_11_91去玩_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 416604
-    },
-    "63ec9114e1db": {
-      "path": "assets/63ec9114e1db.jpg",
-      "originalName": "63ec9114e1db.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71507
-    },
-    "709ef12a1d12": {
-      "path": "assets/709ef12a1d12.jpg",
-      "originalName": "709ef12a1d12.jpg",
-      "mimeType": "image/jpeg",
-      "size": 355910
-    },
-    "73560afcb7a7": {
-      "path": "assets/73560afcb7a7.jpg",
-      "originalName": "73560afcb7a7.jpg",
-      "mimeType": "image/jpeg",
-      "size": 489395
-    },
-    "7fb4ec5608c3": {
-      "path": "assets/7fb4ec5608c3.jpg",
-      "originalName": "7fb4ec5608c3.jpg",
-      "mimeType": "image/jpeg",
-      "size": 411289
-    },
-    "83fd614913be": {
-      "path": "assets/83fd614913be.jpg",
-      "originalName": "83fd614913be.jpg",
-      "mimeType": "image/jpeg",
-      "size": 166112
-    },
-    "86020510ff0c": {
-      "path": "assets/86020510ff0c.jpg",
-      "originalName": "86020510ff0c.jpg",
-      "mimeType": "image/jpeg",
-      "size": 367314
-    },
-    "88ebde91c0d0": {
-      "path": "assets/88ebde91c0d0.jpg",
-      "originalName": "88ebde91c0d0.jpg",
-      "mimeType": "image/jpeg",
-      "size": 454470
-    },
-    "95ff5c034fe8": {
-      "path": "assets/95ff5c034fe8.jpg",
-      "originalName": "95ff5c034fe8.jpg",
-      "mimeType": "image/jpeg",
-      "size": 306154
-    },
-    "9730b5e822cc": {
-      "path": "assets/9730b5e822cc.jpg",
-      "originalName": "9730b5e822cc.jpg",
-      "mimeType": "image/jpeg",
-      "size": 350752
-    },
-    "a3a9888574c6": {
-      "path": "assets/a3a9888574c6.jpg",
-      "originalName": "a3a9888574c6.jpg",
-      "mimeType": "image/jpeg",
-      "size": 447911
-    },
-    "aa92a21563f3": {
-      "path": "assets/aa92a21563f3.jpg",
-      "originalName": "aa92a21563f3.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71507
-    },
-    "ab333f28da2f": {
-      "path": "assets/ab333f28da2f.jpg",
-      "originalName": "ab333f28da2f.jpg",
-      "mimeType": "image/jpeg",
-      "size": 401158
-    },
-    "cc771ac4115d": {
-      "path": "assets/cc771ac4115d.jpg",
-      "originalName": "cc771ac4115d.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71506
-    },
-    "d56092b9a9ea": {
-      "path": "assets/d56092b9a9ea.jpg",
-      "originalName": "d56092b9a9ea.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71507
-    },
-    "d710ffa828a9": {
-      "path": "assets/d710ffa828a9.jpg",
-      "originalName": "d710ffa828a9.jpg",
-      "mimeType": "image/jpeg",
-      "size": 674306
-    },
-    "e22319c35c54": {
-      "path": "assets/e22319c35c54.jpg",
-      "originalName": "e22319c35c54.jpg",
-      "mimeType": "image/jpeg",
-      "size": 71507
-    },
-    "e8f18ab7d8df": {
-      "path": "assets/e8f18ab7d8df.jpg",
-      "originalName": "e8f18ab7d8df.jpg",
-      "mimeType": "image/jpeg",
-      "size": 297819
-    },
-    "ed44674b5f51": {
-      "path": "assets/ed44674b5f51.jpg",
-      "originalName": "ed44674b5f51.jpg",
-      "mimeType": "image/jpeg",
-      "size": 506432
-    },
-    "f2170557f733": {
-      "path": "assets/f2170557f733.jpg",
-      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
-      "mimeType": "image/jpeg",
-      "size": 111465
-    },
-    "f3f2d92632a4": {
-      "path": "assets/f3f2d92632a4.jpg",
-      "originalName": "f3f2d92632a4.jpg",
-      "mimeType": "image/jpeg",
-      "size": 337556
-    }
-  },
   "groups": [
     {
       "id": "Background Pass",
@@ -1165,6 +974,24 @@
           "id": "out_0",
           "name": "Pass",
           "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
         }
       ],
       "nodes": [
@@ -1208,25 +1035,7 @@
           }
         }
       ],
-      "connections": [],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
-      ]
+      "connections": []
     },
     {
       "id": "BackgroundPass",
@@ -1237,6 +1046,16 @@
           "id": "out_0",
           "name": "Pass",
           "type": "pass"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "GuassianBlurPass_42",
+            "portId": "pass"
+          }
         }
       ],
       "nodes": [
@@ -2933,16 +2752,6 @@
             "portId": "color0"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "GuassianBlurPass_42",
-            "portId": "pass"
-          }
-        }
       ]
     },
     {
@@ -2965,6 +2774,31 @@
           "id": "out_0",
           "name": "Pass",
           "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "Sdf2D_73",
+            "portId": "position"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "MathMultiply_80",
+            "portId": "dynamic_fixed_2"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "RenderPass_72",
+            "portId": "pass"
+          }
         }
       ],
       "nodes": [
@@ -3196,34 +3030,200 @@
             "portId": "material"
           }
         }
-      ],
-      "inputBindings": [
-        {
-          "groupPortId": "in_0",
-          "to": {
-            "nodeId": "Sdf2D_73",
-            "portId": "position"
-          }
-        },
-        {
-          "groupPortId": "in_1",
-          "to": {
-            "nodeId": "MathMultiply_80",
-            "portId": "dynamic_fixed_2"
-          }
-        }
-      ],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "RenderPass_72",
-            "portId": "pass"
-          }
-        }
       ]
     }
   ],
+  "outputs": {
+    "composite": "Composite_7"
+  },
+  "assets": {
+    "0c76d6ca6136": {
+      "path": "assets/0c76d6ca6136.jpg",
+      "originalName": "0c76d6ca6136.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71504
+    },
+    "0e9d07a28d20": {
+      "path": "assets/0e9d07a28d20.jpg",
+      "originalName": "0e9d07a28d20.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "1a123e792811": {
+      "path": "assets/1a123e792811.jpg",
+      "originalName": "1a123e792811.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242956
+    },
+    "1df96118da1e": {
+      "path": "assets/1df96118da1e.jpg",
+      "originalName": "1df96118da1e.jpg",
+      "mimeType": "image/jpeg",
+      "size": 242988
+    },
+    "260525613beb": {
+      "path": "assets/260525613beb.jpg",
+      "originalName": "260525613beb.jpg",
+      "mimeType": "image/jpeg",
+      "size": 253684
+    },
+    "378d49611c97": {
+      "path": "assets/378d49611c97.jpg",
+      "originalName": "378d49611c97.jpg",
+      "mimeType": "image/jpeg",
+      "size": 371922
+    },
+    "44c2808d8d05": {
+      "path": "assets/44c2808d8d05.jpg",
+      "originalName": "44c2808d8d05.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71502
+    },
+    "550377046ca4": {
+      "path": "assets/550377046ca4.jpg",
+      "originalName": "550377046ca4.jpg",
+      "mimeType": "image/jpeg",
+      "size": 404844
+    },
+    "569810770e32": {
+      "path": "assets/569810770e32.jpg",
+      "originalName": "569810770e32.jpg",
+      "mimeType": "image/jpeg",
+      "size": 369225
+    },
+    "5c8685a3cd6c": {
+      "path": "assets/5c8685a3cd6c.jpg",
+      "originalName": "5c8685a3cd6c.jpg",
+      "mimeType": "image/jpeg",
+      "size": 475231
+    },
+    "61fea0e0acb1": {
+      "path": "assets/61fea0e0acb1.jpg",
+      "originalName": "_11_91去玩_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 416604
+    },
+    "63ec9114e1db": {
+      "path": "assets/63ec9114e1db.jpg",
+      "originalName": "63ec9114e1db.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "709ef12a1d12": {
+      "path": "assets/709ef12a1d12.jpg",
+      "originalName": "709ef12a1d12.jpg",
+      "mimeType": "image/jpeg",
+      "size": 355910
+    },
+    "73560afcb7a7": {
+      "path": "assets/73560afcb7a7.jpg",
+      "originalName": "73560afcb7a7.jpg",
+      "mimeType": "image/jpeg",
+      "size": 489395
+    },
+    "7fb4ec5608c3": {
+      "path": "assets/7fb4ec5608c3.jpg",
+      "originalName": "7fb4ec5608c3.jpg",
+      "mimeType": "image/jpeg",
+      "size": 411289
+    },
+    "83fd614913be": {
+      "path": "assets/83fd614913be.jpg",
+      "originalName": "83fd614913be.jpg",
+      "mimeType": "image/jpeg",
+      "size": 166112
+    },
+    "86020510ff0c": {
+      "path": "assets/86020510ff0c.jpg",
+      "originalName": "86020510ff0c.jpg",
+      "mimeType": "image/jpeg",
+      "size": 367314
+    },
+    "88ebde91c0d0": {
+      "path": "assets/88ebde91c0d0.jpg",
+      "originalName": "88ebde91c0d0.jpg",
+      "mimeType": "image/jpeg",
+      "size": 454470
+    },
+    "95ff5c034fe8": {
+      "path": "assets/95ff5c034fe8.jpg",
+      "originalName": "95ff5c034fe8.jpg",
+      "mimeType": "image/jpeg",
+      "size": 306154
+    },
+    "9730b5e822cc": {
+      "path": "assets/9730b5e822cc.jpg",
+      "originalName": "9730b5e822cc.jpg",
+      "mimeType": "image/jpeg",
+      "size": 350752
+    },
+    "a3a9888574c6": {
+      "path": "assets/a3a9888574c6.jpg",
+      "originalName": "a3a9888574c6.jpg",
+      "mimeType": "image/jpeg",
+      "size": 447911
+    },
+    "aa92a21563f3": {
+      "path": "assets/aa92a21563f3.jpg",
+      "originalName": "aa92a21563f3.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "ab333f28da2f": {
+      "path": "assets/ab333f28da2f.jpg",
+      "originalName": "ab333f28da2f.jpg",
+      "mimeType": "image/jpeg",
+      "size": 401158
+    },
+    "cc771ac4115d": {
+      "path": "assets/cc771ac4115d.jpg",
+      "originalName": "cc771ac4115d.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71506
+    },
+    "d56092b9a9ea": {
+      "path": "assets/d56092b9a9ea.jpg",
+      "originalName": "d56092b9a9ea.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "d710ffa828a9": {
+      "path": "assets/d710ffa828a9.jpg",
+      "originalName": "d710ffa828a9.jpg",
+      "mimeType": "image/jpeg",
+      "size": 674306
+    },
+    "e22319c35c54": {
+      "path": "assets/e22319c35c54.jpg",
+      "originalName": "e22319c35c54.jpg",
+      "mimeType": "image/jpeg",
+      "size": 71507
+    },
+    "e8f18ab7d8df": {
+      "path": "assets/e8f18ab7d8df.jpg",
+      "originalName": "e8f18ab7d8df.jpg",
+      "mimeType": "image/jpeg",
+      "size": 297819
+    },
+    "ed44674b5f51": {
+      "path": "assets/ed44674b5f51.jpg",
+      "originalName": "ed44674b5f51.jpg",
+      "mimeType": "image/jpeg",
+      "size": 506432
+    },
+    "f2170557f733": {
+      "path": "assets/f2170557f733.jpg",
+      "originalName": "环球旅行｜2025年让我涨粉10万的照片_2_吴噪音_来自小红书网页版.jpg",
+      "mimeType": "image/jpeg",
+      "size": 111465
+    },
+    "f3f2d92632a4": {
+      "path": "assets/f3f2d92632a4.jpg",
+      "originalName": "f3f2d92632a4.jpg",
+      "mimeType": "image/jpeg",
+      "size": 337556
+    }
+  },
   "stateMachine": {
     "id": "sm_moxsfuam_3",
     "name": "State Machine",
@@ -3316,6 +3316,7 @@
         "easing": "linear"
       }
     ],
+    "initialStateId": "st_moxsija5_4",
     "mutations": [
       {
         "id": "mutation_moxsjac9_9",
@@ -3434,8 +3435,6 @@
             "type": "float"
           }
         ],
-        "nodes": [],
-        "connections": [],
         "inputBindings": [],
         "outputBindings": [],
         "passthroughBindings": [
@@ -3443,7 +3442,9 @@
             "inputPortId": "localElapsedTime",
             "outputPortId": "Vector2Input_65:y"
           }
-        ]
+        ],
+        "nodes": [],
+        "connections": []
       },
       {
         "id": "mutation_mqyzdqx1_2",
@@ -3572,6 +3573,26 @@
             "type": "float"
           }
         ],
+        "inputBindings": [],
+        "outputBindings": [
+          {
+            "mutationPortId": "FloatInput_81:value",
+            "from": {
+              "nodeId": "min_mr39p2ff_2",
+              "portId": "value"
+            }
+          }
+        ],
+        "passthroughBindings": [
+          {
+            "inputPortId": "mouse.position.x",
+            "outputPortId": "Vector2Input_80:x"
+          },
+          {
+            "inputPortId": "mouse.position.y",
+            "outputPortId": "Vector2Input_80:y"
+          }
+        ],
         "nodes": [
           {
             "id": "min_mr39p2ff_2",
@@ -3594,29 +3615,8 @@
             ]
           }
         ],
-        "connections": [],
-        "inputBindings": [],
-        "outputBindings": [
-          {
-            "mutationPortId": "FloatInput_81:value",
-            "from": {
-              "nodeId": "min_mr39p2ff_2",
-              "portId": "value"
-            }
-          }
-        ],
-        "passthroughBindings": [
-          {
-            "inputPortId": "mouse.position.x",
-            "outputPortId": "Vector2Input_80:x"
-          },
-          {
-            "inputPortId": "mouse.position.y",
-            "outputPortId": "Vector2Input_80:y"
-          }
-        ]
+        "connections": []
       }
-    ],
-    "initialStateId": "st_moxsija5_4"
+    ]
   }
 }

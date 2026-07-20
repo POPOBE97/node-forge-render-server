@@ -1,12 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
-use std::io::{Read, Write};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 
 use crate::{debug_artifacts::DebugArtifactStore, dsl::SceneDSL};
 
@@ -134,6 +133,9 @@ impl AssetStore {
 /// Populate an `AssetStore` from a `SceneDSL`'s `assets` manifest, resolving
 /// each `entry.path` relative to `base_dir`.
 pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetStore> {
+    // A non-.nforge scene must not inherit document-local material overrides
+    // from a previously loaded SQLite document in the same process.
+    crate::renderer::node_compiler::template_loader::install_document_overrides(std::iter::empty());
     let store = AssetStore::new();
     for (asset_id, entry) in &scene.assets {
         let file_path = base_dir.join(&entry.path);
@@ -156,170 +158,29 @@ pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetSto
     Ok(store)
 }
 
-/// Open a `.nforge` zip archive, extract `scene.json` and all `assets/*`,
-/// return the parsed `SceneDSL` and a populated `AssetStore`.
+/// Open a SQLite `.nforge` document and return its SceneDSL projection and assets.
 pub fn load_from_nforge(nforge_path: &Path) -> Result<(SceneDSL, AssetStore)> {
     let loaded = load_from_nforge_with_debug_artifacts(nforge_path)?;
     Ok((loaded.scene, loaded.asset_store))
 }
 
-/// Open a `.nforge` archive and also hydrate debug artifacts.
+/// Open a SQLite `.nforge` document and also hydrate debug artifacts.
 pub fn load_from_nforge_with_debug_artifacts(nforge_path: &Path) -> Result<LoadedNforge> {
-    let file = std::fs::File::open(nforge_path)
-        .with_context(|| format!("failed to open .nforge at {}", nforge_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .with_context(|| format!("failed to read zip archive {}", nforge_path.display()))?;
-
-    // 1) Extract scene.json
-    let scene_json = {
-        let mut entry = archive
-            .by_name("scene.json")
-            .with_context(|| "missing scene.json in .nforge archive")?;
-        let mut buf = String::new();
-        entry
-            .read_to_string(&mut buf)
-            .context("failed to read scene.json from archive")?;
-        buf
-    };
-
-    let mut scene: SceneDSL =
-        serde_json::from_str(&scene_json).context("failed to parse scene.json from archive")?;
-    crate::dsl::normalize_scene_defaults(&mut scene)?;
-
-    // 2) Populate asset store from scene.assets manifest + archive entries
-    let store = AssetStore::new();
-    for (asset_id, entry) in &scene.assets {
-        let zip_path = &entry.path;
-        let mut zip_entry = archive.by_name(zip_path).with_context(|| {
-            format!("missing asset '{zip_path}' in .nforge archive for asset id '{asset_id}'")
-        })?;
-        let mut bytes = Vec::with_capacity(zip_entry.size() as usize);
-        zip_entry
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("failed to read asset '{zip_path}' from archive"))?;
-        store.insert(
-            asset_id.clone(),
-            AssetData {
-                bytes,
-                mime_type: entry.mime_type.clone(),
-                original_name: entry.original_name.clone(),
-            },
-        );
-    }
-
-    // 3) Populate debug artifacts from the archive. The manifest lives in
-    // scene.json while the payloads live under debug-artifacts/*.
-    let mut debug_artifacts = DebugArtifactStore::default();
-    let missing_debug_artifact_ids = debug_artifacts.sync_manifest(scene.debug_artifacts.clone());
-    for artifact_id in missing_debug_artifact_ids {
-        let Some(item) = scene
-            .debug_artifacts
-            .as_ref()
-            .and_then(|manifest| manifest.items.get(artifact_id.as_str()))
-            .cloned()
-        else {
-            continue;
-        };
-        let Ok(mut zip_entry) = archive.by_name(item.path.as_str()) else {
-            continue;
-        };
-        if item.mime_type.starts_with("text/") {
-            let mut text = String::new();
-            if zip_entry.read_to_string(&mut text).is_ok() {
-                debug_artifacts.upsert(item, Some(text));
-            }
-        } else {
-            let mut bytes = Vec::with_capacity(zip_entry.size() as usize);
-            if zip_entry.read_to_end(&mut bytes).is_ok() {
-                debug_artifacts.upsert_bytes(item, bytes);
-            }
-        }
-    }
-
-    Ok(LoadedNforge {
-        scene,
-        asset_store: store,
-        debug_artifacts,
-    })
+    crate::nforge::load(nforge_path)
 }
 
-/// Update `scene.json` and `debug-artifacts/*` entries in an existing `.nforge`.
+/// Transactionally replace debug artifacts in a SQLite `.nforge` document.
 pub fn save_debug_artifacts_to_nforge(
     nforge_path: &Path,
-    scene: &SceneDSL,
+    _scene: &SceneDSL,
     debug_artifacts: &DebugArtifactStore,
 ) -> Result<()> {
-    let file = std::fs::File::open(nforge_path)
-        .with_context(|| format!("failed to open .nforge at {}", nforge_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .with_context(|| format!("failed to read zip archive {}", nforge_path.display()))?;
-
-    let mut files = BTreeMap::<String, Vec<u8>>::new();
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .with_context(|| format!("failed to read zip entry #{index}"))?;
-        if entry.is_dir() {
-            continue;
-        }
-        let name = entry.name().to_string();
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("failed to read zip entry {name}"))?;
-        files.insert(name, bytes);
-    }
-
-    let mut next_scene = scene.clone();
-    next_scene.debug_artifacts = debug_artifacts.export_manifest();
-    files.insert(
-        "scene.json".to_string(),
-        serde_json::to_vec(&next_scene).context("failed to serialize scene.json")?,
-    );
-
-    if let Some(manifest) = debug_artifacts.export_manifest() {
-        for item in manifest.items.values() {
-            if let Some(bytes) = debug_artifacts.bytes(item.id.as_str()) {
-                files.insert(item.path.clone(), bytes.to_vec());
-            }
-        }
-    }
-
-    let file_name = nforge_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("invalid .nforge file name: {}", nforge_path.display()))?;
-    let tmp_path = nforge_path.with_file_name(format!(".{file_name}.tmp"));
-    let tmp_file = std::fs::File::create(&tmp_path)
-        .with_context(|| format!("failed to create temp archive {}", tmp_path.display()))?;
-    let mut writer = zip::ZipWriter::new(tmp_file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    for (name, bytes) in files {
-        writer
-            .start_file(name.as_str(), options)
-            .with_context(|| format!("failed to start zip entry {name}"))?;
-        writer
-            .write_all(bytes.as_slice())
-            .with_context(|| format!("failed to write zip entry {name}"))?;
-    }
-    writer
-        .finish()
-        .context("failed to finish updated .nforge archive")?;
-    std::fs::rename(&tmp_path, nforge_path).with_context(|| {
-        format!(
-            "failed to replace {} with {}",
-            nforge_path.display(),
-            tmp_path.display()
-        )
-    })?;
-    Ok(())
+    crate::nforge::save_debug_artifacts(nforge_path, debug_artifacts)
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
-        io::Write,
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -348,18 +209,21 @@ mod tests {
     fn write_test_nforge(
         path: &PathBuf,
         scene_json: &str,
-        artifact_path: &str,
+        _artifact_path: &str,
         artifact_text: &str,
     ) {
-        let file = std::fs::File::create(path).unwrap();
-        let mut writer = zip::ZipWriter::new(file);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        writer.start_file("scene.json", options).unwrap();
-        writer.write_all(scene_json.as_bytes()).unwrap();
-        writer.start_file(artifact_path, options).unwrap();
-        writer.write_all(artifact_text.as_bytes()).unwrap();
-        writer.finish().unwrap();
+        let scene: crate::dsl::SceneDSL = serde_json::from_str(scene_json).unwrap();
+        crate::nforge::initialize_test_document(path, &scene).unwrap();
+        let mut artifacts = crate::debug_artifacts::DebugArtifactStore::default();
+        artifacts.sync_manifest(scene.debug_artifacts.clone());
+        let item = scene
+            .debug_artifacts
+            .as_ref()
+            .and_then(|manifest| manifest.items.values().next())
+            .unwrap()
+            .clone();
+        artifacts.upsert(item, Some(artifact_text.to_string()));
+        crate::nforge::save_debug_artifacts(path, &artifacts).unwrap();
     }
 
     #[test]
@@ -454,6 +318,18 @@ mod tests {
             Some(updated_patch_text)
         );
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn legacy_zip_nforge_is_rejected_with_a_clear_error() {
+        let path = temp_nforge_path("legacy-zip");
+        std::fs::write(&path, b"PK\x03\x04legacy").unwrap();
+        let error = super::load_from_nforge(&path).unwrap_err();
+        assert!(
+            error.to_string().contains("legacy ZIP .nforge unsupported"),
+            "unexpected error: {error:#}"
+        );
         let _ = std::fs::remove_file(path);
     }
 }

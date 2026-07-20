@@ -886,59 +886,6 @@
       }
     }
   ],
-  "outputs": {
-    "composite": "node_default_composite"
-  },
-  "assets": {
-    "0a00dc1303fe": {
-      "path": "assets/0a00dc1303fe.png",
-      "originalName": "launcher.png",
-      "mimeType": "image/png",
-      "size": 2689787
-    },
-    "0e7827174088": {
-      "path": "assets/0e7827174088.png",
-      "originalName": "setting-dark.png",
-      "mimeType": "image/png",
-      "size": 470628
-    },
-    "17e95ecc3c30": {
-      "path": "assets/17e95ecc3c30.png",
-      "originalName": "calendar-dark.png",
-      "mimeType": "image/png",
-      "size": 196118
-    },
-    "2ed590c9f2c5": {
-      "path": "assets/2ed590c9f2c5.png",
-      "originalName": "album-dark.png",
-      "mimeType": "image/png",
-      "size": 687165
-    },
-    "2f1de3bd307b": {
-      "path": "assets/2f1de3bd307b.png",
-      "originalName": "album-light.png",
-      "mimeType": "image/png",
-      "size": 588586
-    },
-    "4e3dfb4b08c7": {
-      "path": "assets/4e3dfb4b08c7.png",
-      "originalName": "calendar-light.png",
-      "mimeType": "image/png",
-      "size": 215617
-    },
-    "62fb14427cc7": {
-      "path": "assets/62fb14427cc7.png",
-      "originalName": "setting-light.png",
-      "mimeType": "image/png",
-      "size": 480117
-    },
-    "d9ac3045086f": {
-      "path": "assets/d9ac3045086f.png",
-      "originalName": "weather.png",
-      "mimeType": "image/png",
-      "size": 830797
-    }
-  },
   "groups": [
     {
       "id": "BackgroundTexture",
@@ -949,6 +896,16 @@
           "id": "out_0",
           "name": "Output 1",
           "type": "color"
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_1",
+            "portId": "output"
+          }
         }
       ],
       "nodes": [
@@ -1386,19 +1343,62 @@
             "portId": "dynamic_1783677219938_8"
           }
         }
-      ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "ResourcePool_1",
-            "portId": "output"
-          }
-        }
       ]
     }
   ],
+  "outputs": {
+    "composite": "node_default_composite"
+  },
+  "assets": {
+    "0a00dc1303fe": {
+      "path": "assets/0a00dc1303fe.png",
+      "originalName": "launcher.png",
+      "mimeType": "image/png",
+      "size": 2689787
+    },
+    "0e7827174088": {
+      "path": "assets/0e7827174088.png",
+      "originalName": "setting-dark.png",
+      "mimeType": "image/png",
+      "size": 470628
+    },
+    "17e95ecc3c30": {
+      "path": "assets/17e95ecc3c30.png",
+      "originalName": "calendar-dark.png",
+      "mimeType": "image/png",
+      "size": 196118
+    },
+    "2ed590c9f2c5": {
+      "path": "assets/2ed590c9f2c5.png",
+      "originalName": "album-dark.png",
+      "mimeType": "image/png",
+      "size": 687165
+    },
+    "2f1de3bd307b": {
+      "path": "assets/2f1de3bd307b.png",
+      "originalName": "album-light.png",
+      "mimeType": "image/png",
+      "size": 588586
+    },
+    "4e3dfb4b08c7": {
+      "path": "assets/4e3dfb4b08c7.png",
+      "originalName": "calendar-light.png",
+      "mimeType": "image/png",
+      "size": 215617
+    },
+    "62fb14427cc7": {
+      "path": "assets/62fb14427cc7.png",
+      "originalName": "setting-light.png",
+      "mimeType": "image/png",
+      "size": 480117
+    },
+    "d9ac3045086f": {
+      "path": "assets/d9ac3045086f.png",
+      "originalName": "weather.png",
+      "mimeType": "image/png",
+      "size": 830797
+    }
+  },
   "stateMachine": {
     "id": "sm_mrerc38a_2",
     "name": "State Machine",
@@ -1512,8 +1512,8 @@
         "easing": "ease-in-out"
       }
     ],
-    "mutations": [],
-    "initialStateId": "st_mrerv8z2_3"
+    "initialStateId": "st_mrerv8z2_3",
+    "mutations": []
   },
   "passTargetSizes": {
     "IntelligentLight_30": {
