@@ -172,6 +172,13 @@ pub(crate) struct ResourcePlans {
     pub baked_data_parse_bytes_by_pass: HashMap<String, Arc<[u8]>>,
     pub baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String>,
     pub pass_extensions: HashMap<String, PassExtension>,
+    pub shader_parameter_buffers_by_pass: HashMap<String, ShaderParameterBufferPlan>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ShaderParameterBufferPlan {
+    pub binding: GraphBinding,
+    pub values: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]

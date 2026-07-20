@@ -19,6 +19,7 @@ use crate::{
     renderer::{
         geometry_resolver::types::ResolvedCompositionContext,
         node_compiler::geometry_nodes::rect2d_geometry_vertices,
+        render_plan::types::ShaderParameterBufferPlan,
         scene_prep::PreparedScene,
         types::{BakedDataParseMeta, PassExtension, PassOutputRegistry},
         utils::as_bytes_slice,
@@ -91,6 +92,7 @@ pub(crate) struct BuilderState<'b> {
     pub gradient_source_pass_ids: &'b mut HashSet<String>,
 
     pub pass_extensions: &'b mut HashMap<String, PassExtension>,
+    pub shader_parameter_buffers_by_pass: &'b mut HashMap<String, ShaderParameterBufferPlan>,
 }
 
 pub(crate) fn make_fullscreen_geometry(w: f32, h: f32) -> Arc<[u8]> {

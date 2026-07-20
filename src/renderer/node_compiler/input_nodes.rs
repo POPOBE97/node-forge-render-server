@@ -187,6 +187,20 @@ pub fn compile_vector4_input(
     ))
 }
 
+/// Compile a Mat4Input node through the same graph-uniform fast path as other
+/// value input nodes.
+pub fn compile_mat4_input(
+    node: &Node,
+    _out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    let field = register_graph_field(ctx, node, GraphFieldKind::Mat4);
+    Ok(TypedExpr::new(
+        format!("graph_inputs.{field}"),
+        ValueType::Mat4,
+    ))
+}
+
 /// Compile a TimeInput node to WGSL.
 ///
 /// TimeInput exposes monotonic time in seconds from runtime uniforms.

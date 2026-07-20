@@ -130,5 +130,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         pass_textures: Vec::new(),
         graph_schema: None,
         graph_binding_kind: None,
+        shader_parameter_schema: None,
     }
 }

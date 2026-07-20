@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-20T04:19:14.757Z",
+  "generatedAt": "2026-07-20T08:54:03.486Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -121,6 +121,7 @@
     "packed<vector4>",
     "pass",
     "renderTexture",
+    "sampledTexture",
     "shader",
     "texture",
     "vector2",
@@ -248,6 +249,7 @@
       "vector3[]",
       "vector4[]",
       "texture",
+      "sampledTexture",
       "ImageFile",
       "renderTexture",
       "material",
@@ -348,6 +350,10 @@
     ],
     "texture": [
       "texture"
+    ],
+    "sampledTexture": [
+      "texture",
+      "pass"
     ],
     "ImageFile": [
       "ImageFile"
@@ -2361,6 +2367,11 @@
           "id": "alpha",
           "name": "Alpha",
           "type": "float"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -4503,6 +4514,11 @@
           "id": "color",
           "name": "Color",
           "type": "color"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -5300,7 +5316,7 @@
       "type": "ShaderMaterial",
       "label": "Shader Material",
       "category": "Material",
-      "description": "Custom shader-based material (outputs material)",
+      "description": "Rapid-prototyping WGSL material with reflected parameters",
       "inputs": [],
       "outputs": [
         {
@@ -5309,11 +5325,7 @@
           "type": "material"
         }
       ],
-      "defaultParams": {
-        "language": "glsl",
-        "vertex": "// vertex shader\n",
-        "fragment": "// fragment shader\n"
-      }
+      "defaultParams": {}
     },
     {
       "type": "Sin",

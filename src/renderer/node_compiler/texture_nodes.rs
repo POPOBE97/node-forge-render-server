@@ -677,6 +677,10 @@ where
             ValueType::F32,
             uv_expr.uses_time,
         )),
+        "texture" => Ok(TypedExpr::new(
+            upstream_node_id.clone(),
+            ValueType::Texture2D,
+        )),
         other => bail!("unsupported PassTexture output port: {other}"),
     }
 }

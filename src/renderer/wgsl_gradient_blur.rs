@@ -135,6 +135,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         pass_textures: material_ctx.pass_textures,
         graph_schema,
         graph_binding_kind,
+        shader_parameter_schema: None,
     })
 }
 
@@ -375,6 +376,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         pass_textures: material_ctx.pass_textures,
         graph_schema,
         graph_binding_kind,
+        shader_parameter_schema: None,
     })
 }
 

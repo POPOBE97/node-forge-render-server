@@ -155,6 +155,21 @@ fn spawn_template_watcher(
 
                     let scene = last_good.lock().ok().and_then(|g| g.clone());
                     if let Some(scene) = scene {
+                        if let Some(error) = scene
+                            .nodes
+                            .iter()
+                            .filter(|node| node.node_type == "ShaderMaterial")
+                            .find_map(|node| {
+                                renderer::node_compiler::shader_material::validate_node_source(node)
+                                    .err()
+                            })
+                        {
+                            eprintln!(
+                                "[shader-material-hmr] keeping last-good render after WGSL error: {error:#}"
+                            );
+                            egui_ctx.request_repaint();
+                            continue;
+                        }
                         let _ = scene_tx.try_send(ws::SceneUpdate::Parsed {
                             scene,
                             request_id: None,

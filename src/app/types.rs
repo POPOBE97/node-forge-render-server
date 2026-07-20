@@ -460,10 +460,11 @@ pub struct App {
 }
 
 pub(super) fn scene_uses_time(scene: &crate::dsl::SceneDSL) -> bool {
-    scene
-        .nodes
-        .iter()
-        .any(|node| matches!(node.node_type.as_str(), "TimeInput" | "Time"))
+    scene.nodes.iter().any(|node| {
+        matches!(node.node_type.as_str(), "TimeInput" | "Time")
+            || (node.node_type == "ShaderMaterial"
+                && crate::renderer::node_compiler::shader_material::node_uses_time(node))
+    })
 }
 
 pub(super) fn extract_resource_pools(scene: &crate::dsl::SceneDSL) -> Vec<ResourcePoolInfo> {
@@ -867,6 +868,26 @@ mod tests {
     fn scene_uses_time_returns_false_when_time_nodes_absent() {
         let scene = scene_with_node_types(&["FloatInput", "ColorInput"]);
         assert!(!super::scene_uses_time(&scene));
+    }
+
+    #[test]
+    fn scene_uses_time_detects_shader_material_system_time() {
+        let path =
+            std::env::temp_dir().join(format!("node-forge-scene-time-{}.wgsl", std::process::id()));
+        std::fs::write(
+            &path,
+            r#"
+fn shader_material(in: ShaderMaterialInput) -> vec4f {
+    return vec4f(in.uv, sin(in.time), 1.0);
+}
+"#,
+        )
+        .unwrap();
+        let mut scene = scene_with_node_types(&["ShaderMaterial"]);
+        scene.nodes[0].wgsl_override = Some(path.to_string_lossy().to_string());
+
+        assert!(super::scene_uses_time(&scene));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

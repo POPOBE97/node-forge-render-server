@@ -18,6 +18,7 @@ pub fn graph_field_kind_for_node_type(node_type: &str) -> Option<GraphFieldKind>
         "Vector2Input" => Some(GraphFieldKind::Vec2),
         "Vector3Input" => Some(GraphFieldKind::Vec3),
         "Vector4Input" => Some(GraphFieldKind::Vec4),
+        "Mat4Input" => Some(GraphFieldKind::Mat4),
         "ColorInput" => Some(GraphFieldKind::Vec4Color),
         _ => None,
     }
@@ -63,10 +64,11 @@ pub fn build_graph_schema_with_field_names(
         });
     }
 
-    GraphSchema {
-        size_bytes: (fields.len() as u64) * 16,
-        fields,
-    }
+    let size_bytes = fields
+        .iter()
+        .map(|field| field.kind.slot_count() as u64 * 16)
+        .sum();
+    GraphSchema { size_bytes, fields }
 }
 
 pub fn choose_graph_binding_kind(
@@ -198,6 +200,73 @@ fn write_i32_slot(dst: &mut [u8], slot_index: usize, values: [i32; 4]) {
     }
 }
 
+fn shader_parameter_target(field_node_id: &str) -> Option<(&str, &str)> {
+    field_node_id
+        .split_once("::")
+        .filter(|(_, parameter_id)| parameter_id.starts_with("param:"))
+}
+
+fn parse_json_vec4(value: Option<&Value>, default_w: f32) -> [f32; 4] {
+    let Some(value) = value else {
+        return [0.0, 0.0, 0.0, default_w];
+    };
+    if let Some(array) = value.as_array() {
+        let read = |index: usize, fallback: f32| {
+            array
+                .get(index)
+                .and_then(parse_json_number_f32)
+                .unwrap_or(fallback)
+        };
+        return [read(0, 0.0), read(1, 0.0), read(2, 0.0), read(3, default_w)];
+    }
+    if let Some(object) = value.as_object() {
+        let read = |key: &str, fallback: f32| {
+            object
+                .get(key)
+                .and_then(parse_json_number_f32)
+                .unwrap_or(fallback)
+        };
+        return [
+            read("x", read("r", 0.0)),
+            read("y", read("g", 0.0)),
+            read("z", read("b", 0.0)),
+            read("w", read("a", default_w)),
+        ];
+    }
+    let scalar = parse_json_number_f32(value).unwrap_or(0.0);
+    [scalar, scalar, scalar, scalar]
+}
+
+fn write_shader_array_slots(
+    dst: &mut [u8],
+    first_slot: usize,
+    value: Option<&Value>,
+    length: usize,
+    components: usize,
+) {
+    let values = value.and_then(Value::as_array);
+    for index in 0..length {
+        let packed = if components == 1 {
+            [
+                values
+                    .and_then(|array| array.get(index))
+                    .and_then(parse_json_number_f32)
+                    .unwrap_or(0.0),
+                0.0,
+                0.0,
+                0.0,
+            ]
+        } else {
+            let mut packed = parse_json_vec4(values.and_then(|array| array.get(index)), 0.0);
+            for component in components..4 {
+                packed[component] = 0.0;
+            }
+            packed
+        };
+        write_f32_slot(dst, first_slot + index, packed);
+    }
+}
+
 pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u8>> {
     if schema.is_empty() {
         return Ok(Vec::new());
@@ -224,15 +293,24 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
     });
 
     let mut bytes = vec![0_u8; schema.size_bytes as usize];
-    for (slot_index, field) in schema.fields.iter().enumerate() {
+    let mut slot_index = 0;
+    for field in &schema.fields {
+        let shader_parameter = shader_parameter_target(&field.node_id);
+        let lookup_node_id = shader_parameter
+            .map(|(node_id, _)| node_id)
+            .unwrap_or(field.node_id.as_str());
         let node = nodes_by_id
-            .get(field.node_id.as_str())
+            .get(lookup_node_id)
             .copied()
             .ok_or_else(|| anyhow!("graph uniform node not found: {}", field.node_id))?;
+        let shader_value =
+            shader_parameter.and_then(|(_, parameter_id)| node.params.get(parameter_id));
 
         match field.kind {
             GraphFieldKind::F32 => {
-                let v = if node.node_type == "MidiInput" {
+                let v = if shader_parameter.is_some() {
+                    shader_value.and_then(parse_json_number_f32).unwrap_or(0.0)
+                } else if node.node_type == "MidiInput" {
                     parse_midi_input_f32(node)
                 } else {
                     parse_const_f32(node).unwrap_or(0.0)
@@ -240,21 +318,31 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_f32_slot(&mut bytes, slot_index, [v, 0.0, 0.0, 0.0]);
             }
             GraphFieldKind::I32 => {
-                let v = parse_const_f32(node).unwrap_or(0.0) as i32;
-                write_i32_slot(&mut bytes, slot_index, [v, 0, 0, 0]);
-            }
-            GraphFieldKind::Bool => {
-                let v = if parse_const_bool(node).unwrap_or(false) {
-                    1
+                let v = if shader_parameter.is_some() {
+                    shader_value.and_then(parse_json_number_f32).unwrap_or(0.0) as i32
                 } else {
-                    0
+                    parse_const_f32(node).unwrap_or(0.0) as i32
                 };
                 write_i32_slot(&mut bytes, slot_index, [v, 0, 0, 0]);
             }
+            GraphFieldKind::Bool => {
+                let raw = if shader_parameter.is_some() {
+                    shader_value.and_then(Value::as_bool).unwrap_or(false)
+                } else {
+                    parse_const_bool(node).unwrap_or(false)
+                };
+                let v = if raw { 1 } else { 0 };
+                write_i32_slot(&mut bytes, slot_index, [v, 0, 0, 0]);
+            }
             GraphFieldKind::Vec2 => {
-                let fallback =
-                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
-                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                let fallback = if shader_parameter.is_some() {
+                    parse_json_vec4(shader_value, 0.0)
+                } else {
+                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0])
+                };
+                let v = if shader_parameter.is_none()
+                    && let Some(resolved) = resolved_nodes_by_id.as_ref()
+                {
                     [
                         resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
                         resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
@@ -267,9 +355,14 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_f32_slot(&mut bytes, slot_index, [v[0], v[1], 0.0, 0.0]);
             }
             GraphFieldKind::Vec3 => {
-                let fallback =
-                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0]);
-                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                let fallback = if shader_parameter.is_some() {
+                    parse_json_vec4(shader_value, 0.0)
+                } else {
+                    parse_const_vec(node, ["x", "y", "z", "w"]).unwrap_or([0.0, 0.0, 0.0, 0.0])
+                };
+                let v = if shader_parameter.is_none()
+                    && let Some(resolved) = resolved_nodes_by_id.as_ref()
+                {
                     [
                         resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
                         resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
@@ -282,8 +375,14 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_f32_slot(&mut bytes, slot_index, [v[0], v[1], v[2], 0.0]);
             }
             GraphFieldKind::Vec4 => {
-                let fallback = parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0]);
-                let v = if let Some(resolved) = resolved_nodes_by_id.as_ref() {
+                let fallback = if shader_parameter.is_some() {
+                    parse_json_vec4(shader_value, 0.0)
+                } else {
+                    parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0])
+                };
+                let v = if shader_parameter.is_none()
+                    && let Some(resolved) = resolved_nodes_by_id.as_ref()
+                {
                     [
                         resolve_graph_input_component(scene, resolved, node, "x", fallback[0]),
                         resolve_graph_input_component(scene, resolved, node, "y", fallback[1]),
@@ -296,10 +395,56 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 write_f32_slot(&mut bytes, slot_index, v);
             }
             GraphFieldKind::Vec4Color => {
-                let v = parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0]);
+                let v = if shader_parameter.is_some() {
+                    parse_json_vec4(shader_value, 1.0)
+                } else {
+                    parse_vec4_value_array(node, "value").unwrap_or([1.0, 0.0, 1.0, 1.0])
+                };
                 write_f32_slot(&mut bytes, slot_index, v);
             }
+            GraphFieldKind::Mat4 => {
+                let matrix = if shader_parameter.is_some() {
+                    shader_value
+                } else {
+                    node.params.get("value")
+                }
+                .and_then(Value::as_array);
+                for column in 0..4 {
+                    let packed = [
+                        matrix
+                            .and_then(|values| values.get(column * 4))
+                            .and_then(parse_json_number_f32)
+                            .unwrap_or(if column == 0 { 1.0 } else { 0.0 }),
+                        matrix
+                            .and_then(|values| values.get(column * 4 + 1))
+                            .and_then(parse_json_number_f32)
+                            .unwrap_or(if column == 1 { 1.0 } else { 0.0 }),
+                        matrix
+                            .and_then(|values| values.get(column * 4 + 2))
+                            .and_then(parse_json_number_f32)
+                            .unwrap_or(if column == 2 { 1.0 } else { 0.0 }),
+                        matrix
+                            .and_then(|values| values.get(column * 4 + 3))
+                            .and_then(parse_json_number_f32)
+                            .unwrap_or(if column == 3 { 1.0 } else { 0.0 }),
+                    ];
+                    write_f32_slot(&mut bytes, slot_index + column, packed);
+                }
+            }
+            GraphFieldKind::F32Array(length) => {
+                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 1);
+            }
+            GraphFieldKind::Vec2Array(length) => {
+                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 2);
+            }
+            GraphFieldKind::Vec3Array(length) => {
+                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 3);
+            }
+            GraphFieldKind::Vec4Array(length) => {
+                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 4);
+            }
         }
+        slot_index += field.kind.slot_count();
     }
 
     Ok(bytes)
@@ -315,6 +460,7 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "Mat4Input"
             | "ColorInput"
     )
 }
@@ -332,33 +478,40 @@ fn collect_ignored_input_value_node_ids_for_pass_bindings(
     let mut ignored_input_value_node_ids: BTreeSet<String> = BTreeSet::new();
 
     for pass in pass_bindings {
-        let Some(binding) = pass.graph_binding.as_ref() else {
-            continue;
-        };
+        for binding in [
+            pass.graph_binding.as_ref(),
+            pass.shader_parameter_binding.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for field in &binding.schema.fields {
+                let actual_node_id = shader_parameter_target(&field.node_id)
+                    .map(|(node_id, _)| node_id)
+                    .unwrap_or(field.node_id.as_str());
+                ignored_input_value_node_ids.insert(actual_node_id.to_string());
 
-        for field in &binding.schema.fields {
-            ignored_input_value_node_ids.insert(field.node_id.clone());
+                let component_ports: &[&str] = match nodes_by_id
+                    .get(actual_node_id)
+                    .map(|node| node.node_type.as_str())
+                {
+                    Some("Vector2Input") => &["x", "y"],
+                    Some("Vector3Input") => &["x", "y", "z"],
+                    Some("Vector4Input") => &["x", "y", "z", "w"],
+                    _ => &[],
+                };
 
-            let component_ports: &[&str] = match nodes_by_id
-                .get(field.node_id.as_str())
-                .map(|node| node.node_type.as_str())
-            {
-                Some("Vector2Input") => &["x", "y"],
-                Some("Vector3Input") => &["x", "y", "z"],
-                Some("Vector4Input") => &["x", "y", "z", "w"],
-                _ => &[],
-            };
-
-            let mut visiting_outputs: BTreeSet<(String, String)> = BTreeSet::new();
-            for port_id in component_ports {
-                collect_scalar_input_dependencies_for_input_port(
-                    scene,
-                    &nodes_by_id,
-                    field.node_id.as_str(),
-                    port_id,
-                    &mut ignored_input_value_node_ids,
-                    &mut visiting_outputs,
-                );
+                let mut visiting_outputs: BTreeSet<(String, String)> = BTreeSet::new();
+                for port_id in component_ports {
+                    collect_scalar_input_dependencies_for_input_port(
+                        scene,
+                        &nodes_by_id,
+                        actual_node_id,
+                        port_id,
+                        &mut ignored_input_value_node_ids,
+                        &mut visiting_outputs,
+                    );
+                }
             }
         }
     }
@@ -531,6 +684,9 @@ fn canonicalized_params(
                     | "maxValue"
             )
         {
+            continue;
+        }
+        if node.node_type == "ShaderMaterial" && k.starts_with("param:") {
             continue;
         }
         out.insert(k.clone(), v.clone());
@@ -721,6 +877,11 @@ fn graph_field_kind_label(kind: GraphFieldKind) -> &'static str {
         GraphFieldKind::Vec3 => "vec3",
         GraphFieldKind::Vec4 => "vec4",
         GraphFieldKind::Vec4Color => "vec4_color",
+        GraphFieldKind::Mat4 => "mat4",
+        GraphFieldKind::F32Array(_) => "f32_array",
+        GraphFieldKind::Vec2Array(_) => "vec2_array",
+        GraphFieldKind::Vec3Array(_) => "vec3_array",
+        GraphFieldKind::Vec4Array(_) => "vec4_array",
     }
 }
 
@@ -732,40 +893,45 @@ fn graph_binding_kind_label(kind: GraphBindingKind) -> &'static str {
 }
 
 fn canonical_graph_bindings_value(pass_bindings: &[PassBindings]) -> Vec<Value> {
-    let mut sorted: Vec<&PassBindings> = pass_bindings
-        .iter()
-        .filter(|p| p.graph_binding.is_some())
-        .collect();
+    let mut sorted: Vec<&PassBindings> = pass_bindings.iter().collect();
     sorted.sort_by(|a, b| a.pass_id.cmp(&b.pass_id));
 
     sorted
         .into_iter()
-        .filter_map(|p| {
-            let binding = p.graph_binding.as_ref()?;
-            let mut fields = binding.schema.fields.clone();
-            fields.sort_by(|a, b| {
-                a.field_name
-                    .cmp(&b.field_name)
-                    .then_with(|| a.node_id.cmp(&b.node_id))
-            });
-            let fields_value: Vec<Value> = fields
-                .into_iter()
-                .map(|f| {
-                    json!({
-                        "nodeId": f.node_id,
-                        "fieldName": f.field_name,
-                        "kind": graph_field_kind_label(f.kind),
+        .flat_map(|pass| {
+            [
+                ("graph", pass.graph_binding.as_ref()),
+                ("shader_parameters", pass.shader_parameter_binding.as_ref()),
+            ]
+            .into_iter()
+            .filter_map(move |(role, binding)| {
+                let binding = binding?;
+                let mut fields = binding.schema.fields.clone();
+                fields.sort_by(|a, b| {
+                    a.field_name
+                        .cmp(&b.field_name)
+                        .then_with(|| a.node_id.cmp(&b.node_id))
+                });
+                let fields_value: Vec<Value> = fields
+                    .into_iter()
+                    .map(|field| {
+                        json!({
+                            "nodeId": field.node_id,
+                            "fieldName": field.field_name,
+                            "kind": graph_field_kind_label(field.kind),
+                        })
                     })
-                })
-                .collect();
+                    .collect();
 
-            Some(json!({
-                "passId": p.pass_id,
-                "bufferName": binding.buffer_name.as_str(),
-                "kind": graph_binding_kind_label(binding.kind),
-                "sizeBytes": binding.schema.size_bytes,
-                "fields": fields_value,
-            }))
+                Some(json!({
+                    "passId": pass.pass_id,
+                    "role": role,
+                    "bufferName": binding.buffer_name.as_str(),
+                    "kind": graph_binding_kind_label(binding.kind),
+                    "sizeBytes": binding.schema.size_bytes,
+                    "fields": fields_value,
+                }))
+            })
         })
         .collect()
 }
@@ -996,6 +1162,63 @@ mod tests {
     }
 
     #[test]
+    fn pack_graph_values_reads_shader_material_parameter_slots() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "shader-params".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![make_node(
+                "ShaderMaterial_1",
+                "ShaderMaterial",
+                json!({
+                    "param:gain": 2.5,
+                    "param:tint": [0.1, 0.2, 0.3, 0.4],
+                    "param:weights": [1.0, 2.0, 3.0],
+                }),
+            )],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let schema = GraphSchema {
+            fields: vec![
+                GraphField {
+                    node_id: "ShaderMaterial_1::param:gain".to_string(),
+                    field_name: "gain".to_string(),
+                    kind: GraphFieldKind::F32,
+                },
+                GraphField {
+                    node_id: "ShaderMaterial_1::param:tint".to_string(),
+                    field_name: "tint".to_string(),
+                    kind: GraphFieldKind::Vec4,
+                },
+                GraphField {
+                    node_id: "ShaderMaterial_1::param:weights".to_string(),
+                    field_name: "weights".to_string(),
+                    kind: GraphFieldKind::F32Array(3),
+                },
+            ],
+            size_bytes: 80,
+        };
+
+        let bytes = pack_graph_values(&scene, &schema).unwrap();
+        let read_f32 =
+            |offset: usize| f32::from_ne_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        assert_eq!(read_f32(0), 2.5);
+        assert_eq!(
+            [read_f32(16), read_f32(20), read_f32(24), read_f32(28)],
+            [0.1, 0.2, 0.3, 0.4]
+        );
+        assert_eq!([read_f32(32), read_f32(48), read_f32(64)], [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
     fn pack_graph_values_resolves_vector4_input_component_connections() {
         let scene = SceneDSL {
             version: "1.0".to_string(),
@@ -1137,6 +1360,8 @@ mod tests {
                 },
             }),
             last_graph_hash: None,
+            shader_parameter_binding: None,
+            last_shader_parameter_hash: None,
             extension: None,
         };
 
@@ -1242,6 +1467,8 @@ mod tests {
                 },
             }),
             last_graph_hash: None,
+            shader_parameter_binding: None,
+            last_shader_parameter_hash: None,
             extension: None,
         };
 
@@ -1302,6 +1529,8 @@ mod tests {
                 },
             }),
             last_graph_hash: None,
+            shader_parameter_binding: None,
+            last_shader_parameter_hash: None,
             extension: None,
         };
 

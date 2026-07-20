@@ -17,6 +17,7 @@ pub enum ValueType {
     /// This is not a "storable" value in WGSL and must only be used by nodes that explicitly
     /// know how to sample it (e.g. GlassMaterial).
     Texture2D,
+    Mat4,
     Vec2,
     Vec3,
     Vec4,
@@ -44,6 +45,11 @@ pub enum GraphFieldKind {
     /// premultiplied-alpha at the read site. Distinct from [`Vec4`] so
     /// callers can keep color/non-color paths separate.
     Vec4Color,
+    Mat4,
+    F32Array(usize),
+    Vec2Array(usize),
+    Vec3Array(usize),
+    Vec4Array(usize),
 }
 
 impl GraphFieldKind {
@@ -51,11 +57,22 @@ impl GraphFieldKind {
         matches!(self, Self::I32 | Self::Bool)
     }
 
-    pub fn wgsl_slot_type(self) -> &'static str {
-        if self.uses_i32_slot() {
-            "vec4i"
-        } else {
-            "vec4f"
+    pub fn wgsl_slot_type(self) -> String {
+        match self {
+            Self::I32 | Self::Bool => "vec4i".to_string(),
+            Self::Mat4 => "mat4x4f".to_string(),
+            Self::F32Array(n) | Self::Vec2Array(n) | Self::Vec3Array(n) | Self::Vec4Array(n) => {
+                format!("array<vec4f, {n}>")
+            }
+            _ => "vec4f".to_string(),
+        }
+    }
+
+    pub fn slot_count(self) -> usize {
+        match self {
+            Self::Mat4 => 4,
+            Self::F32Array(n) | Self::Vec2Array(n) | Self::Vec3Array(n) | Self::Vec4Array(n) => n,
+            _ => 1,
         }
     }
 }
@@ -224,6 +241,7 @@ impl ValueType {
             ValueType::U32 => "u32",
             ValueType::Bool => "bool",
             ValueType::Texture2D => "texture_2d<f32>",
+            ValueType::Mat4 => "mat4x4f",
             ValueType::Vec2 => "vec2f",
             ValueType::Vec3 => "vec3f",
             ValueType::Vec4 => "vec4f",
@@ -240,6 +258,7 @@ impl ValueType {
             ValueType::U32 => "uint",
             ValueType::Bool => "bool",
             ValueType::Texture2D => "sampler2D",
+            ValueType::Mat4 => "mat4",
             ValueType::Vec2 => "vec2",
             ValueType::Vec3 => "vec3",
             ValueType::Vec4 => "vec4",
@@ -406,6 +425,13 @@ pub struct MaterialCompileContext {
     pub graph_input_field_names: BTreeMap<String, String>,
     pub used_graph_input_field_names: BTreeSet<String>,
 
+    /// Unconnected ShaderMaterial parameters use their own system buffer at
+    /// group 0 / binding 3. Keeping this schema separate prevents reflected
+    /// parameters from changing or colliding with the regular graph-input ABI.
+    pub shader_parameter_kinds: BTreeMap<String, GraphFieldKind>,
+    pub shader_parameter_field_names: BTreeMap<String, String>,
+    pub used_shader_parameter_field_names: BTreeSet<String>,
+
     /// Keep legacy `node_<id>_<hash>` graph field names for contexts whose
     /// callers only propagate field kinds. Vertex geometry compilation is the
     /// current example.
@@ -448,6 +474,30 @@ impl MaterialCompileContext {
             allocate_unique_ident(&mut self.used_graph_input_field_names, preferred, node_id);
         self.graph_input_field_names
             .insert(node_id.to_string(), field_name.clone());
+        field_name
+    }
+
+    pub fn register_shader_parameter_named(
+        &mut self,
+        parameter_key: &str,
+        kind: GraphFieldKind,
+        preferred: &str,
+    ) -> String {
+        self.shader_parameter_kinds
+            .entry(parameter_key.to_string())
+            .or_insert(kind);
+
+        if let Some(existing) = self.shader_parameter_field_names.get(parameter_key) {
+            return existing.clone();
+        }
+
+        let field_name = allocate_unique_ident(
+            &mut self.used_shader_parameter_field_names,
+            preferred,
+            parameter_key,
+        );
+        self.shader_parameter_field_names
+            .insert(parameter_key.to_string(), field_name.clone());
         field_name
     }
 
@@ -609,6 +659,8 @@ pub struct PassBindings {
     pub base_params: Params,
     pub graph_binding: Option<GraphBinding>,
     pub last_graph_hash: Option<[u8; 32]>,
+    pub shader_parameter_binding: Option<GraphBinding>,
+    pub last_shader_parameter_hash: Option<[u8; 32]>,
     pub extension: Option<PassExtension>,
 }
 
@@ -633,6 +685,9 @@ pub struct WgslShaderBundle {
     pub graph_schema: Option<GraphSchema>,
     /// Selected graph binding kind used by generated declarations.
     pub graph_binding_kind: Option<GraphBindingKind>,
+    /// Unconnected ShaderMaterial parameters, always bound as read-only storage
+    /// at group 0 / binding 3.
+    pub shader_parameter_schema: Option<GraphSchema>,
 }
 
 /// A CPU-side 2D convolution kernel.

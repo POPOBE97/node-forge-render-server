@@ -719,6 +719,37 @@ fn validate_connection(
         Some(PortTypeSpec::One(ty.clone()))
     }
 
+    fn shader_material_input_port_type(node: &Node, port_id: &str) -> Option<PortTypeSpec> {
+        let spec = dynamic_port_type(&node.inputs, port_id)?;
+        let PortTypeSpec::One(port_type) = &spec else {
+            return None;
+        };
+
+        let valid = if port_id.starts_with("resource:") {
+            port_type == "sampledTexture"
+        } else if port_id.starts_with("param:") {
+            matches!(
+                port_type.as_str(),
+                "float"
+                    | "int"
+                    | "bool"
+                    | "vector2"
+                    | "vector3"
+                    | "vector4"
+                    | "color"
+                    | "mat4"
+                    | "float[]"
+                    | "vector2[]"
+                    | "vector3[]"
+                    | "vector4[]"
+            )
+        } else {
+            false
+        };
+
+        valid.then_some(spec)
+    }
+
     fn inferred_result_output_node_type(node_type: &str) -> bool {
         matches!(
             node_type,
@@ -822,6 +853,19 @@ fn validate_connection(
     } else if to_node.node_type == "MathClosure" {
         // MathClosure inputs are instance-defined (node.inputs in the DSL export).
         if let Some(spec) = math_closure_input_port_type(to_node, &c.to.port_id) {
+            Cow::Owned(spec)
+        } else {
+            errors.push(format!(
+                "connection '{}' uses unknown to port '{}.{}' (type {})",
+                c.id, c.to.node_id, c.to.port_id, to_node.node_type
+            ));
+            return;
+        }
+    } else if to_node.node_type == "ShaderMaterial" {
+        // ShaderMaterial inputs are reflected from the node's WGSL function signature and
+        // exported on the node instance. Keep the accepted IDs and types constrained to the
+        // reflection contract instead of treating arbitrary instance ports as valid.
+        if let Some(spec) = shader_material_input_port_type(to_node, &c.to.port_id) {
             Cow::Owned(spec)
         } else {
             errors.push(format!(

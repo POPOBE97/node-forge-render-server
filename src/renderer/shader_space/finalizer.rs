@@ -56,6 +56,16 @@ impl ShaderSpaceFinalizer {
                     .graph_values
                     .as_ref()
                     .map(|values| crate::renderer::graph_uniforms::hash_bytes(values.as_slice())),
+                shader_parameter_binding: resources
+                    .shader_parameter_buffers_by_pass
+                    .get(&spec.pass_id)
+                    .map(|plan| plan.binding.clone()),
+                last_shader_parameter_hash: resources
+                    .shader_parameter_buffers_by_pass
+                    .get(&spec.pass_id)
+                    .map(|plan| {
+                        crate::renderer::graph_uniforms::hash_bytes(plan.values.as_slice())
+                    }),
                 extension: resources.pass_extensions.get(&spec.pass_id).cloned(),
             })
             .collect();
@@ -98,6 +108,13 @@ impl ShaderSpaceFinalizer {
                     usage,
                 });
             }
+        }
+        for plan in resources.shader_parameter_buffers_by_pass.values() {
+            buffer_specs.push(BufferSpec::Sized {
+                name: plan.binding.buffer_name.clone(),
+                size: plan.binding.schema.size_bytes as usize,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            });
         }
         for spec in &resources.render_pass_specs {
             let Some(name) = spec.baked_data_parse_buffer.clone() else {
@@ -282,6 +299,10 @@ impl ShaderSpaceFinalizer {
                 .get(&spec.name)
                 .cloned();
             let graph_binding = spec.graph_binding.clone();
+            let shader_parameter_binding = resources
+                .shader_parameter_buffers_by_pass
+                .get(&spec.pass_id)
+                .map(|plan| plan.binding.clone());
 
             let texture_names: Vec<ResourceName> = spec
                 .texture_bindings
@@ -349,6 +370,15 @@ impl ShaderSpaceFinalizer {
                             true,
                         ),
                     };
+                }
+                if let Some(shader_parameter_binding) = shader_parameter_binding.clone() {
+                    pass_builder = pass_builder.bind_storage_buffer(
+                        0,
+                        3,
+                        shader_parameter_binding.buffer_name.clone(),
+                        ShaderStages::FRAGMENT,
+                        true,
+                    );
                 }
 
                 let vertex_attributes = match spec.vertex_layout {
@@ -505,6 +535,16 @@ impl ShaderSpaceFinalizer {
             shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
             if let (Some(graph_binding), Some(values)) = (&spec.graph_binding, &spec.graph_values) {
                 shader_space.write_buffer(graph_binding.buffer_name.as_str(), 0, values)?;
+            }
+            if let Some(plan) = resources
+                .shader_parameter_buffers_by_pass
+                .get(&spec.pass_id)
+            {
+                shader_space.write_buffer(
+                    plan.binding.buffer_name.as_str(),
+                    0,
+                    plan.values.as_slice(),
+                )?;
             }
         }
         for spec in &resources.image_prepasses {

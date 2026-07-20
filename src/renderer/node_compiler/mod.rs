@@ -12,6 +12,7 @@ pub mod math_closure;
 pub mod math_nodes;
 pub mod remap_nodes;
 pub mod sdf_nodes;
+pub mod shader_material;
 pub mod template_loader;
 pub mod texture_nodes;
 pub mod trigonometry_nodes;
@@ -174,6 +175,7 @@ fn is_input_like_node(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "Mat4Input"
             | "TimeInput"
             | "Time"
             | "FragCoord"
@@ -222,6 +224,7 @@ fn value_type_from_port_type(port_type: Option<&str>) -> Option<ValueType> {
         "vector2" | "vec2" => Some(ValueType::Vec2),
         "vector3" | "vec3" => Some(ValueType::Vec3),
         "vector4" | "vec4" | "color" => Some(ValueType::Vec4),
+        "mat4" | "mat4x4" => Some(ValueType::Mat4),
         _ => None,
     }
 }
@@ -235,6 +238,10 @@ fn default_expr_for_type(ty: ValueType) -> TypedExpr {
         ValueType::Vec2 => TypedExpr::new("vec2f(0.0, 0.0)", ValueType::Vec2),
         ValueType::Vec3 => TypedExpr::new("vec3f(0.0, 0.0, 0.0)", ValueType::Vec3),
         ValueType::Vec4 => TypedExpr::new("vec4f(0.0, 0.0, 0.0, 0.0)", ValueType::Vec4),
+        ValueType::Mat4 => TypedExpr::new(
+            "mat4x4f(vec4f(1.0, 0.0, 0.0, 0.0), vec4f(0.0, 1.0, 0.0, 0.0), vec4f(0.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 1.0))",
+            ValueType::Mat4,
+        ),
         _ => TypedExpr::new("0.0", ValueType::F32),
     }
 }
@@ -845,6 +852,7 @@ fn compile_expr(
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,
+        "Mat4Input" => input_nodes::compile_mat4_input(node, out_port, ctx)?,
         "TimeInput" => input_nodes::compile_time_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
         "GeoFragcoord" => input_nodes::compile_geo_fragcoord(node, out_port)?,
@@ -985,6 +993,15 @@ fn compile_expr(
             compile_fn,
         )?,
         "HyperOSGlassMaterial" => hyperos_glass_material::compile_hyperos_glass_material(
+            scene,
+            nodes_by_id,
+            node,
+            out_port,
+            ctx,
+            cache,
+            compile_fn,
+        )?,
+        "ShaderMaterial" => shader_material::compile_shader_material(
             scene,
             nodes_by_id,
             node,

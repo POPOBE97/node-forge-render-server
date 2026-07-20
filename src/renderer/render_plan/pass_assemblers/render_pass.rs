@@ -20,6 +20,7 @@ use crate::{
         geometry_resolver::is_draw_pass_node_type,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
+        render_plan::types::ShaderParameterBufferPlan,
         scene_prep::bake_data_parse_nodes,
         types::{
             BakedDataParseMeta, BakedValue, GraphBinding, GraphBindingKind, MaterialCompileContext,
@@ -520,6 +521,27 @@ pub(crate) fn assemble_render_pass(
             kind,
             schema,
         });
+    }
+
+    if let Some(schema) = bundle.shader_parameter_schema.clone() {
+        let max_storage_bytes = device.limits().max_storage_buffer_binding_size as u64;
+        if schema.size_bytes > max_storage_bytes {
+            return Err(anyhow!(
+                "ShaderMaterial parameter buffer size {} exceeds device storage-buffer limit {}",
+                schema.size_bytes,
+                max_storage_bytes
+            ));
+        }
+        let binding = GraphBinding {
+            buffer_name: format!("params.{layer_id}.shader_material").into(),
+            kind: GraphBindingKind::StorageRead,
+            schema,
+        };
+        let values = pack_graph_values(&prepared.scene, &binding.schema)?;
+        bs.shader_parameter_buffers_by_pass.insert(
+            pass_name.as_str().to_string(),
+            ShaderParameterBufferPlan { binding, values },
+        );
     }
 
     let shader_wgsl = bundle.module;

@@ -303,6 +303,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         pass_textures: Vec::new(),
         graph_schema: None,
         graph_binding_kind: None,
+        shader_parameter_schema: None,
     }
 }
 
@@ -460,6 +461,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         pass_textures: Vec::new(),
         graph_schema: None,
         graph_binding_kind: None,
+        shader_parameter_schema: None,
     }
 }
 
@@ -494,6 +496,7 @@ fn build_static_vertex_fragment_bundle(combined_wgsl: String) -> WgslShaderBundl
         pass_textures: Vec::new(),
         graph_schema: None,
         graph_binding_kind: None,
+        shader_parameter_schema: None,
     }
 }
 
@@ -588,6 +591,22 @@ pub(crate) fn graph_inputs_wgsl_decl(schema: &GraphSchema, kind: GraphBindingKin
             out.push_str("var<storage, read> graph_inputs: GraphInputs;\n")
         }
     }
+    out
+}
+
+fn shader_material_params_wgsl_decl(schema: &GraphSchema) -> String {
+    let mut out = String::new();
+    out.push_str("\nstruct ShaderMaterialParams {\n");
+    for field in &schema.fields {
+        out.push_str(&format!(
+            "    {}: {},\n",
+            field.field_name,
+            field.kind.wgsl_slot_type()
+        ));
+    }
+    out.push_str("};\n");
+    out.push_str("@group(0) @binding(3)\n");
+    out.push_str("var<storage, read> shader_material_params: ShaderMaterialParams;\n");
     out
 }
 
@@ -753,6 +772,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         pass_textures: material_ctx.pass_textures,
         graph_schema,
         graph_binding_kind,
+        shader_parameter_schema: None,
     })
 }
 
@@ -857,6 +877,16 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     let graph_binding_kind = graph_schema
         .as_ref()
         .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
+    let shader_parameter_schema = if material_ctx.shader_parameter_kinds.is_empty() {
+        None
+    } else {
+        Some(
+            crate::renderer::graph_uniforms::build_graph_schema_with_field_names(
+                &material_ctx.shader_parameter_kinds,
+                &material_ctx.shader_parameter_field_names,
+            ),
+        )
+    };
 
     let mut common = r#"
 struct Params {
@@ -899,6 +929,9 @@ var<uniform> params: Params;
 
     if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
         common.push_str(&graph_inputs_wgsl_decl(schema, kind));
+    }
+    if let Some(schema) = shader_parameter_schema.as_ref() {
+        common.push_str(&shader_material_params_wgsl_decl(schema));
     }
 
     if !(vertex_uses_instance_index || material_ctx.uses_instance_index) {
@@ -1132,6 +1165,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         pass_textures,
         graph_schema,
         graph_binding_kind,
+        shader_parameter_schema,
     })
 }
 

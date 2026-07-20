@@ -39,8 +39,16 @@ enum SceneUpdateMode {
 #[derive(Debug)]
 struct GraphBufferUpdate {
     pass_index: usize,
+    target: GraphBufferTarget,
+    buffer_name: rust_wgpu_fiber::ResourceName,
     bytes: Vec<u8>,
     hash: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GraphBufferTarget {
+    Graph,
+    ShaderParameters,
 }
 
 fn choose_scene_update_mode(
@@ -322,26 +330,58 @@ fn collect_graph_uniform_updates(
             let bytes = ext.pack_buffer(scene);
             let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
             if pass.last_graph_hash != Some(hash) {
+                let buffer_name = pass
+                    .graph_binding
+                    .as_ref()
+                    .map(|binding| binding.buffer_name.clone())
+                    .with_context(|| {
+                        format!(
+                            "extension graph binding missing for pass '{}'",
+                            pass.pass_id
+                        )
+                    })?;
                 out.push(GraphBufferUpdate {
                     pass_index,
+                    target: GraphBufferTarget::Graph,
+                    buffer_name,
                     bytes,
                     hash,
                 });
             }
-            continue;
+        } else if let Some(binding) = pass.graph_binding.as_ref() {
+            let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
+                .with_context(|| {
+                    format!("failed to pack graph values for pass '{}'", pass.pass_id)
+                })?;
+            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
+            if pass.last_graph_hash != Some(hash) {
+                out.push(GraphBufferUpdate {
+                    pass_index,
+                    target: GraphBufferTarget::Graph,
+                    buffer_name: binding.buffer_name.clone(),
+                    bytes,
+                    hash,
+                });
+            }
         }
-        let Some(binding) = pass.graph_binding.as_ref() else {
-            continue;
-        };
-        let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
-            .with_context(|| format!("failed to pack graph values for pass '{}'", pass.pass_id))?;
-        let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
-        if pass.last_graph_hash != Some(hash) {
-            out.push(GraphBufferUpdate {
-                pass_index,
-                bytes,
-                hash,
-            });
+        if let Some(binding) = pass.shader_parameter_binding.as_ref() {
+            let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
+                .with_context(|| {
+                    format!(
+                        "failed to pack ShaderMaterial parameters for pass '{}'",
+                        pass.pass_id
+                    )
+                })?;
+            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
+            if pass.last_shader_parameter_hash != Some(hash) {
+                out.push(GraphBufferUpdate {
+                    pass_index,
+                    target: GraphBufferTarget::ShaderParameters,
+                    buffer_name: binding.buffer_name.clone(),
+                    bytes,
+                    hash,
+                });
+            }
         }
     }
     Ok(out)
@@ -368,20 +408,22 @@ fn apply_graph_uniform_updates_inner(
 ) -> Result<usize> {
     let updates = collect_graph_uniform_updates(scene, passes)?;
     for update in &updates {
-        let buffer_name = passes[update.pass_index]
-            .graph_binding
-            .as_ref()
-            .map(|b| b.buffer_name.clone())
+        shader_space
+            .write_buffer(update.buffer_name.as_str(), 0, update.bytes.as_slice())
             .with_context(|| {
                 format!(
-                    "graph binding missing while applying update for pass '{}'",
-                    passes[update.pass_index].pass_id
+                    "failed to write graph buffer '{}'",
+                    update.buffer_name.as_str()
                 )
             })?;
-        shader_space
-            .write_buffer(buffer_name.as_str(), 0, update.bytes.as_slice())
-            .with_context(|| format!("failed to write graph buffer '{}'", buffer_name.as_str()))?;
-        passes[update.pass_index].last_graph_hash = Some(update.hash);
+        match update.target {
+            GraphBufferTarget::Graph => {
+                passes[update.pass_index].last_graph_hash = Some(update.hash);
+            }
+            GraphBufferTarget::ShaderParameters => {
+                passes[update.pass_index].last_shader_parameter_hash = Some(update.hash);
+            }
+        }
     }
     Ok(updates.len())
 }
@@ -1077,6 +1119,8 @@ mod tests {
                 schema,
             }),
             last_graph_hash: Some(same_hash),
+            shader_parameter_binding: None,
+            last_shader_parameter_hash: None,
             extension: None,
         };
 
@@ -1142,12 +1186,85 @@ mod tests {
                 schema,
             }),
             last_graph_hash: None,
+            shader_parameter_binding: None,
+            last_shader_parameter_hash: None,
             extension: None,
         };
 
         let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].pass_index, 0);
+        assert_eq!(updates[0].bytes.len(), 16);
+    }
+
+    #[test]
+    fn collect_graph_uniform_updates_emits_shader_parameter_buffer_changes() {
+        let scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![crate::dsl::Node {
+                id: "shader1".to_string(),
+                node_type: "ShaderMaterial".to_string(),
+                params: HashMap::from([("param:gain".to_string(), serde_json::json!(3.0))]),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                input_bindings: Vec::new(),
+                wgsl_override: None,
+            }],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let schema = GraphSchema {
+            fields: vec![GraphField {
+                node_id: "shader1::param:gain".to_string(),
+                field_name: "shader1_gain".to_string(),
+                kind: GraphFieldKind::F32,
+            }],
+            size_bytes: 16,
+        };
+        let pass = PassBindings {
+            pass_id: "passA".to_string(),
+            params_buffer: ResourceName::from("params.passA"),
+            base_params: Params {
+                target_size: [1.0, 1.0],
+                geo_size: [1.0, 1.0],
+                center: [0.5, 0.5],
+                geo_translate: [0.0, 0.0],
+                geo_scale: [1.0, 1.0],
+                time: 0.0,
+                _pad0: 0.0,
+                color: [1.0, 1.0, 1.0, 1.0],
+                camera: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                camera_position: [0.0, 0.0, 0.0, 0.0],
+            },
+            graph_binding: None,
+            last_graph_hash: None,
+            shader_parameter_binding: Some(GraphBinding {
+                buffer_name: ResourceName::from("params.passA.shader_material"),
+                kind: GraphBindingKind::StorageRead,
+                schema,
+            }),
+            last_shader_parameter_hash: None,
+            extension: None,
+        };
+
+        let updates = collect_graph_uniform_updates(&scene, &[pass]).unwrap();
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].target, GraphBufferTarget::ShaderParameters);
+        assert_eq!(
+            updates[0].buffer_name,
+            ResourceName::from("params.passA.shader_material")
+        );
         assert_eq!(updates[0].bytes.len(), 16);
     }
 

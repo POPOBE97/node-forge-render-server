@@ -24,18 +24,11 @@ fn rewrite_node_input_bindings(node: &mut Node, node_id_map: &HashMap<String, St
     }
 }
 
-fn instance_input_sources(scene: &SceneDSL, instance: &Node) -> HashMap<String, Vec<Endpoint>> {
-    // Collect both explicit inbound connections AND editor-exported inputBindings (sourceBinding).
+fn instance_binding_sources(instance: &Node) -> HashMap<String, Vec<Endpoint>> {
+    // sourceBinding is editor metadata and a fallback for documents that do not
+    // persist explicit inbound connections. When both exist, the connection is
+    // authoritative and must not be duplicated by this metadata.
     let mut inbound: HashMap<String, Vec<Endpoint>> = HashMap::new();
-
-    for c in &scene.connections {
-        if c.to.node_id == instance.id {
-            inbound
-                .entry(c.to.port_id.clone())
-                .or_default()
-                .push(c.from.clone());
-        }
-    }
 
     for b in &instance.input_bindings {
         if let Some(sb) = b.source_binding.as_ref() {
@@ -198,7 +191,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
         // Gather existing inbound/outbound connections for this instance.
         // Note: for some editors, instance inputs may only be expressed via inputBindings,
         // so we collect those too.
-        let inbound_sources_by_port = {
+        let binding_sources_by_port = {
             let inst_node = scene
                 .nodes
                 .iter()
@@ -213,7 +206,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     input_bindings: Vec::new(),
                     wgsl_override: None,
                 });
-            instance_input_sources(scene, &inst_node)
+            instance_binding_sources(&inst_node)
         };
 
         let mut inbound_by_port: HashMap<String, Vec<Connection>> = HashMap::new();
@@ -233,9 +226,22 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             }
         }
 
+        let has_binding_consumers = scene.nodes.iter().any(|node| {
+            node.input_bindings.iter().any(|binding| {
+                binding
+                    .source_binding
+                    .as_ref()
+                    .is_some_and(|source| source.node_id == instance_id)
+            })
+        });
+
         // If the instance has no outbound connections and no inbound sources
         // (i.e. it is an orphan node), skip expansion and remove it.
-        if outbound_by_port.is_empty() && inbound_sources_by_port.is_empty() {
+        if outbound_by_port.is_empty()
+            && inbound_by_port.is_empty()
+            && binding_sources_by_port.is_empty()
+            && !has_binding_consumers
+        {
             scene
                 .nodes
                 .retain(|n| !(n.id == instance_id && n.node_type == "GroupInstance"));
@@ -270,8 +276,10 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             if let Some(inbounds) = inbound_by_port.get(&b.group_port_id) {
                 sources.extend(inbounds.iter().map(|c| c.from.clone()));
             }
-            if let Some(extra) = inbound_sources_by_port.get(&b.group_port_id) {
-                sources.extend(extra.iter().cloned());
+            if sources.is_empty()
+                && let Some(fallback) = binding_sources_by_port.get(&b.group_port_id)
+            {
+                sources.extend(fallback.iter().cloned());
             }
 
             // Special-case: ImageFile -> ImageTexture.image is not part of the bundled node scheme.
@@ -368,6 +376,22 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 );
             };
 
+            // Keep editor-only sourceBinding metadata usable when it is the
+            // sole representation of a downstream group input.
+            for node in &mut scene.nodes {
+                for binding in &mut node.input_bindings {
+                    let Some(source_binding) = binding.source_binding.as_mut() else {
+                        continue;
+                    };
+                    if source_binding.node_id == instance_id
+                        && source_binding.output_port_id == b.group_port_id
+                    {
+                        source_binding.node_id = source_new_node_id.clone();
+                        source_binding.output_port_id = b.from.port_id.clone();
+                    }
+                }
+            }
+
             let Some(outbounds) = outbound_by_port.get(&b.group_port_id) else {
                 // Output can be unused; allow it.
                 continue;
@@ -397,4 +421,138 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
     }
 
     Ok(expanded_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn chained_group_scene(with_explicit_connection: bool) -> SceneDSL {
+        let mut connections = vec![json!({
+            "id": "sink_to_consumer",
+            "from": { "nodeId": "GroupInstance_B", "portId": "out" },
+            "to": { "nodeId": "consumer", "portId": "a" }
+        })];
+        if with_explicit_connection {
+            connections.insert(
+                0,
+                json!({
+                    "id": "source_to_sink",
+                    "from": { "nodeId": "GroupInstance_A", "portId": "out" },
+                    "to": { "nodeId": "GroupInstance_B", "portId": "in" }
+                }),
+            );
+        }
+
+        serde_json::from_value(json!({
+            "version": "2.0",
+            "metadata": { "name": "group expansion regression" },
+            "nodes": [
+                {
+                    "id": "GroupInstance_A",
+                    "type": "GroupInstance",
+                    "params": { "groupId": "source_group" }
+                },
+                {
+                    "id": "GroupInstance_B",
+                    "type": "GroupInstance",
+                    "params": { "groupId": "sink_group" },
+                    "inputBindings": [{
+                        "portId": "in",
+                        "variableName": "in",
+                        "sourceBinding": {
+                            "nodeId": "GroupInstance_A",
+                            "outputPortId": "out"
+                        }
+                    }]
+                },
+                {
+                    "id": "consumer",
+                    "type": "MathAdd",
+                    "params": {}
+                }
+            ],
+            "connections": connections,
+            "groups": [
+                {
+                    "id": "source_group",
+                    "name": "Source",
+                    "inputs": [],
+                    "outputs": [{ "id": "out", "type": "float" }],
+                    "nodes": [{
+                        "id": "source_value",
+                        "type": "FloatInput",
+                        "params": { "value": 1.0 }
+                    }],
+                    "connections": [],
+                    "inputBindings": [],
+                    "outputBindings": [{
+                        "groupPortId": "out",
+                        "from": { "nodeId": "source_value", "portId": "value" }
+                    }]
+                },
+                {
+                    "id": "sink_group",
+                    "name": "Sink",
+                    "inputs": [{ "id": "in", "type": "float" }],
+                    "outputs": [{ "id": "out", "type": "float" }],
+                    "nodes": [{
+                        "id": "sink_value",
+                        "type": "MathAdd",
+                        "params": {}
+                    }],
+                    "connections": [],
+                    "inputBindings": [{
+                        "groupPortId": "in",
+                        "to": { "nodeId": "sink_value", "portId": "a" }
+                    }],
+                    "outputBindings": [{
+                        "groupPortId": "out",
+                        "from": { "nodeId": "sink_value", "portId": "result" }
+                    }]
+                }
+            ]
+        }))
+        .expect("test scene should deserialize")
+    }
+
+    fn assert_chained_groups_expand(mut scene: SceneDSL) {
+        assert_eq!(expand_group_instances(&mut scene).unwrap(), 2);
+        assert!(
+            scene
+                .nodes
+                .iter()
+                .all(|node| node.node_type != "GroupInstance")
+        );
+        assert!(scene.connections.iter().all(|connection| {
+            connection.from.node_id != "GroupInstance_A"
+                && connection.from.node_id != "GroupInstance_B"
+                && connection.to.node_id != "GroupInstance_A"
+                && connection.to.node_id != "GroupInstance_B"
+        }));
+
+        let inputs = scene
+            .connections
+            .iter()
+            .filter(|connection| {
+                connection.to.node_id == "GroupInstance_B/sink_value"
+                    && connection.to.port_id == "a"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].from.node_id, "GroupInstance_A/source_value");
+        assert_eq!(inputs[0].from.port_id, "value");
+    }
+
+    #[test]
+    fn explicit_group_input_connection_wins_over_source_binding_metadata() {
+        assert_chained_groups_expand(chained_group_scene(true));
+    }
+
+    #[test]
+    fn source_binding_only_group_input_is_rewritten_during_expansion() {
+        assert_chained_groups_expand(chained_group_scene(false));
+    }
 }

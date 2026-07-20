@@ -191,7 +191,10 @@ fn is_value_driven_input_node_type(node_type: &str) -> bool {
             | "IntInput"
             | "Vector2Input"
             | "Vector3Input"
+            | "Vector4Input"
+            | "Mat4Input"
             | "ColorInput"
+            | "ShaderMaterial"
     )
 }
 
@@ -212,6 +215,7 @@ fn is_uniform_param_key(key: &str) -> bool {
 }
 
 fn node_params_changed_only_uniform_keys(
+    node_type: &str,
     prev: &HashMap<String, Value>,
     next: &HashMap<String, Value>,
 ) -> bool {
@@ -220,7 +224,12 @@ fn node_params_changed_only_uniform_keys(
         let before = prev.get(key);
         if before != Some(after) {
             saw_change = true;
-            if !is_uniform_param_key(key) {
+            let supported_key = if node_type == "ShaderMaterial" {
+                key.starts_with("param:")
+            } else {
+                is_uniform_param_key(key)
+            };
+            if !supported_key {
                 return false;
             }
         }
@@ -258,7 +267,11 @@ pub(crate) fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &Scen
         if !is_value_driven_input_node_type(updated.node_type.as_str()) {
             return false;
         }
-        if !node_params_changed_only_uniform_keys(&prev.params, &updated.params) {
+        if !node_params_changed_only_uniform_keys(
+            updated.node_type.as_str(),
+            &prev.params,
+            &updated.params,
+        ) {
             return false;
         }
         if uniform_delta_change_affects_geometry_allocation(cache, &updated.id) {
@@ -507,6 +520,41 @@ mod tests {
             nodes: SceneDeltaNodes {
                 added: Vec::new(),
                 updated: vec![node("FloatInput_1", "FloatInput", json!({"value": 0.9}))],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            state_machine: None,
+            debug_artifacts: None,
+            assets_added: None,
+            assets_removed: None,
+        };
+        assert!(delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn delta_updates_only_uniform_values_accepts_shader_material_parameter_change() {
+        let mut scene = base_scene();
+        scene.nodes.push(node(
+            "ShaderMaterial_1",
+            "ShaderMaterial",
+            json!({"param:gain": 0.5, "param:tint": [1.0, 1.0, 1.0, 1.0]}),
+        ));
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "ShaderMaterial_1",
+                    "ShaderMaterial",
+                    json!({"param:gain": 0.75}),
+                )],
                 removed: Vec::new(),
             },
             connections: SceneDeltaConnections {
