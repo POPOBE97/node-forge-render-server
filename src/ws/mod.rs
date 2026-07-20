@@ -832,6 +832,7 @@ fn handle_text_message(
             // Request any assets referenced by the scene that are missing from the store.
             let referenced_ids: Vec<String> = scene.assets.keys().cloned().collect();
             request_missing_assets(ws, transfer_state, asset_store, &referenced_ids);
+            let assets_ready = asset_ids_ready(scene.assets.keys(), asset_store);
 
             if let Ok(mut guard) = scene_cache.lock() {
                 let mut cache = guard
@@ -841,17 +842,19 @@ fn handle_text_message(
                 *guard = Some(cache);
             }
 
-            // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
-            send_scene_update(
-                scene_tx,
-                scene_drop_rx,
-                SceneUpdate::Parsed {
-                    scene,
-                    request_id: msg.request_id,
-                    source: ParsedSceneSource::SceneUpdate,
-                },
-                ui_wake,
-            );
+            if assets_ready {
+                // Keep only latest: bounded(1) + drop stale message if receiver hasn't caught up.
+                send_scene_update(
+                    scene_tx,
+                    scene_drop_rx,
+                    SceneUpdate::Parsed {
+                        scene,
+                        request_id: msg.request_id,
+                        source: ParsedSceneSource::SceneUpdate,
+                    },
+                    ui_wake,
+                );
+            }
         }
         "scene_delta" => {
             let payload = match msg.payload {
@@ -920,6 +923,7 @@ fn handle_text_message(
                 // Request any asset binaries the store hasn't received yet.
                 let referenced_ids: Vec<String> = cache.assets.keys().cloned().collect();
                 request_missing_assets(ws, transfer_state, asset_store, &referenced_ids);
+                let assets_ready = asset_ids_ready(cache.assets.keys(), asset_store);
 
                 // Detect dangling references before pruning (signals a cache mismatch).
                 if has_dangling_connection_references(&cache) {
@@ -936,7 +940,7 @@ fn handle_text_message(
 
                 prune_invalid_connections(&mut cache);
 
-                if is_uniform_only_delta {
+                if is_uniform_only_delta && assets_ready {
                     *guard = Some(cache);
                     send_scene_update(
                         scene_tx,
@@ -959,7 +963,11 @@ fn handle_text_message(
                     return Ok(());
                 }
 
-                scene = Some(materialized);
+                if assets_ready {
+                    scene = Some(materialized);
+                } else {
+                    apply_scene_update(&mut cache, &materialized);
+                }
                 *guard = Some(cache);
             }
 
@@ -1065,6 +1073,7 @@ fn handle_text_message(
                     trigger_rerender_for_asset(
                         &asset_id,
                         scene_cache,
+                        asset_store,
                         scene_tx,
                         scene_drop_rx,
                         ui_wake,
@@ -1336,35 +1345,42 @@ fn handle_text_message(
     Ok(())
 }
 
+fn asset_ids_ready<'a>(
+    asset_ids: impl IntoIterator<Item = &'a String>,
+    asset_store: &AssetStore,
+) -> bool {
+    asset_ids
+        .into_iter()
+        .all(|asset_id| asset_store.contains(asset_id))
+}
+
+fn scene_after_asset_upload(
+    asset_id: &str,
+    cache: &SceneCache,
+    asset_store: &AssetStore,
+) -> Option<SceneDSL> {
+    if !cache.assets.contains_key(asset_id) || !asset_ids_ready(cache.assets.keys(), asset_store) {
+        return None;
+    }
+
+    Some(materialize_scene_dsl(cache))
+}
+
 fn trigger_rerender_for_asset(
     asset_id: &str,
     scene_cache: &Arc<Mutex<Option<SceneCache>>>,
+    asset_store: &AssetStore,
     scene_tx: &Sender<SceneUpdate>,
     scene_drop_rx: &Receiver<SceneUpdate>,
     ui_wake: Option<&UiWakeCallback>,
 ) {
-    let should_rerender = scene_cache
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|cache| {
-                cache.assets.contains_key(asset_id)
-                    || cache.nodes_by_id.values().any(|node| {
-                        node.params
-                            .get("assetId")
-                            .and_then(|v| v.as_str())
-                            .is_some_and(|id| id == asset_id)
-                    })
-            })
-        })
-        .unwrap_or(false);
+    let scene = scene_cache.lock().ok().and_then(|guard| {
+        guard
+            .as_ref()
+            .and_then(|cache| scene_after_asset_upload(asset_id, cache, asset_store))
+    });
 
-    if should_rerender
-        && let Some(scene) = scene_cache
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(materialize_scene_dsl))
-    {
+    if let Some(scene) = scene {
         send_scene_update(
             scene_tx,
             scene_drop_rx,
@@ -1375,6 +1391,81 @@ fn trigger_rerender_for_asset(
             },
             ui_wake,
         );
+    }
+}
+
+#[cfg(test)]
+mod asset_scene_tests {
+    use super::*;
+    use crate::{
+        asset_store::AssetData,
+        dsl::{AssetEntry, Metadata},
+    };
+
+    fn scene_cache_with_assets(asset_ids: &[&str]) -> SceneCache {
+        let assets = asset_ids
+            .iter()
+            .map(|asset_id| {
+                (
+                    (*asset_id).to_string(),
+                    AssetEntry {
+                        path: format!("assets/{asset_id}.bin"),
+                        original_name: format!("{asset_id}.bin"),
+                        mime_type: "application/octet-stream".to_string(),
+                        size: None,
+                    },
+                )
+            })
+            .collect();
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "asset-scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: Vec::new(),
+            connections: Vec::new(),
+            outputs: Some(HashMap::new()),
+            groups: Vec::new(),
+            assets,
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        SceneCache::from_scene_update(&scene)
+    }
+
+    fn insert_asset(store: &AssetStore, asset_id: &str) {
+        store.insert(
+            asset_id,
+            AssetData {
+                bytes: vec![1],
+                mime_type: "application/octet-stream".to_string(),
+                original_name: format!("{asset_id}.bin"),
+            },
+        );
+    }
+
+    #[test]
+    fn completed_asset_only_releases_scene_after_all_manifest_assets_are_ready() {
+        let store = AssetStore::new();
+        let cache = scene_cache_with_assets(&["asset-a", "asset-b"]);
+
+        insert_asset(&store, "asset-a");
+        assert!(scene_after_asset_upload("asset-a", &cache, &store).is_none());
+
+        insert_asset(&store, "asset-b");
+        assert!(scene_after_asset_upload("asset-b", &cache, &store).is_some());
+    }
+
+    #[test]
+    fn completed_asset_does_not_release_an_unrelated_scene() {
+        let store = AssetStore::new();
+        let cache = scene_cache_with_assets(&["asset-a"]);
+
+        insert_asset(&store, "asset-a");
+        insert_asset(&store, "stale-asset");
+        assert!(scene_after_asset_upload("stale-asset", &cache, &store).is_none());
     }
 }
 

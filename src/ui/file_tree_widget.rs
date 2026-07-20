@@ -481,7 +481,7 @@ fn draw_node(
                             Pos2::new(guide_x, guide_top),
                             Pos2::new(guide_x, child_end_y - 4.0),
                         ],
-                        egui::Stroke::new(1.0, Color32::from_gray(36)),
+                        egui::Stroke::new(1.0_f32, Color32::from_gray(36)),
                     );
                 }
             }
@@ -556,7 +556,7 @@ fn draw_icon(painter: &egui::Painter, x: f32, y: f32, icon: TreeIcon) {
             painter.rect_filled(inner, egui::CornerRadius::same(2), COLOR_ICON_TEXTURE);
             painter.line_segment(
                 [inner.left_bottom(), inner.right_top()],
-                egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 0, 80)),
+                egui::Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(0, 0, 0, 80)),
             );
         }
         TreeIcon::Buffer => {

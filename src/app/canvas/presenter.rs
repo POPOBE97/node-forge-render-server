@@ -795,7 +795,7 @@ fn draw_badges(
                     ref_tag_anim_t,
                 ),
                 egui::Stroke::new(
-                    1.0,
+                    1.0_f32,
                     with_alpha(
                         Color32::from_rgba_unmultiplied(56, 181, 96, 220),
                         ref_tag_anim_t,
@@ -853,7 +853,7 @@ fn draw_badges(
             badge_rect,
             egui::CornerRadius::same(6),
             Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-            egui::Stroke::new(1.0, Color32::from_gray(32)),
+            egui::Stroke::new(1.0_f32, Color32::from_gray(32)),
             egui::StrokeKind::Outside,
         );
         ui.painter().galley(
@@ -1405,7 +1405,7 @@ pub fn show_canvas(
         ui.painter().rect_stroke(
             canvas_rect.shrink(2.0),
             egui::CornerRadius::same(design_tokens::BORDER_RADIUS_REGULAR as u8),
-            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(120, 170, 255, 220)),
+            egui::Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(120, 170, 255, 220)),
             egui::StrokeKind::Outside,
         );
         ui.painter().text(

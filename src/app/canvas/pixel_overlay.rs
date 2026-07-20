@@ -471,7 +471,8 @@ pub fn draw_pixel_overlay(
     }
 
     let painter = ui.painter().with_clip_rect(visible_image_rect);
-    let grid_stroke = egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 58));
+    let grid_stroke =
+        egui::Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 58));
     for x in x_start..=x_end {
         let sx = image_rect.min.x + x as f32 * pixel_size;
         painter.line_segment(

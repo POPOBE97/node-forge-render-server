@@ -153,7 +153,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                     header_y + HEADER_ROW_H,
                 ),
             ],
-            egui::Stroke::new(0.5, design_tokens::white(20)),
+            egui::Stroke::new(0.5_f32, design_tokens::white(20)),
         );
 
         // Walk visible cells and place a tick at each whole-second boundary.
@@ -176,7 +176,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                         egui::pos2(x, header_y + HEADER_ROW_H - 4.0),
                         egui::pos2(x, header_y + HEADER_ROW_H),
                     ],
-                    egui::Stroke::new(0.5, design_tokens::white(40)),
+                    egui::Stroke::new(0.5_f32, design_tokens::white(40)),
                 );
                 let label = format!("{secs}s");
                 grid_painter.text(
@@ -215,7 +215,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
             let x = grid_origin.x + col as f32 * CELL_W;
             grid_painter.line_segment(
                 [egui::pos2(x, row_y), egui::pos2(x, row_y + VALUE_ROW_H)],
-                egui::Stroke::new(0.5, design_tokens::white(10)),
+                egui::Stroke::new(0.5_f32, design_tokens::white(10)),
             );
         }
 
@@ -269,7 +269,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                 egui::pos2(cx, value_area_y),
                 egui::pos2(cx, value_area_y + value_area_h),
             ],
-            egui::Stroke::new(1.0, egui::Color32::WHITE),
+            egui::Stroke::new(1.0_f32, egui::Color32::WHITE),
         );
     }
 
@@ -324,7 +324,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                 .show(ui.ctx(), |ui| {
                     egui::Frame::NONE
                         .fill(crate::color::lab(10.0, 0.0, 0.0))
-                        .stroke(egui::Stroke::new(1.0, design_tokens::white(10)))
+                        .stroke(egui::Stroke::new(1.0_f32, design_tokens::white(10)))
                         .corner_radius(design_tokens::BORDER_RADIUS_SMALL)
                         .inner_margin(egui::Margin::symmetric(10, 6))
                         .show(ui, |ui| {

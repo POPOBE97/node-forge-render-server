@@ -525,9 +525,9 @@ fn draw_preview_handles(
         let center = point_to_screen(values.positions[index], rect, values.position_space);
         let fill = values.colors[index];
         let stroke = if index == selected_zone {
-            Stroke::new(2.0, design_tokens::white(100))
+            Stroke::new(2.0_f32, design_tokens::white(100))
         } else {
-            Stroke::new(1.0, design_tokens::white(48))
+            Stroke::new(1.0_f32, design_tokens::white(48))
         };
         painter.circle_filled(
             center,
@@ -549,7 +549,7 @@ fn draw_preview_handles(
                     Pos2::new(center.x - 4.0, center.y),
                     Pos2::new(center.x + 4.0, center.y),
                 ],
-                Stroke::new(1.0, design_tokens::white(90)),
+                Stroke::new(1.0_f32, design_tokens::white(90)),
             );
         }
         if values.color_locks[index] {
@@ -558,7 +558,7 @@ fn draw_preview_handles(
                     Pos2::new(center.x, center.y - 4.0),
                     Pos2::new(center.x, center.y + 4.0),
                 ],
-                Stroke::new(1.0, design_tokens::white(90)),
+                Stroke::new(1.0_f32, design_tokens::white(90)),
             );
         }
     }

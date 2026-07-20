@@ -257,8 +257,12 @@ fn show_area_picker(
         rect.left() + x_frac.clamp(0.0, 1.0) * rect.width(),
         rect.top() + y_frac.clamp(0.0, 1.0) * rect.height(),
     );
-    painter.circle_stroke(crosshair, 6.0, Stroke::new(2.0, Color32::WHITE));
-    painter.circle_stroke(crosshair, 7.0, Stroke::new(1.0, design_tokens::black(60)));
+    painter.circle_stroke(crosshair, 6.0, Stroke::new(2.0_f32, Color32::WHITE));
+    painter.circle_stroke(
+        crosshair,
+        7.0,
+        Stroke::new(1.0_f32, design_tokens::black(60)),
+    );
 
     if (response.clicked() || response.dragged())
         && let Some(pointer) = response.interact_pointer_pos()
@@ -787,7 +791,7 @@ fn draw_strip_indicator(painter: &egui::Painter, rect: Rect, t: f32) {
     painter.rect_stroke(
         indicator,
         design_tokens::radius(2),
-        Stroke::new(1.0, design_tokens::black(60)),
+        Stroke::new(1.0_f32, design_tokens::black(60)),
         egui::StrokeKind::Inside,
     );
 }

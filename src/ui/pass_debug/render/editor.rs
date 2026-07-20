@@ -590,7 +590,7 @@ fn paint_line_number_gutter(
             egui::pos2(separator_x, gutter_rect.top()),
             egui::pos2(separator_x, gutter_rect.bottom()),
         ],
-        egui::Stroke::new(1.0, line_number_separator_color(ui)),
+        egui::Stroke::new(1.0_f32, line_number_separator_color(ui)),
     );
 
     let active_line = output

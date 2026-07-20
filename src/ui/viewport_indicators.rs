@@ -343,7 +343,7 @@ pub fn draw_viewport_indicator_at(
         rect,
         egui::CornerRadius::same(5),
         with_alpha(bg_color, alpha),
-        egui::Stroke::new(1.0, with_alpha(border_color, alpha)),
+        egui::Stroke::new(1.0_f32, with_alpha(border_color, alpha)),
         egui::StrokeKind::Outside,
     );
 
@@ -430,7 +430,7 @@ fn draw_text_badge_at(
         egui::CornerRadius::same(6),
         with_alpha(Color32::from_rgba_unmultiplied(0, 0, 0, 176), alpha),
         egui::Stroke::new(
-            1.0,
+            1.0_f32,
             with_alpha(Color32::from_rgba_unmultiplied(52, 52, 52, 220), alpha),
         ),
         egui::StrokeKind::Outside,
@@ -579,7 +579,7 @@ fn draw_overbright_white_text(
         let x1 = rect.right() - 3.0;
         ui.painter().line_segment(
             [pos2(x0, y), pos2(x1, y)],
-            egui::Stroke::new(1.4, with_alpha(Color32::WHITE, alpha)),
+            egui::Stroke::new(1.4_f32, with_alpha(Color32::WHITE, alpha)),
         );
     }
 }

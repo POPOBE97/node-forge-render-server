@@ -422,9 +422,9 @@ fn draw_preview_handles(
             values.colors[index]
         };
         let stroke = if index == selected_point {
-            Stroke::new(2.0, design_tokens::white(100))
+            Stroke::new(2.0_f32, design_tokens::white(100))
         } else {
-            Stroke::new(1.0, design_tokens::white(50))
+            Stroke::new(1.0_f32, design_tokens::white(50))
         };
         painter.circle_filled(
             center + Vec2::new(0.0, 1.0),
@@ -440,7 +440,7 @@ fn draw_preview_handles(
                     Pos2::new(center.x - 4.0, center.y),
                     Pos2::new(center.x + 4.0, center.y),
                 ],
-                Stroke::new(1.0, design_tokens::white(90)),
+                Stroke::new(1.0_f32, design_tokens::white(90)),
             );
         }
     }

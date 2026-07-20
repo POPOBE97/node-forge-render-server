@@ -1,0 +1,1530 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "name": "My Scene",
+    "created": "2026-07-10T10:53:24.923Z",
+    "modified": "2026-07-10T10:53:24.923Z"
+  },
+  "nodes": [
+    {
+      "id": "node_default_render_texture",
+      "type": "RenderTexture",
+      "position": {
+        "x": 480,
+        "y": -120
+      },
+      "width": 160,
+      "label": "Render Texture",
+      "params": {
+        "width": 1080,
+        "height": 2400,
+        "format": "rgba16float"
+      }
+    },
+    {
+      "id": "node_default_composite",
+      "type": "Composite",
+      "position": {
+        "x": 680,
+        "y": -260
+      },
+      "width": 160,
+      "label": "Composite",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1783678358530_1",
+          "name": "GlassInputBarPass",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1783679357206_2",
+          "name": "LightEffectPass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1783678358530_1",
+          "label": "GlassInputBarPass",
+          "variableName": "GlassInputBarPass",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_21",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1783679357206_2",
+          "label": "LightEffectPass",
+          "variableName": "LightEffectPass",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_26",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "pass",
+          "label": "BackgroundPass",
+          "variableName": "BackgroundPass",
+          "type": "pass"
+        }
+      ]
+    },
+    {
+      "id": "node_default_screen",
+      "type": "Screen",
+      "position": {
+        "x": 860,
+        "y": -260
+      },
+      "width": 160,
+      "label": "Screen",
+      "params": {
+        "width": 1080,
+        "height": 2400
+      }
+    },
+    {
+      "id": "GroupInstance_10",
+      "type": "GroupInstance",
+      "position": {
+        "x": -920,
+        "y": -260
+      },
+      "width": 160,
+      "label": "Group",
+      "params": {
+        "groupId": "BackgroundTexture"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output 1",
+          "type": "color"
+        }
+      ]
+    },
+    {
+      "id": "GradientBlur_11",
+      "type": "GradientBlur",
+      "position": {
+        "x": -720,
+        "y": -260
+      },
+      "width": 160,
+      "label": "Gradient Blur",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "FragCoord_14",
+      "type": "FragCoord",
+      "position": {
+        "x": -1280,
+        "y": -180
+      },
+      "width": 160,
+      "label": "FragCoord",
+      "params": {}
+    },
+    {
+      "id": "MathClosure_15",
+      "type": "MathClosure",
+      "position": {
+        "x": -920,
+        "y": -180
+      },
+      "width": 160,
+      "label": "Math Closure",
+      "params": {
+        "source": "output = mix(\n  startSigma,\n  endSigma,\n  smoothstep(start, end, xy.y)\n);",
+        "_uiCollapsedFields": [
+          "sec:source"
+        ]
+      },
+      "inputs": [
+        {
+          "id": "dynamic_1783677667132_1",
+          "name": "xy",
+          "type": "vector2"
+        },
+        {
+          "id": "dynamic_1783677743832_2",
+          "name": "start",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1783677760237_3",
+          "name": "end",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1783677787424_4",
+          "name": "startSigma",
+          "type": "float"
+        },
+        {
+          "id": "dynamic_1783677793362_5",
+          "name": "endSigma",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "float"
+        }
+      ],
+      "inputBindings": [
+        {
+          "portId": "dynamic_1783677667132_1",
+          "label": "xy",
+          "variableName": "xy",
+          "type": "vector2",
+          "sourceBinding": {
+            "nodeId": "FragCoord_14",
+            "outputPortId": "xy",
+            "outputLabel": "XY"
+          }
+        },
+        {
+          "portId": "dynamic_1783677743832_2",
+          "label": "start",
+          "variableName": "start",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_16",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_1783677760237_3",
+          "label": "end",
+          "variableName": "end",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_17",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_1783677787424_4",
+          "label": "startSigma",
+          "variableName": "startSigma",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_18",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "dynamic_1783677793362_5",
+          "label": "endSigma",
+          "variableName": "endSigma",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_19",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FloatInput_16",
+      "type": "FloatInput",
+      "position": {
+        "x": -1280,
+        "y": -120
+      },
+      "width": 160,
+      "label": "GradientBlurStartY",
+      "params": {
+        "value": 300
+      }
+    },
+    {
+      "id": "FloatInput_17",
+      "type": "FloatInput",
+      "position": {
+        "x": -1280,
+        "y": -40
+      },
+      "width": 160,
+      "label": "GradientBlurEndY",
+      "params": {
+        "value": 0
+      }
+    },
+    {
+      "id": "FloatInput_18",
+      "type": "FloatInput",
+      "position": {
+        "x": -1100,
+        "y": -120
+      },
+      "width": 160,
+      "label": "GradientBlurStartSigma",
+      "params": {
+        "value": 0
+      }
+    },
+    {
+      "id": "FloatInput_19",
+      "type": "FloatInput",
+      "position": {
+        "x": -1100,
+        "y": -40
+      },
+      "width": 160,
+      "label": "GradientBlurEndSigma",
+      "params": {
+        "value": 40
+      }
+    },
+    {
+      "id": "GlassMaterial_20",
+      "type": "GlassMaterial",
+      "position": {
+        "x": -200,
+        "y": 160
+      },
+      "width": 322,
+      "label": "Glass Material",
+      "params": {
+        "uBlendLuminanceValues": [
+          0.19935962108691996,
+          0.5345638396158368,
+          0.872433827315481,
+          1.197105006682011
+        ],
+        "uBlendLuminanceAmount": 1,
+        "uBlendSaturation": 1,
+        "uInnerBottom": 0,
+        "uInnerGlassColor": [
+          1,
+          1,
+          1,
+          0.2
+        ],
+        "uInnerColorWhite": 0,
+        "uInnerColorPow": 1,
+        "uInnerColorMix": 0,
+        "uGeoPxRadius": 30,
+        "uShapeEdgePx": 30,
+        "uShapeEdgePow": 4,
+        "uShapeThicknessPx": 50,
+        "uShapeReflectOffsetPx": 0,
+        "uReflectLighten": 0.5,
+        "uReflectStrength": 0.5,
+        "uReflectionExtend": 0,
+        "uReflectionExtendColor": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "uDirectionalLightDirection": {
+          "x": 0.5,
+          "y": -0.7,
+          "z": 0
+        },
+        "uDirectionalLightIntensity": 0.5,
+        "uDirectionalLightOppositeIntensity": 0.4,
+        "uDirectionalLightAngleRange": 0.32,
+        "uRefractBlurScale": 1,
+        "uRefractIorIOR": 1.5,
+        "uBgColorSaturation": 1,
+        "uBgColorBrightness": 0,
+        "uBionicBurn": 1,
+        "uPressLightCenterFall": 0,
+        "uPressLightCenterStrength": 0,
+        "uPressLightCenterPeak": 0,
+        "uPressRingStrength": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "_uiCollapsedFields": []
+      }
+    },
+    {
+      "id": "RenderPass_21",
+      "type": "RenderPass",
+      "position": {
+        "x": 160,
+        "y": 20
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Rect2DGeometry_22",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": -200,
+        "y": 20
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "Vector2Input_23",
+      "type": "Vector2Input",
+      "position": {
+        "x": -400,
+        "y": 20
+      },
+      "width": 160,
+      "label": "GlassInputBarSize",
+      "params": {
+        "x": 1008,
+        "y": 168
+      }
+    },
+    {
+      "id": "Vector2Input_24",
+      "type": "Vector2Input",
+      "position": {
+        "x": -400,
+        "y": 120
+      },
+      "width": 160,
+      "label": "GlassInputBarPosition",
+      "params": {
+        "x": 540,
+        "y": 180
+      }
+    },
+    {
+      "id": "FloatInput_25",
+      "type": "FloatInput",
+      "position": {
+        "x": -400,
+        "y": 220
+      },
+      "width": 165,
+      "label": "GlassInputBarCornerRadius",
+      "params": {
+        "value": 60
+      }
+    },
+    {
+      "id": "RenderPass_26",
+      "type": "RenderPass",
+      "position": {
+        "x": 880,
+        "y": 440
+      },
+      "width": 160,
+      "label": "Render Pass",
+      "params": {
+        "name": "Render Pass",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "Rect2DGeometry_27",
+      "type": "Rect2DGeometry",
+      "position": {
+        "x": 700,
+        "y": 440
+      },
+      "width": 160,
+      "label": "2D Rect",
+      "params": {
+        "radius": 0,
+        "smooth": 1
+      }
+    },
+    {
+      "id": "Vector2Input_28",
+      "type": "Vector2Input",
+      "position": {
+        "x": 520,
+        "y": 440
+      },
+      "width": 160,
+      "label": "LightEffectSize",
+      "params": {
+        "x": 1008,
+        "y": 168
+      }
+    },
+    {
+      "id": "Vector2Input_29",
+      "type": "Vector2Input",
+      "position": {
+        "x": 520,
+        "y": 540
+      },
+      "width": 160,
+      "label": "LightEffectPosition",
+      "params": {
+        "x": 540,
+        "y": 180
+      }
+    },
+    {
+      "id": "IntelligentLight_30",
+      "type": "IntelligentLight",
+      "position": {
+        "x": 340,
+        "y": 660
+      },
+      "width": 160,
+      "label": "Intelligent Light",
+      "params": {
+        "layoutMode": "manual",
+        "width": 54,
+        "height": 54,
+        "driver": 0,
+        "power": 0,
+        "lightness": 0.75,
+        "color0": "#8086ff",
+        "color1": "#ffd3b3",
+        "color2": "#ff8635",
+        "color3": "#847eff",
+        "color4": "#1269f2",
+        "color5": "#8086ff",
+        "color6": "#ffd3b3",
+        "color7": "#ff8635",
+        "color8": "#ff8635",
+        "color9": "#1269f2",
+        "color10": "#847eff"
+      }
+    },
+    {
+      "id": "PassTexture_31",
+      "type": "PassTexture",
+      "position": {
+        "x": 520,
+        "y": 660
+      },
+      "width": 160,
+      "label": "Pass Texture",
+      "params": {
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge_default_rt_to_composite",
+      "from": {
+        "nodeId": "node_default_render_texture",
+        "portId": "texture"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "target"
+      }
+    },
+    {
+      "id": "edge_default_composite_to_screen",
+      "from": {
+        "nodeId": "node_default_composite",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_screen",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_1",
+      "from": {
+        "nodeId": "GroupInstance_10",
+        "portId": "out_0"
+      },
+      "to": {
+        "nodeId": "GradientBlur_11",
+        "portId": "source"
+      }
+    },
+    {
+      "id": "edge_2",
+      "from": {
+        "nodeId": "GradientBlur_11",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_3",
+      "from": {
+        "nodeId": "FragCoord_14",
+        "portId": "xy"
+      },
+      "to": {
+        "nodeId": "MathClosure_15",
+        "portId": "dynamic_1783677667132_1"
+      }
+    },
+    {
+      "id": "edge_4",
+      "from": {
+        "nodeId": "MathClosure_15",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GradientBlur_11",
+        "portId": "mask"
+      }
+    },
+    {
+      "id": "edge_5",
+      "from": {
+        "nodeId": "FloatInput_16",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_15",
+        "portId": "dynamic_1783677743832_2"
+      }
+    },
+    {
+      "id": "edge_6",
+      "from": {
+        "nodeId": "FloatInput_17",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_15",
+        "portId": "dynamic_1783677760237_3"
+      }
+    },
+    {
+      "id": "edge_7",
+      "from": {
+        "nodeId": "FloatInput_18",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_15",
+        "portId": "dynamic_1783677787424_4"
+      }
+    },
+    {
+      "id": "edge_8",
+      "from": {
+        "nodeId": "FloatInput_19",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "MathClosure_15",
+        "portId": "dynamic_1783677793362_5"
+      }
+    },
+    {
+      "id": "edge_9",
+      "from": {
+        "nodeId": "GlassMaterial_20",
+        "portId": "material"
+      },
+      "to": {
+        "nodeId": "RenderPass_21",
+        "portId": "material"
+      }
+    },
+    {
+      "id": "edge_10",
+      "from": {
+        "nodeId": "Rect2DGeometry_22",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_21",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_11",
+      "from": {
+        "nodeId": "Vector2Input_23",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_22",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_12",
+      "from": {
+        "nodeId": "RenderPass_21",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "dynamic_1783678358530_1"
+      }
+    },
+    {
+      "id": "edge_13",
+      "from": {
+        "nodeId": "Vector2Input_24",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_22",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_14",
+      "from": {
+        "nodeId": "GradientBlur_11",
+        "portId": "output"
+      },
+      "to": {
+        "nodeId": "GlassMaterial_20",
+        "portId": "uBgTex"
+      }
+    },
+    {
+      "id": "edge_15",
+      "from": {
+        "nodeId": "FloatInput_25",
+        "portId": "value"
+      },
+      "to": {
+        "nodeId": "GlassMaterial_20",
+        "portId": "uGeoPxRadius"
+      }
+    },
+    {
+      "id": "edge_16",
+      "from": {
+        "nodeId": "RenderPass_26",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "dynamic_1783679357206_2"
+      }
+    },
+    {
+      "id": "edge_17",
+      "from": {
+        "nodeId": "Vector2Input_28",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_27",
+        "portId": "size"
+      }
+    },
+    {
+      "id": "edge_18",
+      "from": {
+        "nodeId": "Vector2Input_29",
+        "portId": "vector"
+      },
+      "to": {
+        "nodeId": "Rect2DGeometry_27",
+        "portId": "position"
+      }
+    },
+    {
+      "id": "edge_19",
+      "from": {
+        "nodeId": "Rect2DGeometry_27",
+        "portId": "geometry"
+      },
+      "to": {
+        "nodeId": "RenderPass_26",
+        "portId": "geometry"
+      }
+    },
+    {
+      "id": "edge_20",
+      "from": {
+        "nodeId": "IntelligentLight_30",
+        "portId": "pass"
+      },
+      "to": {
+        "nodeId": "PassTexture_31",
+        "portId": "pass"
+      }
+    },
+    {
+      "id": "edge_21",
+      "from": {
+        "nodeId": "PassTexture_31",
+        "portId": "color"
+      },
+      "to": {
+        "nodeId": "RenderPass_26",
+        "portId": "material"
+      }
+    }
+  ],
+  "outputs": {
+    "composite": "node_default_composite"
+  },
+  "assets": {
+    "0a00dc1303fe": {
+      "path": "assets/0a00dc1303fe.png",
+      "originalName": "launcher.png",
+      "mimeType": "image/png",
+      "size": 2689787
+    },
+    "0e7827174088": {
+      "path": "assets/0e7827174088.png",
+      "originalName": "setting-dark.png",
+      "mimeType": "image/png",
+      "size": 470628
+    },
+    "17e95ecc3c30": {
+      "path": "assets/17e95ecc3c30.png",
+      "originalName": "calendar-dark.png",
+      "mimeType": "image/png",
+      "size": 196118
+    },
+    "2ed590c9f2c5": {
+      "path": "assets/2ed590c9f2c5.png",
+      "originalName": "album-dark.png",
+      "mimeType": "image/png",
+      "size": 687165
+    },
+    "2f1de3bd307b": {
+      "path": "assets/2f1de3bd307b.png",
+      "originalName": "album-light.png",
+      "mimeType": "image/png",
+      "size": 588586
+    },
+    "4e3dfb4b08c7": {
+      "path": "assets/4e3dfb4b08c7.png",
+      "originalName": "calendar-light.png",
+      "mimeType": "image/png",
+      "size": 215617
+    },
+    "62fb14427cc7": {
+      "path": "assets/62fb14427cc7.png",
+      "originalName": "setting-light.png",
+      "mimeType": "image/png",
+      "size": 480117
+    },
+    "d9ac3045086f": {
+      "path": "assets/d9ac3045086f.png",
+      "originalName": "weather.png",
+      "mimeType": "image/png",
+      "size": 830797
+    }
+  },
+  "groups": [
+    {
+      "id": "BackgroundTexture",
+      "name": "Group",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output 1",
+          "type": "color"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ResourcePool_1",
+          "type": "ResourcePool",
+          "position": {
+            "x": 180,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Resource Pool",
+          "params": {
+            "selectedIndex": 0
+          },
+          "inputs": [
+            {
+              "id": "dynamic_1783677219646_1",
+              "name": "input1",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219690_2",
+              "name": "input2",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219717_3",
+              "name": "input3",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219856_4",
+              "name": "input4",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219882_5",
+              "name": "input5",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219901_6",
+              "name": "input6",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219920_7",
+              "name": "input7",
+              "type": "color"
+            },
+            {
+              "id": "dynamic_1783677219938_8",
+              "name": "input8",
+              "type": "color"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "color"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "dynamic_1783677219646_1",
+              "label": "input1",
+              "variableName": "input1",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_2",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219690_2",
+              "label": "input2",
+              "variableName": "input2",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_3",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219717_3",
+              "label": "input3",
+              "variableName": "input3",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_4",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219856_4",
+              "label": "input4",
+              "variableName": "input4",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_5",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219882_5",
+              "label": "input5",
+              "variableName": "input5",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_6",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219901_6",
+              "label": "input6",
+              "variableName": "input6",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_7",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219920_7",
+              "label": "input7",
+              "variableName": "input7",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_8",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            },
+            {
+              "portId": "dynamic_1783677219938_8",
+              "label": "input8",
+              "variableName": "input8",
+              "type": "color",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_9",
+                "outputPortId": "color",
+                "outputLabel": "Color"
+              }
+            }
+          ]
+        },
+        {
+          "id": "ImageTexture_2",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "2ed590c9f2c5",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_3",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 60
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "2f1de3bd307b",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_4",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 120
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "17e95ecc3c30",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_5",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 180
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "4e3dfb4b08c7",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_6",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 240
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "0a00dc1303fe",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_7",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 300
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "0e7827174088",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_8",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 360
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "62fb14427cc7",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        },
+        {
+          "id": "ImageTexture_9",
+          "type": "ImageTexture",
+          "position": {
+            "x": 0,
+            "y": 420
+          },
+          "width": 160,
+          "label": "Image Texture",
+          "params": {
+            "assetId": "d9ac3045086f",
+            "interpolation": "linear",
+            "extension": "repeat",
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear",
+            "encoderSpace": "srgb",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "_uiCollapsed": true
+          }
+        }
+      ],
+      "connections": [
+        {
+          "id": "edge_1",
+          "from": {
+            "nodeId": "ImageTexture_2",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219646_1"
+          }
+        },
+        {
+          "id": "edge_2",
+          "from": {
+            "nodeId": "ImageTexture_3",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219690_2"
+          }
+        },
+        {
+          "id": "edge_3",
+          "from": {
+            "nodeId": "ImageTexture_4",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219717_3"
+          }
+        },
+        {
+          "id": "edge_4",
+          "from": {
+            "nodeId": "ImageTexture_5",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219856_4"
+          }
+        },
+        {
+          "id": "edge_5",
+          "from": {
+            "nodeId": "ImageTexture_6",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219882_5"
+          }
+        },
+        {
+          "id": "edge_6",
+          "from": {
+            "nodeId": "ImageTexture_7",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219901_6"
+          }
+        },
+        {
+          "id": "edge_7",
+          "from": {
+            "nodeId": "ImageTexture_8",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219920_7"
+          }
+        },
+        {
+          "id": "edge_8",
+          "from": {
+            "nodeId": "ImageTexture_9",
+            "portId": "color"
+          },
+          "to": {
+            "nodeId": "ResourcePool_1",
+            "portId": "dynamic_1783677219938_8"
+          }
+        }
+      ],
+      "inputBindings": [],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "ResourcePool_1",
+            "portId": "output"
+          }
+        }
+      ]
+    }
+  ],
+  "stateMachine": {
+    "id": "sm_mrerc38a_2",
+    "name": "State Machine",
+    "states": [
+      {
+        "id": "st_mrerv8z2_3",
+        "name": "Entry",
+        "position": {
+          "x": 0,
+          "y": -80
+        },
+        "parameterOverrides": {},
+        "type": "entryState"
+      },
+      {
+        "id": "st_mrerv8z2_4",
+        "name": "Any",
+        "position": {
+          "x": 0,
+          "y": -40
+        },
+        "parameterOverrides": {},
+        "type": "anyState"
+      },
+      {
+        "id": "st_mrerv8z2_5",
+        "name": "Exit",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "parameterOverrides": {},
+        "type": "exitState"
+      },
+      {
+        "id": "st_mrerw3qg_6",
+        "name": "Off",
+        "position": {
+          "x": 300,
+          "y": -80
+        },
+        "parameterOverrides": {
+          "FloatInput_25:value": 60,
+          "Vector2Input_24:x": 540,
+          "Vector2Input_24:y": -168,
+          "Vector2Input_23:x": 1008,
+          "Vector2Input_23:y": 168,
+          "FloatInput_19:value": 0,
+          "FloatInput_17:value": 0,
+          "FloatInput_18:value": 0,
+          "FloatInput_16:value": 400
+        },
+        "type": "animationState"
+      },
+      {
+        "id": "st_mrerxocx_8",
+        "name": "Idle",
+        "position": {
+          "x": 580,
+          "y": -80
+        },
+        "parameterOverrides": {
+          "FloatInput_25:value": 60,
+          "Vector2Input_24:x": 540,
+          "Vector2Input_24:y": 180,
+          "Vector2Input_23:x": 1008,
+          "Vector2Input_23:y": 168,
+          "FloatInput_19:value": 40,
+          "FloatInput_17:value": 0,
+          "FloatInput_18:value": 0,
+          "FloatInput_16:value": 300
+        },
+        "type": "animationState"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "tr_mrerwa4r_7",
+        "source": "st_mrerv8z2_3",
+        "target": "st_mrerw3qg_6",
+        "trigger": {
+          "type": "event",
+          "eventName": "mouseup"
+        },
+        "delay": 0,
+        "duration": 0,
+        "easing": "linear"
+      },
+      {
+        "id": "tr_mrery48v_a",
+        "source": "st_mrerw3qg_6",
+        "target": "st_mrerxocx_8",
+        "trigger": {
+          "type": "event",
+          "eventName": "mouseup"
+        },
+        "delay": 0,
+        "duration": 0.3,
+        "easing": "ease-in-out"
+      },
+      {
+        "id": "tr_mreryyrx_b",
+        "source": "st_mrerxocx_8",
+        "target": "st_mrerw3qg_6",
+        "trigger": {
+          "type": "event",
+          "eventName": "mouseup"
+        },
+        "delay": 0,
+        "duration": 0.3,
+        "easing": "ease-in-out"
+      }
+    ],
+    "mutations": [],
+    "initialStateId": "st_mrerv8z2_3"
+  },
+  "passTargetSizes": {
+    "IntelligentLight_30": {
+      "passName": "sys.ilight.IntelligentLight_30.upsample.pass",
+      "nodeId": "IntelligentLight_30",
+      "nodeType": "IntelligentLight",
+      "targetTexture": "sys.ilight.IntelligentLight_30.out",
+      "targetSize": [
+        1080,
+        2400
+      ]
+    }
+  }
+}

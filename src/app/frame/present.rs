@@ -116,7 +116,7 @@ pub(super) fn run(
                 egui::Frame::NONE
                     .fill(crate::color::lab(7.78201, -0.000_014_901_2, 0.0))
                     .inner_margin(egui::Margin::symmetric(12, 8))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(32))),
+                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_gray(32))),
             )
             .show_inside(ui, |ui| {
                 let interaction = ui::timeline_panel::show_timeline(ui, buf);
