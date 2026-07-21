@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use node_forge_render_server::animation::AnimationSession;
+use node_forge_render_server::animation::{AnimationSession, AnimationStep};
 use node_forge_render_server::state_machine::types::{
     AnimationState, AnimationStateType, AnimationTransition, StateMachine, TransitionCondition,
     TransitionMotionGraph,
@@ -422,8 +422,6 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         .expect("doubao state machine should compile")
         .expect("doubao fixture should have a state machine");
 
-    session.step(0.0);
-    session.fire_event("mouseup");
     let entered_off = session.step(0.0);
     assert_eq!(entered_off.current_state_id, "st_mrerw3qg_6");
     let mut settled_off = entered_off;
@@ -488,6 +486,15 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         ("FloatInput_37", "value", serde_json::json!(60)),
         ("Vector2Input_38", "x", serde_json::json!(1008)),
         ("Vector2Input_38", "y", serde_json::json!(168)),
+        ("FloatInput_42", "value", serde_json::json!(1)),
+        ("FloatInput_43", "value", serde_json::json!(1)),
+        ("FloatInput_44", "value", serde_json::json!(0.3)),
+        ("FloatInput_45", "value", serde_json::json!(0)),
+        ("FloatInput_46", "value", serde_json::json!(1)),
+        ("FloatInput_47", "value", serde_json::json!(1)),
+        ("FloatInput_48", "value", serde_json::json!(0)),
+        ("FloatInput_49", "value", serde_json::json!(0)),
+        ("FloatInput_50", "value", serde_json::json!(0)),
     ];
     for (node_id, param_name, value) in expected {
         assert_eq!(
@@ -498,6 +505,172 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
             "final snap mismatch for {node_id}:{param_name}"
         );
     }
+}
+
+#[test]
+fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
+    let case_dir = cases_root().join("doubao-voice-interaction");
+    let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    for (from_node, from_port, to_node, to_port) in [
+        (
+            "ImageTexture_InputBarUI",
+            "color",
+            "ShaderMaterial_InputBarUI",
+            "param:ui_color",
+        ),
+        (
+            "FloatInput_42",
+            "value",
+            "ShaderMaterial_InputBarUI",
+            "param:opacity",
+        ),
+        (
+            "RenderPass_InputBarUI",
+            "pass",
+            "node_default_composite",
+            "dynamic_input_bar_ui",
+        ),
+    ] {
+        assert!(
+            scene.connections.iter().any(|connection| {
+                connection.from.node_id == from_node
+                    && connection.from.port_id == from_port
+                    && connection.to.node_id == to_node
+                    && connection.to.port_id == to_port
+            }),
+            "missing Listening UI connection {from_node}.{from_port} -> {to_node}.{to_port}"
+        );
+    }
+    let composite = scene
+        .nodes
+        .iter()
+        .find(|node| node.id == "node_default_composite")
+        .expect("doubao fixture should have a Composite node");
+    assert_eq!(
+        composite
+            .inputs
+            .iter()
+            .map(|port| port.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "dynamic_1783678358530_1",
+            "dynamic_input_bar_ui",
+            "dynamic_1784530828769_2",
+        ],
+        "Composite dynamic inputs must remain Glass -> UI -> Light"
+    );
+
+    let settle = |session: &mut AnimationSession| {
+        let mut snapshot = session.step(0.0);
+        for _ in 0..240 {
+            if snapshot.active_transition_id.is_none() {
+                break;
+            }
+            snapshot = session.step(1.0 / 60.0);
+        }
+        snapshot
+    };
+
+    let enter_off = |session: &mut AnimationSession| {
+        let entered = session.step(0.0);
+        assert_eq!(entered.current_state_id, "st_mrerw3qg_6");
+        settle(session)
+    };
+
+    let assert_listening_values = |snapshot: &AnimationStep| {
+        let expected = [
+            ("FloatInput_42", serde_json::json!(0)),
+            ("FloatInput_43", serde_json::json!(1)),
+            ("FloatInput_44", serde_json::json!(0.3)),
+            ("FloatInput_45", serde_json::json!(0)),
+            ("FloatInput_46", serde_json::json!(1)),
+            ("FloatInput_47", serde_json::json!(0)),
+            ("FloatInput_48", serde_json::json!(1)),
+            ("FloatInput_49", serde_json::json!(1)),
+            ("FloatInput_50", serde_json::json!(1)),
+        ];
+        for (node_id, value) in expected {
+            assert_eq!(
+                snapshot.active_overrides.get(
+                    &node_forge_render_server::state_machine::OverrideKey::new(node_id, "value")
+                ),
+                Some(&value),
+                "Listening final snap mismatch for {node_id}:value"
+            );
+        }
+    };
+
+    let mut off_session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    let settled_off = enter_off(&mut off_session);
+    assert_eq!(settled_off.current_state_id, "st_mrerw3qg_6");
+
+    off_session.fire_event("mousedown");
+    let off_to_listening = off_session.step(1.0 / 60.0);
+    assert_eq!(off_to_listening.current_state_id, "st_listening");
+    assert_eq!(
+        off_to_listening.active_transition_id.as_deref(),
+        Some("tr_off_to_listening")
+    );
+    let off_drivers: BTreeMap<&str, &str> = off_to_listening
+        .motion_channels
+        .iter()
+        .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
+        .collect();
+    for key in [
+        "FloatInput_40:value",
+        "FloatInput_41:value",
+        "Vector2Input_35:x",
+        "Vector2Input_35:y",
+        "Vector2Input_36:y",
+        "Vector2Input_38:x",
+        "Vector2Input_38:y",
+    ] {
+        assert_eq!(
+            off_drivers.get(key),
+            Some(&"spring"),
+            "wrong Off -> Listening driver for {key}"
+        );
+    }
+    let completed_off_to_listening = settle(&mut off_session);
+    assert_eq!(completed_off_to_listening.active_transition_id, None);
+    assert_listening_values(&completed_off_to_listening);
+
+    let mut idle_session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    enter_off(&mut idle_session);
+    idle_session.fire_event("mouseup");
+    let idle = settle(&mut idle_session);
+    assert_eq!(idle.current_state_id, "st_mrerxocx_8");
+    assert_eq!(
+        idle.active_overrides
+            .get(&node_forge_render_server::state_machine::OverrideKey::new(
+                "FloatInput_42",
+                "value"
+            )),
+        Some(&serde_json::json!(1))
+    );
+
+    idle_session.fire_event("mousedown");
+    let idle_to_listening = idle_session.step(1.0 / 60.0);
+    assert_eq!(idle_to_listening.current_state_id, "st_listening");
+    assert_eq!(
+        idle_to_listening.active_transition_id.as_deref(),
+        Some("tr_idle_to_listening")
+    );
+    let ui_opacity = idle_to_listening
+        .motion_channels
+        .iter()
+        .find(|channel| channel.key == "FloatInput_42:value")
+        .expect("InputBarUiOpacity should have a motion channel");
+    assert_eq!(ui_opacity.driver, "spring");
+    assert!(!ui_opacity.completed);
+
+    let completed_idle_to_listening = settle(&mut idle_session);
+    assert_eq!(completed_idle_to_listening.active_transition_id, None);
+    assert_listening_values(&completed_idle_to_listening);
 }
 
 #[test]

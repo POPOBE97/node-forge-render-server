@@ -1,31 +1,30 @@
 {
   "version": "2.0",
   "metadata": {
-    "name": "My Scene",
-    "created": "2026-07-10T10:53:24.923Z",
-    "modified": "2026-07-10T10:53:24.923Z"
+    "name": "doubao-voice-interaction"
   },
   "nodes": [
     {
       "id": "node_default_render_texture",
-      "type": "RenderTexture",
-      "position": {
-        "x": 480,
-        "y": -120
-      },
-      "width": 160,
       "label": "Render Texture",
       "params": {
-        "width": 1080,
+        "_uiCollapsed": true,
+        "format": "rgba16float",
         "height": 2400,
-        "format": "rgba16float"
-      }
+        "width": 1080
+      },
+      "position": {
+        "x": 480,
+        "y": -320
+      },
+      "type": "RenderTexture",
+      "width": 160
     },
     {
       "id": "node_default_composite",
       "type": "Composite",
       "position": {
-        "x": 680,
+        "x": 480,
         "y": -260
       },
       "width": 160,
@@ -33,10 +32,6 @@
       "params": {
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
         "camera": [
           1,
           0,
@@ -54,7 +49,11 @@
           0,
           0,
           1
-        ]
+        ],
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "src_factor": "one"
       },
       "inputs": [
         {
@@ -63,7 +62,12 @@
           "type": "pass"
         },
         {
-          "id": "dynamic_1783679357206_2",
+          "id": "dynamic_input_bar_ui",
+          "name": "InputBarUiPass",
+          "type": "pass"
+        },
+        {
+          "id": "dynamic_1784530828769_2",
           "name": "LightEffectPass",
           "type": "pass"
         }
@@ -75,822 +79,1111 @@
           "variableName": "GlassInputBarPass",
           "type": "pass",
           "sourceBinding": {
-            "nodeId": "RenderPass_21",
-            "outputPortId": "pass",
-            "outputLabel": "Pass"
-          }
-        },
-        {
-          "portId": "dynamic_1783679357206_2",
-          "label": "LightEffectPass",
-          "variableName": "LightEffectPass",
-          "type": "pass",
-          "sourceBinding": {
-            "nodeId": "RenderPass_26",
-            "outputPortId": "pass",
-            "outputLabel": "Pass"
+            "nodeId": "GroupInstance_34",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
           }
         },
         {
           "portId": "pass",
           "label": "BackgroundPass",
           "variableName": "BackgroundPass",
-          "type": "pass"
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "GroupInstance_33",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
+          }
+        },
+        {
+          "portId": "dynamic_input_bar_ui",
+          "label": "InputBarUiPass",
+          "variableName": "InputBarUiPass",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "RenderPass_InputBarUI",
+            "outputPortId": "pass",
+            "outputLabel": "Pass"
+          }
+        },
+        {
+          "portId": "dynamic_1784530828769_2",
+          "label": "LightEffectPass",
+          "variableName": "LightEffectPass",
+          "type": "pass",
+          "sourceBinding": {
+            "nodeId": "GroupInstance_32",
+            "outputPortId": "out_0",
+            "outputLabel": "out_0"
+          }
         }
       ]
     },
     {
       "id": "node_default_screen",
-      "type": "Screen",
-      "position": {
-        "x": 860,
-        "y": -260
-      },
-      "width": 160,
       "label": "Screen",
       "params": {
-        "width": 1080,
-        "height": 2400
-      }
-    },
-    {
-      "id": "GroupInstance_10",
-      "type": "GroupInstance",
+        "height": 2400,
+        "width": 1080
+      },
       "position": {
-        "x": -920,
+        "x": 780,
         "y": -260
       },
-      "width": 160,
-      "label": "Group",
-      "params": {
-        "groupId": "BackgroundTexture"
-      },
-      "inputs": [],
-      "outputs": [
+      "type": "Screen",
+      "width": 160
+    },
+    {
+      "id": "GroupInstance_32",
+      "inputBindings": [
         {
-          "id": "out_0",
-          "name": "Output 1",
-          "type": "color"
+          "label": "VoiceOpacity",
+          "portId": "voice_opacity",
+          "sourceBinding": {
+            "nodeId": "FloatInput_45",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "VoiceOpacity"
+        },
+        {
+          "label": "CoreGlowOpacity",
+          "portId": "core_glow_opacity",
+          "sourceBinding": {
+            "nodeId": "FloatInput_46",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "CoreGlowOpacity"
+        },
+        {
+          "label": "GlowMaskMorph",
+          "portId": "glow_mask_morph",
+          "sourceBinding": {
+            "nodeId": "FloatInput_47",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "GlowMaskMorph"
+        },
+        {
+          "label": "VoiceDotOpacity",
+          "portId": "voice_dot_opacity",
+          "sourceBinding": {
+            "nodeId": "FloatInput_48",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "VoiceDotOpacity"
+        },
+        {
+          "label": "VoiceDotProgress",
+          "portId": "voice_dot_progress",
+          "sourceBinding": {
+            "nodeId": "FloatInput_49",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "VoiceDotProgress"
+        },
+        {
+          "label": "VoiceDotResponse",
+          "portId": "voice_dot_response",
+          "sourceBinding": {
+            "nodeId": "FloatInput_50",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "VoiceDotResponse"
         }
-      ]
-    },
-    {
-      "id": "GradientBlur_11",
-      "type": "GradientBlur",
-      "position": {
-        "x": -720,
-        "y": -260
-      },
-      "width": 160,
-      "label": "Gradient Blur",
-      "params": {
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
-        "camera": [
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1
-        ]
-      }
-    },
-    {
-      "id": "FragCoord_14",
-      "type": "FragCoord",
-      "position": {
-        "x": -1280,
-        "y": -180
-      },
-      "width": 160,
-      "label": "FragCoord",
-      "params": {}
-    },
-    {
-      "id": "MathClosure_15",
-      "type": "MathClosure",
-      "position": {
-        "x": -920,
-        "y": -180
-      },
-      "width": 160,
-      "label": "Math Closure",
-      "params": {
-        "source": "output = mix(\n  startSigma,\n  endSigma,\n  smoothstep(start, end, xy.y)\n);",
-        "_uiCollapsedFields": [
-          "sec:source"
-        ]
-      },
+      ],
       "inputs": [
         {
-          "id": "dynamic_1783677667132_1",
-          "name": "xy",
+          "id": "in_0",
+          "name": "Frame Size",
           "type": "vector2"
         },
         {
-          "id": "dynamic_1783677743832_2",
-          "name": "start",
+          "id": "in_1",
+          "name": "Position",
+          "type": "vector2"
+        },
+        {
+          "id": "in_2",
+          "name": "Corner Radius",
           "type": "float"
         },
         {
-          "id": "dynamic_1783677760237_3",
-          "name": "end",
+          "id": "in_3",
+          "name": "Bloom Size",
+          "type": "vector2"
+        },
+        {
+          "id": "voice_opacity",
+          "name": "VoiceOpacity",
           "type": "float"
         },
         {
-          "id": "dynamic_1783677787424_4",
-          "name": "startSigma",
+          "id": "core_glow_opacity",
+          "name": "CoreGlowOpacity",
           "type": "float"
         },
         {
-          "id": "dynamic_1783677793362_5",
-          "name": "endSigma",
+          "id": "glow_mask_morph",
+          "name": "GlowMaskMorph",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_opacity",
+          "name": "VoiceDotOpacity",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_progress",
+          "name": "VoiceDotProgress",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_response",
+          "name": "VoiceDotResponse",
           "type": "float"
         }
       ],
+      "label": "Light Effect",
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "LightEffect"
+      },
+      "position": {
+        "x": 300,
+        "y": -100
+      },
+      "type": "GroupInstance",
+      "width": 160
+    },
+    {
+      "id": "GroupInstance_33",
+      "inputBindings": [
+        {
+          "label": "GradientBlurStartY",
+          "portId": "gradient_blur_start_y",
+          "sourceBinding": {
+            "nodeId": "FloatInput_38",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "GradientBlurStartY"
+        },
+        {
+          "label": "GradientBlurEndY",
+          "portId": "gradient_blur_end_y",
+          "sourceBinding": {
+            "nodeId": "FloatInput_39",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "GradientBlurEndY"
+        },
+        {
+          "label": "GradientBlurStartSigma",
+          "portId": "gradient_blur_start_sigma",
+          "sourceBinding": {
+            "nodeId": "FloatInput_40",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "GradientBlurStartSigma"
+        },
+        {
+          "label": "GradientBlurEndSigma",
+          "portId": "gradient_blur_end_sigma",
+          "sourceBinding": {
+            "nodeId": "FloatInput_41",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "GradientBlurEndSigma"
+        },
+        {
+          "label": "BackgroundDarkenAlpha",
+          "portId": "darken_alpha",
+          "sourceBinding": {
+            "nodeId": "FloatInput_44",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
+          "type": "float",
+          "variableName": "BackgroundDarkenAlpha"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "gradient_blur_start_y",
+          "name": "GradientBlurStartY",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_end_y",
+          "name": "GradientBlurEndY",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_start_sigma",
+          "name": "GradientBlurStartSigma",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_end_sigma",
+          "name": "GradientBlurEndSigma",
+          "type": "float"
+        },
+        {
+          "id": "darken_alpha",
+          "name": "BackgroundDarkenAlpha",
           "type": "float"
         }
       ],
+      "label": "Group 3",
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "Background"
+      },
+      "position": {
+        "x": 0,
+        "y": -260
+      },
+      "type": "GroupInstance",
+      "width": 160
+    },
+    {
+      "id": "GroupInstance_34",
       "inputBindings": [
         {
-          "portId": "dynamic_1783677667132_1",
-          "label": "xy",
-          "variableName": "xy",
-          "type": "vector2",
+          "label": "Background",
+          "portId": "in_0",
           "sourceBinding": {
-            "nodeId": "FragCoord_14",
-            "outputPortId": "xy",
-            "outputLabel": "XY"
-          }
+            "nodeId": "GroupInstance_33",
+            "outputLabel": "out_0",
+            "outputPortId": "out_0"
+          },
+          "type": "pass",
+          "variableName": "Background"
         },
         {
-          "portId": "dynamic_1783677743832_2",
-          "label": "start",
-          "variableName": "start",
-          "type": "float",
+          "label": "Alpha",
+          "portId": "in_4",
           "sourceBinding": {
-            "nodeId": "FloatInput_16",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_1783677760237_3",
-          "label": "end",
-          "variableName": "end",
+            "nodeId": "FloatInput_43",
+            "outputLabel": "Value",
+            "outputPortId": "value"
+          },
           "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_17",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_1783677787424_4",
-          "label": "startSigma",
-          "variableName": "startSigma",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_18",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
-        },
-        {
-          "portId": "dynamic_1783677793362_5",
-          "label": "endSigma",
-          "variableName": "endSigma",
-          "type": "float",
-          "sourceBinding": {
-            "nodeId": "FloatInput_19",
-            "outputPortId": "value",
-            "outputLabel": "Value"
-          }
+          "variableName": "Alpha"
         }
-      ]
+      ],
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Background",
+          "type": "pass"
+        },
+        {
+          "id": "in_1",
+          "name": "Size",
+          "type": "vector2"
+        },
+        {
+          "id": "in_2",
+          "name": "Position",
+          "type": "vector2"
+        },
+        {
+          "id": "in_3",
+          "name": "Radius",
+          "type": "float"
+        },
+        {
+          "id": "in_4",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "label": "Group 4",
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "params": {
+        "groupId": "GlassComponent"
+      },
+      "position": {
+        "x": 300,
+        "y": -260
+      },
+      "type": "GroupInstance",
+      "width": 160
     },
     {
-      "id": "FloatInput_16",
-      "type": "FloatInput",
+      "id": "Vector2Input_35",
+      "label": "InputBarSizePx",
+      "params": {
+        "x": 1008,
+        "y": 168
+      },
       "position": {
-        "x": -1280,
+        "x": 0,
         "y": -120
       },
-      "width": 160,
-      "label": "GradientBlurStartY",
-      "params": {
-        "value": 300
-      }
+      "type": "Vector2Input",
+      "width": 160
     },
     {
-      "id": "FloatInput_17",
-      "type": "FloatInput",
-      "position": {
-        "x": -1280,
-        "y": -40
+      "id": "Vector2Input_36",
+      "label": "InputBarPositionPx",
+      "params": {
+        "x": 540,
+        "y": 180
       },
-      "width": 160,
+      "position": {
+        "x": 0,
+        "y": -20
+      },
+      "type": "Vector2Input",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_37",
+      "label": "InputBarCornerRadiusPx",
+      "params": {
+        "value": 60
+      },
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "Vector2Input_38",
+      "label": "LightBloomSizePx",
+      "params": {
+        "x": 1008,
+        "y": 168
+      },
+      "position": {
+        "x": 0,
+        "y": 160
+      },
+      "type": "Vector2Input",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_38",
+      "label": "GradientBlurStartY",
+      "params": {
+        "value": 480
+      },
+      "position": {
+        "x": -240,
+        "y": -320
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_39",
       "label": "GradientBlurEndY",
       "params": {
         "value": 0
-      }
+      },
+      "position": {
+        "x": -240,
+        "y": -240
+      },
+      "type": "FloatInput",
+      "width": 160
     },
     {
-      "id": "FloatInput_18",
-      "type": "FloatInput",
-      "position": {
-        "x": -1100,
-        "y": -120
-      },
-      "width": 160,
+      "id": "FloatInput_40",
       "label": "GradientBlurStartSigma",
       "params": {
         "value": 0
-      }
+      },
+      "position": {
+        "x": -240,
+        "y": -160
+      },
+      "type": "FloatInput",
+      "width": 160
     },
     {
-      "id": "FloatInput_19",
-      "type": "FloatInput",
-      "position": {
-        "x": -1100,
-        "y": -40
-      },
-      "width": 160,
+      "id": "FloatInput_41",
       "label": "GradientBlurEndSigma",
       "params": {
-        "value": 40
-      }
+        "value": 512
+      },
+      "position": {
+        "x": -240,
+        "y": -80
+      },
+      "type": "FloatInput",
+      "width": 160
     },
     {
-      "id": "GlassMaterial_20",
-      "type": "GlassMaterial",
+      "id": "FloatInput_42",
+      "label": "InputBarUiOpacity",
+      "params": {
+        "value": 1
+      },
       "position": {
-        "x": -200,
+        "x": -480,
+        "y": -320
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_43",
+      "label": "InputBarOpacity",
+      "params": {
+        "value": 1
+      },
+      "position": {
+        "x": -480,
+        "y": -240
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_44",
+      "label": "BackgroundDarkenAlpha",
+      "params": {
+        "value": 0.3
+      },
+      "position": {
+        "x": -480,
+        "y": -160
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_45",
+      "label": "VoiceOpacity",
+      "params": {
+        "value": 0
+      },
+      "position": {
+        "x": -480,
+        "y": -80
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_46",
+      "label": "CoreGlowOpacity",
+      "params": {
+        "value": 1
+      },
+      "position": {
+        "x": -480,
+        "y": 0
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_47",
+      "label": "GlowMaskMorph",
+      "params": {
+        "value": 1
+      },
+      "position": {
+        "x": -480,
+        "y": 80
+      },
+      "type": "FloatInput",
+      "width": 160
+    },
+    {
+      "id": "FloatInput_48",
+      "label": "VoiceDotOpacity",
+      "params": {
+        "value": 1
+      },
+      "position": {
+        "x": -480,
         "y": 160
       },
-      "width": 322,
-      "label": "Glass Material",
-      "params": {
-        "uBlendLuminanceValues": [
-          0.19935962108691996,
-          0.5345638396158368,
-          0.872433827315481,
-          1.197105006682011
-        ],
-        "uBlendLuminanceAmount": 1,
-        "uBlendSaturation": 1,
-        "uInnerBottom": 0,
-        "uInnerGlassColor": [
-          1,
-          1,
-          1,
-          0.2
-        ],
-        "uInnerColorWhite": 0,
-        "uInnerColorPow": 1,
-        "uInnerColorMix": 0,
-        "uGeoPxRadius": 30,
-        "uShapeEdgePx": 30,
-        "uShapeEdgePow": 4,
-        "uShapeThicknessPx": 50,
-        "uShapeReflectOffsetPx": 0,
-        "uReflectLighten": 0.5,
-        "uReflectStrength": 0.5,
-        "uReflectionExtend": 0,
-        "uReflectionExtendColor": [
-          1,
-          1,
-          1,
-          1
-        ],
-        "uDirectionalLightDirection": {
-          "x": 0.5,
-          "y": -0.7,
-          "z": 0
-        },
-        "uDirectionalLightIntensity": 0.5,
-        "uDirectionalLightOppositeIntensity": 0.4,
-        "uDirectionalLightAngleRange": 0.32,
-        "uRefractBlurScale": 1,
-        "uRefractIorIOR": 1.5,
-        "uBgColorSaturation": 1,
-        "uBgColorBrightness": 0,
-        "uBionicBurn": 1,
-        "uPressLightCenterFall": 0,
-        "uPressLightCenterStrength": 0,
-        "uPressLightCenterPeak": 0,
-        "uPressRingStrength": [
-          0,
-          0,
-          0,
-          0
-        ],
-        "_uiCollapsedFields": []
-      }
-    },
-    {
-      "id": "RenderPass_21",
-      "type": "RenderPass",
-      "position": {
-        "x": 160,
-        "y": 20
-      },
-      "width": 160,
-      "label": "Render Pass",
-      "params": {
-        "name": "Render Pass",
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 1,
-        "culling": "none",
-        "depthTest": false,
-        "camera": [
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1
-        ]
-      }
-    },
-    {
-      "id": "Rect2DGeometry_22",
-      "type": "Rect2DGeometry",
-      "position": {
-        "x": -200,
-        "y": 20
-      },
-      "width": 160,
-      "label": "2D Rect",
-      "params": {
-        "radius": 0,
-        "smooth": 1
-      }
-    },
-    {
-      "id": "Vector2Input_23",
-      "type": "Vector2Input",
-      "position": {
-        "x": -400,
-        "y": 20
-      },
-      "width": 160,
-      "label": "GlassInputBarSize",
-      "params": {
-        "x": 1008,
-        "y": 168
-      }
-    },
-    {
-      "id": "Vector2Input_24",
-      "type": "Vector2Input",
-      "position": {
-        "x": -400,
-        "y": 120
-      },
-      "width": 160,
-      "label": "GlassInputBarPosition",
-      "params": {
-        "x": 540,
-        "y": 180
-      }
-    },
-    {
-      "id": "FloatInput_25",
       "type": "FloatInput",
-      "position": {
-        "x": -400,
-        "y": 220
-      },
-      "width": 165,
-      "label": "GlassInputBarCornerRadius",
-      "params": {
-        "value": 60
-      }
+      "width": 160
     },
     {
-      "id": "RenderPass_26",
-      "type": "RenderPass",
-      "position": {
-        "x": 880,
-        "y": 440
-      },
-      "width": 160,
-      "label": "Render Pass",
+      "id": "FloatInput_49",
+      "label": "VoiceDotProgress",
       "params": {
-        "name": "Render Pass",
-        "blend_preset": "premul_alpha",
-        "blendfunc": "add",
-        "src_factor": "one",
-        "dst_factor": "one-minus-src-alpha",
-        "src_alpha_factor": "one",
-        "dst_alpha_factor": "one-minus-src-alpha",
-        "msaaSampleCount": 1,
-        "culling": "none",
-        "depthTest": false,
-        "camera": [
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1
-        ]
-      }
+        "value": 1
+      },
+      "position": {
+        "x": -480,
+        "y": 240
+      },
+      "type": "FloatInput",
+      "width": 160
     },
     {
-      "id": "Rect2DGeometry_27",
-      "type": "Rect2DGeometry",
-      "position": {
-        "x": 700,
-        "y": 440
-      },
-      "width": 160,
-      "label": "2D Rect",
+      "id": "FloatInput_50",
+      "label": "VoiceDotResponse",
       "params": {
-        "radius": 0,
-        "smooth": 1
-      }
+        "value": 0
+      },
+      "position": {
+        "x": -480,
+        "y": 320
+      },
+      "type": "FloatInput",
+      "width": 160
     },
     {
-      "id": "Vector2Input_28",
-      "type": "Vector2Input",
-      "position": {
-        "x": 520,
-        "y": 440
-      },
-      "width": 160,
-      "label": "LightEffectSize",
-      "params": {
-        "x": 1008,
-        "y": 168
-      }
-    },
-    {
-      "id": "Vector2Input_29",
-      "type": "Vector2Input",
-      "position": {
-        "x": 520,
-        "y": 540
-      },
-      "width": 160,
-      "label": "LightEffectPosition",
-      "params": {
-        "x": 540,
-        "y": 180
-      }
-    },
-    {
-      "id": "IntelligentLight_30",
-      "type": "IntelligentLight",
-      "position": {
-        "x": 340,
-        "y": 660
-      },
-      "width": 160,
-      "label": "Intelligent Light",
-      "params": {
-        "layoutMode": "manual",
-        "width": 54,
-        "height": 54,
-        "driver": 0,
-        "power": 0,
-        "lightness": 0.75,
-        "color0": "#8086ff",
-        "color1": "#ffd3b3",
-        "color2": "#ff8635",
-        "color3": "#847eff",
-        "color4": "#1269f2",
-        "color5": "#8086ff",
-        "color6": "#ffd3b3",
-        "color7": "#ff8635",
-        "color8": "#ff8635",
-        "color9": "#1269f2",
-        "color10": "#847eff"
-      }
-    },
-    {
-      "id": "PassTexture_31",
-      "type": "PassTexture",
-      "position": {
-        "x": 520,
-        "y": 660
-      },
-      "width": 160,
-      "label": "Pass Texture",
+      "id": "ImageTexture_InputBarUI",
+      "label": "Input Bar UI Texture",
       "params": {
         "addressModeU": "clamp-to-edge",
         "addressModeV": "clamp-to-edge",
-        "magFilter": "nearest",
-        "minFilter": "nearest",
-        "mipmapFilter": "nearest"
-      }
+        "alphaMode": "straight",
+        "aspectCorrection": "off",
+        "assetId": "9d8125d0f6eb",
+        "encoderSpace": "srgb",
+        "extension": "repeat",
+        "interpolation": "linear",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear"
+      },
+      "position": {
+        "x": 20,
+        "y": 300
+      },
+      "type": "ImageTexture",
+      "width": 160
+    },
+    {
+      "id": "ShaderMaterial_InputBarUI",
+      "inputBindings": [
+        {
+          "label": "ui_color",
+          "portId": "param:ui_color",
+          "type": "color",
+          "variableName": "ui_color"
+        },
+        {
+          "label": "opacity",
+          "portId": "param:opacity",
+          "type": "float",
+          "variableName": "opacity"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "param:ui_color",
+          "name": "ui_color",
+          "type": "color"
+        },
+        {
+          "id": "param:opacity",
+          "name": "opacity",
+          "type": "float"
+        }
+      ],
+      "label": "Input Bar UI Material",
+      "params": {
+        "param:opacity": 1,
+        "param:ui_color": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "position": {
+        "x": 220,
+        "y": 300
+      },
+      "shaderMaterial": {
+        "parameters": [
+          {
+            "id": "param:ui_color",
+            "kind": "value",
+            "name": "ui_color",
+            "portType": "color",
+            "wgslType": "vec4f"
+          },
+          {
+            "id": "param:opacity",
+            "kind": "value",
+            "name": "opacity",
+            "portType": "float",
+            "wgslType": "f32"
+          }
+        ],
+        "sourceHash": "a3d27690ed767ec8"
+      },
+      "type": "ShaderMaterial",
+      "wgslOverride": "materials/ShaderMaterial_InputBarUI.wgsl",
+      "width": 174
+    },
+    {
+      "id": "Rect2DGeometry_InputBarUI",
+      "label": "Input Bar UI Geometry",
+      "params": {
+        "radius": 0,
+        "smooth": 1
+      },
+      "position": {
+        "x": 220,
+        "y": 180
+      },
+      "type": "Rect2DGeometry",
+      "width": 160
+    },
+    {
+      "id": "RenderPass_InputBarUI",
+      "label": "Input Bar UI Pass",
+      "params": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "camera": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "culling": "none",
+        "depthTest": false,
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "dst_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "name": "Render Pass",
+        "src_alpha_factor": "one",
+        "src_factor": "one"
+      },
+      "position": {
+        "x": 440,
+        "y": 240
+      },
+      "type": "RenderPass",
+      "width": 160
     }
   ],
   "connections": [
     {
-      "id": "edge_default_rt_to_composite",
       "from": {
         "nodeId": "node_default_render_texture",
         "portId": "texture"
       },
+      "id": "edge_default_rt_to_composite",
       "to": {
         "nodeId": "node_default_composite",
         "portId": "target"
       }
     },
     {
-      "id": "edge_default_composite_to_screen",
       "from": {
         "nodeId": "node_default_composite",
         "portId": "pass"
       },
+      "id": "edge_default_composite_to_screen",
       "to": {
         "nodeId": "node_default_screen",
         "portId": "pass"
       }
     },
     {
-      "id": "edge_1",
       "from": {
-        "nodeId": "GroupInstance_10",
+        "nodeId": "GroupInstance_32",
         "portId": "out_0"
       },
+      "id": "edge_24",
       "to": {
-        "nodeId": "GradientBlur_11",
-        "portId": "source"
+        "nodeId": "node_default_composite",
+        "portId": "dynamic_1784530828769_2"
       }
     },
     {
-      "id": "edge_2",
       "from": {
-        "nodeId": "GradientBlur_11",
-        "portId": "output"
+        "nodeId": "GroupInstance_33",
+        "portId": "out_0"
       },
+      "id": "edge_25",
       "to": {
         "nodeId": "node_default_composite",
         "portId": "pass"
       }
     },
     {
-      "id": "edge_3",
       "from": {
-        "nodeId": "FragCoord_14",
-        "portId": "xy"
+        "nodeId": "GroupInstance_33",
+        "portId": "out_0"
       },
+      "id": "edge_27",
       "to": {
-        "nodeId": "MathClosure_15",
-        "portId": "dynamic_1783677667132_1"
+        "nodeId": "GroupInstance_34",
+        "portId": "in_0"
       }
     },
     {
-      "id": "edge_4",
       "from": {
-        "nodeId": "MathClosure_15",
-        "portId": "output"
+        "nodeId": "GroupInstance_34",
+        "portId": "out_0"
       },
-      "to": {
-        "nodeId": "GradientBlur_11",
-        "portId": "mask"
-      }
-    },
-    {
-      "id": "edge_5",
-      "from": {
-        "nodeId": "FloatInput_16",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_15",
-        "portId": "dynamic_1783677743832_2"
-      }
-    },
-    {
-      "id": "edge_6",
-      "from": {
-        "nodeId": "FloatInput_17",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_15",
-        "portId": "dynamic_1783677760237_3"
-      }
-    },
-    {
-      "id": "edge_7",
-      "from": {
-        "nodeId": "FloatInput_18",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_15",
-        "portId": "dynamic_1783677787424_4"
-      }
-    },
-    {
-      "id": "edge_8",
-      "from": {
-        "nodeId": "FloatInput_19",
-        "portId": "value"
-      },
-      "to": {
-        "nodeId": "MathClosure_15",
-        "portId": "dynamic_1783677793362_5"
-      }
-    },
-    {
-      "id": "edge_9",
-      "from": {
-        "nodeId": "GlassMaterial_20",
-        "portId": "material"
-      },
-      "to": {
-        "nodeId": "RenderPass_21",
-        "portId": "material"
-      }
-    },
-    {
-      "id": "edge_10",
-      "from": {
-        "nodeId": "Rect2DGeometry_22",
-        "portId": "geometry"
-      },
-      "to": {
-        "nodeId": "RenderPass_21",
-        "portId": "geometry"
-      }
-    },
-    {
-      "id": "edge_11",
-      "from": {
-        "nodeId": "Vector2Input_23",
-        "portId": "vector"
-      },
-      "to": {
-        "nodeId": "Rect2DGeometry_22",
-        "portId": "size"
-      }
-    },
-    {
-      "id": "edge_12",
-      "from": {
-        "nodeId": "RenderPass_21",
-        "portId": "pass"
-      },
+      "id": "edge_28",
       "to": {
         "nodeId": "node_default_composite",
         "portId": "dynamic_1783678358530_1"
       }
     },
     {
-      "id": "edge_13",
       "from": {
-        "nodeId": "Vector2Input_24",
+        "nodeId": "Vector2Input_35",
         "portId": "vector"
       },
+      "id": "edge_29",
       "to": {
-        "nodeId": "Rect2DGeometry_22",
-        "portId": "position"
+        "nodeId": "GroupInstance_32",
+        "portId": "in_0"
       }
     },
     {
-      "id": "edge_14",
       "from": {
-        "nodeId": "GradientBlur_11",
-        "portId": "output"
+        "nodeId": "Vector2Input_36",
+        "portId": "vector"
       },
+      "id": "edge_30",
       "to": {
-        "nodeId": "GlassMaterial_20",
-        "portId": "uBgTex"
+        "nodeId": "GroupInstance_32",
+        "portId": "in_1"
       }
     },
     {
-      "id": "edge_15",
       "from": {
-        "nodeId": "FloatInput_25",
+        "nodeId": "Vector2Input_35",
+        "portId": "vector"
+      },
+      "id": "edge_31",
+      "to": {
+        "nodeId": "GroupInstance_34",
+        "portId": "in_1"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "Vector2Input_36",
+        "portId": "vector"
+      },
+      "id": "edge_32",
+      "to": {
+        "nodeId": "GroupInstance_34",
+        "portId": "in_2"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_37",
         "portId": "value"
       },
+      "id": "edge_33",
       "to": {
-        "nodeId": "GlassMaterial_20",
-        "portId": "uGeoPxRadius"
+        "nodeId": "GroupInstance_34",
+        "portId": "in_3"
       }
     },
     {
-      "id": "edge_16",
       "from": {
-        "nodeId": "RenderPass_26",
-        "portId": "pass"
+        "nodeId": "FloatInput_37",
+        "portId": "value"
       },
+      "id": "edge_34",
       "to": {
-        "nodeId": "node_default_composite",
-        "portId": "dynamic_1783679357206_2"
+        "nodeId": "GroupInstance_32",
+        "portId": "in_2"
       }
     },
     {
-      "id": "edge_17",
       "from": {
-        "nodeId": "Vector2Input_28",
+        "nodeId": "Vector2Input_38",
         "portId": "vector"
       },
+      "id": "edge_35",
       "to": {
-        "nodeId": "Rect2DGeometry_27",
+        "nodeId": "GroupInstance_32",
+        "portId": "in_3"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_38",
+        "portId": "value"
+      },
+      "id": "edge_blur_start_y",
+      "to": {
+        "nodeId": "GroupInstance_33",
+        "portId": "gradient_blur_start_y"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_39",
+        "portId": "value"
+      },
+      "id": "edge_blur_end_y",
+      "to": {
+        "nodeId": "GroupInstance_33",
+        "portId": "gradient_blur_end_y"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_40",
+        "portId": "value"
+      },
+      "id": "edge_blur_start_sigma",
+      "to": {
+        "nodeId": "GroupInstance_33",
+        "portId": "gradient_blur_start_sigma"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_41",
+        "portId": "value"
+      },
+      "id": "edge_blur_end_sigma",
+      "to": {
+        "nodeId": "GroupInstance_33",
+        "portId": "gradient_blur_end_sigma"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "Vector2Input_35",
+        "portId": "vector"
+      },
+      "id": "edge_ui_size",
+      "to": {
+        "nodeId": "Rect2DGeometry_InputBarUI",
         "portId": "size"
       }
     },
     {
-      "id": "edge_18",
       "from": {
-        "nodeId": "Vector2Input_29",
+        "nodeId": "Vector2Input_36",
         "portId": "vector"
       },
+      "id": "edge_ui_position",
       "to": {
-        "nodeId": "Rect2DGeometry_27",
+        "nodeId": "Rect2DGeometry_InputBarUI",
         "portId": "position"
       }
     },
     {
-      "id": "edge_19",
       "from": {
-        "nodeId": "Rect2DGeometry_27",
+        "nodeId": "ShaderMaterial_InputBarUI",
+        "portId": "material"
+      },
+      "id": "edge_ui_material",
+      "to": {
+        "nodeId": "RenderPass_InputBarUI",
+        "portId": "material"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "Rect2DGeometry_InputBarUI",
         "portId": "geometry"
       },
+      "id": "edge_ui_geometry",
       "to": {
-        "nodeId": "RenderPass_26",
+        "nodeId": "RenderPass_InputBarUI",
         "portId": "geometry"
       }
     },
     {
-      "id": "edge_20",
       "from": {
-        "nodeId": "IntelligentLight_30",
-        "portId": "pass"
+        "nodeId": "FloatInput_44",
+        "portId": "value"
       },
+      "id": "edge_background_darken_alpha",
       "to": {
-        "nodeId": "PassTexture_31",
-        "portId": "pass"
+        "nodeId": "GroupInstance_33",
+        "portId": "darken_alpha"
       }
     },
     {
-      "id": "edge_21",
       "from": {
-        "nodeId": "PassTexture_31",
+        "nodeId": "FloatInput_43",
+        "portId": "value"
+      },
+      "id": "edge_input_bar_opacity",
+      "to": {
+        "nodeId": "GroupInstance_34",
+        "portId": "in_4"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_45",
+        "portId": "value"
+      },
+      "id": "edge_voice_opacity",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "voice_opacity"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_46",
+        "portId": "value"
+      },
+      "id": "edge_core_glow_opacity",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "core_glow_opacity"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_47",
+        "portId": "value"
+      },
+      "id": "edge_glow_mask_morph",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "glow_mask_morph"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_48",
+        "portId": "value"
+      },
+      "id": "edge_voice_dot_opacity",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "voice_dot_opacity"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_49",
+        "portId": "value"
+      },
+      "id": "edge_voice_dot_progress",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "voice_dot_progress"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "FloatInput_50",
+        "portId": "value"
+      },
+      "id": "edge_voice_dot_response",
+      "to": {
+        "nodeId": "GroupInstance_32",
+        "portId": "voice_dot_response"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "RenderPass_InputBarUI",
+        "portId": "pass"
+      },
+      "id": "edge_ui_composite",
+      "to": {
+        "nodeId": "node_default_composite",
+        "portId": "dynamic_input_bar_ui"
+      }
+    },
+    {
+      "id": "edge_ui_opacity",
+      "from": {
+        "nodeId": "ImageTexture_InputBarUI",
+        "portId": "alpha"
+      },
+      "to": {
+        "nodeId": "ShaderMaterial_InputBarUI",
+        "portId": "param:opacity"
+      }
+    },
+    {
+      "id": "edge_ui_color",
+      "from": {
+        "nodeId": "ImageTexture_InputBarUI",
         "portId": "color"
       },
       "to": {
-        "nodeId": "RenderPass_26",
-        "portId": "material"
+        "nodeId": "ShaderMaterial_InputBarUI",
+        "portId": "param:ui_color"
       }
     }
   ],
   "groups": [
     {
       "id": "BackgroundTexture",
-      "name": "Group",
+      "inputBindings": [],
       "inputs": [],
+      "name": "Group",
+      "outputBindings": [
+        {
+          "from": {
+            "nodeId": "ResourcePool_1",
+            "portId": "output"
+          },
+          "groupPortId": "out_0"
+        }
+      ],
       "outputs": [
         {
           "id": "out_0",
@@ -898,29 +1191,99 @@
           "type": "color"
         }
       ],
-      "inputBindings": [],
-      "outputBindings": [
-        {
-          "groupPortId": "out_0",
-          "from": {
-            "nodeId": "ResourcePool_1",
-            "portId": "output"
-          }
-        }
-      ],
       "nodes": [
         {
           "id": "ResourcePool_1",
-          "type": "ResourcePool",
-          "position": {
-            "x": 180,
-            "y": 0
-          },
-          "width": 160,
-          "label": "Resource Pool",
-          "params": {
-            "selectedIndex": 0
-          },
+          "inputBindings": [
+            {
+              "label": "input1",
+              "portId": "dynamic_1783677219646_1",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_2",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input1"
+            },
+            {
+              "label": "input2",
+              "portId": "dynamic_1783677219690_2",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_3",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input2"
+            },
+            {
+              "label": "input3",
+              "portId": "dynamic_1783677219717_3",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_4",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input3"
+            },
+            {
+              "label": "input4",
+              "portId": "dynamic_1783677219856_4",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_5",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input4"
+            },
+            {
+              "label": "input5",
+              "portId": "dynamic_1783677219882_5",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_6",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input5"
+            },
+            {
+              "label": "input6",
+              "portId": "dynamic_1783677219901_6",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_7",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input6"
+            },
+            {
+              "label": "input7",
+              "portId": "dynamic_1783677219920_7",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_8",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input7"
+            },
+            {
+              "label": "input8",
+              "portId": "dynamic_1783677219938_8",
+              "sourceBinding": {
+                "nodeId": "ImageTexture_9",
+                "outputLabel": "Color",
+                "outputPortId": "color"
+              },
+              "type": "color",
+              "variableName": "input8"
+            }
+          ],
           "inputs": [
             {
               "id": "dynamic_1783677219646_1",
@@ -963,6 +1326,7 @@
               "type": "color"
             }
           ],
+          "label": "Resource Pool",
           "outputs": [
             {
               "id": "output",
@@ -970,377 +1334,1627 @@
               "type": "color"
             }
           ],
-          "inputBindings": [
-            {
-              "portId": "dynamic_1783677219646_1",
-              "label": "input1",
-              "variableName": "input1",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_2",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219690_2",
-              "label": "input2",
-              "variableName": "input2",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_3",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219717_3",
-              "label": "input3",
-              "variableName": "input3",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_4",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219856_4",
-              "label": "input4",
-              "variableName": "input4",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_5",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219882_5",
-              "label": "input5",
-              "variableName": "input5",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_6",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219901_6",
-              "label": "input6",
-              "variableName": "input6",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_7",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219920_7",
-              "label": "input7",
-              "variableName": "input7",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_8",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            },
-            {
-              "portId": "dynamic_1783677219938_8",
-              "label": "input8",
-              "variableName": "input8",
-              "type": "color",
-              "sourceBinding": {
-                "nodeId": "ImageTexture_9",
-                "outputPortId": "color",
-                "outputLabel": "Color"
-              }
-            }
-          ]
+          "params": {
+            "selectedIndex": 4
+          },
+          "position": {
+            "x": 180,
+            "y": 0
+          },
+          "type": "ResourcePool",
+          "width": 160
         },
         {
           "id": "ImageTexture_2",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "2ed590c9f2c5",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 0
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "2ed590c9f2c5",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_3",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "2f1de3bd307b",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 60
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "2f1de3bd307b",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_4",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "17e95ecc3c30",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 120
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "17e95ecc3c30",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_5",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "4e3dfb4b08c7",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 180
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "4e3dfb4b08c7",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_6",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "0a00dc1303fe",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 240
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "0a00dc1303fe",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_7",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "0e7827174088",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 300
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "0e7827174088",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_8",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "62fb14427cc7",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 360
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "62fb14427cc7",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         },
         {
           "id": "ImageTexture_9",
-          "type": "ImageTexture",
+          "label": "Image Texture",
+          "params": {
+            "_uiCollapsed": true,
+            "addressModeU": "repeat",
+            "addressModeV": "repeat",
+            "alphaMode": "straight",
+            "aspectCorrection": "fill",
+            "assetId": "d9ac3045086f",
+            "encoderSpace": "srgb",
+            "extension": "repeat",
+            "interpolation": "linear",
+            "magFilter": "linear",
+            "minFilter": "linear",
+            "mipmapFilter": "linear"
+          },
           "position": {
             "x": 0,
             "y": 420
           },
-          "width": 160,
-          "label": "Image Texture",
-          "params": {
-            "assetId": "d9ac3045086f",
-            "interpolation": "linear",
-            "extension": "repeat",
-            "addressModeU": "repeat",
-            "addressModeV": "repeat",
-            "magFilter": "linear",
-            "minFilter": "linear",
-            "mipmapFilter": "linear",
-            "encoderSpace": "srgb",
-            "alphaMode": "straight",
-            "aspectCorrection": "fill",
-            "_uiCollapsed": true
-          }
+          "type": "ImageTexture",
+          "width": 160
         }
       ],
       "connections": [
         {
-          "id": "edge_1",
           "from": {
             "nodeId": "ImageTexture_2",
             "portId": "color"
           },
+          "id": "edge_1",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219646_1"
           }
         },
         {
-          "id": "edge_2",
           "from": {
             "nodeId": "ImageTexture_3",
             "portId": "color"
           },
+          "id": "edge_2",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219690_2"
           }
         },
         {
-          "id": "edge_3",
           "from": {
             "nodeId": "ImageTexture_4",
             "portId": "color"
           },
+          "id": "edge_3",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219717_3"
           }
         },
         {
-          "id": "edge_4",
           "from": {
             "nodeId": "ImageTexture_5",
             "portId": "color"
           },
+          "id": "edge_4",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219856_4"
           }
         },
         {
-          "id": "edge_5",
           "from": {
             "nodeId": "ImageTexture_6",
             "portId": "color"
           },
+          "id": "edge_5",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219882_5"
           }
         },
         {
-          "id": "edge_6",
           "from": {
             "nodeId": "ImageTexture_7",
             "portId": "color"
           },
+          "id": "edge_6",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219901_6"
           }
         },
         {
-          "id": "edge_7",
           "from": {
             "nodeId": "ImageTexture_8",
             "portId": "color"
           },
+          "id": "edge_7",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219920_7"
           }
         },
         {
-          "id": "edge_8",
           "from": {
             "nodeId": "ImageTexture_9",
             "portId": "color"
           },
+          "id": "edge_8",
           "to": {
             "nodeId": "ResourcePool_1",
             "portId": "dynamic_1783677219938_8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LightEffect",
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:frame_size_px"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "Rect2DGeometry_27",
+            "portId": "position"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:corner_radius_px"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:light_bloom_size_px"
+          }
+        },
+        {
+          "groupPortId": "voice_opacity",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:voice_opacity"
+          }
+        },
+        {
+          "groupPortId": "core_glow_opacity",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:core_glow_opacity"
+          }
+        },
+        {
+          "groupPortId": "glow_mask_morph",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:glow_mask_morph"
+          }
+        },
+        {
+          "groupPortId": "voice_dot_opacity",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:voice_dot_opacity"
+          }
+        },
+        {
+          "groupPortId": "voice_dot_progress",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:voice_dot_progress"
+          }
+        },
+        {
+          "groupPortId": "voice_dot_response",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:voice_dot_response"
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Frame Size",
+          "type": "vector2"
+        },
+        {
+          "id": "in_1",
+          "name": "Position",
+          "type": "vector2"
+        },
+        {
+          "id": "in_2",
+          "name": "Corner Radius",
+          "type": "float"
+        },
+        {
+          "id": "in_3",
+          "name": "Bloom Size",
+          "type": "vector2"
+        },
+        {
+          "id": "voice_opacity",
+          "name": "VoiceOpacity",
+          "type": "float"
+        },
+        {
+          "id": "core_glow_opacity",
+          "name": "CoreGlowOpacity",
+          "type": "float"
+        },
+        {
+          "id": "glow_mask_morph",
+          "name": "GlowMaskMorph",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_opacity",
+          "name": "VoiceDotOpacity",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_progress",
+          "name": "VoiceDotProgress",
+          "type": "float"
+        },
+        {
+          "id": "voice_dot_response",
+          "name": "VoiceDotResponse",
+          "type": "float"
+        }
+      ],
+      "name": "Light Effect",
+      "outputBindings": [
+        {
+          "from": {
+            "nodeId": "RenderPass_26",
+            "portId": "pass"
+          },
+          "groupPortId": "out_0"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "RenderPass_26",
+          "label": "Render Pass",
+          "params": {
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "culling": "none",
+            "depthTest": false,
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "msaaSampleCount": 1,
+            "name": "Render Pass",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "position": {
+            "x": 200,
+            "y": -20
+          },
+          "type": "RenderPass",
+          "width": 160
+        },
+        {
+          "id": "Rect2DGeometry_27",
+          "label": "2D Rect",
+          "params": {
+            "radius": 0,
+            "smooth": 1
+          },
+          "position": {
+            "x": 20,
+            "y": -20
+          },
+          "type": "Rect2DGeometry",
+          "width": 160
+        },
+        {
+          "id": "IntelligentLight_30",
+          "label": "Intelligent Light",
+          "params": {
+            "color0": "#8086ff",
+            "color1": "#ffd3b3",
+            "color10": "#847eff",
+            "color2": "#ff8635",
+            "color3": "#847eff",
+            "color4": "#1269f2",
+            "color5": "#8086ff",
+            "color6": "#ffd3b3",
+            "color7": "#ff8635",
+            "color8": "#ff8635",
+            "color9": "#1269f2",
+            "driver": 0,
+            "height": 36,
+            "layoutMode": "manual",
+            "lightness": 0.75,
+            "pos4": [
+              34.8,
+              23.2
+            ],
+            "power": 0,
+            "width": 36
+          },
+          "position": {
+            "x": -380,
+            "y": 120
+          },
+          "type": "IntelligentLight",
+          "width": 160
+        },
+        {
+          "id": "ShaderMaterial_32",
+          "inputBindings": [
+            {
+              "label": "intelli_tex",
+              "portId": "resource:intelli_tex",
+              "type": "sampledTexture",
+              "variableName": "intelli_tex"
+            },
+            {
+              "label": "frame_size_px",
+              "portId": "param:frame_size_px",
+              "type": "vector2",
+              "variableName": "frame_size_px"
+            },
+            {
+              "label": "light_bloom_size_px",
+              "portId": "param:light_bloom_size_px",
+              "type": "vector2",
+              "variableName": "light_bloom_size_px"
+            },
+            {
+              "label": "corner_radius_px",
+              "portId": "param:corner_radius_px",
+              "type": "float",
+              "variableName": "corner_radius_px"
+            },
+            {
+              "label": "density",
+              "portId": "param:density",
+              "type": "float",
+              "variableName": "density"
+            },
+            {
+              "label": "human_voice_energies",
+              "portId": "param:human_voice_energies",
+              "type": "float[]",
+              "variableName": "human_voice_energies"
+            },
+            {
+              "label": "total_energy",
+              "portId": "param:total_energy",
+              "type": "float",
+              "variableName": "total_energy"
+            },
+            {
+              "label": "voice_opacity",
+              "portId": "param:voice_opacity",
+              "type": "float",
+              "variableName": "voice_opacity"
+            },
+            {
+              "label": "core_glow_opacity",
+              "portId": "param:core_glow_opacity",
+              "type": "float",
+              "variableName": "core_glow_opacity"
+            },
+            {
+              "label": "glow_mask_morph",
+              "portId": "param:glow_mask_morph",
+              "type": "float",
+              "variableName": "glow_mask_morph"
+            },
+            {
+              "label": "light_clip_bloom_progress",
+              "portId": "param:light_clip_bloom_progress",
+              "type": "float",
+              "variableName": "light_clip_bloom_progress"
+            },
+            {
+              "label": "voice_dot_opacity",
+              "portId": "param:voice_dot_opacity",
+              "type": "float",
+              "variableName": "voice_dot_opacity"
+            },
+            {
+              "label": "voice_dot_progress",
+              "portId": "param:voice_dot_progress",
+              "type": "float",
+              "variableName": "voice_dot_progress"
+            },
+            {
+              "label": "voice_dot_response",
+              "portId": "param:voice_dot_response",
+              "type": "float",
+              "variableName": "voice_dot_response"
+            },
+            {
+              "label": "voice_dot_color",
+              "portId": "param:voice_dot_color",
+              "type": "color",
+              "variableName": "voice_dot_color"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "resource:intelli_tex",
+              "name": "intelli_tex",
+              "type": "sampledTexture"
+            },
+            {
+              "id": "param:frame_size_px",
+              "name": "frame_size_px",
+              "type": "vector2"
+            },
+            {
+              "id": "param:light_bloom_size_px",
+              "name": "light_bloom_size_px",
+              "type": "vector2"
+            },
+            {
+              "id": "param:corner_radius_px",
+              "name": "corner_radius_px",
+              "type": "float"
+            },
+            {
+              "id": "param:density",
+              "name": "density",
+              "type": "float"
+            },
+            {
+              "id": "param:human_voice_energies",
+              "name": "human_voice_energies",
+              "type": "float[]"
+            },
+            {
+              "id": "param:total_energy",
+              "name": "total_energy",
+              "type": "float"
+            },
+            {
+              "id": "param:voice_opacity",
+              "name": "voice_opacity",
+              "type": "float"
+            },
+            {
+              "id": "param:core_glow_opacity",
+              "name": "core_glow_opacity",
+              "type": "float"
+            },
+            {
+              "id": "param:glow_mask_morph",
+              "name": "glow_mask_morph",
+              "type": "float"
+            },
+            {
+              "id": "param:light_clip_bloom_progress",
+              "name": "light_clip_bloom_progress",
+              "type": "float"
+            },
+            {
+              "id": "param:voice_dot_opacity",
+              "name": "voice_dot_opacity",
+              "type": "float"
+            },
+            {
+              "id": "param:voice_dot_progress",
+              "name": "voice_dot_progress",
+              "type": "float"
+            },
+            {
+              "id": "param:voice_dot_response",
+              "name": "voice_dot_response",
+              "type": "float"
+            },
+            {
+              "id": "param:voice_dot_color",
+              "name": "voice_dot_color",
+              "type": "color"
+            }
+          ],
+          "label": "Shader Material",
+          "params": {
+            "param:core_glow_opacity": 1,
+            "param:corner_radius_px": 60,
+            "param:density": 3,
+            "param:frame_size_px": [
+              1008,
+              168
+            ],
+            "param:glow_mask_morph": 0,
+            "param:human_voice_energies": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "param:light_bloom_size_px": [
+              1008,
+              168
+            ],
+            "param:light_clip_bloom_progress": 0,
+            "param:total_energy": 0,
+            "param:voice_dot_color": [
+              1.5,
+              1.5,
+              1.5,
+              1
+            ],
+            "param:voice_dot_opacity": 1,
+            "param:voice_dot_progress": 1,
+            "param:voice_dot_response": 1,
+            "param:voice_opacity": 0
+          },
+          "position": {
+            "x": 20,
+            "y": 120
+          },
+          "shaderMaterial": {
+            "parameters": [
+              {
+                "id": "resource:intelli_tex",
+                "kind": "resource",
+                "name": "intelli_tex",
+                "portType": "sampledTexture",
+                "samplerParameter": "intelli_sampler",
+                "textureParameter": "intelli_tex",
+                "wgslType": "texture_2d<f32> + sampler"
+              },
+              {
+                "id": "param:frame_size_px",
+                "kind": "value",
+                "name": "frame_size_px",
+                "portType": "vector2",
+                "wgslType": "vec2f"
+              },
+              {
+                "id": "param:light_bloom_size_px",
+                "kind": "value",
+                "name": "light_bloom_size_px",
+                "portType": "vector2",
+                "wgslType": "vec2f"
+              },
+              {
+                "id": "param:corner_radius_px",
+                "kind": "value",
+                "name": "corner_radius_px",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:density",
+                "kind": "value",
+                "name": "density",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "arrayLength": 16,
+                "id": "param:human_voice_energies",
+                "kind": "value",
+                "name": "human_voice_energies",
+                "portType": "float[]",
+                "wgslType": "array<f32,16>"
+              },
+              {
+                "id": "param:total_energy",
+                "kind": "value",
+                "name": "total_energy",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:voice_opacity",
+                "kind": "value",
+                "name": "voice_opacity",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:core_glow_opacity",
+                "kind": "value",
+                "name": "core_glow_opacity",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:glow_mask_morph",
+                "kind": "value",
+                "name": "glow_mask_morph",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:light_clip_bloom_progress",
+                "kind": "value",
+                "name": "light_clip_bloom_progress",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:voice_dot_opacity",
+                "kind": "value",
+                "name": "voice_dot_opacity",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:voice_dot_progress",
+                "kind": "value",
+                "name": "voice_dot_progress",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:voice_dot_response",
+                "kind": "value",
+                "name": "voice_dot_response",
+                "portType": "float",
+                "wgslType": "f32"
+              },
+              {
+                "id": "param:voice_dot_color",
+                "kind": "value",
+                "name": "voice_dot_color",
+                "portType": "color",
+                "wgslType": "vec4f"
+              }
+            ],
+            "sourceHash": "f951451c1b8fdadc"
+          },
+          "type": "ShaderMaterial",
+          "wgslOverride": "materials/ShaderMaterial_32.wgsl",
+          "width": 160
+        },
+        {
+          "id": "Vector2Input_39",
+          "label": "LightCanvasSizePx",
+          "params": {
+            "x": 1080,
+            "y": 1080
+          },
+          "position": {
+            "x": -380,
+            "y": -140
+          },
+          "type": "Vector2Input",
+          "width": 160
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "nodeId": "Rect2DGeometry_27",
+            "portId": "geometry"
+          },
+          "id": "edge_19",
+          "to": {
+            "nodeId": "RenderPass_26",
+            "portId": "geometry"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "material"
+          },
+          "id": "edge_21",
+          "to": {
+            "nodeId": "RenderPass_26",
+            "portId": "material"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "IntelligentLight_30",
+            "portId": "pass"
+          },
+          "id": "edge_22",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "resource:intelli_tex"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "Vector2Input_39",
+            "portId": "vector"
+          },
+          "id": "edge_23",
+          "to": {
+            "nodeId": "Rect2DGeometry_27",
+            "portId": "size"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Background",
+      "name": "Group 3",
+      "inputs": [
+        {
+          "id": "gradient_blur_start_y",
+          "name": "GradientBlurStartY",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_end_y",
+          "name": "GradientBlurEndY",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_start_sigma",
+          "name": "GradientBlurStartSigma",
+          "type": "float"
+        },
+        {
+          "id": "gradient_blur_end_sigma",
+          "name": "GradientBlurEndSigma",
+          "type": "float"
+        },
+        {
+          "id": "darken_alpha",
+          "name": "BackgroundDarkenAlpha",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "gradient_blur_start_y",
+          "to": {
+            "nodeId": "MathClosure_15",
+            "portId": "dynamic_1783677743832_2"
+          }
+        },
+        {
+          "groupPortId": "gradient_blur_end_y",
+          "to": {
+            "nodeId": "MathClosure_15",
+            "portId": "dynamic_1783677760237_3"
+          }
+        },
+        {
+          "groupPortId": "gradient_blur_start_sigma",
+          "to": {
+            "nodeId": "MathClosure_15",
+            "portId": "dynamic_1783677787424_4"
+          }
+        },
+        {
+          "groupPortId": "gradient_blur_end_sigma",
+          "to": {
+            "nodeId": "MathClosure_15",
+            "portId": "dynamic_1783677793362_5"
+          }
+        },
+        {
+          "groupPortId": "darken_alpha",
+          "to": {
+            "nodeId": "ShaderMaterial_BackgroundDarken",
+            "portId": "param:darken_alpha"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "RenderPass_BackgroundDarken",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "GroupInstance_10",
+          "inputBindings": [],
+          "inputs": [],
+          "label": "Group",
+          "outputs": [
+            {
+              "id": "out_0",
+              "name": "Output 1",
+              "type": "color"
+            }
+          ],
+          "params": {
+            "groupId": "BackgroundTexture"
+          },
+          "position": {
+            "x": 360,
+            "y": 0
+          },
+          "type": "GroupInstance",
+          "width": 160
+        },
+        {
+          "id": "GradientBlur_11",
+          "label": "Gradient Blur",
+          "params": {
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "position": {
+            "x": 560,
+            "y": 0
+          },
+          "type": "GradientBlur",
+          "width": 160
+        },
+        {
+          "id": "FragCoord_14",
+          "label": "FragCoord",
+          "params": {},
+          "position": {
+            "x": 0,
+            "y": 80
+          },
+          "type": "FragCoord",
+          "width": 160
+        },
+        {
+          "id": "MathClosure_15",
+          "inputBindings": [
+            {
+              "label": "xy",
+              "portId": "dynamic_1783677667132_1",
+              "sourceBinding": {
+                "nodeId": "FragCoord_14",
+                "outputLabel": "XY",
+                "outputPortId": "xy"
+              },
+              "type": "vector2",
+              "variableName": "xy"
+            },
+            {
+              "label": "start",
+              "portId": "dynamic_1783677743832_2",
+              "sourceBinding": {
+                "nodeId": "FloatInput_16",
+                "outputLabel": "Value",
+                "outputPortId": "value"
+              },
+              "type": "float",
+              "variableName": "start"
+            },
+            {
+              "label": "end",
+              "portId": "dynamic_1783677760237_3",
+              "sourceBinding": {
+                "nodeId": "FloatInput_17",
+                "outputLabel": "Value",
+                "outputPortId": "value"
+              },
+              "type": "float",
+              "variableName": "end"
+            },
+            {
+              "label": "startSigma",
+              "portId": "dynamic_1783677787424_4",
+              "sourceBinding": {
+                "nodeId": "FloatInput_18",
+                "outputLabel": "Value",
+                "outputPortId": "value"
+              },
+              "type": "float",
+              "variableName": "startSigma"
+            },
+            {
+              "label": "endSigma",
+              "portId": "dynamic_1783677793362_5",
+              "sourceBinding": {
+                "nodeId": "FloatInput_19",
+                "outputLabel": "Value",
+                "outputPortId": "value"
+              },
+              "type": "float",
+              "variableName": "endSigma"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "dynamic_1783677667132_1",
+              "name": "xy",
+              "type": "vector2"
+            },
+            {
+              "id": "dynamic_1783677743832_2",
+              "name": "start",
+              "type": "float"
+            },
+            {
+              "id": "dynamic_1783677760237_3",
+              "name": "end",
+              "type": "float"
+            },
+            {
+              "id": "dynamic_1783677787424_4",
+              "name": "startSigma",
+              "type": "float"
+            },
+            {
+              "id": "dynamic_1783677793362_5",
+              "name": "endSigma",
+              "type": "float"
+            }
+          ],
+          "label": "Math Closure",
+          "outputs": [
+            {
+              "id": "output",
+              "name": "Output",
+              "type": "float"
+            }
+          ],
+          "params": {
+            "_uiCollapsedFields": [
+              "sec:source"
+            ],
+            "source": "output = mix(\n  startSigma,\n  endSigma,\n  smoothstep(start, end, xy.y)\n);"
+          },
+          "position": {
+            "x": 360,
+            "y": 80
+          },
+          "type": "MathClosure",
+          "width": 160
+        },
+        {
+          "id": "ShaderMaterial_BackgroundDarken",
+          "type": "ShaderMaterial",
+          "position": {
+            "x": 760,
+            "y": 0
+          },
+          "label": "Background Darken Material",
+          "params": {
+            "param:darken_alpha": 0.3
+          },
+          "inputs": [
+            {
+              "id": "resource:content_tex",
+              "name": "content_tex",
+              "type": "sampledTexture"
+            },
+            {
+              "id": "param:darken_alpha",
+              "name": "darken_alpha",
+              "type": "float"
+            }
+          ],
+          "inputBindings": [
+            {
+              "portId": "resource:content_tex",
+              "label": "content_tex",
+              "variableName": "content_tex",
+              "type": "sampledTexture"
+            },
+            {
+              "portId": "param:darken_alpha",
+              "label": "darken_alpha",
+              "variableName": "darken_alpha",
+              "type": "float"
+            }
+          ],
+          "wgslOverride": "materials/ShaderMaterial_BackgroundDarken.wgsl",
+          "shaderMaterial": {
+            "sourceHash": "3666e231cfa012ce",
+            "parameters": [
+              {
+                "id": "resource:content_tex",
+                "name": "content_tex",
+                "kind": "resource",
+                "portType": "sampledTexture",
+                "wgslType": "texture_2d<f32> + sampler",
+                "textureParameter": "content_tex",
+                "samplerParameter": "content_sampler"
+              },
+              {
+                "id": "param:darken_alpha",
+                "name": "darken_alpha",
+                "kind": "value",
+                "portType": "float",
+                "wgslType": "f32"
+              }
+            ]
+          }
+        },
+        {
+          "id": "Rect2DGeometry_BackgroundDarken",
+          "type": "Rect2DGeometry",
+          "position": {
+            "x": 560,
+            "y": 180
+          },
+          "label": "Background Darken Geometry",
+          "params": {}
+        },
+        {
+          "id": "RenderPass_BackgroundDarken",
+          "type": "RenderPass",
+          "position": {
+            "x": 980,
+            "y": 0
+          },
+          "label": "Background Darken Pass",
+          "params": {
+            "name": "Render Pass",
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "src_factor": "one",
+            "dst_factor": "one-minus-src-alpha",
+            "src_alpha_factor": "one",
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "msaaSampleCount": 1,
+            "culling": "none",
+            "depthTest": false
+          }
+        },
+        {
+          "id": "Vector2Input_BackgroundSize",
+          "type": "Vector2Input",
+          "position": {
+            "x": 320,
+            "y": 280
+          },
+          "label": "Background Size",
+          "params": {
+            "x": 1080,
+            "y": 2400
+          }
+        },
+        {
+          "id": "Vector2Input_BackgroundPosition",
+          "type": "Vector2Input",
+          "position": {
+            "x": 320,
+            "y": 360
+          },
+          "label": "Background Position",
+          "params": {
+            "x": 540,
+            "y": 1200
+          }
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "nodeId": "GroupInstance_10",
+            "portId": "out_0"
+          },
+          "id": "edge_1",
+          "to": {
+            "nodeId": "GradientBlur_11",
+            "portId": "source"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "FragCoord_14",
+            "portId": "xy"
+          },
+          "id": "edge_3",
+          "to": {
+            "nodeId": "MathClosure_15",
+            "portId": "dynamic_1783677667132_1"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "MathClosure_15",
+            "portId": "output"
+          },
+          "id": "edge_4",
+          "to": {
+            "nodeId": "GradientBlur_11",
+            "portId": "mask"
+          }
+        },
+        {
+          "id": "edge_background_blur_to_darken",
+          "from": {
+            "nodeId": "GradientBlur_11",
+            "portId": "output"
+          },
+          "to": {
+            "nodeId": "ShaderMaterial_BackgroundDarken",
+            "portId": "resource:content_tex"
+          }
+        },
+        {
+          "id": "edge_background_darken_size",
+          "from": {
+            "nodeId": "Vector2Input_BackgroundSize",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "Rect2DGeometry_BackgroundDarken",
+            "portId": "size"
+          }
+        },
+        {
+          "id": "edge_background_darken_position",
+          "from": {
+            "nodeId": "Vector2Input_BackgroundPosition",
+            "portId": "vector"
+          },
+          "to": {
+            "nodeId": "Rect2DGeometry_BackgroundDarken",
+            "portId": "position"
+          }
+        },
+        {
+          "id": "edge_background_darken_material",
+          "from": {
+            "nodeId": "ShaderMaterial_BackgroundDarken",
+            "portId": "material"
+          },
+          "to": {
+            "nodeId": "RenderPass_BackgroundDarken",
+            "portId": "material"
+          }
+        },
+        {
+          "id": "edge_background_darken_geometry",
+          "from": {
+            "nodeId": "Rect2DGeometry_BackgroundDarken",
+            "portId": "geometry"
+          },
+          "to": {
+            "nodeId": "RenderPass_BackgroundDarken",
+            "portId": "geometry"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GlassComponent",
+      "name": "Group 4",
+      "inputs": [
+        {
+          "id": "in_0",
+          "name": "Background",
+          "type": "pass"
+        },
+        {
+          "id": "in_1",
+          "name": "Size",
+          "type": "vector2"
+        },
+        {
+          "id": "in_2",
+          "name": "Position",
+          "type": "vector2"
+        },
+        {
+          "id": "in_3",
+          "name": "Radius",
+          "type": "float"
+        },
+        {
+          "id": "in_4",
+          "name": "Alpha",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_0",
+          "name": "Pass",
+          "type": "pass"
+        }
+      ],
+      "inputBindings": [
+        {
+          "groupPortId": "in_0",
+          "to": {
+            "nodeId": "GlassMaterial_20",
+            "portId": "uBgTex"
+          }
+        },
+        {
+          "groupPortId": "in_1",
+          "to": {
+            "nodeId": "Rect2DGeometry_22",
+            "portId": "size"
+          }
+        },
+        {
+          "groupPortId": "in_2",
+          "to": {
+            "nodeId": "Rect2DGeometry_22",
+            "portId": "position"
+          }
+        },
+        {
+          "groupPortId": "in_3",
+          "to": {
+            "nodeId": "GlassMaterial_20",
+            "portId": "uGeoPxRadius"
+          }
+        },
+        {
+          "groupPortId": "in_4",
+          "to": {
+            "nodeId": "GlassMaterial_20",
+            "portId": "uAlpha"
+          }
+        }
+      ],
+      "outputBindings": [
+        {
+          "groupPortId": "out_0",
+          "from": {
+            "nodeId": "RenderPass_21",
+            "portId": "pass"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "GlassMaterial_20",
+          "label": "Glass Material",
+          "params": {
+            "_uiCollapsedFields": [],
+            "uAlpha": 1,
+            "uBgColorBrightness": 0,
+            "uBgColorSaturation": 1,
+            "uBionicBurn": 1,
+            "uBlendLuminanceAmount": 1,
+            "uBlendLuminanceValues": [
+              0.5040672704193048,
+              0.4963276574079112,
+              0.872433827315481,
+              1.2011755721823536
+            ],
+            "uBlendSaturation": 1,
+            "uDirectionalLightAngleRange": 0.32,
+            "uDirectionalLightDirection": {
+              "x": 0.5,
+              "y": -0.7,
+              "z": 0
+            },
+            "uDirectionalLightIntensity": 0.5,
+            "uDirectionalLightOppositeIntensity": 0.4,
+            "uGeoPxRadius": 30,
+            "uInnerBottom": 0,
+            "uInnerColorMix": 0,
+            "uInnerColorPow": 1,
+            "uInnerColorWhite": 0,
+            "uInnerGlassColor": [
+              1,
+              1,
+              1,
+              0.2
+            ],
+            "uPressLightCenterFall": 0,
+            "uPressLightCenterPeak": 0,
+            "uPressLightCenterStrength": 0,
+            "uPressRingStrength": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "uReflectLighten": 0.5,
+            "uReflectStrength": 0.5,
+            "uReflectionExtend": 0,
+            "uReflectionExtendColor": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "uRefractBlurScale": 1,
+            "uRefractIorIOR": 1.5,
+            "uShapeEdgePow": 4,
+            "uShapeEdgePx": 30,
+            "uShapeReflectOffsetPx": 0,
+            "uShapeThicknessPx": 50
+          },
+          "position": {
+            "x": 200,
+            "y": 140
+          },
+          "type": "GlassMaterial",
+          "width": 202
+        },
+        {
+          "id": "RenderPass_21",
+          "label": "Render Pass",
+          "params": {
+            "blend_preset": "premul_alpha",
+            "blendfunc": "add",
+            "camera": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1
+            ],
+            "culling": "none",
+            "depthTest": false,
+            "dst_alpha_factor": "one-minus-src-alpha",
+            "dst_factor": "one-minus-src-alpha",
+            "msaaSampleCount": 1,
+            "name": "Render Pass",
+            "src_alpha_factor": "one",
+            "src_factor": "one"
+          },
+          "position": {
+            "x": 560,
+            "y": 0
+          },
+          "type": "RenderPass",
+          "width": 160
+        },
+        {
+          "id": "Rect2DGeometry_22",
+          "label": "2D Rect",
+          "params": {
+            "radius": 0,
+            "smooth": 1
+          },
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "type": "Rect2DGeometry",
+          "width": 160
+        }
+      ],
+      "connections": [
+        {
+          "from": {
+            "nodeId": "GlassMaterial_20",
+            "portId": "material"
+          },
+          "id": "edge_9",
+          "to": {
+            "nodeId": "RenderPass_21",
+            "portId": "material"
+          }
+        },
+        {
+          "from": {
+            "nodeId": "Rect2DGeometry_22",
+            "portId": "geometry"
+          },
+          "id": "edge_10",
+          "to": {
+            "nodeId": "RenderPass_21",
+            "portId": "geometry"
           }
         }
       ]
@@ -1351,125 +2965,1900 @@
   },
   "assets": {
     "0a00dc1303fe": {
-      "path": "assets/0a00dc1303fe.png",
-      "originalName": "launcher.png",
       "mimeType": "image/png",
+      "originalName": "launcher.png",
+      "path": "assets/0a00dc1303fe.png",
       "size": 2689787
     },
     "0e7827174088": {
-      "path": "assets/0e7827174088.png",
-      "originalName": "setting-dark.png",
       "mimeType": "image/png",
+      "originalName": "setting-dark.png",
+      "path": "assets/0e7827174088.png",
       "size": 470628
     },
     "17e95ecc3c30": {
-      "path": "assets/17e95ecc3c30.png",
-      "originalName": "calendar-dark.png",
       "mimeType": "image/png",
+      "originalName": "calendar-dark.png",
+      "path": "assets/17e95ecc3c30.png",
       "size": 196118
     },
     "2ed590c9f2c5": {
-      "path": "assets/2ed590c9f2c5.png",
-      "originalName": "album-dark.png",
       "mimeType": "image/png",
+      "originalName": "album-dark.png",
+      "path": "assets/2ed590c9f2c5.png",
       "size": 687165
     },
     "2f1de3bd307b": {
-      "path": "assets/2f1de3bd307b.png",
-      "originalName": "album-light.png",
       "mimeType": "image/png",
+      "originalName": "album-light.png",
+      "path": "assets/2f1de3bd307b.png",
       "size": 588586
     },
     "4e3dfb4b08c7": {
-      "path": "assets/4e3dfb4b08c7.png",
-      "originalName": "calendar-light.png",
       "mimeType": "image/png",
+      "originalName": "calendar-light.png",
+      "path": "assets/4e3dfb4b08c7.png",
       "size": 215617
     },
     "62fb14427cc7": {
-      "path": "assets/62fb14427cc7.png",
-      "originalName": "setting-light.png",
       "mimeType": "image/png",
+      "originalName": "setting-light.png",
+      "path": "assets/62fb14427cc7.png",
       "size": 480117
     },
-    "d9ac3045086f": {
-      "path": "assets/d9ac3045086f.png",
-      "originalName": "weather.png",
+    "9d8125d0f6eb": {
       "mimeType": "image/png",
+      "originalName": "input_bar_ui.png",
+      "path": "assets/9d8125d0f6eb.png",
+      "size": 9975
+    },
+    "d9ac3045086f": {
+      "mimeType": "image/png",
+      "originalName": "weather.png",
+      "path": "assets/d9ac3045086f.png",
       "size": 830797
     }
   },
   "stateMachine": {
     "id": "sm_mrerc38a_2",
+    "initialStateId": "st_mrerv8z2_3",
+    "motionGraphs": [
+      {
+        "connections": [],
+        "id": "mg_tr_idle_to_listening",
+        "inputBindings": [
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_40:value",
+            "to": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_41:value",
+            "to": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_42:value",
+            "to": {
+              "nodeId": "spring_input_bar_ui_opacity",
+              "portId": "value"
+            }
+          }
+        ],
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "name": "Idle → Listening Motion",
+        "nodes": [
+          {
+            "bounce": 0.15,
+            "delay": 0,
+            "duration": 0.25,
+            "id": "spring_any",
+            "label": "Any",
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_end_sigma",
+            "label": "GradientBlurEndSigma",
+            "position": {
+              "x": 0,
+              "y": 320
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_start_sigma",
+            "label": "GradientBlurStartSigma",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.1,
+            "delay": 0,
+            "duration": 0.3,
+            "id": "spring_input_bar_ui_opacity",
+            "label": "InputBarUiOpacity",
+            "position": {
+              "x": 0,
+              "y": 480
+            },
+            "type": "spring"
+          }
+        ],
+        "outputBindings": [
+          {
+            "from": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            },
+            "motionPortId": "*"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_40:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_41:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_ui_opacity",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_42:value"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "passthroughBindings": [],
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        }
+      },
+      {
+        "connections": [],
+        "id": "mg_tr_mrerwa4r_7",
+        "inputBindings": [
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "instant_mrudelg0_2",
+              "portId": "value"
+            }
+          }
+        ],
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "name": "Entry → Off Motion",
+        "nodes": [
+          {
+            "id": "instant_mrudelg0_2",
+            "label": "Instant",
+            "position": {
+              "x": -40,
+              "y": 0
+            },
+            "type": "instant"
+          }
+        ],
+        "outputBindings": [
+          {
+            "from": {
+              "nodeId": "instant_mrudelg0_2",
+              "portId": "value"
+            },
+            "motionPortId": "*"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "passthroughBindings": []
+      },
+      {
+        "connections": [],
+        "id": "mg_tr_mrery48v_a",
+        "inputBindings": [
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_40:value",
+            "to": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_41:value",
+            "to": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "spring_input_bar_size_x",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "spring_input_bar_size_y",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_36:y",
+            "to": {
+              "nodeId": "spring_input_bar_position_y",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_38:x",
+            "to": {
+              "nodeId": "spring_light_bloom_size_x",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_38:y",
+            "to": {
+              "nodeId": "spring_light_bloom_size_y",
+              "portId": "value"
+            }
+          }
+        ],
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "name": "Off → Idle Motion",
+        "nodes": [
+          {
+            "bounce": 0.15,
+            "delay": 0,
+            "duration": 0.25,
+            "id": "spring_any",
+            "label": "Any",
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_end_sigma",
+            "label": "GradientBlurEndSigma",
+            "position": {
+              "x": 0,
+              "y": 320
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_start_sigma",
+            "label": "GradientBlurStartSigma",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.25,
+            "delay": 0,
+            "duration": 0.3,
+            "id": "spring_input_bar_position_y",
+            "label": "InputBarPositionPx.y",
+            "position": {
+              "x": 0,
+              "y": 800
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_input_bar_size_x",
+            "label": "InputBarSizePx.x",
+            "position": {
+              "x": 0,
+              "y": 480
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_input_bar_size_y",
+            "label": "InputBarSizePx.y",
+            "position": {
+              "x": 0,
+              "y": 640
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_light_bloom_size_x",
+            "label": "LightBloomSizePx.x",
+            "position": {
+              "x": 0,
+              "y": 960
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_light_bloom_size_y",
+            "label": "LightBloomSizePx.y",
+            "position": {
+              "x": 0,
+              "y": 1120
+            },
+            "type": "spring"
+          }
+        ],
+        "outputBindings": [
+          {
+            "from": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            },
+            "motionPortId": "*"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_40:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_41:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_size_x",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_35:x"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_size_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_35:y"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_position_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_36:y"
+          },
+          {
+            "from": {
+              "nodeId": "spring_light_bloom_size_x",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_38:x"
+          },
+          {
+            "from": {
+              "nodeId": "spring_light_bloom_size_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_38:y"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "passthroughBindings": [],
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        }
+      },
+      {
+        "connections": [],
+        "id": "mg_tr_mreryyrx_b",
+        "inputBindings": [
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "timeline",
+              "portId": "value"
+            }
+          }
+        ],
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "name": "Idle → Off Motion",
+        "nodes": [
+          {
+            "delay": 0,
+            "duration": 0.3,
+            "id": "timeline",
+            "label": "Ease In Out",
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "type": "ease-in-out"
+          }
+        ],
+        "outputBindings": [
+          {
+            "from": {
+              "nodeId": "timeline",
+              "portId": "value"
+            },
+            "motionPortId": "*"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "passthroughBindings": []
+      },
+      {
+        "connections": [],
+        "id": "mg_tr_off_to_listening",
+        "inputBindings": [
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_40:value",
+            "to": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_41:value",
+            "to": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "spring_input_bar_size_x",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "spring_input_bar_size_y",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_36:y",
+            "to": {
+              "nodeId": "spring_input_bar_position_y",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_38:x",
+            "to": {
+              "nodeId": "spring_light_bloom_size_x",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "Vector2Input_38:y",
+            "to": {
+              "nodeId": "spring_light_bloom_size_y",
+              "portId": "value"
+            }
+          }
+        ],
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "name": "Off → Listening Motion",
+        "nodes": [
+          {
+            "bounce": 0.15,
+            "delay": 0,
+            "duration": 0.25,
+            "id": "spring_any",
+            "label": "Any",
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_end_sigma",
+            "label": "GradientBlurEndSigma",
+            "position": {
+              "x": 0,
+              "y": 320
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.55,
+            "id": "spring_blur_start_sigma",
+            "label": "GradientBlurStartSigma",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.25,
+            "delay": 0,
+            "duration": 0.3,
+            "id": "spring_input_bar_position_y",
+            "label": "InputBarPositionPx.y",
+            "position": {
+              "x": 0,
+              "y": 800
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_input_bar_size_x",
+            "label": "InputBarSizePx.x",
+            "position": {
+              "x": 0,
+              "y": 480
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_input_bar_size_y",
+            "label": "InputBarSizePx.y",
+            "position": {
+              "x": 0,
+              "y": 640
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_light_bloom_size_x",
+            "label": "LightBloomSizePx.x",
+            "position": {
+              "x": 0,
+              "y": 960
+            },
+            "type": "spring"
+          },
+          {
+            "bounce": 0.2,
+            "delay": 0,
+            "duration": 0.4,
+            "id": "spring_light_bloom_size_y",
+            "label": "LightBloomSizePx.y",
+            "position": {
+              "x": 0,
+              "y": 1120
+            },
+            "type": "spring"
+          }
+        ],
+        "outputBindings": [
+          {
+            "from": {
+              "nodeId": "spring_any",
+              "portId": "value"
+            },
+            "motionPortId": "*"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_start_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_40:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_blur_end_sigma",
+              "portId": "value"
+            },
+            "motionPortId": "FloatInput_41:value"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_size_x",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_35:x"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_size_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_35:y"
+          },
+          {
+            "from": {
+              "nodeId": "spring_input_bar_position_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_36:y"
+          },
+          {
+            "from": {
+              "nodeId": "spring_light_bloom_size_x",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_38:x"
+          },
+          {
+            "from": {
+              "nodeId": "spring_light_bloom_size_y",
+              "portId": "value"
+            },
+            "motionPortId": "Vector2Input_38:y"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "InputBarCornerRadiusPx",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_38:value",
+            "name": "GradientBlurStartY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_39:value",
+            "name": "GradientBlurEndY",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_40:value",
+            "name": "GradientBlurStartSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_41:value",
+            "name": "GradientBlurEndSigma",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_42:value",
+            "name": "InputBarUiOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_43:value",
+            "name": "InputBarOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_44:value",
+            "name": "BackgroundDarkenAlpha",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_45:value",
+            "name": "VoiceOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_46:value",
+            "name": "CoreGlowOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_47:value",
+            "name": "GlowMaskMorph",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_48:value",
+            "name": "VoiceDotOpacity",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_49:value",
+            "name": "VoiceDotProgress",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_50:value",
+            "name": "VoiceDotResponse",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "InputBarSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "InputBarSizePx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:x",
+            "name": "InputBarPositionPx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_36:y",
+            "name": "InputBarPositionPx.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:x",
+            "name": "LightBloomSizePx.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_38:y",
+            "name": "LightBloomSizePx.y",
+            "type": "float"
+          }
+        ],
+        "passthroughBindings": [],
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        }
+      }
+    ],
     "name": "State Machine",
     "states": [
       {
         "id": "st_mrerv8z2_3",
         "name": "Entry",
+        "parameterOverrides": {},
         "position": {
           "x": 0,
           "y": -80
         },
-        "parameterOverrides": {},
         "type": "entryState"
       },
       {
         "id": "st_mrerv8z2_4",
         "name": "Any",
+        "parameterOverrides": {},
         "position": {
           "x": 0,
           "y": -40
         },
-        "parameterOverrides": {},
         "type": "anyState"
       },
       {
         "id": "st_mrerv8z2_5",
         "name": "Exit",
+        "parameterOverrides": {},
         "position": {
           "x": 0,
           "y": 0
         },
-        "parameterOverrides": {},
         "type": "exitState"
       },
       {
         "id": "st_mrerw3qg_6",
         "name": "Off",
+        "parameterOverrides": {
+          "FloatInput_37:value": 6,
+          "FloatInput_38:value": 480,
+          "FloatInput_39:value": 0,
+          "FloatInput_40:value": 0,
+          "FloatInput_41:value": 0,
+          "FloatInput_42:value": 0,
+          "FloatInput_43:value": 0,
+          "FloatInput_44:value": 0,
+          "FloatInput_45:value": 0.18,
+          "FloatInput_46:value": 0.18,
+          "FloatInput_47:value": 0.18,
+          "FloatInput_48:value": 0,
+          "FloatInput_49:value": 0,
+          "FloatInput_50:value": 0,
+          "Vector2Input_35:x": 216,
+          "Vector2Input_35:y": 12,
+          "Vector2Input_36:x": 540,
+          "Vector2Input_36:y": 18,
+          "Vector2Input_38:x": 216,
+          "Vector2Input_38:y": 12
+        },
         "position": {
           "x": 300,
           "y": -80
-        },
-        "parameterOverrides": {
-          "FloatInput_25:value": 60,
-          "Vector2Input_24:x": 540,
-          "Vector2Input_24:y": -168,
-          "Vector2Input_23:x": 1008,
-          "Vector2Input_23:y": 168,
-          "FloatInput_19:value": 0,
-          "FloatInput_17:value": 0,
-          "FloatInput_18:value": 0,
-          "FloatInput_16:value": 400
         },
         "type": "animationState"
       },
       {
         "id": "st_mrerxocx_8",
         "name": "Idle",
+        "parameterOverrides": {
+          "FloatInput_37:value": 60,
+          "FloatInput_38:value": 480,
+          "FloatInput_39:value": 0,
+          "FloatInput_40:value": 0,
+          "FloatInput_41:value": 512,
+          "FloatInput_42:value": 1,
+          "FloatInput_43:value": 1,
+          "FloatInput_44:value": 0.3,
+          "FloatInput_45:value": 0,
+          "FloatInput_46:value": 1,
+          "FloatInput_47:value": 1,
+          "FloatInput_48:value": 0,
+          "FloatInput_49:value": 0,
+          "FloatInput_50:value": 0,
+          "Vector2Input_35:x": 1008,
+          "Vector2Input_35:y": 168,
+          "Vector2Input_36:x": 540,
+          "Vector2Input_36:y": 186,
+          "Vector2Input_38:x": 1008,
+          "Vector2Input_38:y": 168
+        },
         "position": {
           "x": 580,
           "y": -80
         },
+        "type": "animationState"
+      },
+      {
+        "id": "st_listening",
+        "name": "Listening",
         "parameterOverrides": {
-          "FloatInput_25:value": 60,
-          "Vector2Input_24:x": 540,
-          "Vector2Input_24:y": 180,
-          "Vector2Input_23:x": 1008,
-          "Vector2Input_23:y": 168,
-          "FloatInput_19:value": 40,
-          "FloatInput_17:value": 0,
-          "FloatInput_18:value": 0,
-          "FloatInput_16:value": 300
+          "FloatInput_37:value": 60,
+          "FloatInput_38:value": 480,
+          "FloatInput_39:value": 0,
+          "FloatInput_40:value": 0,
+          "FloatInput_41:value": 512,
+          "FloatInput_42:value": 0,
+          "FloatInput_43:value": 1,
+          "FloatInput_44:value": 0.3,
+          "FloatInput_45:value": 0,
+          "FloatInput_46:value": 1,
+          "FloatInput_47:value": 0,
+          "FloatInput_48:value": 1,
+          "FloatInput_49:value": 1,
+          "FloatInput_50:value": 1,
+          "Vector2Input_35:x": 1008,
+          "Vector2Input_35:y": 168,
+          "Vector2Input_36:x": 540,
+          "Vector2Input_36:y": 186,
+          "Vector2Input_38:x": 1008,
+          "Vector2Input_38:y": 168
+        },
+        "position": {
+          "x": 440,
+          "y": 100
         },
         "type": "animationState"
       }
@@ -1477,119 +4866,51 @@
     "transitions": [
       {
         "id": "tr_mrerwa4r_7",
+        "motionGraphId": "mg_tr_mrerwa4r_7",
         "source": "st_mrerv8z2_3",
-        "target": "st_mrerw3qg_6",
-        "trigger": {
-          "type": "event",
-          "eventName": "mouseup"
-        },
-        "motionGraphId": "mg_tr_mrerwa4r_7"
+        "target": "st_mrerw3qg_6"
       },
       {
         "id": "tr_mrery48v_a",
+        "motionGraphId": "mg_tr_mrery48v_a",
         "source": "st_mrerw3qg_6",
         "target": "st_mrerxocx_8",
         "trigger": {
-          "type": "event",
-          "eventName": "mouseup"
-        },
-        "motionGraphId": "mg_tr_mrery48v_a"
+          "eventName": "mouseup",
+          "type": "event"
+        }
       },
       {
         "id": "tr_mreryyrx_b",
+        "motionGraphId": "mg_tr_mreryyrx_b",
         "source": "st_mrerxocx_8",
         "target": "st_mrerw3qg_6",
         "trigger": {
-          "type": "event",
-          "eventName": "mouseup"
-        },
-        "motionGraphId": "mg_tr_mreryyrx_b"
-      }
-    ],
-    "motionGraphs": [
-      {
-        "id": "mg_tr_mrerwa4r_7",
-        "name": "Instant Motion",
-        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "nodes": [
-          {
-            "id": "timeline",
-            "type": "linear",
-            "position": { "x": 0, "y": 0 },
-            "duration": 0,
-            "delay": 0
-          }
-        ],
-        "connections": [],
-        "inputBindings": [
-          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "outputBindings": [
-          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "passthroughBindings": []
+          "eventName": "mouseup",
+          "type": "event"
+        }
       },
       {
-        "id": "mg_tr_mrery48v_a",
-        "name": "Timeline Motion",
-        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "nodes": [
-          {
-            "id": "timeline",
-            "type": "ease-in-out",
-            "position": { "x": 0, "y": 0 },
-            "duration": 0.3,
-            "delay": 0
-          }
-        ],
-        "connections": [],
-        "inputBindings": [
-          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "outputBindings": [
-          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "passthroughBindings": []
+        "id": "tr_off_to_listening",
+        "motionGraphId": "mg_tr_off_to_listening",
+        "source": "st_mrerw3qg_6",
+        "target": "st_listening",
+        "trigger": {
+          "eventName": "mousedown",
+          "type": "event"
+        }
       },
       {
-        "id": "mg_tr_mreryyrx_b",
-        "name": "Timeline Motion",
-        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "nodes": [
-          {
-            "id": "timeline",
-            "type": "ease-in-out",
-            "position": { "x": 0, "y": 0 },
-            "duration": 0.3,
-            "delay": 0
-          }
-        ],
-        "connections": [],
-        "inputBindings": [
-          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "outputBindings": [
-          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
-        ],
-        "passthroughBindings": []
+        "id": "tr_idle_to_listening",
+        "motionGraphId": "mg_tr_idle_to_listening",
+        "source": "st_mrerxocx_8",
+        "target": "st_listening",
+        "trigger": {
+          "eventName": "mousedown",
+          "type": "event"
+        }
       }
     ],
-    "initialStateId": "st_mrerv8z2_3",
     "mutations": []
-  },
-  "passTargetSizes": {
-    "IntelligentLight_30": {
-      "passName": "sys.ilight.IntelligentLight_30.upsample.pass",
-      "nodeId": "IntelligentLight_30",
-      "nodeType": "IntelligentLight",
-      "targetTexture": "sys.ilight.IntelligentLight_30.out",
-      "targetSize": [
-        1080,
-        2400
-      ]
-    }
   }
 }

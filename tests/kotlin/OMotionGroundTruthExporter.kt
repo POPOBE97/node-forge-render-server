@@ -276,6 +276,11 @@ private fun export(output: File) {
             initialVelocity = 4f,
             retargetFrame = 10,
         ),
+        Scenario("listening_any_60hz", 0.25f, 0.15f, repeated(1f / 60f, 240)),
+        Scenario("listening_blur_60hz", 0.55f, 0.20f, repeated(1f / 60f, 300)),
+        Scenario("listening_position_60hz", 0.30f, 0.25f, repeated(1f / 60f, 240)),
+        Scenario("listening_size_60hz", 0.40f, 0.20f, repeated(1f / 60f, 240)),
+        Scenario("listening_ui_opacity_60hz", 0.30f, 0.10f, repeated(1f / 60f, 240)),
     )
 
     output.parentFile.mkdirs()

@@ -508,32 +508,59 @@
         "motionGraphId": "mg_tr_mq8aagq1_h"
       }
     ],
+    "initialStateId": "st_mq8a9yv3_c",
     "motionGraphs": [
       {
         "id": "mg_tr_mq8aagq1_h",
-        "name": "Mutation 1 Motion",
-        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
-        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "name": "tr_mq8aagq1_h Motion",
+        "inputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "*",
+            "name": "Any",
+            "type": "any"
+          }
+        ],
         "nodes": [
           {
             "id": "timeline",
             "type": "linear",
-            "position": { "x": 0, "y": 0 },
+            "position": {
+              "x": 0,
+              "y": 0
+            },
             "duration": 0.3,
             "delay": 0
           }
         ],
         "connections": [],
         "inputBindings": [
-          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+          {
+            "motionPortId": "*",
+            "to": {
+              "nodeId": "timeline",
+              "portId": "value"
+            }
+          }
         ],
         "outputBindings": [
-          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+          {
+            "motionPortId": "*",
+            "from": {
+              "nodeId": "timeline",
+              "portId": "value"
+            }
+          }
         ],
         "passthroughBindings": []
       }
     ],
-    "initialStateId": "st_mq8a9yv3_c",
     "mutations": [
       {
         "id": "mutation_mq8aa1sy_f",
@@ -555,6 +582,11 @@
             "type": "float"
           },
           {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
             "id": "mouse.position.x",
             "name": "Mouse Position X",
             "type": "float"
@@ -562,11 +594,6 @@
           {
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
-            "type": "float"
-          },
-          {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
             "type": "float"
           }
         ],
