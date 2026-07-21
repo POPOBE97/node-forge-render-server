@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::Instant;
 
-use crate::state_machine::OverrideKey;
+use crate::state_machine::{MotionChannelDebug, OverrideKey};
 
 /// A single recorded frame of state-machine data.
 #[derive(Debug, Clone)]
@@ -20,8 +20,8 @@ pub struct TimelineFrame {
     pub current_state_id: String,
     /// Active transition id, if transitioning.
     pub active_transition_id: Option<String>,
-    /// Blend factor during transition (0.0 → 1.0).
-    pub transition_blend: Option<f64>,
+    /// Per-property driver diagnostics for the transition motion graph.
+    pub motion_channels: Vec<MotionChannelDebug>,
     /// Transition source state name (resolved at record time).
     pub transition_source_name: Option<String>,
     /// Transition target state name (resolved at record time).
@@ -183,7 +183,7 @@ mod tests {
             scene_time_secs: t,
             current_state_id: "idle".into(),
             active_transition_id: None,
-            transition_blend: None,
+            motion_channels: Vec::new(),
             transition_source_name: None,
             transition_target_name: None,
             state_local_times: BTreeMap::new(),

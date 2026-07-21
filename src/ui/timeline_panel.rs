@@ -404,21 +404,51 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                             label_color,
                                             value_color,
                                         );
-                                        if let Some(blend) = frame.transition_blend {
+                                    }
+                                });
+
+                            // ── Overrides ────────────────────────────
+                            if !frame.motion_channels.is_empty() {
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new("MOTION CHANNELS")
+                                        .font(section_font.clone())
+                                        .color(section_color),
+                                );
+                                ui.add_space(2.0);
+                                egui::Grid::new(grid_id.with("motion_channels"))
+                                    .num_columns(2)
+                                    .min_col_width(70.0)
+                                    .spacing(egui::vec2(12.0, 1.0))
+                                    .show(ui, |ui| {
+                                        for channel in &frame.motion_channels {
+                                            let mut detail = format!(
+                                                "{}  value={:?}  velocity={:?}",
+                                                channel.driver, channel.value, channel.velocity
+                                            );
+                                            if let Some(progress) = channel.timeline_progress {
+                                                detail
+                                                    .push_str(&format!("  timeline={progress:.2}"));
+                                            }
+                                            if let Some(progress) = channel.blending_progress {
+                                                detail.push_str(&format!("  blend={progress:.2}"));
+                                            }
+                                            if channel.completed {
+                                                detail.push_str("  completed");
+                                            }
                                             tooltip_row(
                                                 ui,
-                                                "Blend",
-                                                &format!("{blend:.2}"),
+                                                &channel.key,
+                                                &detail,
                                                 &label_font,
                                                 &value_font,
                                                 label_color,
                                                 value_color,
                                             );
                                         }
-                                    }
-                                });
+                                    });
+                            }
 
-                            // ── Overrides ────────────────────────────
                             if !frame.active_overrides.is_empty() {
                                 ui.add_space(4.0);
                                 ui.label(

@@ -97,6 +97,10 @@ UI helper:
 - Prefer small targeted edits over broad refactors.
 - Keep resource naming stable.
 - Do not update WGSL goldens unless output changes are intentional.
+- Persisted schema changes do not keep compatibility loaders. The canonical archive set is
+  `../node-forge-editor/packages/editor/assets/examples/*.nforge`: upgrade affected examples once,
+  sync the corresponding `tests/cases/*/scene.nforge` fixtures, and delete all migration/fallback
+  code and migration tests before finishing.
 
 ## Tooling
 Node sender:

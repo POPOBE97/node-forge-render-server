@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-20T08:54:03.486Z",
+  "generatedAt": "2026-07-21T07:42:02.693Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -5763,7 +5763,7 @@
         "type": "IntelligentLightDefaultDriver",
         "label": "Intelligent Light Default Driver",
         "category": "Core",
-        "description": "Emit the legacy 11-zone Intelligent Light default motion and default colors",
+        "description": "Emit packed Intelligent Light default positions and colors",
         "inputs": [],
         "outputs": [
           {
@@ -5910,6 +5910,70 @@
       "bool",
       "threshold",
       "compound"
-    ]
+    ],
+    "transitionMotion": {
+      "nodeTypes": [
+        "spring",
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "sine-in",
+        "sine-out",
+        "sine-in-out",
+        "cosine-in",
+        "cosine-out",
+        "cosine-in-out",
+        "instant"
+      ],
+      "anyPropertyKey": "*",
+      "springDefaults": {
+        "duration": 0.45,
+        "bounce": 0.1,
+        "delay": 0
+      },
+      "timelineDefaults": {
+        "duration": 0.3,
+        "delay": 0
+      },
+      "timelineNodeTypes": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "sine-in",
+        "sine-out",
+        "sine-in-out",
+        "cosine-in",
+        "cosine-out",
+        "cosine-in-out"
+      ],
+      "blending": {
+        "ownerNodeTypes": [
+          "linear",
+          "ease-in",
+          "ease-out",
+          "ease-in-out",
+          "sine-in",
+          "sine-out",
+          "sine-in-out",
+          "cosine-in",
+          "cosine-out",
+          "cosine-in-out"
+        ],
+        "optional": true,
+        "type": "tween",
+        "defaults": {
+          "duration": 0.1,
+          "easing": "ease-in-out"
+        },
+        "easing": [
+          "linear",
+          "ease-in",
+          "ease-out",
+          "ease-in-out"
+        ]
+      }
+    }
   }
 }

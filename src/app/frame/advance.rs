@@ -110,7 +110,7 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
                 scene_time_secs: step.scene_time_secs,
                 current_state_id: step.current_state_id.clone(),
                 active_transition_id: step.active_transition_id.clone(),
-                transition_blend: step.transition_blend,
+                motion_channels: step.motion_channels.clone(),
                 transition_source_name: tsrc,
                 transition_target_name: ttgt,
                 state_local_times: step.state_local_times.clone(),
@@ -182,7 +182,7 @@ mod tests {
 
     use super::*;
     use crate::state_machine::types::{
-        AnimationState, AnimationTransition, EasingKind, Position, TransitionCondition,
+        AnimationState, AnimationTransition, Position, TransitionCondition,
     };
 
     fn state(id: &str, state_type: AnimationStateType) -> AnimationState {
@@ -206,7 +206,7 @@ mod tests {
             current_state_id: "entry".into(),
             active_transition_id: active_transition_id.map(str::to_string),
             state_local_times: Default::default(),
-            transition_blend: None,
+            motion_channels: Vec::new(),
             finished: false,
         }
     }
@@ -230,11 +230,10 @@ mod tests {
                     event_name: "mousedown".into(),
                 }),
                 condition: None,
-                delay: 0.0,
-                duration: 0.3,
-                easing: EasingKind::Linear,
+                motion_graph_id: "motion".into(),
             }],
             mutations: Vec::new(),
+            motion_graphs: Vec::new(),
             initial_state_id: Some("entry".into()),
             viewport: None,
         };
@@ -262,11 +261,10 @@ mod tests {
                 target: "mutation".into(),
                 trigger: None,
                 condition: None,
-                delay: 0.0,
-                duration: 0.3,
-                easing: EasingKind::Linear,
+                motion_graph_id: "motion".into(),
             }],
             mutations: Vec::new(),
+            motion_graphs: Vec::new(),
             initial_state_id: Some("entry".into()),
             viewport: None,
         };

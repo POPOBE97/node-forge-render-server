@@ -57,9 +57,10 @@ fn back_pin_pin_compile_and_tick() {
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
-    // Fire mousedown — transition fires (delay + duration = 2.3s total).
+    // Fire mousedown — the logical state changes immediately while the
+    // presentation Timeline continues for delay + duration = 2.3s total.
     let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
-    assert_eq!(result.current_state_id, "st_mmamj2am_3");
+    assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert!(result.active_transition_id.is_some());
 
     // Advance past delay (0.3s) + duration (2.0s) = 2.3s total.
@@ -197,8 +198,19 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
             .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
         Some(&serde_json::json!(444.0))
     );
+    let returning_value = returned
+        .overrides
+        .get(&state_machine::OverrideKey::new("FloatInput_81", "value"))
+        .and_then(serde_json::Value::as_f64)
+        .expect("return Timeline should emit a numeric presentation value");
+    assert!(
+        returning_value > 0.0,
+        "Timeline should not snap to its target"
+    );
+
+    let settled = rt.tick(0.4, &Default::default(), &vec![]);
     assert_eq!(
-        returned
+        settled
             .overrides
             .get(&state_machine::OverrideKey::new("FloatInput_81", "value")),
         Some(&serde_json::json!(0))

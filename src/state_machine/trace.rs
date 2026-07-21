@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsl::SceneDSL;
 
+use super::motion::MotionChannelDebug;
 use super::mutation;
 use super::runtime::TickResult;
 use super::timeline::TickSchedule;
@@ -34,7 +35,7 @@ pub struct AnimationTraceFrame {
     pub state_local_times: BTreeMap<String, f64>,
     pub scene_time_secs: f64,
     pub active_transition_id: Option<String>,
-    pub transition_blend: Option<f64>,
+    pub motion_channels: Vec<MotionChannelDebug>,
     pub finished: bool,
     pub diagnostics: Vec<String>,
     pub values: BTreeMap<String, serde_json::Value>,
@@ -109,7 +110,7 @@ pub fn generate_trace_for_scene_with_events(
                 .collect(),
             scene_time_secs: round_f64(result.scene_time_secs),
             active_transition_id: result.active_transition_id.clone(),
-            transition_blend: result.transition_blend.map(round_f64),
+            motion_channels: result.motion_channels.clone(),
             finished: result.finished,
             diagnostics: result.diagnostics.clone(),
             values: frame_values,

@@ -22,8 +22,8 @@ use proptest::prelude::*;
 use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::dsl::{Metadata, SceneDSL};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EasingKind, MutationDefinition,
-    StateMachine, TransitionCondition,
+    AnimationState, AnimationStateType, AnimationTransition, MutationDefinition, StateMachine,
+    TransitionCondition, TransitionMotionGraph,
 };
 
 /// Build a minimal scene with a state machine that transitions from "entry"
@@ -74,11 +74,10 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
             condition: Some(TransitionCondition::Event {
                 event_name: event_name.to_string(),
             }),
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         }],
         mutations: vec![],
+        motion_graphs: vec![TransitionMotionGraph::instant("instant")],
         initial_state_id: Some("entry".into()),
         viewport: None,
     };
@@ -153,9 +152,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 target: "idle".into(),
                 trigger: None,
                 condition: None,
-                delay: 0.0,
-                duration: 0.0,
-                easing: EasingKind::Linear,
+                motion_graph_id: "motion_entry_idle".into(),
             },
             AnimationTransition {
                 id: "tr_down".into(),
@@ -165,9 +162,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                     event_name: "mousedown".into(),
                 }),
                 condition: None,
-                delay: 0.0,
-                duration: 0.0,
-                easing: EasingKind::Linear,
+                motion_graph_id: "motion_down".into(),
             },
             AnimationTransition {
                 id: "tr_up".into(),
@@ -177,9 +172,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                     event_name: "mouseup".into(),
                 }),
                 condition: None,
-                delay: 0.0,
-                duration: 0.0,
-                easing: EasingKind::Linear,
+                motion_graph_id: "motion_up".into(),
             },
         ],
         mutations: vec![MutationDefinition {
@@ -194,6 +187,11 @@ fn scene_with_press_release_transitions() -> SceneDSL {
             passthrough_bindings: vec![],
             viewport: None,
         }],
+        motion_graphs: vec![
+            TransitionMotionGraph::instant("motion_entry_idle"),
+            TransitionMotionGraph::instant("motion_down"),
+            TransitionMotionGraph::instant("motion_up"),
+        ],
         initial_state_id: Some("entry".into()),
         viewport: None,
     };
@@ -594,8 +592,6 @@ proptest! {
         prop_assert_eq!(a.finished, b.finished, "finished should match");
         prop_assert_eq!(&a.state_local_times, &b.state_local_times,
             "state_local_times should match");
-        prop_assert_eq!(a.transition_blend, b.transition_blend,
-            "transition_blend should match");
         prop_assert_eq!(a.active_transition_id, b.active_transition_id,
             "active_transition_id should match");
     }

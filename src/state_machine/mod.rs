@@ -34,6 +34,7 @@
 //! ```
 
 pub mod easing;
+pub mod motion;
 pub mod mutation;
 pub mod runtime;
 pub mod timeline;
@@ -42,6 +43,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export key types for ergonomic use.
+pub use motion::MotionChannelDebug;
 pub use runtime::{ExternalParams, FiredEvents, StateMachineRuntime, TickResult};
 pub use timeline::{TickSample, TickSchedule, evenly_spaced_samples};
 pub use trace::{

@@ -26,6 +26,7 @@ pub fn validate(sm: &StateMachine) -> Result<()> {
     validate_transition_direction_constraints(sm)?;
     validate_transition_conditions(sm)?;
     validate_mutation_internals(sm)?;
+    validate_motion_graphs(sm)?;
     Ok(())
 }
 
@@ -111,8 +112,17 @@ fn validate_mutation_node_refs(sm: &StateMachine) -> Result<()> {
 
 fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
     let state_ids: HashSet<&str> = sm.states.iter().map(|s| s.id.as_str()).collect();
+    let motion_graph_ids: HashSet<&str> = sm.motion_graphs.iter().map(|g| g.id.as_str()).collect();
+    let mut referenced_motion_graph_ids = HashSet::new();
 
     for t in &sm.transitions {
+        if !referenced_motion_graph_ids.insert(t.motion_graph_id.as_str()) {
+            bail!(
+                "state_machine validation: transition '{}' reuses motion graph '{}'; each transition must own an independent motion graph",
+                t.id,
+                t.motion_graph_id
+            );
+        }
         if !state_ids.contains(t.source.as_str()) {
             bail!(
                 "state_machine validation: transition '{}' source '{}' references missing state",
@@ -127,8 +137,217 @@ fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
                 t.target
             );
         }
+        if !motion_graph_ids.contains(t.motion_graph_id.as_str()) {
+            bail!(
+                "state_machine validation: transition '{}' references missing motion graph '{}'",
+                t.id,
+                t.motion_graph_id
+            );
+        }
     }
 
+    Ok(())
+}
+
+fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
+    let mut graph_ids = HashSet::new();
+    for graph in &sm.motion_graphs {
+        if !graph_ids.insert(graph.id.as_str()) {
+            bail!(
+                "state_machine validation: duplicate transition motion graph id '{}'",
+                graph.id
+            );
+        }
+
+        let node_ids: HashSet<&str> = graph.nodes.iter().map(TransitionMotionNode::id).collect();
+        if node_ids.len() != graph.nodes.len() {
+            bail!(
+                "state_machine validation: transition motion graph '{}' has duplicate node ids",
+                graph.id
+            );
+        }
+        let input_ids: HashSet<&str> = graph.inputs.iter().map(|port| port.id.as_str()).collect();
+        let output_ids: HashSet<&str> = graph.outputs.iter().map(|port| port.id.as_str()).collect();
+        let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut incoming_count: HashMap<&str, usize> =
+            node_ids.iter().map(|node_id| (*node_id, 0)).collect();
+
+        for connection in &graph.connections {
+            if !node_ids.contains(connection.from.node_id.as_str())
+                || !node_ids.contains(connection.to.node_id.as_str())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' connection '{}' references a missing node",
+                    graph.id,
+                    connection.id
+                );
+            }
+            adjacency
+                .entry(connection.from.node_id.as_str())
+                .or_default()
+                .push(connection.to.node_id.as_str());
+            *incoming_count
+                .entry(connection.to.node_id.as_str())
+                .or_default() += 1;
+        }
+        let mut ready: Vec<&str> = incoming_count
+            .iter()
+            .filter_map(|(node_id, count)| (*count == 0).then_some(*node_id))
+            .collect();
+        let mut visited = 0usize;
+        while let Some(node_id) = ready.pop() {
+            visited += 1;
+            for target in adjacency.get(node_id).into_iter().flatten() {
+                let count = incoming_count.get_mut(target).expect("motion node exists");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(target);
+                }
+            }
+        }
+        if visited != node_ids.len() {
+            bail!(
+                "state_machine validation: transition motion graph '{}' contains a cycle",
+                graph.id
+            );
+        }
+        if !graph.connections.is_empty() {
+            bail!(
+                "state_machine validation: transition motion graph '{}' cannot chain timing drivers",
+                graph.id
+            );
+        }
+
+        let mut input_channel_by_node: HashMap<&str, &str> = HashMap::new();
+        for binding in &graph.input_bindings {
+            if !input_ids.contains(binding.port_id.as_str())
+                || !node_ids.contains(binding.to.node_id.as_str())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' has invalid input binding '{}'",
+                    graph.id,
+                    binding.port_id
+                );
+            }
+            if input_channel_by_node
+                .insert(binding.to.node_id.as_str(), binding.port_id.as_str())
+                .is_some()
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' node '{}' has multiple property inputs",
+                    graph.id,
+                    binding.to.node_id
+                );
+            }
+        }
+        let mut covered_outputs = HashSet::new();
+        for binding in &graph.output_bindings {
+            if !output_ids.contains(binding.port_id.as_str())
+                || !node_ids.contains(binding.from.node_id.as_str())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' has invalid output binding '{}'",
+                    graph.id,
+                    binding.port_id
+                );
+            }
+            let input_channel = input_channel_by_node
+                .get(binding.from.node_id.as_str())
+                .copied()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "state_machine validation: transition motion graph '{}' node '{}' has an output without a State In binding",
+                        graph.id,
+                        binding.from.node_id
+                    )
+                })?;
+            if input_channel != binding.port_id {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' crosses property '{}' to '{}'",
+                    graph.id,
+                    input_channel,
+                    binding.port_id
+                );
+            }
+            if !covered_outputs.insert(binding.port_id.as_str()) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
+                    graph.id,
+                    binding.port_id
+                );
+            }
+        }
+        for passthrough in &graph.passthrough_bindings {
+            if !input_ids.contains(passthrough.from_port_id.as_str())
+                || !output_ids.contains(passthrough.to_port_id.as_str())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' has invalid passthrough",
+                    graph.id
+                );
+            }
+            if passthrough.from_port_id != passthrough.to_port_id {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' crosses passthrough properties",
+                    graph.id
+                );
+            }
+            if !covered_outputs.insert(passthrough.to_port_id.as_str()) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
+                    graph.id,
+                    passthrough.to_port_id
+                );
+            }
+        }
+        let has_any_fallback = covered_outputs.contains("*");
+        for output_id in &output_ids {
+            if !has_any_fallback && !covered_outputs.contains(output_id) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' leaves property '{}' uncovered",
+                    graph.id,
+                    output_id
+                );
+            }
+        }
+
+        for node in &graph.nodes {
+            if let Some((_curve, timeline)) = node.timeline() {
+                if !timeline.duration.is_finite() || timeline.duration < 0.0 {
+                    bail!("state_machine validation: timeline duration must be >= 0");
+                }
+                if !timeline.delay.is_finite() || timeline.delay < 0.0 {
+                    bail!("state_machine validation: timeline delay must be >= 0");
+                }
+                if let Some(blending) = &timeline.blending
+                    && (!blending.duration.is_finite() || blending.duration < 0.0)
+                {
+                    bail!("state_machine validation: blending duration must be >= 0");
+                }
+                continue;
+            }
+            match node {
+                TransitionMotionNode::Spring {
+                    duration,
+                    bounce,
+                    delay,
+                    ..
+                } => {
+                    if !duration.is_finite() || *duration <= 0.0 {
+                        bail!("state_machine validation: spring duration must be > 0");
+                    }
+                    if !bounce.is_finite() || !(-1.0..1.0).contains(bounce) {
+                        bail!("state_machine validation: spring bounce must be in (-1, 1)");
+                    }
+                    if !delay.is_finite() || *delay < 0.0 {
+                        bail!("state_machine validation: spring delay must be >= 0");
+                    }
+                }
+                TransitionMotionNode::Instant { .. } => {}
+                _ => unreachable!("timeline motion nodes returned above"),
+            }
+        }
+    }
     Ok(())
 }
 
@@ -355,7 +574,44 @@ mod tests {
             ],
             transitions: vec![],
             mutations: vec![],
+            motion_graphs: vec![instant_motion_graph()],
             initial_state_id: Some("entry".into()),
+            viewport: None,
+        }
+    }
+
+    fn instant_motion_graph() -> TransitionMotionGraph {
+        let port = MutationPort {
+            id: "*".into(),
+            name: Some("Any".into()),
+            port_type: Some("any".into()),
+        };
+        TransitionMotionGraph {
+            id: "instant".into(),
+            name: "Instant".into(),
+            inputs: vec![port.clone()],
+            outputs: vec![port],
+            nodes: vec![TransitionMotionNode::Instant {
+                id: "motion".into(),
+                position: Position::default(),
+                label: None,
+            }],
+            connections: vec![],
+            input_bindings: vec![TransitionMotionInputBinding {
+                port_id: "*".into(),
+                to: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            output_bindings: vec![TransitionMotionOutputBinding {
+                port_id: "*".into(),
+                from: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
             viewport: None,
         }
     }
@@ -363,6 +619,57 @@ mod tests {
     #[test]
     fn minimal_valid() {
         assert!(validate(&minimal_sm()).is_ok());
+    }
+
+    #[test]
+    fn motion_graph_rejects_cross_property_routes() {
+        let mut sm = minimal_sm();
+        let graph = &mut sm.motion_graphs[0];
+        graph.inputs[0].id = "Node:x".into();
+        graph.outputs[0].id = "Node:y".into();
+        graph.input_bindings[0].port_id = "Node:x".into();
+        graph.output_bindings[0].port_id = "Node:y".into();
+
+        let err = validate(&sm).unwrap_err().to_string();
+        assert!(err.contains("crosses property"), "{err}");
+    }
+
+    #[test]
+    fn motion_graph_rejects_cycles() {
+        let mut sm = minimal_sm();
+        let graph = &mut sm.motion_graphs[0];
+        graph.nodes.push(TransitionMotionNode::Instant {
+            id: "motion2".into(),
+            position: Position::default(),
+            label: None,
+        });
+        graph.connections = vec![
+            MutationConnection {
+                id: "a".into(),
+                from: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "motion2".into(),
+                    port_id: "value".into(),
+                },
+            },
+            MutationConnection {
+                id: "b".into(),
+                from: MutationEndpoint {
+                    node_id: "motion2".into(),
+                    port_id: "value".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            },
+        ];
+
+        let err = validate(&sm).unwrap_err().to_string();
+        assert!(err.contains("contains a cycle"), "{err}");
     }
 
     #[test]
@@ -421,9 +728,7 @@ mod tests {
             target: "s1".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.3,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("exitState"), "{err}");
@@ -446,9 +751,7 @@ mod tests {
             target: "entry".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.3,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("entryState"), "{err}");
@@ -476,12 +779,28 @@ mod tests {
                     param_id: "p".into(),
                 }],
             }),
-            delay: 0.0,
-            duration: 0.3,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("at least 2"), "{err}");
+    }
+
+    #[test]
+    fn transition_motion_graph_cannot_be_shared() {
+        let mut sm = minimal_sm();
+        for id in ["t1", "t2"] {
+            sm.transitions.push(AnimationTransition {
+                id: id.into(),
+                source: "entry".into(),
+                target: "exit".into(),
+                trigger: None,
+                condition: None,
+                motion_graph_id: "instant".into(),
+            });
+        }
+
+        let err = validate(&sm).unwrap_err().to_string();
+        assert!(err.contains("independent motion graph"), "{err}");
     }
 
     #[test]
@@ -538,9 +857,7 @@ mod tests {
             target: "s1".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         sm.mutations.push(mutation);
         let err = validate(&sm).unwrap_err().to_string();

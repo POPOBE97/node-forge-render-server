@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::Result;
 
-use super::easing::ease;
+use super::motion::{MotionChannelDebug, MotionEngine};
 use super::mutation::{self, MutationInputContext, MutationRuntimeState, MutationValue};
 use super::types::*;
 
@@ -36,6 +36,9 @@ pub struct StateMachineRuntime {
     /// Lookup: mutation id → index into `definition.mutations`.
     mutation_index: HashMap<String, usize>,
 
+    /// Lookup: transition motion graph id → index into `definition.motion_graphs`.
+    motion_graph_index: HashMap<String, usize>,
+
     /// Current active state id.
     current_state_id: String,
 
@@ -49,6 +52,9 @@ pub struct StateMachineRuntime {
 
     /// Active transition (if any).
     active_transition: Option<ActiveTransition>,
+
+    /// Per-property physical/timeline presentation drivers.
+    motion_engine: MotionEngine,
 
     /// Latest runtime input snapshot available to mutations.
     runtime_input: RuntimeInputSnapshot,
@@ -70,15 +76,8 @@ pub struct StateMachineRuntime {
 /// Bookkeeping for an in-progress transition.
 #[derive(Debug, Clone)]
 struct ActiveTransition {
-    transition_id: String,
     source_state_id: String,
     target_state_id: String,
-    /// Explicit delay before blend begins (seconds).
-    delay: f64,
-    /// Blend duration (seconds).
-    duration: f64,
-    easing: EasingKind,
-    elapsed: f64,
 }
 
 /// The result of a single `tick` call.
@@ -97,9 +96,6 @@ pub struct TickResult {
     /// The id of the current active state (after this tick).
     pub current_state_id: String,
 
-    /// Blend factor if a transition is in progress (0.0 → 1.0).
-    pub transition_blend: Option<f64>,
-
     /// Scene elapsed time in seconds after this tick.
     pub scene_time_secs: f64,
 
@@ -108,6 +104,9 @@ pub struct TickResult {
 
     /// Active transition id, when transitioning.
     pub active_transition_id: Option<String>,
+
+    /// Per-property driver diagnostics for the debug timeline.
+    pub motion_channels: Vec<MotionChannelDebug>,
 }
 
 /// External parameter state visible to condition evaluation.
@@ -129,6 +128,12 @@ impl StateMachineRuntime {
             .iter()
             .enumerate()
             .map(|(i, m)| (m.id.clone(), i))
+            .collect();
+        let motion_graph_index = definition
+            .motion_graphs
+            .iter()
+            .enumerate()
+            .map(|(index, graph)| (graph.id.clone(), index))
             .collect();
 
         let initial = definition
@@ -154,10 +159,12 @@ impl StateMachineRuntime {
         Self {
             definition,
             mutation_index,
+            motion_graph_index,
             current_state_id: initial,
             scene_time: 0.0,
             state_local_times,
             active_transition: None,
+            motion_engine: MotionEngine::new(),
             runtime_input: RuntimeInputSnapshot::default(),
             mutation_runtime_states: HashMap::new(),
             current_overrides: HashMap::new(),
@@ -187,6 +194,7 @@ impl StateMachineRuntime {
             *v = 0.0;
         }
         self.active_transition = None;
+        self.motion_engine.reset();
         self.runtime_input = RuntimeInputSnapshot::default();
         self.mutation_runtime_states.clear();
         self.current_overrides.clear();
@@ -208,59 +216,37 @@ impl StateMachineRuntime {
                 scene_time_secs: self.scene_time,
                 state_local_times: self.snapshot_local_times(),
                 active_transition_id: self
-                    .active_transition
-                    .as_ref()
-                    .map(|at| at.transition_id.clone()),
+                    .motion_engine
+                    .active_transition_id()
+                    .map(str::to_string),
                 ..Default::default()
             };
         }
 
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.scene_time += dt;
         let prev_state_local_times = self.state_local_times.clone();
-
         let mut diagnostics: Vec<String> = Vec::new();
 
-        // ── Advance active transition ──────────────────────────────────
-        if let Some(ref mut at) = self.active_transition {
-            at.elapsed += dt;
-
-            // The source state (current_state_id) keeps ticking during
-            // the transition (both delay and blend phases).
-            let source_id = at.source_state_id.clone();
-            if let Some(t) = self.state_local_times.get_mut(&source_id) {
-                *t += dt;
-            }
-
-            // During the blend phase (past delay), tick the *target* state's
-            // local time so its mutation sees advancing localElapsedTime.
-            if at.elapsed > at.delay {
-                let target_id = at.target_state_id.clone();
-                if let Some(t) = self.state_local_times.get_mut(&target_id) {
-                    *t += dt;
-                }
-            }
-
-            let total = at.delay + at.duration;
-            if at.elapsed >= total {
-                // Transition complete — enter target state.
-                // Target state's local time is preserved (accumulated during blend).
-                let target = at.target_state_id.clone();
-                self.active_transition = None;
-                self.current_state_id = target;
-            }
-        } else {
-            // No active transition — tick local time for the current state
-            // (all state types except ExitState).
-            let should_tick = self
-                .find_state(&self.current_state_id)
-                .map(|s| s.resolved_type() != AnimationStateType::ExitState)
-                .unwrap_or(false);
-            if should_tick {
-                let id = self.current_state_id.clone();
-                if let Some(t) = self.state_local_times.get_mut(&id) {
-                    *t += dt;
-                }
-            }
+        // Logical state changes immediately on transition fire. Presentation
+        // drivers retain the visual source independently, so both source and
+        // target local clocks may still advance during a handoff.
+        let current_id = self.current_state_id.clone();
+        if self
+            .find_state(&current_id)
+            .is_some_and(|state| state.resolved_type() != AnimationStateType::ExitState)
+            && let Some(time) = self.state_local_times.get_mut(&current_id)
+        {
+            *time += dt;
+        }
+        if let Some(source_id) = self
+            .active_transition
+            .as_ref()
+            .map(|transition| transition.source_state_id.clone())
+            && source_id != current_id
+            && let Some(time) = self.state_local_times.get_mut(&source_id)
+        {
+            *time += dt;
         }
 
         // AnyState always ticks, regardless of which state is current or
@@ -273,12 +259,7 @@ impl StateMachineRuntime {
             .find(|s| s.resolved_type() == AnimationStateType::AnyState)
         {
             let any_id = any_state.id.clone();
-            let already_ticked = self.current_state_id == any_id
-                || self
-                    .active_transition
-                    .as_ref()
-                    .map(|at| at.source_state_id == any_id || at.target_state_id == any_id)
-                    .unwrap_or(false);
+            let already_ticked = self.current_state_id == any_id;
             if !already_ticked {
                 if let Some(t) = self.state_local_times.get_mut(&any_id) {
                     *t += dt;
@@ -286,85 +267,80 @@ impl StateMachineRuntime {
             }
         }
 
-        // ── Evaluate transition candidates (only if no active transition) ──
-        if self.active_transition.is_none() {
-            if let Some(transition) = self.pick_transition(params, events) {
-                let total = transition.delay + transition.duration;
-                if total <= 0.0 {
-                    // Instant transition (no delay, no blend).
-                    self.enter_state(&transition.target);
-                } else {
-                    // Reset the target state's local time for the upcoming
-                    // blend phase (it will start ticking once delay expires).
-                    self.state_local_times
-                        .insert(transition.target.clone(), 0.0);
-                    self.mutation_runtime_states.remove(&transition.target);
-                    self.active_transition = Some(ActiveTransition {
-                        transition_id: transition.id.clone(),
-                        source_state_id: self.current_state_id.clone(),
-                        target_state_id: transition.target.clone(),
-                        delay: transition.delay,
-                        duration: transition.duration,
-                        easing: transition.easing,
-                        elapsed: 0.0,
-                    });
-                }
+        // Transitions remain interruptible while a previous visual driver is
+        // active. Routing uses the logical current state (already the target
+        // of the previous transition).
+        if let Some(transition) = self.pick_transition(params, events) {
+            let source_state_id = self.current_state_id.clone();
+            let source_advanced =
+                self.state_advanced_this_tick(&prev_state_local_times, &source_state_id);
+            let source_patch = self.evaluate_state_patch(
+                &source_state_id,
+                params,
+                &mut diagnostics,
+                source_advanced,
+            );
+
+            self.state_local_times
+                .insert(transition.target.clone(), 0.0);
+            self.mutation_runtime_states.remove(&transition.target);
+            let target_patch =
+                self.evaluate_state_patch(&transition.target, params, &mut diagnostics, false);
+            let graph = self
+                .motion_graph_index
+                .get(&transition.motion_graph_id)
+                .and_then(|index| self.definition.motion_graphs.get(*index))
+                .cloned();
+            if let Some(graph) = graph {
+                self.motion_engine.start_transition(
+                    &transition.id,
+                    &graph,
+                    &source_patch,
+                    &target_patch,
+                    &self.current_overrides,
+                );
+                self.active_transition = Some(ActiveTransition {
+                    source_state_id,
+                    target_state_id: transition.target.clone(),
+                });
             }
+            self.current_state_id = transition.target;
         }
 
-        // ── Build explicit state patch ─────────────────────────────────
-        let source_state_id = self.current_state_id.clone();
-        let source_advanced =
-            self.state_advanced_this_tick(&prev_state_local_times, &source_state_id);
-        let source_patch =
-            self.evaluate_state_patch(&source_state_id, params, &mut diagnostics, source_advanced);
-
-        // 3. If in-transition, compute blend factor.
-        //    - During delay phase (elapsed < delay): blend = 0 (source-state output).
-        //    - During blend phase: normal eased interpolation 0→1.
-        let transition_blend = if let Some(ref at) = self.active_transition {
-            if at.elapsed < at.delay {
-                // Still in delay window — keep source-state output.
-                Some(0.0)
-            } else if at.duration > 0.0 {
-                let blend_elapsed = at.elapsed - at.delay;
-                let raw_t = (blend_elapsed / at.duration).clamp(0.0, 1.0);
-                Some(ease(at.easing, raw_t))
-            } else {
-                // No blend duration — snap to target after delay.
-                Some(1.0)
-            }
+        let target_state_id = self.current_state_id.clone();
+        let target_advanced =
+            self.state_advanced_this_tick(&prev_state_local_times, &target_state_id);
+        let target_patch =
+            self.evaluate_state_patch(&target_state_id, params, &mut diagnostics, target_advanced);
+        let source_patch = if let Some(source_id) = self
+            .active_transition
+            .as_ref()
+            .map(|transition| transition.source_state_id.clone())
+        {
+            let advanced = self.state_advanced_this_tick(&prev_state_local_times, &source_id);
+            self.evaluate_state_patch(&source_id, params, &mut diagnostics, advanced)
         } else {
-            None
+            target_patch.clone()
         };
-
-        // 4. Blend source→target patches when in the blend phase.
-        let patch =
-            if let (Some(at), Some(blend)) = (self.active_transition.clone(), transition_blend) {
-                if blend > 0.0 {
-                    let target_advanced =
-                        self.state_advanced_this_tick(&prev_state_local_times, &at.target_state_id);
-                    let target_patch = self.evaluate_state_patch(
-                        &at.target_state_id,
-                        params,
-                        &mut diagnostics,
-                        target_advanced,
-                    );
-                    self.blend_state_patches(&source_patch, &target_patch, blend)
-                } else {
-                    source_patch
-                }
-            } else {
-                source_patch
-            };
+        self.motion_engine
+            .update_endpoints(&source_patch, &target_patch);
+        let motion_step = self.motion_engine.step(dt);
+        let patch = if self.motion_engine.active_transition_id().is_some() {
+            motion_step.overrides.clone()
+        } else {
+            self.active_transition = None;
+            target_patch
+        };
 
         for (key, value) in patch {
             self.current_overrides.insert(key, value);
         }
 
-        // Check if current state is exit.
+        // Exit becomes terminal only after its visual transition completes.
         if let Some(state) = self.find_state(&self.current_state_id) {
-            if state.resolved_type() == AnimationStateType::ExitState {
+            if state.resolved_type() == AnimationStateType::ExitState
+                && self.motion_engine.active_transition_id().is_none()
+            {
                 self.finished = true;
             }
         }
@@ -376,13 +352,13 @@ impl StateMachineRuntime {
             diagnostics,
             finished: self.finished,
             current_state_id: self.current_state_id.clone(),
-            transition_blend,
             scene_time_secs: self.scene_time,
             state_local_times: self.snapshot_local_times(),
             active_transition_id: self
-                .active_transition
-                .as_ref()
-                .map(|at| at.transition_id.clone()),
+                .motion_engine
+                .active_transition_id()
+                .map(str::to_string),
+            motion_channels: motion_step.channels,
         }
     }
 
@@ -393,9 +369,7 @@ impl StateMachineRuntime {
 
     /// Get the active transition id, if a transition is currently running.
     pub fn active_transition_id(&self) -> Option<&str> {
-        self.active_transition
-            .as_ref()
-            .map(|at| at.transition_id.as_str())
+        self.motion_engine.active_transition_id()
     }
 
     /// Get the definition.
@@ -404,13 +378,6 @@ impl StateMachineRuntime {
     }
 
     // ── Internal helpers ───────────────────────────────────────────────
-
-    fn enter_state(&mut self, state_id: &str) {
-        self.mutation_runtime_states.remove(state_id);
-        self.current_state_id = state_id.to_string();
-        // Reset this state's local time on entry (instant transitions).
-        self.state_local_times.insert(state_id.to_string(), 0.0);
-    }
 
     /// Snapshot all per-state local times as a sorted BTreeMap for output.
     fn snapshot_local_times(&self) -> BTreeMap<String, f64> {
@@ -498,35 +465,6 @@ impl StateMachineRuntime {
 
         self.mutation_runtime_states
             .retain(|state_id, _| keep.contains(state_id));
-    }
-
-    fn blend_state_patches(
-        &self,
-        source_patch: &HashMap<OverrideKey, serde_json::Value>,
-        target_patch: &HashMap<OverrideKey, serde_json::Value>,
-        blend: f64,
-    ) -> HashMap<OverrideKey, serde_json::Value> {
-        let all_keys: HashSet<OverrideKey> = source_patch
-            .keys()
-            .chain(target_patch.keys())
-            .cloned()
-            .collect();
-        let mut patch = HashMap::new();
-
-        for key in all_keys {
-            let value = match (source_patch.get(&key), target_patch.get(&key)) {
-                (Some(source), Some(target)) => blend_json_values(source, target, blend),
-                (Some(source), None) => source.clone(),
-                (None, Some(target)) => match self.current_overrides.get(&key) {
-                    Some(current) => blend_json_values(current, target, blend),
-                    None => target.clone(),
-                },
-                (None, None) => continue,
-            };
-            patch.insert(key, value);
-        }
-
-        patch
     }
 
     /// Pick the highest-priority satisfied transition from the current state
@@ -687,41 +625,6 @@ impl StateMachineRuntime {
     }
 }
 
-/// Linearly interpolate two JSON values by blend factor `t` (0→1).
-/// Falls back to the target value for non-numeric types.
-fn blend_json_values(
-    source: &serde_json::Value,
-    target: &serde_json::Value,
-    t: f64,
-) -> serde_json::Value {
-    match (source, target) {
-        (serde_json::Value::Number(sn), serde_json::Value::Number(gn)) => {
-            let sv = sn.as_f64().unwrap_or(0.0);
-            let gv = gn.as_f64().unwrap_or(0.0);
-            let blended = sv + (gv - sv) * t;
-            serde_json::json!(blended)
-        }
-        (serde_json::Value::Array(sa), serde_json::Value::Array(ga)) => {
-            let len = sa.len().max(ga.len());
-            let mut out = Vec::with_capacity(len);
-            for i in 0..len {
-                let sv = sa.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let gv = ga.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                out.push(serde_json::json!(sv + (gv - sv) * t));
-            }
-            serde_json::Value::Array(out)
-        }
-        _ => {
-            // Non-numeric: snap to target when blend > 0.5.
-            if t >= 0.5 {
-                target.clone()
-            } else {
-                source.clone()
-            }
-        }
-    }
-}
-
 fn json_is_truthy(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Bool(b) => *b,
@@ -868,9 +771,71 @@ mod tests {
             ],
             transitions: vec![],
             mutations: vec![],
+            motion_graphs: vec![
+                instant_motion_graph("instant"),
+                timeline_motion_graph("timeline", 0.3),
+                timeline_motion_graph("timeline-1", 1.0),
+            ],
             initial_state_id: Some("entry".into()),
             viewport: None,
         }
+    }
+
+    fn motion_ports() -> (Vec<MutationPort>, Vec<MutationPort>) {
+        let port = MutationPort {
+            id: "*".into(),
+            name: Some("Any".into()),
+            port_type: Some("any".into()),
+        };
+        (vec![port.clone()], vec![port])
+    }
+
+    fn instant_motion_graph(id: &str) -> TransitionMotionGraph {
+        let (inputs, outputs) = motion_ports();
+        TransitionMotionGraph {
+            id: id.into(),
+            name: "Instant".into(),
+            inputs,
+            outputs,
+            nodes: vec![TransitionMotionNode::Instant {
+                id: "motion".into(),
+                position: Position::default(),
+                label: None,
+            }],
+            connections: vec![],
+            input_bindings: vec![TransitionMotionInputBinding {
+                port_id: "*".into(),
+                to: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            output_bindings: vec![TransitionMotionOutputBinding {
+                port_id: "*".into(),
+                from: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
+            viewport: None,
+        }
+    }
+
+    fn timeline_motion_graph(id: &str, duration: f64) -> TransitionMotionGraph {
+        let mut graph = instant_motion_graph(id);
+        graph.name = "Timeline".into();
+        graph.nodes = vec![TransitionMotionNode::Linear {
+            timeline: TimelineMotionNode {
+                id: "motion".into(),
+                position: Position::default(),
+                label: None,
+                duration,
+                delay: 0.0,
+                blending: None,
+            },
+        }];
+        graph
     }
 
     #[test]
@@ -899,9 +864,7 @@ mod tests {
             target: "s1".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -941,9 +904,7 @@ mod tests {
             target: "a".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         sm.transitions.push(AnimationTransition {
             id: "a_to_b".into(),
@@ -953,9 +914,7 @@ mod tests {
                 event_name: "go".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1001,9 +960,7 @@ mod tests {
             target: "a".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         sm.transitions.push(AnimationTransition {
             id: "a_to_b".into(),
@@ -1013,9 +970,7 @@ mod tests {
                 event_name: "go".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 1.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "timeline-1".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1023,14 +978,14 @@ mod tests {
         assert_eq!(a.current_state_id, "a");
 
         let triggered = rt.tick(0.016, &HashMap::new(), &vec!["go".into()]);
-        assert_eq!(triggered.current_state_id, "a");
+        assert_eq!(triggered.current_state_id, "b");
         assert_eq!(
             triggered.overrides.get(&OverrideKey::new("Node", "x")),
             Some(&serde_json::json!(5.0))
         );
 
         let blending = rt.tick(0.5, &HashMap::new(), &vec![]);
-        assert_eq!(blending.current_state_id, "a");
+        assert_eq!(blending.current_state_id, "b");
         assert_eq!(
             blending.overrides.get(&OverrideKey::new("Node", "x")),
             Some(&serde_json::json!(5.0))
@@ -1045,13 +1000,21 @@ mod tests {
     }
 
     #[test]
-    fn timed_transition_blends() {
+    fn timed_transition_advances() {
         let mut sm = minimal_sm();
+        sm.states
+            .iter_mut()
+            .find(|state| state.id == "entry")
+            .unwrap()
+            .parameter_overrides
+            .insert("Node:x".into(), serde_json::json!(0.0));
         sm.states.push(AnimationState {
             id: "s1".into(),
             name: "S1".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            parameter_overrides: [("Node:x".into(), serde_json::json!(1.0))]
+                .into_iter()
+                .collect(),
             state_type: Some(AnimationStateType::AnimationState),
             mutation_id: None,
         });
@@ -1061,21 +1024,22 @@ mod tests {
             target: "s1".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 1.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "timeline-1".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
         let r1 = rt.tick(0.5, &HashMap::new(), &vec![]);
-        // Should be mid-transition, not yet at s1.
-        assert_eq!(r1.current_state_id, "entry");
-        assert!(r1.transition_blend.is_some());
+        // Routing switches immediately while presentation remains mid-motion.
+        assert_eq!(r1.current_state_id, "s1");
+        assert_eq!(
+            r1.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(0.5))
+        );
 
         let r2 = rt.tick(1.1, &HashMap::new(), &vec![]);
         // Transition complete.
         assert_eq!(r2.current_state_id, "s1");
-        assert!(r2.transition_blend.is_none());
+        assert_eq!(r2.active_transition_id, None);
     }
 
     #[test]
@@ -1098,9 +1062,7 @@ mod tests {
                 param_id: "flag".into(),
                 value: Some(true),
             }),
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1135,9 +1097,7 @@ mod tests {
             condition: Some(TransitionCondition::Event {
                 event_name: "click".into(),
             }),
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1182,9 +1142,7 @@ mod tests {
                 event_name: "mousedown".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 0.3,
-            easing: EasingKind::Linear,
+            motion_graph_id: "timeline".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1194,14 +1152,78 @@ mod tests {
         assert_eq!(idle.active_transition_id, None);
 
         let triggered = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
-        assert_eq!(triggered.current_state_id, "entry");
-        assert_eq!(
-            triggered.active_transition_id.as_deref(),
-            Some("tr_any_mutation")
-        );
+        assert_eq!(triggered.current_state_id, "mutation");
+        assert_eq!(triggered.active_transition_id, None);
 
         let completed = rt.tick(0.4, &HashMap::new(), &vec![]);
         assert_eq!(completed.current_state_id, "mutation");
+    }
+
+    #[test]
+    fn timeline_tracks_a_dynamic_mutation_target_local_time() {
+        let mut sm = minimal_sm();
+        sm.states
+            .iter_mut()
+            .find(|state| state.id == "entry")
+            .unwrap()
+            .parameter_overrides
+            .insert("Node:x".into(), serde_json::json!(0.0));
+        sm.states.push(AnimationState {
+            id: "dynamic".into(),
+            name: "Dynamic".into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: Some(AnimationStateType::MutationNode),
+            mutation_id: Some("dynamic_target".into()),
+        });
+        sm.mutations.push(MutationDefinition {
+            id: "dynamic_target".into(),
+            name: "Dynamic Target".into(),
+            inputs: vec![MutationPort {
+                id: "localElapsedTime".into(),
+                name: Some("Local Elapsed Time".into()),
+                port_type: Some("float".into()),
+            }],
+            outputs: vec![MutationPort {
+                id: "Node:x".into(),
+                name: Some("Node.x".into()),
+                port_type: Some("float".into()),
+            }],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![MutationPassthroughBinding {
+                from_port_id: "localElapsedTime".into(),
+                to_port_id: "Node:x".into(),
+            }],
+            viewport: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_dynamic".into(),
+            source: "entry".into(),
+            target: "dynamic".into(),
+            trigger: None,
+            condition: None,
+            motion_graph_id: "timeline".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        let entered = runtime.tick(0.1, &HashMap::new(), &vec![]);
+        assert_eq!(entered.current_state_id, "dynamic");
+        assert_eq!(
+            entered.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(0.0))
+        );
+
+        let advancing = runtime.tick(0.1, &HashMap::new(), &vec![]);
+        let value = advancing
+            .overrides
+            .get(&OverrideKey::new("Node", "x"))
+            .and_then(serde_json::Value::as_f64)
+            .expect("dynamic Timeline output");
+        assert!((value - (0.1 * 2.0 / 3.0)).abs() < 1e-8, "value={value}");
+        assert_eq!(advancing.state_local_times.get("dynamic"), Some(&0.1));
     }
 
     #[test]
@@ -1255,9 +1277,7 @@ mod tests {
                 event_name: "mousedown".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1303,9 +1323,7 @@ mod tests {
             target: "mutation".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         sm.transitions.push(AnimationTransition {
             id: "mutation_to_idle".into(),
@@ -1315,9 +1333,7 @@ mod tests {
                 event_name: "pause".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
         sm.transitions.push(AnimationTransition {
             id: "idle_to_mutation".into(),
@@ -1327,9 +1343,7 @@ mod tests {
                 event_name: "resume".into(),
             }),
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1364,9 +1378,7 @@ mod tests {
             target: "exit".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1392,9 +1404,7 @@ mod tests {
             target: "s1".into(),
             trigger: None,
             condition: None,
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1429,9 +1439,7 @@ mod tests {
                 param_id: "ready".into(),
                 value: Some(true),
             }),
-            delay: 0.0,
-            duration: 0.0,
-            easing: EasingKind::Linear,
+            motion_graph_id: "instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);

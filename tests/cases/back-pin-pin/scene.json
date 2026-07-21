@@ -1325,9 +1325,32 @@
           "type": "event",
           "eventName": "mousedown"
         },
-        "delay": 0.3,
-        "duration": 2,
-        "easing": "linear"
+        "motionGraphId": "mg_tr_mmbig5yq_d"
+      }
+    ],
+    "motionGraphs": [
+      {
+        "id": "mg_tr_mmbig5yq_d",
+        "name": "Send Motion",
+        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "nodes": [
+          {
+            "id": "timeline",
+            "type": "linear",
+            "position": { "x": 0, "y": 0 },
+            "duration": 2,
+            "delay": 0.3
+          }
+        ],
+        "connections": [],
+        "inputBindings": [
+          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "outputBindings": [
+          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_mmamj2am_3",

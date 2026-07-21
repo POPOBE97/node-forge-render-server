@@ -505,9 +505,32 @@
         "id": "tr_mq8aagq1_h",
         "source": "st_mq8a9yv3_c",
         "target": "st_mq8aa1sy_g",
-        "delay": 0,
-        "duration": 0.3,
-        "easing": "linear"
+        "motionGraphId": "mg_tr_mq8aagq1_h"
+      }
+    ],
+    "motionGraphs": [
+      {
+        "id": "mg_tr_mq8aagq1_h",
+        "name": "Mutation 1 Motion",
+        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "nodes": [
+          {
+            "id": "timeline",
+            "type": "linear",
+            "position": { "x": 0, "y": 0 },
+            "duration": 0.3,
+            "delay": 0
+          }
+        ],
+        "connections": [],
+        "inputBindings": [
+          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "outputBindings": [
+          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_mq8a9yv3_c",

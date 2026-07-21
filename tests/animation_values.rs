@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EasingKind, StateMachine,
-    TransitionCondition,
+    AnimationState, AnimationStateType, AnimationTransition, StateMachine, TransitionCondition,
+    TransitionMotionGraph,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, TickSchedule,
@@ -173,12 +173,6 @@ fn first_trace_mismatch(
                 ef.active_transition_id, af.active_transition_id
             ));
         }
-        if ef.transition_blend != af.transition_blend {
-            return Some(format!(
-                "case {case_name} frame {i}: transition_blend mismatch expected={:?} actual={:?}",
-                ef.transition_blend, af.transition_blend
-            ));
-        }
         if ef.finished != af.finished {
             return Some(format!(
                 "case {case_name} frame {i}: finished mismatch expected={} actual={}",
@@ -260,7 +254,7 @@ fn generate_trace_via_session(
             state_local_times,
             scene_time_secs: round_f64(step.scene_time_secs),
             active_transition_id: step.active_transition_id.clone(),
-            transition_blend: step.transition_blend.map(round_f64),
+            motion_channels: step.motion_channels.clone(),
             finished: step.finished,
             diagnostics: step.diagnostics.clone(),
             values: frame_values,
@@ -356,9 +350,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     target: "a".into(),
                     trigger: None,
                     condition: None,
-                    delay: 0.0,
-                    duration: 0.0,
-                    easing: EasingKind::Linear,
+                    motion_graph_id: "motion_entry_to_a".into(),
                 },
                 AnimationTransition {
                     id: "a_to_b".into(),
@@ -368,12 +360,14 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                         event_name: "go".into(),
                     }),
                     condition: None,
-                    delay: 0.0,
-                    duration: 0.0,
-                    easing: EasingKind::Linear,
+                    motion_graph_id: "motion_a_to_b".into(),
                 },
             ],
             mutations: vec![],
+            motion_graphs: vec![
+                TransitionMotionGraph::instant("motion_entry_to_a"),
+                TransitionMotionGraph::instant("motion_a_to_b"),
+            ],
             initial_state_id: Some("entry".into()),
             viewport: None,
         }),
@@ -418,6 +412,92 @@ fn animation_session_keeps_values_when_next_state_omits_override() {
         )),
         Some(&serde_json::json!(0.0))
     );
+}
+
+#[test]
+fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
+    let case_dir = cases_root().join("doubao-voice-interaction");
+    let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+
+    session.step(0.0);
+    session.fire_event("mouseup");
+    let entered_off = session.step(0.0);
+    assert_eq!(entered_off.current_state_id, "st_mrerw3qg_6");
+    let mut settled_off = entered_off;
+    for _ in 0..180 {
+        settled_off = session.step(1.0 / 60.0);
+    }
+    assert_eq!(settled_off.current_state_id, "st_mrerw3qg_6");
+    assert_eq!(
+        settled_off.active_overrides.get(
+            &node_forge_render_server::state_machine::OverrideKey::new("Vector2Input_35", "x")
+        ),
+        Some(&serde_json::json!(216))
+    );
+
+    session.fire_event("mouseup");
+    let started = session.step(1.0 / 60.0);
+    assert_eq!(started.current_state_id, "st_mrerxocx_8");
+    assert_eq!(
+        started.active_transition_id.as_deref(),
+        Some("tr_mrery48v_a"),
+        "channels={:?} diagnostics={:?}",
+        started.motion_channels,
+        started.diagnostics
+    );
+
+    let drivers: BTreeMap<&str, &str> = started
+        .motion_channels
+        .iter()
+        .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
+        .collect();
+    for key in [
+        "FloatInput_40:value",
+        "FloatInput_41:value",
+        "Vector2Input_35:x",
+        "Vector2Input_35:y",
+        "Vector2Input_36:y",
+        "Vector2Input_38:x",
+        "Vector2Input_38:y",
+    ] {
+        assert_eq!(drivers.get(key), Some(&"spring"), "wrong driver for {key}");
+    }
+
+    let mut completed = started;
+    for _ in 0..240 {
+        if completed.active_transition_id.is_none() {
+            break;
+        }
+        completed = session.step(1.0 / 60.0);
+    }
+    assert_eq!(completed.active_transition_id, None);
+    assert_eq!(completed.current_state_id, "st_mrerxocx_8");
+
+    let expected = [
+        ("FloatInput_38", "value", serde_json::json!(480)),
+        ("FloatInput_39", "value", serde_json::json!(0)),
+        ("FloatInput_40", "value", serde_json::json!(0)),
+        ("FloatInput_41", "value", serde_json::json!(512)),
+        ("Vector2Input_35", "x", serde_json::json!(1008)),
+        ("Vector2Input_35", "y", serde_json::json!(168)),
+        ("Vector2Input_36", "x", serde_json::json!(540)),
+        ("Vector2Input_36", "y", serde_json::json!(186)),
+        ("FloatInput_37", "value", serde_json::json!(60)),
+        ("Vector2Input_38", "x", serde_json::json!(1008)),
+        ("Vector2Input_38", "y", serde_json::json!(168)),
+    ];
+    for (node_id, param_name, value) in expected {
+        assert_eq!(
+            completed.active_overrides.get(
+                &node_forge_render_server::state_machine::OverrideKey::new(node_id, param_name)
+            ),
+            Some(&value),
+            "final snap mismatch for {node_id}:{param_name}"
+        );
+    }
 }
 
 #[test]

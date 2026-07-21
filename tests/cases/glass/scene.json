@@ -3291,9 +3291,7 @@
           "type": "event",
           "eventName": "mouseup"
         },
-        "delay": 0,
-        "duration": 0.1,
-        "easing": "ease-out"
+        "motionGraphId": "mg_tr_mr0cae1v_e"
       },
       {
         "id": "tr_mr0cao6x_f",
@@ -3303,17 +3301,84 @@
           "type": "event",
           "eventName": "mousedown"
         },
-        "delay": 0,
-        "duration": 0,
-        "easing": "linear"
+        "motionGraphId": "mg_tr_mr0cao6x_f"
       },
       {
         "id": "tr_mr0dt2uj_g",
         "source": "st_moxsija5_4",
         "target": "st_mr0ca7p2_d",
-        "delay": 0,
-        "duration": 0,
-        "easing": "linear"
+        "motionGraphId": "mg_tr_mr0dt2uj_g"
+      }
+    ],
+    "motionGraphs": [
+      {
+        "id": "mg_tr_mr0cae1v_e",
+        "name": "Release Motion",
+        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "nodes": [
+          {
+            "id": "timeline",
+            "type": "ease-out",
+            "position": { "x": 0, "y": 0 },
+            "duration": 0.1,
+            "delay": 0
+          }
+        ],
+        "connections": [],
+        "inputBindings": [
+          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "outputBindings": [
+          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "passthroughBindings": []
+      },
+      {
+        "id": "mg_tr_mr0cao6x_f",
+        "name": "Press Motion",
+        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "nodes": [
+          {
+            "id": "timeline",
+            "type": "linear",
+            "position": { "x": 0, "y": 0 },
+            "duration": 0,
+            "delay": 0
+          }
+        ],
+        "connections": [],
+        "inputBindings": [
+          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "outputBindings": [
+          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "passthroughBindings": []
+      },
+      {
+        "id": "mg_tr_mr0dt2uj_g",
+        "name": "Initial Motion",
+        "inputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "outputs": [{ "id": "*", "name": "Any", "type": "any" }],
+        "nodes": [
+          {
+            "id": "timeline",
+            "type": "linear",
+            "position": { "x": 0, "y": 0 },
+            "duration": 0,
+            "delay": 0
+          }
+        ],
+        "connections": [],
+        "inputBindings": [
+          { "motionPortId": "*", "to": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "outputBindings": [
+          { "motionPortId": "*", "from": { "nodeId": "timeline", "portId": "value" } }
+        ],
+        "passthroughBindings": []
       }
     ],
     "initialStateId": "st_moxsija5_4",

@@ -1,8 +1,7 @@
 //! Animation engine layer.
 //!
-//! Provides a deterministic fixed-step animation session that owns the
-//! state-machine runtime and produces per-frame parameter overrides for
-//! the render loop.
+//! Provides a render-frame animation session backed by per-property motion
+//! drivers. Every session step advances once with the full frame delta.
 //!
 //! # Usage (app integration)
 //!
@@ -16,11 +15,8 @@
 //! }
 //! ```
 
-pub mod runloop;
 pub mod session;
-pub mod task;
 pub mod timeline;
-pub mod value_pool;
 
-pub use session::{AnimationSession, AnimationStep, FixedStepClock};
+pub use session::{AnimationSession, AnimationStep};
 pub use timeline::{TimelineBuffer, TimelineFrame};

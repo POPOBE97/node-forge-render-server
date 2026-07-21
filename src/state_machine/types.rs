@@ -24,6 +24,8 @@ pub struct StateMachine {
     pub transitions: Vec<AnimationTransition>,
     #[serde(default)]
     pub mutations: Vec<MutationDefinition>,
+    #[serde(default, rename = "motionGraphs")]
+    pub motion_graphs: Vec<TransitionMotionGraph>,
     #[serde(default, rename = "initialStateId")]
     pub initial_state_id: Option<String>,
     /// Editor-only viewport metadata — ignored at runtime.
@@ -110,20 +112,8 @@ pub struct AnimationTransition {
     /// `None` means no extra guard — the trigger alone is sufficient.
     #[serde(default)]
     pub condition: Option<TransitionCondition>,
-
-    /// Delay before the transition blend begins, in seconds.  Defaults to 0.
-    #[serde(default)]
-    pub delay: f64,
-    /// Transition duration in seconds.  Defaults to 0.3.
-    #[serde(default = "default_duration")]
-    pub duration: f64,
-    /// Easing curve.  Defaults to `EaseInOut`.
-    #[serde(default)]
-    pub easing: EasingKind,
-}
-
-fn default_duration() -> f64 {
-    0.3
+    #[serde(rename = "motionGraphId")]
+    pub motion_graph_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -134,6 +124,262 @@ pub enum EasingKind {
     EaseOut,
     #[default]
     EaseInOut,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum TimelinePreset {
+    #[default]
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    SineIn,
+    SineOut,
+    SineInOut,
+    CosineIn,
+    CosineOut,
+    CosineInOut,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TimelineBlending {
+    #[serde(rename = "type")]
+    pub blend_type: TimelineBlendingType,
+    #[serde(default = "default_blend_duration")]
+    pub duration: f64,
+    #[serde(default)]
+    pub easing: EasingKind,
+}
+
+fn default_blend_duration() -> f64 {
+    0.1
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TimelineBlendingType {
+    Tween,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TimelineMotionNode {
+    pub id: String,
+    #[serde(default)]
+    pub position: Position,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default = "default_timeline_duration")]
+    pub duration: f64,
+    #[serde(default)]
+    pub delay: f64,
+    #[serde(default)]
+    pub blending: Option<TimelineBlending>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum TransitionMotionNode {
+    Spring {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default = "default_spring_duration")]
+        duration: f64,
+        #[serde(default = "default_spring_bounce")]
+        bounce: f64,
+        #[serde(default)]
+        delay: f64,
+    },
+    Linear {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in")]
+    EaseIn {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-out")]
+    EaseOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "ease-in-out")]
+    EaseInOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "sine-in")]
+    SineIn {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "sine-out")]
+    SineOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "sine-in-out")]
+    SineInOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "cosine-in")]
+    CosineIn {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "cosine-out")]
+    CosineOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    #[serde(rename = "cosine-in-out")]
+    CosineInOut {
+        #[serde(flatten)]
+        timeline: TimelineMotionNode,
+    },
+    Instant {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+}
+
+fn default_spring_duration() -> f64 {
+    0.45
+}
+
+fn default_spring_bounce() -> f64 {
+    0.1
+}
+
+fn default_timeline_duration() -> f64 {
+    0.3
+}
+
+impl TransitionMotionNode {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Spring { id, .. } | Self::Instant { id, .. } => id,
+            Self::Linear { timeline }
+            | Self::EaseIn { timeline }
+            | Self::EaseOut { timeline }
+            | Self::EaseInOut { timeline }
+            | Self::SineIn { timeline }
+            | Self::SineOut { timeline }
+            | Self::SineInOut { timeline }
+            | Self::CosineIn { timeline }
+            | Self::CosineOut { timeline }
+            | Self::CosineInOut { timeline } => &timeline.id,
+        }
+    }
+
+    pub fn timeline(&self) -> Option<(TimelinePreset, &TimelineMotionNode)> {
+        Some(match self {
+            Self::Linear { timeline } => (TimelinePreset::Linear, timeline),
+            Self::EaseIn { timeline } => (TimelinePreset::EaseIn, timeline),
+            Self::EaseOut { timeline } => (TimelinePreset::EaseOut, timeline),
+            Self::EaseInOut { timeline } => (TimelinePreset::EaseInOut, timeline),
+            Self::SineIn { timeline } => (TimelinePreset::SineIn, timeline),
+            Self::SineOut { timeline } => (TimelinePreset::SineOut, timeline),
+            Self::SineInOut { timeline } => (TimelinePreset::SineInOut, timeline),
+            Self::CosineIn { timeline } => (TimelinePreset::CosineIn, timeline),
+            Self::CosineOut { timeline } => (TimelinePreset::CosineOut, timeline),
+            Self::CosineInOut { timeline } => (TimelinePreset::CosineInOut, timeline),
+            Self::Spring { .. } | Self::Instant { .. } => return None,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TransitionMotionGraph {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub inputs: Vec<MutationPort>,
+    #[serde(default)]
+    pub outputs: Vec<MutationPort>,
+    #[serde(default)]
+    pub nodes: Vec<TransitionMotionNode>,
+    #[serde(default)]
+    pub connections: Vec<MutationConnection>,
+    #[serde(default, rename = "inputBindings")]
+    pub input_bindings: Vec<TransitionMotionInputBinding>,
+    #[serde(default, rename = "outputBindings")]
+    pub output_bindings: Vec<TransitionMotionOutputBinding>,
+    #[serde(default, rename = "passthroughBindings")]
+    pub passthrough_bindings: Vec<TransitionMotionPassthroughBinding>,
+    #[serde(default)]
+    pub viewport: Option<Viewport>,
+}
+
+impl TransitionMotionGraph {
+    /// Build the canonical `Any -> Instant -> Any` graph used for edges that
+    /// should update all properties without interpolation.
+    pub fn instant(id: impl Into<String>) -> Self {
+        let port = MutationPort {
+            id: "*".into(),
+            name: Some("Any".into()),
+            port_type: Some("any".into()),
+        };
+        Self {
+            id: id.into(),
+            name: "Instant".into(),
+            inputs: vec![port.clone()],
+            outputs: vec![port],
+            nodes: vec![TransitionMotionNode::Instant {
+                id: "motion".into(),
+                position: Position::default(),
+                label: None,
+            }],
+            connections: vec![],
+            input_bindings: vec![TransitionMotionInputBinding {
+                port_id: "*".into(),
+                to: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            output_bindings: vec![TransitionMotionOutputBinding {
+                port_id: "*".into(),
+                from: MutationEndpoint {
+                    node_id: "motion".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
+            viewport: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TransitionMotionInputBinding {
+    #[serde(rename = "motionPortId")]
+    pub port_id: String,
+    pub to: MutationEndpoint,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TransitionMotionOutputBinding {
+    #[serde(rename = "motionPortId")]
+    pub port_id: String,
+    pub from: MutationEndpoint,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TransitionMotionPassthroughBinding {
+    #[serde(rename = "inputPortId")]
+    pub from_port_id: String,
+    #[serde(rename = "outputPortId")]
+    pub to_port_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +614,7 @@ impl OverrideKey {
 mod tests {
     use super::{
         MutationInnerNodeType, MutationInputBinding, MutationOutputBinding,
-        MutationPassthroughBinding, MutationPort,
+        MutationPassthroughBinding, MutationPort, TimelinePreset, TransitionMotionNode,
     };
 
     #[test]
@@ -433,5 +679,46 @@ mod tests {
         .expect("packed mutation port should deserialize");
 
         assert_eq!(parsed.port_type.as_deref(), Some("packed<float>"));
+    }
+
+    #[test]
+    fn timeline_presets_are_independent_flat_motion_node_types() {
+        let cases = [
+            ("linear", TimelinePreset::Linear),
+            ("ease-in", TimelinePreset::EaseIn),
+            ("ease-out", TimelinePreset::EaseOut),
+            ("ease-in-out", TimelinePreset::EaseInOut),
+            ("sine-in", TimelinePreset::SineIn),
+            ("sine-out", TimelinePreset::SineOut),
+            ("sine-in-out", TimelinePreset::SineInOut),
+            ("cosine-in", TimelinePreset::CosineIn),
+            ("cosine-out", TimelinePreset::CosineOut),
+            ("cosine-in-out", TimelinePreset::CosineInOut),
+        ];
+
+        for (node_type, expected_curve) in cases {
+            let node: TransitionMotionNode = serde_json::from_value(serde_json::json!({
+                "id": "motion",
+                "type": node_type,
+                "position": { "x": 10.0, "y": 20.0 },
+                "duration": 0.4,
+                "delay": 0.1,
+                "blending": {
+                    "type": "tween",
+                    "duration": 0.12,
+                    "easing": "ease-in-out"
+                }
+            }))
+            .unwrap_or_else(|error| panic!("failed to deserialize {node_type}: {error}"));
+            let (curve, timeline) = node.timeline().expect("expected timeline-based node");
+            assert_eq!(curve, expected_curve);
+            assert_eq!(timeline.duration, 0.4);
+
+            let serialized = serde_json::to_value(&node).expect("motion node should serialize");
+            assert_eq!(serialized["type"], node_type);
+            assert_eq!(serialized["duration"], 0.4);
+            assert!(serialized.get("curve").is_none());
+            assert!(serialized.get("timeline").is_none());
+        }
     }
 }

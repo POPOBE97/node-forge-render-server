@@ -447,7 +447,6 @@ pub(super) struct InteractionBridgeState {
     pub interaction_event_seq: u64,
     pub last_synced_animation_state_id: Option<String>,
     pub cached_state_local_times: Vec<(String, f64)>,
-    pub cached_transition_blend: Option<f64>,
     pub cached_override_values: Vec<(String, String)>,
 }
 

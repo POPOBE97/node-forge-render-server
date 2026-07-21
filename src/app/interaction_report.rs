@@ -482,14 +482,9 @@ mod tests {
             session.fire_event(&payload.event_type);
         }
         let triggered = session.step(1.0 / 30.0);
-        if mousedown_to_mutation.delay + mousedown_to_mutation.duration <= 0.0 {
-            assert_eq!(triggered.current_state_id, mousedown_to_mutation.target);
-        } else {
-            assert_eq!(
-                triggered.active_transition_id.as_deref(),
-                Some(mousedown_to_mutation.id.as_str())
-            );
-        }
+        // Routing state switches immediately; the visual motion graph may
+        // remain active independently after this frame.
+        assert_eq!(triggered.current_state_id, mousedown_to_mutation.target);
     }
 
     #[test]

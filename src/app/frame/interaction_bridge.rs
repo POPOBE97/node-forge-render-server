@@ -208,7 +208,6 @@ pub fn sync_animation_state(
 pub fn update_debug_state(app: &mut App, step: &AnimationStep) {
     app.interaction_bridge.cached_state_local_times =
         step.state_local_times.clone().into_iter().collect();
-    app.interaction_bridge.cached_transition_blend = step.transition_blend;
     app.interaction_bridge.cached_override_values = step
         .active_overrides
         .iter()
