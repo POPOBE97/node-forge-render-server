@@ -2,7 +2,7 @@ use rust_wgpu_fiber::eframe::{egui_wgpu, wgpu};
 
 use crate::{
     app::{
-        texture_bridge,
+        canvas, texture_bridge,
         types::{AnalysisSourceDomain, App, DiffMetricMode, DiffStats, RefImageMode, TestMode},
     },
     renderer, ui,
@@ -49,7 +49,8 @@ pub(super) fn run(
             app.canvas.invalidation.mark_pixel_overlay_dirty();
         }
 
-        app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
+        let profile = canvas::draw_capture::render_profiled(app, false);
+        app.runtime.latest_render_profile = Some(profile);
         app.runtime.scene_redraw_pending = false;
         app.runtime
             .render_texture_fps_tracker

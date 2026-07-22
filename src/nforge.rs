@@ -16,7 +16,7 @@ use crate::{
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 1;
+const FORMAT_VERSION: i64 = 2;
 const CHANGE_LOG_RETENTION: i64 = 10_000;
 
 fn now_millis() -> u128 {
@@ -201,6 +201,22 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         }
     }
     template_loader::install_document_overrides(materials);
+
+    let mut functions = Vec::new();
+    {
+        let mut statement =
+            connection.prepare("SELECT resource_json FROM functions ORDER BY scope_id, node_id")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            functions.push(
+                serde_json::from_str::<crate::state_machine::mutation_function::FunctionResource>(
+                    &row?,
+                )
+                .context("invalid Mutation Function resource in .nforge")?,
+            );
+        }
+    }
+    crate::state_machine::mutation_function::install_document_functions(functions)?;
 
     let mut debug_store = DebugArtifactStore::default();
     let mut debug_items = HashMap::<String, DebugArtifactItem>::new();

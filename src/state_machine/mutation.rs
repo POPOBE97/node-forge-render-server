@@ -13,15 +13,18 @@
 //! - `MathDivide`     — divides connected inputs in order.
 //! - `Lerp`           — `mix(a, b, t)`.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Result, bail};
 
-use crate::renderer::render_plan::pass_assemblers::intelligent_light::{
-    INTELLIGENT_LIGHT_ZONE_COUNT, IntelligentLightDefaultDriverState,
-};
+use crate::renderer::render_plan::pass_assemblers::intelligent_light::INTELLIGENT_LIGHT_ZONE_COUNT;
 
 use super::types::*;
+
+const MUTATION_GRAPH_FRAME_BUDGET: Duration = Duration::from_millis(4);
 
 // ---------------------------------------------------------------------------
 // Typed animation value
@@ -38,6 +41,30 @@ pub enum AnimValue {
 }
 
 impl AnimValue {
+    pub fn from_json(value: &serde_json::Value) -> Option<Self> {
+        if let Some(value) = value.as_f64() {
+            return Some(Self::Float(value));
+        }
+        let values = value.as_array()?;
+        if values.len() == 2 {
+            return Some(Self::Vec2([values[0].as_f64()?, values[1].as_f64()?]));
+        }
+        if values.len() == 4 {
+            return Some(Self::Color([
+                values[0].as_f64()?,
+                values[1].as_f64()?,
+                values[2].as_f64()?,
+                values[3].as_f64()?,
+            ]));
+        }
+        Some(Self::Packed(
+            values
+                .iter()
+                .map(Self::from_json)
+                .collect::<Option<Vec<_>>>()?,
+        ))
+    }
+
     /// Extract as `f64`, converting if possible.
     pub fn as_f64(self) -> Option<f64> {
         match self {
@@ -85,11 +112,6 @@ impl From<[f64; 4]> for AnimValue {
 
 pub type MutationValue = AnimValue;
 
-#[derive(Debug, Default, Clone)]
-pub struct MutationRuntimeState {
-    intelligent_light_default_drivers: HashMap<String, IntelligentLightDefaultDriverState>,
-}
-
 /// Input context supplied to mutation evaluation.
 pub struct MutationInputContext {
     /// Current parameter snapshot keyed by mutation-input port id.
@@ -100,8 +122,6 @@ pub struct MutationInputContext {
     pub local_elapsed_time: f64,
     /// Latest mouse position in render-target frag pixel coordinates.
     pub mouse_position: Option<MousePosition>,
-    /// Whether stateful nodes should advance by one fixed frame this evaluation.
-    pub advance_frame: bool,
 }
 
 /// Evaluate a mutation definition given its input context.
@@ -110,15 +130,6 @@ pub struct MutationInputContext {
 pub fn evaluate_mutation(
     mutation: &MutationDefinition,
     ctx: &MutationInputContext,
-) -> Result<HashMap<String, MutationValue>> {
-    let mut runtime_state = MutationRuntimeState::default();
-    evaluate_mutation_with_state(mutation, ctx, &mut runtime_state)
-}
-
-pub fn evaluate_mutation_with_state(
-    mutation: &MutationDefinition,
-    ctx: &MutationInputContext,
-    runtime_state: &mut MutationRuntimeState,
 ) -> Result<HashMap<String, MutationValue>> {
     let has_inner_graph = !mutation.nodes.is_empty() || !mutation.connections.is_empty();
     let has_passthroughs = !mutation.passthrough_bindings.is_empty();
@@ -136,6 +147,12 @@ pub fn evaluate_mutation_with_state(
             mutation.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
         let order = topological_sort(&mutation.nodes, &mutation.connections)?;
+        for node in &mutation.nodes {
+            if node.node_type == MutationInnerNodeType::MutationFunction {
+                super::mutation_function::prepare(&mutation.id, &node.id)?;
+            }
+        }
+        let deadline = Instant::now() + MUTATION_GRAPH_FRAME_BUDGET;
 
         let mut port_values: HashMap<(&str, &str), MutationValue> = HashMap::new();
 
@@ -145,6 +162,13 @@ pub fn evaluate_mutation_with_state(
         }
 
         for node_id in &order {
+            let remaining_budget = deadline.saturating_duration_since(Instant::now());
+            if remaining_budget.is_zero() {
+                bail!(
+                    "Mutation graph '{}' exceeded its 4ms frame budget",
+                    mutation.id
+                );
+            }
             let node = nodes_by_id.get(node_id.as_str()).unwrap();
 
             for conn in &mutation.connections {
@@ -160,7 +184,13 @@ pub fn evaluate_mutation_with_state(
                 }
             }
 
-            evaluate_inner_node(node, &mut port_values, runtime_state, ctx.advance_frame)?;
+            evaluate_inner_node(&mutation.id, node, &mut port_values, remaining_budget)?;
+            if Instant::now() >= deadline {
+                bail!(
+                    "Mutation graph '{}' exceeded its 4ms frame budget",
+                    mutation.id
+                );
+            }
         }
 
         for b in &mutation.output_bindings {
@@ -227,26 +257,7 @@ pub fn resolve_output_target(port_id: &str) -> Option<OverrideKey> {
     OverrideKey::parse(port_id)
 }
 
-fn grouped_intelligent_light_target(port_id: &str) -> Option<(&str, &str)> {
-    let (node_id, param_name) = port_id.split_once(':')?;
-    match param_name {
-        "positions" | "colors" => Some((node_id, param_name)),
-        _ => None,
-    }
-}
-
 pub fn expand_output_target_keys(port_id: &str) -> Vec<OverrideKey> {
-    if let Some((node_id, param_name)) = grouped_intelligent_light_target(port_id) {
-        let prefix = if param_name == "positions" {
-            "pos"
-        } else {
-            "color"
-        };
-        return (0..INTELLIGENT_LIGHT_ZONE_COUNT)
-            .map(|index| OverrideKey::new(node_id, format!("{prefix}{index}")))
-            .collect();
-    }
-
     resolve_output_target(port_id).into_iter().collect()
 }
 
@@ -254,38 +265,6 @@ pub fn expand_output_overrides(
     port_id: &str,
     value: &MutationValue,
 ) -> Vec<(OverrideKey, serde_json::Value)> {
-    if let Some((node_id, param_name)) = grouped_intelligent_light_target(port_id) {
-        let expected_prefix = if param_name == "positions" {
-            "pos"
-        } else {
-            "color"
-        };
-        let expected_kind_is_positions = param_name == "positions";
-
-        if let AnimValue::Packed(values) = value {
-            return values
-                .iter()
-                .take(INTELLIGENT_LIGHT_ZONE_COUNT)
-                .enumerate()
-                .filter_map(|(index, packed_value)| {
-                    match (expected_kind_is_positions, packed_value) {
-                        (true, AnimValue::Vec2(v)) => Some((
-                            OverrideKey::new(node_id, format!("{expected_prefix}{index}")),
-                            AnimValue::Vec2(*v).to_json(),
-                        )),
-                        (false, AnimValue::Color(v)) => Some((
-                            OverrideKey::new(node_id, format!("{expected_prefix}{index}")),
-                            AnimValue::Color(*v).to_json(),
-                        )),
-                        _ => None,
-                    }
-                })
-                .collect();
-        }
-
-        return Vec::new();
-    }
-
     resolve_output_target(port_id)
         .map(|key| vec![(key, value.to_json())])
         .unwrap_or_default()
@@ -352,10 +331,10 @@ fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<Mutat
 // ---------------------------------------------------------------------------
 
 fn evaluate_inner_node<'a>(
+    mutation_id: &str,
     node: &'a MutationInnerNode,
     port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
-    runtime_state: &mut MutationRuntimeState,
-    advance_frame: bool,
+    remaining_budget: Duration,
 ) -> Result<()> {
     match node.node_type {
         MutationInnerNodeType::FloatInput => {
@@ -379,75 +358,60 @@ fn evaluate_inner_node<'a>(
                 AnimValue::Packed(packed),
             );
         }
-        MutationInnerNodeType::IntelligentLightDefaultDriver => {
-            let driver_state = runtime_state
-                .intelligent_light_default_drivers
-                .entry(node.id.clone())
-                .or_default();
-            let frame = if advance_frame {
-                driver_state.advance()
-            } else {
-                driver_state.current_frame()
-            };
-
+        MutationInnerNodeType::MutationFunction => {
+            let input = serde_json::Value::Object(
+                node.inputs
+                    .iter()
+                    .map(|port| {
+                        (
+                            port.id.clone(),
+                            get_port_value(node, port.id.as_str(), port_values)
+                                .unwrap_or_default()
+                                .to_json(),
+                        )
+                    })
+                    .collect(),
+            );
+            let result = super::mutation_function::evaluate(
+                mutation_id,
+                &node.id,
+                &input,
+                remaining_budget,
+            )?;
+            let object = result.as_object().ok_or_else(|| {
+                anyhow::anyhow!("Mutation Function '{}' must return an object", node.id)
+            })?;
             for output in &node.outputs {
-                if output.id == "positions" {
-                    write_output_if_declared_or_default(
-                        node,
-                        port_values,
-                        output.id.as_str(),
-                        AnimValue::Packed(
-                            frame
-                                .positions
-                                .iter()
-                                .copied()
-                                .map(AnimValue::Vec2)
-                                .collect(),
-                        ),
-                    );
-                    continue;
-                }
-
-                if output.id == "colors" {
-                    write_output_if_declared_or_default(
-                        node,
-                        port_values,
-                        output.id.as_str(),
-                        AnimValue::Packed(
-                            frame.colors.iter().copied().map(AnimValue::Color).collect(),
-                        ),
-                    );
-                    continue;
-                }
-
-                if let Some(index) = output
-                    .id
-                    .strip_prefix("pos")
-                    .and_then(|suffix| suffix.parse::<usize>().ok())
-                    .filter(|index| *index < INTELLIGENT_LIGHT_ZONE_COUNT)
+                let value = object.get(&output.id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Mutation Function '{}' omitted output '{}'",
+                        node.id,
+                        output.id
+                    )
+                })?;
+                let value = AnimValue::from_json(value).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Mutation Function '{}.{}' returned a value incompatible with '{}'",
+                        node.id,
+                        output.id,
+                        output.port_type.as_deref().unwrap_or("any")
+                    )
+                })?;
+                if matches!(output.id.as_str(), "positions" | "colors")
+                    && !matches!(
+                        &value,
+                        AnimValue::Packed(values)
+                            if values.len() == INTELLIGENT_LIGHT_ZONE_COUNT
+                    )
                 {
-                    write_output_if_declared_or_default(
-                        node,
-                        port_values,
-                        output.id.as_str(),
-                        AnimValue::Vec2(frame.positions[index]),
-                    );
-                    continue;
-                }
-
-                if let Some(index) = output
-                    .id
-                    .strip_prefix("color")
-                    .and_then(|suffix| suffix.parse::<usize>().ok())
-                    .filter(|index| *index < INTELLIGENT_LIGHT_ZONE_COUNT)
-                {
-                    write_output_if_declared_or_default(
-                        node,
-                        port_values,
-                        output.id.as_str(),
-                        AnimValue::Color(frame.colors[index]),
+                    bail!(
+                        "Mutation Function '{}.{}' must return exactly {} elements",
+                        node.id,
+                        output.id,
+                        INTELLIGENT_LIGHT_ZONE_COUNT
                     );
                 }
+                write_output_if_declared_or_default(node, port_values, output.id.as_str(), value);
             }
         }
         MutationInnerNodeType::MathAdd => {
@@ -662,7 +626,6 @@ mod tests {
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,
             mouse_position: None,
-            advance_frame: true,
         }
     }
 
@@ -677,34 +640,6 @@ mod tests {
     fn output_packed_len(outputs: &HashMap<String, MutationValue>, key: &str) -> usize {
         match outputs.get(key).cloned() {
             Some(AnimValue::Packed(values)) => values.len(),
-            other => panic!("expected packed output for {key}, got {other:?}"),
-        }
-    }
-
-    fn output_packed_vec2(
-        outputs: &HashMap<String, MutationValue>,
-        key: &str,
-        index: usize,
-    ) -> [f64; 2] {
-        match outputs.get(key).cloned() {
-            Some(AnimValue::Packed(values)) => match values.get(index).cloned() {
-                Some(AnimValue::Vec2(value)) => value,
-                other => panic!("expected vec2 packed output for {key}[{index}], got {other:?}"),
-            },
-            other => panic!("expected packed output for {key}, got {other:?}"),
-        }
-    }
-
-    fn output_packed_color(
-        outputs: &HashMap<String, MutationValue>,
-        key: &str,
-        index: usize,
-    ) -> [f64; 4] {
-        match outputs.get(key).cloned() {
-            Some(AnimValue::Packed(values)) => match values.get(index).cloned() {
-                Some(AnimValue::Color(value)) => value,
-                other => panic!("expected color packed output for {key}[{index}], got {other:?}"),
-            },
             other => panic!("expected packed output for {key}, got {other:?}"),
         }
     }
@@ -1115,82 +1050,6 @@ mod tests {
 
         let result = evaluate_mutation(&m, &ctx).unwrap();
         assert!((output_f64(&result, "out") - 79.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn intelligent_light_default_driver_emits_typed_outputs_and_persists_state() {
-        let mut m = empty_mutation();
-        m.nodes.push(MutationInnerNode {
-            id: "driver".into(),
-            node_type: MutationInnerNodeType::IntelligentLightDefaultDriver,
-            params: HashMap::new(),
-            inputs: vec![],
-            outputs: vec![
-                MutationPort {
-                    id: "positions".into(),
-                    name: Some("Positions".into()),
-                    port_type: Some("packed<vector2>".into()),
-                },
-                MutationPort {
-                    id: "colors".into(),
-                    name: Some("Colors".into()),
-                    port_type: Some("packed<color>".into()),
-                },
-            ],
-        });
-        m.output_bindings.push(MutationOutputBinding {
-            port_id: "out_positions".into(),
-            from: MutationEndpoint {
-                node_id: "driver".into(),
-                port_id: "positions".into(),
-            },
-        });
-        m.output_bindings.push(MutationOutputBinding {
-            port_id: "out_colors".into(),
-            from: MutationEndpoint {
-                node_id: "driver".into(),
-                port_id: "colors".into(),
-            },
-        });
-
-        let mut runtime_state = MutationRuntimeState::default();
-        let mut ctx = empty_ctx();
-        ctx.advance_frame = false;
-
-        let initial = evaluate_mutation_with_state(&m, &ctx, &mut runtime_state).unwrap();
-        let initial_pos = output_packed_vec2(&initial, "out_positions", 0);
-        let initial_color = output_packed_color(&initial, "out_colors", 0);
-
-        ctx.advance_frame = true;
-        let advanced = evaluate_mutation_with_state(&m, &ctx, &mut runtime_state).unwrap();
-        let advanced_pos = output_packed_vec2(&advanced, "out_positions", 0);
-        let advanced_color = output_packed_color(&advanced, "out_colors", 0);
-
-        assert_eq!(
-            output_packed_len(&advanced, "out_positions"),
-            INTELLIGENT_LIGHT_ZONE_COUNT
-        );
-        assert_eq!(
-            output_packed_len(&advanced, "out_colors"),
-            INTELLIGENT_LIGHT_ZONE_COUNT
-        );
-        assert_ne!(
-            initial_pos, advanced_pos,
-            "driver should advance positions between frames"
-        );
-        assert_eq!(
-            initial_color, advanced_color,
-            "driver colors should stay constant"
-        );
-        assert!((advanced_pos[0] - 0.3540362174764879).abs() < 1e-6);
-        assert!((advanced_pos[1] - 0.27569746078678015).abs() < 1e-6);
-        let expected_color = [0.5019608, 0.5254902, 1.0, 1.0];
-        for (actual, expected) in advanced_color.into_iter().zip(expected_color) {
-            assert!(
-                (actual - expected).abs() < 1e-6,
-                "color0 should match the legacy default constant"
-            );
-        }
     }
 
     // ── Passthrough binding tests ──────────────────────────────────────

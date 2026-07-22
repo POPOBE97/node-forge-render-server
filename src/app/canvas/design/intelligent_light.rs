@@ -5,7 +5,7 @@ use crate::{
     dsl::{Node, SceneDSL, incoming_connection},
     protocol::DesignParamPatchPayload,
     renderer::render_plan::pass_assemblers::intelligent_light::{
-        INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position, procedural_positions,
+        INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position,
     },
     ui::{
         color_popover::{ColorPopoverConfig, show_color_popover},
@@ -28,15 +28,8 @@ const DEFAULT_COLOR_HEXES: [&str; INTELLIGENT_LIGHT_ZONE_COUNT] = [
     "#ff8635", "#1269f2", "#847eff",
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum IntelligentLightLayoutMode {
-    Procedural,
-    Manual,
-}
-
 #[derive(Clone, Debug)]
 struct IntelligentLightValues {
-    layout_mode: IntelligentLightLayoutMode,
     positions: [[f32; 2]; INTELLIGENT_LIGHT_ZONE_COUNT],
     colors: [Color32; INTELLIGENT_LIGHT_ZONE_COUNT],
     position_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
@@ -45,17 +38,15 @@ struct IntelligentLightValues {
 }
 
 pub fn is_intelligent_light_design_param(key: &str) -> bool {
-    key == "layoutMode"
-        || key.strip_prefix("pos").is_some_and(|suffix| {
-            suffix
-                .parse::<usize>()
-                .is_ok_and(|index| index < INTELLIGENT_LIGHT_ZONE_COUNT)
-        })
-        || key.strip_prefix("color").is_some_and(|suffix| {
-            suffix
-                .parse::<usize>()
-                .is_ok_and(|index| index < INTELLIGENT_LIGHT_ZONE_COUNT)
-        })
+    key.strip_prefix("pos").is_some_and(|suffix| {
+        suffix
+            .parse::<usize>()
+            .is_ok_and(|index| index < INTELLIGENT_LIGHT_ZONE_COUNT)
+    }) || key.strip_prefix("color").is_some_and(|suffix| {
+        suffix
+            .parse::<usize>()
+            .is_ok_and(|index| index < INTELLIGENT_LIGHT_ZONE_COUNT)
+    })
 }
 
 pub fn show_overlay(
@@ -353,15 +344,6 @@ fn emit_position_patch(
 
     let position = screen_to_point(pointer_pos, rect, values.position_space);
     let mut params = Map::new();
-    if phase == "begin" && values.layout_mode == IntelligentLightLayoutMode::Procedural {
-        params.insert(
-            "layoutMode".to_string(),
-            Value::String("manual".to_string()),
-        );
-        for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
-            params.insert(position_key(index), json!(values.positions[index]));
-        }
-    }
     params.insert(position_key(zone_index), json!(position));
     emit_patch(phase, target, session_id, state, params, actions);
 }
@@ -583,44 +565,29 @@ fn read_intelligent_light_values(
             .unwrap_or(DEFAULT_TARGET_SIZE.1 as f32)
             .max(1.0),
     ];
-    let layout_mode = read_layout_mode(node, state);
-    let driver = resolve_driver_value(scene, node);
     let mut positions = [[0.0; 2]; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut colors = [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut position_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut color_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
 
-    let procedural_positions = if layout_mode == IntelligentLightLayoutMode::Procedural {
-        Some(procedural_positions(driver))
-    } else {
-        None
-    };
-
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
         let pos_key = position_key(index);
         let position_connection = incoming_connection(scene, node.id.as_str(), pos_key.as_str());
         position_locks[index] = position_connection.is_some();
-        positions[index] = if let Some(live_positions) = procedural_positions.as_ref() {
-            clamp_pixel_position(
-                [live_positions[index].0, live_positions[index].1],
-                position_space,
-            )
-        } else {
-            position_connection
-                .and_then(|conn| {
-                    resolve_connected_position_value(
-                        scene,
-                        &conn.from.node_id,
-                        &conn.from.port_id,
-                        position_space,
-                    )
-                })
-                .or_else(|| {
-                    param_value(node, state, pos_key.as_str(), animation_playing)
-                        .and_then(|value| parse_pixel_vec2_value(value, position_space))
-                })
-                .unwrap_or_else(|| default_light_position(index, position_space))
-        };
+        positions[index] = position_connection
+            .and_then(|conn| {
+                resolve_connected_position_value(
+                    scene,
+                    &conn.from.node_id,
+                    &conn.from.port_id,
+                    position_space,
+                )
+            })
+            .or_else(|| {
+                param_value(node, state, pos_key.as_str(), animation_playing)
+                    .and_then(|value| parse_pixel_vec2_value(value, position_space))
+            })
+            .unwrap_or_else(|| default_light_position(index, position_space));
 
         let color_key = color_key(index);
         let color_connection = incoming_connection(scene, node.id.as_str(), color_key.as_str());
@@ -639,7 +606,6 @@ fn read_intelligent_light_values(
     }
 
     IntelligentLightValues {
-        layout_mode,
         positions,
         colors,
         position_locks,
@@ -692,31 +658,6 @@ fn resolve_connected_color_value(
             .get("value")
             .or_else(|| upstream.params.get(port_id))?,
     )
-}
-
-fn read_layout_mode(
-    _node: &Node,
-    _state: &IntelligentLightDesignState,
-) -> IntelligentLightLayoutMode {
-    // Intelligent Light now edits in manual mode only.
-    IntelligentLightLayoutMode::Manual
-}
-
-fn resolve_driver_value(scene: &SceneDSL, node: &Node) -> f64 {
-    if let Some(conn) = incoming_connection(scene, node.id.as_str(), "driver")
-        && let Some(upstream) = scene
-            .nodes
-            .iter()
-            .find(|candidate| candidate.id == conn.from.node_id)
-    {
-        return upstream
-            .params
-            .get("value")
-            .and_then(json_f64)
-            .unwrap_or_else(|| node.params.get("driver").and_then(json_f64).unwrap_or(0.0));
-    }
-
-    node.params.get("driver").and_then(json_f64).unwrap_or(0.0)
 }
 
 fn param_value<'a>(
@@ -881,14 +822,6 @@ fn json_f32(value: &Value) -> Option<f32> {
     value.is_finite().then_some(value as f32)
 }
 
-fn json_f64(value: &Value) -> Option<f64> {
-    let value = value
-        .as_f64()
-        .or_else(|| value.as_i64().map(|value| value as f64))
-        .or_else(|| value.as_u64().map(|value| value as f64))?;
-    value.is_finite().then_some(value)
-}
-
 fn color_component_to_u8(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
@@ -914,9 +847,8 @@ mod tests {
         }
     }
 
-    fn test_values(layout_mode: IntelligentLightLayoutMode) -> IntelligentLightValues {
+    fn test_values() -> IntelligentLightValues {
         IntelligentLightValues {
-            layout_mode,
             positions: std::array::from_fn(|index| default_light_position(index, [60.0, 37.0])),
             colors: [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT],
             position_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
@@ -962,7 +894,7 @@ mod tests {
 
     #[test]
     fn intelligent_light_design_param_allowlist_rejects_unknown_keys() {
-        assert!(is_intelligent_light_design_param("layoutMode"));
+        assert!(!is_intelligent_light_design_param("layoutMode"));
         assert!(is_intelligent_light_design_param("pos0"));
         assert!(is_intelligent_light_design_param("pos10"));
         assert!(is_intelligent_light_design_param("color0"));
@@ -999,7 +931,7 @@ mod tests {
     fn opening_color_popover_emits_begin_and_tracks_original_hex() {
         let target = test_target();
         let mut state = IntelligentLightDesignState::default();
-        let mut values = test_values(IntelligentLightLayoutMode::Manual);
+        let mut values = test_values();
         values.colors[3] = parse_hex_color("#abcdef").expect("hex color");
         let mut actions = Vec::new();
 
@@ -1021,7 +953,7 @@ mod tests {
         let mut state = IntelligentLightDesignState::default();
         state.color_popover_zone = Some(1);
         state.color_edit_original_hex = Some("#112233".to_string());
-        let mut values = test_values(IntelligentLightLayoutMode::Manual);
+        let mut values = test_values();
         values.colors[1] = parse_hex_color("#334455").expect("hex color");
         values.colors[2] = parse_hex_color("#abcdef").expect("hex color");
         let mut actions = Vec::new();
@@ -1040,40 +972,6 @@ mod tests {
         assert_eq!(
             actions[1].params.get("color2"),
             Some(&Value::String("#abcdef".to_string()))
-        );
-    }
-
-    #[test]
-    fn procedural_begin_patch_freezes_all_zones_and_switches_to_manual() {
-        let target = test_target();
-        let mut state = IntelligentLightDesignState::default();
-        let values = test_values(IntelligentLightLayoutMode::Procedural);
-        let rect = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(300.0, 200.0));
-        let mut actions = Vec::new();
-
-        emit_position_patch(
-            "begin",
-            &target,
-            "session",
-            &mut state,
-            &values,
-            0,
-            Pos2::new(300.0, 0.0),
-            rect,
-            &mut actions,
-        );
-
-        let patch = actions.pop().expect("freeze patch");
-        assert_eq!(patch.phase, "begin");
-        assert_eq!(
-            patch.params.get("layoutMode"),
-            Some(&Value::String("manual".to_string()))
-        );
-        assert_eq!(patch.params.len(), 1 + INTELLIGENT_LIGHT_ZONE_COUNT);
-        assert_eq!(patch.params.get("pos0"), Some(&json!([60.0, 37.0])));
-        assert_eq!(
-            patch.params.get("pos1"),
-            Some(&json!(default_light_position(1, [60.0, 37.0])))
         );
     }
 
@@ -1169,7 +1067,6 @@ mod tests {
                     "ilight",
                     "IntelligentLight",
                     HashMap::from([
-                        ("layoutMode".to_string(), json!("manual")),
                         ("pos0".to_string(), json!([0.1, 0.2])),
                         ("color0".to_string(), json!("#112233")),
                     ]),
@@ -1220,56 +1117,11 @@ mod tests {
             false,
         );
 
-        assert_eq!(values.layout_mode, IntelligentLightLayoutMode::Manual);
         assert_eq!(values.positions[0], [45.0, 27.75]);
         assert_eq!(
             values.colors[0],
             parse_hex_color("#abcdef").expect("hex color")
         );
-    }
-
-    #[test]
-    fn legacy_procedural_overlay_values_use_manual_positions() {
-        let scene = SceneDSL {
-            version: "1".to_string(),
-            metadata: crate::dsl::Metadata {
-                name: "ilight procedural".to_string(),
-                created: None,
-                modified: None,
-            },
-            nodes: vec![test_node(
-                "ilight",
-                "IntelligentLight",
-                HashMap::from([
-                    ("layoutMode".to_string(), json!("procedural")),
-                    ("driver".to_string(), json!(0.0)),
-                    ("pos0".to_string(), json!([0.0, 0.0])),
-                ]),
-            )],
-            connections: vec![],
-            outputs: None,
-            groups: vec![],
-            assets: HashMap::new(),
-            state_machine: None,
-            debug_artifacts: None,
-        };
-        let target = test_target();
-        let node = scene
-            .nodes
-            .iter()
-            .find(|candidate| candidate.id == "ilight")
-            .expect("ilight node");
-
-        let values = read_intelligent_light_values(
-            &scene,
-            node,
-            &target,
-            &IntelligentLightDesignState::default(),
-            false,
-        );
-
-        assert_eq!(values.layout_mode, IntelligentLightLayoutMode::Manual);
-        assert_eq!(values.positions[0], [0.0, 37.0]);
     }
 
     #[test]

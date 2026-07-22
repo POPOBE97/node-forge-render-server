@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rust_wgpu_fiber::{ResourceName, eframe::egui, eframe::wgpu};
+use rust_wgpu_fiber::{ResourceName, eframe::egui, eframe::wgpu, shader_space::PassCaptureMode};
 
 use crate::{
     app::{
@@ -113,6 +113,7 @@ pub struct CanvasDisplayState {
     pub color_attachment: Option<egui::TextureId>,
     pub preview_texture_name: Option<ResourceName>,
     pub preview_color_attachment: Option<egui::TextureId>,
+    pub pass_capture: Option<DrawCallCaptureState>,
     pub hdr_preview_clamp_enabled: bool,
     pub wireframe_enabled: bool,
     pub hdr_clamp_renderer: Option<ui::hdr_clamp::HdrClampRenderer>,
@@ -122,6 +123,12 @@ pub struct CanvasDisplayState {
     pub pixel_overlay_last_request_key: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrawCallCaptureState {
+    pub pass_name: String,
+    pub mode: PassCaptureMode,
+}
+
 impl Default for CanvasDisplayState {
     fn default() -> Self {
         Self {
@@ -129,6 +136,7 @@ impl Default for CanvasDisplayState {
             color_attachment: None,
             preview_texture_name: None,
             preview_color_attachment: None,
+            pass_capture: None,
             hdr_preview_clamp_enabled: false,
             wireframe_enabled: false,
             hdr_clamp_renderer: None,

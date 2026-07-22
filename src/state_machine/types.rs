@@ -45,7 +45,6 @@ pub enum AnimationStateType {
     AnyState,
     ExitState,
     AnimationState,
-    MutationNode,
 }
 
 /// A single state in the state graph.
@@ -58,35 +57,16 @@ pub struct AnimationState {
     pub position: Option<Position>,
     #[serde(default, rename = "parameterOverrides")]
     pub parameter_overrides: HashMap<String, serde_json::Value>,
-    /// Discriminant.  Legacy scenes may omit this — see normalization.
     #[serde(rename = "type")]
-    pub state_type: Option<AnimationStateType>,
-    /// Only present when `state_type == MutationNode`.
+    pub state_type: AnimationStateType,
+    /// Optional state-local post-motion Mutation graph.
     #[serde(default, rename = "mutationId")]
     pub mutation_id: Option<String>,
 }
 
 impl AnimationState {
-    /// Resolved state type, applying legacy inference when `type` is missing.
     pub fn resolved_type(&self) -> AnimationStateType {
-        if let Some(t) = self.state_type {
-            return t;
-        }
-        // Legacy inference by name.
-        let name_lower = self.name.to_ascii_lowercase();
-        if name_lower == "entry" {
-            return AnimationStateType::EntryState;
-        }
-        if name_lower == "any" {
-            return AnimationStateType::AnyState;
-        }
-        if name_lower == "exit" {
-            return AnimationStateType::ExitState;
-        }
-        if self.mutation_id.is_some() {
-            return AnimationStateType::MutationNode;
-        }
-        AnimationStateType::AnimationState
+        self.state_type
     }
 }
 
@@ -130,6 +110,14 @@ pub enum TimelinePreset {
     CosineInOut,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RepeatMode {
+    #[default]
+    PingPong,
+    Restart,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TimelineBlending {
     #[serde(rename = "type")]
@@ -168,6 +156,36 @@ pub struct TimelineMotionNode {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TransitionMotionNode {
+    #[serde(rename = "RepeatTimeline")]
+    RepeatTimeline {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        from: f64,
+        #[serde(default = "default_repeat_to")]
+        to: f64,
+        #[serde(default = "default_repeat_duration")]
+        duration: f64,
+        #[serde(default)]
+        easing: TimelinePreset,
+        #[serde(default)]
+        mode: RepeatMode,
+    },
+    #[serde(rename = "SpringFollow")]
+    SpringFollow {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default = "default_spring_duration")]
+        duration: f64,
+        #[serde(default = "default_spring_bounce")]
+        bounce: f64,
+    },
     Spring {
         id: String,
         #[serde(default)]
@@ -366,6 +384,14 @@ fn default_spring_duration() -> f64 {
     0.45
 }
 
+fn default_repeat_to() -> f64 {
+    1.0
+}
+
+fn default_repeat_duration() -> f64 {
+    1.0
+}
+
 fn default_spring_bounce() -> f64 {
     0.1
 }
@@ -377,7 +403,9 @@ fn default_timeline_duration() -> f64 {
 impl TransitionMotionNode {
     pub fn id(&self) -> &str {
         match self {
-            Self::Spring { id, .. }
+            Self::RepeatTimeline { id, .. }
+            | Self::SpringFollow { id, .. }
+            | Self::Spring { id, .. }
             | Self::Instant { id, .. }
             | Self::EventTrigger { id, .. }
             | Self::Logic { id, .. }
@@ -414,6 +442,8 @@ impl TransitionMotionNode {
             Self::CosineOut { timeline } => (TimelinePreset::CosineOut, timeline),
             Self::CosineInOut { timeline } => (TimelinePreset::CosineInOut, timeline),
             Self::Spring { .. }
+            | Self::RepeatTimeline { .. }
+            | Self::SpringFollow { .. }
             | Self::Instant { .. }
             | Self::EventTrigger { .. }
             | Self::Logic { .. }
@@ -430,7 +460,9 @@ impl TransitionMotionNode {
     pub fn is_timing(&self) -> bool {
         matches!(
             self,
-            Self::Spring { .. }
+            Self::RepeatTimeline { .. }
+                | Self::SpringFollow { .. }
+                | Self::Spring { .. }
                 | Self::Linear { .. }
                 | Self::EaseIn { .. }
                 | Self::EaseOut { .. }
@@ -590,8 +622,8 @@ pub struct MutationPort {
 pub enum MutationInnerNodeType {
     #[serde(rename = "FloatInput")]
     FloatInput,
-    #[serde(rename = "IntelligentLightDefaultDriver")]
-    IntelligentLightDefaultDriver,
+    #[serde(rename = "MutationFunction")]
+    MutationFunction,
     #[serde(rename = "PackArray")]
     PackArray,
     #[serde(rename = "MathAdd")]

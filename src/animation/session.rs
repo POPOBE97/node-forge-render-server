@@ -104,8 +104,7 @@ impl AnimationSession {
             None => return Ok(None),
         };
 
-        // Collect base values for all params this state machine can override.
-        let base_values = collect_base_values(scene, runtime.definition());
+        let base_values = state_machine::collect_scene_current_values(scene);
 
         Ok(Some(Self {
             runtime,
@@ -215,6 +214,7 @@ impl AnimationSession {
         for (key, value) in updates {
             self.base_values.insert(key.clone(), value.clone());
         }
+        self.runtime.update_current_values(updates);
     }
 
     /// Queue an event to fire on the next `step()`.
@@ -284,67 +284,3 @@ impl AnimationSession {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Collect the base (initial) values for all params this state machine can override.
-fn collect_base_values(
-    scene: &SceneDSL,
-    sm: &state_machine::StateMachine,
-) -> HashMap<OverrideKey, serde_json::Value> {
-    use crate::state_machine::mutation;
-
-    let mut base = HashMap::new();
-
-    // From static parameterOverrides in states.
-    for state in &sm.states {
-        for key_str in state.parameter_overrides.keys() {
-            if let Some(ok) = OverrideKey::parse(key_str)
-                && let Some(val) = lookup_node_param(scene, &ok)
-            {
-                base.insert(ok, val);
-            }
-        }
-    }
-
-    // From mutation output targets (unified resolver).
-    for m in &sm.mutations {
-        for ok in mutation::all_output_target_keys(m) {
-            if let std::collections::hash_map::Entry::Vacant(e) = base.entry(ok.clone())
-                && let Some(val) = lookup_node_param(scene, &ok)
-            {
-                e.insert(val);
-            }
-        }
-    }
-
-    base
-}
-
-fn lookup_node_param(scene: &SceneDSL, key: &OverrideKey) -> Option<serde_json::Value> {
-    // First try top-level nodes (exact match).
-    if let Some(val) = scene
-        .nodes
-        .iter()
-        .find(|n| n.id == key.node_id)
-        .and_then(|n| n.params.get(key.param_name.as_str()))
-        .cloned()
-    {
-        return Some(val);
-    }
-
-    // Fall back to searching inside group definitions.
-    // The state machine may reference nodes that live inside a group
-    // (e.g. `FloatInput_53`) which only appear in `scene.groups[].nodes`.
-    for group in &scene.groups {
-        if let Some(val) = group
-            .nodes
-            .iter()
-            .find(|n| n.id == key.node_id)
-            .and_then(|n| n.params.get(key.param_name.as_str()))
-            .cloned()
-        {
-            return Some(val);
-        }
-    }
-
-    None
-}

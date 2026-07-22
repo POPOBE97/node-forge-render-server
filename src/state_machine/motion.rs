@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::easing::ease;
 use super::types::{
-    EasingKind, OverrideKey, TimelineBlending, TimelinePreset, TransitionMotionGraph,
+    EasingKind, OverrideKey, RepeatMode, TimelineBlending, TimelinePreset, TransitionMotionGraph,
     TransitionMotionNode,
 };
 
@@ -40,25 +40,82 @@ pub struct MotionStep {
 pub struct MotionEngine {
     channels: HashMap<OverrideKey, Channel>,
     active_transition_id: Option<String>,
+    initial_values: HashMap<OverrideKey, serde_json::Value>,
+    current_values: HashMap<OverrideKey, serde_json::Value>,
+    post_processed_keys: HashSet<OverrideKey>,
 }
 
 impl MotionEngine {
     pub fn new() -> Self {
+        Self::with_initial_values(HashMap::new())
+    }
+
+    pub fn with_initial_values(initial_values: HashMap<OverrideKey, serde_json::Value>) -> Self {
         Self {
             channels: HashMap::new(),
             active_transition_id: None,
+            current_values: initial_values.clone(),
+            initial_values,
+            post_processed_keys: HashSet::new(),
         }
     }
 
     pub fn reset(&mut self) {
         self.channels.clear();
         self.active_transition_id = None;
+        self.current_values.clone_from(&self.initial_values);
+        self.post_processed_keys.clear();
     }
 
     pub fn active_transition_id(&self) -> Option<&str> {
         self.active_transition_id.as_deref()
     }
 
+    /// Submit a new property animation transaction.
+    ///
+    /// The caller supplies logical target values only. Presentation sources
+    /// are always taken from the engine-owned current-value store, while an
+    /// interrupted channel contributes velocity when that velocity is still
+    /// meaningful.
+    pub fn transition_to(
+        &mut self,
+        transition_id: &str,
+        target: &HashMap<OverrideKey, serde_json::Value>,
+        graph: &TransitionMotionGraph,
+    ) {
+        let plans = compile_channel_plans(graph);
+        for (key, target_json) in target {
+            let key_string = key_string(&key);
+            let plan = plans
+                .specific
+                .get(&key_string)
+                .or(plans.fallback.as_ref())
+                .cloned()
+                .unwrap_or(MotionPlan::Instant);
+            let source_json = self
+                .current_values
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| target_json.clone());
+            let old = if self.post_processed_keys.contains(key) {
+                // A Mutation changed the final presentation after the channel
+                // sample, so its velocity no longer describes that value.
+                None
+            } else {
+                self.channels.remove(key)
+            };
+            self.channels.insert(
+                key.clone(),
+                Channel::start(old, source_json, target_json.clone(), plan),
+            );
+        }
+        self.post_processed_keys.clear();
+        self.active_transition_id = Some(transition_id.to_string());
+    }
+
+    /// Compatibility helper for low-level motion tests. Runtime code should
+    /// use [`Self::transition_to`] so source ownership remains inside the
+    /// animation engine.
     pub fn start_transition(
         &mut self,
         transition_id: &str,
@@ -67,43 +124,53 @@ impl MotionEngine {
         target: &HashMap<OverrideKey, serde_json::Value>,
         sticky: &HashMap<OverrideKey, serde_json::Value>,
     ) {
-        let plans = compile_channel_plans(graph);
-        let mut keys: HashSet<OverrideKey> = source.keys().chain(target.keys()).cloned().collect();
-        keys.extend(sticky.keys().cloned());
-
-        for key in keys {
-            let key_string = key_string(&key);
-            let plan = plans
-                .specific
-                .get(&key_string)
-                .or(plans.fallback.as_ref())
-                .cloned()
-                .unwrap_or(MotionPlan::Instant);
-            let source_json = source
-                .get(&key)
-                .or_else(|| sticky.get(&key))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            let target_json = target
-                .get(&key)
-                .or_else(|| sticky.get(&key))
-                .cloned()
-                .unwrap_or_else(|| source_json.clone());
-            let old = self.channels.remove(&key);
-            self.channels
-                .insert(key, Channel::start(old, source_json, target_json, plan));
+        for (key, value) in sticky.iter().chain(source.iter()) {
+            self.current_values.insert(key.clone(), value.clone());
         }
-        self.active_transition_id = Some(transition_id.to_string());
+        self.transition_to(transition_id, target, graph);
     }
 
-    pub fn update_endpoints(
-        &mut self,
-        source: &HashMap<OverrideKey, serde_json::Value>,
-        target: &HashMap<OverrideKey, serde_json::Value>,
-    ) {
-        for (key, channel) in &mut self.channels {
-            channel.update_endpoints(source.get(key), target.get(key));
+    /// Atomically commit a post-motion Mutation patch as the global final
+    /// current values for this frame.
+    pub fn commit_post_process(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
+        for (key, value) in patch {
+            self.post_processed_keys.insert(key.clone());
+            self.current_values.insert(key, value);
         }
+    }
+
+    /// Commit logical State targets when no transition transaction is active.
+    /// These are animation-engine writes, not Mutation post-processing writes.
+    pub fn commit_logical_values(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
+        for (key, value) in patch {
+            if self.channels.get(&key).is_some_and(Channel::is_persistent) {
+                continue;
+            }
+            self.current_values.insert(key.clone(), value);
+            self.channels.remove(&key);
+            self.post_processed_keys.remove(&key);
+        }
+    }
+
+    /// Update global uniform values from outside the state machine. An active
+    /// animation transaction retains priority until its channel completes.
+    pub fn update_external_values(&mut self, updates: &[(OverrideKey, serde_json::Value)]) {
+        for (key, value) in updates {
+            self.initial_values.insert(key.clone(), value.clone());
+            let transaction_is_active = self
+                .channels
+                .get(key)
+                .is_some_and(|channel| !channel.sample().completed);
+            if !transaction_is_active {
+                self.channels.remove(key);
+                self.current_values.insert(key.clone(), value.clone());
+                self.post_processed_keys.remove(key);
+            }
+        }
+    }
+
+    pub fn current_values(&self) -> &HashMap<OverrideKey, serde_json::Value> {
+        &self.current_values
     }
 
     pub fn step(&mut self, dt: f64) -> MotionStep {
@@ -114,7 +181,9 @@ impl MotionEngine {
         for (key, channel) in &mut self.channels {
             channel.step(dt);
             let sample = channel.sample();
-            result.overrides.insert(key.clone(), sample.value.to_json());
+            let value = sample.value.to_json();
+            self.current_values.insert(key.clone(), value.clone());
+            result.overrides.insert(key.clone(), value);
             result.channels.push(MotionChannelDebug {
                 key: key_string(key),
                 driver: sample.driver.to_string(),
@@ -124,8 +193,8 @@ impl MotionEngine {
                 blending_progress: sample.blending_progress,
                 completed: sample.completed,
             });
-            all_completed &= sample.completed;
-            if sample.completed {
+            all_completed &= sample.completed || sample.persistent;
+            if sample.completed && !sample.persistent {
                 // A property may finish before sibling channels. Freeze it
                 // immediately so a later interruption observes a stopped
                 // Hold driver with zero velocity.
@@ -133,13 +202,16 @@ impl MotionEngine {
             }
         }
         result.channels.sort_by(|a, b| a.key.cmp(&b.key));
-        result.active = !self.channels.is_empty() && !all_completed;
+        result.active = self.active_transition_id.is_some() && !all_completed;
         if all_completed {
             self.active_transition_id = None;
             for channel in self.channels.values_mut() {
-                channel.finish();
+                if !channel.is_persistent() {
+                    channel.finish();
+                }
             }
         }
+        result.overrides.clone_from(&self.current_values);
         result
     }
 }
@@ -187,7 +259,39 @@ fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
         if input_port != binding.port_id {
             continue;
         }
-        let Some(plan) = MotionPlan::from_node(node) else {
+        let plan = match node {
+            TransitionMotionNode::SpringFollow {
+                duration, bounce, ..
+            } => graph.connections.iter().find_map(|connection| {
+                if connection.to.node_id != binding.from.node_id
+                    || connection.to.port_id != "target"
+                    || connection.from.port_id != "target"
+                {
+                    return None;
+                }
+                match nodes.get(connection.from.node_id.as_str())? {
+                    TransitionMotionNode::RepeatTimeline {
+                        from,
+                        to,
+                        duration: repeat_duration,
+                        easing,
+                        mode,
+                        ..
+                    } => Some(MotionPlan::RepeatFollow {
+                        from: *from,
+                        to: *to,
+                        duration: *repeat_duration,
+                        curve: *easing,
+                        mode: *mode,
+                        follow_duration: *duration,
+                        bounce: *bounce,
+                    }),
+                    _ => None,
+                }
+            }),
+            _ => MotionPlan::from_node(node),
+        };
+        let Some(plan) = plan else {
             continue;
         };
         if binding.port_id == ANY_CHANNEL {
@@ -213,6 +317,15 @@ fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
 
 #[derive(Debug, Clone)]
 enum MotionPlan {
+    RepeatFollow {
+        from: f64,
+        to: f64,
+        duration: f64,
+        curve: TimelinePreset,
+        mode: RepeatMode,
+        follow_duration: f64,
+        bounce: f64,
+    },
     Spring {
         duration: f64,
         bounce: f64,
@@ -257,7 +370,6 @@ impl MotionPlan {
 #[derive(Debug, Clone)]
 struct Channel {
     driver: Driver,
-    target_json: serde_json::Value,
 }
 
 impl Channel {
@@ -281,23 +393,11 @@ impl Channel {
                 plan,
             )),
         };
-        Self {
-            driver,
-            target_json,
-        }
+        Self { driver }
     }
 
-    fn update_endpoints(
-        &mut self,
-        source: Option<&serde_json::Value>,
-        target: Option<&serde_json::Value>,
-    ) {
-        let source = source.and_then(NumericValue::from_json);
-        let target_numeric = target.and_then(NumericValue::from_json);
-        if let Some(target) = target {
-            self.target_json = target.clone();
-        }
-        self.driver.update_endpoints(source, target_numeric);
+    fn is_persistent(&self) -> bool {
+        self.driver.sample().persistent
     }
 
     fn step(&mut self, dt: f64) {
@@ -383,6 +483,7 @@ enum Driver {
     Blend(BlendDriver),
     Delayed(DelayedDriver),
     Discrete(DiscreteDriver),
+    RepeatFollow(RepeatFollowDriver),
 }
 
 impl Driver {
@@ -412,6 +513,25 @@ impl Driver {
         .filter(|value| value.len() == source.len())
         .unwrap_or_else(|| source.same_shape(vec![0.0; source.len()]));
         match plan {
+            MotionPlan::RepeatFollow {
+                from,
+                to,
+                duration,
+                curve,
+                mode,
+                follow_duration,
+                bounce,
+            } => Driver::RepeatFollow(RepeatFollowDriver::new(
+                current_value,
+                current_velocity,
+                from,
+                to,
+                duration,
+                curve,
+                mode,
+                follow_duration,
+                bounce,
+            )),
             MotionPlan::Spring {
                 duration,
                 bounce,
@@ -456,29 +576,6 @@ impl Driver {
         }
     }
 
-    fn update_endpoints(&mut self, source: Option<NumericValue>, target: Option<NumericValue>) {
-        match self {
-            Self::Spring(driver) => {
-                if let Some(target) = target {
-                    driver.retarget(target);
-                }
-            }
-            Self::Timeline(driver) => driver.update_endpoints(source, target),
-            Self::Blend(driver) => {
-                // The outgoing visual still targets the logical source state
-                // while the new Timeline targets the logical destination.
-                // This keeps dynamic Mutation endpoints live during blending.
-                driver.outgoing.update_endpoints(None, source.clone());
-                driver.incoming.update_endpoints(source, target);
-            }
-            Self::Delayed(driver) => {
-                driver.outgoing.update_endpoints(None, source.clone());
-                driver.incoming.update_endpoints(source, target);
-            }
-            Self::Hold(_) | Self::Discrete(_) => {}
-        }
-    }
-
     fn step(&mut self, dt: f64) {
         match self {
             Self::Hold(_) => {}
@@ -487,6 +584,7 @@ impl Driver {
             Self::Blend(driver) => driver.step(dt),
             Self::Delayed(driver) => driver.step(dt),
             Self::Discrete(driver) => driver.step(dt),
+            Self::RepeatFollow(driver) => driver.step(dt),
         }
     }
 
@@ -498,6 +596,7 @@ impl Driver {
             Self::Blend(driver) => driver.sample(),
             Self::Delayed(driver) => driver.sample(),
             Self::Discrete(driver) => driver.sample(),
+            Self::RepeatFollow(driver) => driver.sample(),
         }
     }
 }
@@ -508,6 +607,7 @@ struct DriverSample {
     velocity: NumericValue,
     driver: &'static str,
     completed: bool,
+    persistent: bool,
     timeline_progress: Option<f64>,
     blending_progress: Option<f64>,
 }
@@ -525,9 +625,74 @@ impl DriverSample {
             velocity: sample.velocity,
             driver,
             completed,
+            persistent: false,
             timeline_progress,
             blending_progress,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RepeatFollowDriver {
+    from: f64,
+    to: f64,
+    duration: f64,
+    curve: TimelinePreset,
+    mode: RepeatMode,
+    elapsed: f64,
+    spring: SpringDriver,
+}
+
+impl RepeatFollowDriver {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        initial: NumericValue,
+        initial_velocity: NumericValue,
+        from: f64,
+        to: f64,
+        duration: f64,
+        curve: TimelinePreset,
+        mode: RepeatMode,
+        follow_duration: f64,
+        bounce: f64,
+    ) -> Self {
+        let target = initial.same_shape(vec![from; initial.len()]);
+        Self {
+            from,
+            to,
+            duration,
+            curve,
+            mode,
+            elapsed: 0.0,
+            spring: SpringDriver::new(initial, initial_velocity, target, follow_duration, bounce),
+        }
+    }
+
+    fn step(&mut self, dt: f64) {
+        self.elapsed += dt.max(0.0);
+        let leg_duration = self.duration.max(f64::EPSILON);
+        let cycle = self.elapsed / leg_duration;
+        let leg = cycle.floor() as u64;
+        let mut raw = cycle.fract();
+        if self.mode == RepeatMode::PingPong && leg % 2 == 1 {
+            raw = 1.0 - raw;
+        }
+        let (amount, _) = timeline_curve(self.curve, raw);
+        let target_value = self.from + (self.to - self.from) * amount;
+        let target = self
+            .spring
+            .value
+            .same_shape(vec![target_value; self.spring.value.len()]);
+        self.spring.retarget(target);
+        self.spring.step(dt);
+    }
+
+    fn sample(&self) -> DriverSample {
+        let mut sample = self.spring.sample();
+        sample.driver = "repeat+spring-follow";
+        sample.completed = false;
+        sample.persistent = true;
+        sample
     }
 }
 
@@ -759,19 +924,6 @@ impl TimelineDriver {
             duration,
             curve,
             elapsed: 0.0,
-        }
-    }
-
-    fn update_endpoints(&mut self, source: Option<NumericValue>, target: Option<NumericValue>) {
-        if let Some(source) = source
-            && source.len() == self.from.len()
-        {
-            self.from = source;
-        }
-        if let Some(target) = target
-            && target.len() == self.to.len()
-        {
-            self.to = target;
         }
     }
 
@@ -1060,6 +1212,7 @@ impl DiscreteDriver {
             velocity: NumericValue::Json(serde_json::Value::Null),
             driver: "discrete",
             completed,
+            persistent: timing.persistent,
             timeline_progress: timing.timeline_progress,
             blending_progress: timing.blending_progress,
         }
@@ -1587,6 +1740,108 @@ mod tests {
         let completed = driver.sample();
         assert!(completed.completed);
         assert_eq!(completed.value.to_json(), serde_json::json!("target"));
+    }
+
+    #[test]
+    fn repeat_timeline_spring_follow_is_persistent_but_not_transaction_blocking() {
+        let key = OverrideKey::new("Snap", "value");
+        let port = super::super::types::MutationPort {
+            id: "Snap:value".into(),
+            name: Some("Snap".into()),
+            port_type: Some("float".into()),
+        };
+        let graph = TransitionMotionGraph {
+            id: "repeat-follow".into(),
+            name: "Repeat Follow".into(),
+            inputs: vec![port.clone()],
+            outputs: vec![port],
+            nodes: vec![
+                TransitionMotionNode::RepeatTimeline {
+                    id: "repeat".into(),
+                    position: Default::default(),
+                    label: None,
+                    from: 0.4,
+                    to: 0.6,
+                    duration: 0.8,
+                    easing: TimelinePreset::SineInOut,
+                    mode: RepeatMode::PingPong,
+                },
+                TransitionMotionNode::SpringFollow {
+                    id: "follow".into(),
+                    position: Default::default(),
+                    label: None,
+                    duration: 0.8,
+                    bounce: 0.1,
+                },
+            ],
+            connections: vec![super::super::types::MutationConnection {
+                id: "repeat-follow".into(),
+                from: super::super::types::MutationEndpoint {
+                    node_id: "repeat".into(),
+                    port_id: "target".into(),
+                },
+                to: super::super::types::MutationEndpoint {
+                    node_id: "follow".into(),
+                    port_id: "target".into(),
+                },
+            }],
+            input_bindings: vec![super::super::types::TransitionMotionInputBinding {
+                port_id: "Snap:value".into(),
+                to: super::super::types::MutationEndpoint {
+                    node_id: "follow".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            output_bindings: vec![super::super::types::TransitionMotionOutputBinding {
+                port_id: "Snap:value".into(),
+                from: super::super::types::MutationEndpoint {
+                    node_id: "follow".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
+            condition_binding: None,
+            viewport: None,
+        };
+        let initial = HashMap::from([(key.clone(), serde_json::json!(0.5))]);
+        let mut engine = MotionEngine::with_initial_values(initial);
+        engine.transition_to(
+            "thinking",
+            &HashMap::from([(key.clone(), serde_json::json!(0.5))]),
+            &graph,
+        );
+
+        let first = engine.step(0.1);
+        assert!(
+            !first.active,
+            "persistent follow must not keep the transition open"
+        );
+        assert!(
+            engine
+                .channels
+                .get(&key)
+                .is_some_and(Channel::is_persistent)
+        );
+        let first_value = engine.current_values()[&key].as_f64().unwrap();
+        for _ in 0..8 {
+            engine.step(0.1);
+        }
+        let later_value = engine.current_values()[&key].as_f64().unwrap();
+        assert_ne!(first_value, later_value);
+
+        engine.transition_to(
+            "interrupt",
+            &HashMap::from([(key.clone(), serde_json::json!(0.2))]),
+            &TransitionMotionGraph::instant("instant"),
+        );
+        engine.step(0.0);
+        assert_eq!(engine.current_values()[&key], serde_json::json!(0.2));
+        assert!(
+            !engine
+                .channels
+                .get(&key)
+                .is_some_and(Channel::is_persistent)
+        );
     }
 
     #[test]

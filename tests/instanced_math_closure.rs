@@ -13,6 +13,10 @@ fn instanced_math_closure_builds_and_reports_instance_count() {
             return;
         }
     };
+    if headless.adapter.get_info().backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+        eprintln!("Native GPU unavailable; skipping texture-backed instancing integration test");
+        return;
+    }
 
     let build = renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
         .with_adapter(headless.adapter.clone())

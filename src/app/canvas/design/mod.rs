@@ -159,6 +159,7 @@ mod tests {
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.mesh_gradient.mesh.pass".to_string(),
+                display_label: None,
                 source_node_id: Some("mesh".to_string()),
                 source_node_type: Some("MeshGradient".to_string()),
                 order_index: 0,

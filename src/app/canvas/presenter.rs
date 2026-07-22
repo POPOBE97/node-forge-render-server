@@ -812,7 +812,15 @@ fn draw_badges(
         badge_y += (badge_size.y + 6.0) * ref_tag_anim_t;
     }
 
-    let preview_badge_text = if let Some(session) = app.canvas.design.active.as_ref() {
+    let preview_badge_text = if let Some(capture) = app.canvas.display.pass_capture.as_ref()
+        && using_preview
+    {
+        Some(format!(
+            "Draw {} • {}",
+            capture.mode.as_str(),
+            compact_pass_name(capture.pass_name.as_str(), 42),
+        ))
+    } else if let Some(session) = app.canvas.design.active.as_ref() {
         let pass_name = compact_pass_name(session.target.pass_name.as_str(), 42);
         let status = match design_status {
             Some(design::DesignOverlayStatus::Stale(reason)) => {

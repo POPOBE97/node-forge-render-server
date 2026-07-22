@@ -57,13 +57,14 @@ fn back_pin_pin_compile_and_tick() {
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
-    // Fire mousedown — the logical state changes immediately while the
-    // presentation Timeline continues for delay + duration = 2.3s total.
+    // Fire mousedown — the logical state changes immediately. This transition
+    // has no state target values, so the AnimationEngine has no channels to run;
+    // the target State's post-motion Mutation starts on the same tick.
     let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
-    assert!(result.active_transition_id.is_some());
+    assert_eq!(result.active_transition_id, None);
 
-    // Advance past delay (0.3s) + duration (2.0s) = 2.3s total.
+    // The state-local time Mutation continues to update independently.
     let result = rt.tick(2.4, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert!(!result.finished);
@@ -106,11 +107,6 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
                     .iter()
                     .find(|state| state.id == transition.source)
                     .map(|state| state.resolved_type());
-                let target_type = sm
-                    .states
-                    .iter()
-                    .find(|state| state.id == transition.target)
-                    .map(|state| state.resolved_type());
                 let trigger_matches = sm
                     .motion_graphs
                     .iter()
@@ -126,7 +122,11 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
                     });
 
                 source_type == Some(AnimationStateType::AnimationState)
-                    && target_type == Some(AnimationStateType::MutationNode)
+                    && sm
+                        .states
+                        .iter()
+                        .find(|state| state.id == transition.target)
+                        .is_some_and(|state| state.mutation_id.is_some())
                     && trigger_matches
             })
             .expect(
@@ -224,7 +224,7 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
         settled
             .overrides
             .get(&state_machine::OverrideKey::new("FloatInput_81", "value")),
-        Some(&serde_json::json!(0))
+        Some(&serde_json::json!(0.0))
     );
 }
 
@@ -270,30 +270,77 @@ fn back_pin_pin_state_types_correct() {
             .iter()
             .any(|(_, t)| *t == AnimationStateType::ExitState)
     );
-    assert!(
-        types
-            .iter()
-            .any(|(_, t)| *t == AnimationStateType::MutationNode)
-    );
+    assert!(sm.states.iter().any(|state| state.mutation_id.is_some()));
 }
 
 #[test]
-fn back_pin_pin_mutation_node_references_valid_mutation() {
-    use node_forge_render_server::state_machine::types::AnimationStateType;
-
+fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
     let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
     let sm = scene.state_machine.as_ref().unwrap();
 
     let mutation_ids: Vec<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
     for s in &sm.states {
-        if s.resolved_type() == AnimationStateType::MutationNode {
+        if s.mutation_id.is_some() {
             let mid = s.mutation_id.as_deref().unwrap();
             assert!(
                 mutation_ids.contains(&mid),
-                "mutationNode '{}' references missing mutation '{}'",
+                "state '{}' references missing mutation '{}'",
                 s.id,
                 mid,
             );
         }
     }
+}
+
+#[test]
+fn doubao_nforge_executes_state_local_driver_function_to_packed_outputs() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("cases")
+        .join("doubao-voice-interaction")
+        .join("scene.nforge");
+    let (scene, _asset_store) =
+        node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let mut runtime = state_machine::compile_from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao scene should have a state machine");
+
+    let frame = runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
+    assert_eq!(frame.current_state_id, "st_mrerw3qg_6");
+    assert!(frame.diagnostics.is_empty(), "{:?}", frame.diagnostics);
+
+    let positions = frame
+        .overrides
+        .get(&state_machine::OverrideKey::new(
+            "GroupInstance_32",
+            "intelligent_light_positions",
+        ))
+        .and_then(serde_json::Value::as_array)
+        .expect("Off Mutation must output packed positions");
+    let colors = frame
+        .overrides
+        .get(&state_machine::OverrideKey::new(
+            "GroupInstance_32",
+            "intelligent_light_colors",
+        ))
+        .and_then(serde_json::Value::as_array)
+        .expect("Off Mutation must output packed colors");
+    assert_eq!(positions.len(), 11);
+    assert_eq!(colors.len(), 11);
+    assert!(positions.iter().all(|value| {
+        value.as_array().is_some_and(|components| {
+            components.len() == 2
+                && components
+                    .iter()
+                    .all(|component| component.as_f64().is_some())
+        })
+    }));
+    assert!(colors.iter().all(|value| {
+        value.as_array().is_some_and(|components| {
+            components.len() == 4
+                && components
+                    .iter()
+                    .all(|component| component.as_f64().is_some())
+        })
+    }));
 }

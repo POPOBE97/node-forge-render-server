@@ -59,7 +59,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 name: "Entry".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::EntryState),
+                state_type: AnimationStateType::EntryState,
                 mutation_id: None,
             },
             AnimationState {
@@ -67,7 +67,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 name: "Any".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::AnyState),
+                state_type: AnimationStateType::AnyState,
                 mutation_id: None,
             },
             AnimationState {
@@ -75,7 +75,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 name: "Exit".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::ExitState),
+                state_type: AnimationStateType::ExitState,
                 mutation_id: None,
             },
             AnimationState {
@@ -83,7 +83,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 name: "Target".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::AnimationState),
+                state_type: AnimationStateType::AnimationState,
                 mutation_id: None,
             },
         ],
@@ -126,7 +126,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 name: "Entry".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::EntryState),
+                state_type: AnimationStateType::EntryState,
                 mutation_id: None,
             },
             AnimationState {
@@ -134,7 +134,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 name: "Idle".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::AnimationState),
+                state_type: AnimationStateType::AnimationState,
                 mutation_id: None,
             },
             AnimationState {
@@ -142,7 +142,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 name: "Any".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::AnyState),
+                state_type: AnimationStateType::AnyState,
                 mutation_id: None,
             },
             AnimationState {
@@ -150,7 +150,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 name: "Mutation".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::MutationNode),
+                state_type: AnimationStateType::AnimationState,
                 mutation_id: Some("mut_press".into()),
             },
             AnimationState {
@@ -158,7 +158,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 name: "Exit".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: Some(AnimationStateType::ExitState),
+                state_type: AnimationStateType::ExitState,
                 mutation_id: None,
             },
         ],

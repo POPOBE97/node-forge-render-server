@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T08:38:39.498Z",
+  "generatedAt": "2026-07-22T14:52:19.457Z",
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -528,6 +528,29 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
         },
         {
           "id": "threshold",
@@ -2466,7 +2489,7 @@
       "type": "IntelligentLight",
       "label": "Intelligent Light",
       "category": "Lighting",
-      "description": "Drives an intelligent lighting fixture with 11 color zones and a time-like driver",
+      "description": "Renders an intelligent lighting fixture from 11 packed or manually authored zones",
       "inputs": [
         {
           "id": "width",
@@ -2481,10 +2504,27 @@
           "default": 37
         },
         {
-          "id": "driver",
-          "name": "Driver",
-          "type": "float",
-          "default": 0
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
         },
         {
           "id": "power",
@@ -2507,6 +2547,16 @@
             "max": 1,
             "step": 0.01
           }
+        },
+        {
+          "id": "positions",
+          "name": "Positions",
+          "type": "packed<vector2>"
+        },
+        {
+          "id": "colors",
+          "name": "Colors",
+          "type": "packed<color>"
         },
         {
           "id": "pos0",
@@ -2637,9 +2687,7 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {
-        "layoutMode": "manual"
-      }
+      "defaultParams": {}
     },
     {
       "type": "IntInput",
@@ -5744,12 +5792,6 @@
         "label": "Exit",
         "category": "Built-ins",
         "description": "Built-in exit state. Target-only transition endpoint."
-      },
-      {
-        "type": "mutationNode",
-        "label": "Mutation",
-        "category": "States",
-        "description": "Dynamic state node backed by a mutation subgraph."
       }
     ],
     "innerNodes": [
@@ -5769,26 +5811,6 @@
         "defaultParams": {
           "value": 0
         }
-      },
-      {
-        "type": "IntelligentLightDefaultDriver",
-        "label": "Intelligent Light Default Driver",
-        "category": "Core",
-        "description": "Emit packed Intelligent Light default positions and colors",
-        "inputs": [],
-        "outputs": [
-          {
-            "id": "positions",
-            "name": "Positions",
-            "type": "packed<vector2>"
-          },
-          {
-            "id": "colors",
-            "name": "Colors",
-            "type": "packed<color>"
-          }
-        ],
-        "defaultParams": {}
       },
       {
         "type": "Lerp",
@@ -5899,6 +5921,15 @@
         "defaultParams": {}
       },
       {
+        "type": "MutationFunction",
+        "label": "Mutation Function",
+        "category": "Core",
+        "description": "Run a pure TypeScript function over the post-motion current snapshot",
+        "inputs": [],
+        "outputs": [],
+        "defaultParams": {}
+      },
+      {
         "type": "PackArray",
         "label": "Pack Array",
         "category": "Core",
@@ -5935,7 +5966,9 @@
         "cosine-in",
         "cosine-out",
         "cosine-in-out",
-        "instant"
+        "instant",
+        "RepeatTimeline",
+        "SpringFollow"
       ],
       "anyPropertyKey": "*",
       "springDefaults": {
@@ -5959,6 +5992,27 @@
         "cosine-out",
         "cosine-in-out"
       ],
+      "repeatTimeline": {
+        "defaults": {
+          "from": 0,
+          "to": 1,
+          "duration": 1,
+          "easing": "linear",
+          "mode": "pingPong"
+        },
+        "modes": [
+          "pingPong",
+          "restart"
+        ],
+        "allowedConsumer": "SpringFollow"
+      },
+      "springFollow": {
+        "defaults": {
+          "duration": 0.45,
+          "bounce": 0.1
+        },
+        "requiredSource": "RepeatTimeline"
+      },
       "blending": {
         "ownerNodeTypes": [
           "linear",

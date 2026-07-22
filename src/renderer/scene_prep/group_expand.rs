@@ -59,7 +59,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
     let mut expanded_count: usize = 0;
 
     loop {
-        let Some((instance_id, group_id, instance_label)) = scene
+        let Some((instance_id, group_id, instance_label, instance_params)) = scene
             .nodes
             .iter()
             .find(|n| n.node_type == "GroupInstance")
@@ -72,7 +72,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(ToOwned::to_owned);
-                (n.id.clone(), gid, label)
+                (n.id.clone(), gid, label, n.params.clone())
             })
         else {
             break;
@@ -282,9 +282,30 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 sources.extend(fallback.iter().cloned());
             }
 
+            // State-local Mutation outputs are committed as current values on
+            // the GroupInstance itself. Forward those inline values through
+            // the group input binding without manufacturing a graph edge.
+            if sources.is_empty()
+                && let Some(value) = instance_params.get(&b.group_port_id).cloned()
+            {
+                let destination = scene
+                    .nodes
+                    .iter_mut()
+                    .find(|node| node.id == *target_new_node_id)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "group '{}' inputBindings target node '{}' missing after clone",
+                            group_id,
+                            target_new_node_id
+                        )
+                    })?;
+                destination.params.insert(b.to.port_id.clone(), value);
+                any = true;
+            }
+
             // Special-case: ImageFile -> ImageTexture.image is not part of the bundled node scheme.
             // Instead, inline by copying ImageFile params into the ImageTexture node.
-            if b.to.port_id == "image" {
+            if !any && b.to.port_id == "image" {
                 // Use the first available source.
                 let src_ep = sources.first().cloned().ok_or_else(|| {
                     anyhow!(
@@ -340,7 +361,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 copy_image_file_params_into_image_texture(dst, asset_id, data_url, path);
 
                 any = true;
-            } else {
+            } else if !any {
                 for src in sources {
                     any = true;
                     scene.connections.push(Connection {
@@ -355,6 +376,20 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
             }
 
             if !any {
+                let is_unset_packed_input = group.inputs.iter().any(|input| {
+                    input.id == b.group_port_id
+                        && input
+                            .port_type
+                            .as_deref()
+                            .is_some_and(|port_type| port_type.starts_with("packed<"))
+                });
+                if is_unset_packed_input {
+                    // An unbound packed interface leaves the internal node in
+                    // manual authoring mode. Once a Mutation supplies one
+                    // packed value, the destination validates the complete
+                    // positions/colors pair and exact element counts.
+                    continue;
+                }
                 // No upstream connection provided for this input. This is an authoring error.
                 bail!(
                     "GroupInstance '{}' missing required input '{}' for group '{}'",

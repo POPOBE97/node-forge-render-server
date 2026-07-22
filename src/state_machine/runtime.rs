@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use anyhow::Result;
 
 use super::motion::{MotionChannelDebug, MotionEngine};
-use super::mutation::{self, MutationInputContext, MutationRuntimeState, MutationValue};
+use super::mutation::{self, MutationInputContext, MutationValue};
 use super::types::*;
 
 // ---------------------------------------------------------------------------
@@ -50,8 +50,10 @@ pub struct StateMachineRuntime {
     /// (ticking).  Entry/Any/Exit states stay at 0.
     state_local_times: HashMap<String, f64>,
 
-    /// Active transition (if any).
-    active_transition: Option<ActiveTransition>,
+    /// Whether the initial logical State targets have been installed into the
+    /// animation engine. Later idle frames must retain post-Mutation current
+    /// values so a new transaction inherits the actual presentation.
+    logical_state_initialized: bool,
 
     /// Per-property physical/timeline presentation drivers.
     motion_engine: MotionEngine,
@@ -62,25 +64,8 @@ pub struct StateMachineRuntime {
     /// Persistent key/mouse press bookkeeping used by Event Trigger holdingTime outputs.
     trigger_holds: TriggerHoldState,
 
-    /// Persistent runtime state for mutation nodes, keyed by state id.
-    mutation_runtime_states: HashMap<String, MutationRuntimeState>,
-
-    /// Current animation parameter values emitted by the state machine.
-    ///
-    /// State `parameter_overrides` and mutation outputs are patches: if a state
-    /// does not write a key, the last written value stays active until reset or
-    /// until another state/mutation writes that key.
-    current_overrides: HashMap<OverrideKey, serde_json::Value>,
-
     /// Whether the state machine has reached the exit state.
     pub finished: bool,
-}
-
-/// Bookkeeping for an in-progress transition.
-#[derive(Debug, Clone)]
-struct ActiveTransition {
-    source_state_id: String,
-    target_state_id: String,
 }
 
 /// The result of a single `tick` call.
@@ -407,6 +392,15 @@ impl StateMachineRuntime {
     /// Call [`super::validation::validate`] before constructing if you want
     /// fail-fast diagnostics.
     pub fn new(definition: StateMachine) -> Self {
+        Self::with_initial_values(definition, HashMap::new())
+    }
+
+    /// Construct a runtime with the scene's current uniform snapshot owned by
+    /// the animation engine from the first frame onward.
+    pub fn with_initial_values(
+        definition: StateMachine,
+        initial_values: HashMap<OverrideKey, serde_json::Value>,
+    ) -> Self {
         let mutation_index: HashMap<String, usize> = definition
             .mutations
             .iter()
@@ -447,12 +441,10 @@ impl StateMachineRuntime {
             current_state_id: initial,
             scene_time: 0.0,
             state_local_times,
-            active_transition: None,
-            motion_engine: MotionEngine::new(),
+            logical_state_initialized: false,
+            motion_engine: MotionEngine::with_initial_values(initial_values),
             runtime_input: RuntimeInputSnapshot::default(),
             trigger_holds: TriggerHoldState::default(),
-            mutation_runtime_states: HashMap::new(),
-            current_overrides: HashMap::new(),
             finished: false,
         }
     }
@@ -478,12 +470,10 @@ impl StateMachineRuntime {
         for v in self.state_local_times.values_mut() {
             *v = 0.0;
         }
-        self.active_transition = None;
+        self.logical_state_initialized = false;
         self.motion_engine.reset();
         self.runtime_input = RuntimeInputSnapshot::default();
         self.trigger_holds = TriggerHoldState::default();
-        self.mutation_runtime_states.clear();
-        self.current_overrides.clear();
         self.finished = false;
     }
 
@@ -492,11 +482,18 @@ impl StateMachineRuntime {
         self.runtime_input.mouse_position = Some(position);
     }
 
+    /// Merge external UniformDelta values into the animation engine. Running
+    /// channels retain transaction priority; idle channels accept the update
+    /// immediately.
+    pub fn update_current_values(&mut self, updates: &[(OverrideKey, serde_json::Value)]) {
+        self.motion_engine.update_external_values(updates);
+    }
+
     /// Advance the state machine by `dt` seconds and produce overrides.
     pub fn tick(&mut self, dt: f64, params: &ExternalParams, events: &FiredEvents) -> TickResult {
         if self.finished {
             return TickResult {
-                overrides: self.current_overrides.clone(),
+                overrides: self.motion_engine.current_values().clone(),
                 finished: true,
                 current_state_id: self.current_state_id.clone(),
                 scene_time_secs: self.scene_time,
@@ -512,7 +509,6 @@ impl StateMachineRuntime {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.scene_time += dt;
         self.trigger_holds.process_events(self.scene_time, events);
-        let prev_state_local_times = self.state_local_times.clone();
         let mut diagnostics: Vec<String> = Vec::new();
 
         // Logical state changes immediately on transition fire. Presentation
@@ -526,16 +522,6 @@ impl StateMachineRuntime {
         {
             *time += dt;
         }
-        if let Some(source_id) = self
-            .active_transition
-            .as_ref()
-            .map(|transition| transition.source_state_id.clone())
-            && source_id != current_id
-            && let Some(time) = self.state_local_times.get_mut(&source_id)
-        {
-            *time += dt;
-        }
-
         // AnyState always ticks, regardless of which state is current or
         // whether a transition is active — unless it's the current state
         // (already ticked above).
@@ -554,74 +540,73 @@ impl StateMachineRuntime {
             }
         }
 
+        // Establish the logical state's values through the animation engine
+        // before routing. This makes an initial state's presentation the
+        // source of a transition fired on the first tick.
+        if !self.logical_state_initialized {
+            self.motion_engine
+                .commit_logical_values(self.state_parameter_patch(&current_id));
+            self.logical_state_initialized = true;
+        }
+
         // Transitions remain interruptible while a previous visual driver is
         // active. Routing uses the logical current state (already the target
         // of the previous transition).
         if let Some(transition) = self.pick_transition(params, events) {
-            let source_state_id = self.current_state_id.clone();
-            let source_advanced =
-                self.state_advanced_this_tick(&prev_state_local_times, &source_state_id);
-            let source_patch = self.evaluate_state_patch(
-                &source_state_id,
-                params,
-                &mut diagnostics,
-                source_advanced,
-            );
-
             self.state_local_times
                 .insert(transition.target.clone(), 0.0);
-            self.mutation_runtime_states.remove(&transition.target);
-            let target_patch =
-                self.evaluate_state_patch(&transition.target, params, &mut diagnostics, false);
+            let target_patch = self.state_parameter_patch(&transition.target);
             let graph = self
                 .motion_graph_index
                 .get(&transition.motion_graph_id)
                 .and_then(|index| self.definition.motion_graphs.get(*index))
                 .cloned();
             if let Some(graph) = graph {
-                self.motion_engine.start_transition(
-                    &transition.id,
-                    &graph,
-                    &source_patch,
-                    &target_patch,
-                    &self.current_overrides,
-                );
-                self.active_transition = Some(ActiveTransition {
-                    source_state_id,
-                    target_state_id: transition.target.clone(),
-                });
+                self.motion_engine
+                    .transition_to(&transition.id, &target_patch, &graph);
             }
             self.current_state_id = transition.target;
         }
 
         let target_state_id = self.current_state_id.clone();
-        let target_advanced =
-            self.state_advanced_this_tick(&prev_state_local_times, &target_state_id);
-        let target_patch =
-            self.evaluate_state_patch(&target_state_id, params, &mut diagnostics, target_advanced);
-        let source_patch = if let Some(source_id) = self
-            .active_transition
-            .as_ref()
-            .map(|transition| transition.source_state_id.clone())
-        {
-            let advanced = self.state_advanced_this_tick(&prev_state_local_times, &source_id);
-            self.evaluate_state_patch(&source_id, params, &mut diagnostics, advanced)
-        } else {
-            target_patch.clone()
-        };
-        self.motion_engine
-            .update_endpoints(&source_patch, &target_patch);
-        let motion_step = self.motion_engine.step(dt);
-        let patch = if self.motion_engine.active_transition_id().is_some() {
-            motion_step.overrides.clone()
-        } else {
-            self.active_transition = None;
-            target_patch
-        };
 
-        for (key, value) in patch {
-            self.current_overrides.insert(key, value);
+        // Motion always advances first and freezes the single source snapshot
+        // observed by both Any and target-state Mutation graphs.
+        let motion_step = self.motion_engine.step(dt);
+        let post_motion_snapshot = self.motion_engine.current_values().clone();
+        let mut mutation_patch = HashMap::new();
+
+        if let Some(any_state) = self
+            .definition
+            .states
+            .iter()
+            .find(|state| state.resolved_type() == AnimationStateType::AnyState)
+            .cloned()
+            && let Some(mutation_id) = any_state.mutation_id.as_deref()
+        {
+            match self.evaluate_mutation_state(mutation_id, &any_state.id, &post_motion_snapshot) {
+                Ok(patch) => mutation_patch.extend(patch),
+                Err(error) => diagnostics.push(format!(
+                    "mutation evaluation error (state={}, mutation={}): {error}",
+                    any_state.id, mutation_id
+                )),
+            }
         }
+
+        if let Some(target_state) = self.find_state(&target_state_id).cloned()
+            && let Some(mutation_id) = target_state.mutation_id.as_deref()
+        {
+            match self.evaluate_mutation_state(mutation_id, &target_state.id, &post_motion_snapshot)
+            {
+                // Target State wins conflicts with Any.
+                Ok(patch) => mutation_patch.extend(patch),
+                Err(error) => diagnostics.push(format!(
+                    "mutation evaluation error (state={}, mutation={}): {error}",
+                    target_state.id, mutation_id
+                )),
+            }
+        }
+        self.motion_engine.commit_post_process(mutation_patch);
 
         // Exit becomes terminal only after its visual transition completes.
         if let Some(state) = self.find_state(&self.current_state_id) {
@@ -632,10 +617,8 @@ impl StateMachineRuntime {
             }
         }
 
-        self.prune_mutation_runtime_states();
-
         TickResult {
-            overrides: self.current_overrides.clone(),
+            overrides: self.motion_engine.current_values().clone(),
             diagnostics,
             finished: self.finished,
             current_state_id: self.current_state_id.clone(),
@@ -678,80 +661,17 @@ impl StateMachineRuntime {
         self.definition.states.iter().find(|s| s.id == state_id)
     }
 
-    fn evaluate_state_patch(
-        &mut self,
-        state_id: &str,
-        params: &ExternalParams,
-        diagnostics: &mut Vec<String>,
-        advance_frame: bool,
-    ) -> HashMap<OverrideKey, serde_json::Value> {
+    fn state_parameter_patch(&self, state_id: &str) -> HashMap<OverrideKey, serde_json::Value> {
         let mut patch = HashMap::new();
         let Some(state) = self.find_state(state_id) else {
             return patch;
         };
-        let parameter_overrides = state.parameter_overrides.clone();
-        let state_type = state.resolved_type();
-        let mutation_id = state.mutation_id.clone();
-
-        for (key_str, value) in &parameter_overrides {
+        for (key_str, value) in &state.parameter_overrides {
             if let Some(key) = OverrideKey::parse(key_str) {
                 patch.insert(key, value.clone());
             }
         }
-
-        if state_type == AnimationStateType::MutationNode
-            && let Some(ref mid) = mutation_id
-        {
-            match self.evaluate_mutation_state(mid, state_id, params, advance_frame) {
-                Ok(mutation_overrides) => {
-                    patch.extend(mutation_overrides);
-                }
-                Err(e) => {
-                    diagnostics.push(format!(
-                        "mutation evaluation error (state={state_id}, mutation={mid}): {e}"
-                    ));
-                }
-            }
-        }
-
         patch
-    }
-
-    fn state_advanced_this_tick(
-        &self,
-        prev_state_local_times: &HashMap<String, f64>,
-        state_id: &str,
-    ) -> bool {
-        let previous = prev_state_local_times.get(state_id).copied().unwrap_or(0.0);
-        let current = self.state_local_times.get(state_id).copied().unwrap_or(0.0);
-        current > previous
-    }
-
-    fn prune_mutation_runtime_states(&mut self) {
-        let mut keep = HashSet::new();
-        if self
-            .find_state(&self.current_state_id)
-            .is_some_and(|state| state.resolved_type() == AnimationStateType::MutationNode)
-        {
-            keep.insert(self.current_state_id.clone());
-        }
-
-        if let Some(active_transition) = &self.active_transition {
-            for state_id in [
-                &active_transition.source_state_id,
-                &active_transition.target_state_id,
-            ] {
-                if self
-                    .find_state(state_id)
-                    .is_some_and(|state| state.resolved_type() == AnimationStateType::MutationNode)
-                {
-                    keep.insert(state_id.clone());
-                }
-            }
-        }
-
-        self.mutation_runtime_states
-            .retain(|state_id, _| keep.contains(state_id));
     }
 
     /// Pick the highest-priority satisfied transition from the current state
@@ -981,18 +901,17 @@ impl StateMachineRuntime {
                 .or_else(|| {
                     OverrideKey::parse(port_id)
                         .as_ref()
-                        .and_then(|key| self.current_overrides.get(key))
+                        .and_then(|key| self.motion_engine.current_values().get(key))
                 })
                 .and_then(condition_value_from_json),
         }
     }
 
     fn evaluate_mutation_state(
-        &mut self,
+        &self,
         mutation_id: &str,
         state_id: &str,
-        params: &ExternalParams,
-        advance_frame: bool,
+        current_snapshot: &HashMap<OverrideKey, serde_json::Value>,
     ) -> Result<HashMap<OverrideKey, serde_json::Value>> {
         let mutation_idx = self
             .mutation_index
@@ -1001,14 +920,14 @@ impl StateMachineRuntime {
             .ok_or_else(|| anyhow::anyhow!("mutation '{mutation_id}' not found"))?;
         let mutation = &self.definition.mutations[mutation_idx];
 
-        // Build input context.
+        // Build input context from the frozen post-motion current snapshot.
         let mut input_values: HashMap<String, MutationValue> = HashMap::new();
         for input_port in &mutation.inputs {
-            // Try to resolve from external params via port name.
-            if let Some(ref name) = input_port.name {
-                if let Some(val) = params.get(name).and_then(|v| v.as_f64()) {
-                    input_values.insert(input_port.id.clone(), val.into());
-                }
+            if let Some(key) = OverrideKey::parse(&input_port.id)
+                && let Some(value) = current_snapshot.get(&key)
+                && let Some(value) = MutationValue::from_json(value)
+            {
+                input_values.insert(input_port.id.clone(), value);
             }
         }
         let ctx = MutationInputContext {
@@ -1016,14 +935,8 @@ impl StateMachineRuntime {
             scene_elapsed_time: self.scene_time,
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
             mouse_position: self.runtime_input.mouse_position,
-            advance_frame,
         };
-
-        let runtime_state = self
-            .mutation_runtime_states
-            .entry(state_id.to_string())
-            .or_default();
-        let outputs = mutation::evaluate_mutation_with_state(mutation, &ctx, runtime_state)?;
+        let outputs = mutation::evaluate_mutation(mutation, &ctx)?;
 
         // Map output port ids → OverrideKeys via unified target resolution.
         let mut overrides: HashMap<OverrideKey, serde_json::Value> = HashMap::new();
@@ -1055,106 +968,6 @@ impl StateMachineRuntime {
 mod tests {
     use super::*;
 
-    fn intelligent_light_driver_mutation(id: &str) -> MutationDefinition {
-        MutationDefinition {
-            id: id.into(),
-            name: "Intelligent Light Driver".into(),
-            inputs: vec![],
-            outputs: vec![
-                MutationPort {
-                    id: "Light:positions".into(),
-                    name: Some("Light.positions".into()),
-                    port_type: Some("packed<vector2>".into()),
-                },
-                MutationPort {
-                    id: "Light:colors".into(),
-                    name: Some("Light.colors".into()),
-                    port_type: Some("packed<color>".into()),
-                },
-            ],
-            nodes: vec![MutationInnerNode {
-                id: "driver".into(),
-                node_type: MutationInnerNodeType::IntelligentLightDefaultDriver,
-                params: HashMap::new(),
-                inputs: vec![],
-                outputs: vec![
-                    MutationPort {
-                        id: "positions".into(),
-                        name: Some("Positions".into()),
-                        port_type: Some("packed<vector2>".into()),
-                    },
-                    MutationPort {
-                        id: "colors".into(),
-                        name: Some("Colors".into()),
-                        port_type: Some("packed<color>".into()),
-                    },
-                ],
-            }],
-            connections: vec![],
-            input_bindings: vec![],
-            output_bindings: vec![
-                MutationOutputBinding {
-                    port_id: "Light:positions".into(),
-                    from: MutationEndpoint {
-                        node_id: "driver".into(),
-                        port_id: "positions".into(),
-                    },
-                },
-                MutationOutputBinding {
-                    port_id: "Light:colors".into(),
-                    from: MutationEndpoint {
-                        node_id: "driver".into(),
-                        port_id: "colors".into(),
-                    },
-                },
-            ],
-            passthrough_bindings: vec![],
-            viewport: None,
-        }
-    }
-
-    fn override_vec2(result: &TickResult, node_id: &str, param_name: &str) -> [f64; 2] {
-        let value = result
-            .overrides
-            .get(&OverrideKey::new(node_id, param_name))
-            .unwrap_or_else(|| panic!("missing override for {node_id}:{param_name}"));
-        let array = value
-            .as_array()
-            .unwrap_or_else(|| panic!("expected array override for {node_id}:{param_name}"));
-        [
-            array[0]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric x for {node_id}:{param_name}")),
-            array[1]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric y for {node_id}:{param_name}")),
-        ]
-    }
-
-    fn override_color(result: &TickResult, node_id: &str, param_name: &str) -> [f64; 4] {
-        let value = result
-            .overrides
-            .get(&OverrideKey::new(node_id, param_name))
-            .unwrap_or_else(|| panic!("missing override for {node_id}:{param_name}"));
-        let array = value
-            .as_array()
-            .unwrap_or_else(|| panic!("expected array override for {node_id}:{param_name}"));
-        [
-            array[0]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric r for {node_id}:{param_name}")),
-            array[1]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric g for {node_id}:{param_name}")),
-            array[2]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric b for {node_id}:{param_name}")),
-            array[3]
-                .as_f64()
-                .unwrap_or_else(|| panic!("expected numeric a for {node_id}:{param_name}")),
-        ]
-    }
-
     fn minimal_sm() -> StateMachine {
         StateMachine {
             id: "sm1".into(),
@@ -1165,7 +978,7 @@ mod tests {
                     name: "Entry".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::EntryState),
+                    state_type: AnimationStateType::EntryState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -1173,7 +986,7 @@ mod tests {
                     name: "Any".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::AnyState),
+                    state_type: AnimationStateType::AnyState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -1181,7 +994,7 @@ mod tests {
                     name: "Exit".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::ExitState),
+                    state_type: AnimationStateType::ExitState,
                     mutation_id: None,
                 },
             ],
@@ -1361,7 +1174,7 @@ mod tests {
             parameter_overrides: [("Node1:color".into(), serde_json::json!([1, 0, 0, 1]))]
                 .into_iter()
                 .collect(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -1391,7 +1204,7 @@ mod tests {
             parameter_overrides: [("Node:x".into(), serde_json::json!(5.0))]
                 .into_iter()
                 .collect(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.states.push(AnimationState {
@@ -1399,7 +1212,7 @@ mod tests {
             name: "B".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -1445,7 +1258,7 @@ mod tests {
             parameter_overrides: [("Node:x".into(), serde_json::json!(5.0))]
                 .into_iter()
                 .collect(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.states.push(AnimationState {
@@ -1453,7 +1266,7 @@ mod tests {
             name: "B".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -1515,7 +1328,7 @@ mod tests {
             parameter_overrides: [("Node:x".into(), serde_json::json!(1.0))]
                 .into_iter()
                 .collect(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -1548,7 +1361,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.motion_graphs.push(with_bool_input_condition(
@@ -1583,7 +1396,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.motion_graphs.push(with_event_condition(
@@ -1616,7 +1429,7 @@ mod tests {
             name: "Mutation".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: Some("m1".into()),
         });
         sm.mutations.push(MutationDefinition {
@@ -1657,7 +1470,7 @@ mod tests {
     }
 
     #[test]
-    fn timeline_tracks_a_dynamic_mutation_target_local_time() {
+    fn post_motion_mutation_overrides_timeline_with_current_local_time() {
         let mut sm = minimal_sm();
         sm.states
             .iter_mut()
@@ -1670,7 +1483,7 @@ mod tests {
             name: "Dynamic".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: Some("dynamic_target".into()),
         });
         sm.mutations.push(MutationDefinition {
@@ -1717,8 +1530,185 @@ mod tests {
             .get(&OverrideKey::new("Node", "x"))
             .and_then(serde_json::Value::as_f64)
             .expect("dynamic Timeline output");
-        assert!((value - (0.1 * 2.0 / 3.0)).abs() < 1e-8, "value={value}");
+        assert!((value - 0.1).abs() < 1e-8, "value={value}");
         assert_eq!(advancing.state_local_times.get("dynamic"), Some(&0.1));
+    }
+
+    #[test]
+    fn transition_after_idle_mutation_inherits_final_current_value() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "a".into(),
+            name: "A".into(),
+            position: None,
+            parameter_overrides: [("Node:x".into(), serde_json::json!(0.0))]
+                .into_iter()
+                .collect(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_id: Some("a_mutation".into()),
+        });
+        sm.states.push(AnimationState {
+            id: "b".into(),
+            name: "B".into(),
+            position: None,
+            parameter_overrides: [("Node:x".into(), serde_json::json!(10.0))]
+                .into_iter()
+                .collect(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_id: None,
+        });
+        sm.mutations.push(MutationDefinition {
+            id: "a_mutation".into(),
+            name: "A Mutation".into(),
+            inputs: vec![MutationPort {
+                id: "localElapsedTime".into(),
+                name: None,
+                port_type: Some("float".into()),
+            }],
+            outputs: vec![MutationPort {
+                id: "Node:x".into(),
+                name: None,
+                port_type: Some("float".into()),
+            }],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![MutationPassthroughBinding {
+                from_port_id: "localElapsedTime".into(),
+                to_port_id: "Node:x".into(),
+            }],
+            viewport: None,
+        });
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_a".into(),
+            source: "entry".into(),
+            target: "a".into(),
+            motion_graph_id: "instant".into(),
+        });
+        sm.motion_graphs
+            .push(with_event_condition(timeline_motion_graph("go", 1.0), "go"));
+        sm.transitions.push(AnimationTransition {
+            id: "a_to_b".into(),
+            source: "a".into(),
+            target: "b".into(),
+            motion_graph_id: "go".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        runtime.tick(0.0, &HashMap::new(), &vec![]);
+        let idle = runtime.tick(0.2, &HashMap::new(), &vec![]);
+        assert_eq!(
+            idle.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(0.2))
+        );
+        let interrupted = runtime.tick(0.0, &HashMap::new(), &vec!["go".into()]);
+        assert_eq!(interrupted.active_transition_id.as_deref(), Some("a_to_b"));
+        assert_eq!(
+            interrupted.overrides.get(&OverrideKey::new("Node", "x")),
+            Some(&serde_json::json!(0.2))
+        );
+    }
+
+    #[test]
+    fn any_and_target_mutations_share_post_motion_snapshot_and_target_wins() {
+        fn mutation(id: &str, seen_output: &str, conflict_value: f64) -> MutationDefinition {
+            MutationDefinition {
+                id: id.into(),
+                name: id.into(),
+                inputs: vec![MutationPort {
+                    id: "Node:x".into(),
+                    name: None,
+                    port_type: Some("float".into()),
+                }],
+                outputs: vec![
+                    MutationPort {
+                        id: seen_output.into(),
+                        name: None,
+                        port_type: Some("float".into()),
+                    },
+                    MutationPort {
+                        id: "Node:conflict".into(),
+                        name: None,
+                        port_type: Some("float".into()),
+                    },
+                ],
+                nodes: vec![MutationInnerNode {
+                    id: "constant".into(),
+                    node_type: MutationInnerNodeType::FloatInput,
+                    params: HashMap::from([("value".into(), serde_json::json!(conflict_value))]),
+                    inputs: vec![],
+                    outputs: vec![MutationPort {
+                        id: "value".into(),
+                        name: None,
+                        port_type: Some("float".into()),
+                    }],
+                }],
+                connections: vec![],
+                input_bindings: vec![],
+                output_bindings: vec![MutationOutputBinding {
+                    port_id: "Node:conflict".into(),
+                    from: MutationEndpoint {
+                        node_id: "constant".into(),
+                        port_id: "value".into(),
+                    },
+                }],
+                passthrough_bindings: vec![MutationPassthroughBinding {
+                    from_port_id: "Node:x".into(),
+                    to_port_id: seen_output.into(),
+                }],
+                viewport: None,
+            }
+        }
+
+        let mut sm = minimal_sm();
+        sm.states
+            .iter_mut()
+            .find(|state| state.id == "entry")
+            .unwrap()
+            .parameter_overrides
+            .insert("Node:x".into(), serde_json::json!(0.0));
+        sm.states
+            .iter_mut()
+            .find(|state| state.id == "any")
+            .unwrap()
+            .mutation_id = Some("any_mutation".into());
+        sm.states.push(AnimationState {
+            id: "target".into(),
+            name: "Target".into(),
+            position: None,
+            parameter_overrides: [("Node:x".into(), serde_json::json!(10.0))]
+                .into_iter()
+                .collect(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_id: Some("target_mutation".into()),
+        });
+        sm.mutations
+            .push(mutation("any_mutation", "Node:anySeen", 1.0));
+        sm.mutations
+            .push(mutation("target_mutation", "Node:targetSeen", 2.0));
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_target".into(),
+            source: "entry".into(),
+            target: "target".into(),
+            motion_graph_id: "timeline-1".into(),
+        });
+
+        let result = StateMachineRuntime::new(sm).tick(0.5, &HashMap::new(), &vec![]);
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("Node", "anySeen")),
+            Some(&serde_json::json!(5.0))
+        );
+        assert_eq!(
+            result
+                .overrides
+                .get(&OverrideKey::new("Node", "targetSeen")),
+            Some(&serde_json::json!(5.0))
+        );
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("Node", "conflict")),
+            Some(&serde_json::json!(2.0))
+        );
     }
 
     #[test]
@@ -1729,7 +1719,7 @@ mod tests {
             name: "Mutation".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: Some("m_mouse".into()),
         });
         sm.mutations.push(MutationDefinition {
@@ -1792,77 +1782,6 @@ mod tests {
     }
 
     #[test]
-    fn intelligent_light_driver_restarts_after_leaving_and_reentering_state() {
-        let mut sm = minimal_sm();
-        sm.states.push(AnimationState {
-            id: "mutation".into(),
-            name: "Mutation".into(),
-            position: None,
-            parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
-            mutation_id: Some("m_light".into()),
-        });
-        sm.states.push(AnimationState {
-            id: "idle".into(),
-            name: "Idle".into(),
-            position: None,
-            parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
-            mutation_id: None,
-        });
-        sm.mutations
-            .push(intelligent_light_driver_mutation("m_light"));
-        sm.transitions.push(AnimationTransition {
-            id: "entry_to_mutation".into(),
-            source: "entry".into(),
-            target: "mutation".into(),
-            motion_graph_id: "instant".into(),
-        });
-        sm.motion_graphs.push(with_event_condition(
-            instant_motion_graph("pause-condition"),
-            "pause",
-        ));
-        sm.transitions.push(AnimationTransition {
-            id: "mutation_to_idle".into(),
-            source: "mutation".into(),
-            target: "idle".into(),
-            motion_graph_id: "pause-condition".into(),
-        });
-        sm.motion_graphs.push(with_event_condition(
-            instant_motion_graph("resume-condition"),
-            "resume",
-        ));
-        sm.transitions.push(AnimationTransition {
-            id: "idle_to_mutation".into(),
-            source: "idle".into(),
-            target: "mutation".into(),
-            motion_graph_id: "resume-condition".into(),
-        });
-
-        let mut rt = StateMachineRuntime::new(sm);
-
-        let entered = rt.tick(0.016, &HashMap::new(), &vec![]);
-        let initial_pos = override_vec2(&entered, "Light", "pos0");
-        let initial_color = override_color(&entered, "Light", "color0");
-
-        let advanced = rt.tick(0.016, &HashMap::new(), &vec![]);
-        let advanced_pos = override_vec2(&advanced, "Light", "pos0");
-        let advanced_color = override_color(&advanced, "Light", "color0");
-        assert_ne!(advanced_pos, initial_pos);
-        assert_eq!(advanced_color, initial_color);
-
-        let paused = rt.tick(0.016, &HashMap::new(), &vec!["pause".into()]);
-        assert_eq!(paused.current_state_id, "idle");
-
-        let resumed = rt.tick(0.016, &HashMap::new(), &vec!["resume".into()]);
-        let resumed_pos = override_vec2(&resumed, "Light", "pos0");
-        let resumed_color = override_color(&resumed, "Light", "color0");
-        assert_eq!(resumed.current_state_id, "mutation");
-        assert_eq!(resumed_pos, initial_pos);
-        assert_eq!(resumed_color, initial_color);
-    }
-
-    #[test]
     fn exit_state_marks_finished() {
         let mut sm = minimal_sm();
         sm.transitions.push(AnimationTransition {
@@ -1886,7 +1805,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -1913,7 +1832,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.motion_graphs.push(with_event_and_bool_input_condition(

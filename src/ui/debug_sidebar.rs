@@ -1,4 +1,4 @@
-use rust_wgpu_fiber::eframe::egui;
+use rust_wgpu_fiber::{eframe::egui, shader_space::PassCaptureMode};
 use std::cell::RefCell;
 use std::hash::Hash;
 
@@ -235,6 +235,23 @@ fn analysis_tab_options() -> [RadioButtonOption<'static, AnalysisTab>; 3] {
     ]
 }
 
+fn pass_capture_mode_options() -> [RadioButtonOption<'static, PassCaptureMode>; 3] {
+    [
+        RadioButtonOption {
+            value: PassCaptureMode::Solo,
+            label: "Solo",
+        },
+        RadioButtonOption {
+            value: PassCaptureMode::Before,
+            label: "Before",
+        },
+        RadioButtonOption {
+            value: PassCaptureMode::After,
+            label: "After",
+        },
+    ]
+}
+
 fn sidebar_width_id() -> egui::Id {
     egui::Id::new("ui.debug_sidebar.width")
 }
@@ -254,6 +271,10 @@ pub fn sidebar_width(ctx: &egui::Context) -> f32 {
 pub enum SidebarAction {
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
+    /// Capture and preview one render pass independently of later target writers.
+    PreviewPass(String),
+    /// Switch the active pass capture between isolated and contextual states.
+    SetPassCaptureMode(PassCaptureMode),
     /// Open a render pass shader debug window.
     OpenPassDebug(String),
     /// Open a pass-specific design window.
@@ -347,6 +368,11 @@ pub struct DisplaySidebarState {
     pub ppi: f32,
 }
 
+pub struct PassCaptureSidebarState<'a> {
+    pub pass_name: &'a str,
+    pub mode: PassCaptureMode,
+}
+
 pub fn show_in_rect(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
@@ -362,6 +388,7 @@ pub fn show_in_rect(
     android_reference: AndroidReferenceStatus,
     reference: Option<&ReferenceSidebarState>,
     test_mode_state: TestModeSidebarState<'_>,
+    pass_capture_state: Option<PassCaptureSidebarState<'_>>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
 ) -> SidebarResult {
@@ -463,6 +490,7 @@ pub fn show_in_rect(
                             with_sidebar_content_padding(ui, |ui| {
                                 show_resource_tree_section(
                                     ui,
+                                    pass_capture_state.as_ref(),
                                     tree_nodes,
                                     file_tree_state,
                                     &mut sidebar_action,
@@ -1120,11 +1148,36 @@ fn show_test_mode_section(
 
 fn show_resource_tree_section(
     ui: &mut egui::Ui,
+    pass_capture: Option<&PassCaptureSidebarState<'_>>,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
     sidebar_action: &mut Option<SidebarAction>,
 ) {
     two_column_section::section(ui, "Resource Tree", |ui| {
+        if let Some(capture) = pass_capture {
+            sidebar_grid_row(ui, |row| {
+                row.place(1, 4, |ui| {
+                    sidebar_group_cell(ui, "Draw capture", |ui| {
+                        let mut mode = capture.mode;
+                        if radio_button_group::radio_button_group(
+                            ui,
+                            "ui.debug_sidebar.draw_capture.mode",
+                            &mut mode,
+                            &pass_capture_mode_options(),
+                        ) && mode != capture.mode
+                        {
+                            *sidebar_action = Some(SidebarAction::SetPassCaptureMode(mode));
+                        }
+                    });
+                });
+            });
+            ui.label(design_tokens::rich_text(
+                capture.pass_name,
+                TextRole::InactiveItemTitle,
+            ));
+            ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        }
+
         let tree_response = egui::ScrollArea::horizontal()
             .id_salt("ui.debug_sidebar.resource_tree.scroll_x")
             .auto_shrink([false, false])
@@ -1151,6 +1204,13 @@ fn show_resource_tree_section(
             match &clicked.kind {
                 NodeKind::Texture { texture_name } => {
                     *sidebar_action = Some(SidebarAction::PreviewTexture(texture_name.clone()));
+                }
+                NodeKind::Pass {
+                    pass_name,
+                    target_texture: Some(_),
+                    ..
+                } => {
+                    *sidebar_action = Some(SidebarAction::PreviewPass(pass_name.clone()));
                 }
                 _ => {}
             }

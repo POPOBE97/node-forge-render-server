@@ -8,8 +8,8 @@ use node_forge_render_server::state_machine::types::{
     TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
-    AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, TickSchedule,
-    build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
+    AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
+    TickSchedule, build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
 };
 use node_forge_render_server::{asset_store, dsl};
 
@@ -31,6 +31,14 @@ fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
         },
     });
     graph
+}
+
+fn space_event(event_type: &str) -> FiredEvent {
+    FiredEvent {
+        event_type: event_type.into(),
+        key: Some(" ".into()),
+        ..Default::default()
+    }
 }
 
 fn manifest_dir() -> PathBuf {
@@ -326,7 +334,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     name: "Entry".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::EntryState),
+                    state_type: AnimationStateType::EntryState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -334,7 +342,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     name: "Any".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::AnyState),
+                    state_type: AnimationStateType::AnyState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -342,7 +350,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     name: "Exit".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::ExitState),
+                    state_type: AnimationStateType::ExitState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -352,7 +360,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     parameter_overrides: [("Target:value".into(), serde_json::json!(5.0))]
                         .into_iter()
                         .collect(),
-                    state_type: Some(AnimationStateType::AnimationState),
+                    state_type: AnimationStateType::AnimationState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -360,7 +368,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     name: "B".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::AnimationState),
+                    state_type: AnimationStateType::AnimationState,
                     mutation_id: None,
                 },
             ],
@@ -448,11 +456,13 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         settled_off.active_overrides.get(
             &node_forge_render_server::state_machine::OverrideKey::new("Vector2Input_35", "x")
         ),
-        Some(&serde_json::json!(216))
+        Some(&serde_json::json!(216.0))
     );
 
-    session.fire_event("mouseup");
-    let started = session.step(1.0 / 60.0);
+    session.fire_event(space_event("keydown"));
+    session.step(0.1);
+    session.fire_event(space_event("keyup"));
+    let started = session.step(0.0);
     assert_eq!(started.current_state_id, "st_mrerxocx_8");
     assert_eq!(
         started.active_transition_id.as_deref(),
@@ -490,26 +500,26 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
     assert_eq!(completed.current_state_id, "st_mrerxocx_8");
 
     let expected = [
-        ("FloatInput_38", "value", serde_json::json!(480)),
-        ("FloatInput_39", "value", serde_json::json!(0)),
-        ("FloatInput_40", "value", serde_json::json!(0)),
-        ("FloatInput_41", "value", serde_json::json!(512)),
-        ("Vector2Input_35", "x", serde_json::json!(1008)),
-        ("Vector2Input_35", "y", serde_json::json!(168)),
-        ("Vector2Input_36", "x", serde_json::json!(540)),
-        ("Vector2Input_36", "y", serde_json::json!(186)),
-        ("FloatInput_37", "value", serde_json::json!(60)),
-        ("Vector2Input_38", "x", serde_json::json!(1008)),
-        ("Vector2Input_38", "y", serde_json::json!(168)),
-        ("FloatInput_42", "value", serde_json::json!(1)),
-        ("FloatInput_43", "value", serde_json::json!(1)),
+        ("FloatInput_38", "value", serde_json::json!(480.0)),
+        ("FloatInput_39", "value", serde_json::json!(0.0)),
+        ("FloatInput_40", "value", serde_json::json!(0.0)),
+        ("FloatInput_41", "value", serde_json::json!(512.0)),
+        ("Vector2Input_35", "x", serde_json::json!(1008.0)),
+        ("Vector2Input_35", "y", serde_json::json!(168.0)),
+        ("Vector2Input_36", "x", serde_json::json!(540.0)),
+        ("Vector2Input_36", "y", serde_json::json!(186.0)),
+        ("FloatInput_37", "value", serde_json::json!(60.0)),
+        ("Vector2Input_38", "x", serde_json::json!(1008.0)),
+        ("Vector2Input_38", "y", serde_json::json!(168.0)),
+        ("FloatInput_42", "value", serde_json::json!(1.0)),
+        ("FloatInput_43", "value", serde_json::json!(1.0)),
         ("FloatInput_44", "value", serde_json::json!(0.3)),
-        ("FloatInput_45", "value", serde_json::json!(0)),
-        ("FloatInput_46", "value", serde_json::json!(1)),
-        ("FloatInput_47", "value", serde_json::json!(1)),
-        ("FloatInput_48", "value", serde_json::json!(0)),
-        ("FloatInput_49", "value", serde_json::json!(0)),
-        ("FloatInput_50", "value", serde_json::json!(0)),
+        ("FloatInput_45", "value", serde_json::json!(0.0)),
+        ("FloatInput_46", "value", serde_json::json!(1.0)),
+        ("FloatInput_47", "value", serde_json::json!(1.0)),
+        ("FloatInput_48", "value", serde_json::json!(0.0)),
+        ("FloatInput_49", "value", serde_json::json!(0.0)),
+        ("FloatInput_50", "value", serde_json::json!(0.0)),
     ];
     for (node_id, param_name, value) in expected {
         assert_eq!(
@@ -533,26 +543,30 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
             "ShaderMaterial_InputBarUI",
             "param:ui_color",
         ),
+        ("FloatInput_42", "value", "GroupInstance_51", "in_2"),
         (
-            "FloatInput_42",
-            "value",
-            "ShaderMaterial_InputBarUI",
-            "param:opacity",
-        ),
-        (
-            "RenderPass_InputBarUI",
-            "pass",
+            "GroupInstance_51",
+            "out_0",
             "node_default_composite",
             "dynamic_input_bar_ui",
         ),
     ] {
         assert!(
-            scene.connections.iter().any(|connection| {
-                connection.from.node_id == from_node
-                    && connection.from.port_id == from_port
-                    && connection.to.node_id == to_node
-                    && connection.to.port_id == to_port
-            }),
+            scene
+                .connections
+                .iter()
+                .chain(
+                    scene
+                        .groups
+                        .iter()
+                        .flat_map(|group| group.connections.iter()),
+                )
+                .any(|connection| {
+                    connection.from.node_id == from_node
+                        && connection.from.port_id == from_port
+                        && connection.to.node_id == to_node
+                        && connection.to.port_id == to_port
+                }),
             "missing Listening UI connection {from_node}.{from_port} -> {to_node}.{to_port}"
         );
     }
@@ -571,8 +585,9 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
             "dynamic_1783678358530_1",
             "dynamic_input_bar_ui",
             "dynamic_1784530828769_2",
+            "dynamic_ptt_prompt",
         ],
-        "Composite dynamic inputs must remain Glass -> UI -> Light"
+        "Composite dynamic inputs must remain Glass -> UI -> Light -> PTT Prompt"
     );
 
     let settle = |session: &mut AnimationSession| {
@@ -594,15 +609,15 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
 
     let assert_listening_values = |snapshot: &AnimationStep| {
         let expected = [
-            ("FloatInput_42", serde_json::json!(0)),
-            ("FloatInput_43", serde_json::json!(1)),
+            ("FloatInput_42", serde_json::json!(0.0)),
+            ("FloatInput_43", serde_json::json!(1.0)),
             ("FloatInput_44", serde_json::json!(0.3)),
-            ("FloatInput_45", serde_json::json!(0)),
-            ("FloatInput_46", serde_json::json!(1)),
-            ("FloatInput_47", serde_json::json!(0)),
-            ("FloatInput_48", serde_json::json!(1)),
-            ("FloatInput_49", serde_json::json!(1)),
-            ("FloatInput_50", serde_json::json!(1)),
+            ("FloatInput_45", serde_json::json!(0.0)),
+            ("FloatInput_46", serde_json::json!(1.0)),
+            ("FloatInput_47", serde_json::json!(0.0)),
+            ("FloatInput_48", serde_json::json!(1.0)),
+            ("FloatInput_49", serde_json::json!(1.0)),
+            ("FloatInput_50", serde_json::json!(1.0)),
         ];
         for (node_id, value) in expected {
             assert_eq!(
@@ -621,8 +636,9 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
     let settled_off = enter_off(&mut off_session);
     assert_eq!(settled_off.current_state_id, "st_mrerw3qg_6");
 
-    off_session.fire_event("mousedown");
-    let off_to_listening = off_session.step(1.0 / 60.0);
+    off_session.fire_event(space_event("keydown"));
+    off_session.step(0.0);
+    let off_to_listening = off_session.step(0.21);
     assert_eq!(off_to_listening.current_state_id, "st_listening");
     assert_eq!(
         off_to_listening.active_transition_id.as_deref(),
@@ -656,7 +672,10 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         .expect("doubao state machine should compile")
         .expect("doubao fixture should have a state machine");
     enter_off(&mut idle_session);
-    idle_session.fire_event("mouseup");
+    idle_session.fire_event(space_event("keydown"));
+    idle_session.step(0.1);
+    idle_session.fire_event(space_event("keyup"));
+    idle_session.step(0.0);
     let idle = settle(&mut idle_session);
     assert_eq!(idle.current_state_id, "st_mrerxocx_8");
     assert_eq!(
@@ -665,11 +684,12 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
                 "FloatInput_42",
                 "value"
             )),
-        Some(&serde_json::json!(1))
+        Some(&serde_json::json!(1.0))
     );
 
-    idle_session.fire_event("mousedown");
-    let idle_to_listening = idle_session.step(1.0 / 60.0);
+    idle_session.fire_event(space_event("keydown"));
+    idle_session.step(0.0);
+    let idle_to_listening = idle_session.step(0.21);
     assert_eq!(idle_to_listening.current_state_id, "st_listening");
     assert_eq!(
         idle_to_listening.active_transition_id.as_deref(),

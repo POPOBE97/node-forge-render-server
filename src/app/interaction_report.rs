@@ -435,11 +435,6 @@ mod tests {
                     .iter()
                     .find(|state| state.id == transition.source)
                     .map(|state| state.resolved_type());
-                let target_type = sm
-                    .states
-                    .iter()
-                    .find(|state| state.id == transition.target)
-                    .map(|state| state.resolved_type());
                 let trigger_matches = sm
                     .motion_graphs
                     .iter()
@@ -461,7 +456,11 @@ mod tests {
                             | AnimationStateType::EntryState
                             | AnimationStateType::AnimationState
                     )
-                ) && target_type == Some(AnimationStateType::MutationNode)
+                ) && sm
+                    .states
+                    .iter()
+                    .find(|state| state.id == transition.target)
+                    .is_some_and(|state| state.mutation_id.is_some())
                     && trigger_matches
             })
             .expect("glass.nforge should have a mousedown transition to Mutation");

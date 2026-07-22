@@ -122,6 +122,13 @@ pub enum SceneUpdate {
     },
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeSceneUpdatePayload {
+    scene: SceneDSL,
+    functions: Vec<crate::state_machine::mutation_function::FunctionResource>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ScenePerfTrace {
     pub trace_id: String,
@@ -872,7 +879,11 @@ fn handle_text_message(
                     msg_type: "scene_update".to_string(),
                     timestamp: now_millis(),
                     request_id: msg.request_id,
-                    payload: Some(serde_json::to_value(scene)?),
+                    payload: Some(serde_json::to_value(RuntimeSceneUpdatePayload {
+                        scene,
+                        functions:
+                            crate::state_machine::mutation_function::installed_document_functions(),
+                    })?),
                 };
                 let _ = ws.send(Message::Text(serde_json::to_string(&resp)?));
             } else {
@@ -903,10 +914,10 @@ fn handle_text_message(
                 *guard = None;
             }
 
-            let mut scene: SceneDSL = match serde_json::from_value(payload.clone()) {
+            let runtime_payload: RuntimeSceneUpdatePayload = match serde_json::from_value(payload) {
                 Ok(s) => s,
                 Err(e) => {
-                    let message = format!("invalid SceneDSL: {e}");
+                    let message = format!("invalid runtime scene payload: {e}");
                     send_error(ws, msg.request_id.clone(), "PARSE_ERROR", &message);
                     send_scene_update(
                         scene_tx,
@@ -920,8 +931,27 @@ fn handle_text_message(
                     return Ok(());
                 }
             };
+            let raw_scene = serde_json::to_value(&runtime_payload.scene)?;
+            let mut scene = runtime_payload.scene;
 
-            dsl::materialize_scene_node_labels_from_raw_json(&mut scene, &payload);
+            dsl::materialize_scene_node_labels_from_raw_json(&mut scene, &raw_scene);
+
+            if let Err(error) = crate::state_machine::mutation_function::install_document_functions(
+                runtime_payload.functions,
+            ) {
+                let message = format!("invalid Mutation Function resources: {error:#}");
+                send_error(ws, msg.request_id.clone(), "VALIDATION_ERROR", &message);
+                send_scene_update(
+                    scene_tx,
+                    scene_drop_rx,
+                    SceneUpdate::ParseError {
+                        message,
+                        request_id: msg.request_id,
+                    },
+                    ui_wake,
+                );
+                return Ok(());
+            }
 
             // Keep client payload compact: fill in missing params from the bundled scheme.
             if let Err(e) = dsl::normalize_scene_defaults(&mut scene) {

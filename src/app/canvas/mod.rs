@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod design;
 pub mod display;
+pub mod draw_capture;
 pub mod ops;
 pub mod pixel_overlay;
 pub mod presenter;

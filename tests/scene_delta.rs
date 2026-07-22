@@ -333,7 +333,7 @@ fn materialize_scene_dsl_roundtrips_cache() {
 }
 
 #[test]
-fn scene_delta_updates_intelligent_light_design_params() {
+fn scene_delta_updates_intelligent_light_params() {
     let scene = SceneDSL {
         version: "1.0".to_string(),
         metadata: Metadata {
@@ -344,7 +344,7 @@ fn scene_delta_updates_intelligent_light_design_params() {
         nodes: vec![intelligent_light_node(
             "ilight",
             HashMap::from([
-                ("layoutMode".to_string(), json!("procedural")),
+                ("power".to_string(), json!(0.25)),
                 ("color0".to_string(), json!("#111111")),
             ]),
         )],
@@ -364,7 +364,7 @@ fn scene_delta_updates_intelligent_light_design_params() {
             updated: vec![intelligent_light_node(
                 "ilight",
                 HashMap::from([
-                    ("layoutMode".to_string(), json!("manual")),
+                    ("power".to_string(), json!(0.75)),
                     ("pos0".to_string(), json!([0.42, 0.58])),
                     ("color0".to_string(), json!("#44cc88")),
                 ]),
@@ -387,7 +387,7 @@ fn scene_delta_updates_intelligent_light_design_params() {
     apply_scene_delta(&mut cache, &delta);
 
     let cached = cache.nodes_by_id.get("ilight").expect("ilight cached node");
-    assert_eq!(cached.params.get("layoutMode"), Some(&json!("manual")));
+    assert_eq!(cached.params.get("power"), Some(&json!(0.75)));
     assert_eq!(cached.params.get("pos0"), Some(&json!([0.42, 0.58])));
     assert_eq!(cached.params.get("color0"), Some(&json!("#44cc88")));
 
@@ -397,7 +397,7 @@ fn scene_delta_updates_intelligent_light_design_params() {
         .iter()
         .find(|candidate| candidate.id == "ilight")
         .expect("ilight materialized node");
-    assert_eq!(node.params.get("layoutMode"), Some(&json!("manual")));
+    assert_eq!(node.params.get("power"), Some(&json!(0.75)));
     assert_eq!(node.params.get("pos0"), Some(&json!([0.42, 0.58])));
     assert_eq!(node.params.get("color0"), Some(&json!("#44cc88")));
 }

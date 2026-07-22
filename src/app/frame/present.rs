@@ -98,6 +98,12 @@ pub(super) fn run(
     let display_sidebar_state = ui::debug_sidebar::DisplaySidebarState {
         ppi: app.canvas.viewport.effective_display_ppi(),
     };
+    let pass_capture_sidebar_state = app.canvas.display.pass_capture.as_ref().map(|capture| {
+        ui::debug_sidebar::PassCaptureSidebarState {
+            pass_name: capture.pass_name.as_str(),
+            mode: capture.mode,
+        }
+    });
 
     let mut pending_commands = Vec::<AppCommand>::new();
     let mut sidebar_result = ui::debug_sidebar::SidebarResult::default();
@@ -160,6 +166,7 @@ pub(super) fn run(
                         max_row_cols: app.shell.matrix_config.max_row_cols,
                         show_labels: app.shell.matrix_config.show_labels,
                     },
+                    pass_capture_sidebar_state,
                     &app.shell.resource_tree_nodes,
                     &mut app.shell.file_tree_state,
                 );
@@ -231,7 +238,8 @@ pub(super) fn run(
                 params.time = app.runtime.time_value_secs;
                 let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
-            app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
+            let profile = canvas::draw_capture::render_profiled(app, false);
+            app.runtime.latest_render_profile = Some(profile);
             app.runtime.scene_redraw_pending = false;
         }
     } else if app.runtime.timeline_preview_was_active {
@@ -260,7 +268,8 @@ pub(super) fn run(
                 params.time = app.runtime.time_value_secs;
                 let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
             }
-            app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
+            let profile = canvas::draw_capture::render_profiled(app, false);
+            app.runtime.latest_render_profile = Some(profile);
             app.runtime.scene_redraw_pending = false;
         }
         app.runtime.timeline_pre_hover_overrides = None;

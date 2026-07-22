@@ -496,7 +496,7 @@
           "y": 40
         },
         "parameterOverrides": {},
-        "type": "mutationNode",
+        "type": "animationState",
         "mutationId": "mutation_mq8aa1sy_f"
       }
     ],

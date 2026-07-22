@@ -51,6 +51,12 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
+        ui::debug_sidebar::SidebarAction::PreviewPass(pass_name) => {
+            AppCommand::Canvas(CanvasAction::SetPassCapture(pass_name))
+        }
+        ui::debug_sidebar::SidebarAction::SetPassCaptureMode(mode) => {
+            AppCommand::Canvas(CanvasAction::SetPassCaptureMode(mode))
+        }
         ui::debug_sidebar::SidebarAction::OpenPassDebug(pass_name) => {
             AppCommand::OpenPassDebug(pass_name)
         }
@@ -425,7 +431,8 @@ fn render_current_shader_space(app: &mut App, now: f64) {
         params.time = t;
         let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
     }
-    app.runtime.latest_render_profile = Some(app.core.shader_space.render_profiled(false));
+    let profile = canvas::draw_capture::render_profiled(app, false);
+    app.runtime.latest_render_profile = Some(profile);
     app.runtime
         .render_texture_fps_tracker
         .record_scene_redraw(now);
@@ -435,14 +442,31 @@ fn render_current_shader_space(app: &mut App, now: f64) {
 mod tests {
     use super::{AppCommand, from_sidebar_action};
     use crate::{
-        app::{AnalysisTab, DiffMetricMode},
+        app::{AnalysisTab, DiffMetricMode, canvas::actions::CanvasAction},
         ui::debug_sidebar::SidebarAction,
     };
+    use rust_wgpu_fiber::shader_space::PassCaptureMode;
 
     #[test]
     fn sidebar_texture_preview_maps_to_canvas_command() {
         let command = from_sidebar_action(SidebarAction::PreviewTexture("foo.bar".to_string()));
         assert!(matches!(command, AppCommand::Canvas(_)));
+    }
+
+    #[test]
+    fn sidebar_pass_capture_maps_to_canvas_commands() {
+        let preview = from_sidebar_action(SidebarAction::PreviewPass("draw.pass".to_string()));
+        assert!(matches!(
+            preview,
+            AppCommand::Canvas(CanvasAction::SetPassCapture(pass_name))
+                if pass_name == "draw.pass"
+        ));
+
+        let mode = from_sidebar_action(SidebarAction::SetPassCaptureMode(PassCaptureMode::After));
+        assert!(matches!(
+            mode,
+            AppCommand::Canvas(CanvasAction::SetPassCaptureMode(PassCaptureMode::After))
+        ));
     }
 
     #[test]

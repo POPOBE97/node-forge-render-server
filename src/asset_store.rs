@@ -136,6 +136,7 @@ pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetSto
     // A non-.nforge scene must not inherit document-local material overrides
     // from a previously loaded SQLite document in the same process.
     crate::renderer::node_compiler::template_loader::install_document_overrides(std::iter::empty());
+    crate::state_machine::mutation_function::clear_document_functions();
     let store = AssetStore::new();
     for (asset_id, entry) in &scene.assets {
         let file_path = base_dir.join(&entry.path);

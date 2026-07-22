@@ -21,6 +21,10 @@ fn downsample_output_target_deduplicates_compose_pass() {
             return;
         }
     };
+    if headless.adapter.get_info().backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+        eprintln!("Native GPU unavailable; skipping texture-backed downsample integration test");
+        return;
+    }
 
     let build = renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
         .with_adapter(headless.adapter.clone())

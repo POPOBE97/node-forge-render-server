@@ -81,7 +81,6 @@
       "width": 160,
       "label": "Intelligent Light",
       "params": {
-        "layoutMode": "manual",
         "color0": "#8086ff",
         "color1": "#ffd3b3",
         "color10": "#847eff",
@@ -93,7 +92,7 @@
         "color7": "#ff8635",
         "color8": "#ff8635",
         "color9": "#1269f2",
-        "height": 30,
+        "height": 36,
         "lightness": 0.75,
         "pos2": [
           8.300000190734863,
@@ -116,8 +115,91 @@
           9.100000381469728
         ],
         "power": 0,
-        "width": 14,
-        "driver": 0
+        "width": 36
+      }
+    },
+    {
+      "id": "ILightDriverWidth",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 80
+      },
+      "label": "Driver Width",
+      "params": {
+        "value": 420
+      }
+    },
+    {
+      "id": "ILightDriverHeight",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 140
+      },
+      "label": "Driver Height",
+      "params": {
+        "value": 900
+      }
+    },
+    {
+      "id": "ILightDriverCornerRadius",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 200
+      },
+      "label": "Driver Corner Radius",
+      "params": {
+        "value": 210
+      }
+    },
+    {
+      "id": "ILightDriverSnapAmount",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 260
+      },
+      "label": "Driver Snap Amount",
+      "params": {
+        "value": 0
+      }
+    },
+    {
+      "id": "ILightDriverSnapPrimary",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 320
+      },
+      "label": "Driver Snap Primary",
+      "params": {
+        "value": 0.5
+      }
+    },
+    {
+      "id": "ILightDriverSnapSecondary",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 380
+      },
+      "label": "Driver Snap Secondary",
+      "params": {
+        "value": 0.5
+      }
+    },
+    {
+      "id": "ILightDriverNormalOffset",
+      "type": "FloatInput",
+      "position": {
+        "x": -500,
+        "y": 440
+      },
+      "label": "Driver Normal Offset",
+      "params": {
+        "value": 0
       }
     }
   ],
@@ -202,7 +284,7 @@
           "y": -40
         },
         "parameterOverrides": {},
-        "type": "mutationNode",
+        "type": "animationState",
         "mutationId": "mutation_mp6nhknz_9"
       }
     ],
@@ -324,44 +406,47 @@
     "mutations": [
       {
         "id": "mutation_mp6nhknz_9",
-        "inputBindings": [],
+        "name": "Mutation 1",
         "inputs": [
-          {
-            "id": "localElapsedTime",
-            "name": "Local Elapsed Time",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.x",
-            "name": "Mouse Position X",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.y",
-            "name": "Mouse Position Y",
-            "type": "float"
-          },
           {
             "id": "sceneElapsedTime",
             "name": "Scene Elapsed Time",
             "type": "float"
-          }
-        ],
-        "name": "Mutation 1",
-        "outputBindings": [
-          {
-            "mutationPortId": "IntelligentLight_8:colors",
-            "from": {
-              "nodeId": "min_mram1jtb_5",
-              "portId": "colors"
-            }
           },
           {
-            "mutationPortId": "IntelligentLight_8:positions",
-            "from": {
-              "nodeId": "min_mram1jtb_5",
-              "portId": "positions"
-            }
+            "id": "ILightDriverWidth:value",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverHeight:value",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverCornerRadius:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverSnapPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverSnapSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "ILightDriverNormalOffset:value",
+            "name": "Normal Offset",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -376,28 +461,143 @@
             "type": "packed<vector2>"
           }
         ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverWidth:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverHeight:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverCornerRadius:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverSnapPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverSnapSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "ILightDriverNormalOffset:value",
+            "to": {
+              "nodeId": "function_ilight_example",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "IntelligentLight_8:colors",
+            "from": {
+              "nodeId": "function_ilight_example",
+              "portId": "colors"
+            }
+          },
+          {
+            "mutationPortId": "IntelligentLight_8:positions",
+            "from": {
+              "nodeId": "function_ilight_example",
+              "portId": "positions"
+            }
+          }
+        ],
         "passthroughBindings": [],
         "nodes": [
           {
-            "id": "min_mram1jtb_5",
-            "type": "IntelligentLightDefaultDriver",
+            "id": "function_ilight_example",
+            "type": "MutationFunction",
             "position": {
               "x": -300,
               "y": 600
             },
-            "label": "Intelligent Light Default Driver",
+            "label": "Intelligent Light Driver",
             "params": {},
-            "inputs": [],
-            "outputs": [
+            "inputs": [
               {
-                "id": "colors",
-                "name": "Colors",
-                "type": "packed<color>"
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
               },
               {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
                 "id": "positions",
-                "name": "Positions",
+                "name": "positions",
                 "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
               }
             ]
           }

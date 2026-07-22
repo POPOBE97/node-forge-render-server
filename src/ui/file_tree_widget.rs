@@ -205,7 +205,14 @@ pub fn show_file_tree(
         && let Some(entry) = visible_entries
             .iter()
             .find(|entry| &entry.node.id == hover_id)
-        && matches!(entry.node.kind, NodeKind::Texture { .. })
+        && matches!(
+            entry.node.kind,
+            NodeKind::Texture { .. }
+                | NodeKind::Pass {
+                    target_texture: Some(_),
+                    ..
+                }
+        )
     {
         state.selected_id = Some(entry.node.id.clone());
         response.clicked = Some(entry.node.clone());

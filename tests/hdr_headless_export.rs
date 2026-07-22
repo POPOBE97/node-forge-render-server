@@ -3,11 +3,14 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use node_forge_render_server::{dsl, renderer};
+use rust_wgpu_fiber::eframe::wgpu;
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 use serde_json::json;
 
 fn can_run_headless() -> bool {
-    HeadlessRenderer::new(HeadlessRendererConfig::default()).is_ok()
+    HeadlessRenderer::new(HeadlessRendererConfig::default())
+        .map(|renderer| renderer.adapter.get_info().backend != wgpu::Backend::Noop)
+        .unwrap_or(false)
 }
 
 fn unique_temp_output(ext: &str) -> PathBuf {

@@ -26,6 +26,10 @@ fn build_pass_bindings(
             return None;
         }
     };
+    if headless.adapter.get_info().backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+        eprintln!("Native GPU unavailable; skipping texture-backed camera policy integration test");
+        return None;
+    }
 
     let build = renderer::ShaderSpaceBuilder::new(headless.device.clone(), headless.queue.clone())
         .with_adapter(headless.adapter.clone())

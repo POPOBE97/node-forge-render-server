@@ -1,11 +1,15 @@
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
-use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
+use rust_wgpu_fiber::{
+    ResourceName,
+    eframe::wgpu,
+    shader_space::{PASS_CAPTURE_OUTPUT_TEXTURE_NAME, PassCaptureMode},
+};
 
 use crate::app::{
     canvas::{
         actions::{CanvasAction, CanvasFrameResult},
         ops, pixel_overlay, reference,
-        state::{CanvasViewportState, PhysicalZoomRequest},
+        state::{CanvasViewportState, DrawCallCaptureState, PhysicalZoomRequest},
     },
     display_metrics,
     layout_math::clamp_zoom,
@@ -49,12 +53,42 @@ pub fn apply_action(
 ) -> anyhow::Result<CanvasFrameResult> {
     match action {
         CanvasAction::SetPreviewTexture(name) => {
+            app.canvas.display.pass_capture = None;
             app.canvas.display.preview_texture_name = Some(name);
             app.canvas.viewport.pending_view_reset = true;
             pixel_overlay::clear_cache(app);
             app.canvas.invalidation.preview_source_changed();
         }
+        CanvasAction::SetPassCapture(pass_name) => {
+            let mode = app
+                .canvas
+                .display
+                .pass_capture
+                .as_ref()
+                .filter(|capture| capture.pass_name == pass_name)
+                .map(|capture| capture.mode)
+                .unwrap_or(PassCaptureMode::Solo);
+            app.canvas.design.active = None;
+            app.canvas.display.pass_capture = Some(DrawCallCaptureState { pass_name, mode });
+            app.canvas.display.preview_texture_name =
+                Some(ResourceName::from(PASS_CAPTURE_OUTPUT_TEXTURE_NAME));
+            app.canvas.viewport.pending_view_reset = true;
+            app.runtime.scene_redraw_pending = true;
+            pixel_overlay::clear_cache(app);
+            app.canvas.invalidation.preview_source_changed();
+        }
+        CanvasAction::SetPassCaptureMode(mode) => {
+            if let Some(capture) = app.canvas.display.pass_capture.as_mut()
+                && capture.mode != mode
+            {
+                capture.mode = mode;
+                app.runtime.scene_redraw_pending = true;
+                pixel_overlay::clear_cache(app);
+                app.canvas.invalidation.preview_source_changed();
+            }
+        }
         CanvasAction::ClearPreviewTexture => {
+            app.canvas.display.pass_capture = None;
             app.canvas.display.preview_texture_name = None;
             app.shell.file_tree_state.selected_id = None;
             if let Some(id) = app.canvas.display.preview_color_attachment.take() {
@@ -64,6 +98,16 @@ pub fn apply_action(
             app.canvas.invalidation.preview_source_changed();
         }
         CanvasAction::EnterPassDesign(target) => {
+            if app.canvas.display.pass_capture.take().is_some()
+                && app
+                    .canvas
+                    .display
+                    .preview_texture_name
+                    .as_ref()
+                    .is_some_and(|name| name.as_str() == PASS_CAPTURE_OUTPUT_TEXTURE_NAME)
+            {
+                app.canvas.display.preview_texture_name = None;
+            }
             let previous_preview_texture = app
                 .canvas
                 .design

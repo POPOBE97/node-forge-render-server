@@ -12,7 +12,10 @@ use std::collections::{HashMap, HashSet};
 
 use rust_wgpu_fiber::{eframe::wgpu, shader_space::ShaderSpace};
 
-use crate::{dsl::SceneDSL, renderer::PassBindings};
+use crate::{
+    dsl::{Node, SceneDSL},
+    renderer::{PassBindings, render_plan::resource_naming::readable_pass_name_for_node},
+};
 
 // ---------------------------------------------------------------------------
 // Snapshot types
@@ -22,9 +25,12 @@ use crate::{dsl::SceneDSL, renderer::PassBindings};
 #[derive(Clone, Debug)]
 pub struct PassInfo {
     pub name: String,
+    /// Optional UI-only label. The exact resource `name` remains the stable
+    /// identity used by pass debug and GPU resource lookup.
+    pub display_label: Option<String>,
     pub source_node_id: Option<String>,
     pub source_node_type: Option<String>,
-    /// Monotonic insertion order from ShaderSpace pass registry.
+    /// Monotonic execution order from the ShaderSpace composition.
     pub order_index: usize,
     pub target_texture: Option<String>,
     /// Target texture dimensions (if known).
@@ -77,13 +83,25 @@ impl ResourceSnapshot {
         scene: Option<&SceneDSL>,
     ) -> Self {
         let pass_sources = scene.map(pass_source_metadata_by_pass).unwrap_or_default();
+        let pass_display_labels = scene.map(pass_display_labels_by_pass).unwrap_or_default();
+        let mut execution_order = ss.composition.flatten();
+        execution_order.reverse();
+        let execution_order_by_pass: HashMap<String, usize> = execution_order
+            .into_iter()
+            .enumerate()
+            .map(|(index, dependency)| (dependency.pass_name.as_str().to_string(), index))
+            .collect();
         // --- Passes ---
         let mut passes: Vec<PassInfo> = ss
             .passes
             .inner
             .iter()
             .enumerate()
-            .map(|(order_index, (name, pass))| {
+            .map(|(registry_index, (name, pass))| {
+                let order_index = execution_order_by_pass
+                    .get(name.as_str())
+                    .copied()
+                    .unwrap_or(registry_index);
                 let (source_node_id, source_node_type) = pass_sources
                     .get(name.as_str())
                     .cloned()
@@ -126,6 +144,7 @@ impl ResourceSnapshot {
 
                 PassInfo {
                     name: name.as_str().to_string(),
+                    display_label: pass_display_labels.get(name.as_str()).cloned(),
                     source_node_id,
                     source_node_type,
                     order_index,
@@ -257,6 +276,38 @@ fn pass_source_metadata_by_pass(
         }
     }
     out
+}
+
+fn pass_display_labels_by_pass(scene: &SceneDSL) -> HashMap<String, String> {
+    scene
+        .nodes
+        .iter()
+        .filter(|node| node.node_type == "RenderPass")
+        .filter_map(|node| {
+            grouped_render_pass_display_label(node).map(|label| {
+                (
+                    readable_pass_name_for_node(node).as_str().to_string(),
+                    label,
+                )
+            })
+        })
+        .collect()
+}
+
+fn grouped_render_pass_display_label(node: &Node) -> Option<String> {
+    let group_label = ["__group_instance_label", "__group_name", "__group_id"]
+        .iter()
+        .find_map(|key| node.params.get(*key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|label| !label.is_empty())?;
+    let pass_label = ["label", "name", "title", "headerLabel"]
+        .iter()
+        .find_map(|key| node.params.get(*key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .unwrap_or("Render Pass");
+
+    Some(format!("{group_label} / {pass_label}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -418,7 +469,10 @@ fn build_dependency_tree(
     root_writers.sort_by_key(|p| p.order_index);
 
     fn pass_label(pass: &PassInfo) -> String {
-        let base = pass_basename(&pass.name);
+        let base = pass
+            .display_label
+            .clone()
+            .unwrap_or_else(|| pass_basename(&pass.name));
         if !pass.is_compute && pass.instance_count > 1 {
             format!("{} (×{})", base, pass.instance_count)
         } else {
@@ -571,9 +625,11 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo, pass_source_metadata_by_pass,
+        BufferNodeInfo, PassInfo, ResourceSnapshot, SamplerNodeInfo, pass_display_labels_by_pass,
+        pass_source_metadata_by_pass,
     };
     use crate::dsl::{Metadata, Node, SceneDSL};
+    use serde_json::json;
 
     #[test]
     fn long_root_target_label_is_preserved() {
@@ -597,6 +653,7 @@ mod tests {
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.compose.pass".to_string(),
+                display_label: None,
                 source_node_id: None,
                 source_node_type: None,
                 order_index: 0,
@@ -650,6 +707,7 @@ mod tests {
             passes: vec![
                 PassInfo {
                     name: "sys.compose.pass".to_string(),
+                    display_label: None,
                     source_node_id: None,
                     source_node_type: None,
                     order_index: 0,
@@ -664,6 +722,7 @@ mod tests {
                 },
                 PassInfo {
                     name: "sys.grade.pass".to_string(),
+                    display_label: None,
                     source_node_id: None,
                     source_node_type: None,
                     order_index: 1,
@@ -678,6 +737,7 @@ mod tests {
                 },
                 PassInfo {
                     name: "sys.compute.prepass".to_string(),
+                    display_label: None,
                     source_node_id: None,
                     source_node_type: None,
                     order_index: 2,
@@ -706,6 +766,7 @@ mod tests {
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.render.pass.exact.name.pass".to_string(),
+                display_label: Some("Light Effect / Render Pass".to_string()),
                 source_node_id: None,
                 source_node_type: None,
                 order_index: 0,
@@ -725,11 +786,48 @@ mod tests {
 
         let tree = snapshot.to_tree();
         let pass_node = &tree[0].children[0].children[0];
+        assert_eq!(pass_node.label, "Light Effect / Render Pass");
         assert!(matches!(
             &pass_node.kind,
             super::NodeKind::Pass { pass_name, .. }
                 if pass_name == "sys.render.pass.exact.name.pass"
         ));
+    }
+
+    #[test]
+    fn grouped_render_pass_display_label_includes_group_name() {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "metadata test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![Node {
+                id: "GroupInstance_32/RenderPass_26".to_string(),
+                node_type: "RenderPass".to_string(),
+                params: HashMap::from([
+                    ("__group_name".to_string(), json!("Light Effect")),
+                    ("name".to_string(), json!("Render Pass")),
+                ]),
+                inputs: vec![],
+                outputs: vec![],
+                input_bindings: vec![],
+                wgsl_override: None,
+            }],
+            connections: vec![],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let labels = pass_display_labels_by_pass(&scene);
+        assert_eq!(
+            labels.get("render.pass.pass26.pass"),
+            Some(&"Light Effect / Render Pass".to_string())
+        );
     }
 
     #[test]

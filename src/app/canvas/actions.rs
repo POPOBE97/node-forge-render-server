@@ -1,4 +1,4 @@
-use rust_wgpu_fiber::{ResourceName, eframe::egui};
+use rust_wgpu_fiber::{ResourceName, eframe::egui, shader_space::PassCaptureMode};
 
 use crate::app::{
     frame::commands::AppCommand,
@@ -9,6 +9,8 @@ use crate::ui::resource_tree::PassDesignTarget;
 #[derive(Clone, Debug)]
 pub enum CanvasAction {
     SetPreviewTexture(ResourceName),
+    SetPassCapture(String),
+    SetPassCaptureMode(PassCaptureMode),
     ClearPreviewTexture,
     EnterPassDesign(PassDesignTarget),
     ExitPassDesign,

@@ -552,6 +552,14 @@ fn run_case(case: &Case) {
                     case.name
                 )
             });
+        let headless_backend = headless.adapter.get_info().backend;
+        if headless_backend == rust_wgpu_fiber::eframe::wgpu::Backend::Noop {
+            eprintln!(
+                "case {}: native GPU unavailable; render-plan and WGSL validation passed, pixel comparison skipped on the non-rendering noop backend",
+                case.name
+            );
+            return;
+        }
 
         // Enable WGSL dump to out/wgsl_dump for debugging shader issues.
         let wgsl_dump_dir = out_dir.join("wgsl_dump");

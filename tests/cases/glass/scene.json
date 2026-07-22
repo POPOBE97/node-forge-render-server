@@ -422,22 +422,6 @@
       }
     },
     {
-      "id": "ReferenceImage_46",
-      "type": "ReferenceImage",
-      "position": {
-        "x": 620,
-        "y": -420
-      },
-      "width": 160,
-      "label": "Reference Image",
-      "params": {
-        "source": "image",
-        "assetId": "762325f2042e",
-        "encoderSpace": "srgb",
-        "alphaMode": "premultiplied"
-      }
-    },
-    {
       "id": "MathAdd_66",
       "type": "MathAdd",
       "position": {
@@ -3266,7 +3250,7 @@
           "y": 40
         },
         "parameterOverrides": {},
-        "type": "mutationNode",
+        "type": "animationState",
         "mutationId": "mutation_mqyzdqx1_2"
       },
       {
@@ -3814,134 +3798,6 @@
     ],
     "initialStateId": "st_moxsija5_4",
     "mutations": [
-      {
-        "id": "mutation_moxsjac9_9",
-        "name": "Mutation 1",
-        "inputs": [
-          {
-            "id": "ColorInput_62:value",
-            "name": "Color Input.value",
-            "type": "color"
-          },
-          {
-            "id": "FloatInput_55:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
-          {
-            "id": "FloatInput_61:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
-          {
-            "id": "localElapsedTime",
-            "name": "Local Elapsed Time",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.x",
-            "name": "Mouse Position X",
-            "type": "float"
-          },
-          {
-            "id": "mouse.position.y",
-            "name": "Mouse Position Y",
-            "type": "float"
-          },
-          {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_53:x",
-            "name": "Vector2 Input.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_53:y",
-            "name": "Vector2 Input.y",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_59:x",
-            "name": "Vector2 Input.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_59:y",
-            "name": "Vector2 Input.y",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_65:x",
-            "name": "Offset.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_65:y",
-            "name": "Offset.y",
-            "type": "float"
-          }
-        ],
-        "outputs": [
-          {
-            "id": "ColorInput_62:value",
-            "name": "Color Input.value",
-            "type": "color"
-          },
-          {
-            "id": "FloatInput_55:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
-          {
-            "id": "FloatInput_61:value",
-            "name": "Float Input.value",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_53:x",
-            "name": "Vector2 Input.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_53:y",
-            "name": "Vector2 Input.y",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_59:x",
-            "name": "Vector2 Input.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_59:y",
-            "name": "Vector2 Input.y",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_65:x",
-            "name": "Offset.x",
-            "type": "float"
-          },
-          {
-            "id": "Vector2Input_65:y",
-            "name": "Offset.y",
-            "type": "float"
-          }
-        ],
-        "inputBindings": [],
-        "outputBindings": [],
-        "passthroughBindings": [
-          {
-            "inputPortId": "localElapsedTime",
-            "outputPortId": "Vector2Input_65:y"
-          }
-        ],
-        "nodes": [],
-        "connections": []
-      },
       {
         "id": "mutation_mqyzdqx1_2",
         "name": "Mutation 2",

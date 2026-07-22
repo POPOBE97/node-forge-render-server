@@ -140,74 +140,16 @@
     },
     {
       "id": "GroupInstance_32",
-      "inputBindings": [
-        {
-          "label": "VoiceOpacity",
-          "portId": "voice_opacity",
-          "sourceBinding": {
-            "nodeId": "FloatInput_45",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "VoiceOpacity"
-        },
-        {
-          "label": "CoreGlowOpacity",
-          "portId": "core_glow_opacity",
-          "sourceBinding": {
-            "nodeId": "FloatInput_46",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "CoreGlowOpacity"
-        },
-        {
-          "label": "GlowMaskMorph",
-          "portId": "glow_mask_morph",
-          "sourceBinding": {
-            "nodeId": "FloatInput_47",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "GlowMaskMorph"
-        },
-        {
-          "label": "VoiceDotOpacity",
-          "portId": "voice_dot_opacity",
-          "sourceBinding": {
-            "nodeId": "FloatInput_48",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "VoiceDotOpacity"
-        },
-        {
-          "label": "VoiceDotProgress",
-          "portId": "voice_dot_progress",
-          "sourceBinding": {
-            "nodeId": "FloatInput_49",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "VoiceDotProgress"
-        },
-        {
-          "label": "VoiceDotResponse",
-          "portId": "voice_dot_response",
-          "sourceBinding": {
-            "nodeId": "FloatInput_50",
-            "outputLabel": "Value",
-            "outputPortId": "value"
-          },
-          "type": "float",
-          "variableName": "VoiceDotResponse"
-        }
-      ],
+      "type": "GroupInstance",
+      "position": {
+        "x": 180,
+        "y": 40
+      },
+      "width": 160,
+      "label": "Light Effect",
+      "params": {
+        "groupId": "LightEffect"
+      },
       "inputs": [
         {
           "id": "in_0",
@@ -268,9 +210,18 @@
           "id": "voice_dot_color",
           "name": "VoiceDotColor",
           "type": "color"
+        },
+        {
+          "id": "intelligent_light_positions",
+          "name": "Intelligent Light Positions",
+          "type": "packed<vector2>"
+        },
+        {
+          "id": "intelligent_light_colors",
+          "name": "Intelligent Light Colors",
+          "type": "packed<color>"
         }
       ],
-      "label": "Light Effect",
       "outputs": [
         {
           "id": "out_0",
@@ -278,15 +229,74 @@
           "type": "pass"
         }
       ],
-      "params": {
-        "groupId": "LightEffect"
-      },
-      "position": {
-        "x": 180,
-        "y": 40
-      },
-      "type": "GroupInstance",
-      "width": 160
+      "inputBindings": [
+        {
+          "portId": "voice_opacity",
+          "label": "VoiceOpacity",
+          "variableName": "VoiceOpacity",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_45",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "core_glow_opacity",
+          "label": "CoreGlowOpacity",
+          "variableName": "CoreGlowOpacity",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_46",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "glow_mask_morph",
+          "label": "GlowMaskMorph",
+          "variableName": "GlowMaskMorph",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_47",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "voice_dot_opacity",
+          "label": "VoiceDotOpacity",
+          "variableName": "VoiceDotOpacity",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_48",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "voice_dot_progress",
+          "label": "VoiceDotProgress",
+          "variableName": "VoiceDotProgress",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_49",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        },
+        {
+          "portId": "voice_dot_response",
+          "label": "VoiceDotResponse",
+          "variableName": "VoiceDotResponse",
+          "type": "float",
+          "sourceBinding": {
+            "nodeId": "FloatInput_50",
+            "outputPortId": "value",
+            "outputLabel": "Value"
+          }
+        }
+      ]
     },
     {
       "id": "GroupInstance_33",
@@ -484,17 +494,17 @@
     },
     {
       "id": "Vector2Input_36",
-      "label": "InputBarPositionPx",
-      "params": {
-        "x": 540,
-        "y": 180
-      },
+      "type": "Vector2Input",
       "position": {
         "x": -220,
         "y": 160
       },
-      "type": "Vector2Input",
-      "width": 160
+      "width": 160,
+      "label": "InputBarPositionPx",
+      "params": {
+        "x": 540,
+        "y": 186
+      }
     },
     {
       "id": "FloatInput_37",
@@ -577,16 +587,16 @@
     },
     {
       "id": "FloatInput_42",
-      "label": "InputBarUiOpacity",
-      "params": {
-        "value": 0
-      },
+      "type": "FloatInput",
       "position": {
         "x": -400,
         "y": -260
       },
-      "type": "FloatInput",
-      "width": 160
+      "width": 160,
+      "label": "InputBarUiOpacity",
+      "params": {
+        "value": 1
+      }
     },
     {
       "id": "FloatInput_43",
@@ -655,29 +665,29 @@
     },
     {
       "id": "FloatInput_48",
-      "label": "VoiceDotOpacity",
-      "params": {
-        "value": 1
-      },
+      "type": "FloatInput",
       "position": {
         "x": -400,
         "y": 220
       },
-      "type": "FloatInput",
-      "width": 160
+      "width": 160,
+      "label": "VoiceDotOpacity",
+      "params": {
+        "value": 0
+      }
     },
     {
       "id": "FloatInput_49",
-      "label": "VoiceDotProgress",
-      "params": {
-        "value": 1
-      },
+      "type": "FloatInput",
       "position": {
         "x": -400,
         "y": 300
       },
-      "type": "FloatInput",
-      "width": 160
+      "width": 160,
+      "label": "VoiceDotProgress",
+      "params": {
+        "value": 0
+      }
     },
     {
       "id": "FloatInput_50",
@@ -2357,6 +2367,16 @@
           "id": "voice_dot_color",
           "name": "VoiceDotColor",
           "type": "color"
+        },
+        {
+          "id": "intelligent_light_positions",
+          "name": "Intelligent Light Positions",
+          "type": "packed<vector2>"
+        },
+        {
+          "id": "intelligent_light_colors",
+          "name": "Intelligent Light Colors",
+          "type": "packed<color>"
         }
       ],
       "outputs": [
@@ -2367,6 +2387,20 @@
         }
       ],
       "inputBindings": [
+        {
+          "groupPortId": "core_glow_opacity",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:core_glow_opacity"
+          }
+        },
+        {
+          "groupPortId": "glow_mask_morph",
+          "to": {
+            "nodeId": "ShaderMaterial_32",
+            "portId": "param:glow_mask_morph"
+          }
+        },
         {
           "groupPortId": "in_0",
           "to": {
@@ -2396,24 +2430,17 @@
           }
         },
         {
-          "groupPortId": "voice_opacity",
+          "groupPortId": "light_clip_bloom_progress",
           "to": {
             "nodeId": "ShaderMaterial_32",
-            "portId": "param:voice_opacity"
+            "portId": "param:light_clip_bloom_progress"
           }
         },
         {
-          "groupPortId": "core_glow_opacity",
+          "groupPortId": "voice_dot_color",
           "to": {
             "nodeId": "ShaderMaterial_32",
-            "portId": "param:core_glow_opacity"
-          }
-        },
-        {
-          "groupPortId": "glow_mask_morph",
-          "to": {
-            "nodeId": "ShaderMaterial_32",
-            "portId": "param:glow_mask_morph"
+            "portId": "param:voice_dot_color"
           }
         },
         {
@@ -2438,17 +2465,24 @@
           }
         },
         {
-          "groupPortId": "light_clip_bloom_progress",
+          "groupPortId": "voice_opacity",
           "to": {
             "nodeId": "ShaderMaterial_32",
-            "portId": "param:light_clip_bloom_progress"
+            "portId": "param:voice_opacity"
           }
         },
         {
-          "groupPortId": "voice_dot_color",
+          "groupPortId": "intelligent_light_positions",
           "to": {
-            "nodeId": "ShaderMaterial_32",
-            "portId": "param:voice_dot_color"
+            "nodeId": "IntelligentLight_30",
+            "portId": "positions"
+          }
+        },
+        {
+          "groupPortId": "intelligent_light_colors",
+          "to": {
+            "nodeId": "IntelligentLight_30",
+            "portId": "colors"
           }
         }
       ],
@@ -2518,6 +2552,12 @@
         },
         {
           "id": "IntelligentLight_30",
+          "type": "IntelligentLight",
+          "position": {
+            "x": -380,
+            "y": 120
+          },
+          "width": 160,
           "label": "Intelligent Light",
           "params": {
             "color0": "#8086ff",
@@ -2528,121 +2568,105 @@
             "color4": "#1269f2",
             "color5": "#8086ff",
             "color6": "#ffd3b3",
-            "color7": "#ff8635",
+            "color7": [
+              0.207843137254902,
+              0.5624331067077604,
+              1,
+              1
+            ],
             "color8": "#ff8635",
             "color9": "#1269f2",
-            "driver": 0,
             "height": 36,
-            "layoutMode": "manual",
             "lightness": 0.75,
+            "pos0": [
+              0.8,
+              31.7
+            ],
+            "pos1": [
+              29.7,
+              12.8
+            ],
+            "pos10": [
+              10.5,
+              23.4
+            ],
+            "pos2": [
+              19.6,
+              12.1
+            ],
+            "pos3": [
+              16.8,
+              19.6
+            ],
             "pos4": [
-              34.8,
-              23.2
+              30.3,
+              28.3
+            ],
+            "pos8": [
+              18.7,
+              30.8
+            ],
+            "pos9": [
+              9.4,
+              32.7
             ],
             "power": 0,
             "width": 36
-          },
-          "position": {
-            "x": -380,
-            "y": 120
-          },
-          "type": "IntelligentLight",
-          "width": 160
+          }
         },
         {
           "id": "ShaderMaterial_32",
-          "inputBindings": [
-            {
-              "label": "intelli_tex",
-              "portId": "resource:intelli_tex",
-              "type": "sampledTexture",
-              "variableName": "intelli_tex"
-            },
-            {
-              "label": "frame_size_px",
-              "portId": "param:frame_size_px",
-              "type": "vector2",
-              "variableName": "frame_size_px"
-            },
-            {
-              "label": "light_bloom_size_px",
-              "portId": "param:light_bloom_size_px",
-              "type": "vector2",
-              "variableName": "light_bloom_size_px"
-            },
-            {
-              "label": "corner_radius_px",
-              "portId": "param:corner_radius_px",
-              "type": "float",
-              "variableName": "corner_radius_px"
-            },
-            {
-              "label": "density",
-              "portId": "param:density",
-              "type": "float",
-              "variableName": "density"
-            },
-            {
-              "label": "human_voice_energies",
-              "portId": "param:human_voice_energies",
-              "type": "float[]",
-              "variableName": "human_voice_energies"
-            },
-            {
-              "label": "total_energy",
-              "portId": "param:total_energy",
-              "type": "float",
-              "variableName": "total_energy"
-            },
-            {
-              "label": "voice_opacity",
-              "portId": "param:voice_opacity",
-              "type": "float",
-              "variableName": "voice_opacity"
-            },
-            {
-              "label": "core_glow_opacity",
-              "portId": "param:core_glow_opacity",
-              "type": "float",
-              "variableName": "core_glow_opacity"
-            },
-            {
-              "label": "glow_mask_morph",
-              "portId": "param:glow_mask_morph",
-              "type": "float",
-              "variableName": "glow_mask_morph"
-            },
-            {
-              "label": "light_clip_bloom_progress",
-              "portId": "param:light_clip_bloom_progress",
-              "type": "float",
-              "variableName": "light_clip_bloom_progress"
-            },
-            {
-              "label": "voice_dot_opacity",
-              "portId": "param:voice_dot_opacity",
-              "type": "float",
-              "variableName": "voice_dot_opacity"
-            },
-            {
-              "label": "voice_dot_progress",
-              "portId": "param:voice_dot_progress",
-              "type": "float",
-              "variableName": "voice_dot_progress"
-            },
-            {
-              "label": "voice_dot_response",
-              "portId": "param:voice_dot_response",
-              "type": "float",
-              "variableName": "voice_dot_response"
-            },
-            {
-              "label": "voice_dot_color",
-              "portId": "param:voice_dot_color",
-              "type": "color",
-              "variableName": "voice_dot_color"
-            }
-          ],
+          "type": "ShaderMaterial",
+          "position": {
+            "x": 20,
+            "y": 120
+          },
+          "width": 160,
+          "label": "Shader Material",
+          "params": {
+            "param:core_glow_opacity": 1,
+            "param:corner_radius_px": 60,
+            "param:density": 3,
+            "param:frame_size_px": [
+              1008,
+              168
+            ],
+            "param:glow_mask_morph": 0,
+            "param:human_voice_energies": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "param:light_bloom_size_px": [
+              1008,
+              168
+            ],
+            "param:light_clip_bloom_progress": 0,
+            "param:total_energy": 0,
+            "param:voice_dot_color": [
+              1.5,
+              1.5,
+              1.5,
+              1
+            ],
+            "param:voice_dot_opacity": 1,
+            "param:voice_dot_progress": 1,
+            "param:voice_dot_response": 1,
+            "param:voice_opacity": 0
+          },
           "inputs": [
             {
               "id": "resource:intelli_tex",
@@ -2720,171 +2744,212 @@
               "type": "color"
             }
           ],
-          "label": "Shader Material",
-          "params": {
-            "param:core_glow_opacity": 1,
-            "param:corner_radius_px": 60,
-            "param:density": 3,
-            "param:frame_size_px": [
-              1008,
-              168
-            ],
-            "param:glow_mask_morph": 0,
-            "param:human_voice_energies": [
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0
-            ],
-            "param:light_bloom_size_px": [
-              1008,
-              168
-            ],
-            "param:light_clip_bloom_progress": 0,
-            "param:total_energy": 0,
-            "param:voice_dot_color": [
-              1.5,
-              1.5,
-              1.5,
-              1
-            ],
-            "param:voice_dot_opacity": 1,
-            "param:voice_dot_progress": 1,
-            "param:voice_dot_response": 1,
-            "param:voice_opacity": 0
-          },
-          "position": {
-            "x": 20,
-            "y": 120
-          },
+          "inputBindings": [
+            {
+              "portId": "resource:intelli_tex",
+              "label": "intelli_tex",
+              "variableName": "intelli_tex",
+              "type": "sampledTexture"
+            },
+            {
+              "portId": "param:frame_size_px",
+              "label": "frame_size_px",
+              "variableName": "frame_size_px",
+              "type": "vector2"
+            },
+            {
+              "portId": "param:light_bloom_size_px",
+              "label": "light_bloom_size_px",
+              "variableName": "light_bloom_size_px",
+              "type": "vector2"
+            },
+            {
+              "portId": "param:corner_radius_px",
+              "label": "corner_radius_px",
+              "variableName": "corner_radius_px",
+              "type": "float"
+            },
+            {
+              "portId": "param:density",
+              "label": "density",
+              "variableName": "density",
+              "type": "float"
+            },
+            {
+              "portId": "param:human_voice_energies",
+              "label": "human_voice_energies",
+              "variableName": "human_voice_energies",
+              "type": "float[]"
+            },
+            {
+              "portId": "param:total_energy",
+              "label": "total_energy",
+              "variableName": "total_energy",
+              "type": "float"
+            },
+            {
+              "portId": "param:voice_opacity",
+              "label": "voice_opacity",
+              "variableName": "voice_opacity",
+              "type": "float"
+            },
+            {
+              "portId": "param:core_glow_opacity",
+              "label": "core_glow_opacity",
+              "variableName": "core_glow_opacity",
+              "type": "float"
+            },
+            {
+              "portId": "param:glow_mask_morph",
+              "label": "glow_mask_morph",
+              "variableName": "glow_mask_morph",
+              "type": "float"
+            },
+            {
+              "portId": "param:light_clip_bloom_progress",
+              "label": "light_clip_bloom_progress",
+              "variableName": "light_clip_bloom_progress",
+              "type": "float"
+            },
+            {
+              "portId": "param:voice_dot_opacity",
+              "label": "voice_dot_opacity",
+              "variableName": "voice_dot_opacity",
+              "type": "float"
+            },
+            {
+              "portId": "param:voice_dot_progress",
+              "label": "voice_dot_progress",
+              "variableName": "voice_dot_progress",
+              "type": "float"
+            },
+            {
+              "portId": "param:voice_dot_response",
+              "label": "voice_dot_response",
+              "variableName": "voice_dot_response",
+              "type": "float"
+            },
+            {
+              "portId": "param:voice_dot_color",
+              "label": "voice_dot_color",
+              "variableName": "voice_dot_color",
+              "type": "color"
+            }
+          ],
+          "wgslOverride": "materials/ShaderMaterial_32.wgsl",
           "shaderMaterial": {
+            "sourceHash": "f951451c1b8fdadc",
             "parameters": [
               {
                 "id": "resource:intelli_tex",
-                "kind": "resource",
                 "name": "intelli_tex",
+                "kind": "resource",
                 "portType": "sampledTexture",
-                "samplerParameter": "intelli_sampler",
+                "wgslType": "texture_2d<f32> + sampler",
                 "textureParameter": "intelli_tex",
-                "wgslType": "texture_2d<f32> + sampler"
+                "samplerParameter": "intelli_sampler"
               },
               {
                 "id": "param:frame_size_px",
-                "kind": "value",
                 "name": "frame_size_px",
+                "kind": "value",
                 "portType": "vector2",
                 "wgslType": "vec2f"
               },
               {
                 "id": "param:light_bloom_size_px",
-                "kind": "value",
                 "name": "light_bloom_size_px",
+                "kind": "value",
                 "portType": "vector2",
                 "wgslType": "vec2f"
               },
               {
                 "id": "param:corner_radius_px",
-                "kind": "value",
                 "name": "corner_radius_px",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:density",
-                "kind": "value",
                 "name": "density",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
-                "arrayLength": 16,
                 "id": "param:human_voice_energies",
-                "kind": "value",
                 "name": "human_voice_energies",
+                "kind": "value",
                 "portType": "float[]",
-                "wgslType": "array<f32,16>"
+                "wgslType": "array<f32,16>",
+                "arrayLength": 16
               },
               {
                 "id": "param:total_energy",
-                "kind": "value",
                 "name": "total_energy",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:voice_opacity",
-                "kind": "value",
                 "name": "voice_opacity",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:core_glow_opacity",
-                "kind": "value",
                 "name": "core_glow_opacity",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:glow_mask_morph",
-                "kind": "value",
                 "name": "glow_mask_morph",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:light_clip_bloom_progress",
-                "kind": "value",
                 "name": "light_clip_bloom_progress",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:voice_dot_opacity",
-                "kind": "value",
                 "name": "voice_dot_opacity",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:voice_dot_progress",
-                "kind": "value",
                 "name": "voice_dot_progress",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:voice_dot_response",
-                "kind": "value",
                 "name": "voice_dot_response",
+                "kind": "value",
                 "portType": "float",
                 "wgslType": "f32"
               },
               {
                 "id": "param:voice_dot_color",
-                "kind": "value",
                 "name": "voice_dot_color",
+                "kind": "value",
                 "portType": "color",
                 "wgslType": "vec4f"
               }
-            ],
-            "sourceHash": "f951451c1b8fdadc"
-          },
-          "type": "ShaderMaterial",
-          "wgslOverride": "materials/ShaderMaterial_32.wgsl",
-          "width": 160
+            ]
+          }
         },
         {
           "id": "Vector2Input_39",
@@ -4125,6 +4190,7 @@
           "Vector2Input_38:x": 216,
           "Vector2Input_38:y": 12
         },
+        "mutationId": "mutation_ilight_off",
         "type": "animationState"
       },
       {
@@ -4222,6 +4288,7 @@
           "Vector2Input_38:x": 1008,
           "Vector2Input_38:y": 168
         },
+        "mutationId": "mutation_ilight_idle",
         "type": "animationState"
       },
       {
@@ -4319,13 +4386,14 @@
           "Vector2Input_38:x": 1008,
           "Vector2Input_38:y": 168
         },
+        "mutationId": "mutation_ilight_listening",
         "type": "animationState"
       },
       {
         "id": "st_thinking",
         "name": "Thinking",
         "position": {
-          "x": 960,
+          "x": 860,
           "y": -80
         },
         "parameterOverrides": {
@@ -4416,14 +4484,15 @@
           "Vector2Input_38:x": 1008,
           "Vector2Input_38:y": 168
         },
+        "mutationId": "mutation_ilight_thinking",
         "type": "animationState"
       },
       {
         "id": "st_speaking",
         "name": "Speaking",
         "position": {
-          "x": 1000,
-          "y": 100
+          "x": 880,
+          "y": 160
         },
         "parameterOverrides": {
           "ColorInput_IntelligentLightParticleColor:value": [
@@ -4513,14 +4582,15 @@
           "Vector2Input_38:x": 1008,
           "Vector2Input_38:y": 168
         },
+        "mutationId": "mutation_ilight_speaking",
         "type": "animationState"
       },
       {
         "id": "st_push_to_talk",
         "name": "PushToTalk",
         "position": {
-          "x": 500,
-          "y": 300
+          "x": 400,
+          "y": 220
         },
         "parameterOverrides": {
           "ColorInput_IntelligentLightParticleColor:value": [
@@ -4610,14 +4680,15 @@
           "Vector2Input_38:x": 1080,
           "Vector2Input_38:y": 1080
         },
+        "mutationId": "mutation_ilight_push_to_talk",
         "type": "animationState"
       },
       {
         "id": "st_push_to_talk_cancel",
         "name": "PushToTalkCancel",
         "position": {
-          "x": 860,
-          "y": 280
+          "x": 700,
+          "y": 300
         },
         "parameterOverrides": {
           "ColorInput_IntelligentLightParticleColor:value": [
@@ -4707,6 +4778,7 @@
           "Vector2Input_38:x": 1080,
           "Vector2Input_38:y": 1080
         },
+        "mutationId": "mutation_ilight_push_to_talk_cancel",
         "type": "animationState"
       }
     ],
@@ -9021,9 +9093,82 @@
             "duration": 0.55,
             "bounce": 0.2,
             "delay": 0
+          },
+          {
+            "id": "thinking_repeat_primary",
+            "type": "RepeatTimeline",
+            "position": {
+              "x": 180,
+              "y": 860
+            },
+            "label": "Primary 0.40 ↔ 0.60",
+            "from": 0.4,
+            "to": 0.6,
+            "duration": 0.8,
+            "easing": "sine-in-out",
+            "mode": "pingPong"
+          },
+          {
+            "id": "thinking_follow_primary",
+            "type": "SpringFollow",
+            "position": {
+              "x": 420,
+              "y": 860
+            },
+            "label": "Primary Follow",
+            "duration": 0.8,
+            "bounce": 0.1
+          },
+          {
+            "id": "thinking_repeat_secondary",
+            "type": "RepeatTimeline",
+            "position": {
+              "x": 180,
+              "y": 1020
+            },
+            "label": "Secondary 0.40 ↔ 0.60",
+            "from": 0.4,
+            "to": 0.6,
+            "duration": 0.8,
+            "easing": "sine-in-out",
+            "mode": "pingPong"
+          },
+          {
+            "id": "thinking_follow_secondary",
+            "type": "SpringFollow",
+            "position": {
+              "x": 420,
+              "y": 1020
+            },
+            "label": "Secondary Follow",
+            "duration": 0.8,
+            "bounce": 0.1
           }
         ],
-        "connections": [],
+        "connections": [
+          {
+            "id": "thinking_repeat_follow_primary",
+            "from": {
+              "nodeId": "thinking_repeat_primary",
+              "portId": "target"
+            },
+            "to": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "target"
+            }
+          },
+          {
+            "id": "thinking_repeat_follow_secondary",
+            "from": {
+              "nodeId": "thinking_repeat_secondary",
+              "portId": "target"
+            },
+            "to": {
+              "nodeId": "thinking_follow_secondary",
+              "portId": "target"
+            }
+          }
+        ],
         "inputBindings": [
           {
             "motionPortId": "*",
@@ -9043,6 +9188,20 @@
             "motionPortId": "FloatInput_41:value",
             "to": {
               "nodeId": "timing_02",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "thinking_follow_secondary",
               "portId": "value"
             }
           }
@@ -9066,6 +9225,20 @@
             "motionPortId": "FloatInput_41:value",
             "from": {
               "nodeId": "timing_02",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "from": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "from": {
+              "nodeId": "thinking_follow_secondary",
               "portId": "value"
             }
           }
@@ -13725,6 +13898,56 @@
             "duration": 0.3,
             "bounce": 0.15,
             "delay": 0.02
+          },
+          {
+            "id": "thinking_repeat_primary",
+            "type": "RepeatTimeline",
+            "position": {
+              "x": 180,
+              "y": 860
+            },
+            "label": "Primary 0.40 ↔ 0.60",
+            "from": 0.4,
+            "to": 0.6,
+            "duration": 0.8,
+            "easing": "sine-in-out",
+            "mode": "pingPong"
+          },
+          {
+            "id": "thinking_follow_primary",
+            "type": "SpringFollow",
+            "position": {
+              "x": 420,
+              "y": 860
+            },
+            "label": "Primary Follow",
+            "duration": 0.8,
+            "bounce": 0.1
+          },
+          {
+            "id": "thinking_repeat_secondary",
+            "type": "RepeatTimeline",
+            "position": {
+              "x": 180,
+              "y": 1020
+            },
+            "label": "Secondary 0.40 ↔ 0.60",
+            "from": 0.4,
+            "to": 0.6,
+            "duration": 0.8,
+            "easing": "sine-in-out",
+            "mode": "pingPong"
+          },
+          {
+            "id": "thinking_follow_secondary",
+            "type": "SpringFollow",
+            "position": {
+              "x": 420,
+              "y": 1020
+            },
+            "label": "Secondary Follow",
+            "duration": 0.8,
+            "bounce": 0.1
           }
         ],
         "connections": [
@@ -13748,6 +13971,28 @@
             "to": {
               "nodeId": "condition_tr_push_to_talk_to_thinking_02",
               "portId": "b"
+            }
+          },
+          {
+            "id": "thinking_repeat_follow_primary",
+            "from": {
+              "nodeId": "thinking_repeat_primary",
+              "portId": "target"
+            },
+            "to": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "target"
+            }
+          },
+          {
+            "id": "thinking_repeat_follow_secondary",
+            "from": {
+              "nodeId": "thinking_repeat_secondary",
+              "portId": "target"
+            },
+            "to": {
+              "nodeId": "thinking_follow_secondary",
+              "portId": "target"
             }
           }
         ],
@@ -13793,6 +14038,20 @@
               "nodeId": "timing_03",
               "portId": "value"
             }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "thinking_follow_secondary",
+              "portId": "value"
+            }
           }
         ],
         "outputBindings": [
@@ -13835,6 +14094,20 @@
             "motionPortId": "FloatInput_LightClipBloomProgress:value",
             "from": {
               "nodeId": "timing_03",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "from": {
+              "nodeId": "thinking_follow_primary",
+              "portId": "value"
+            }
+          },
+          {
+            "motionPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "from": {
+              "nodeId": "thinking_follow_secondary",
               "portId": "value"
             }
           }
@@ -15698,8 +15971,8 @@
             "id": "condition_tr_thinking_to_speaking_00",
             "type": "FloatInput",
             "position": {
-              "x": 360,
-              "y": 0
+              "x": 340,
+              "y": -200
             },
             "label": "Thinking ≥ 1.5s Threshold",
             "value": 1.5
@@ -15709,7 +15982,7 @@
             "type": "Logic",
             "position": {
               "x": 580,
-              "y": 110
+              "y": -180
             },
             "label": "Thinking ≥ 1.5s",
             "op": "greaterEqual"
@@ -16989,6 +17262,1407 @@
       }
     ],
     "initialStateId": "st_mrerv8z2_3",
-    "mutations": []
+    "mutations": [
+      {
+        "id": "mutation_ilight_off",
+        "name": "Off Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_off",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_off",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_off",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_off",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_idle",
+        "name": "Idle Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_idle",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_idle",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_idle",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_idle",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_listening",
+        "name": "Listening Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_listening",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_listening",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_listening",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_listening",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_thinking",
+        "name": "Thinking Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_thinking",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_thinking",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_speaking",
+        "name": "Speaking Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_speaking",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_speaking",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_push_to_talk",
+        "name": "PushToTalk Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_push_to_talk",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_push_to_talk",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      {
+        "id": "mutation_ilight_push_to_talk_cancel",
+        "name": "PushToTalkCancel Intelligent Light",
+        "inputs": [
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:x",
+            "name": "Width",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_35:y",
+            "name": "Height",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_37:value",
+            "name": "Corner Radius",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapAmount:value",
+            "name": "Snap Amount",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "name": "Snap Target Primary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "name": "Snap Target Secondary",
+            "type": "float"
+          },
+          {
+            "id": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "name": "Normal Offset",
+            "type": "float"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "GroupInstance_32:intelligent_light_positions",
+            "name": "Positions",
+            "type": "packed<vector2>"
+          },
+          {
+            "id": "GroupInstance_32:intelligent_light_colors",
+            "name": "Colors",
+            "type": "packed<color>"
+          }
+        ],
+        "inputBindings": [
+          {
+            "mutationPortId": "sceneElapsedTime",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "sceneElapsedTime"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:x",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "width"
+            }
+          },
+          {
+            "mutationPortId": "Vector2Input_35:y",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "height"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_37:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "cornerRadius"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapAmount:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "snapAmount"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTPrimary:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "snapTargetPrimary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightSnapTargetTSecondary:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "snapTargetSecondary"
+            }
+          },
+          {
+            "mutationPortId": "FloatInput_IntelligentLightCurveNormalOffsetPx:value",
+            "to": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "normalOffset"
+            }
+          }
+        ],
+        "outputBindings": [
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_positions",
+            "from": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "positions"
+            }
+          },
+          {
+            "mutationPortId": "GroupInstance_32:intelligent_light_colors",
+            "from": {
+              "nodeId": "function_ilight_push_to_talk_cancel",
+              "portId": "colors"
+            }
+          }
+        ],
+        "passthroughBindings": [],
+        "nodes": [
+          {
+            "id": "function_ilight_push_to_talk_cancel",
+            "type": "MutationFunction",
+            "position": {
+              "x": 200,
+              "y": 80
+            },
+            "label": "Intelligent Light Driver",
+            "params": {},
+            "inputs": [
+              {
+                "id": "sceneElapsedTime",
+                "name": "sceneElapsedTime",
+                "type": "float"
+              },
+              {
+                "id": "width",
+                "name": "width",
+                "type": "float"
+              },
+              {
+                "id": "height",
+                "name": "height",
+                "type": "float"
+              },
+              {
+                "id": "cornerRadius",
+                "name": "cornerRadius",
+                "type": "float"
+              },
+              {
+                "id": "snapAmount",
+                "name": "snapAmount",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetPrimary",
+                "name": "snapTargetPrimary",
+                "type": "float"
+              },
+              {
+                "id": "snapTargetSecondary",
+                "name": "snapTargetSecondary",
+                "type": "float"
+              },
+              {
+                "id": "normalOffset",
+                "name": "normalOffset",
+                "type": "float"
+              }
+            ],
+            "outputs": [
+              {
+                "id": "positions",
+                "name": "positions",
+                "type": "packed<vector2>"
+              },
+              {
+                "id": "colors",
+                "name": "colors",
+                "type": "packed<color>"
+              }
+            ]
+          }
+        ],
+        "connections": []
+      }
+    ]
   }
 }

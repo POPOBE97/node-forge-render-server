@@ -18,7 +18,7 @@ pub fn validate(sm: &StateMachine) -> Result<()> {
     validate_state_ids(sm)?;
     validate_builtin_states(sm)?;
     validate_mutation_ids(sm)?;
-    validate_mutation_node_refs(sm)?;
+    validate_mutation_ownership(sm)?;
     validate_transition_endpoints(sm)?;
     validate_transition_direction_constraints(sm)?;
     validate_mutation_internals(sm)?;
@@ -79,25 +79,35 @@ fn validate_mutation_ids(sm: &StateMachine) -> Result<()> {
     Ok(())
 }
 
-// ── MutationNode → MutationDefinition references ──────────────────────────
+// ── State-local MutationDefinition ownership ───────────────────────────────
 
-fn validate_mutation_node_refs(sm: &StateMachine) -> Result<()> {
+fn validate_mutation_ownership(sm: &StateMachine) -> Result<()> {
     let mutation_ids: HashSet<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
+    let mut owner_by_mutation: HashMap<&str, &str> = HashMap::new();
 
     for s in &sm.states {
-        if s.resolved_type() != AnimationStateType::MutationNode {
-            continue;
-        }
         match s.mutation_id.as_deref() {
-            None => bail!(
-                "state_machine validation: mutationNode '{}' is missing mutationId",
-                s.id
-            ),
+            None => continue,
             Some(mid) if !mutation_ids.contains(mid) => bail!(
-                "state_machine validation: mutationNode '{}' references missing mutation '{mid}'",
+                "state_machine validation: state '{}' references missing mutation '{mid}'",
                 s.id
             ),
-            _ => {}
+            Some(mid) => {
+                if let Some(existing) = owner_by_mutation.insert(mid, s.id.as_str()) {
+                    bail!(
+                        "state_machine validation: mutation '{mid}' is shared by states '{existing}' and '{}'",
+                        s.id
+                    );
+                }
+            }
+        }
+    }
+    for mutation in &sm.mutations {
+        if !owner_by_mutation.contains_key(mutation.id.as_str()) {
+            bail!(
+                "state_machine validation: mutation '{}' is not owned by any state",
+                mutation.id
+            );
         }
     }
 
@@ -210,15 +220,18 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
         let node_by_id: HashMap<&str, &TransitionMotionNode> =
             graph.nodes.iter().map(|node| (node.id(), node)).collect();
         for connection in &graph.connections {
-            if node_by_id
-                .get(connection.from.node_id.as_str())
-                .is_some_and(|node| node.is_timing())
-                || node_by_id
-                    .get(connection.to.node_id.as_str())
-                    .is_some_and(|node| node.is_timing())
+            let from = node_by_id.get(connection.from.node_id.as_str()).copied();
+            let to = node_by_id.get(connection.to.node_id.as_str()).copied();
+            let repeat_follow = matches!(from, Some(TransitionMotionNode::RepeatTimeline { .. }))
+                && connection.from.port_id == "target"
+                && matches!(to, Some(TransitionMotionNode::SpringFollow { .. }))
+                && connection.to.port_id == "target";
+            if !repeat_follow
+                && (from.is_some_and(TransitionMotionNode::is_timing)
+                    || to.is_some_and(TransitionMotionNode::is_timing))
             {
                 bail!(
-                    "state_machine validation: transition motion graph '{}' cannot chain timing drivers",
+                    "state_machine validation: transition motion graph '{}' only allows RepeatTimeline.target -> SpringFollow.target timing chains",
                     graph.id
                 );
             }
@@ -380,6 +393,63 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 continue;
             }
             match node {
+                TransitionMotionNode::RepeatTimeline {
+                    from, to, duration, ..
+                } => {
+                    if !from.is_finite() || !to.is_finite() {
+                        bail!("state_machine validation: repeat timeline endpoints must be finite");
+                    }
+                    if !duration.is_finite() || *duration <= 0.0 {
+                        bail!("state_machine validation: repeat timeline duration must be > 0");
+                    }
+                    let valid_consumer = graph.connections.iter().any(|connection| {
+                        connection.from.node_id == node.id()
+                            && connection.from.port_id == "target"
+                            && connection.to.port_id == "target"
+                            && node_by_id.get(connection.to.node_id.as_str()).is_some_and(
+                                |target| {
+                                    matches!(target, TransitionMotionNode::SpringFollow { .. })
+                                },
+                            )
+                    });
+                    if !valid_consumer {
+                        bail!(
+                            "state_machine validation: RepeatTimeline must drive SpringFollow.target"
+                        );
+                    }
+                }
+                TransitionMotionNode::SpringFollow {
+                    duration, bounce, ..
+                } => {
+                    if !duration.is_finite() || *duration <= 0.0 {
+                        bail!("state_machine validation: spring follow duration must be > 0");
+                    }
+                    if !bounce.is_finite() || !(-1.0..1.0).contains(bounce) {
+                        bail!("state_machine validation: spring follow bounce must be in (-1, 1)");
+                    }
+                    let repeat_inputs = graph
+                        .connections
+                        .iter()
+                        .filter(|connection| {
+                            connection.to.node_id == node.id()
+                                && connection.to.port_id == "target"
+                                && connection.from.port_id == "target"
+                                && node_by_id
+                                    .get(connection.from.node_id.as_str())
+                                    .is_some_and(|source| {
+                                        matches!(
+                                            source,
+                                            TransitionMotionNode::RepeatTimeline { .. }
+                                        )
+                                    })
+                        })
+                        .count();
+                    if repeat_inputs != 1 {
+                        bail!(
+                            "state_machine validation: SpringFollow requires exactly one RepeatTimeline target"
+                        );
+                    }
+                }
                 TransitionMotionNode::Spring {
                     duration,
                     bounce,
@@ -582,7 +652,7 @@ mod tests {
                     name: "Entry".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::EntryState),
+                    state_type: AnimationStateType::EntryState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -590,7 +660,7 @@ mod tests {
                     name: "Any".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::AnyState),
+                    state_type: AnimationStateType::AnyState,
                     mutation_id: None,
                 },
                 AnimationState {
@@ -598,7 +668,7 @@ mod tests {
                     name: "Exit".into(),
                     position: None,
                     parameter_overrides: Default::default(),
-                    state_type: Some(AnimationStateType::ExitState),
+                    state_type: AnimationStateType::ExitState,
                     mutation_id: None,
                 },
             ],
@@ -711,7 +781,7 @@ mod tests {
             name: "Dup".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         let err = validate(&sm).unwrap_err().to_string();
@@ -735,7 +805,7 @@ mod tests {
             name: "M1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: Some("nonexistent".into()),
         });
         let err = validate(&sm).unwrap_err().to_string();
@@ -750,7 +820,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -771,7 +841,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: None,
         });
         sm.transitions.push(AnimationTransition {
@@ -845,7 +915,7 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::MutationNode),
+            state_type: AnimationStateType::AnimationState,
             mutation_id: Some("m1".into()),
         });
         sm.transitions.push(AnimationTransition {
