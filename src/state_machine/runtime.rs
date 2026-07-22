@@ -59,6 +59,9 @@ pub struct StateMachineRuntime {
     /// Latest runtime input snapshot available to mutations.
     runtime_input: RuntimeInputSnapshot,
 
+    /// Persistent key/mouse press bookkeeping used by Event Trigger holdingTime outputs.
+    trigger_holds: TriggerHoldState,
+
     /// Persistent runtime state for mutation nodes, keyed by state id.
     mutation_runtime_states: HashMap<String, MutationRuntimeState>,
 
@@ -118,6 +121,7 @@ pub type ExternalParams = HashMap<String, serde_json::Value>;
 pub struct FiredEvent {
     pub event_type: String,
     pub key: Option<String>,
+    pub button: Option<String>,
     pub repeat: bool,
     pub modifiers: EventModifiers,
 }
@@ -148,6 +152,164 @@ impl From<&String> for FiredEvent {
 
 /// Complete interaction events fired this tick.
 pub type FiredEvents = Vec<FiredEvent>;
+
+#[derive(Debug, Clone)]
+struct ActiveKeyHold {
+    key: Option<String>,
+    modifiers: EventModifiers,
+    started_at: f64,
+}
+
+#[derive(Debug, Clone)]
+struct ReleasedKeyHold {
+    key: Option<String>,
+    modifiers: EventModifiers,
+    duration: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TriggerHoldState {
+    active_keys: Vec<ActiveKeyHold>,
+    active_mouse_buttons: HashMap<String, f64>,
+    released_keys: Vec<ReleasedKeyHold>,
+    released_mouse_buttons: Vec<f64>,
+}
+
+impl TriggerHoldState {
+    fn begin_tick(&mut self) {
+        self.released_keys.clear();
+        self.released_mouse_buttons.clear();
+    }
+
+    fn process_events(&mut self, scene_time: f64, events: &FiredEvents) {
+        self.begin_tick();
+        for event in events {
+            match event.event_type.as_str() {
+                "keydown" if !event.repeat => {
+                    let already_active =
+                        self.active_keys
+                            .iter()
+                            .any(|active| match (&active.key, &event.key) {
+                                (Some(active), Some(incoming)) => keys_match(active, incoming),
+                                (None, None) => true,
+                                _ => false,
+                            });
+                    if !already_active {
+                        self.active_keys.push(ActiveKeyHold {
+                            key: event.key.clone(),
+                            modifiers: event.modifiers,
+                            started_at: scene_time,
+                        });
+                    }
+                }
+                "keyup" => {
+                    let index = event.key.as_deref().and_then(|released_key| {
+                        self.active_keys.iter().position(|active| {
+                            active
+                                .key
+                                .as_deref()
+                                .is_some_and(|active_key| keys_match(active_key, released_key))
+                        })
+                    });
+                    let duration = if let Some(index) = index {
+                        (scene_time - self.active_keys.remove(index).started_at).max(0.0)
+                    } else if event.key.is_none() {
+                        let duration = self
+                            .active_keys
+                            .iter()
+                            .map(|active| (scene_time - active.started_at).max(0.0))
+                            .fold(0.0, f64::max);
+                        self.active_keys.clear();
+                        duration
+                    } else {
+                        0.0
+                    };
+                    self.released_keys.push(ReleasedKeyHold {
+                        key: event.key.clone(),
+                        modifiers: event.modifiers,
+                        duration,
+                    });
+                }
+                "mousedown" => {
+                    let button = event.button.clone().unwrap_or_else(|| "__unknown__".into());
+                    self.active_mouse_buttons
+                        .entry(button)
+                        .or_insert(scene_time);
+                }
+                "mouseup" => {
+                    let duration = if let Some(button) = event.button.as_ref() {
+                        self.active_mouse_buttons
+                            .remove(button)
+                            .map(|started_at| (scene_time - started_at).max(0.0))
+                            .unwrap_or(0.0)
+                    } else {
+                        let duration = self
+                            .active_mouse_buttons
+                            .values()
+                            .map(|started_at| (scene_time - *started_at).max(0.0))
+                            .fold(0.0, f64::max);
+                        self.active_mouse_buttons.clear();
+                        duration
+                    };
+                    self.released_mouse_buttons.push(duration);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn holding_time(
+        &self,
+        event_type: &str,
+        key: Option<&str>,
+        modifiers: EventModifiers,
+        scene_time: f64,
+    ) -> f64 {
+        match event_type {
+            "keydown" => self
+                .active_keys
+                .iter()
+                .filter(|active| match key {
+                    Some(expected) => {
+                        active.modifiers == modifiers
+                            && active
+                                .key
+                                .as_deref()
+                                .is_some_and(|actual| keys_match(expected, actual))
+                    }
+                    None => true,
+                })
+                .map(|active| (scene_time - active.started_at).max(0.0))
+                .fold(0.0, f64::max),
+            "keyup" => self
+                .released_keys
+                .iter()
+                .filter(|released| match key {
+                    Some(expected) => {
+                        released.modifiers == modifiers
+                            && released
+                                .key
+                                .as_deref()
+                                .is_some_and(|actual| keys_match(expected, actual))
+                    }
+                    None => true,
+                })
+                .map(|released| released.duration)
+                .fold(0.0, f64::max),
+            "mousedown" => self
+                .active_mouse_buttons
+                .values()
+                .map(|started_at| (scene_time - *started_at).max(0.0))
+                .fold(0.0, f64::max),
+            "mouseup" => self
+                .released_mouse_buttons
+                .iter()
+                .copied()
+                .fold(0.0, f64::max),
+            _ => 0.0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ConditionValue {
@@ -198,6 +360,26 @@ fn normalized_key(key: &str) -> String {
 
 fn keys_match(expected: &str, actual: &str) -> bool {
     normalized_key(expected) == normalized_key(actual)
+}
+
+fn event_trigger_matches(
+    event: &FiredEvent,
+    event_type: &str,
+    key: Option<&str>,
+    modifiers: EventModifiers,
+    ignore_repeat: bool,
+) -> bool {
+    if event.event_type != event_type || (ignore_repeat && event.repeat) {
+        return false;
+    }
+    let Some(expected_key) = key else {
+        return true;
+    };
+    event
+        .key
+        .as_deref()
+        .is_some_and(|actual| keys_match(expected_key, actual))
+        && event.modifiers == modifiers
 }
 
 fn input_number<F>(
@@ -268,6 +450,7 @@ impl StateMachineRuntime {
             active_transition: None,
             motion_engine: MotionEngine::new(),
             runtime_input: RuntimeInputSnapshot::default(),
+            trigger_holds: TriggerHoldState::default(),
             mutation_runtime_states: HashMap::new(),
             current_overrides: HashMap::new(),
             finished: false,
@@ -298,6 +481,7 @@ impl StateMachineRuntime {
         self.active_transition = None;
         self.motion_engine.reset();
         self.runtime_input = RuntimeInputSnapshot::default();
+        self.trigger_holds = TriggerHoldState::default();
         self.mutation_runtime_states.clear();
         self.current_overrides.clear();
         self.finished = false;
@@ -327,6 +511,7 @@ impl StateMachineRuntime {
 
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.scene_time += dt;
+        self.trigger_holds.process_events(self.scene_time, events);
         let prev_state_local_times = self.state_local_times.clone();
         let mut diagnostics: Vec<String> = Vec::new();
 
@@ -695,27 +880,27 @@ impl StateMachineRuntime {
                 modifiers,
                 ignore_repeat,
                 ..
-            } => ConditionValue::Bool(events.iter().any(|event| {
-                if event.event_type != *event_type {
-                    return false;
+            } => match output_port_id {
+                "fired" => ConditionValue::Bool(events.iter().any(|event| {
+                    event_trigger_matches(
+                        event,
+                        event_type,
+                        key.as_deref(),
+                        *modifiers,
+                        *ignore_repeat,
+                    )
+                })),
+                "holdingTime" => ConditionValue::Number(self.trigger_holds.holding_time(
+                    event_type,
+                    key.as_deref(),
+                    *modifiers,
+                    self.scene_time,
+                )),
+                _ => {
+                    visiting.remove(node_id);
+                    return None;
                 }
-                if *ignore_repeat && event.repeat {
-                    return false;
-                }
-                if let Some(expected_key) = key {
-                    if event
-                        .key
-                        .as_deref()
-                        .is_none_or(|actual| !keys_match(expected_key, actual))
-                    {
-                        return false;
-                    }
-                    if event.modifiers != *modifiers {
-                        return false;
-                    }
-                }
-                true
-            })),
+            },
             TransitionMotionNode::Logic { op, .. } => {
                 let a = input("a", cache, visiting).unwrap_or(ConditionValue::Bool(false));
                 let b = input("b", cache, visiting).unwrap_or(ConditionValue::Bool(false));
@@ -1795,6 +1980,7 @@ mod tests {
         let repeated = FiredEvent {
             event_type: "keydown".into(),
             key: Some(" ".into()),
+            button: None,
             repeat: true,
             modifiers: EventModifiers::default(),
         };
@@ -1807,6 +1993,7 @@ mod tests {
         let modified = FiredEvent {
             event_type: "keydown".into(),
             key: Some(" ".into()),
+            button: None,
             repeat: false,
             modifiers: EventModifiers {
                 ctrl: true,
@@ -1822,6 +2009,7 @@ mod tests {
         let matching = FiredEvent {
             event_type: "keydown".into(),
             key: Some("Space".into()),
+            button: None,
             repeat: false,
             modifiers: EventModifiers::default(),
         };
@@ -1831,6 +2019,197 @@ mod tests {
                 .current_state_id,
             "exit"
         );
+    }
+
+    #[test]
+    fn key_and_mouse_holding_times_split_press_and_release_semantics() {
+        let mut holds = TriggerHoldState::default();
+        let mouse_down = FiredEvent {
+            event_type: "mousedown".into(),
+            button: Some("left".into()),
+            ..Default::default()
+        };
+        holds.process_events(1.0, &vec![mouse_down]);
+        holds.process_events(1.25, &vec![]);
+        assert!(
+            (holds.holding_time("mousedown", None, EventModifiers::default(), 1.25) - 0.25).abs()
+                < 1e-9
+        );
+
+        let mouse_up = FiredEvent {
+            event_type: "mouseup".into(),
+            button: Some("left".into()),
+            ..Default::default()
+        };
+        holds.process_events(1.3, &vec![mouse_up]);
+        assert_eq!(
+            holds.holding_time("mousedown", None, EventModifiers::default(), 1.3),
+            0.0
+        );
+        assert!(
+            (holds.holding_time("mouseup", None, EventModifiers::default(), 1.3) - 0.3).abs()
+                < 1e-9
+        );
+        holds.process_events(1.31, &vec![]);
+        assert_eq!(
+            holds.holding_time("mouseup", None, EventModifiers::default(), 1.31),
+            0.0
+        );
+
+        let key_down = FiredEvent {
+            event_type: "keydown".into(),
+            key: Some("Space".into()),
+            ..Default::default()
+        };
+        holds.process_events(2.0, &vec![key_down]);
+        holds.process_events(2.4, &vec![]);
+        assert!(
+            (holds.holding_time("keydown", Some(" "), EventModifiers::default(), 2.4) - 0.4).abs()
+                < 1e-9
+        );
+
+        let key_up = FiredEvent {
+            event_type: "keyup".into(),
+            key: Some("Space".into()),
+            ..Default::default()
+        };
+        holds.process_events(2.5, &vec![key_up]);
+        assert!(
+            (holds.holding_time("keyup", Some(" "), EventModifiers::default(), 2.5) - 0.5).abs()
+                < 1e-9
+        );
+    }
+
+    #[test]
+    fn graph_owned_mousedown_holding_time_fires_before_release() {
+        let mut sm = minimal_sm();
+        let mut graph = instant_motion_graph("mouse-hold");
+        graph.nodes.extend([
+            TransitionMotionNode::EventTrigger {
+                id: "down".into(),
+                position: Position::default(),
+                label: None,
+                event_type: "mousedown".into(),
+                key: None,
+                modifiers: EventModifiers::default(),
+                ignore_repeat: true,
+            },
+            TransitionMotionNode::FloatInput {
+                id: "threshold".into(),
+                position: Position::default(),
+                label: None,
+                value: 0.2,
+            },
+            TransitionMotionNode::Logic {
+                id: "held-long-enough".into(),
+                position: Position::default(),
+                label: None,
+                op: LogicOp::GreaterEqual,
+            },
+        ]);
+        graph.connections.extend([
+            MutationConnection {
+                id: "holding-time".into(),
+                from: MutationEndpoint {
+                    node_id: "down".into(),
+                    port_id: "holdingTime".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "held-long-enough".into(),
+                    port_id: "a".into(),
+                },
+            },
+            MutationConnection {
+                id: "threshold".into(),
+                from: MutationEndpoint {
+                    node_id: "threshold".into(),
+                    port_id: "value".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "held-long-enough".into(),
+                    port_id: "b".into(),
+                },
+            },
+        ]);
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: MutationEndpoint {
+                node_id: "held-long-enough".into(),
+                port_id: "result".into(),
+            },
+        });
+        sm.motion_graphs.push(graph);
+        sm.transitions.push(AnimationTransition {
+            id: "hold-transition".into(),
+            source: "entry".into(),
+            target: "exit".into(),
+            motion_graph_id: "mouse-hold".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        let down = FiredEvent {
+            event_type: "mousedown".into(),
+            button: Some("left".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            runtime
+                .tick(0.0, &HashMap::new(), &vec![down])
+                .current_state_id,
+            "entry"
+        );
+        assert_eq!(
+            runtime
+                .tick(0.19, &HashMap::new(), &vec![])
+                .current_state_id,
+            "entry"
+        );
+        assert_eq!(
+            runtime
+                .tick(0.02, &HashMap::new(), &vec![])
+                .current_state_id,
+            "exit"
+        );
+    }
+
+    #[test]
+    fn mouseup_holding_time_output_keeps_completed_duration_for_release_tick() {
+        let mut runtime = StateMachineRuntime::new(minimal_sm());
+        let down = FiredEvent {
+            event_type: "mousedown".into(),
+            button: Some("left".into()),
+            ..Default::default()
+        };
+        runtime.tick(0.0, &HashMap::new(), &vec![down]);
+        runtime.tick(0.12, &HashMap::new(), &vec![]);
+
+        let up = FiredEvent {
+            event_type: "mouseup".into(),
+            button: Some("left".into()),
+            ..Default::default()
+        };
+        runtime.tick(0.0, &HashMap::new(), &vec![up.clone()]);
+
+        let mut graph = instant_motion_graph("release-hold");
+        graph.nodes.push(TransitionMotionNode::EventTrigger {
+            id: "up".into(),
+            position: Position::default(),
+            label: None,
+            event_type: "mouseup".into(),
+            key: None,
+            modifiers: EventModifiers::default(),
+            ignore_repeat: true,
+        });
+        let value = runtime.evaluate_condition_node(
+            &graph,
+            "up",
+            "holdingTime",
+            &HashMap::new(),
+            &vec![up],
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+        );
+
+        assert_eq!(value, Some(ConditionValue::Number(0.12)));
     }
 
     #[test]

@@ -81,6 +81,7 @@ impl From<&InteractionEventPayload> for FiredEvent {
         Self {
             event_type: payload.event_type.clone(),
             key: key.map(|key| key.key.clone()),
+            button: data.and_then(|data| data.button.clone()),
             repeat: key.is_some_and(|key| key.repeat),
             modifiers: EventModifiers {
                 ctrl: modifiers.is_some_and(|modifiers| modifiers.ctrl),

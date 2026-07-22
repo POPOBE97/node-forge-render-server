@@ -19,6 +19,38 @@ fn assign_sequence_numbers(payloads: &mut [protocol::InteractionEventPayload], s
     }
 }
 
+fn synthesize_click_payloads(
+    payloads: &mut Vec<protocol::InteractionEventPayload>,
+    pressed_mouse_buttons: &mut std::collections::HashSet<String>,
+) {
+    let mut expanded = Vec::with_capacity(payloads.len() + 1);
+    for payload in std::mem::take(payloads) {
+        let button = payload
+            .data
+            .as_ref()
+            .and_then(|data| data.button.as_deref())
+            .unwrap_or("left");
+        if button != "left" {
+            expanded.push(payload);
+            continue;
+        }
+        match payload.event_type.as_str() {
+            "mousedown" => {
+                pressed_mouse_buttons.insert(button.to_string());
+                expanded.push(payload);
+            }
+            "mouseup" if pressed_mouse_buttons.remove(button) => {
+                let mut click = payload.clone();
+                click.event_type = "click".to_string();
+                expanded.push(payload);
+                expanded.push(click);
+            }
+            _ => expanded.push(payload),
+        }
+    }
+    *payloads = expanded;
+}
+
 fn state_event_payload(
     event_type: &str,
     state_id: &str,
@@ -152,6 +184,11 @@ pub fn collect_early_canvas_interactions(
         &mut app.canvas.interactions.canvas_event_focus_latched,
     );
 
+    synthesize_click_payloads(
+        &mut payloads,
+        &mut app.interaction_bridge.pressed_mouse_buttons,
+    );
+
     assign_sequence_numbers(
         &mut payloads,
         &mut app.interaction_bridge.interaction_event_seq,
@@ -229,7 +266,7 @@ mod tests {
 
     use super::{
         assign_sequence_numbers, frag_pixel_position_from_screen_pos, interaction_message_text,
-        state_transition_payloads,
+        state_transition_payloads, synthesize_click_payloads,
     };
     use crate::protocol::InteractionEventPayload;
 
@@ -252,6 +289,38 @@ mod tests {
         assert_eq!(payloads[0].seq, 11);
         assert_eq!(payloads[1].seq, 12);
         assert_eq!(seq, 12);
+    }
+
+    #[test]
+    fn primary_mouse_press_release_synthesizes_click() {
+        let data = Some(crate::protocol::InteractionEventData {
+            button: Some("left".into()),
+            ..Default::default()
+        });
+        let mut payloads = vec![
+            InteractionEventPayload {
+                event_type: "mousedown".into(),
+                seq: 0,
+                data: data.clone(),
+            },
+            InteractionEventPayload {
+                event_type: "mouseup".into(),
+                seq: 0,
+                data,
+            },
+        ];
+        let mut pressed = std::collections::HashSet::new();
+
+        synthesize_click_payloads(&mut payloads, &mut pressed);
+
+        assert_eq!(
+            payloads
+                .iter()
+                .map(|payload| payload.event_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["mousedown", "mouseup", "click"]
+        );
+        assert!(pressed.is_empty());
     }
 
     #[test]

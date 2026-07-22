@@ -1,6 +1,5 @@
 use std::{
-    collections::VecDeque,
-    collections::hash_map::DefaultHasher,
+    collections::{HashSet, VecDeque, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -445,6 +444,7 @@ pub(super) struct AppShell {
 #[derive(Default)]
 pub(super) struct InteractionBridgeState {
     pub interaction_event_seq: u64,
+    pub pressed_mouse_buttons: HashSet<String>,
     pub last_synced_animation_state_id: Option<String>,
     pub cached_state_local_times: Vec<(String, f64)>,
     pub cached_override_values: Vec<(String, String)>,
