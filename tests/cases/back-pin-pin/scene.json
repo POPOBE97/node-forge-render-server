@@ -1335,8 +1335,18 @@
             "type": "any"
           },
           {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
+            "id": "ColorInput_48:value",
+            "name": "uBgOverlay.value",
+            "type": "color"
+          },
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_53:value",
+            "name": "uEdgeModelRotationY.value",
             "type": "float"
           },
           {
@@ -1353,6 +1363,11 @@
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
             "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -1360,6 +1375,21 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "ColorInput_48:value",
+            "name": "uBgOverlay.value",
+            "type": "color"
+          },
+          {
+            "id": "ColorInput_7:value",
+            "name": "Color Input.value",
+            "type": "color"
+          },
+          {
+            "id": "FloatInput_53:value",
+            "name": "uEdgeModelRotationY.value",
+            "type": "float"
           }
         ],
         "nodes": [
@@ -1415,6 +1445,20 @@
           "from": {
             "nodeId": "condition_tr_mmbig5yq_d_event",
             "portId": "fired"
+          }
+        },
+        "layout": {
+          "inputPosition": {
+            "x": -260,
+            "y": 0
+          },
+          "outputPosition": {
+            "x": 180,
+            "y": 0
+          },
+          "conditionOutputPosition": {
+            "x": 180,
+            "y": -180
           }
         }
       }

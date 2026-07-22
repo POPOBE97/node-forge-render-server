@@ -3313,8 +3313,8 @@
             "type": "any"
           },
           {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
+            "id": "FloatInput_81:value",
+            "name": "Opacity",
             "type": "float"
           },
           {
@@ -3331,6 +3331,56 @@
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
             "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:x",
+            "name": "Mouse Position.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:y",
+            "name": "Mouse Position.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3338,6 +3388,56 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "FloatInput_81:value",
+            "name": "Opacity",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:x",
+            "name": "Mouse Position.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:y",
+            "name": "Mouse Position.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
+            "type": "float"
           }
         ],
         "nodes": [
@@ -3394,6 +3494,20 @@
             "nodeId": "condition_tr_mr0cae1v_e_event",
             "portId": "fired"
           }
+        },
+        "layout": {
+          "inputPosition": {
+            "x": -260,
+            "y": 0
+          },
+          "outputPosition": {
+            "x": 180,
+            "y": 0
+          },
+          "conditionOutputPosition": {
+            "x": 180,
+            "y": -180
+          }
         }
       },
       {
@@ -3406,8 +3520,8 @@
             "type": "any"
           },
           {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
+            "id": "FloatInput_81:value",
+            "name": "Opacity.value",
             "type": "float"
           },
           {
@@ -3424,6 +3538,56 @@
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
             "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:x",
+            "name": "Mouse Position.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:y",
+            "name": "Mouse Position.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3431,6 +3595,56 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "FloatInput_81:value",
+            "name": "Opacity.value",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:x",
+            "name": "Mouse Position.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector2Input_80:y",
+            "name": "Mouse Position.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:x",
+            "name": "Vector3 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:y",
+            "name": "Vector3 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector3Input_67:z",
+            "name": "Vector3 Input.z",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:w",
+            "name": "Vector4 Input.w",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:x",
+            "name": "Vector4 Input.x",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:y",
+            "name": "Vector4 Input.y",
+            "type": "float"
+          },
+          {
+            "id": "Vector4Input_82:z",
+            "name": "Vector4 Input.z",
+            "type": "float"
           }
         ],
         "nodes": [
@@ -3487,6 +3701,20 @@
             "nodeId": "condition_tr_mr0cao6x_f_event",
             "portId": "fired"
           }
+        },
+        "layout": {
+          "inputPosition": {
+            "x": -260,
+            "y": 0
+          },
+          "outputPosition": {
+            "x": 180,
+            "y": 0
+          },
+          "conditionOutputPosition": {
+            "x": 180,
+            "y": -180
+          }
         }
       },
       {
@@ -3499,8 +3727,8 @@
             "type": "any"
           },
           {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
+            "id": "FloatInput_81:value",
+            "name": "Opacity",
             "type": "float"
           },
           {
@@ -3517,6 +3745,11 @@
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
             "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3524,6 +3757,11 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "FloatInput_81:value",
+            "name": "Opacity",
+            "type": "float"
           }
         ],
         "nodes": [
@@ -3557,7 +3795,21 @@
             }
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "layout": {
+          "inputPosition": {
+            "x": -260,
+            "y": 0
+          },
+          "outputPosition": {
+            "x": 180,
+            "y": 0
+          },
+          "conditionOutputPosition": {
+            "x": 180,
+            "y": -180
+          }
+        }
       }
     ],
     "initialStateId": "st_moxsija5_4",

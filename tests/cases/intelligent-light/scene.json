@@ -225,9 +225,14 @@
             "type": "any"
           },
           {
-            "id": "sceneElapsedTime",
-            "name": "Scene Elapsed Time",
-            "type": "float"
+            "id": "IntelligentLight_8:colors",
+            "name": "Intelligent Light.colors",
+            "type": "packed<color>"
+          },
+          {
+            "id": "IntelligentLight_8:positions",
+            "name": "Intelligent Light.positions",
+            "type": "packed<vector2>"
           },
           {
             "id": "localElapsedTime",
@@ -243,6 +248,11 @@
             "id": "mouse.position.y",
             "name": "Mouse Position Y",
             "type": "float"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -250,6 +260,16 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "IntelligentLight_8:colors",
+            "name": "Intelligent Light.colors",
+            "type": "packed<color>"
+          },
+          {
+            "id": "IntelligentLight_8:positions",
+            "name": "Intelligent Light.positions",
+            "type": "packed<vector2>"
           }
         ],
         "nodes": [
@@ -283,7 +303,21 @@
             }
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "layout": {
+          "inputPosition": {
+            "x": -260,
+            "y": 0
+          },
+          "outputPosition": {
+            "x": 180,
+            "y": 0
+          },
+          "conditionOutputPosition": {
+            "x": 180,
+            "y": -180
+          }
+        }
       }
     ],
     "initialStateId": "st_mp6nhg2s_6",
