@@ -37,6 +37,8 @@ struct GraphInputs {
     float_input_37: vec4f,
     // Node: FloatInput_43
     float_input_43: vec4f,
+    // Node: FloatInput_InputBarRefractionIndex
+    float_input_input_bar_refraction_index: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
@@ -655,7 +657,7 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
  // GlassMaterial(GroupInstance_34/GlassMaterial_20)
- var alpha_material_out: vec4f;
+ var input_bar_refraction_index_material_out: vec4f;
  {
      let screen_px = in.frag_coord_gl;
      let local_px = in.local_px.xy;
@@ -691,7 +693,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Refraction ---
      let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
-     let refractive_index = f32(1.5);
+     let refractive_index = f32((graph_inputs.float_input_input_bar_refraction_index).x);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
      let refract_thickness = mix((f32(50.0) - edge) * 2.0, f32(50.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
@@ -759,10 +761,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Premultiply alpha ---
      glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);
-     alpha_material_out = glass_mat;
+     input_bar_refraction_index_material_out = glass_mat;
  }
 
     // Final composite
-    let _frag_out = alpha_material_out;
+    let _frag_out = input_bar_refraction_index_material_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

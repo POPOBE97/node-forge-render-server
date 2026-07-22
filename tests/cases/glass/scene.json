@@ -3287,20 +3287,12 @@
         "id": "tr_mr0cae1v_e",
         "source": "st_mqyzdqx1_3",
         "target": "st_mr0ca7p2_d",
-        "trigger": {
-          "type": "event",
-          "eventName": "mouseup"
-        },
         "motionGraphId": "mg_tr_mr0cae1v_e"
       },
       {
         "id": "tr_mr0cao6x_f",
         "source": "st_mr0ca7p2_d",
         "target": "st_mqyzdqx1_3",
-        "trigger": {
-          "type": "event",
-          "eventName": "mousedown"
-        },
         "motionGraphId": "mg_tr_mr0cao6x_f"
       },
       {
@@ -3310,7 +3302,6 @@
         "motionGraphId": "mg_tr_mr0dt2uj_g"
       }
     ],
-    "initialStateId": "st_moxsija5_4",
     "motionGraphs": [
       {
         "id": "mg_tr_mr0cae1v_e",
@@ -3320,6 +3311,26 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3332,13 +3343,29 @@
         "nodes": [
           {
             "id": "timeline",
-            "type": "ease-out",
             "position": {
               "x": 0,
               "y": 0
             },
             "duration": 0.1,
-            "delay": 0
+            "delay": 0,
+            "type": "ease-out"
+          },
+          {
+            "id": "condition_tr_mr0cae1v_e_event",
+            "type": "EventTrigger",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "eventType": "mouseup",
+            "modifiers": {
+              "ctrl": false,
+              "alt": false,
+              "shift": false,
+              "meta": false
+            },
+            "ignoreRepeat": true
           }
         ],
         "connections": [],
@@ -3360,7 +3387,14 @@
             }
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "conditionBinding": {
+          "source": "node",
+          "from": {
+            "nodeId": "condition_tr_mr0cae1v_e_event",
+            "portId": "fired"
+          }
+        }
       },
       {
         "id": "mg_tr_mr0cao6x_f",
@@ -3370,6 +3404,26 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3382,13 +3436,29 @@
         "nodes": [
           {
             "id": "timeline",
-            "type": "linear",
             "position": {
               "x": 0,
               "y": 0
             },
             "duration": 0,
-            "delay": 0
+            "delay": 0,
+            "type": "linear"
+          },
+          {
+            "id": "condition_tr_mr0cao6x_f_event",
+            "type": "EventTrigger",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "eventType": "mousedown",
+            "modifiers": {
+              "ctrl": false,
+              "alt": false,
+              "shift": false,
+              "meta": false
+            },
+            "ignoreRepeat": true
           }
         ],
         "connections": [],
@@ -3410,7 +3480,14 @@
             }
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "conditionBinding": {
+          "source": "node",
+          "from": {
+            "nodeId": "condition_tr_mr0cao6x_f_event",
+            "portId": "fired"
+          }
+        }
       },
       {
         "id": "mg_tr_mr0dt2uj_g",
@@ -3420,6 +3497,26 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -3432,13 +3529,13 @@
         "nodes": [
           {
             "id": "timeline",
-            "type": "linear",
             "position": {
               "x": 0,
               "y": 0
             },
             "duration": 0,
-            "delay": 0
+            "delay": 0,
+            "type": "linear"
           }
         ],
         "connections": [],
@@ -3463,6 +3560,7 @@
         "passthroughBindings": []
       }
     ],
+    "initialStateId": "st_moxsija5_4",
     "mutations": [
       {
         "id": "mutation_moxsjac9_9",

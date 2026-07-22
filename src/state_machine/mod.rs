@@ -44,14 +44,14 @@ pub mod validation;
 
 // Re-export key types for ergonomic use.
 pub use motion::MotionChannelDebug;
-pub use runtime::{ExternalParams, FiredEvents, StateMachineRuntime, TickResult};
+pub use runtime::{ExternalParams, FiredEvent, FiredEvents, StateMachineRuntime, TickResult};
 pub use timeline::{TickSample, TickSchedule, evenly_spaced_samples};
 pub use trace::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, build_initial_values,
     canonicalize_json_value, generate_trace_for_scene, generate_trace_for_scene_with_events,
     round_f64, tracked_override_keys,
 };
-pub use types::{MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine};
+pub use types::{EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine};
 pub use validation::validate;
 
 use std::collections::HashMap;

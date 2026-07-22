@@ -80,10 +80,10 @@ pub fn generate_trace_for_scene_with_events(
 
     for sample in schedule.samples() {
         // Collect events scheduled for this frame.
-        let events: Vec<String> = event_schedule
+        let events: Vec<super::runtime::FiredEvent> = event_schedule
             .iter()
             .filter(|e| e.frame_index == sample.frame_index)
-            .map(|e| e.event_name.clone())
+            .map(|e| super::runtime::FiredEvent::from(e.event_name.as_str()))
             .collect();
 
         let result = runtime.tick(sample.dt_secs, &HashMap::new(), &events);

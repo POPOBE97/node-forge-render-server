@@ -10,9 +10,6 @@ use anyhow::{Result, bail};
 
 use super::types::*;
 
-/// Maximum allowed nesting depth for compound transition conditions.
-const MAX_CONDITION_DEPTH: usize = 8;
-
 /// Validate a `StateMachine` definition.
 ///
 /// Returns `Ok(())` when the definition is structurally sound, or an `Err`
@@ -24,7 +21,6 @@ pub fn validate(sm: &StateMachine) -> Result<()> {
     validate_mutation_node_refs(sm)?;
     validate_transition_endpoints(sm)?;
     validate_transition_direction_constraints(sm)?;
-    validate_transition_conditions(sm)?;
     validate_mutation_internals(sm)?;
     validate_motion_graphs(sm)?;
     Ok(())
@@ -211,11 +207,21 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 graph.id
             );
         }
-        if !graph.connections.is_empty() {
-            bail!(
-                "state_machine validation: transition motion graph '{}' cannot chain timing drivers",
-                graph.id
-            );
+        let node_by_id: HashMap<&str, &TransitionMotionNode> =
+            graph.nodes.iter().map(|node| (node.id(), node)).collect();
+        for connection in &graph.connections {
+            if node_by_id
+                .get(connection.from.node_id.as_str())
+                .is_some_and(|node| node.is_timing())
+                || node_by_id
+                    .get(connection.to.node_id.as_str())
+                    .is_some_and(|node| node.is_timing())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' cannot chain timing drivers",
+                    graph.id
+                );
+            }
         }
 
         let mut input_channel_by_node: HashMap<&str, &str> = HashMap::new();
@@ -228,6 +234,12 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                     graph.id,
                     binding.port_id
                 );
+            }
+            if !node_by_id
+                .get(binding.to.node_id.as_str())
+                .is_some_and(|node| node.is_timing())
+            {
+                continue;
             }
             if input_channel_by_node
                 .insert(binding.to.node_id.as_str(), binding.port_id.as_str())
@@ -247,6 +259,16 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
             {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has invalid output binding '{}'",
+                    graph.id,
+                    binding.port_id
+                );
+            }
+            if !node_by_id
+                .get(binding.from.node_id.as_str())
+                .is_some_and(|node| node.is_timing())
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' output '{}' must be driven by a timing node",
                     graph.id,
                     binding.port_id
                 );
@@ -311,6 +333,37 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
             }
         }
 
+        match graph.condition_binding.as_ref() {
+            None => {}
+            Some(TransitionConditionBinding::Input { input_port_id }) => {
+                let valid = graph.inputs.iter().any(|port| {
+                    port.id == *input_port_id && port.port_type.as_deref() == Some("bool")
+                });
+                if !valid {
+                    bail!(
+                        "state_machine validation: transition motion graph '{}' Condition Out requires a bool input",
+                        graph.id
+                    );
+                }
+            }
+            Some(TransitionConditionBinding::Node { from }) => {
+                let valid = node_by_id
+                    .get(from.node_id.as_str())
+                    .is_some_and(|node| match node {
+                        TransitionMotionNode::EventTrigger { .. } => from.port_id == "fired",
+                        TransitionMotionNode::Logic { .. } => from.port_id == "result",
+                        TransitionMotionNode::BoolInput { .. } => from.port_id == "value",
+                        _ => false,
+                    });
+                if !valid {
+                    bail!(
+                        "state_machine validation: transition motion graph '{}' Condition Out requires a bool condition-node output",
+                        graph.id
+                    );
+                }
+            }
+        }
+
         for node in &graph.nodes {
             if let Some((_curve, timeline)) = node.timeline() {
                 if !timeline.duration.is_finite() || timeline.duration < 0.0 {
@@ -343,7 +396,20 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                         bail!("state_machine validation: spring delay must be >= 0");
                     }
                 }
-                TransitionMotionNode::Instant { .. } => {}
+                TransitionMotionNode::Instant { .. }
+                | TransitionMotionNode::EventTrigger { .. }
+                | TransitionMotionNode::Logic { .. }
+                | TransitionMotionNode::BoolInput { .. }
+                | TransitionMotionNode::MathAdd { .. }
+                | TransitionMotionNode::MathSubtract { .. }
+                | TransitionMotionNode::MathMultiply { .. }
+                | TransitionMotionNode::MathDivide { .. }
+                | TransitionMotionNode::Lerp { .. } => {}
+                TransitionMotionNode::FloatInput { value, .. } => {
+                    if !value.is_finite() {
+                        bail!("state_machine validation: FloatInput value must be finite");
+                    }
+                }
                 _ => unreachable!("timeline motion nodes returned above"),
             }
         }
@@ -387,42 +453,6 @@ fn validate_transition_direction_constraints(sm: &StateMachine) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-// ── Condition shape / depth ────────────────────────────────────────────────
-
-fn validate_transition_conditions(sm: &StateMachine) -> Result<()> {
-    for t in &sm.transitions {
-        if let Some(trig) = t.trigger.as_ref() {
-            validate_condition(trig, 1, &t.id)?;
-        }
-        if let Some(cond) = t.condition.as_ref() {
-            validate_condition(cond, 1, &t.id)?;
-        }
-    }
-    Ok(())
-}
-
-fn validate_condition(cond: &TransitionCondition, depth: usize, transition_id: &str) -> Result<()> {
-    if depth > MAX_CONDITION_DEPTH {
-        bail!(
-            "state_machine validation: transition '{}' condition nesting exceeds max depth {MAX_CONDITION_DEPTH}",
-            transition_id
-        );
-    }
-    if let TransitionCondition::Compound { conditions, .. } = cond {
-        if conditions.len() < 2 {
-            bail!(
-                "state_machine validation: transition '{}' compound condition must have at least 2 sub-conditions, found {}",
-                transition_id,
-                conditions.len()
-            );
-        }
-        for sub in conditions {
-            validate_condition(sub, depth + 1, transition_id)?;
-        }
-    }
     Ok(())
 }
 
@@ -612,6 +642,7 @@ mod tests {
                 },
             }],
             passthrough_bindings: vec![],
+            condition_binding: None,
             viewport: None,
         }
     }
@@ -726,8 +757,6 @@ mod tests {
             id: "t1".into(),
             source: "exit".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
         let err = validate(&sm).unwrap_err().to_string();
@@ -749,40 +778,10 @@ mod tests {
             id: "t1".into(),
             source: "s1".into(),
             target: "entry".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("entryState"), "{err}");
-    }
-
-    #[test]
-    fn compound_condition_min_children() {
-        let mut sm = minimal_sm();
-        sm.states.push(AnimationState {
-            id: "s1".into(),
-            name: "S1".into(),
-            position: None,
-            parameter_overrides: Default::default(),
-            state_type: Some(AnimationStateType::AnimationState),
-            mutation_id: None,
-        });
-        sm.transitions.push(AnimationTransition {
-            id: "t1".into(),
-            source: "entry".into(),
-            target: "s1".into(),
-            trigger: None,
-            condition: Some(TransitionCondition::Compound {
-                op: CompoundOp::And,
-                conditions: vec![TransitionCondition::Trigger {
-                    param_id: "p".into(),
-                }],
-            }),
-            motion_graph_id: "instant".into(),
-        });
-        let err = validate(&sm).unwrap_err().to_string();
-        assert!(err.contains("at least 2"), "{err}");
     }
 
     #[test]
@@ -793,8 +792,6 @@ mod tests {
                 id: id.into(),
                 source: "entry".into(),
                 target: "exit".into(),
-                trigger: None,
-                condition: None,
                 motion_graph_id: "instant".into(),
             });
         }
@@ -855,8 +852,6 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
         sm.mutations.push(mutation);

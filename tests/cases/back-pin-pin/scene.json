@@ -1321,14 +1321,9 @@
         "id": "tr_mmbig5yq_d",
         "source": "st_mmamj2am_3",
         "target": "st_mmamj4me_7",
-        "trigger": {
-          "type": "event",
-          "eventName": "mousedown"
-        },
         "motionGraphId": "mg_tr_mmbig5yq_d"
       }
     ],
-    "initialStateId": "st_mmamj2am_3",
     "motionGraphs": [
       {
         "id": "mg_tr_mmbig5yq_d",
@@ -1338,6 +1333,26 @@
             "id": "*",
             "name": "Any",
             "type": "any"
+          },
+          {
+            "id": "sceneElapsedTime",
+            "name": "Scene Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "localElapsedTime",
+            "name": "Local Elapsed Time",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.x",
+            "name": "Mouse Position X",
+            "type": "float"
+          },
+          {
+            "id": "mouse.position.y",
+            "name": "Mouse Position Y",
+            "type": "float"
           }
         ],
         "outputs": [
@@ -1350,13 +1365,29 @@
         "nodes": [
           {
             "id": "timeline",
-            "type": "linear",
             "position": {
               "x": 0,
               "y": 0
             },
             "duration": 2,
-            "delay": 0.3
+            "delay": 0.3,
+            "type": "linear"
+          },
+          {
+            "id": "condition_tr_mmbig5yq_d_event",
+            "type": "EventTrigger",
+            "position": {
+              "x": 0,
+              "y": 160
+            },
+            "eventType": "mousedown",
+            "modifiers": {
+              "ctrl": false,
+              "alt": false,
+              "shift": false,
+              "meta": false
+            },
+            "ignoreRepeat": true
           }
         ],
         "connections": [],
@@ -1378,9 +1409,17 @@
             }
           }
         ],
-        "passthroughBindings": []
+        "passthroughBindings": [],
+        "conditionBinding": {
+          "source": "node",
+          "from": {
+            "nodeId": "condition_tr_mmbig5yq_d_event",
+            "portId": "fired"
+          }
+        }
       }
     ],
+    "initialStateId": "st_mmamj2am_3",
     "mutations": [
       {
         "id": "mutation_mmamj4me_6",

@@ -22,9 +22,30 @@ use proptest::prelude::*;
 use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::dsl::{Metadata, SceneDSL};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, MutationDefinition, StateMachine,
-    TransitionCondition, TransitionMotionGraph,
+    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, MutationDefinition,
+    MutationEndpoint, Position, StateMachine, TransitionConditionBinding, TransitionMotionGraph,
+    TransitionMotionNode,
 };
+
+fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
+    let mut graph = TransitionMotionGraph::instant(id);
+    graph.nodes.push(TransitionMotionNode::EventTrigger {
+        id: "trigger".into(),
+        position: Position::default(),
+        label: None,
+        event_type: event_type.into(),
+        key: None,
+        modifiers: EventModifiers::default(),
+        ignore_repeat: true,
+    });
+    graph.condition_binding = Some(TransitionConditionBinding::Node {
+        from: MutationEndpoint {
+            node_id: "trigger".into(),
+            port_id: "fired".into(),
+        },
+    });
+    graph
+}
 
 /// Build a minimal scene with a state machine that transitions from "entry"
 /// to "target" on a given event name (instant transition: delay=0, duration=0).
@@ -70,14 +91,10 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
             id: "tr_event".into(),
             source: "entry".into(),
             target: "target".into(),
-            trigger: None,
-            condition: Some(TransitionCondition::Event {
-                event_name: event_name.to_string(),
-            }),
             motion_graph_id: "instant".into(),
         }],
         mutations: vec![],
-        motion_graphs: vec![TransitionMotionGraph::instant("instant")],
+        motion_graphs: vec![event_motion_graph("instant", event_name)],
         initial_state_id: Some("entry".into()),
         viewport: None,
     };
@@ -150,28 +167,18 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "tr_entry_idle".into(),
                 source: "entry".into(),
                 target: "idle".into(),
-                trigger: None,
-                condition: None,
                 motion_graph_id: "motion_entry_idle".into(),
             },
             AnimationTransition {
                 id: "tr_down".into(),
                 source: "idle".into(),
                 target: "mutation".into(),
-                trigger: Some(TransitionCondition::Event {
-                    event_name: "mousedown".into(),
-                }),
-                condition: None,
                 motion_graph_id: "motion_down".into(),
             },
             AnimationTransition {
                 id: "tr_up".into(),
                 source: "mutation".into(),
                 target: "idle".into(),
-                trigger: Some(TransitionCondition::Event {
-                    event_name: "mouseup".into(),
-                }),
-                condition: None,
                 motion_graph_id: "motion_up".into(),
             },
         ],
@@ -189,8 +196,8 @@ fn scene_with_press_release_transitions() -> SceneDSL {
         }],
         motion_graphs: vec![
             TransitionMotionGraph::instant("motion_entry_idle"),
-            TransitionMotionGraph::instant("motion_down"),
-            TransitionMotionGraph::instant("motion_up"),
+            event_motion_graph("motion_down", "mousedown"),
+            event_motion_graph("motion_up", "mouseup"),
         ],
         initial_state_id: Some("entry".into()),
         viewport: None,

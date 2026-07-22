@@ -95,23 +95,11 @@ impl AnimationState {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct AnimationTransition {
     pub id: String,
     pub source: String,
     pub target: String,
-
-    /// Trigger — checked every frame.  When the trigger passes, the
-    /// `condition` (if any) is evaluated.  If both pass the transition fires.
-    ///
-    /// When `trigger` is `None` the edge is considered "always triggered"
-    /// (equivalent to an unconditional trigger gate).
-    #[serde(default)]
-    pub trigger: Option<TransitionCondition>,
-
-    /// Additional guard evaluated only after the trigger passes.
-    /// `None` means no extra guard — the trigger alone is sufficient.
-    #[serde(default)]
-    pub condition: Option<TransitionCondition>,
     #[serde(rename = "motionGraphId")]
     pub motion_graph_id: String,
 }
@@ -249,6 +237,129 @@ pub enum TransitionMotionNode {
         #[serde(default)]
         label: Option<String>,
     },
+    #[serde(rename = "EventTrigger")]
+    EventTrigger {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(rename = "eventType")]
+        event_type: String,
+        #[serde(default)]
+        key: Option<String>,
+        #[serde(default)]
+        modifiers: EventModifiers,
+        #[serde(default = "default_true", rename = "ignoreRepeat")]
+        ignore_repeat: bool,
+    },
+    #[serde(rename = "Logic")]
+    Logic {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        op: LogicOp,
+    },
+    #[serde(rename = "BoolInput")]
+    BoolInput {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        value: bool,
+    },
+    #[serde(rename = "FloatInput")]
+    FloatInput {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default)]
+        value: f64,
+    },
+    #[serde(rename = "MathAdd")]
+    MathAdd {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    #[serde(rename = "MathSubtract")]
+    MathSubtract {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    #[serde(rename = "MathMultiply")]
+    MathMultiply {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    #[serde(rename = "MathDivide")]
+    MathDivide {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    #[serde(rename = "Lerp")]
+    Lerp {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+    },
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EventModifiers {
+    #[serde(default)]
+    pub ctrl: bool,
+    #[serde(default)]
+    pub alt: bool,
+    #[serde(default)]
+    pub shift: bool,
+    #[serde(default)]
+    pub meta: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+pub enum LogicOp {
+    #[serde(rename = "and")]
+    And,
+    #[serde(rename = "or")]
+    Or,
+    #[serde(rename = "not")]
+    Not,
+    #[serde(rename = "equal")]
+    Equal,
+    #[serde(rename = "notEqual")]
+    NotEqual,
+    #[serde(rename = "greater")]
+    Greater,
+    #[serde(rename = "greaterEqual")]
+    GreaterEqual,
+    #[serde(rename = "less")]
+    Less,
+    #[serde(rename = "lessEqual")]
+    LessEqual,
 }
 
 fn default_spring_duration() -> f64 {
@@ -266,7 +377,17 @@ fn default_timeline_duration() -> f64 {
 impl TransitionMotionNode {
     pub fn id(&self) -> &str {
         match self {
-            Self::Spring { id, .. } | Self::Instant { id, .. } => id,
+            Self::Spring { id, .. }
+            | Self::Instant { id, .. }
+            | Self::EventTrigger { id, .. }
+            | Self::Logic { id, .. }
+            | Self::BoolInput { id, .. }
+            | Self::FloatInput { id, .. }
+            | Self::MathAdd { id, .. }
+            | Self::MathSubtract { id, .. }
+            | Self::MathMultiply { id, .. }
+            | Self::MathDivide { id, .. }
+            | Self::Lerp { id, .. } => id,
             Self::Linear { timeline }
             | Self::EaseIn { timeline }
             | Self::EaseOut { timeline }
@@ -292,8 +413,36 @@ impl TransitionMotionNode {
             Self::CosineIn { timeline } => (TimelinePreset::CosineIn, timeline),
             Self::CosineOut { timeline } => (TimelinePreset::CosineOut, timeline),
             Self::CosineInOut { timeline } => (TimelinePreset::CosineInOut, timeline),
-            Self::Spring { .. } | Self::Instant { .. } => return None,
+            Self::Spring { .. }
+            | Self::Instant { .. }
+            | Self::EventTrigger { .. }
+            | Self::Logic { .. }
+            | Self::BoolInput { .. }
+            | Self::FloatInput { .. }
+            | Self::MathAdd { .. }
+            | Self::MathSubtract { .. }
+            | Self::MathMultiply { .. }
+            | Self::MathDivide { .. }
+            | Self::Lerp { .. } => return None,
         })
+    }
+
+    pub fn is_timing(&self) -> bool {
+        matches!(
+            self,
+            Self::Spring { .. }
+                | Self::Linear { .. }
+                | Self::EaseIn { .. }
+                | Self::EaseOut { .. }
+                | Self::EaseInOut { .. }
+                | Self::SineIn { .. }
+                | Self::SineOut { .. }
+                | Self::SineInOut { .. }
+                | Self::CosineIn { .. }
+                | Self::CosineOut { .. }
+                | Self::CosineInOut { .. }
+                | Self::Instant { .. }
+        )
     }
 }
 
@@ -316,6 +465,8 @@ pub struct TransitionMotionGraph {
     pub output_bindings: Vec<TransitionMotionOutputBinding>,
     #[serde(default, rename = "passthroughBindings")]
     pub passthrough_bindings: Vec<TransitionMotionPassthroughBinding>,
+    #[serde(default, rename = "conditionBinding")]
+    pub condition_binding: Option<TransitionConditionBinding>,
     #[serde(default)]
     pub viewport: Option<Viewport>,
 }
@@ -355,6 +506,7 @@ impl TransitionMotionGraph {
                 },
             }],
             passthrough_bindings: vec![],
+            condition_binding: None,
             viewport: None,
         }
     }
@@ -382,44 +534,16 @@ pub struct TransitionMotionPassthroughBinding {
     pub to_port_id: String,
 }
 
-// ---------------------------------------------------------------------------
-// Transition conditions
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum TransitionCondition {
-    Trigger {
-        #[serde(rename = "paramId")]
-        param_id: String,
+#[serde(tag = "source", rename_all = "lowercase")]
+pub enum TransitionConditionBinding {
+    Input {
+        #[serde(rename = "inputPortId")]
+        input_port_id: String,
     },
-    Bool {
-        #[serde(rename = "paramId")]
-        param_id: String,
-        /// Defaults to `true` if missing.
-        #[serde(default)]
-        value: Option<bool>,
+    Node {
+        from: MutationEndpoint,
     },
-    Threshold {
-        #[serde(rename = "paramId")]
-        param_id: String,
-        value: f64,
-    },
-    Event {
-        #[serde(rename = "eventName")]
-        event_name: String,
-    },
-    Compound {
-        op: CompoundOp,
-        conditions: Vec<TransitionCondition>,
-    },
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum CompoundOp {
-    And,
-    Or,
 }
 
 // ---------------------------------------------------------------------------

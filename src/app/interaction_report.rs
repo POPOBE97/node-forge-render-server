@@ -292,7 +292,7 @@ mod tests {
     use super::{collect_interaction_payloads, is_clean_rendering_state};
     use crate::{
         animation::AnimationSession,
-        state_machine::types::{AnimationStateType, TransitionCondition},
+        state_machine::types::{AnimationStateType, TransitionMotionNode},
     };
     use rust_wgpu_fiber::eframe::egui::{self, Pos2, Rect, vec2};
 
@@ -440,10 +440,19 @@ mod tests {
                     .iter()
                     .find(|state| state.id == transition.target)
                     .map(|state| state.resolved_type());
-                let trigger_matches = matches!(
-                    transition.trigger.as_ref(),
-                    Some(TransitionCondition::Event { event_name }) if event_name == "mousedown"
-                );
+                let trigger_matches = sm
+                    .motion_graphs
+                    .iter()
+                    .find(|graph| graph.id == transition.motion_graph_id)
+                    .is_some_and(|graph| {
+                        graph.nodes.iter().any(|node| {
+                            matches!(
+                                node,
+                                TransitionMotionNode::EventTrigger { event_type, .. }
+                                    if event_type == "mousedown"
+                            )
+                        })
+                    });
 
                 matches!(
                     source_type,

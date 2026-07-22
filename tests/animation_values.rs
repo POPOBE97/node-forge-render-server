@@ -3,14 +3,35 @@ use std::path::{Path, PathBuf};
 
 use node_forge_render_server::animation::{AnimationSession, AnimationStep};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, StateMachine, TransitionCondition,
-    TransitionMotionGraph,
+    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, MutationEndpoint,
+    Position, StateMachine, TransitionConditionBinding, TransitionMotionGraph,
+    TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, TickSchedule,
     build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
 };
 use node_forge_render_server::{asset_store, dsl};
+
+fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
+    let mut graph = TransitionMotionGraph::instant(id);
+    graph.nodes.push(TransitionMotionNode::EventTrigger {
+        id: "trigger".into(),
+        position: Position::default(),
+        label: None,
+        event_type: event_type.into(),
+        key: None,
+        modifiers: EventModifiers::default(),
+        ignore_repeat: true,
+    });
+    graph.condition_binding = Some(TransitionConditionBinding::Node {
+        from: MutationEndpoint {
+            node_id: "trigger".into(),
+            port_id: "fired".into(),
+        },
+    });
+    graph
+}
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -348,25 +369,19 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     id: "entry_to_a".into(),
                     source: "entry".into(),
                     target: "a".into(),
-                    trigger: None,
-                    condition: None,
                     motion_graph_id: "motion_entry_to_a".into(),
                 },
                 AnimationTransition {
                     id: "a_to_b".into(),
                     source: "a".into(),
                     target: "b".into(),
-                    trigger: Some(TransitionCondition::Event {
-                        event_name: "go".into(),
-                    }),
-                    condition: None,
                     motion_graph_id: "motion_a_to_b".into(),
                 },
             ],
             mutations: vec![],
             motion_graphs: vec![
                 TransitionMotionGraph::instant("motion_entry_to_a"),
-                TransitionMotionGraph::instant("motion_a_to_b"),
+                event_motion_graph("motion_a_to_b", "go"),
             ],
             initial_state_id: Some("entry".into()),
             viewport: None,

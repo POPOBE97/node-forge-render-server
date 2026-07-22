@@ -171,7 +171,7 @@ pub fn collect_early_canvas_interactions(
             session.update_mouse_position(mouse_position);
         }
         for payload in &payloads {
-            session.fire_event(&payload.event_type);
+            session.fire_event(payload);
         }
     }
 

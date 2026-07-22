@@ -37,6 +37,8 @@ struct GraphInputs {
     float_input_37: vec4f,
     // Node: FloatInput_43
     float_input_43: vec4f,
+    // Node: FloatInput_InputBarRefractionIndex
+    float_input_input_bar_refraction_index: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36

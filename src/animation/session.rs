@@ -5,8 +5,10 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::dsl::SceneDSL;
+use crate::protocol::InteractionEventPayload;
 use crate::state_machine::{
-    self, MotionChannelDebug, MousePosition, OverrideKey, StateMachineRuntime, TickResult,
+    self, EventModifiers, FiredEvent, FiredEvents, MotionChannelDebug, MousePosition, OverrideKey,
+    StateMachineRuntime, TickResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,7 @@ pub struct AnimationSession {
     /// Current animation parameter state (last runloop flush).
     active_overrides: HashMap<OverrideKey, serde_json::Value>,
     /// Queued events to fire on the next step (e.g. "mousedown").
-    pending_events: Vec<String>,
+    pending_events: FiredEvents,
     /// Whether the initial dt=0 tick has been fired.
     /// The first call to `step()` always fires a single tick with dt=0
     /// to establish the initial state (matching the test trace path).
@@ -69,6 +71,25 @@ pub struct AnimationSession {
     /// Cached finished flag from the last tick.
     cached_finished: bool,
     cached_motion_channels: Vec<MotionChannelDebug>,
+}
+
+impl From<&InteractionEventPayload> for FiredEvent {
+    fn from(payload: &InteractionEventPayload) -> Self {
+        let data = payload.data.as_ref();
+        let modifiers = data.and_then(|data| data.modifiers.as_ref());
+        let key = data.and_then(|data| data.key.as_ref());
+        Self {
+            event_type: payload.event_type.clone(),
+            key: key.map(|key| key.key.clone()),
+            repeat: key.is_some_and(|key| key.repeat),
+            modifiers: EventModifiers {
+                ctrl: modifiers.is_some_and(|modifiers| modifiers.ctrl),
+                alt: modifiers.is_some_and(|modifiers| modifiers.alt),
+                shift: modifiers.is_some_and(|modifiers| modifiers.shift),
+                meta: modifiers.is_some_and(|modifiers| modifiers.meta),
+            },
+        }
+    }
 }
 
 impl AnimationSession {
@@ -199,8 +220,8 @@ impl AnimationSession {
     ///
     /// Events are consumed in order as dt=0 control updates so input edges are
     /// not dropped on frames without a fixed-step animation tick.
-    pub fn fire_event(&mut self, event_name: impl Into<String>) {
-        self.pending_events.push(event_name.into());
+    pub fn fire_event(&mut self, event: impl Into<FiredEvent>) {
+        self.pending_events.push(event.into());
     }
 
     /// Update the latest mouse frag-pixel position visible to mutation nodes.
@@ -250,7 +271,7 @@ impl AnimationSession {
     fn runtime_tick(
         &mut self,
         dt: f64,
-        events: &Vec<String>,
+        events: &FiredEvents,
         diagnostics: &mut Vec<String>,
     ) -> TickResult {
         let result = self.runtime.tick(dt, &HashMap::new(), events);

@@ -71,7 +71,9 @@ fn back_pin_pin_compile_and_tick() {
 
 #[test]
 fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
-    use node_forge_render_server::state_machine::types::{AnimationStateType, TransitionCondition};
+    use node_forge_render_server::state_machine::types::{
+        AnimationStateType, TransitionMotionNode,
+    };
 
     let path = editor_glass_nforge_path();
     if !path.exists() {
@@ -109,10 +111,19 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
                     .iter()
                     .find(|state| state.id == transition.target)
                     .map(|state| state.resolved_type());
-                let trigger_matches = matches!(
-                    transition.trigger.as_ref(),
-                    Some(TransitionCondition::Event { event_name }) if event_name == "mousedown"
-                );
+                let trigger_matches = sm
+                    .motion_graphs
+                    .iter()
+                    .find(|graph| graph.id == transition.motion_graph_id)
+                    .is_some_and(|graph| {
+                        graph.nodes.iter().any(|node| {
+                            matches!(
+                                node,
+                                TransitionMotionNode::EventTrigger { event_type, .. }
+                                    if event_type == "mousedown"
+                            )
+                        })
+                    });
 
                 source_type == Some(AnimationStateType::AnimationState)
                     && target_type == Some(AnimationStateType::MutationNode)

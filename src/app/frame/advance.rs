@@ -181,9 +181,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::state_machine::types::{
-        AnimationState, AnimationTransition, Position, TransitionCondition,
-    };
+    use crate::state_machine::types::{AnimationState, AnimationTransition, Position};
 
     fn state(id: &str, state_type: AnimationStateType) -> AnimationState {
         AnimationState {
@@ -226,10 +224,6 @@ mod tests {
                 id: "tr_any_mutation".into(),
                 source: "any".into(),
                 target: "mutation".into(),
-                trigger: Some(TransitionCondition::Event {
-                    event_name: "mousedown".into(),
-                }),
-                condition: None,
                 motion_graph_id: "motion".into(),
             }],
             mutations: Vec::new(),
@@ -259,8 +253,6 @@ mod tests {
                 id: "tr_entry_mutation".into(),
                 source: "entry".into(),
                 target: "mutation".into(),
-                trigger: None,
-                condition: None,
                 motion_graph_id: "motion".into(),
             }],
             mutations: Vec::new(),

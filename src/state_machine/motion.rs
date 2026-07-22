@@ -187,7 +187,9 @@ fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
         if input_port != binding.port_id {
             continue;
         }
-        let plan = MotionPlan::from_node(node);
+        let Some(plan) = MotionPlan::from_node(node) else {
+            continue;
+        };
         if binding.port_id == ANY_CHANNEL {
             plans.fallback = Some(plan);
         } else {
@@ -226,16 +228,16 @@ enum MotionPlan {
 }
 
 impl MotionPlan {
-    fn from_node(node: &TransitionMotionNode) -> Self {
+    fn from_node(node: &TransitionMotionNode) -> Option<Self> {
         if let Some((curve, timeline)) = node.timeline() {
-            return Self::Timeline {
+            return Some(Self::Timeline {
                 duration: timeline.duration,
                 delay: timeline.delay,
                 curve,
                 blending: timeline.blending.clone(),
-            };
+            });
         }
-        match node {
+        Some(match node {
             TransitionMotionNode::Spring {
                 duration,
                 bounce,
@@ -247,8 +249,8 @@ impl MotionPlan {
                 delay: *delay,
             },
             TransitionMotionNode::Instant { .. } => Self::Instant,
-            _ => unreachable!("timeline motion nodes returned above"),
-        }
+            _ => return None,
+        })
     }
 }
 
@@ -1662,6 +1664,7 @@ mod tests {
                 )
                 .collect(),
             passthrough_bindings: vec![],
+            condition_binding: None,
             viewport: None,
         };
         let source = [

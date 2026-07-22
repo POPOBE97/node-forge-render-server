@@ -33,6 +33,8 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
+    // Node: ColorInput_VoiceDotColor
+    color_input_voice_dot_color: vec4f,
     // Node: FloatInput_37
     float_input_37: vec4f,
     // Node: FloatInput_45
@@ -47,6 +49,8 @@ struct GraphInputs {
     float_input_49: vec4f,
     // Node: FloatInput_50
     float_input_50: vec4f,
+    // Node: FloatInput_LightClipBloomProgress
+    float_input_light_clip_bloom_progress: vec4f,
     // Node: GroupInstance_32/Vector2Input_39
     node_GroupInstance_32_Vector2Input_39_f8d74346: vec4f,
     // Node: Vector2Input_35
@@ -63,9 +67,7 @@ var<uniform> graph_inputs: GraphInputs;
 struct ShaderMaterialParams {
     shader_GroupInstance_32_ShaderMaterial_32_density: vec4f,
     shader_GroupInstance_32_ShaderMaterial_32_human_voice_energies: array<vec4f, 16>,
-    shader_GroupInstance_32_ShaderMaterial_32_light_clip_bloom_progress: vec4f,
     shader_GroupInstance_32_ShaderMaterial_32_total_energy: vec4f,
-    shader_GroupInstance_32_ShaderMaterial_32_voice_dot_color: vec4f,
 };
 @group(0) @binding(3)
 var<storage, read> shader_material_params: ShaderMaterialParams;
@@ -432,7 +434,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_32.material
-    let voice_dot_response_material = shader_material_GroupInstance_32_ShaderMaterial_32(
+    let voice_dot_color_material = shader_material_GroupInstance_32_ShaderMaterial_32(
         ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_32_IntelligentLight_30,
         pass_samp_GroupInstance_32_IntelligentLight_30,
@@ -446,13 +448,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (graph_inputs.float_input_45).x,
         (graph_inputs.float_input_46).x,
         (graph_inputs.float_input_47).x,
-        (shader_material_params.shader_GroupInstance_32_ShaderMaterial_32_light_clip_bloom_progress).x,
+        (graph_inputs.float_input_light_clip_bloom_progress).x,
         (graph_inputs.float_input_48).x,
         (graph_inputs.float_input_49).x,
         (graph_inputs.float_input_50).x,
-        shader_material_params.shader_GroupInstance_32_ShaderMaterial_32_voice_dot_color,
+        vec4f((graph_inputs.color_input_voice_dot_color).rgb * (graph_inputs.color_input_voice_dot_color).a, (graph_inputs.color_input_voice_dot_color).a),
     );
     // Final composite
-    let _frag_out = voice_dot_response_material;
+    let _frag_out = voice_dot_color_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

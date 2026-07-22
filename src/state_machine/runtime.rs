@@ -114,8 +114,110 @@ pub struct TickResult {
 /// Maps param ids to current values.
 pub type ExternalParams = HashMap<String, serde_json::Value>;
 
-/// Events fired this tick (for event-type conditions).
-pub type FiredEvents = Vec<String>;
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FiredEvent {
+    pub event_type: String,
+    pub key: Option<String>,
+    pub repeat: bool,
+    pub modifiers: EventModifiers,
+}
+
+impl From<&str> for FiredEvent {
+    fn from(event_type: &str) -> Self {
+        Self {
+            event_type: event_type.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<String> for FiredEvent {
+    fn from(event_type: String) -> Self {
+        Self {
+            event_type,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&String> for FiredEvent {
+    fn from(event_type: &String) -> Self {
+        Self::from(event_type.as_str())
+    }
+}
+
+/// Complete interaction events fired this tick.
+pub type FiredEvents = Vec<FiredEvent>;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConditionValue {
+    Bool(bool),
+    Number(f64),
+}
+
+impl ConditionValue {
+    fn as_bool(self) -> bool {
+        match self {
+            Self::Bool(value) => value,
+            Self::Number(value) => value != 0.0,
+        }
+    }
+
+    fn as_number(self) -> Option<f64> {
+        match self {
+            Self::Number(value) => Some(value),
+            Self::Bool(_) => None,
+        }
+    }
+}
+
+fn condition_value_from_json(value: &serde_json::Value) -> Option<ConditionValue> {
+    value
+        .as_bool()
+        .map(ConditionValue::Bool)
+        .or_else(|| value.as_f64().map(ConditionValue::Number))
+}
+
+fn compare_numbers(
+    left: ConditionValue,
+    right: ConditionValue,
+    compare: impl FnOnce(f64, f64) -> bool,
+) -> bool {
+    left.as_number()
+        .zip(right.as_number())
+        .is_some_and(|(left, right)| compare(left, right))
+}
+
+fn normalized_key(key: &str) -> String {
+    match key {
+        "Space" | "Spacebar" => " ".to_string(),
+        other if other.len() == 1 => other.to_ascii_lowercase(),
+        other => other.to_string(),
+    }
+}
+
+fn keys_match(expected: &str, actual: &str) -> bool {
+    normalized_key(expected) == normalized_key(actual)
+}
+
+fn input_number<F>(
+    input: &F,
+    port_id: &str,
+    cache: &mut HashMap<(String, String), ConditionValue>,
+    visiting: &mut HashSet<String>,
+    default: f64,
+) -> f64
+where
+    F: Fn(
+        &str,
+        &mut HashMap<(String, String), ConditionValue>,
+        &mut HashSet<String>,
+    ) -> Option<ConditionValue>,
+{
+    input(port_id, cache, visiting)
+        .and_then(ConditionValue::as_number)
+        .unwrap_or(default)
+}
 
 impl StateMachineRuntime {
     /// Construct a new runtime from a validated `StateMachine` definition.
@@ -499,65 +601,204 @@ impl StateMachineRuntime {
         }
 
         // Evaluate in deterministic order (scene order preserved).
-        // For each candidate: check trigger first (every frame), then condition.
-        // Both must pass for the transition to fire.
         for t in &candidates {
-            // 1. Check trigger — if trigger is None, it's always triggered.
-            if !self.evaluate_condition(t.trigger.as_ref(), params, events) {
+            let Some(graph) = self
+                .motion_graph_index
+                .get(&t.motion_graph_id)
+                .and_then(|index| self.definition.motion_graphs.get(*index))
+            else {
+                continue;
+            };
+            if !self.evaluate_transition_condition(graph, params, events) {
                 continue;
             }
-            // 2. Trigger passed — now check condition guard.
-            if !self.evaluate_condition(t.condition.as_ref(), params, events) {
-                continue;
-            }
-            // Both passed — fire this transition.
             return Some((*t).clone());
         }
 
         None
     }
 
-    fn evaluate_condition(
+    fn evaluate_transition_condition(
         &self,
-        condition: Option<&TransitionCondition>,
+        graph: &TransitionMotionGraph,
         params: &ExternalParams,
         events: &FiredEvents,
     ) -> bool {
-        let Some(cond) = condition else {
-            // No condition → always satisfied (unconditional transition).
+        let Some(binding) = graph.condition_binding.as_ref() else {
             return true;
         };
+        let mut cache = HashMap::new();
+        let mut visiting = HashSet::new();
+        match binding {
+            TransitionConditionBinding::Input { input_port_id } => self
+                .resolve_transition_input(input_port_id, params)
+                .is_some_and(ConditionValue::as_bool),
+            TransitionConditionBinding::Node { from } => self
+                .evaluate_condition_node(
+                    graph,
+                    &from.node_id,
+                    &from.port_id,
+                    params,
+                    events,
+                    &mut cache,
+                    &mut visiting,
+                )
+                .is_some_and(ConditionValue::as_bool),
+        }
+    }
 
-        match cond {
-            TransitionCondition::Trigger { param_id } => {
-                // Trigger is satisfied if the param is truthy.
-                params
-                    .get(param_id)
-                    .map(|v| json_is_truthy(v))
-                    .unwrap_or(false)
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_condition_node(
+        &self,
+        graph: &TransitionMotionGraph,
+        node_id: &str,
+        output_port_id: &str,
+        params: &ExternalParams,
+        events: &FiredEvents,
+        cache: &mut HashMap<(String, String), ConditionValue>,
+        visiting: &mut HashSet<String>,
+    ) -> Option<ConditionValue> {
+        let cache_key = (node_id.to_string(), output_port_id.to_string());
+        if let Some(value) = cache.get(&cache_key) {
+            return Some(*value);
+        }
+        if !visiting.insert(node_id.to_string()) {
+            return None;
+        }
+        let node = graph.nodes.iter().find(|node| node.id() == node_id)?;
+        let input = |port_id: &str,
+                     cache: &mut HashMap<(String, String), ConditionValue>,
+                     visiting: &mut HashSet<String>| {
+            if let Some(connection) = graph.connections.iter().find(|connection| {
+                connection.to.node_id == node_id && connection.to.port_id == port_id
+            }) {
+                return self.evaluate_condition_node(
+                    graph,
+                    &connection.from.node_id,
+                    &connection.from.port_id,
+                    params,
+                    events,
+                    cache,
+                    visiting,
+                );
             }
-            TransitionCondition::Bool { param_id, value } => {
-                let expected = value.unwrap_or(true);
-                params
-                    .get(param_id)
-                    .and_then(|v| v.as_bool())
-                    .map(|v| v == expected)
-                    .unwrap_or(false)
+            graph
+                .input_bindings
+                .iter()
+                .find(|binding| binding.to.node_id == node_id && binding.to.port_id == port_id)
+                .and_then(|binding| self.resolve_transition_input(&binding.port_id, params))
+        };
+        let value = match node {
+            TransitionMotionNode::EventTrigger {
+                event_type,
+                key,
+                modifiers,
+                ignore_repeat,
+                ..
+            } => ConditionValue::Bool(events.iter().any(|event| {
+                if event.event_type != *event_type {
+                    return false;
+                }
+                if *ignore_repeat && event.repeat {
+                    return false;
+                }
+                if let Some(expected_key) = key {
+                    if event
+                        .key
+                        .as_deref()
+                        .is_none_or(|actual| !keys_match(expected_key, actual))
+                    {
+                        return false;
+                    }
+                    if event.modifiers != *modifiers {
+                        return false;
+                    }
+                }
+                true
+            })),
+            TransitionMotionNode::Logic { op, .. } => {
+                let a = input("a", cache, visiting).unwrap_or(ConditionValue::Bool(false));
+                let b = input("b", cache, visiting).unwrap_or(ConditionValue::Bool(false));
+                ConditionValue::Bool(match op {
+                    LogicOp::And => a.as_bool() && b.as_bool(),
+                    LogicOp::Or => a.as_bool() || b.as_bool(),
+                    LogicOp::Not => !a.as_bool(),
+                    LogicOp::Equal => a == b,
+                    LogicOp::NotEqual => a != b,
+                    LogicOp::Greater => compare_numbers(a, b, |left, right| left > right),
+                    LogicOp::GreaterEqual => compare_numbers(a, b, |left, right| left >= right),
+                    LogicOp::Less => compare_numbers(a, b, |left, right| left < right),
+                    LogicOp::LessEqual => compare_numbers(a, b, |left, right| left <= right),
+                })
             }
-            TransitionCondition::Threshold { param_id, value } => params
-                .get(param_id)
-                .and_then(|v| v.as_f64())
-                .map(|v| v >= *value)
-                .unwrap_or(false),
-            TransitionCondition::Event { event_name } => events.contains(event_name),
-            TransitionCondition::Compound { op, conditions } => match op {
-                CompoundOp::And => conditions
-                    .iter()
-                    .all(|c| self.evaluate_condition(Some(c), params, events)),
-                CompoundOp::Or => conditions
-                    .iter()
-                    .any(|c| self.evaluate_condition(Some(c), params, events)),
-            },
+            TransitionMotionNode::BoolInput { value, .. } => ConditionValue::Bool(*value),
+            TransitionMotionNode::FloatInput { value, .. } => ConditionValue::Number(*value),
+            TransitionMotionNode::MathAdd { .. } => ConditionValue::Number(
+                input_number(&input, "a", cache, visiting, 0.0)
+                    + input_number(&input, "b", cache, visiting, 0.0),
+            ),
+            TransitionMotionNode::MathSubtract { .. } => ConditionValue::Number(
+                input_number(&input, "a", cache, visiting, 0.0)
+                    - input_number(&input, "b", cache, visiting, 0.0),
+            ),
+            TransitionMotionNode::MathMultiply { .. } => ConditionValue::Number(
+                input_number(&input, "a", cache, visiting, 0.0)
+                    * input_number(&input, "b", cache, visiting, 0.0),
+            ),
+            TransitionMotionNode::MathDivide { .. } => {
+                let numerator = input_number(&input, "a", cache, visiting, 0.0);
+                let denominator = input_number(&input, "b", cache, visiting, 0.0);
+                ConditionValue::Number(if denominator == 0.0 {
+                    0.0
+                } else {
+                    numerator / denominator
+                })
+            }
+            TransitionMotionNode::Lerp { .. } => {
+                let a = input_number(&input, "a", cache, visiting, 0.0);
+                let b = input_number(&input, "b", cache, visiting, 0.0);
+                let t = input_number(&input, "t", cache, visiting, 0.5);
+                ConditionValue::Number(a + (b - a) * t)
+            }
+            _ => {
+                visiting.remove(node_id);
+                return None;
+            }
+        };
+        visiting.remove(node_id);
+        cache.insert(cache_key, value);
+        Some(value)
+    }
+
+    fn resolve_transition_input(
+        &self,
+        port_id: &str,
+        params: &ExternalParams,
+    ) -> Option<ConditionValue> {
+        match port_id {
+            "sceneElapsedTime" => Some(ConditionValue::Number(self.scene_time)),
+            "localElapsedTime" => Some(ConditionValue::Number(
+                self.state_local_times
+                    .get(&self.current_state_id)
+                    .copied()
+                    .unwrap_or(0.0),
+            )),
+            "mouse.position.x" => self
+                .runtime_input
+                .mouse_position
+                .map(|position| ConditionValue::Number(position.x)),
+            "mouse.position.y" => self
+                .runtime_input
+                .mouse_position
+                .map(|position| ConditionValue::Number(position.y)),
+            _ => params
+                .get(port_id)
+                .or_else(|| {
+                    OverrideKey::parse(port_id)
+                        .as_ref()
+                        .and_then(|key| self.current_overrides.get(key))
+                })
+                .and_then(condition_value_from_json),
         }
     }
 
@@ -622,16 +863,6 @@ impl StateMachineRuntime {
         }
 
         Ok(overrides)
-    }
-}
-
-fn json_is_truthy(v: &serde_json::Value) -> bool {
-    match v {
-        serde_json::Value::Bool(b) => *b,
-        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(false),
-        serde_json::Value::String(s) => !s.is_empty(),
-        serde_json::Value::Null => false,
-        _ => true,
     }
 }
 
@@ -818,6 +1049,7 @@ mod tests {
                 },
             }],
             passthrough_bindings: vec![],
+            condition_binding: None,
             viewport: None,
         }
     }
@@ -835,6 +1067,95 @@ mod tests {
                 blending: None,
             },
         }];
+        graph
+    }
+
+    fn with_event_condition(
+        mut graph: TransitionMotionGraph,
+        event_type: &str,
+    ) -> TransitionMotionGraph {
+        graph.nodes.push(TransitionMotionNode::EventTrigger {
+            id: "trigger".into(),
+            position: Position::default(),
+            label: None,
+            event_type: event_type.into(),
+            key: None,
+            modifiers: EventModifiers::default(),
+            ignore_repeat: true,
+        });
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: MutationEndpoint {
+                node_id: "trigger".into(),
+                port_id: "fired".into(),
+            },
+        });
+        graph
+    }
+
+    fn with_bool_input_condition(
+        mut graph: TransitionMotionGraph,
+        input_port_id: &str,
+    ) -> TransitionMotionGraph {
+        graph.inputs.push(MutationPort {
+            id: input_port_id.into(),
+            name: Some(input_port_id.into()),
+            port_type: Some("bool".into()),
+        });
+        graph.condition_binding = Some(TransitionConditionBinding::Input {
+            input_port_id: input_port_id.into(),
+        });
+        graph
+    }
+
+    fn with_event_and_bool_input_condition(
+        mut graph: TransitionMotionGraph,
+        event_type: &str,
+        input_port_id: &str,
+    ) -> TransitionMotionGraph {
+        graph.inputs.push(MutationPort {
+            id: input_port_id.into(),
+            name: Some(input_port_id.into()),
+            port_type: Some("bool".into()),
+        });
+        graph.nodes.push(TransitionMotionNode::EventTrigger {
+            id: "trigger".into(),
+            position: Position::default(),
+            label: None,
+            event_type: event_type.into(),
+            key: None,
+            modifiers: EventModifiers::default(),
+            ignore_repeat: true,
+        });
+        graph.nodes.push(TransitionMotionNode::Logic {
+            id: "condition".into(),
+            position: Position::default(),
+            label: None,
+            op: LogicOp::And,
+        });
+        graph.connections.push(MutationConnection {
+            id: "trigger-to-condition".into(),
+            from: MutationEndpoint {
+                node_id: "trigger".into(),
+                port_id: "fired".into(),
+            },
+            to: MutationEndpoint {
+                node_id: "condition".into(),
+                port_id: "a".into(),
+            },
+        });
+        graph.input_bindings.push(TransitionMotionInputBinding {
+            port_id: input_port_id.into(),
+            to: MutationEndpoint {
+                node_id: "condition".into(),
+                port_id: "b".into(),
+            },
+        });
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: MutationEndpoint {
+                node_id: "condition".into(),
+                port_id: "result".into(),
+            },
+        });
         graph
     }
 
@@ -862,8 +1183,6 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
 
@@ -902,19 +1221,17 @@ mod tests {
             id: "entry_to_a".into(),
             source: "entry".into(),
             target: "a".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
+        sm.motion_graphs.push(with_event_condition(
+            instant_motion_graph("go-instant"),
+            "go",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "a_to_b".into(),
             source: "a".into(),
             target: "b".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "go".into(),
-            }),
-            condition: None,
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "go-instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -958,19 +1275,17 @@ mod tests {
             id: "entry_to_a".into(),
             source: "entry".into(),
             target: "a".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
+        sm.motion_graphs.push(with_event_condition(
+            timeline_motion_graph("go-timeline", 1.0),
+            "go",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "a_to_b".into(),
             source: "a".into(),
             target: "b".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "go".into(),
-            }),
-            condition: None,
-            motion_graph_id: "timeline-1".into(),
+            motion_graph_id: "go-timeline".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1022,8 +1337,6 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "timeline-1".into(),
         });
 
@@ -1053,16 +1366,15 @@ mod tests {
             state_type: Some(AnimationStateType::AnimationState),
             mutation_id: None,
         });
+        sm.motion_graphs.push(with_bool_input_condition(
+            instant_motion_graph("flag-condition"),
+            "flag",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: Some(TransitionCondition::Bool {
-                param_id: "flag".into(),
-                value: Some(true),
-            }),
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "flag-condition".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1089,15 +1401,15 @@ mod tests {
             state_type: Some(AnimationStateType::AnimationState),
             mutation_id: None,
         });
+        sm.motion_graphs.push(with_event_condition(
+            instant_motion_graph("click-condition"),
+            "click",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: Some(TransitionCondition::Event {
-                event_name: "click".into(),
-            }),
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "click-condition".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1134,15 +1446,15 @@ mod tests {
             passthrough_bindings: vec![],
             viewport: None,
         });
+        sm.motion_graphs.push(with_event_condition(
+            timeline_motion_graph("mousedown-condition", 0.3),
+            "mousedown",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "tr_any_mutation".into(),
             source: "any".into(),
             target: "mutation".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "mousedown".into(),
-            }),
-            condition: None,
-            motion_graph_id: "timeline".into(),
+            motion_graph_id: "mousedown-condition".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1203,8 +1515,6 @@ mod tests {
             id: "entry_to_dynamic".into(),
             source: "entry".into(),
             target: "dynamic".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "timeline".into(),
         });
 
@@ -1269,15 +1579,15 @@ mod tests {
             ],
             viewport: None,
         });
+        sm.motion_graphs.push(with_event_condition(
+            instant_motion_graph("mousedown-instant"),
+            "mousedown",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "entry_to_mouse".into(),
             source: "entry".into(),
             target: "mutation".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "mousedown".into(),
-            }),
-            condition: None,
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "mousedown-instant".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1321,29 +1631,27 @@ mod tests {
             id: "entry_to_mutation".into(),
             source: "entry".into(),
             target: "mutation".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
+        sm.motion_graphs.push(with_event_condition(
+            instant_motion_graph("pause-condition"),
+            "pause",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "mutation_to_idle".into(),
             source: "mutation".into(),
             target: "idle".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "pause".into(),
-            }),
-            condition: None,
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "pause-condition".into(),
         });
+        sm.motion_graphs.push(with_event_condition(
+            instant_motion_graph("resume-condition"),
+            "resume",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "idle_to_mutation".into(),
             source: "idle".into(),
             target: "mutation".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "resume".into(),
-            }),
-            condition: None,
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "resume-condition".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1376,8 +1684,6 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "exit".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
 
@@ -1402,8 +1708,6 @@ mod tests {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: None,
-            condition: None,
             motion_graph_id: "instant".into(),
         });
 
@@ -1427,19 +1731,16 @@ mod tests {
             state_type: Some(AnimationStateType::AnimationState),
             mutation_id: None,
         });
-        // Trigger: event "go", Condition: bool "ready" == true.
+        sm.motion_graphs.push(with_event_and_bool_input_condition(
+            instant_motion_graph("go-and-ready"),
+            "go",
+            "ready",
+        ));
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
             source: "entry".into(),
             target: "s1".into(),
-            trigger: Some(TransitionCondition::Event {
-                event_name: "go".into(),
-            }),
-            condition: Some(TransitionCondition::Bool {
-                param_id: "ready".into(),
-                value: Some(true),
-            }),
-            motion_graph_id: "instant".into(),
+            motion_graph_id: "go-and-ready".into(),
         });
 
         let mut rt = StateMachineRuntime::new(sm);
@@ -1461,5 +1762,197 @@ mod tests {
         // Both trigger and condition → transitions.
         let r4 = rt.tick(0.016, &p, &vec!["go".into()]);
         assert_eq!(r4.current_state_id, "s1");
+    }
+
+    #[test]
+    fn graph_owned_key_chord_ignores_repeat_and_matches_exact_modifiers() {
+        let mut sm = minimal_sm();
+        let mut graph = instant_motion_graph("key-condition");
+        graph.nodes.push(TransitionMotionNode::EventTrigger {
+            id: "space".into(),
+            position: Position::default(),
+            label: None,
+            event_type: "keydown".into(),
+            key: Some(" ".into()),
+            modifiers: EventModifiers::default(),
+            ignore_repeat: true,
+        });
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: MutationEndpoint {
+                node_id: "space".into(),
+                port_id: "fired".into(),
+            },
+        });
+        sm.motion_graphs.push(graph);
+        sm.transitions.push(AnimationTransition {
+            id: "key-transition".into(),
+            source: "entry".into(),
+            target: "exit".into(),
+            motion_graph_id: "key-condition".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        let repeated = FiredEvent {
+            event_type: "keydown".into(),
+            key: Some(" ".into()),
+            repeat: true,
+            modifiers: EventModifiers::default(),
+        };
+        assert_eq!(
+            runtime
+                .tick(0.0, &HashMap::new(), &vec![repeated])
+                .current_state_id,
+            "entry"
+        );
+        let modified = FiredEvent {
+            event_type: "keydown".into(),
+            key: Some(" ".into()),
+            repeat: false,
+            modifiers: EventModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            runtime
+                .tick(0.0, &HashMap::new(), &vec![modified])
+                .current_state_id,
+            "entry"
+        );
+        let matching = FiredEvent {
+            event_type: "keydown".into(),
+            key: Some("Space".into()),
+            repeat: false,
+            modifiers: EventModifiers::default(),
+        };
+        assert_eq!(
+            runtime
+                .tick(0.0, &HashMap::new(), &vec![matching])
+                .current_state_id,
+            "exit"
+        );
+    }
+
+    #[test]
+    fn graph_owned_mouse_range_is_composed_from_logic_nodes() {
+        let mut sm = minimal_sm();
+        let mut graph = instant_motion_graph("mouse-range");
+        graph.inputs.push(MutationPort {
+            id: "mouse.position.x".into(),
+            name: Some("Mouse Position X".into()),
+            port_type: Some("float".into()),
+        });
+        graph.nodes.extend([
+            TransitionMotionNode::FloatInput {
+                id: "lower".into(),
+                position: Position::default(),
+                label: None,
+                value: 20.0,
+            },
+            TransitionMotionNode::FloatInput {
+                id: "upper".into(),
+                position: Position::default(),
+                label: None,
+                value: 80.0,
+            },
+            TransitionMotionNode::Logic {
+                id: "gte".into(),
+                position: Position::default(),
+                label: None,
+                op: LogicOp::GreaterEqual,
+            },
+            TransitionMotionNode::Logic {
+                id: "lte".into(),
+                position: Position::default(),
+                label: None,
+                op: LogicOp::LessEqual,
+            },
+            TransitionMotionNode::Logic {
+                id: "inside".into(),
+                position: Position::default(),
+                label: None,
+                op: LogicOp::And,
+            },
+        ]);
+        for node_id in ["gte", "lte"] {
+            graph.input_bindings.push(TransitionMotionInputBinding {
+                port_id: "mouse.position.x".into(),
+                to: MutationEndpoint {
+                    node_id: node_id.into(),
+                    port_id: "a".into(),
+                },
+            });
+        }
+        graph.connections.extend([
+            MutationConnection {
+                id: "lower-gte".into(),
+                from: MutationEndpoint {
+                    node_id: "lower".into(),
+                    port_id: "value".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "gte".into(),
+                    port_id: "b".into(),
+                },
+            },
+            MutationConnection {
+                id: "upper-lte".into(),
+                from: MutationEndpoint {
+                    node_id: "upper".into(),
+                    port_id: "value".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "lte".into(),
+                    port_id: "b".into(),
+                },
+            },
+            MutationConnection {
+                id: "gte-inside".into(),
+                from: MutationEndpoint {
+                    node_id: "gte".into(),
+                    port_id: "result".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "inside".into(),
+                    port_id: "a".into(),
+                },
+            },
+            MutationConnection {
+                id: "lte-inside".into(),
+                from: MutationEndpoint {
+                    node_id: "lte".into(),
+                    port_id: "result".into(),
+                },
+                to: MutationEndpoint {
+                    node_id: "inside".into(),
+                    port_id: "b".into(),
+                },
+            },
+        ]);
+        graph.condition_binding = Some(TransitionConditionBinding::Node {
+            from: MutationEndpoint {
+                node_id: "inside".into(),
+                port_id: "result".into(),
+            },
+        });
+        sm.motion_graphs.push(graph);
+        sm.transitions.push(AnimationTransition {
+            id: "mouse-transition".into(),
+            source: "entry".into(),
+            target: "exit".into(),
+            motion_graph_id: "mouse-range".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        runtime.set_mouse_position(MousePosition { x: 10.0, y: 0.0 });
+        assert_eq!(
+            runtime.tick(0.0, &HashMap::new(), &vec![]).current_state_id,
+            "entry"
+        );
+        runtime.set_mouse_position(MousePosition { x: 50.0, y: 0.0 });
+        assert_eq!(
+            runtime.tick(0.0, &HashMap::new(), &vec![]).current_state_id,
+            "exit"
+        );
     }
 }

@@ -33,6 +33,8 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
+    // Node: ColorInput_VoiceDotColor
+    color_input_voice_dot_color: vec4f,
     // Node: FloatInput_37
     float_input_37: vec4f,
     // Node: FloatInput_45
@@ -47,6 +49,8 @@ struct GraphInputs {
     float_input_49: vec4f,
     // Node: FloatInput_50
     float_input_50: vec4f,
+    // Node: FloatInput_LightClipBloomProgress
+    float_input_light_clip_bloom_progress: vec4f,
     // Node: GroupInstance_32/Vector2Input_39
     node_GroupInstance_32_Vector2Input_39_f8d74346: vec4f,
     // Node: Vector2Input_35
@@ -63,9 +67,7 @@ var<uniform> graph_inputs: GraphInputs;
 struct ShaderMaterialParams {
     shader_GroupInstance_32_ShaderMaterial_32_density: vec4f,
     shader_GroupInstance_32_ShaderMaterial_32_human_voice_energies: array<vec4f, 16>,
-    shader_GroupInstance_32_ShaderMaterial_32_light_clip_bloom_progress: vec4f,
     shader_GroupInstance_32_ShaderMaterial_32_total_energy: vec4f,
-    shader_GroupInstance_32_ShaderMaterial_32_voice_dot_color: vec4f,
 };
 @group(0) @binding(3)
 var<storage, read> shader_material_params: ShaderMaterialParams;
