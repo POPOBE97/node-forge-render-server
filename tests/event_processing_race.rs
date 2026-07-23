@@ -23,8 +23,8 @@ use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::dsl::{Metadata, SceneDSL};
 use node_forge_render_server::state_machine::types::{
     AnimationState, AnimationStateType, AnimationTransition, EventModifiers, MutationDefinition,
-    MutationEndpoint, Position, StateMachine, TransitionConditionBinding, TransitionMotionGraph,
-    TransitionMotionNode,
+    MutationEndpoint, MutationStateBinding, Position, StateMachine, TransitionConditionBinding,
+    TransitionMotionGraph, TransitionMotionNode,
 };
 
 fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
@@ -93,6 +93,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
             target: "target".into(),
             motion_graph_id: "instant".into(),
         }],
+        mutation_bindings: vec![],
         mutations: vec![],
         motion_graphs: vec![event_motion_graph("instant", event_name)],
         initial_state_id: Some("entry".into()),
@@ -151,6 +152,14 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
+                mutation_id: None,
+            },
+            AnimationState {
+                id: "mutation_node".into(),
+                name: "Press Mutation".into(),
+                position: None,
+                parameter_overrides: Default::default(),
+                state_type: AnimationStateType::MutationNode,
                 mutation_id: Some("mut_press".into()),
             },
             AnimationState {
@@ -182,6 +191,11 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 motion_graph_id: "motion_up".into(),
             },
         ],
+        mutation_bindings: vec![MutationStateBinding {
+            id: "binding_mutation".into(),
+            state_id: "mutation".into(),
+            mutation_node_id: "mutation_node".into(),
+        }],
         mutations: vec![MutationDefinition {
             id: "mut_press".into(),
             name: "Press Mutation".into(),

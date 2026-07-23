@@ -309,7 +309,11 @@ fn resolve_input_binding_value(
     binding: &MutationInputBinding,
     ctx: &MutationInputContext,
 ) -> MutationValue {
-    // Look up by port id in the provided values map.
+    if let Some(value) = resolve_builtin_value(&binding.port_id, ctx) {
+        return value;
+    }
+
+    // Fall back to the current animated/root parameter snapshot.
     ctx.values
         .get(&binding.port_id)
         .cloned()
@@ -1076,6 +1080,58 @@ mod tests {
         assert!(
             (output_f64(&result, "FloatInput_53:value") - 3.14).abs() < f64::EPSILON,
             "passthrough should wire sceneElapsedTime → output"
+        );
+    }
+
+    #[test]
+    fn inner_graph_input_binding_prefers_scene_elapsed_time_builtin() {
+        let mut m = empty_mutation();
+        m.nodes.push(MutationInnerNode {
+            id: "add".into(),
+            node_type: MutationInnerNodeType::MathAdd,
+            params: HashMap::new(),
+            inputs: vec![
+                MutationPort {
+                    id: "a".into(),
+                    name: None,
+                    port_type: Some("float".into()),
+                },
+                MutationPort {
+                    id: "b".into(),
+                    name: None,
+                    port_type: Some("float".into()),
+                },
+            ],
+            outputs: vec![MutationPort {
+                id: "result".into(),
+                name: None,
+                port_type: Some("float".into()),
+            }],
+        });
+        m.input_bindings.push(MutationInputBinding {
+            port_id: "sceneElapsedTime".into(),
+            to: MutationEndpoint {
+                node_id: "add".into(),
+                port_id: "a".into(),
+            },
+        });
+        m.output_bindings.push(MutationOutputBinding {
+            port_id: "Time:value".into(),
+            from: MutationEndpoint {
+                node_id: "add".into(),
+                port_id: "result".into(),
+            },
+        });
+
+        let mut ctx = empty_ctx();
+        ctx.scene_elapsed_time = 1.25;
+        ctx.values
+            .insert("sceneElapsedTime".into(), MutationValue::from(99.0));
+
+        let result = evaluate_mutation(&m, &ctx).unwrap();
+        assert!(
+            (output_f64(&result, "Time:value") - 1.25).abs() < f64::EPSILON,
+            "built-in scene time must reach inner graph inputs before external values"
         );
     }
 

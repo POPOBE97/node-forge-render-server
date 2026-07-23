@@ -81,6 +81,7 @@ fn state_machine(id: &str) -> StateMachine {
         name: String::new(),
         states: Vec::new(),
         transitions: Vec::new(),
+        mutation_bindings: Vec::new(),
         mutations: Vec::new(),
         motion_graphs: Vec::new(),
         initial_state_id: None,

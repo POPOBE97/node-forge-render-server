@@ -379,6 +379,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     motion_graph_id: "motion_a_to_b".into(),
                 },
             ],
+            mutation_bindings: vec![],
             mutations: vec![],
             motion_graphs: vec![
                 TransitionMotionGraph::instant("motion_entry_to_a"),
@@ -699,6 +700,86 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
     let completed_idle_to_listening = settle(&mut idle_session);
     assert_eq!(completed_idle_to_listening.active_transition_id, None);
     assert_listening_values(&completed_idle_to_listening);
+}
+
+#[test]
+fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
+    let case_dir = support::render_case_dir("doubao-voice-interaction");
+    let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    let machine = scene
+        .state_machine
+        .as_ref()
+        .expect("doubao fixture should have a state machine");
+    assert_eq!(
+        machine.mutations.len(),
+        1,
+        "expected one shared Mutation scope"
+    );
+    assert_eq!(machine.mutation_bindings.len(), 7);
+    assert!(
+        machine
+            .mutation_bindings
+            .iter()
+            .all(|binding| binding.mutation_node_id == "mutation_node_st_mrerxocx_8"),
+        "all logical States must use the shared Intelligent Light Mutation node"
+    );
+
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    let mut snapshot = session.step(0.0);
+    for _ in 0..240 {
+        if snapshot.active_transition_id.is_none() {
+            break;
+        }
+        snapshot = session.step(1.0 / 60.0);
+    }
+    assert_eq!(snapshot.current_state_id, "st_mrerw3qg_6");
+
+    session.fire_event(space_event("keydown"));
+    session.step(0.1);
+    session.fire_event(space_event("keyup"));
+    session.step(0.0);
+    for _ in 0..240 {
+        snapshot = session.step(1.0 / 60.0);
+        if snapshot.current_state_id == "st_mrerxocx_8" && snapshot.active_transition_id.is_none() {
+            break;
+        }
+    }
+    assert_eq!(snapshot.current_state_id, "st_mrerxocx_8");
+    assert_eq!(snapshot.active_transition_id, None);
+
+    let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
+        "GroupInstance_32",
+        "intelligent_light_positions",
+    );
+    let before = snapshot
+        .active_overrides
+        .get(&positions_key)
+        .cloned()
+        .expect("shared Mutation should produce Intelligent Light positions");
+    assert_eq!(
+        before.as_array().map(Vec::len),
+        Some(11),
+        "Intelligent Light must produce exactly 11 positions"
+    );
+    let before_scene_time = snapshot.scene_time_secs;
+
+    let advanced = session.step(1.0 / 30.0);
+    let after = advanced
+        .active_overrides
+        .get(&positions_key)
+        .expect("positions should remain available on subsequent Idle frames");
+    assert_ne!(
+        &before, after,
+        "Idle positions must advance across fixed-step boundaries"
+    );
+    assert!(advanced.scene_time_secs > before_scene_time);
+    assert!(
+        advanced.diagnostics.is_empty(),
+        "Mutation evaluation emitted diagnostics: {:?}",
+        advanced.diagnostics
+    );
 }
 
 #[test]

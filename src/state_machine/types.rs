@@ -22,6 +22,8 @@ pub struct StateMachine {
     pub states: Vec<AnimationState>,
     #[serde(default)]
     pub transitions: Vec<AnimationTransition>,
+    #[serde(default, rename = "mutationBindings")]
+    pub mutation_bindings: Vec<MutationStateBinding>,
     #[serde(default)]
     pub mutations: Vec<MutationDefinition>,
     #[serde(default, rename = "motionGraphs")]
@@ -45,6 +47,7 @@ pub enum AnimationStateType {
     AnyState,
     ExitState,
     AnimationState,
+    MutationNode,
 }
 
 /// A single state in the state graph.
@@ -59,7 +62,7 @@ pub struct AnimationState {
     pub parameter_overrides: HashMap<String, serde_json::Value>,
     #[serde(rename = "type")]
     pub state_type: AnimationStateType,
-    /// Optional state-local post-motion Mutation graph.
+    /// Mutation graph owned by a standalone `mutationNode`.
     #[serde(default, rename = "mutationId")]
     pub mutation_id: Option<String>,
 }
@@ -82,6 +85,16 @@ pub struct AnimationTransition {
     pub target: String,
     #[serde(rename = "motionGraphId")]
     pub motion_graph_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MutationStateBinding {
+    pub id: String,
+    #[serde(rename = "stateId")]
+    pub state_id: String,
+    #[serde(rename = "mutationNodeId")]
+    pub mutation_node_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]

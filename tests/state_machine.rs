@@ -27,8 +27,9 @@ fn back_pin_pin_scene_parses_state_machine() {
     );
     let sm = scene.state_machine.as_ref().unwrap();
     assert_eq!(sm.id, "sm_mmamfug8_2");
-    assert_eq!(sm.states.len(), 7);
+    assert_eq!(sm.states.len(), 8);
     assert_eq!(sm.mutations.len(), 1);
+    assert_eq!(sm.mutation_bindings.len(), 1);
     assert_eq!(sm.initial_state_id.as_deref(), Some("st_mmamj2am_3"));
 }
 
@@ -48,7 +49,7 @@ fn back_pin_pin_compile_and_tick() {
 
     assert_eq!(rt.current_state_id(), "st_mmamj2am_3");
 
-    // Without mousedown event the entry→mutation transition should NOT fire.
+    // Without mousedown event the transition to the Mutation-bound State should NOT fire.
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
@@ -118,15 +119,12 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
 
                 source_type == Some(AnimationStateType::AnimationState)
                     && sm
-                        .states
+                        .mutation_bindings
                         .iter()
-                        .find(|state| state.id == transition.target)
-                        .is_some_and(|state| state.mutation_id.is_some())
+                        .any(|binding| binding.state_id == transition.target)
                     && trigger_matches
             })
-            .expect(
-                "glass.nforge should have an animation state -> Mutation 2 mousedown transition",
-            );
+            .expect("glass.nforge should have a mousedown transition to a Mutation-bound State");
 
         (
             mousedown_to_mutation.id.clone(),
@@ -288,7 +286,7 @@ fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
 }
 
 #[test]
-fn doubao_nforge_executes_state_local_driver_function_to_packed_outputs() {
+fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
@@ -307,7 +305,7 @@ fn doubao_nforge_executes_state_local_driver_function_to_packed_outputs() {
             "intelligent_light_positions",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("Off Mutation must output packed positions");
+        .expect("shared Intelligent Light Mutation must output packed positions");
     let colors = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
@@ -315,7 +313,7 @@ fn doubao_nforge_executes_state_local_driver_function_to_packed_outputs() {
             "intelligent_light_colors",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("Off Mutation must output packed colors");
+        .expect("shared Intelligent Light Mutation must output packed colors");
     assert_eq!(positions.len(), 11);
     assert_eq!(colors.len(), 11);
     assert!(positions.iter().all(|value| {

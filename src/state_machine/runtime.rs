@@ -582,7 +582,7 @@ impl StateMachineRuntime {
             .iter()
             .find(|state| state.resolved_type() == AnimationStateType::AnyState)
             .cloned()
-            && let Some(mutation_id) = any_state.mutation_id.as_deref()
+            && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
         {
             match self.evaluate_mutation_state(mutation_id, &any_state.id, &post_motion_snapshot) {
                 Ok(patch) => mutation_patch.extend(patch),
@@ -594,7 +594,7 @@ impl StateMachineRuntime {
         }
 
         if let Some(target_state) = self.find_state(&target_state_id).cloned()
-            && let Some(mutation_id) = target_state.mutation_id.as_deref()
+            && let Some(mutation_id) = self.mutation_id_bound_to_state(&target_state.id)
         {
             match self.evaluate_mutation_state(mutation_id, &target_state.id, &post_motion_snapshot)
             {
@@ -962,6 +962,23 @@ impl StateMachineRuntime {
 
         Ok(overrides)
     }
+
+    fn mutation_id_bound_to_state(&self, state_id: &str) -> Option<&str> {
+        let binding = self
+            .definition
+            .mutation_bindings
+            .iter()
+            .find(|binding| binding.state_id == state_id)?;
+        self.definition
+            .states
+            .iter()
+            .find(|state| {
+                state.id == binding.mutation_node_id
+                    && state.state_type == AnimationStateType::MutationNode
+            })?
+            .mutation_id
+            .as_deref()
+    }
 }
 
 #[cfg(test)]
@@ -999,6 +1016,7 @@ mod tests {
                 },
             ],
             transitions: vec![],
+            mutation_bindings: vec![],
             mutations: vec![],
             motion_graphs: vec![
                 instant_motion_graph("instant"),
@@ -1008,6 +1026,23 @@ mod tests {
             initial_state_id: Some("entry".into()),
             viewport: None,
         }
+    }
+
+    fn bind_mutation(sm: &mut StateMachine, state_id: &str, mutation_id: &str) {
+        let mutation_node_id = format!("mutation_node_{state_id}");
+        sm.states.push(AnimationState {
+            id: mutation_node_id.clone(),
+            name: format!("{state_id} Mutation"),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: AnimationStateType::MutationNode,
+            mutation_id: Some(mutation_id.into()),
+        });
+        sm.mutation_bindings.push(MutationStateBinding {
+            id: format!("binding_{state_id}"),
+            state_id: state_id.into(),
+            mutation_node_id,
+        });
     }
 
     fn motion_ports() -> (Vec<MutationPort>, Vec<MutationPort>) {
@@ -1430,7 +1465,7 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: Some("m1".into()),
+            mutation_id: None,
         });
         sm.mutations.push(MutationDefinition {
             id: "m1".into(),
@@ -1444,6 +1479,7 @@ mod tests {
             passthrough_bindings: vec![],
             viewport: None,
         });
+        bind_mutation(&mut sm, "mutation", "m1");
         sm.motion_graphs.push(with_event_condition(
             timeline_motion_graph("mousedown-condition", 0.3),
             "mousedown",
@@ -1484,7 +1520,7 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: Some("dynamic_target".into()),
+            mutation_id: None,
         });
         sm.mutations.push(MutationDefinition {
             id: "dynamic_target".into(),
@@ -1509,6 +1545,7 @@ mod tests {
             }],
             viewport: None,
         });
+        bind_mutation(&mut sm, "dynamic", "dynamic_target");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_dynamic".into(),
             source: "entry".into(),
@@ -1545,7 +1582,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: Some("a_mutation".into()),
+            mutation_id: None,
         });
         sm.states.push(AnimationState {
             id: "b".into(),
@@ -1580,6 +1617,7 @@ mod tests {
             }],
             viewport: None,
         });
+        bind_mutation(&mut sm, "a", "a_mutation");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_a".into(),
             source: "entry".into(),
@@ -1668,11 +1706,6 @@ mod tests {
             .unwrap()
             .parameter_overrides
             .insert("Node:x".into(), serde_json::json!(0.0));
-        sm.states
-            .iter_mut()
-            .find(|state| state.id == "any")
-            .unwrap()
-            .mutation_id = Some("any_mutation".into());
         sm.states.push(AnimationState {
             id: "target".into(),
             name: "Target".into(),
@@ -1681,12 +1714,14 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: Some("target_mutation".into()),
+            mutation_id: None,
         });
         sm.mutations
             .push(mutation("any_mutation", "Node:anySeen", 1.0));
         sm.mutations
             .push(mutation("target_mutation", "Node:targetSeen", 2.0));
+        bind_mutation(&mut sm, "any", "any_mutation");
+        bind_mutation(&mut sm, "target", "target_mutation");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_target".into(),
             source: "entry".into(),
@@ -1720,7 +1755,7 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: Some("m_mouse".into()),
+            mutation_id: None,
         });
         sm.mutations.push(MutationDefinition {
             id: "m_mouse".into(),
@@ -1754,6 +1789,7 @@ mod tests {
             ],
             viewport: None,
         });
+        bind_mutation(&mut sm, "mutation", "m_mouse");
         sm.motion_graphs.push(with_event_condition(
             instant_motion_graph("mousedown-instant"),
             "mousedown",

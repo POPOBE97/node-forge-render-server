@@ -63,6 +63,16 @@ fn validate_builtin_states(sm: &StateMachine) -> Result<()> {
     if exit_count != 1 {
         bail!("state_machine validation: expected exactly 1 exitState, found {exit_count}");
     }
+    if let Some(initial_state_id) = sm.initial_state_id.as_deref()
+        && sm.states.iter().any(|state| {
+            state.id == initial_state_id && state.state_type == AnimationStateType::MutationNode
+        })
+    {
+        bail!(
+            "state_machine validation: initialStateId '{}' cannot reference a mutationNode",
+            initial_state_id
+        );
+    }
 
     Ok(())
 }
@@ -84,18 +94,35 @@ fn validate_mutation_ids(sm: &StateMachine) -> Result<()> {
 fn validate_mutation_ownership(sm: &StateMachine) -> Result<()> {
     let mutation_ids: HashSet<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
     let mut owner_by_mutation: HashMap<&str, &str> = HashMap::new();
+    let state_by_id: HashMap<&str, &AnimationState> = sm
+        .states
+        .iter()
+        .map(|state| (state.id.as_str(), state))
+        .collect();
 
     for s in &sm.states {
+        if s.state_type == AnimationStateType::MutationNode && s.mutation_id.is_none() {
+            bail!(
+                "state_machine validation: mutation node '{}' is missing mutationId",
+                s.id
+            );
+        }
+        if s.state_type != AnimationStateType::MutationNode && s.mutation_id.is_some() {
+            bail!(
+                "state_machine validation: state '{}' stores mutationId but is not a mutationNode",
+                s.id
+            );
+        }
         match s.mutation_id.as_deref() {
             None => continue,
             Some(mid) if !mutation_ids.contains(mid) => bail!(
-                "state_machine validation: state '{}' references missing mutation '{mid}'",
+                "state_machine validation: mutation node '{}' references missing mutation '{mid}'",
                 s.id
             ),
             Some(mid) => {
                 if let Some(existing) = owner_by_mutation.insert(mid, s.id.as_str()) {
                     bail!(
-                        "state_machine validation: mutation '{mid}' is shared by states '{existing}' and '{}'",
+                        "state_machine validation: mutation '{mid}' is shared by mutation nodes '{existing}' and '{}'",
                         s.id
                     );
                 }
@@ -105,8 +132,59 @@ fn validate_mutation_ownership(sm: &StateMachine) -> Result<()> {
     for mutation in &sm.mutations {
         if !owner_by_mutation.contains_key(mutation.id.as_str()) {
             bail!(
-                "state_machine validation: mutation '{}' is not owned by any state",
+                "state_machine validation: mutation '{}' is not owned by any mutationNode",
                 mutation.id
+            );
+        }
+    }
+
+    let mut binding_ids = HashSet::new();
+    let mut bound_state_ids: HashMap<&str, &str> = HashMap::new();
+    for binding in &sm.mutation_bindings {
+        if !binding_ids.insert(binding.id.as_str()) {
+            bail!(
+                "state_machine validation: duplicate Mutation binding id '{}'",
+                binding.id
+            );
+        }
+        let state = state_by_id.get(binding.state_id.as_str()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "state_machine validation: Mutation binding '{}' references missing State '{}'",
+                binding.id,
+                binding.state_id
+            )
+        })?;
+        if state.state_type == AnimationStateType::MutationNode {
+            bail!(
+                "state_machine validation: Mutation binding '{}' state endpoint '{}' is a mutationNode",
+                binding.id,
+                binding.state_id
+            );
+        }
+        let mutation_node = state_by_id
+            .get(binding.mutation_node_id.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "state_machine validation: Mutation binding '{}' references missing Mutation node '{}'",
+                    binding.id,
+                    binding.mutation_node_id
+                )
+            })?;
+        if mutation_node.state_type != AnimationStateType::MutationNode {
+            bail!(
+                "state_machine validation: Mutation binding '{}' endpoint '{}' is not a mutationNode",
+                binding.id,
+                binding.mutation_node_id
+            );
+        }
+        if let Some(existing) =
+            bound_state_ids.insert(binding.state_id.as_str(), binding.id.as_str())
+        {
+            bail!(
+                "state_machine validation: State '{}' has multiple Mutation bindings '{}' and '{}'",
+                binding.state_id,
+                existing,
+                binding.id
             );
         }
     }
@@ -117,7 +195,8 @@ fn validate_mutation_ownership(sm: &StateMachine) -> Result<()> {
 // ── Transition endpoint references ─────────────────────────────────────────
 
 fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
-    let state_ids: HashSet<&str> = sm.states.iter().map(|s| s.id.as_str()).collect();
+    let state_by_id: HashMap<&str, &AnimationState> =
+        sm.states.iter().map(|s| (s.id.as_str(), s)).collect();
     let motion_graph_ids: HashSet<&str> = sm.motion_graphs.iter().map(|g| g.id.as_str()).collect();
     let mut referenced_motion_graph_ids = HashSet::new();
 
@@ -129,14 +208,14 @@ fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
                 t.motion_graph_id
             );
         }
-        if !state_ids.contains(t.source.as_str()) {
+        if !state_by_id.contains_key(t.source.as_str()) {
             bail!(
                 "state_machine validation: transition '{}' source '{}' references missing state",
                 t.id,
                 t.source
             );
         }
-        if !state_ids.contains(t.target.as_str()) {
+        if !state_by_id.contains_key(t.target.as_str()) {
             bail!(
                 "state_machine validation: transition '{}' target '{}' references missing state",
                 t.id,
@@ -148,6 +227,18 @@ fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
                 "state_machine validation: transition '{}' references missing motion graph '{}'",
                 t.id,
                 t.motion_graph_id
+            );
+        }
+        if state_by_id
+            .get(t.source.as_str())
+            .is_some_and(|state| state.state_type == AnimationStateType::MutationNode)
+            || state_by_id
+                .get(t.target.as_str())
+                .is_some_and(|state| state.state_type == AnimationStateType::MutationNode)
+        {
+            bail!(
+                "state_machine validation: transition '{}' cannot use a mutationNode as source or target",
+                t.id
             );
         }
     }
@@ -673,6 +764,7 @@ mod tests {
                 },
             ],
             transitions: vec![],
+            mutation_bindings: vec![],
             mutations: vec![],
             motion_graphs: vec![instant_motion_graph()],
             initial_state_id: Some("entry".into()),
@@ -714,6 +806,43 @@ mod tests {
             passthrough_bindings: vec![],
             condition_binding: None,
             viewport: None,
+        }
+    }
+
+    fn empty_mutation(id: &str) -> MutationDefinition {
+        MutationDefinition {
+            id: id.into(),
+            name: id.into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![],
+            viewport: None,
+        }
+    }
+
+    fn regular_state(id: &str) -> AnimationState {
+        AnimationState {
+            id: id.into(),
+            name: id.into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_id: None,
+        }
+    }
+
+    fn mutation_node(id: &str, mutation_id: &str) -> AnimationState {
+        AnimationState {
+            id: id.into(),
+            name: id.into(),
+            position: None,
+            parameter_overrides: Default::default(),
+            state_type: AnimationStateType::MutationNode,
+            mutation_id: Some(mutation_id.into()),
         }
     }
 
@@ -805,7 +934,7 @@ mod tests {
             name: "M1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::AnimationState,
+            state_type: AnimationStateType::MutationNode,
             mutation_id: Some("nonexistent".into()),
         });
         let err = validate(&sm).unwrap_err().to_string();
@@ -871,6 +1000,58 @@ mod tests {
     }
 
     #[test]
+    fn mutation_node_can_feed_multiple_states() {
+        let mut sm = minimal_sm();
+        sm.states.extend([
+            regular_state("state_a"),
+            regular_state("state_b"),
+            mutation_node("mutation_node", "mutation"),
+        ]);
+        sm.mutations.push(empty_mutation("mutation"));
+        sm.mutation_bindings.extend([
+            MutationStateBinding {
+                id: "binding_a".into(),
+                state_id: "state_a".into(),
+                mutation_node_id: "mutation_node".into(),
+            },
+            MutationStateBinding {
+                id: "binding_b".into(),
+                state_id: "state_b".into(),
+                mutation_node_id: "mutation_node".into(),
+            },
+        ]);
+
+        validate(&sm).expect("a Mutation node output may fan out to multiple States");
+    }
+
+    #[test]
+    fn state_cannot_receive_multiple_mutations() {
+        let mut sm = minimal_sm();
+        sm.states.extend([
+            regular_state("state"),
+            mutation_node("mutation_a_node", "mutation_a"),
+            mutation_node("mutation_b_node", "mutation_b"),
+        ]);
+        sm.mutations
+            .extend([empty_mutation("mutation_a"), empty_mutation("mutation_b")]);
+        sm.mutation_bindings.extend([
+            MutationStateBinding {
+                id: "binding_a".into(),
+                state_id: "state".into(),
+                mutation_node_id: "mutation_a_node".into(),
+            },
+            MutationStateBinding {
+                id: "binding_b".into(),
+                state_id: "state".into(),
+                mutation_node_id: "mutation_b_node".into(),
+            },
+        ]);
+
+        let error = validate(&sm).unwrap_err().to_string();
+        assert!(error.contains("multiple Mutation bindings"), "{error}");
+    }
+
+    #[test]
     fn passthrough_duplicate_output_rejected() {
         let mut sm = minimal_sm();
         let mutation = MutationDefinition {
@@ -915,14 +1096,8 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::AnimationState,
+            state_type: AnimationStateType::MutationNode,
             mutation_id: Some("m1".into()),
-        });
-        sm.transitions.push(AnimationTransition {
-            id: "t1".into(),
-            source: "entry".into(),
-            target: "s1".into(),
-            motion_graph_id: "instant".into(),
         });
         sm.mutations.push(mutation);
         let err = validate(&sm).unwrap_err().to_string();
