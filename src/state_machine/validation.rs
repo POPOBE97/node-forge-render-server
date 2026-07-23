@@ -777,6 +777,7 @@ mod tests {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
+            array_length: None,
         };
         TransitionMotionGraph {
             id: "instant".into(),
@@ -1062,6 +1063,7 @@ mod tests {
                 id: "X:value".into(),
                 name: Some("X".into()),
                 port_type: Some("float".into()),
+                array_length: None,
             }],
             nodes: vec![MutationInnerNode {
                 id: "n".into(),
@@ -1074,6 +1076,7 @@ mod tests {
                     id: "value".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 }],
             }],
             connections: vec![],

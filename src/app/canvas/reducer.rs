@@ -9,7 +9,9 @@ use crate::app::{
     canvas::{
         actions::{CanvasAction, CanvasFrameResult},
         ops, pixel_overlay, reference,
-        state::{CanvasViewportState, DrawCallCaptureState, PhysicalZoomRequest},
+        state::{
+            CanvasDisplayState, CanvasViewportState, DrawCallCaptureState, PhysicalZoomRequest,
+        },
     },
     display_metrics,
     layout_math::clamp_zoom,
@@ -45,6 +47,25 @@ fn sync_zoom_to_display_ppi(
         .unwrap_or(zoom)
 }
 
+fn activate_pass_capture(display: &mut CanvasDisplayState, pass_name: String) {
+    display.pass_capture = Some(DrawCallCaptureState {
+        pass_name,
+        mode: display.pass_capture_mode,
+    });
+}
+
+fn update_pass_capture_mode(display: &mut CanvasDisplayState, mode: PassCaptureMode) -> bool {
+    if display.pass_capture_mode == mode {
+        return false;
+    }
+
+    display.pass_capture_mode = mode;
+    if let Some(capture) = display.pass_capture.as_mut() {
+        capture.mode = mode;
+    }
+    true
+}
+
 pub fn apply_action(
     app: &mut App,
     render_state: &egui_wgpu::RenderState,
@@ -60,16 +81,8 @@ pub fn apply_action(
             app.canvas.invalidation.preview_source_changed();
         }
         CanvasAction::SetPassCapture(pass_name) => {
-            let mode = app
-                .canvas
-                .display
-                .pass_capture
-                .as_ref()
-                .filter(|capture| capture.pass_name == pass_name)
-                .map(|capture| capture.mode)
-                .unwrap_or(PassCaptureMode::Solo);
             app.canvas.design.active = None;
-            app.canvas.display.pass_capture = Some(DrawCallCaptureState { pass_name, mode });
+            activate_pass_capture(&mut app.canvas.display, pass_name);
             app.canvas.display.preview_texture_name =
                 Some(ResourceName::from(PASS_CAPTURE_OUTPUT_TEXTURE_NAME));
             app.canvas.viewport.pending_view_reset = true;
@@ -78,10 +91,7 @@ pub fn apply_action(
             app.canvas.invalidation.preview_source_changed();
         }
         CanvasAction::SetPassCaptureMode(mode) => {
-            if let Some(capture) = app.canvas.display.pass_capture.as_mut()
-                && capture.mode != mode
-            {
-                capture.mode = mode;
+            if update_pass_capture_mode(&mut app.canvas.display, mode) {
                 app.runtime.scene_redraw_pending = true;
                 pixel_overlay::clear_cache(app);
                 app.canvas.invalidation.preview_source_changed();
@@ -471,9 +481,32 @@ pub fn apply_action(
 
 #[cfg(test)]
 mod tests {
-    use super::{super::actions::CanvasAction, set_viewport_display_ppi, sync_zoom_to_display_ppi};
-    use crate::app::canvas::state::CanvasViewportState;
+    use super::{
+        super::actions::CanvasAction, activate_pass_capture, set_viewport_display_ppi,
+        sync_zoom_to_display_ppi, update_pass_capture_mode,
+    };
+    use crate::app::canvas::state::{CanvasDisplayState, CanvasViewportState};
     use crate::app::types::{AnalysisTab, ClippingSettings, DiffMetricMode, UiWindowMode};
+    use rust_wgpu_fiber::shader_space::PassCaptureMode;
+
+    #[test]
+    fn pass_capture_mode_survives_switching_away_from_a_pass() {
+        let mut display = CanvasDisplayState::default();
+        activate_pass_capture(&mut display, "first.pass".to_string());
+        assert!(update_pass_capture_mode(
+            &mut display,
+            PassCaptureMode::After
+        ));
+
+        display.pass_capture = None;
+        activate_pass_capture(&mut display, "second.pass".to_string());
+
+        assert_eq!(display.pass_capture_mode, PassCaptureMode::After);
+        assert_eq!(
+            display.pass_capture.as_ref().map(|capture| capture.mode),
+            Some(PassCaptureMode::After)
+        );
+    }
 
     #[test]
     fn invalidation_sets_analysis_and_clipping_on_analysis_tab_change() {

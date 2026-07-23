@@ -267,6 +267,110 @@ fn write_shader_array_slots(
     }
 }
 
+fn write_shader_i32_array_slots(
+    dst: &mut [u8],
+    first_slot: usize,
+    value: Option<&Value>,
+    length: usize,
+    boolean: bool,
+) {
+    let values = value.and_then(Value::as_array);
+    for index in 0..length {
+        let item = values.and_then(|array| array.get(index));
+        let scalar = if boolean {
+            i32::from(item.and_then(Value::as_bool).unwrap_or(false))
+        } else {
+            item.and_then(Value::as_i64).unwrap_or(0) as i32
+        };
+        write_i32_slot(dst, first_slot + index, [scalar, 0, 0, 0]);
+    }
+}
+
+fn connected_packed_input_value(scene: &SceneDSL, node: &Node) -> Value {
+    if let Some(value) = node.params.get("value").and_then(Value::as_array) {
+        return Value::Array(value.clone());
+    }
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|candidate| (candidate.id.as_str(), candidate))
+        .collect::<HashMap<_, _>>();
+    let values = node
+        .inputs
+        .iter()
+        .map(|input| {
+            let source = scene
+                .connections
+                .iter()
+                .find(|connection| {
+                    connection.to.node_id == node.id && connection.to.port_id == input.id
+                })
+                .and_then(|connection| nodes_by_id.get(connection.from.node_id.as_str()).copied());
+            let Some(source) = source else {
+                return Value::Null;
+            };
+            match source.node_type.as_str() {
+                "Vector2Input" => json!([
+                    source
+                        .params
+                        .get("x")
+                        .and_then(parse_json_number_f32)
+                        .unwrap_or(0.0),
+                    source
+                        .params
+                        .get("y")
+                        .and_then(parse_json_number_f32)
+                        .unwrap_or(0.0)
+                ]),
+                "Vector3Input" => json!([
+                    source
+                        .params
+                        .get("x")
+                        .and_then(parse_json_number_f32)
+                        .unwrap_or(0.0),
+                    source
+                        .params
+                        .get("y")
+                        .and_then(parse_json_number_f32)
+                        .unwrap_or(0.0),
+                    source
+                        .params
+                        .get("z")
+                        .and_then(parse_json_number_f32)
+                        .unwrap_or(0.0)
+                ]),
+                "Vector4Input" => {
+                    let value = parse_vec4_xyzw(source).unwrap_or([0.0; 4]);
+                    json!(value)
+                }
+                "ColorInput" => source
+                    .params
+                    .get("value")
+                    .cloned()
+                    .unwrap_or_else(|| json!([1.0, 0.0, 1.0, 1.0])),
+                "BoolInput" => source
+                    .params
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)),
+                _ => source
+                    .params
+                    .get("value")
+                    .cloned()
+                    .or_else(|| {
+                        source
+                            .params
+                            .get("x")
+                            .and_then(parse_json_number_f32)
+                            .map(|value| json!(value))
+                    })
+                    .unwrap_or(Value::Null),
+            }
+        })
+        .collect();
+    Value::Array(values)
+}
+
 pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u8>> {
     if schema.is_empty() {
         return Ok(Vec::new());
@@ -305,6 +409,9 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
             .ok_or_else(|| anyhow!("graph uniform node not found: {}", field.node_id))?;
         let shader_value =
             shader_parameter.and_then(|(_, parameter_id)| node.params.get(parameter_id));
+        let packed_input_value =
+            (node.node_type == "PackedInput").then(|| connected_packed_input_value(scene, node));
+        let array_value = shader_value.or(packed_input_value.as_ref());
 
         match field.kind {
             GraphFieldKind::F32 => {
@@ -432,16 +539,25 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
                 }
             }
             GraphFieldKind::F32Array(length) => {
-                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 1);
+                write_shader_array_slots(&mut bytes, slot_index, array_value, length, 1);
+            }
+            GraphFieldKind::I32Array(length) => {
+                write_shader_i32_array_slots(&mut bytes, slot_index, array_value, length, false);
+            }
+            GraphFieldKind::BoolArray(length) => {
+                write_shader_i32_array_slots(&mut bytes, slot_index, array_value, length, true);
             }
             GraphFieldKind::Vec2Array(length) => {
-                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 2);
+                write_shader_array_slots(&mut bytes, slot_index, array_value, length, 2);
             }
             GraphFieldKind::Vec3Array(length) => {
-                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 3);
+                write_shader_array_slots(&mut bytes, slot_index, array_value, length, 3);
             }
             GraphFieldKind::Vec4Array(length) => {
-                write_shader_array_slots(&mut bytes, slot_index, shader_value, length, 4);
+                write_shader_array_slots(&mut bytes, slot_index, array_value, length, 4);
+            }
+            GraphFieldKind::Vec4ColorArray(length) => {
+                write_shader_array_slots(&mut bytes, slot_index, array_value, length, 4);
             }
         }
         slot_index += field.kind.slot_count();
@@ -462,6 +578,7 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
             | "Vector4Input"
             | "Mat4Input"
             | "ColorInput"
+            | "PackedInput"
     )
 }
 
@@ -879,9 +996,12 @@ fn graph_field_kind_label(kind: GraphFieldKind) -> &'static str {
         GraphFieldKind::Vec4Color => "vec4_color",
         GraphFieldKind::Mat4 => "mat4",
         GraphFieldKind::F32Array(_) => "f32_array",
+        GraphFieldKind::I32Array(_) => "i32_array",
+        GraphFieldKind::BoolArray(_) => "bool_array",
         GraphFieldKind::Vec2Array(_) => "vec2_array",
         GraphFieldKind::Vec3Array(_) => "vec3_array",
         GraphFieldKind::Vec4Array(_) => "vec4_array",
+        GraphFieldKind::Vec4ColorArray(_) => "color_array",
     }
 }
 

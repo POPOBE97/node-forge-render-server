@@ -70,6 +70,7 @@
     "Normalize",
     "OrthographicCamera",
     "PBRMaterial",
+    "PackedInput",
     "PassTexture",
     "PerspectiveCamera",
     "PrincipledBSDF",
@@ -4551,6 +4552,23 @@
       }
     },
     {
+      "type": "PackedInput",
+      "label": "Packed Input",
+      "category": "Input",
+      "description": "Declare a typed packed uniform assembled from connected input values",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "packed<float>"
+        }
+      ],
+      "defaultParams": {
+        "elementType": "float"
+      }
+    },
+    {
       "type": "PassTexture",
       "label": "Pass Texture",
       "category": "Texture",
@@ -5791,6 +5809,12 @@
         "label": "Exit",
         "category": "Built-ins",
         "description": "Built-in exit state. Target-only transition endpoint."
+      },
+      {
+        "type": "mutationNode",
+        "label": "Mutation",
+        "category": "States",
+        "description": "State-local post-motion Mutation node"
       }
     ],
     "innerNodes": [

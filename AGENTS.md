@@ -71,6 +71,29 @@ practical and revert unrelated formatting churn before finishing.
 
 ## Renderer invariants (do not break)
 
+### Motion-Driven Rendering Runtime Rules
+
+- The root `../AGENTS.md` Motion-Driven Rendering Architecture section is authoritative. These
+  runtime rules apply even where current code still contains technical debt.
+- The renderer executes the canonical Render Graph; it does not reconstruct missing authoring
+  intent. Graph schemas and uniform packing must originate from explicit uniform declaration nodes
+  and preserve their declared DSL types.
+- Group expansion is structural only. It may materialize explicit graph connections and group
+  bindings, but it must not create a Mutation data path by copying `GroupInstance` params, scanning
+  consumers, matching special port names, or resolving consumer IDs into group-internal nodes.
+- Animation and Mutation overrides target explicit uniform declarations only. Do not accept a
+  consumer or `GroupInstance` target and reverse-map it by ID, ID suffix, group binding, or port
+  name.
+- Keep the `MotionEngine` presentation state separate from render-frame values. Evaluate Mutation
+  against an immutable post-motion snapshot, overlay its patch in a frame-local value map, and pass
+  that map to uniform packing without committing it back to the `MotionEngine`.
+- Treat missing declarations, graph edges, and group bindings as errors rather than synthesizing
+  hidden forwarding or missing-edge fallbacks.
+- Preserve semantic types through buffer layout and packing. ABI-compatible representations such
+  as `packed<color>` and `packed<vector4>` are not interchangeable.
+- Missing uniform or packed-uniform support must be implemented across the DSL/editor/protocol and
+  renderer instead of being emulated with consumer-specific renderer behavior.
+
 Type coercion (`src/renderer/utils.rs`):
 - Scalar numeric: `f32` <-> `i32`, `bool` -> `f32`/`i32`
 - Scalar splat: `f32|i32|bool` -> `vec2/vec3/vec4`

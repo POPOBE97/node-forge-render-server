@@ -59,6 +59,7 @@ fn accepts_reflected_shader_material_resource_port_after_group_expansion() {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
             port_type: Some("sampledTexture".to_string()),
+            array_length: None,
         },
         "resource:intelli_tex",
     );
@@ -74,6 +75,7 @@ fn rejects_shader_material_port_not_present_in_reflected_inputs() {
             id: "resource:other".to_string(),
             name: Some("other".to_string()),
             port_type: Some("sampledTexture".to_string()),
+            array_length: None,
         },
         "resource:intelli_tex",
     );
@@ -94,6 +96,7 @@ fn rejects_shader_material_resource_with_forged_value_type() {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
             port_type: Some("float".to_string()),
+            array_length: None,
         },
         "resource:intelli_tex",
     );

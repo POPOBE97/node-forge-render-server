@@ -300,7 +300,7 @@ fn grouped_render_pass_display_label(node: &Node) -> Option<String> {
         .find_map(|key| node.params.get(*key).and_then(|value| value.as_str()))
         .map(str::trim)
         .filter(|label| !label.is_empty())?;
-    let pass_label = ["label", "name", "title", "headerLabel"]
+    let pass_label = ["__node_label", "label", "name", "title", "headerLabel"]
         .iter()
         .find_map(|key| node.params.get(*key).and_then(|value| value.as_str()))
         .map(str::trim)
@@ -795,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn grouped_render_pass_display_label_includes_group_name() {
+    fn grouped_render_pass_display_label_uses_instance_and_node_title_labels() {
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: Metadata {
@@ -807,7 +807,8 @@ mod tests {
                 id: "GroupInstance_32/RenderPass_26".to_string(),
                 node_type: "RenderPass".to_string(),
                 params: HashMap::from([
-                    ("__group_name".to_string(), json!("Light Effect")),
+                    ("__group_instance_label".to_string(), json!("LightEffect")),
+                    ("__node_label".to_string(), json!("Beauty Pass")),
                     ("name".to_string(), json!("Render Pass")),
                 ]),
                 inputs: vec![],
@@ -826,7 +827,7 @@ mod tests {
         let labels = pass_display_labels_by_pass(&scene);
         assert_eq!(
             labels.get("render.pass.pass26.pass"),
-            Some(&"Light Effect / Render Pass".to_string())
+            Some(&"LightEffect / Beauty Pass".to_string())
         );
     }
 

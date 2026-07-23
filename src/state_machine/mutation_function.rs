@@ -118,12 +118,11 @@ fn function_for(mutation_id: &str, node_id: &str) -> Result<FunctionResource> {
 }
 
 struct FunctionJsRuntime {
-    runtime: JsRuntime,
+    initializer: String,
 }
 
 impl FunctionJsRuntime {
     fn new(resource: &FunctionResource) -> Result<Self> {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
         let initializer = format!(
             r#"
             globalThis.__nodeForgeDeepFreeze = function deepFreeze(value) {{
@@ -133,7 +132,7 @@ impl FunctionJsRuntime {
               }}
               return value;
             }};
-            globalThis.__nodeForgeMutation = (() => {{
+            globalThis.__nodeForgeMutationFactory = () => {{
               const module = {{ exports: {{}} }};
               const exports = module.exports;
               {compiled}
@@ -141,19 +140,20 @@ impl FunctionJsRuntime {
                 throw new TypeError('compiled Mutation Function has no default function');
               }}
               return module.exports.default;
-            }})();
+            }};
             "#,
             compiled = resource.compiled_java_script
         );
+        let mut runtime = JsRuntime::new(RuntimeOptions::default());
         runtime
-            .execute_script(ascii_str!("<mutation-function-init>"), initializer)
+            .execute_script(ascii_str!("<mutation-function-init>"), initializer.clone())
             .with_context(|| {
                 format!(
                     "failed to initialize Mutation Function '{}/{}'",
                     resource.scope, resource.node_id
                 )
             })?;
-        Ok(Self { runtime })
+        Ok(Self { initializer })
     }
 
     fn evaluate(
@@ -164,10 +164,21 @@ impl FunctionJsRuntime {
         if remaining_budget.is_zero() {
             bail!("Mutation Function exceeded the Mutation graph frame budget");
         }
+        // A fresh JavaScript realm is created for every frame. This prevents
+        // module locals, closures, and globalThis writes from becoming hidden
+        // cross-frame Mutation state.
+        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        runtime
+            .execute_script(
+                ascii_str!("<mutation-function-init>"),
+                self.initializer.clone(),
+            )
+            .context("failed to initialize Mutation Function frame")?;
         let input = serde_json::to_string(input)?;
-        let script =
-            format!("globalThis.__nodeForgeMutation(globalThis.__nodeForgeDeepFreeze({input}))");
-        let isolate_handle = self.runtime.v8_isolate().thread_safe_handle();
+        let script = format!(
+            "globalThis.__nodeForgeMutationFactory()(globalThis.__nodeForgeDeepFreeze({input}))"
+        );
+        let isolate_handle = runtime.v8_isolate().thread_safe_handle();
         let (cancel_tx, cancel_rx) = mpsc::channel();
         let timed_out = Arc::new(AtomicBool::new(false));
         let timed_out_in_thread = Arc::clone(&timed_out);
@@ -177,9 +188,7 @@ impl FunctionJsRuntime {
                 isolate_handle.terminate_execution();
             }
         });
-        let result = self
-            .runtime
-            .execute_script(ascii_str!("<mutation-function-frame>"), script);
+        let result = runtime.execute_script(ascii_str!("<mutation-function-frame>"), script);
         let _ = cancel_tx.send(());
         let _ = terminator.join();
 
@@ -187,13 +196,13 @@ impl FunctionJsRuntime {
             Ok(value) => value,
             Err(error) => {
                 if timed_out.load(Ordering::Acquire) {
-                    self.runtime.v8_isolate().cancel_terminate_execution();
+                    runtime.v8_isolate().cancel_terminate_execution();
                     bail!("Mutation Function exceeded the Mutation graph frame budget");
                 }
                 return Err(anyhow!("Mutation Function execution failed: {error:?}"));
             }
         };
-        deno_core::scope!(scope, self.runtime);
+        deno_core::scope!(scope, runtime);
         let local = deno_core::v8::Local::new(scope, value);
         deno_core::serde_v8::from_v8(scope, local)
             .map_err(|error| anyhow!("Mutation Function returned an invalid value: {error:?}"))
@@ -303,5 +312,24 @@ mod tests {
             .expect("runtime recovers"),
             serde_json::json!({"value": 7})
         );
+
+        install_document_functions([resource(
+            "export default function mutation(): { value: number } { return { value: 1 }; }",
+            "globalThis.hiddenCounter = (globalThis.hiddenCounter ?? 0) + 1; Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation() { return { value: globalThis.hiddenCounter }; }",
+        )])
+        .expect("install function");
+
+        for _ in 0..2 {
+            assert_eq!(
+                evaluate(
+                    "test",
+                    "function",
+                    &serde_json::json!({}),
+                    Duration::from_millis(20),
+                )
+                .expect("evaluate stateless frame"),
+                serde_json::json!({"value": 1})
+            );
+        }
     }
 }

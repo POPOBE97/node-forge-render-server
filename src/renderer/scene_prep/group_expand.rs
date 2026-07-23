@@ -59,7 +59,7 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
     let mut expanded_count: usize = 0;
 
     loop {
-        let Some((instance_id, group_id, instance_label, instance_params)) = scene
+        let Some((instance_id, group_id, instance_label, _instance_params)) = scene
             .nodes
             .iter()
             .find(|n| n.node_type == "GroupInstance")
@@ -67,7 +67,8 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 let gid = parse_group_id(n).map(|s| s.to_string());
                 let label = n
                     .params
-                    .get("label")
+                    .get("__node_label")
+                    .or_else(|| n.params.get("label"))
                     .and_then(|v| v.as_str())
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
@@ -282,27 +283,6 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 sources.extend(fallback.iter().cloned());
             }
 
-            // State-local Mutation outputs are committed as current values on
-            // the GroupInstance itself. Forward those inline values through
-            // the group input binding without manufacturing a graph edge.
-            if sources.is_empty()
-                && let Some(value) = instance_params.get(&b.group_port_id).cloned()
-            {
-                let destination = scene
-                    .nodes
-                    .iter_mut()
-                    .find(|node| node.id == *target_new_node_id)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "group '{}' inputBindings target node '{}' missing after clone",
-                            group_id,
-                            target_new_node_id
-                        )
-                    })?;
-                destination.params.insert(b.to.port_id.clone(), value);
-                any = true;
-            }
-
             // Special-case: ImageFile -> ImageTexture.image is not part of the bundled node scheme.
             // Instead, inline by copying ImageFile params into the ImageTexture node.
             if !any && b.to.port_id == "image" {
@@ -385,9 +365,9 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
                 });
                 if is_unset_packed_input {
                     // An unbound packed interface leaves the internal node in
-                    // manual authoring mode. Once a Mutation supplies one
-                    // packed value, the destination validates the complete
-                    // positions/colors pair and exact element counts.
+                    // manual authoring mode. When explicit PackedInput edges
+                    // are connected, the destination validates the complete
+                    // pair and exact element counts.
                     continue;
                 }
                 // No upstream connection provided for this input. This is an authoring error.
@@ -589,5 +569,71 @@ mod tests {
     #[test]
     fn source_binding_only_group_input_is_rewritten_during_expansion() {
         assert_chained_groups_expand(chained_group_scene(false));
+    }
+
+    #[test]
+    fn expanded_nodes_inherit_the_group_instance_title_label() {
+        let mut scene: SceneDSL = serde_json::from_value(json!({
+            "version": "2.0",
+            "metadata": { "name": "group label regression" },
+            "nodes": [
+                {
+                    "id": "GroupInstance_32",
+                    "type": "GroupInstance",
+                    "label": "LightEffect",
+                    "params": { "groupId": "light_effect" }
+                },
+                {
+                    "id": "screen",
+                    "type": "Screen",
+                    "params": {}
+                }
+            ],
+            "connections": [{
+                "id": "group_to_screen",
+                "from": { "nodeId": "GroupInstance_32", "portId": "pass" },
+                "to": { "nodeId": "screen", "portId": "pass" }
+            }],
+            "groups": [{
+                "id": "light_effect",
+                "name": "Light Effect Definition",
+                "inputs": [],
+                "outputs": [{ "id": "pass", "type": "pass" }],
+                "nodes": [{
+                    "id": "RenderPass_26",
+                    "type": "RenderPass",
+                    "label": "Beauty Pass",
+                    "params": { "name": "Render Pass" }
+                }],
+                "connections": [],
+                "inputBindings": [],
+                "outputBindings": [{
+                    "groupPortId": "pass",
+                    "from": { "nodeId": "RenderPass_26", "portId": "pass" }
+                }]
+            }]
+        }))
+        .expect("test scene should deserialize");
+
+        assert_eq!(expand_group_instances(&mut scene).unwrap(), 1);
+        let expanded_pass = scene
+            .nodes
+            .iter()
+            .find(|node| node.id == "GroupInstance_32/RenderPass_26")
+            .expect("expanded render pass");
+        assert_eq!(
+            expanded_pass
+                .params
+                .get("__group_instance_label")
+                .and_then(|value| value.as_str()),
+            Some("LightEffect")
+        );
+        assert_eq!(
+            expanded_pass
+                .params
+                .get("__node_label")
+                .and_then(|value| value.as_str()),
+            Some("Beauty Pass")
+        );
     }
 }

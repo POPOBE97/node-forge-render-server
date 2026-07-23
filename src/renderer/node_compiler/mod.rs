@@ -175,6 +175,7 @@ fn is_input_like_node(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "PackedInput"
             | "Mat4Input"
             | "TimeInput"
             | "Time"
@@ -257,6 +258,7 @@ fn is_pure_group_node_type(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "PackedInput"
             | "TimeInput"
             | "Time"
             | "MathAdd"
@@ -852,6 +854,7 @@ fn compile_expr(
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,
+        "PackedInput" => input_nodes::compile_packed_input(node, out_port, ctx)?,
         "Mat4Input" => input_nodes::compile_mat4_input(node, out_port, ctx)?,
         "TimeInput" => input_nodes::compile_time_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,
@@ -1401,17 +1404,20 @@ mod readability_tests {
                     id: "left".to_string(),
                     name: Some("Left".to_string()),
                     port_type: Some("float".to_string()),
+                    array_length: None,
                 },
                 NodePort {
                     id: "right".to_string(),
                     name: Some("Right".to_string()),
                     port_type: Some("float".to_string()),
+                    array_length: None,
                 },
             ],
             outputs: vec![NodePort {
                 id: "out".to_string(),
                 name: Some("Output".to_string()),
                 port_type: Some("float".to_string()),
+                array_length: None,
             }],
             nodes: vec![
                 node("ga", "FloatInput", "Float Input"),

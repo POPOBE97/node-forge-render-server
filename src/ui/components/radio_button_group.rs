@@ -34,10 +34,18 @@ pub fn radio_button_group<'a, T: Copy + Eq>(
         return false;
     }
 
-    let container_color = design_tokens::RESOURCE_ACTIVE_BG;
-    let active_bg = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 204);
-    let inactive_text = egui::Color32::from_rgb(0xAA, 0xAA, 0xAA);
-    let active_text = egui::Color32::WHITE;
+    let enabled = ui.is_enabled();
+    let apply_enabled = |color: egui::Color32| {
+        if enabled {
+            color
+        } else {
+            color.gamma_multiply(design_tokens::BUTTON_DISABLED_GAMMA)
+        }
+    };
+    let container_color = apply_enabled(design_tokens::RESOURCE_ACTIVE_BG);
+    let active_bg = apply_enabled(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 204));
+    let inactive_text = apply_enabled(egui::Color32::from_rgb(0xAA, 0xAA, 0xAA));
+    let active_text = apply_enabled(egui::Color32::WHITE);
 
     let mut changed = false;
     let available_w = ui.available_width();
@@ -72,8 +80,11 @@ pub fn radio_button_group<'a, T: Copy + Eq>(
                                     egui::vec2(item_w, item_h),
                                     egui::Sense::click(),
                                 );
-                                let response =
-                                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                let response = if enabled {
+                                    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+                                } else {
+                                    response
+                                };
 
                                 if ui.is_rect_visible(rect) {
                                     ui.painter().rect_filled(
@@ -117,7 +128,7 @@ pub fn radio_button_group<'a, T: Copy + Eq>(
                                     );
                                 }
 
-                                if response.clicked() {
+                                if enabled && response.clicked() {
                                     changed |= apply_selection(selected, option.value);
                                 }
                             }

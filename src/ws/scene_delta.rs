@@ -194,6 +194,7 @@ fn is_value_driven_input_node_type(node_type: &str) -> bool {
             | "Vector4Input"
             | "Mat4Input"
             | "ColorInput"
+            | "PackedInput"
             | "ShaderMaterial"
     )
 }

@@ -98,11 +98,13 @@ mod tests {
                             id: "dynamic_1".to_string(),
                             name: Some("image2".to_string()),
                             port_type: Some("color".to_string()),
+                            array_length: None,
                         },
                         NodePort {
                             id: "dynamic_0".to_string(),
                             name: Some("image1".to_string()),
                             port_type: Some("color".to_string()),
+                            array_length: None,
                         },
                     ],
                     input_bindings: Vec::new(),

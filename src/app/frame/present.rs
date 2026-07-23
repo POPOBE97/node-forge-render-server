@@ -98,12 +98,10 @@ pub(super) fn run(
     let display_sidebar_state = ui::debug_sidebar::DisplaySidebarState {
         ppi: app.canvas.viewport.effective_display_ppi(),
     };
-    let pass_capture_sidebar_state = app.canvas.display.pass_capture.as_ref().map(|capture| {
-        ui::debug_sidebar::PassCaptureSidebarState {
-            pass_name: capture.pass_name.as_str(),
-            mode: capture.mode,
-        }
-    });
+    let pass_capture_sidebar_state = ui::debug_sidebar::PassCaptureSidebarState {
+        mode: app.canvas.display.pass_capture_mode,
+        enabled: app.canvas.display.pass_capture.is_some(),
+    };
 
     let mut pending_commands = Vec::<AppCommand>::new();
     let mut sidebar_result = ui::debug_sidebar::SidebarResult::default();

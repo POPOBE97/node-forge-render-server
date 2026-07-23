@@ -216,32 +216,111 @@ pub struct Metadata {
     pub modified: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub id: String,
-    #[serde(rename = "type")]
     pub node_type: String,
-    #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
 
     // Optional editor metadata used for ordering / UI.
-    #[serde(default)]
     pub inputs: Vec<NodePort>,
-    #[serde(default)]
     pub outputs: Vec<NodePort>,
 
-    #[serde(default, rename = "inputBindings")]
     pub input_bindings: Vec<InputBinding>,
 
     /// Optional WGSL material override. Forward-slash relative path under the
     /// scene root (e.g. "materials/<nodeId>.wgsl"). When set, node compilers
     /// read this file in place of the bundled template.
-    #[serde(
-        default,
-        rename = "wgslOverride",
-        skip_serializing_if = "Option::is_none"
-    )]
     pub wgsl_override: Option<String>,
+}
+
+impl Serialize for Node {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct WireNode<'a> {
+            id: &'a str,
+            #[serde(rename = "type")]
+            node_type: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            label: Option<&'a str>,
+            params: HashMap<&'a String, &'a serde_json::Value>,
+            inputs: &'a [NodePort],
+            outputs: &'a [NodePort],
+            #[serde(rename = "inputBindings")]
+            input_bindings: &'a [InputBinding],
+            #[serde(rename = "wgslOverride", skip_serializing_if = "Option::is_none")]
+            wgsl_override: Option<&'a String>,
+        }
+
+        let label = self
+            .params
+            .get("__node_label")
+            .and_then(|value| value.as_str());
+        let params = self
+            .params
+            .iter()
+            .filter(|(key, _)| key.as_str() != "__node_label")
+            .collect();
+
+        WireNode {
+            id: &self.id,
+            node_type: &self.node_type,
+            label,
+            params,
+            inputs: &self.inputs,
+            outputs: &self.outputs,
+            input_bindings: &self.input_bindings,
+            wgsl_override: self.wgsl_override.as_ref(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Node {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WireNode {
+            id: String,
+            #[serde(rename = "type")]
+            node_type: String,
+            #[serde(default)]
+            label: Option<String>,
+            #[serde(default)]
+            params: HashMap<String, serde_json::Value>,
+            #[serde(default)]
+            inputs: Vec<NodePort>,
+            #[serde(default)]
+            outputs: Vec<NodePort>,
+            #[serde(default, rename = "inputBindings")]
+            input_bindings: Vec<InputBinding>,
+            #[serde(default, rename = "wgslOverride")]
+            wgsl_override: Option<String>,
+        }
+
+        let wire = WireNode::deserialize(deserializer)?;
+        let mut params = wire.params;
+        if let Some(label) = wire.label.map(|label| label.trim().to_string()) {
+            if !label.is_empty() {
+                params.insert("__node_label".to_string(), serde_json::Value::String(label));
+            }
+        }
+
+        Ok(Self {
+            id: wire.id,
+            node_type: wire.node_type,
+            params,
+            inputs: wire.inputs,
+            outputs: wire.outputs,
+            input_bindings: wire.input_bindings,
+            wgsl_override: wire.wgsl_override,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -275,6 +354,8 @@ pub struct NodePort {
     pub name: Option<String>,
     #[serde(rename = "type", default)]
     pub port_type: Option<String>,
+    #[serde(default, rename = "arrayLength")]
+    pub array_length: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -1092,6 +1173,33 @@ This node contains user-provided source code; render-time evaluation must be san
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn node_title_label_round_trips_as_top_level_metadata() {
+        let node: Node = serde_json::from_value(json!({
+            "id": "RenderPass_1",
+            "type": "RenderPass",
+            "label": "Beauty Pass",
+            "params": { "name": "Render Pass" }
+        }))
+        .expect("node should deserialize");
+
+        assert_eq!(
+            node.params
+                .get("__node_label")
+                .and_then(|value| value.as_str()),
+            Some("Beauty Pass")
+        );
+
+        let serialized = serde_json::to_value(&node).expect("node should serialize");
+        assert_eq!(serialized.get("label"), Some(&json!("Beauty Pass")));
+        assert_eq!(
+            serialized
+                .get("params")
+                .and_then(|params| params.get("__node_label")),
+            None
+        );
+    }
 
     #[test]
     fn parse_texture_format_accepts_rgba16float_variants() {

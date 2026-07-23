@@ -3,7 +3,7 @@
 //! Springs use the closed-form solution of the damped oscillator. A render
 //! frame advances every driver exactly once with the full frame delta.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,6 @@ pub struct MotionEngine {
     active_transition_id: Option<String>,
     initial_values: HashMap<OverrideKey, serde_json::Value>,
     current_values: HashMap<OverrideKey, serde_json::Value>,
-    post_processed_keys: HashSet<OverrideKey>,
 }
 
 impl MotionEngine {
@@ -56,7 +55,6 @@ impl MotionEngine {
             active_transition_id: None,
             current_values: initial_values.clone(),
             initial_values,
-            post_processed_keys: HashSet::new(),
         }
     }
 
@@ -64,7 +62,6 @@ impl MotionEngine {
         self.channels.clear();
         self.active_transition_id = None;
         self.current_values.clone_from(&self.initial_values);
-        self.post_processed_keys.clear();
     }
 
     pub fn active_transition_id(&self) -> Option<&str> {
@@ -97,19 +94,12 @@ impl MotionEngine {
                 .get(key)
                 .cloned()
                 .unwrap_or_else(|| target_json.clone());
-            let old = if self.post_processed_keys.contains(key) {
-                // A Mutation changed the final presentation after the channel
-                // sample, so its velocity no longer describes that value.
-                None
-            } else {
-                self.channels.remove(key)
-            };
+            let old = self.channels.remove(key);
             self.channels.insert(
                 key.clone(),
                 Channel::start(old, source_json, target_json.clone(), plan),
             );
         }
-        self.post_processed_keys.clear();
         self.active_transition_id = Some(transition_id.to_string());
     }
 
@@ -130,15 +120,6 @@ impl MotionEngine {
         self.transition_to(transition_id, target, graph);
     }
 
-    /// Atomically commit a post-motion Mutation patch as the global final
-    /// current values for this frame.
-    pub fn commit_post_process(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
-        for (key, value) in patch {
-            self.post_processed_keys.insert(key.clone());
-            self.current_values.insert(key, value);
-        }
-    }
-
     /// Commit logical State targets when no transition transaction is active.
     /// These are animation-engine writes, not Mutation post-processing writes.
     pub fn commit_logical_values(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
@@ -148,7 +129,6 @@ impl MotionEngine {
             }
             self.current_values.insert(key.clone(), value);
             self.channels.remove(&key);
-            self.post_processed_keys.remove(&key);
         }
     }
 
@@ -164,7 +144,6 @@ impl MotionEngine {
             if !transaction_is_active {
                 self.channels.remove(key);
                 self.current_values.insert(key.clone(), value.clone());
-                self.post_processed_keys.remove(key);
             }
         }
     }
@@ -1749,6 +1728,7 @@ mod tests {
             id: "Snap:value".into(),
             name: Some("Snap".into()),
             port_type: Some("float".into()),
+            array_length: None,
         };
         let graph = TransitionMotionGraph {
             id: "repeat-follow".into(),
@@ -1852,6 +1832,7 @@ mod tests {
                 id: id.into(),
                 name: Some(id.into()),
                 port_type: Some("float".into()),
+                array_length: None,
             })
             .collect::<Vec<_>>();
         let graph = TransitionMotionGraph {

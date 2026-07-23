@@ -1,9 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 
-use crate::dsl::{Connection, Node, SceneDSL, parse_f32, parse_texture_format, parse_u32};
+use crate::dsl::{parse_f32, parse_texture_format, parse_u32, Connection, Node, SceneDSL};
 
 const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json");
 const DEFAULT_NODE_SCHEME_REL_PATH: &str = "assets/node-scheme.json";
@@ -821,7 +821,7 @@ fn validate_connection(
                 ));
                 return;
             }
-        } else if from_node.node_type == "DataParse" {
+        } else if from_node.node_type == "DataParse" || from_node.node_type == "PackedInput" {
             if let Some(spec) = dynamic_port_type(&from_node.outputs, &c.from.port_id) {
                 Cow::Owned(spec)
             } else {
@@ -885,6 +885,16 @@ fn validate_connection(
             }
         } else {
             Cow::Owned(PortTypeSpec::One("any".to_string()))
+        }
+    } else if to_node.node_type == "PackedInput" {
+        if let Some(spec) = dynamic_port_type(&to_node.inputs, &c.to.port_id) {
+            Cow::Owned(spec)
+        } else {
+            errors.push(format!(
+                "connection '{}' uses unknown to port '{}.{}' (type {})",
+                c.id, c.to.node_id, c.to.port_id, to_node.node_type
+            ));
+            return;
         }
     } else if to_node.node_type == "ResourcePool" {
         // ResourcePool accepts any type on its dynamic input ports.

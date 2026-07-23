@@ -368,9 +368,9 @@ pub struct DisplaySidebarState {
     pub ppi: f32,
 }
 
-pub struct PassCaptureSidebarState<'a> {
-    pub pass_name: &'a str,
+pub struct PassCaptureSidebarState {
     pub mode: PassCaptureMode,
+    pub enabled: bool,
 }
 
 pub fn show_in_rect(
@@ -388,7 +388,7 @@ pub fn show_in_rect(
     android_reference: AndroidReferenceStatus,
     reference: Option<&ReferenceSidebarState>,
     test_mode_state: TestModeSidebarState<'_>,
-    pass_capture_state: Option<PassCaptureSidebarState<'_>>,
+    pass_capture_state: PassCaptureSidebarState,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
 ) -> SidebarResult {
@@ -490,7 +490,7 @@ pub fn show_in_rect(
                             with_sidebar_content_padding(ui, |ui| {
                                 show_resource_tree_section(
                                     ui,
-                                    pass_capture_state.as_ref(),
+                                    pass_capture_state,
                                     tree_nodes,
                                     file_tree_state,
                                     &mut sidebar_action,
@@ -1148,35 +1148,33 @@ fn show_test_mode_section(
 
 fn show_resource_tree_section(
     ui: &mut egui::Ui,
-    pass_capture: Option<&PassCaptureSidebarState<'_>>,
+    pass_capture: PassCaptureSidebarState,
     tree_nodes: &[FileTreeNode],
     file_tree_state: &mut FileTreeState,
     sidebar_action: &mut Option<SidebarAction>,
 ) {
-    two_column_section::section(ui, "Resource Tree", |ui| {
-        if let Some(capture) = pass_capture {
-            sidebar_grid_row(ui, |row| {
-                row.place(1, 4, |ui| {
-                    sidebar_group_cell(ui, "Draw capture", |ui| {
-                        let mut mode = capture.mode;
+    two_column_section::section(ui, "Draw Calls", |ui| {
+        sidebar_grid_row(ui, |row| {
+            row.place(1, 4, |ui| {
+                sidebar_group_cell(ui, "Draw capture", |ui| {
+                    let mut mode = pass_capture.mode;
+                    ui.add_enabled_ui(pass_capture.enabled, |ui| {
                         if radio_button_group::radio_button_group(
                             ui,
                             "ui.debug_sidebar.draw_capture.mode",
                             &mut mode,
                             &pass_capture_mode_options(),
-                        ) && mode != capture.mode
+                        ) && mode != pass_capture.mode
                         {
                             *sidebar_action = Some(SidebarAction::SetPassCaptureMode(mode));
                         }
                     });
                 });
             });
-            ui.label(design_tokens::rich_text(
-                capture.pass_name,
-                TextRole::InactiveItemTitle,
-            ));
-            ui.add_space(SIDEBAR_GRID_ROW_GAP);
-        }
+        });
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        sidebar_grid_label(ui, "Resource Tree");
+        ui.add_space(SIDEBAR_GRID_LABEL_GAP);
 
         let tree_response = egui::ScrollArea::horizontal()
             .id_salt("ui.debug_sidebar.resource_tree.scroll_x")

@@ -662,11 +662,13 @@ mod tests {
                     id: "dyn_a".to_string(),
                     name: Some("color2".to_string()),
                     port_type: Some("color".to_string()),
+                    array_length: None,
                 },
                 NodePort {
                     id: "dyn_b".to_string(),
                     name: Some("color3".to_string()),
                     port_type: Some("color".to_string()),
+                    array_length: None,
                 },
             ],
             input_bindings: Vec::new(),

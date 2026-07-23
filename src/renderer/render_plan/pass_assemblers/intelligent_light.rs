@@ -87,7 +87,7 @@ impl ILightUpdateConfig {
             .map(|v| v as f32)
             .unwrap_or(self.lightness_fallback);
 
-        let packed = layer_node.and_then(|node| match parse_packed_pair(node) {
+        let packed = layer_node.and_then(|node| match resolve_packed_pair(scene, node) {
             Ok(value) => value,
             Err(error) => {
                 eprintln!(
@@ -171,11 +171,11 @@ fn resolve_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2]
     clamp_pixel_position(pixel, target_size)
 }
 
-fn parse_packed_positions(node: &Node) -> Result<[(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT]> {
-    let values = node
-        .params
-        .get("positions")
-        .and_then(serde_json::Value::as_array)
+fn parse_packed_positions(
+    value: &serde_json::Value,
+) -> Result<[(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT]> {
+    let values = value
+        .as_array()
         .context("positions must be packed<vector2>")?;
     if values.len() != INTELLIGENT_LIGHT_ZONE_COUNT {
         bail!("positions must contain exactly {INTELLIGENT_LIGHT_ZONE_COUNT} values");
@@ -205,12 +205,10 @@ fn parse_packed_positions(node: &Node) -> Result<[(f32, f32); INTELLIGENT_LIGHT_
         .map_err(|_| anyhow::anyhow!("positions length changed during validation"))
 }
 
-fn parse_packed_colors(node: &Node) -> Result<[[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT]> {
-    let values = node
-        .params
-        .get("colors")
-        .and_then(serde_json::Value::as_array)
-        .context("colors must be packed<color>")?;
+fn parse_packed_colors(
+    value: &serde_json::Value,
+) -> Result<[[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT]> {
+    let values = value.as_array().context("colors must be packed<color>")?;
     if values.len() != INTELLIGENT_LIGHT_ZONE_COUNT {
         bail!("colors must contain exactly {INTELLIGENT_LIGHT_ZONE_COUNT} values");
     }
@@ -240,7 +238,48 @@ fn parse_packed_colors(node: &Node) -> Result<[[f32; 3]; INTELLIGENT_LIGHT_ZONE_
         .map_err(|_| anyhow::anyhow!("colors length changed during validation"))
 }
 
-fn parse_packed_pair(
+fn packed_input_value(scene: &crate::dsl::SceneDSL, node: &Node) -> serde_json::Value {
+    if let Some(value) = node.params.get("value") {
+        return value.clone();
+    }
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|candidate| (candidate.id.as_str(), candidate))
+        .collect::<std::collections::HashMap<_, _>>();
+    serde_json::Value::Array(
+        node.inputs
+            .iter()
+            .map(|input| {
+                let source = incoming_connection(scene, &node.id, &input.id)
+                    .and_then(|connection| nodes_by_id.get(connection.from.node_id.as_str()))
+                    .copied();
+                let Some(source) = source else {
+                    return serde_json::Value::Null;
+                };
+                match source.node_type.as_str() {
+                    "Vector2Input" => serde_json::json!([
+                        source.params.get("x").and_then(json_f32).unwrap_or(0.0),
+                        source.params.get("y").and_then(json_f32).unwrap_or(0.0)
+                    ]),
+                    "ColorInput" => source
+                        .params
+                        .get("value")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([1.0, 0.0, 1.0, 1.0])),
+                    _ => source
+                        .params
+                        .get("value")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                }
+            })
+            .collect(),
+    )
+}
+
+fn resolve_packed_pair(
+    scene: &crate::dsl::SceneDSL,
     node: &Node,
 ) -> Result<
     Option<(
@@ -248,15 +287,44 @@ fn parse_packed_pair(
         [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT],
     )>,
 > {
-    match (
-        node.params.contains_key("positions"),
-        node.params.contains_key("colors"),
-    ) {
-        (false, false) => Ok(None),
-        (true, true) => Ok(Some((
-            parse_packed_positions(node)?,
-            parse_packed_colors(node)?,
-        ))),
+    let positions_connection = incoming_connection(scene, &node.id, "positions");
+    let colors_connection = incoming_connection(scene, &node.id, "colors");
+    match (positions_connection, colors_connection) {
+        (None, None) => Ok(None),
+        (Some(positions_connection), Some(colors_connection)) => {
+            let positions_node = scene
+                .nodes
+                .iter()
+                .find(|candidate| candidate.id == positions_connection.from.node_id)
+                .context("positions packed source node is missing")?;
+            let colors_node = scene
+                .nodes
+                .iter()
+                .find(|candidate| candidate.id == colors_connection.from.node_id)
+                .context("colors packed source node is missing")?;
+            if positions_node.node_type != "PackedInput"
+                || colors_node.node_type != "PackedInput"
+                || positions_connection.from.port_id != "value"
+                || colors_connection.from.port_id != "value"
+            {
+                bail!("packed mode requires PackedInput.value sources");
+            }
+            let positions_type = positions_node
+                .params
+                .get("elementType")
+                .and_then(serde_json::Value::as_str);
+            let colors_type = colors_node
+                .params
+                .get("elementType")
+                .and_then(serde_json::Value::as_str);
+            if positions_type != Some("vector2") || colors_type != Some("color") {
+                bail!("positions requires packed<vector2> and colors requires packed<color>");
+            }
+            Ok(Some((
+                parse_packed_positions(&packed_input_value(scene, positions_node))?,
+                parse_packed_colors(&packed_input_value(scene, colors_node))?,
+            )))
+        }
         _ => bail!("packed mode requires both positions and colors"),
     }
 }
@@ -355,7 +423,7 @@ pub(crate) fn assemble_intelligent_light(
     let inter_w_f = inter_w as f32;
     let inter_h_f = inter_h as f32;
 
-    let (positions, colors) = if let Some(packed) = parse_packed_pair(layer_node)
+    let (positions, colors) = if let Some(packed) = resolve_packed_pair(scene, layer_node)
         .with_context(|| format!("invalid packed inputs for IntelligentLight {layer_id}"))?
     {
         packed
@@ -1036,19 +1104,27 @@ mod tests {
 
     #[test]
     fn packed_mode_requires_complete_exact_sized_position_and_color_arrays() {
-        let complete = test_node(
-            "ilight",
-            "IntelligentLight",
+        let positions = test_node(
+            "positions",
+            "PackedInput",
             HashMap::from([
+                ("elementType".to_string(), serde_json::json!("vector2")),
                 (
-                    "positions".to_string(),
+                    "value".to_string(),
                     serde_json::json!(vec![
                         serde_json::json!([1.0, 2.0]);
                         INTELLIGENT_LIGHT_ZONE_COUNT
                     ]),
                 ),
+            ]),
+        );
+        let colors = test_node(
+            "colors",
+            "PackedInput",
+            HashMap::from([
+                ("elementType".to_string(), serde_json::json!("color")),
                 (
-                    "colors".to_string(),
+                    "value".to_string(),
                     serde_json::json!(vec![
                         serde_json::json!([1.0, 0.5, 0.25, 1.0]);
                         INTELLIGENT_LIGHT_ZONE_COUNT
@@ -1056,41 +1132,72 @@ mod tests {
                 ),
             ]),
         );
-        assert!(parse_packed_pair(&complete).unwrap().is_some());
-
-        let positions_only = test_node(
-            "ilight",
-            "IntelligentLight",
-            HashMap::from([(
-                "positions".to_string(),
-                serde_json::json!(vec![
-                    serde_json::json!([1.0, 2.0]);
-                    INTELLIGENT_LIGHT_ZONE_COUNT
-                ]),
-            )]),
+        let positions_edge = Connection {
+            id: "positions-edge".to_string(),
+            from: Endpoint {
+                node_id: "positions".to_string(),
+                port_id: "value".to_string(),
+            },
+            to: Endpoint {
+                node_id: "ilight".to_string(),
+                port_id: "positions".to_string(),
+            },
+        };
+        let colors_edge = Connection {
+            id: "colors-edge".to_string(),
+            from: Endpoint {
+                node_id: "colors".to_string(),
+                port_id: "value".to_string(),
+            },
+            to: Endpoint {
+                node_id: "ilight".to_string(),
+                port_id: "colors".to_string(),
+            },
+        };
+        let complete = make_test_scene(
+            serde_json::Map::new(),
+            vec![positions.clone(), colors.clone()],
+            vec![positions_edge.clone(), colors_edge.clone()],
         );
-        assert!(parse_packed_pair(&positions_only).is_err());
+        assert!(
+            resolve_packed_pair(&complete, &complete.nodes[0])
+                .unwrap()
+                .is_some()
+        );
 
-        let wrong_length = test_node(
-            "ilight",
-            "IntelligentLight",
-            HashMap::from([
-                (
-                    "positions".to_string(),
-                    serde_json::json!(vec![
-                        serde_json::json!([1.0, 2.0]);
-                        INTELLIGENT_LIGHT_ZONE_COUNT - 1
-                    ]),
-                ),
-                (
-                    "colors".to_string(),
-                    serde_json::json!(vec![
-                        serde_json::json!([1.0, 0.5, 0.25]);
-                        INTELLIGENT_LIGHT_ZONE_COUNT
-                    ]),
-                ),
+        let positions_only = make_test_scene(
+            serde_json::Map::new(),
+            vec![positions.clone()],
+            vec![positions_edge],
+        );
+        assert!(resolve_packed_pair(&positions_only, &positions_only.nodes[0]).is_err());
+
+        let mut wrong_positions = positions;
+        wrong_positions.params.insert(
+            "value".to_string(),
+            serde_json::json!(vec![
+                serde_json::json!([1.0, 2.0]);
+                INTELLIGENT_LIGHT_ZONE_COUNT - 1
             ]),
         );
-        assert!(parse_packed_pair(&wrong_length).is_err());
+        let wrong_length = make_test_scene(
+            serde_json::Map::new(),
+            vec![wrong_positions, colors],
+            vec![
+                Connection {
+                    id: "positions-edge".to_string(),
+                    from: Endpoint {
+                        node_id: "positions".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ilight".to_string(),
+                        port_id: "positions".to_string(),
+                    },
+                },
+                colors_edge,
+            ],
+        );
+        assert!(resolve_packed_pair(&wrong_length, &wrong_length.nodes[0]).is_err());
     }
 }

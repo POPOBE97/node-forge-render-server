@@ -20,8 +20,6 @@ use std::{
 
 use anyhow::{Result, bail};
 
-use crate::renderer::render_plan::pass_assemblers::intelligent_light::INTELLIGENT_LIGHT_ZONE_COUNT;
-
 use super::types::*;
 
 const MUTATION_GRAPH_FRAME_BUDGET: Duration = Duration::from_millis(4);
@@ -35,41 +33,97 @@ const MUTATION_GRAPH_FRAME_BUDGET: Duration = Duration::from_millis(4);
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnimValue {
     Float(f64),
+    Int(i64),
+    Bool(bool),
     Vec2([f64; 2]),
+    Vec3([f64; 3]),
+    Vec4([f64; 4]),
     Color([f64; 4]),
     Packed(Vec<AnimValue>),
 }
 
 impl AnimValue {
     pub fn from_json(value: &serde_json::Value) -> Option<Self> {
+        Self::from_json_typed(value, None)
+    }
+
+    pub fn from_json_typed(value: &serde_json::Value, port_type: Option<&str>) -> Option<Self> {
+        if let Some(element_type) = port_type
+            .and_then(|value| value.strip_prefix("packed<"))
+            .and_then(|value| value.strip_suffix('>'))
+        {
+            return Some(Self::Packed(
+                value
+                    .as_array()?
+                    .iter()
+                    .map(|item| Self::from_json_typed(item, Some(element_type)))
+                    .collect::<Option<Vec<_>>>()?,
+            ));
+        }
+        if port_type == Some("bool") {
+            return value.as_bool().map(Self::Bool);
+        }
+        if port_type == Some("int") {
+            return value.as_i64().map(Self::Int);
+        }
         if let Some(value) = value.as_f64() {
             return Some(Self::Float(value));
         }
         let values = value.as_array()?;
-        if values.len() == 2 {
-            return Some(Self::Vec2([values[0].as_f64()?, values[1].as_f64()?]));
-        }
-        if values.len() == 4 {
-            return Some(Self::Color([
+        match port_type {
+            Some("vector2") => Some(Self::Vec2([
+                values.first()?.as_f64()?,
+                values.get(1)?.as_f64()?,
+            ])),
+            Some("vector3") => Some(Self::Vec3([
+                values.first()?.as_f64()?,
+                values.get(1)?.as_f64()?,
+                values.get(2)?.as_f64()?,
+            ])),
+            Some("vector4") => Some(Self::Vec4([
+                values.first()?.as_f64()?,
+                values.get(1)?.as_f64()?,
+                values.get(2)?.as_f64()?,
+                values.get(3)?.as_f64()?,
+            ])),
+            Some("color") => Some(Self::Color([
                 values[0].as_f64()?,
                 values[1].as_f64()?,
                 values[2].as_f64()?,
                 values[3].as_f64()?,
-            ]));
+            ])),
+            _ if values.len() == 2 => Some(Self::Vec2([values[0].as_f64()?, values[1].as_f64()?])),
+            _ if values.len() == 3 => Some(Self::Vec3([
+                values[0].as_f64()?,
+                values[1].as_f64()?,
+                values[2].as_f64()?,
+            ])),
+            _ if values.len() == 4 => Some(Self::Vec4([
+                values[0].as_f64()?,
+                values[1].as_f64()?,
+                values[2].as_f64()?,
+                values[3].as_f64()?,
+            ])),
+            _ => Some(Self::Packed(
+                values
+                    .iter()
+                    .map(Self::from_json)
+                    .collect::<Option<Vec<_>>>()?,
+            )),
         }
-        Some(Self::Packed(
-            values
-                .iter()
-                .map(Self::from_json)
-                .collect::<Option<Vec<_>>>()?,
-        ))
     }
 
     /// Extract as `f64`, converting if possible.
     pub fn as_f64(self) -> Option<f64> {
         match self {
             AnimValue::Float(v) => Some(v),
-            AnimValue::Vec2(_) | AnimValue::Color(_) | AnimValue::Packed(_) => None,
+            AnimValue::Int(v) => Some(v as f64),
+            AnimValue::Bool(_)
+            | AnimValue::Vec2(_)
+            | AnimValue::Vec3(_)
+            | AnimValue::Vec4(_)
+            | AnimValue::Color(_)
+            | AnimValue::Packed(_) => None,
         }
     }
 
@@ -77,7 +131,11 @@ impl AnimValue {
     pub fn to_json(&self) -> serde_json::Value {
         match self {
             AnimValue::Float(v) => serde_json::json!(v),
+            AnimValue::Int(v) => serde_json::json!(v),
+            AnimValue::Bool(v) => serde_json::json!(v),
             AnimValue::Vec2(v) => serde_json::json!([v[0], v[1]]),
+            AnimValue::Vec3(v) => serde_json::json!([v[0], v[1], v[2]]),
+            AnimValue::Vec4(v) => serde_json::json!([v[0], v[1], v[2], v[3]]),
             AnimValue::Color(v) => serde_json::json!([v[0], v[1], v[2], v[3]]),
             AnimValue::Packed(values) => {
                 serde_json::Value::Array(values.iter().map(AnimValue::to_json).collect())
@@ -213,6 +271,23 @@ pub fn evaluate_mutation(
         }
         let value = resolve_passthrough_input_value(&pt.from_port_id, mutation, ctx);
         outputs.insert(pt.to_port_id.clone(), value);
+    }
+
+    for port in &mutation.outputs {
+        let Some(expected) = port.array_length else {
+            continue;
+        };
+        let Some(value) = outputs.get(&port.id) else {
+            continue;
+        };
+        if !matches!(value, MutationValue::Packed(values) if values.len() == expected) {
+            bail!(
+                "Mutation '{}' output '{}' must contain exactly {} elements",
+                mutation.id,
+                port.id,
+                expected
+            );
+        }
     }
 
     Ok(outputs)
@@ -393,26 +468,23 @@ fn evaluate_inner_node<'a>(
                         output.id
                     )
                 })?;
-                let value = AnimValue::from_json(value).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Mutation Function '{}.{}' returned a value incompatible with '{}'",
-                        node.id,
-                        output.id,
-                        output.port_type.as_deref().unwrap_or("any")
-                    )
-                })?;
-                if matches!(output.id.as_str(), "positions" | "colors")
-                    && !matches!(
-                        &value,
-                        AnimValue::Packed(values)
-                            if values.len() == INTELLIGENT_LIGHT_ZONE_COUNT
-                    )
+                let value = AnimValue::from_json_typed(value, output.port_type.as_deref())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Mutation Function '{}.{}' returned a value incompatible with '{}'",
+                            node.id,
+                            output.id,
+                            output.port_type.as_deref().unwrap_or("any")
+                        )
+                    })?;
+                if let Some(expected) = output.array_length
+                    && !matches!(&value, AnimValue::Packed(values) if values.len() == expected)
                 {
                     bail!(
                         "Mutation Function '{}.{}' must return exactly {} elements",
                         node.id,
                         output.id,
-                        INTELLIGENT_LIGHT_ZONE_COUNT
+                        expected
                     );
                 }
                 write_output_if_declared_or_default(node, port_values, output.id.as_str(), value);
@@ -669,6 +741,7 @@ mod tests {
                 id: "value".into(),
                 name: Some("Value".into()),
                 port_type: Some("float".into()),
+                array_length: None,
             }],
         });
         m.output_bindings.push(MutationOutputBinding {
@@ -695,17 +768,20 @@ mod tests {
                     id: "input1".into(),
                     name: None,
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
                 MutationPort {
                     id: "input2".into(),
                     name: None,
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "packed".into(),
                 name: None,
                 port_type: Some("packed<float>".into()),
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -758,17 +834,20 @@ mod tests {
                     id: "a".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -813,17 +892,20 @@ mod tests {
                     id: "dynamic_fixed_1".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -868,22 +950,26 @@ mod tests {
                     id: "t".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "a".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -936,17 +1022,20 @@ mod tests {
                     id: "dynamic_fixed_1".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1013,17 +1102,20 @@ mod tests {
                     id: "dynamic_fixed_1".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1066,6 +1158,7 @@ mod tests {
             id: "FloatInput_53:value".into(),
             name: Some("uTime.value".into()),
             port_type: Some("float".into()),
+            array_length: None,
         });
         m.passthrough_bindings
             .push(super::MutationPassthroughBinding {
@@ -1095,17 +1188,20 @@ mod tests {
                     id: "a".into(),
                     name: None,
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
             ],
             outputs: vec![MutationPort {
                 id: "result".into(),
                 name: None,
                 port_type: Some("float".into()),
+                array_length: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1162,6 +1258,7 @@ mod tests {
             id: "ColorInput_7:value".into(),
             name: Some("Color Input.value".into()),
             port_type: Some("float".into()),
+            array_length: None,
         });
         m.input_bindings.push(MutationInputBinding {
             port_id: "ColorInput_7:value".into(),
@@ -1202,6 +1299,7 @@ mod tests {
                 id: "value".into(),
                 name: None,
                 port_type: None,
+                array_length: None,
             }],
         });
         // Output binding writes to "Result:value" via inner graph.

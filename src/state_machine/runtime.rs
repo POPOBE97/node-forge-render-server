@@ -51,8 +51,7 @@ pub struct StateMachineRuntime {
     state_local_times: HashMap<String, f64>,
 
     /// Whether the initial logical State targets have been installed into the
-    /// animation engine. Later idle frames must retain post-Mutation current
-    /// values so a new transaction inherits the actual presentation.
+    /// animation engine. Mutation values never participate in this state.
     logical_state_initialized: bool,
 
     /// Per-property physical/timeline presentation drivers.
@@ -606,7 +605,10 @@ impl StateMachineRuntime {
                 )),
             }
         }
-        self.motion_engine.commit_post_process(mutation_patch);
+        // Mutation is a pure per-frame overlay. It must not feed back into
+        // MotionEngine current values or become a future transition source.
+        let mut frame_overrides = post_motion_snapshot;
+        frame_overrides.extend(mutation_patch);
 
         // Exit becomes terminal only after its visual transition completes.
         if let Some(state) = self.find_state(&self.current_state_id) {
@@ -618,7 +620,7 @@ impl StateMachineRuntime {
         }
 
         TickResult {
-            overrides: self.motion_engine.current_values().clone(),
+            overrides: frame_overrides,
             diagnostics,
             finished: self.finished,
             current_state_id: self.current_state_id.clone(),
@@ -925,7 +927,8 @@ impl StateMachineRuntime {
         for input_port in &mutation.inputs {
             if let Some(key) = OverrideKey::parse(&input_port.id)
                 && let Some(value) = current_snapshot.get(&key)
-                && let Some(value) = MutationValue::from_json(value)
+                && let Some(value) =
+                    MutationValue::from_json_typed(value, input_port.port_type.as_deref())
             {
                 input_values.insert(input_port.id.clone(), value);
             }
@@ -1050,6 +1053,7 @@ mod tests {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
+            array_length: None,
         };
         (vec![port.clone()], vec![port])
     }
@@ -1133,6 +1137,7 @@ mod tests {
             id: input_port_id.into(),
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
+            array_length: None,
         });
         graph.condition_binding = Some(TransitionConditionBinding::Input {
             input_port_id: input_port_id.into(),
@@ -1149,6 +1154,7 @@ mod tests {
             id: input_port_id.into(),
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
+            array_length: None,
         });
         graph.nodes.push(TransitionMotionNode::EventTrigger {
             id: "trigger".into(),
@@ -1529,11 +1535,13 @@ mod tests {
                 id: "localElapsedTime".into(),
                 name: Some("Local Elapsed Time".into()),
                 port_type: Some("float".into()),
+                array_length: None,
             }],
             outputs: vec![MutationPort {
                 id: "Node:x".into(),
                 name: Some("Node.x".into()),
                 port_type: Some("float".into()),
+                array_length: None,
             }],
             nodes: vec![],
             connections: vec![],
@@ -1572,7 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn transition_after_idle_mutation_inherits_final_current_value() {
+    fn transition_after_idle_mutation_uses_motion_source_not_frame_overlay() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
             id: "a".into(),
@@ -1601,11 +1609,13 @@ mod tests {
                 id: "localElapsedTime".into(),
                 name: None,
                 port_type: Some("float".into()),
+                array_length: None,
             }],
             outputs: vec![MutationPort {
                 id: "Node:x".into(),
                 name: None,
                 port_type: Some("float".into()),
+                array_length: None,
             }],
             nodes: vec![],
             connections: vec![],
@@ -1644,7 +1654,7 @@ mod tests {
         assert_eq!(interrupted.active_transition_id.as_deref(), Some("a_to_b"));
         assert_eq!(
             interrupted.overrides.get(&OverrideKey::new("Node", "x")),
-            Some(&serde_json::json!(0.2))
+            Some(&serde_json::json!(0.0))
         );
     }
 
@@ -1658,17 +1668,20 @@ mod tests {
                     id: "Node:x".into(),
                     name: None,
                     port_type: Some("float".into()),
+                    array_length: None,
                 }],
                 outputs: vec![
                     MutationPort {
                         id: seen_output.into(),
                         name: None,
                         port_type: Some("float".into()),
+                        array_length: None,
                     },
                     MutationPort {
                         id: "Node:conflict".into(),
                         name: None,
                         port_type: Some("float".into()),
+                        array_length: None,
                     },
                 ],
                 nodes: vec![MutationInnerNode {
@@ -1680,6 +1693,7 @@ mod tests {
                         id: "value".into(),
                         name: None,
                         port_type: Some("float".into()),
+                        array_length: None,
                     }],
                 }],
                 connections: vec![],
@@ -1766,11 +1780,13 @@ mod tests {
                     id: "MouseX:value".into(),
                     name: Some("MouseX.value".into()),
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
                 MutationPort {
                     id: "MouseY:value".into(),
                     name: Some("MouseY.value".into()),
                     port_type: Some("float".into()),
+                    array_length: None,
                 },
             ],
             nodes: vec![],
@@ -2175,6 +2191,7 @@ mod tests {
             id: "mouse.position.x".into(),
             name: Some("Mouse Position X".into()),
             port_type: Some("float".into()),
+            array_length: None,
         });
         graph.nodes.extend([
             TransitionMotionNode::FloatInput {

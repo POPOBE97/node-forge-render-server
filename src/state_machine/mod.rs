@@ -101,6 +101,64 @@ pub(crate) fn collect_scene_current_values(
             }
         }
     }
+    // PackedInput is an explicit uniform whose base value is assembled from
+    // its ordered child connections. Seed that value into the immutable
+    // motion snapshot so Mutation can read it without owning hidden state.
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    for node in &scene.nodes {
+        if node.node_type != "PackedInput" {
+            continue;
+        }
+        let key = OverrideKey::new(&node.id, "value");
+        if values.contains_key(&key) {
+            continue;
+        }
+        let packed = node
+            .inputs
+            .iter()
+            .map(|input| {
+                let source = scene
+                    .connections
+                    .iter()
+                    .find(|connection| {
+                        connection.to.node_id == node.id && connection.to.port_id == input.id
+                    })
+                    .and_then(|connection| {
+                        nodes_by_id.get(connection.from.node_id.as_str()).copied()
+                    });
+                let Some(source) = source else {
+                    return serde_json::Value::Null;
+                };
+                match source.node_type.as_str() {
+                    "Vector2Input" => serde_json::json!([
+                        source.params.get("x").cloned().unwrap_or_default(),
+                        source.params.get("y").cloned().unwrap_or_default()
+                    ]),
+                    "Vector3Input" => serde_json::json!([
+                        source.params.get("x").cloned().unwrap_or_default(),
+                        source.params.get("y").cloned().unwrap_or_default(),
+                        source.params.get("z").cloned().unwrap_or_default()
+                    ]),
+                    "Vector4Input" => serde_json::json!([
+                        source.params.get("x").cloned().unwrap_or_default(),
+                        source.params.get("y").cloned().unwrap_or_default(),
+                        source.params.get("z").cloned().unwrap_or_default(),
+                        source.params.get("w").cloned().unwrap_or_default()
+                    ]),
+                    _ => source
+                        .params
+                        .get("value")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                }
+            })
+            .collect();
+        values.insert(key, serde_json::Value::Array(packed));
+    }
     values
 }
 
@@ -121,87 +179,10 @@ pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, se
     }
 
     for (key, value) in overrides {
-        let mut applied = false;
         for node in &mut scene.nodes {
             if key.node_id == node.id || node.id.ends_with(&format!("/{}", key.node_id)) {
                 node.params.insert(key.param_name.clone(), value.clone());
-                applied = true;
             }
         }
-
-        if applied {
-            continue;
-        }
-
-        // Prepared scenes no longer contain GroupInstance nodes. Resolve a
-        // state-local Mutation write against the retained canonical group
-        // binding and patch the namespaced clone directly.
-        for group in &scene.groups {
-            for binding in &group.input_bindings {
-                if binding.group_port_id != key.param_name {
-                    continue;
-                }
-                let expanded_id = format!("{}/{}", key.node_id, binding.to.node_id);
-                if let Some(node) = scene.nodes.iter_mut().find(|node| node.id == expanded_id) {
-                    node.params
-                        .insert(binding.to.port_id.clone(), value.clone());
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dsl::{Endpoint, GroupDSL, GroupInputBinding, Metadata, Node};
-
-    #[test]
-    fn group_instance_override_reaches_expanded_packed_input() {
-        let mut scene = SceneDSL {
-            version: "2.0".to_string(),
-            metadata: Metadata {
-                name: "group mutation".to_string(),
-                created: None,
-                modified: None,
-            },
-            nodes: vec![Node {
-                id: "instance/ilight".to_string(),
-                node_type: "IntelligentLight".to_string(),
-                params: HashMap::new(),
-                inputs: vec![],
-                outputs: vec![],
-                input_bindings: vec![],
-                wgsl_override: None,
-            }],
-            connections: vec![],
-            outputs: None,
-            groups: vec![GroupDSL {
-                id: "light".to_string(),
-                name: None,
-                inputs: vec![],
-                outputs: vec![],
-                nodes: vec![],
-                connections: vec![],
-                input_bindings: vec![GroupInputBinding {
-                    group_port_id: "positions".to_string(),
-                    to: Endpoint {
-                        node_id: "ilight".to_string(),
-                        port_id: "positions".to_string(),
-                    },
-                }],
-                output_bindings: vec![],
-            }],
-            assets: HashMap::new(),
-            state_machine: None,
-            debug_artifacts: None,
-        };
-        let packed =
-            serde_json::Value::Array((0..11).map(|_| serde_json::json!([1.0, 2.0])).collect());
-        apply_overrides(
-            &mut scene,
-            &HashMap::from([(OverrideKey::new("instance", "positions"), packed.clone())]),
-        );
-        assert_eq!(scene.nodes[0].params.get("positions"), Some(&packed));
     }
 }

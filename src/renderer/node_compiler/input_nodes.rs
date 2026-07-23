@@ -187,6 +187,93 @@ pub fn compile_vector4_input(
     ))
 }
 
+/// Compile an explicit packed uniform declaration.
+///
+/// Each connected item occupies one 16-byte graph-buffer slot. The declared
+/// element type controls both the buffer representation and the WGSL array
+/// expression; array length is part of the persisted output port metadata.
+pub fn compile_packed_input(
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    if out_port.unwrap_or("value") != "value" {
+        bail!("PackedInput: unsupported output port");
+    }
+    let length = node
+        .outputs
+        .iter()
+        .find(|port| port.id == "value")
+        .and_then(|port| port.array_length)
+        .unwrap_or(node.inputs.len());
+    if length == 0 {
+        bail!("PackedInput '{}': array length must be positive", node.id);
+    }
+    let element_type = node
+        .params
+        .get("elementType")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("float");
+    let (kind, value_type, element_expr): (
+        GraphFieldKind,
+        ValueType,
+        Box<dyn Fn(&str, usize) -> String>,
+    ) = match element_type {
+        "float" => (
+            GraphFieldKind::F32Array(length),
+            ValueType::F32Array(length),
+            Box::new(|field, index| format!("(graph_inputs.{field}[{index}]).x")),
+        ),
+        "int" => (
+            GraphFieldKind::I32Array(length),
+            ValueType::I32Array(length),
+            Box::new(|field, index| format!("(graph_inputs.{field}[{index}]).x")),
+        ),
+        "bool" => (
+            GraphFieldKind::BoolArray(length),
+            ValueType::BoolArray(length),
+            Box::new(|field, index| format!("((graph_inputs.{field}[{index}]).x != 0)")),
+        ),
+        "vector2" => (
+            GraphFieldKind::Vec2Array(length),
+            ValueType::Vec2Array(length),
+            Box::new(|field, index| format!("(graph_inputs.{field}[{index}]).xy")),
+        ),
+        "vector3" => (
+            GraphFieldKind::Vec3Array(length),
+            ValueType::Vec3Array(length),
+            Box::new(|field, index| format!("(graph_inputs.{field}[{index}]).xyz")),
+        ),
+        "vector4" => (
+            GraphFieldKind::Vec4Array(length),
+            ValueType::Vec4Array(length),
+            Box::new(|field, index| format!("graph_inputs.{field}[{index}]")),
+        ),
+        "color" => (
+            GraphFieldKind::Vec4ColorArray(length),
+            ValueType::Vec4Array(length),
+            Box::new(|field, index| {
+                format!(
+                    "vec4f((graph_inputs.{field}[{index}]).rgb * (graph_inputs.{field}[{index}]).a, (graph_inputs.{field}[{index}]).a)"
+                )
+            }),
+        ),
+        other => bail!(
+            "PackedInput '{}': unsupported element type '{other}'",
+            node.id
+        ),
+    };
+    let field = register_graph_field(ctx, node, kind);
+    let elements = (0..length)
+        .map(|index| element_expr(&field, index))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(TypedExpr::new(
+        format!("{}({elements})", value_type.wgsl_type_string()),
+        value_type,
+    ))
+}
+
 /// Compile a Mat4Input node through the same graph-uniform fast path as other
 /// value input nodes.
 pub fn compile_mat4_input(
@@ -724,6 +811,7 @@ mod resource_pool_tests {
                 id: "value".to_string(),
                 name: None,
                 port_type: Some("float".to_string()),
+                array_length: None,
             }],
             wgsl_override: None,
         }
@@ -734,12 +822,14 @@ mod resource_pool_tests {
             id: "selectedIndex".to_string(),
             name: Some("Index".to_string()),
             port_type: Some("int".to_string()),
+            array_length: None,
         }];
         for port_id in dynamic_port_ids {
             inputs.push(NodePort {
                 id: port_id.to_string(),
                 name: None,
                 port_type: Some("any".to_string()),
+                array_length: None,
             });
         }
 
@@ -756,6 +846,7 @@ mod resource_pool_tests {
                 id: "output".to_string(),
                 name: Some("Output".to_string()),
                 port_type: Some("any".to_string()),
+                array_length: None,
             }],
             wgsl_override: None,
         }
