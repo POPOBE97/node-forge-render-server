@@ -4,7 +4,7 @@ Purpose: implement a newly-added editor node end-to-end (scheme → compiler →
 
 ## Inputs
 - The editor “adaptation note” (node type string, port IDs/types, params + defaults, semantics).
-- A test case directory under `tests/cases/<case>/` that exercises the node.
+- A canonical test case under `tests/fixtures/render/<group>/<case>/scene.nforge` that exercises the node.
 
 ## Checklist (SOP)
 

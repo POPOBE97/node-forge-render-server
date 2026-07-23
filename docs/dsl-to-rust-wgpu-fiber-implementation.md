@@ -395,7 +395,7 @@ node tools/ws-send-scene.js path/to/scene.json
 
 ```toml
 [dependencies]
-rust_wgpu_fiber = { path = "3rd/rust-wgpu-fiber" }
+rust_wgpu_fiber = { path = "../rust-wgpu-fiber" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

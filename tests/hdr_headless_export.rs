@@ -7,6 +7,8 @@ use rust_wgpu_fiber::eframe::wgpu;
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 use serde_json::json;
 
+mod support;
+
 fn can_run_headless() -> bool {
     HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map(|renderer| renderer.adapter.get_info().backend != wgpu::Backend::Noop)
@@ -22,8 +24,7 @@ fn unique_temp_output(ext: &str) -> PathBuf {
 }
 
 fn load_scene_with_output_format(format: &str) -> dsl::SceneDSL {
-    let mut scene = dsl::load_scene_from_path("tests/cases/graph-rectangle/scene.json")
-        .expect("load graph-rectangle scene");
+    let mut scene = support::load_render_case_scene("graph-rectangle");
 
     let composite_id = scene
         .outputs

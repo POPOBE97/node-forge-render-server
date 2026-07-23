@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
-use node_forge_render_server::{asset_store, dsl, renderer};
+use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{
     HeadlessRenderer, HeadlessRendererConfig,
     pass::Pipeline,
@@ -8,9 +8,10 @@ use rust_wgpu_fiber::{
 };
 use serde_json::json;
 
+mod support;
+
 fn compact_shared_target_scene() -> dsl::SceneDSL {
-    let scene_path = Path::new("tests/cases/blend-two-passes/scene.json");
-    let mut scene = dsl::load_scene_from_path(scene_path).expect("load shared-target scene");
+    let mut scene = support::load_render_case_scene("blend-two-passes");
     for node in &mut scene.nodes {
         match node.id.as_str() {
             "node_5" => {
@@ -43,10 +44,8 @@ fn compact_shared_target_scene() -> dsl::SceneDSL {
 
 #[test]
 fn captures_individual_draw_states_for_passes_sharing_a_target() {
-    let scene_path = Path::new("tests/cases/blend-two-passes/scene.json");
-    let scene_dir = scene_path.parent().expect("scene directory");
     let scene = compact_shared_target_scene();
-    let assets = asset_store::load_from_scene_dir(&scene, scene_dir).expect("load scene assets");
+    let (_, assets) = support::load_render_case("blend-two-passes");
     let headless = match HeadlessRenderer::new(HeadlessRendererConfig::default()) {
         Ok(renderer) => renderer,
         Err(err) => {
@@ -142,8 +141,6 @@ fn captures_individual_draw_states_for_passes_sharing_a_target() {
 
 #[test]
 fn solo_capture_resolves_a_multisampled_pass_to_a_sampleable_texture() {
-    let scene_path = Path::new("tests/cases/blend-two-passes/scene.json");
-    let scene_dir = scene_path.parent().expect("scene directory");
     let mut scene = compact_shared_target_scene();
     let pass_node = scene
         .nodes
@@ -152,7 +149,7 @@ fn solo_capture_resolves_a_multisampled_pass_to_a_sampleable_texture() {
         .expect("second render-pass node");
     pass_node.params.insert("msaaSampleCount".into(), json!(4));
 
-    let assets = asset_store::load_from_scene_dir(&scene, scene_dir).expect("load scene assets");
+    let (_, assets) = support::load_render_case("blend-two-passes");
     let headless = match HeadlessRenderer::new(HeadlessRendererConfig::default()) {
         Ok(renderer) => renderer,
         Err(err) => {

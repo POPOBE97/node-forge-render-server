@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
 use serde_json::{Map, Value, json};
 
 use crate::{
@@ -26,7 +26,7 @@ fn now_millis() -> u128 {
         .as_millis()
 }
 
-fn configure(connection: &Connection) -> Result<()> {
+fn configure_writable(connection: &Connection) -> Result<()> {
     connection
         .busy_timeout(Duration::from_secs(5))
         .context("failed to configure SQLite busy timeout")?;
@@ -42,7 +42,7 @@ fn configure(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn open(path: &Path) -> Result<Connection> {
+fn validate_header(path: &Path) -> Result<()> {
     let prefix = std::fs::read(path)
         .with_context(|| format!("failed to read .nforge at {}", path.display()))?;
     if prefix.starts_with(b"PK") {
@@ -51,9 +51,10 @@ fn open(path: &Path) -> Result<Connection> {
     if !prefix.starts_with(b"SQLite format 3\0") {
         bail!("unsupported .nforge file; expected a SQLite document");
     }
-    let connection = Connection::open(path)
-        .with_context(|| format!("failed to open .nforge at {}", path.display()))?;
-    configure(&connection)?;
+    Ok(())
+}
+
+fn validate_format(connection: &Connection) -> Result<()> {
     let application_id: i64 = connection
         .pragma_query_value(None, "application_id", |row| row.get(0))
         .context("failed to read .nforge application id")?;
@@ -65,6 +66,57 @@ fn open(path: &Path) -> Result<Connection> {
             "unsupported .nforge SQLite format (application_id={application_id}, version={format_version})"
         );
     }
+    Ok(())
+}
+
+fn open_writable(path: &Path) -> Result<Connection> {
+    validate_header(path)?;
+    let connection = Connection::open(path)
+        .with_context(|| format!("failed to open .nforge at {}", path.display()))?;
+    configure_writable(&connection)?;
+    validate_format(&connection)?;
+    Ok(connection)
+}
+
+fn immutable_sqlite_uri(path: &Path) -> Result<String> {
+    let absolute = path
+        .canonicalize()
+        .with_context(|| format!("failed to resolve .nforge at {}", path.display()))?;
+    let text = absolute
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!(".nforge path is not valid UTF-8: {}", path.display()))?;
+    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~' | b':') {
+            encoded.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
+        }
+    }
+    Ok(format!("file:{encoded}?mode=ro&immutable=1"))
+}
+
+fn open_readonly(path: &Path) -> Result<Connection> {
+    validate_header(path)?;
+    let uri = immutable_sqlite_uri(path)?;
+    let connection = Connection::open_with_flags(
+        uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("failed to open .nforge read-only at {}", path.display()))?;
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .context("failed to configure SQLite busy timeout")?;
+    connection
+        .pragma_update(None, "foreign_keys", true)
+        .context("failed to enable SQLite foreign keys")?;
+    connection
+        .pragma_update(None, "query_only", true)
+        .context("failed to enforce read-only SQLite queries")?;
+    validate_format(&connection)?;
     Ok(connection)
 }
 
@@ -314,7 +366,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
 }
 
 pub fn load(path: &Path) -> Result<LoadedNforge> {
-    let connection = open(path)?;
+    let connection = open_readonly(path)?;
     let (scene, asset_store, debug_artifacts) = read_scene(&connection)?;
     Ok(LoadedNforge {
         scene,
@@ -324,7 +376,7 @@ pub fn load(path: &Path) -> Result<LoadedNforge> {
 }
 
 pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -> Result<()> {
-    let mut connection = open(path)?;
+    let mut connection = open_writable(path)?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .context("failed to begin .nforge debug artifact transaction")?;
@@ -382,7 +434,7 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
 pub fn initialize_test_document(path: &Path, scene: &SceneDSL) -> Result<()> {
     let schema = include_str!("../../node-forge-editor/packages/document/sql/001_init.sql");
     let connection = Connection::open(path)?;
-    configure(&connection)?;
+    configure_writable(&connection)?;
     connection.execute_batch(schema)?;
     let now = now_millis().to_string();
     connection.execute(

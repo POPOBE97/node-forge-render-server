@@ -202,10 +202,7 @@ fn apply_pass_shader_overrides(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        path::{Path, PathBuf},
-    };
+    use std::{collections::HashMap, path::PathBuf};
 
     use anyhow::Result;
 
@@ -222,16 +219,18 @@ mod tests {
     };
 
     fn load_case(case_name: &str) -> Result<(dsl::SceneDSL, Option<asset_store::AssetStore>)> {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
-            .join("cases")
-            .join(case_name);
-        let scene_path = base.join("scene.json");
-        let scene = dsl::load_scene_from_path(&scene_path)?;
+            .join("fixtures")
+            .join("render")
+            .join("editor-examples")
+            .join(case_name)
+            .join("scene.nforge");
+        let (scene, asset_store) = asset_store::load_from_nforge(&archive)?;
         let assets = if scene.assets.is_empty() {
             None
         } else {
-            Some(asset_store::load_from_scene_dir(&scene, Path::new(&base))?)
+            Some(asset_store)
         };
         Ok((scene, assets))
     }

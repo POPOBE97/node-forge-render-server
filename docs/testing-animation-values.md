@@ -11,7 +11,7 @@ This repository includes deterministic animation value-trace testing for scenes 
 
 Golden files live at:
 
-- `tests/cases/<case>/animation_values.json`
+- `tests/fixtures/render/<group>/<case>/expected/animation_values.json`
 
 ## Run Tests
 

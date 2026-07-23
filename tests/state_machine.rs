@@ -4,28 +4,23 @@
 use node_forge_render_server::dsl;
 use node_forge_render_server::state_machine;
 
-fn scene_json_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("cases")
-        .join("back-pin-pin")
-        .join("scene.json")
+mod support;
+
+fn back_pin_pin_scene() -> dsl::SceneDSL {
+    support::load_render_case_scene("back-pin-pin")
 }
 
 fn editor_glass_nforge_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("node-forge-editor")
-        .join("packages")
-        .join("editor")
-        .join("assets")
         .join("examples")
         .join("glass.nforge")
 }
 
 #[test]
 fn back_pin_pin_scene_parses_state_machine() {
-    let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let scene = back_pin_pin_scene();
     assert!(
         scene.state_machine.is_some(),
         "back-pin-pin scene should contain a stateMachine"
@@ -39,14 +34,14 @@ fn back_pin_pin_scene_parses_state_machine() {
 
 #[test]
 fn back_pin_pin_state_machine_validates() {
-    let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
     state_machine::validate(sm).expect("state machine should be valid");
 }
 
 #[test]
 fn back_pin_pin_compile_and_tick() {
-    let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let scene = back_pin_pin_scene();
     let mut rt = state_machine::compile_from_scene(&scene)
         .expect("compile should succeed")
         .expect("runtime should be Some because scene has a state machine");
@@ -230,7 +225,7 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
 
 #[test]
 fn back_pin_pin_apply_overrides_no_crash() {
-    let mut scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let mut scene = back_pin_pin_scene();
     let mut rt = state_machine::compile_from_scene(&scene).unwrap().unwrap();
 
     // Fire mousedown and advance past transition to get mutation overrides.
@@ -246,7 +241,7 @@ fn back_pin_pin_apply_overrides_no_crash() {
 fn back_pin_pin_state_types_correct() {
     use node_forge_render_server::state_machine::types::AnimationStateType;
 
-    let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
 
     let types: Vec<(String, AnimationStateType)> = sm
@@ -275,7 +270,7 @@ fn back_pin_pin_state_types_correct() {
 
 #[test]
 fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
-    let scene = dsl::load_scene_from_path(scene_json_path()).unwrap();
+    let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
 
     let mutation_ids: Vec<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
@@ -294,11 +289,7 @@ fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
 
 #[test]
 fn doubao_nforge_executes_state_local_driver_function_to_packed_outputs() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("cases")
-        .join("doubao-voice-interaction")
-        .join("scene.nforge");
+    let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
     let mut runtime = state_machine::compile_from_scene(&scene)

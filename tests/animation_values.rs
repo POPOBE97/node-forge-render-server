@@ -13,6 +13,8 @@ use node_forge_render_server::state_machine::{
 };
 use node_forge_render_server::{asset_store, dsl};
 
+mod support;
+
 fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
     let mut graph = TransitionMotionGraph::instant(id);
     graph.nodes.push(TransitionMotionNode::EventTrigger {
@@ -46,25 +48,24 @@ fn manifest_dir() -> PathBuf {
 }
 
 fn cases_root() -> PathBuf {
-    manifest_dir().join("tests").join("cases")
+    manifest_dir().join("tests").join("fixtures").join("render")
 }
 
 fn discover_case_dirs() -> Vec<PathBuf> {
     let root = cases_root();
     let mut dirs = Vec::new();
 
-    let entries = std::fs::read_dir(&root)
-        .unwrap_or_else(|e| panic!("failed to read cases dir {}: {e}", root.display()));
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+    for group in ["editor-examples", "renderer-only"] {
+        let group_dir = root.join(group);
+        let entries = std::fs::read_dir(&group_dir)
+            .unwrap_or_else(|e| panic!("failed to read cases dir {}: {e}", group_dir.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() || path.join("SKIP_RENDER_CASE").exists() {
+                continue;
+            }
+            dirs.push(path);
         }
-        if path.join("SKIP_RENDER_CASE").exists() {
-            continue;
-        }
-        dirs.push(path);
     }
 
     dirs.sort();
@@ -81,20 +82,12 @@ fn case_name(case_dir: &Path) -> String {
 
 fn load_case_scene(case_dir: &Path) -> Option<dsl::SceneDSL> {
     let nforge = case_dir.join("scene.nforge");
-    if nforge.exists() {
-        let (scene, _store) = asset_store::load_from_nforge(&nforge)
-            .unwrap_or_else(|e| panic!("failed to load {}: {e:#}", nforge.display()));
-        return Some(scene);
+    if !nforge.exists() {
+        return None;
     }
-
-    let scene_json = case_dir.join("scene.json");
-    if scene_json.exists() {
-        let scene = dsl::load_scene_from_path(&scene_json)
-            .unwrap_or_else(|e| panic!("failed to load {}: {e:#}", scene_json.display()));
-        return Some(scene);
-    }
-
-    None
+    let (scene, _store) = asset_store::load_from_nforge(&nforge)
+        .unwrap_or_else(|e| panic!("failed to load {}: {e:#}", nforge.display()));
+    Some(scene)
 }
 
 fn write_trace(path: &Path, trace: &AnimationTraceLog) {
@@ -439,7 +432,7 @@ fn animation_session_keeps_values_when_next_state_omits_override() {
 
 #[test]
 fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
-    let case_dir = cases_root().join("doubao-voice-interaction");
+    let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
     let mut session = AnimationSession::from_scene(&scene)
         .expect("doubao state machine should compile")
@@ -534,7 +527,7 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
 
 #[test]
 fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
-    let case_dir = cases_root().join("doubao-voice-interaction");
+    let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
     for (from_node, from_port, to_node, to_port) in [
         (
@@ -714,7 +707,7 @@ fn animation_value_traces_match_goldens() {
 
     for case_dir in discover_case_dirs() {
         let name = case_name(&case_dir);
-        let golden_path = case_dir.join("animation_values.json");
+        let golden_path = support::expected_path(&case_dir, "animation_values.json");
         if !golden_path.exists() {
             continue;
         }
@@ -722,7 +715,7 @@ fn animation_value_traces_match_goldens() {
         let scene = match load_case_scene(&case_dir) {
             Some(s) => s,
             None => {
-                failures.push(format!("case {name}: no scene.json or scene.nforge"));
+                failures.push(format!("case {name}: no scene.nforge"));
                 continue;
             }
         };

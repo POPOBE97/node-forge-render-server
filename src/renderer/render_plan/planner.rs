@@ -912,11 +912,8 @@ fn plan_image_textures(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::{Path, PathBuf};
-
     use crate::{
         asset_store::{self, AssetStore},
-        dsl,
         renderer::render_plan::types::PlanningGpuCaps,
     };
 
@@ -945,16 +942,18 @@ mod tests {
     }
 
     fn load_case(case_name: &str) -> Result<(SceneDSL, Option<AssetStore>)> {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
-            .join("cases")
-            .join(case_name);
-        let scene_path = base.join("scene.json");
-        let scene = dsl::load_scene_from_path(&scene_path)?;
+            .join("fixtures")
+            .join("render")
+            .join("editor-examples")
+            .join(case_name)
+            .join("scene.nforge");
+        let (scene, asset_store) = asset_store::load_from_nforge(&archive)?;
         let assets = if scene.assets.is_empty() {
             None
         } else {
-            Some(asset_store::load_from_scene_dir(&scene, Path::new(&base))?)
+            Some(asset_store)
         };
         Ok((scene, assets))
     }
@@ -1250,7 +1249,7 @@ mod tests {
     image_textures: [],
     image_prepasses: [],
     pass_order: [
-        "mip0.rpass4.pass",
+        "rende.rpass4.pass",
         "sys.downsample.Downsample_10.pass",
         "sys.downsample.Downsample_12.pass",
         "sys.downsample.Downsample_14.pass",
@@ -1284,7 +1283,7 @@ mod tests {
         "sys.auto.fullscreen.pass.edge_75.pass",
     ],
     load_ops: [
-        "mip0.rpass4.pass->sys.msaa.sys.pass.RenderPass_4.out.4.color/Clear",
+        "rende.rpass4.pass->sys.msaa.sys.pass.RenderPass_4.out.4.color/Clear",
         "sys.downsample.Downsample_10.pass->sys.downsample.Downsample_10.out/Clear",
         "sys.downsample.Downsample_12.pass->sys.downsample.Downsample_12.out/Clear",
         "sys.downsample.Downsample_14.pass->sys.downsample.Downsample_14.out/Clear",
@@ -1320,7 +1319,7 @@ mod tests {
         "RenderTexture_6.present.hdr.gamma.pass->RenderTexture_6.present.hdr.gamma/Clear",
     ],
     graph_bound_passes: [
-        "mip0.rpass4.pass",
+        "rende.rpass4.pass",
     ],
     pass_outputs: [
         "Downsample_10:pass->sys.downsample.Downsample_10.out:540x1200:Rgba16Float",

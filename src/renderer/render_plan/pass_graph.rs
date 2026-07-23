@@ -883,34 +883,6 @@ mod tests {
     }
 
     #[test]
-    fn sampled_pass_ids_detect_renderpass_used_by_pass_texture() -> Result<()> {
-        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let scene_path =
-            manifest_dir.join("tests/fixtures/render_cases/pass-texture-alpha/scene.json");
-        if !scene_path.exists() {
-            return Ok(());
-        }
-        let scene = crate::dsl::load_scene_from_path(&scene_path)?;
-        let prepared = crate::renderer::scene_prep::prepare_scene(&scene)?;
-
-        let nodes_by_id = &prepared.nodes_by_id;
-        // Collect all pass-like node ids as roots to mirror the old sampled_pass_node_ids behavior.
-        let roots: Vec<String> = nodes_by_id
-            .values()
-            .filter(|n| crate::renderer::geometry_resolver::is_pass_like_node_type(&n.node_type))
-            .map(|n| n.id.clone())
-            .collect();
-
-        let sampled = sampled_pass_node_ids_from_roots(&prepared.scene, nodes_by_id, &roots)?;
-        assert!(
-            sampled.contains("pass_up"),
-            "expected sampled passes to include pass_up, got: {sampled:?}"
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn pass_order_supports_nested_composition_routing_nodes() -> Result<()> {
         let scene = SceneDSL {
             version: "1".to_string(),

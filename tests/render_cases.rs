@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use node_forge_render_server::asset_store::AssetStore;
+use node_forge_render_server::dsl;
+use node_forge_render_server::renderer;
 use node_forge_render_server::renderer::validation;
 use node_forge_render_server::state_machine::evenly_spaced_samples;
-use node_forge_render_server::{dsl, renderer};
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
 
 #[derive(Clone, Debug)]
@@ -15,7 +16,7 @@ struct Case {
 }
 
 fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
-    // Convention: if tests/cases/<case>/baseline.png exists, use it.
+    // Convention: if the case's expected/baseline.png exists, use it.
     // Some cases intentionally don't have a baseline.
     match case_name {
         // These currently shouldn't run in the suite; keep them skipped by default.
@@ -61,7 +62,7 @@ fn manifest_dir() -> PathBuf {
 }
 
 fn cases_root() -> PathBuf {
-    manifest_dir().join("tests").join("cases")
+    manifest_dir().join("tests").join("fixtures").join("render")
 }
 
 fn load_rgba8(path: &Path) -> image::RgbaImage {
@@ -349,9 +350,12 @@ fn compare_rgba8_baseline(
 
 fn run_case(case: &Case) {
     let cases_root = cases_root();
-    let case_dir = cases_root.join(case.name);
-
     let scene_source = cases_root.join(case.scene_source);
+    let case_dir = scene_source
+        .parent()
+        .expect("generated render case source has a parent")
+        .to_path_buf();
+    let expected_dir = case_dir.join("expected");
     assert!(
         scene_source.exists(),
         "case {}: missing scene source at {}",
@@ -359,45 +363,23 @@ fn run_case(case: &Case) {
         scene_source.display()
     );
 
-    // Load scene + assets based on source type (.nforge or .json)
-    let (scene, asset_store) = if scene_source.extension().is_some_and(|e| e == "nforge") {
-        let (s, store) = node_forge_render_server::asset_store::load_from_nforge(&scene_source)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "case {}: failed to load .nforge {}: {e}",
-                    case.name,
-                    scene_source.display()
-                )
-            });
-        (s, store)
-    } else {
-        let s = dsl::load_scene_from_path(&scene_source).unwrap_or_else(|e| {
-            panic!(
-                "case {}: failed to load scene {}: {e}",
-                case.name,
-                scene_source.display()
-            )
-        });
-        // Load assets from the scene directory (assets/ subfolder via scene.assets manifest)
-        let store = node_forge_render_server::asset_store::load_from_scene_dir(
-            &s,
-            scene_source.parent().unwrap_or_else(|| Path::new(".")),
+    let (scene, asset_store) = node_forge_render_server::asset_store::load_from_nforge(
+        &scene_source,
+    )
+    .unwrap_or_else(|e| {
+        panic!(
+            "case {}: failed to load .nforge {}: {e}",
+            case.name,
+            scene_source.display()
         )
-        .unwrap_or_else(|e| {
-            panic!(
-                "case {}: failed to load assets from scene dir: {e}",
-                case.name
-            )
-        });
-        (s, store)
-    };
+    });
 
     let passes =
         renderer::build_all_pass_wgsl_bundles_from_scene_with_assets(&scene, Some(&asset_store))
             .unwrap_or_else(|e| panic!("case {}: failed to build WGSL bundles: {e}", case.name));
 
     let update_goldens = std::env::var("UPDATE_GOLDENS").is_ok_and(|v| v != "0");
-    let wgsl_dir = case_dir.join("wgsl");
+    let wgsl_dir = expected_dir.join("wgsl");
     std::fs::create_dir_all(&wgsl_dir).unwrap_or_else(|e| {
         panic!(
             "case {}: failed to create wgsl dir {}: {e}",
@@ -736,25 +718,25 @@ fn run_case(case: &Case) {
                 compare_stage(
                     "downsample_8",
                     "sys.blur.node_2.ds.8",
-                    &case_dir.join("baseline_downsample_8.png"),
+                    &expected_dir.join("baseline_downsample_8.png"),
                     false,
                 );
                 compare_stage(
                     "downsample_2",
                     "sys.blur.node_2.ds.2",
-                    &case_dir.join("baseline_downsample_2.png"),
+                    &expected_dir.join("baseline_downsample_2.png"),
                     false,
                 );
                 compare_stage(
                     "blur_h",
                     "sys.blur.node_2.h",
-                    &case_dir.join("baseline_blur_h.png"),
+                    &expected_dir.join("baseline_blur_h.png"),
                     false,
                 );
                 compare_stage(
                     "blur_v",
                     "sys.blur.node_2.v",
-                    &case_dir.join("baseline_blur_v.png"),
+                    &expected_dir.join("baseline_blur_v.png"),
                     false,
                 );
             } else {
@@ -766,7 +748,7 @@ fn run_case(case: &Case) {
                         .replace("\\", "_")
                         .replace(':', "_")
                         .replace(' ', "_");
-                    let expected_path = case_dir.join(format!("baseline_{safe}.png"));
+                    let expected_path = expected_dir.join(format!("baseline_{safe}.png"));
                     if expected_path.exists() {
                         compare_stage(safe.as_str(), tex_name.as_str(), &expected_path, false);
                     } else {
@@ -827,7 +809,8 @@ fn run_case(case: &Case) {
                 }
 
                 // Compare against per-frame baseline if it exists.
-                let baseline_frame = case_dir.join(format!("baseline_{frame_idx}.{output_ext}"));
+                let baseline_frame =
+                    expected_dir.join(format!("baseline_{frame_idx}.{output_ext}"));
                 if baseline_frame.exists() {
                     existing_baseline_indices.push(frame_idx);
                     if output_is_hdr {
@@ -891,20 +874,20 @@ fn run_case(case: &Case) {
     //   static  scenes → baseline.{ext}  (from case.baseline_png, typically "baseline.png")
     let initial_baseline = if uses_time {
         let ext = if output_is_hdr { "exr" } else { "png" };
-        let p = case_dir.join(format!("baseline_0.{ext}"));
+        let p = expected_dir.join(format!("baseline_0.{ext}"));
         if p.exists() { Some(p) } else { None }
     } else if let Some(baseline_rel) = case.baseline_png {
         // For static scenes, also check for the HDR variant first.
         if output_is_hdr {
-            let exr = case_dir.join(baseline_rel).with_extension("exr");
+            let exr = expected_dir.join(baseline_rel).with_extension("exr");
             if exr.exists() {
                 Some(exr)
             } else {
-                let png = case_dir.join(baseline_rel);
+                let png = expected_dir.join(baseline_rel);
                 if png.exists() { Some(png) } else { None }
             }
         } else {
-            let p = case_dir.join(baseline_rel);
+            let p = expected_dir.join(baseline_rel);
             if p.exists() { Some(p) } else { None }
         }
     } else {

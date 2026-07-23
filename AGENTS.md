@@ -18,7 +18,7 @@ Headless one-shot render:
 ```bash
 cargo run -q -- \
   --headless \
-  --dsl-json ./tests/cases/<case>/scene.json \
+  --nforge ./tests/fixtures/render/<group>/<case>/scene.nforge \
   --outputdir ./tmp/out
 ```
 
@@ -40,9 +40,10 @@ UPDATE_GOLDENS=1 cargo test --test render_cases
 ```
 
 Render-case layout:
-- `tests/cases/<case>/scene.json`
-- `tests/cases/<case>/wgsl/` expected WGSL
-- `tests/cases/<case>/out/` render outputs
+- `tests/fixtures/render/editor-examples/<case>/scene.nforge`
+- `tests/fixtures/render/renderer-only/<case>/scene.nforge`
+- `<case>/expected/wgsl/` expected WGSL and `<case>/expected/baseline.*` images
+- `<case>/out/` ignored render outputs
 
 ## Lint/format
 ```bash
@@ -98,8 +99,8 @@ UI helper:
 - Keep resource naming stable.
 - Do not update WGSL goldens unless output changes are intentional.
 - Persisted schema changes do not keep compatibility loaders. The canonical archive set is
-  `../node-forge-editor/packages/editor/assets/examples/*.nforge`: upgrade affected examples once,
-  sync the corresponding `tests/cases/*/scene.nforge` fixtures, and delete all migration/fallback
+  `../node-forge-editor/examples/*.nforge`: upgrade affected examples once, sync the corresponding
+  `tests/fixtures/render/editor-examples/*/scene.nforge` fixtures through the parent script, and delete all migration/fallback
   code and migration tests before finishing.
 
 ## Tooling

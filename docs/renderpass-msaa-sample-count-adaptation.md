@@ -60,11 +60,11 @@ global sample count.
 1. Add schema fields in `assets/node-scheme.json`.
 2. Add validation in `src/schema.rs`.
 3. Add adapter injection in `src/renderer/shader_space/api.rs`.
-4. Expose adapter from headless renderer in `3rd/rust-wgpu-fiber/src/headless.rs`.
+4. Expose adapter from headless renderer in `../rust-wgpu-fiber/src/headless.rs`.
 5. Extend vendored fiber pass + texture APIs for sample count and resolve target:
-   - `3rd/rust-wgpu-fiber/src/pass/mod.rs`
-   - `3rd/rust-wgpu-fiber/src/pool/texture_pool.rs`
-   - `3rd/rust-wgpu-fiber/src/shader_space.rs`
+   - `../rust-wgpu-fiber/src/pass/mod.rs`
+   - `../rust-wgpu-fiber/src/pool/texture_pool.rs`
+   - `../rust-wgpu-fiber/src/shader_space/mod.rs`
 6. Add runtime selection + fallback + per-pass resolve handling in
    `src/renderer/shader_space/assembler.rs`.
 7. Wire adapter through callsites:

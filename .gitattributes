@@ -1,1 +1,1 @@
-tests/cases/doubao-voice-interaction/scene.nforge filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge filter=lfs diff=lfs merge=lfs -text

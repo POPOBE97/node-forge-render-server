@@ -35,9 +35,9 @@ core-graphics = "0.23"
 metal = "0.32"
 
 [patch.crates-io]
-eframe = { path = "3rd/eframe" }
-egui-wgpu = { path = "3rd/egui-wgpu" }
-block = { path = "3rd/block" }
+eframe = { path = "third_party/eframe" }
+egui-wgpu = { path = "third_party/egui-wgpu" }
+block = { path = "third_party/block" }
 
 [dev-dependencies]
 proptest = "1"

@@ -24,7 +24,9 @@
 
 # Generated test outputs
 tests/**/out/
+/tmp/
+*.log
 
-# 3rd
-/3rd/rust-wgpu-fiber
+# Third-party build output
+/third_party/**/target/
 .gitnexus

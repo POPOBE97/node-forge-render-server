@@ -1,18 +1,13 @@
-use std::{collections::HashSet, path::Path};
+use std::collections::HashSet;
 
-use node_forge_render_server::{asset_store, dsl, renderer};
+use node_forge_render_server::renderer;
 use rust_wgpu_fiber::{HeadlessRenderer, HeadlessRendererConfig};
+
+mod support;
 
 #[test]
 fn downsample_output_target_deduplicates_compose_pass() {
-    let scene_path = "tests/cases/bloom-nodes/scene.json";
-    let scene = dsl::load_scene_from_path(scene_path).expect("load bloom-nodes scene");
-    let scene_dir = Path::new(scene_path)
-        .parent()
-        .expect("scene path should have parent");
-
-    let assets = asset_store::load_from_scene_dir(&scene, scene_dir)
-        .expect("load assets for back-pin-pin scene");
+    let (scene, assets) = support::load_render_case("bloom-nodes");
 
     let headless = match HeadlessRenderer::new(HeadlessRendererConfig::default()) {
         Ok(renderer) => renderer,

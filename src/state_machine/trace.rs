@@ -58,7 +58,7 @@ pub struct ScheduledEvent {
 }
 
 /// Event schedule: a list of events to fire at specific frames during trace
-/// generation.  Loaded from `events.json` alongside `scene.json`.
+/// generation. Loaded from `events.json` alongside the canonical `scene.nforge`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct EventSchedule {
     pub events: Vec<ScheduledEvent>,
@@ -239,10 +239,14 @@ mod tests {
     fn back_pin_pin_scene() -> dsl::SceneDSL {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
-            .join("cases")
+            .join("fixtures")
+            .join("render")
+            .join("editor-examples")
             .join("back-pin-pin")
-            .join("scene.json");
-        dsl::load_scene_from_path(path).expect("load back-pin-pin scene")
+            .join("scene.nforge");
+        crate::asset_store::load_from_nforge(&path)
+            .expect("load back-pin-pin scene")
+            .0
     }
 
     #[test]
