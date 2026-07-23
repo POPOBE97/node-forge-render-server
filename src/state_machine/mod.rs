@@ -73,6 +73,7 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
     };
 
     validate(&sm)?;
+    mutation_function::prepare_state_machine(&sm)?;
 
     Ok(Some(StateMachineRuntime::with_initial_values(
         sm,
@@ -168,11 +169,9 @@ pub(crate) fn collect_scene_current_values(
 /// matches a node in the scene.  Used to inject runtime animation
 /// values before uniform packing.
 ///
-/// Override keys reference node IDs from the unexpanded scene (e.g.
-/// `FloatInput_53`).  After group expansion those nodes live under
-/// namespaced IDs like `GroupInstance_59/FloatInput_53`.  We first
-/// try an exact match and fall back to a suffix match so that
-/// group-internal nodes are correctly targeted.
+/// Override keys are declaration-side identities and therefore match only
+/// exact node IDs. Group expansion and consumer topology must not create an
+/// implicit animation or Mutation target.
 pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, serde_json::Value>) {
     if overrides.is_empty() {
         return;
@@ -180,7 +179,7 @@ pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, se
 
     for (key, value) in overrides {
         for node in &mut scene.nodes {
-            if key.node_id == node.id || node.id.ends_with(&format!("/{}", key.node_id)) {
+            if key.node_id == node.id {
                 node.params.insert(key.param_name.clone(), value.clone());
             }
         }

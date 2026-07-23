@@ -750,8 +750,8 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
     assert_eq!(snapshot.active_transition_id, None);
 
     let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
-        "GroupInstance_32",
-        "intelligent_light_positions",
+        "PackedInput_IntelligentLightPositions",
+        "value",
     );
     let before = snapshot
         .active_overrides
@@ -780,6 +780,95 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
         "Mutation evaluation emitted diagnostics: {:?}",
         advanced.diagnostics
     );
+}
+
+#[test]
+fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
+    let case_dir = support::render_case_dir("doubao-voice-interaction");
+    let (mut scene, _asset_store) = support::load_render_case("doubao-voice-interaction");
+    let mut machine = scene
+        .state_machine
+        .take()
+        .expect("doubao fixture should have a state machine");
+    machine.initial_state_id = Some("st_mrerxocx_8".into());
+    let mut runtime = node_forge_render_server::state_machine::StateMachineRuntime::new(machine);
+    let no_events = Vec::new();
+
+    let golden_path = support::expected_path(&case_dir, "idle_voice_interaction_golden.json");
+    let golden: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&golden_path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", golden_path.display())),
+    )
+    .unwrap_or_else(|error| panic!("failed to parse {}: {error}", golden_path.display()));
+    assert_eq!(
+        golden["motionParameters"].as_array().map(Vec::len),
+        Some(69)
+    );
+    let frames = golden["frames"]
+        .as_array()
+        .expect("Idle golden must contain frames");
+    assert_eq!(
+        frames.len(),
+        601,
+        "10 seconds at 60 fps must include 601 frames"
+    );
+
+    let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
+        "PackedInput_IntelligentLightPositions",
+        "value",
+    );
+    let colors_key = node_forge_render_server::state_machine::OverrideKey::new(
+        "PackedInput_IntelligentLightColors",
+        "value",
+    );
+    let mut max_position_error = 0.0_f64;
+    let mut max_color_error = 0.0_f64;
+
+    for (index, expected) in frames.iter().enumerate() {
+        let dt = if index == 0 { 0.0 } else { 1.0 / 60.0 };
+        let actual = runtime.tick(dt, &Default::default(), &no_events);
+        assert_eq!(actual.current_state_id, "st_mrerxocx_8");
+        assert!(
+            actual.diagnostics.is_empty(),
+            "frame {index} Mutation diagnostics: {:?}",
+            actual.diagnostics
+        );
+        for (key, field, max_error) in [
+            (&positions_key, "positions", &mut max_position_error),
+            (&colors_key, "colors", &mut max_color_error),
+        ] {
+            let actual_rows = actual.overrides[key]
+                .as_array()
+                .unwrap_or_else(|| panic!("frame {index} has no packed {field}"));
+            let expected_rows = expected[field]
+                .as_array()
+                .unwrap_or_else(|| panic!("golden frame {index} has no {field}"));
+            assert_eq!(actual_rows.len(), expected_rows.len());
+            for (row_index, (actual_row, expected_row)) in
+                actual_rows.iter().zip(expected_rows).enumerate()
+            {
+                let actual_components = actual_row.as_array().unwrap();
+                let expected_components = expected_row.as_array().unwrap();
+                assert_eq!(actual_components.len(), expected_components.len());
+                for (component_index, (actual_value, expected_value)) in actual_components
+                    .iter()
+                    .zip(expected_components)
+                    .enumerate()
+                {
+                    let error =
+                        (actual_value.as_f64().unwrap() - expected_value.as_f64().unwrap()).abs();
+                    *max_error = (*max_error).max(error);
+                    assert!(
+                        error <= 1.0e-5,
+                        "frame {index} {field}[{row_index}][{component_index}] error {error}"
+                    );
+                }
+            }
+        }
+    }
+
+    assert!(max_position_error <= 1.0e-5);
+    assert_eq!(max_color_error, 0.0);
 }
 
 #[test]

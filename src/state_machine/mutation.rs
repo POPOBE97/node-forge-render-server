@@ -205,11 +205,6 @@ pub fn evaluate_mutation(
             mutation.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
         let order = topological_sort(&mutation.nodes, &mutation.connections)?;
-        for node in &mutation.nodes {
-            if node.node_type == MutationInnerNodeType::MutationFunction {
-                super::mutation_function::prepare(&mutation.id, &node.id)?;
-            }
-        }
         let deadline = Instant::now() + MUTATION_GRAPH_FRAME_BUDGET;
 
         let mut port_values: HashMap<(&str, &str), MutationValue> = HashMap::new();
@@ -438,55 +433,26 @@ fn evaluate_inner_node<'a>(
             );
         }
         MutationInnerNodeType::MutationFunction => {
-            let input = serde_json::Value::Object(
-                node.inputs
-                    .iter()
-                    .map(|port| {
-                        (
-                            port.id.clone(),
-                            get_port_value(node, port.id.as_str(), port_values)
-                                .unwrap_or_default()
-                                .to_json(),
-                        )
-                    })
-                    .collect(),
-            );
+            let input = node
+                .inputs
+                .iter()
+                .map(|port| get_port_value(node, port.id.as_str(), port_values).unwrap_or_default())
+                .collect::<Vec<_>>();
             let result = super::mutation_function::evaluate(
                 mutation_id,
                 &node.id,
                 &input,
                 remaining_budget,
             )?;
-            let object = result.as_object().ok_or_else(|| {
-                anyhow::anyhow!("Mutation Function '{}' must return an object", node.id)
-            })?;
-            for output in &node.outputs {
-                let value = object.get(&output.id).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Mutation Function '{}' omitted output '{}'",
-                        node.id,
-                        output.id
-                    )
-                })?;
-                let value = AnimValue::from_json_typed(value, output.port_type.as_deref())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Mutation Function '{}.{}' returned a value incompatible with '{}'",
-                            node.id,
-                            output.id,
-                            output.port_type.as_deref().unwrap_or("any")
-                        )
-                    })?;
-                if let Some(expected) = output.array_length
-                    && !matches!(&value, AnimValue::Packed(values) if values.len() == expected)
-                {
-                    bail!(
-                        "Mutation Function '{}.{}' must return exactly {} elements",
-                        node.id,
-                        output.id,
-                        expected
-                    );
-                }
+            if result.len() != node.outputs.len() {
+                bail!(
+                    "Mutation Function '{}' returned {} outputs for {} declared ports",
+                    node.id,
+                    result.len(),
+                    node.outputs.len()
+                );
+            }
+            for (output, value) in node.outputs.iter().zip(result) {
                 write_output_if_declared_or_default(node, port_values, output.id.as_str(), value);
             }
         }

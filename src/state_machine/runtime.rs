@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use super::motion::{MotionChannelDebug, MotionEngine};
 use super::mutation::{self, MutationInputContext, MutationValue};
@@ -59,6 +59,9 @@ pub struct StateMachineRuntime {
 
     /// Latest runtime input snapshot available to mutations.
     runtime_input: RuntimeInputSnapshot,
+
+    /// Cold-start error captured while preparing persistent Mutation Function contexts.
+    mutation_prepare_error: Option<String>,
 
     /// Persistent key/mouse press bookkeeping used by Event Trigger holdingTime outputs.
     trigger_holds: TriggerHoldState,
@@ -400,6 +403,9 @@ impl StateMachineRuntime {
         definition: StateMachine,
         initial_values: HashMap<OverrideKey, serde_json::Value>,
     ) -> Self {
+        let mutation_prepare_error = super::mutation_function::prepare_state_machine(&definition)
+            .err()
+            .map(|error| format!("{error:#}"));
         let mutation_index: HashMap<String, usize> = definition
             .mutations
             .iter()
@@ -443,6 +449,7 @@ impl StateMachineRuntime {
             logical_state_initialized: false,
             motion_engine: MotionEngine::with_initial_values(initial_values),
             runtime_input: RuntimeInputSnapshot::default(),
+            mutation_prepare_error,
             trigger_holds: TriggerHoldState::default(),
             finished: false,
         }
@@ -915,6 +922,9 @@ impl StateMachineRuntime {
         state_id: &str,
         current_snapshot: &HashMap<OverrideKey, serde_json::Value>,
     ) -> Result<HashMap<OverrideKey, serde_json::Value>> {
+        if let Some(error) = &self.mutation_prepare_error {
+            bail!("Mutation Function preparation failed before playback: {error}");
+        }
         let mutation_idx = self
             .mutation_index
             .get(mutation_id)

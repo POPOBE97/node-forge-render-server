@@ -19,6 +19,40 @@ fn editor_glass_nforge_path() -> std::path::PathBuf {
 }
 
 #[test]
+fn apply_overrides_targets_only_exact_uniform_declarations() {
+    let mut scene = back_pin_pin_scene();
+    let template = scene
+        .nodes
+        .first()
+        .expect("fixture must contain a node")
+        .clone();
+    let mut declaration = template.clone();
+    declaration.id = "DeclaredUniform".into();
+    declaration
+        .params
+        .insert("value".into(), serde_json::json!(1.0));
+    let mut expanded_consumer = template;
+    expanded_consumer.id = "GroupInstance/DeclaredUniform".into();
+    expanded_consumer
+        .params
+        .insert("value".into(), serde_json::json!(2.0));
+    scene.nodes = vec![declaration, expanded_consumer];
+
+    let overrides = std::collections::HashMap::from([(
+        state_machine::OverrideKey::new("DeclaredUniform", "value"),
+        serde_json::json!(3.0),
+    )]);
+    state_machine::apply_overrides(&mut scene, &overrides);
+
+    assert_eq!(scene.nodes[0].params["value"], serde_json::json!(3.0));
+    assert_eq!(
+        scene.nodes[1].params["value"],
+        serde_json::json!(2.0),
+        "consumer suffixes must not become implicit declaration targets"
+    );
+}
+
+#[test]
 fn back_pin_pin_scene_parses_state_machine() {
     let scene = back_pin_pin_scene();
     assert!(
@@ -194,22 +228,24 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
         returned
             .overrides
             .get(&state_machine::OverrideKey::new("Vector2Input_80", "x")),
-        Some(&serde_json::json!(333.0))
+        Some(&serde_json::json!(0)),
+        "Mutation output must not feed the next frame after its state is left"
     );
     assert_eq!(
         returned
             .overrides
             .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
-        Some(&serde_json::json!(444.0))
+        Some(&serde_json::json!(0)),
+        "Mutation output must not feed the next frame after its state is left"
     );
     let returning_value = returned
         .overrides
         .get(&state_machine::OverrideKey::new("FloatInput_81", "value"))
         .and_then(serde_json::Value::as_f64)
         .expect("return Timeline should emit a numeric presentation value");
-    assert!(
-        returning_value > 0.0,
-        "Timeline should not snap to its target"
+    assert_eq!(
+        returning_value, 0.0,
+        "returning to a state with no new opacity target must preserve its motion snapshot"
     );
 
     let settled = rt.tick(0.4, &Default::default(), &vec![]);
@@ -301,16 +337,16 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
     let positions = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
-            "GroupInstance_32",
-            "intelligent_light_positions",
+            "PackedInput_IntelligentLightPositions",
+            "value",
         ))
         .and_then(serde_json::Value::as_array)
         .expect("shared Intelligent Light Mutation must output packed positions");
     let colors = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
-            "GroupInstance_32",
-            "intelligent_light_colors",
+            "PackedInput_IntelligentLightColors",
+            "value",
         ))
         .and_then(serde_json::Value::as_array)
         .expect("shared Intelligent Light Mutation must output packed colors");
