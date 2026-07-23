@@ -75,10 +75,10 @@ var<storage, read> shader_material_params: ShaderMaterialParams;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_32_IntelligentLight_30: texture_2d<f32>;
+var pass_tex_GroupInstance_32_PassTexture_IntelligentLight: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_32_IntelligentLight_30: sampler;
+var pass_samp_GroupInstance_32_PassTexture_IntelligentLight: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -471,8 +471,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_32.material
     let voice_opacity_material = shader_material_GroupInstance_32_ShaderMaterial_32(
         ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
-        pass_tex_GroupInstance_32_IntelligentLight_30,
-        pass_samp_GroupInstance_32_IntelligentLight_30,
+        pass_tex_GroupInstance_32_PassTexture_IntelligentLight,
+        pass_samp_GroupInstance_32_PassTexture_IntelligentLight,
         (graph_inputs.vector2_input_35).xy,
         (graph_inputs.vector2_input_38).xy,
         (graph_inputs.float_input_37).x,

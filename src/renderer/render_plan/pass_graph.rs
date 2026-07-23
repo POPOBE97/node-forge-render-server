@@ -7,7 +7,7 @@ use crate::{
     renderer::{
         geometry_resolver::is_pass_like_node_type,
         scene_prep::composite_layers_in_draw_order,
-        types::PassOutputRegistry,
+        types::{PassOutputRegistry, PassTextureRef},
         wgsl::{build_blur_image_wgsl_bundle, build_pass_wgsl_bundle},
     },
 };
@@ -16,14 +16,19 @@ use super::types::PassTextureBinding;
 
 pub(crate) fn resolve_pass_texture_bindings(
     pass_output_registry: &PassOutputRegistry,
-    pass_node_ids: &[String],
+    texture_refs: &[PassTextureRef],
 ) -> Result<Vec<PassTextureBinding>> {
-    let mut out: Vec<PassTextureBinding> = Vec::with_capacity(pass_node_ids.len());
-    for upstream_pass_id in pass_node_ids {
-        let Some(tex) = pass_output_registry.get_texture(upstream_pass_id) else {
+    let mut out: Vec<PassTextureBinding> = Vec::with_capacity(texture_refs.len());
+    for texture_ref in texture_refs {
+        let Some(tex) = pass_output_registry
+            .get_texture_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
+        else {
             bail!(
-                "PassTexture references upstream pass {upstream_pass_id}, but its output texture is not registered yet. \
-Ensure the upstream pass is rendered earlier in Composite draw order."
+                "PassTexture {} references upstream output {}.{}, but its texture is not registered yet. \
+Ensure the upstream pass is rendered earlier in Composite draw order.",
+                texture_ref.binding_id,
+                texture_ref.source.node_id,
+                texture_ref.source.port_id
             );
         };
         out.push(PassTextureBinding {
@@ -57,11 +62,19 @@ fn deps_for_pass_node(
                 String::new(),
                 false,
             )?;
-            Ok(bundle.pass_textures)
+            Ok(bundle
+                .pass_textures
+                .into_iter()
+                .map(|texture_ref| texture_ref.source.node_id)
+                .collect())
         }
         "GuassianBlurPass" => {
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
-            Ok(bundle.pass_textures)
+            Ok(bundle
+                .pass_textures
+                .into_iter()
+                .map(|texture_ref| texture_ref.source.node_id)
+                .collect())
         }
         "BloomNode" => {
             let source_conn = incoming_connection(scene, pass_node_id, "pass")
@@ -104,7 +117,11 @@ fn deps_for_pass_node(
                     &mut ctx,
                     &mut cache,
                 )?;
-                Ok(ctx.pass_textures)
+                Ok(ctx
+                    .pass_textures
+                    .into_iter()
+                    .map(|texture_ref| texture_ref.source.node_id)
+                    .collect())
             }
         }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),

@@ -252,7 +252,7 @@ pub fn broadcast_pass_target_sizes(hub: &WsHub, snapshot: &ResourceSnapshot, sce
         .filter_map(|node| {
             let pass_name = match node.node_type.as_str() {
                 "MeshGradient" => format!("sys.mesh_gradient.{}.pass", node.id),
-                "IntelligentLight" => format!("sys.ilight.{}.upsample.pass", node.id),
+                "IntelligentLight" => format!("sys.ilight.{}.pass", node.id),
                 _ => return None,
             };
             let (target_size, target_texture) = pass_sizes.get(pass_name.as_str())?;

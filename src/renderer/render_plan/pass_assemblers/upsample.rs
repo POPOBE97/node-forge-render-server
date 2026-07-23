@@ -57,11 +57,12 @@ pub(crate) fn assemble_upsample(
     let src_pass_id = src_conn.from.node_id.clone();
     let src_tex = bs
         .pass_output_registry
-        .get_texture(&src_pass_id)
+        .get_texture_for_port(&src_pass_id, &src_conn.from.port_id)
         .cloned()
         .ok_or_else(|| {
             anyhow!(
-                "Upsample.source references upstream pass {src_pass_id}, but its output texture is not registered yet"
+                "Upsample.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
+                src_conn.from.port_id
             )
         })?;
 
@@ -349,7 +350,7 @@ pub(crate) fn assemble_upsample(
     let upsample_output_tex = upsample_out_tex.clone();
     if is_sampled_output {
         bs.pass_output_registry.register(PassOutputSpec {
-            node_id: layer_id.to_string(),
+            endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "output"),
             texture_name: upsample_output_tex.clone(),
             resolution: [out_w, out_h],
             format: bs.sampled_pass_format,

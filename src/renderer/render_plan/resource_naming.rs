@@ -289,23 +289,33 @@ pub(crate) fn resolve_chain_camera_for_first_pass(
 
 pub(crate) fn infer_uniform_resolution_from_pass_deps(
     blur_node_id: &str,
-    pass_node_ids: &[String],
+    pass_texture_refs: &[crate::renderer::types::PassTextureRef],
     pass_output_registry: &PassOutputRegistry,
 ) -> Result<Option<[u32; 2]>> {
-    if pass_node_ids.is_empty() {
+    if pass_texture_refs.is_empty() {
         return Ok(None);
     }
 
-    let mut resolved: Vec<(String, [u32; 2])> = Vec::with_capacity(pass_node_ids.len());
-    for upstream_pass_id in pass_node_ids {
-        let Some(spec) = pass_output_registry.get(upstream_pass_id) else {
+    let mut resolved: Vec<(String, [u32; 2])> = Vec::with_capacity(pass_texture_refs.len());
+    for texture_ref in pass_texture_refs {
+        let Some(spec) = pass_output_registry
+            .get_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
+        else {
             bail!(
                 "GuassianBlurPass {blur_node_id} non-pass source depends on upstream pass \
-{upstream_pass_id}, but its output is not registered yet. Ensure upstream dependencies \
-render earlier in Composite draw order."
+{}.{}, but its output is not registered yet. Ensure upstream dependencies \
+render earlier in Composite draw order.",
+                texture_ref.source.node_id,
+                texture_ref.source.port_id
             );
         };
-        resolved.push((upstream_pass_id.clone(), spec.resolution));
+        resolved.push((
+            format!(
+                "{}.{}",
+                texture_ref.source.node_id, texture_ref.source.port_id
+            ),
+            spec.resolution,
+        ));
     }
 
     let first_resolution = resolved[0].1;
@@ -376,15 +386,20 @@ pub(crate) fn select_effective_msaa_sample_count(
 
 pub(crate) fn resolve_pass_texture_bindings(
     pass_output_registry: &PassOutputRegistry,
-    pass_node_ids: &[String],
+    pass_texture_refs: &[crate::renderer::types::PassTextureRef],
 ) -> Result<Vec<super::pass_spec::PassTextureBinding>> {
     let mut out: Vec<super::pass_spec::PassTextureBinding> =
-        Vec::with_capacity(pass_node_ids.len());
-    for upstream_pass_id in pass_node_ids {
-        let Some(tex) = pass_output_registry.get_texture(upstream_pass_id) else {
+        Vec::with_capacity(pass_texture_refs.len());
+    for texture_ref in pass_texture_refs {
+        let Some(tex) = pass_output_registry
+            .get_texture_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
+        else {
             bail!(
-                "PassTexture references upstream pass {upstream_pass_id}, but its output texture is not registered yet. \
-Ensure the upstream pass is rendered earlier in Composite draw order."
+                "PassTexture {} references upstream output {}.{}, but its texture is not registered yet. \
+Ensure the upstream pass is rendered earlier in Composite draw order.",
+                texture_ref.binding_id,
+                texture_ref.source.node_id,
+                texture_ref.source.port_id
             );
         };
         out.push(super::pass_spec::PassTextureBinding {
@@ -426,20 +441,22 @@ pub(crate) fn parse_render_pass_depth_test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::types::PassOutputSpec;
+    use crate::renderer::types::{OutputEndpoint, PassOutputSpec, PassTextureRef};
     use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat};
 
     #[test]
     fn pass_textures_are_included_in_texture_bindings() {
         let mut reg = PassOutputRegistry::new();
         reg.register(PassOutputSpec {
-            node_id: "upstream_pass".to_string(),
+            endpoint: OutputEndpoint::new("upstream_pass", "pass"),
             texture_name: "up_tex".into(),
             resolution: [64, 64],
             format: TextureFormat::Rgba8Unorm,
         });
 
-        let bindings = resolve_pass_texture_bindings(&reg, &["upstream_pass".to_string()]).unwrap();
+        let bindings =
+            resolve_pass_texture_bindings(&reg, &[PassTextureRef::direct("upstream_pass", "pass")])
+                .unwrap();
         assert_eq!(bindings.len(), 1);
         assert_eq!(
             bindings[0].texture,
@@ -500,13 +517,13 @@ mod tests {
     fn infer_blur_source_resolution_from_uniform_pass_deps() {
         let mut reg = PassOutputRegistry::new();
         reg.register(PassOutputSpec {
-            node_id: "p0".to_string(),
+            endpoint: OutputEndpoint::new("p0", "pass"),
             texture_name: "tex.p0".into(),
             resolution: [33, 75],
             format: TextureFormat::Rgba8Unorm,
         });
         reg.register(PassOutputSpec {
-            node_id: "p1".to_string(),
+            endpoint: OutputEndpoint::new("p1", "pass"),
             texture_name: "tex.p1".into(),
             resolution: [33, 75],
             format: TextureFormat::Rgba8Unorm,
@@ -514,7 +531,10 @@ mod tests {
 
         let got = infer_uniform_resolution_from_pass_deps(
             "blur_1",
-            &["p0".to_string(), "p1".to_string()],
+            &[
+                PassTextureRef::direct("p0", "pass"),
+                PassTextureRef::direct("p1", "pass"),
+            ],
             &reg,
         )
         .expect("resolution inference should succeed");
@@ -525,13 +545,13 @@ mod tests {
     fn infer_blur_source_resolution_errors_on_mixed_sizes() {
         let mut reg = PassOutputRegistry::new();
         reg.register(PassOutputSpec {
-            node_id: "p0".to_string(),
+            endpoint: OutputEndpoint::new("p0", "pass"),
             texture_name: "tex.p0".into(),
             resolution: [33, 75],
             format: TextureFormat::Rgba8Unorm,
         });
         reg.register(PassOutputSpec {
-            node_id: "p1".to_string(),
+            endpoint: OutputEndpoint::new("p1", "pass"),
             texture_name: "tex.p1".into(),
             resolution: [67, 150],
             format: TextureFormat::Rgba8Unorm,
@@ -539,14 +559,17 @@ mod tests {
 
         let err = infer_uniform_resolution_from_pass_deps(
             "blur_1",
-            &["p0".to_string(), "p1".to_string()],
+            &[
+                PassTextureRef::direct("p0", "pass"),
+                PassTextureRef::direct("p1", "pass"),
+            ],
             &reg,
         )
         .expect_err("mismatched sizes must fail");
         let msg = format!("{err:#}");
         assert!(msg.contains("GuassianBlurPass blur_1"));
-        assert!(msg.contains("p0=33x75"));
-        assert!(msg.contains("p1=67x150"));
+        assert!(msg.contains("p0.pass=33x75"));
+        assert!(msg.contains("p1.pass=67x150"));
     }
 
     #[test]

@@ -7,11 +7,8 @@ use std::collections::HashMap;
 
 use rust_wgpu_fiber::shader_space::{ShaderSpace, ShaderSpaceResult};
 
-use crate::{
-    dsl::{SceneDSL, incoming_connection},
-    renderer::types::Params,
-    renderer::utils::as_bytes,
-};
+use crate::renderer::types::PassTextureRef;
+use crate::{dsl::SceneDSL, renderer::types::Params, renderer::utils::as_bytes};
 
 use crate::renderer::render_plan::pass_spec::SamplerKind;
 use crate::renderer::types::PassBindings;
@@ -76,31 +73,15 @@ pub(crate) fn sampler_kind_from_node_params(
 
 pub(crate) fn sampler_kind_for_pass_texture(
     scene: &SceneDSL,
-    upstream_pass_id: &str,
+    texture_ref: &PassTextureRef,
 ) -> SamplerKind {
-    // We bind pass textures by upstream pass id (see MaterialCompileContext::pass_sampler_var_name).
-    // Therefore, if multiple PassTexture nodes reference the same upstream pass, we can only pick
-    // one sampler behavior. We choose deterministically by smallest node id.
-    let mut pass_texture_nodes: Vec<&crate::dsl::Node> = Vec::new();
-    for node in scene.nodes.iter() {
-        if node.node_type != "PassTexture" {
-            continue;
-        }
-        let Some(conn) = incoming_connection(scene, &node.id, "pass") else {
-            continue;
-        };
-        if conn.from.node_id == upstream_pass_id {
-            pass_texture_nodes.push(node);
-        }
-    }
-
-    pass_texture_nodes.sort_by(|a, b| a.id.cmp(&b.id));
-    if let Some(node) = pass_texture_nodes.first() {
-        sampler_kind_from_node_params(&node.params)
-    } else {
-        // Fallback when a material references a pass output without a PassTexture node.
-        SamplerKind::LinearClamp
-    }
+    texture_ref
+        .sampler_node_id
+        .as_ref()
+        .and_then(|node_id| scene.nodes.iter().find(|node| node.id == *node_id))
+        .map(|node| sampler_kind_from_node_params(&node.params))
+        // Direct reads are node-defined sampling sites whose contract is LinearClamp.
+        .unwrap_or(SamplerKind::LinearClamp)
 }
 
 pub(crate) fn build_image_premultiply_wgsl(tex_var: &str, samp_var: &str) -> String {
@@ -114,4 +95,61 @@ pub fn update_pass_params(
 ) -> ShaderSpaceResult<()> {
     shader_space.write_buffer(pass.params_buffer.as_str(), 0, as_bytes(params))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{dsl::Node, renderer::node_compiler::test_utils::test_scene};
+
+    fn pass_texture_node(id: &str, filter: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "PassTexture".to_string(),
+            params: HashMap::from([
+                (
+                    "addressModeU".to_string(),
+                    serde_json::Value::String("clamp-to-edge".to_string()),
+                ),
+                (
+                    "addressModeV".to_string(),
+                    serde_json::Value::String("clamp-to-edge".to_string()),
+                ),
+                (
+                    "magFilter".to_string(),
+                    serde_json::Value::String(filter.to_string()),
+                ),
+                (
+                    "minFilter".to_string(),
+                    serde_json::Value::String(filter.to_string()),
+                ),
+            ]),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        }
+    }
+
+    #[test]
+    fn pass_texture_sampling_sites_keep_independent_samplers() {
+        let scene = test_scene(
+            vec![
+                pass_texture_node("nearest_read", "nearest"),
+                pass_texture_node("linear_read", "linear"),
+            ],
+            Vec::new(),
+        );
+        let nearest = PassTextureRef::through_pass_texture("nearest_read", "source", "pass");
+        let linear = PassTextureRef::through_pass_texture("linear_read", "source", "pass");
+
+        assert_eq!(
+            sampler_kind_for_pass_texture(&scene, &nearest),
+            SamplerKind::NearestClamp
+        );
+        assert_eq!(
+            sampler_kind_for_pass_texture(&scene, &linear),
+            SamplerKind::LinearClamp
+        );
+    }
 }

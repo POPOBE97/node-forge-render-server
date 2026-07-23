@@ -75,10 +75,10 @@ var<storage, read> shader_material_params: ShaderMaterialParams;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_32_IntelligentLight_30: texture_2d<f32>;
+var pass_tex_GroupInstance_32_PassTexture_IntelligentLight: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_32_IntelligentLight_30: sampler;
+var pass_samp_GroupInstance_32_PassTexture_IntelligentLight: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---

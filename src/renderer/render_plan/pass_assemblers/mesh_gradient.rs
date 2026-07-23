@@ -190,7 +190,7 @@ pub(crate) fn assemble_mesh_gradient(
     bs.composite_passes.push(pass_name);
 
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
         texture_name: output_tex.clone(),
         resolution: [tgt_w_u, tgt_h_u],
         format: if is_sampled_output {

@@ -549,22 +549,27 @@ fn draw_preview_handles(
 fn read_intelligent_light_values(
     scene: &SceneDSL,
     node: &Node,
-    _target: &PassDesignTarget,
+    target: &PassDesignTarget,
     state: &IntelligentLightDesignState,
     animation_playing: bool,
 ) -> IntelligentLightValues {
-    let position_space = [
-        node.params
-            .get("width")
-            .and_then(json_f32)
-            .unwrap_or(DEFAULT_TARGET_SIZE.0 as f32)
-            .max(1.0),
-        node.params
-            .get("height")
-            .and_then(json_f32)
-            .unwrap_or(DEFAULT_TARGET_SIZE.1 as f32)
-            .max(1.0),
-    ];
+    let position_space = target
+        .target_size
+        .map(|(width, height)| [width.max(1) as f32, height.max(1) as f32])
+        .unwrap_or_else(|| {
+            [
+                node.params
+                    .get("width")
+                    .and_then(json_f32)
+                    .unwrap_or(DEFAULT_TARGET_SIZE.0 as f32)
+                    .max(1.0),
+                node.params
+                    .get("height")
+                    .and_then(json_f32)
+                    .unwrap_or(DEFAULT_TARGET_SIZE.1 as f32)
+                    .max(1.0),
+            ]
+        });
     let mut positions = [[0.0; 2]; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut colors = [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut position_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
@@ -841,7 +846,7 @@ mod tests {
         PassDesignTarget {
             node_id: "ilight".to_string(),
             node_type: "IntelligentLight".to_string(),
-            pass_name: "sys.ilight.ilight.upsample.pass".to_string(),
+            pass_name: "sys.ilight.ilight.pass".to_string(),
             target_texture: None,
             target_size: Some((60, 37)),
         }

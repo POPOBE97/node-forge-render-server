@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use rust_wgpu_fiber::ResourceName;
+use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 use serde_json::Value;
 
 use crate::ui::{color_popover::ColorPopoverState, resource_tree::PassDesignTarget};
@@ -15,6 +15,7 @@ pub struct CanvasDesignSession {
     pub target: PassDesignTarget,
     pub session_id: String,
     pub previous_preview_texture: Option<ResourceName>,
+    pub previous_texture_filter: wgpu::FilterMode,
     pub owns_preview_texture: bool,
     pub tool: CanvasDesignToolState,
 }

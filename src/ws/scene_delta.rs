@@ -291,6 +291,8 @@ fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
             | ("MeshGradient", "camera")
+            | ("IntelligentLight", "width")
+            | ("IntelligentLight", "height")
             | ("Downsample", "targetSize")
             | ("Downsample", "camera")
             | ("Upsample", "camera")
@@ -758,6 +760,12 @@ mod tests {
             assets_removed: None,
         };
         assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn intelligent_light_dimensions_are_allocation_sensitive() {
+        assert!(is_geometry_allocation_sink("IntelligentLight", "width"));
+        assert!(is_geometry_allocation_sink("IntelligentLight", "height"));
     }
 
     #[test]

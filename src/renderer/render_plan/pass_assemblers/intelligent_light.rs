@@ -15,7 +15,7 @@ use crate::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension, PassOutputSpec},
         utils::{cpu_num_f32, cpu_num_u32_min_1},
-        wgsl::{build_fullscreen_textured_bundle, build_upsample_bilinear_bundle},
+        wgsl::build_fullscreen_textured_bundle,
     },
 };
 
@@ -404,11 +404,6 @@ pub(crate) fn assemble_intelligent_light(
 ) -> Result<()> {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
-    let tgt_w = bs.tgt_size[0];
-    let tgt_h = bs.tgt_size[1];
-    let tgt_w_u = bs.tgt_size_u[0];
-    let tgt_h_u = bs.tgt_size_u[1];
-
     let pass_blend_state =
         crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
             .with_context(|| format!("invalid blend params for IntelligentLight {}", layer_id))?;
@@ -525,80 +520,16 @@ pub(crate) fn assemble_intelligent_light(
     );
     bs.composite_passes.push(pass_name);
 
-    // ── Output texture (upsampled) ──────────────────────────────────────
-
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
-    let writes_scene_output_target = !is_sampled_output;
-
-    let output_tex: ResourceName = if is_sampled_output {
-        let tex: ResourceName = format!("sys.ilight.{layer_id}.out").into();
-        bs.textures.push(TextureDecl {
-            name: tex.clone(),
-            size: [tgt_w_u, tgt_h_u],
-            format: bs.sampled_pass_format,
-            sample_count: 1,
-            needs_sampling: false,
-        });
-        tex
-    } else {
-        bs.target_texture_name.clone()
-    };
-
-    // ── Pass 2: Upsample blit from intermediate to target ───────────
-
-    let upsample_pass_name: ResourceName = format!("sys.ilight.{layer_id}.upsample.pass").into();
-    let upsample_geo: ResourceName = format!("sys.ilight.{layer_id}.upsample.geo").into();
-    bs.push_fullscreen_geometry(upsample_geo.clone(), tgt_w, tgt_h);
-
-    let upsample_params_name: ResourceName =
-        format!("params.sys.ilight.{layer_id}.upsample").into();
-    let upsample_params = make_params(
-        [tgt_w, tgt_h],
-        [tgt_w, tgt_h],
-        [tgt_w * 0.5, tgt_h * 0.5],
-        legacy_projection_camera_matrix([tgt_w, tgt_h]),
-        [0.0, 0.0, 0.0, 0.0],
-    );
-
-    let upsample_bundle = build_upsample_bilinear_bundle();
-
-    bs.render_pass_specs.push(RenderPassSpec {
-        pass_id: upsample_pass_name.as_str().to_string(),
-        name: upsample_pass_name.clone(),
-        geometry_buffer: upsample_geo,
-        instance_buffer: None,
-        normals_buffer: None,
-        vertex_layout: Default::default(),
-        target_texture: output_tex.clone(),
-        resolve_target: None,
-        params_buffer: upsample_params_name,
-        baked_data_parse_buffer: None,
-        params: upsample_params,
-        graph_binding: None,
-        graph_values: None,
-        shader_wgsl: upsample_bundle.module,
-        texture_bindings: vec![PassTextureBinding {
-            texture: inter_tex.clone(),
-            image_node_id: None,
-        }],
-        sampler_kinds: vec![SamplerKind::LinearClamp],
-        blend_state: pass_blend_state,
-        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-        sample_count: 1,
-    });
-    bs.composite_passes.push(upsample_pass_name);
-
-    // ── Register output ─────────────────────────────────────────────────
+    // ── Canonical output ────────────────────────────────────────────────
+    //
+    // IntelligentLight's natural output is its low-resolution computation
+    // texture. Presentation scaling belongs to each explicit Composite edge.
 
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
-        texture_name: output_tex.clone(),
-        resolution: [tgt_w_u, tgt_h_u],
-        format: if is_sampled_output {
-            bs.sampled_pass_format
-        } else {
-            bs.target_format
-        },
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
+        texture_name: inter_tex.clone(),
+        resolution: [inter_w, inter_h],
+        format: bs.sampled_pass_format,
     });
 
     // ── Composition consumers ───────────────────────────────────────────
@@ -615,14 +546,6 @@ pub(crate) fn assemble_intelligent_light(
             let Some(comp_ctx) = sc.composition_contexts.get(&composition_id) else {
                 continue;
             };
-            if output_tex == comp_ctx.target_texture_name {
-                continue;
-            }
-            if writes_scene_output_target && comp_ctx.target_texture_name == *bs.target_texture_name
-            {
-                continue;
-            }
-
             let comp_w = comp_ctx.target_size_px[0];
             let comp_h = comp_ctx.target_size_px[1];
 
@@ -661,7 +584,7 @@ pub(crate) fn assemble_intelligent_light(
                 )
                 .module,
                 texture_bindings: vec![PassTextureBinding {
-                    texture: output_tex.clone(),
+                    texture: inter_tex.clone(),
                     image_node_id: None,
                 }],
                 sampler_kinds: vec![SamplerKind::LinearClamp],

@@ -521,16 +521,16 @@ impl MaterialCompileContext {
 
         // Pass texture bindings (offset by image texture count)
         let pass_binding_offset = (self.image_textures.len() as u32) * 2;
-        for (i, pass_node_id) in self.pass_textures.iter().enumerate() {
+        for (i, pass_texture) in self.pass_textures.iter().enumerate() {
             let tex_binding = pass_binding_offset + (i as u32) * 2;
             let samp_binding = tex_binding + 1;
             out.push_str(&format!(
                 "@group(1) @binding({tex_binding})\nvar {}: texture_2d<f32>;\n\n",
-                Self::pass_tex_var_name(pass_node_id)
+                Self::pass_tex_var_name(&pass_texture.binding_id)
             ));
             out.push_str(&format!(
                 "@group(1) @binding({samp_binding})\nvar {}: sampler;\n\n",
-                Self::pass_sampler_var_name(pass_node_id)
+                Self::pass_sampler_var_name(&pass_texture.binding_id)
             ));
         }
 
@@ -665,7 +665,10 @@ pub fn build_blur_image_wgsl_bundle_with_graph_binding(
     if source_is_pass {
         let mut bundle =
             crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
-        bundle.pass_textures = vec![conn.from.node_id.clone()];
+        bundle.pass_textures = vec![crate::renderer::types::PassTextureRef::direct(
+            &conn.from.node_id,
+            &conn.from.port_id,
+        )];
         return Ok(bundle);
     }
 

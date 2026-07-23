@@ -81,7 +81,10 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
     if source_is_pass {
         let mut bundle =
             crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
-        bundle.pass_textures = vec![conn.from.node_id.clone()];
+        bundle.pass_textures = vec![crate::renderer::types::PassTextureRef::direct(
+            &conn.from.node_id,
+            &conn.from.port_id,
+        )];
         return Ok(bundle);
     }
 

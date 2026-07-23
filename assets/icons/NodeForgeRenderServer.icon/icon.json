@@ -1,34 +1,30 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.05098,0.04314,0.05490,1.00000"
+    "automatic-gradient" : "extended-srgb:0.01961,0.07059,0.15686,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "image-name" : "05-edge-light.svg",
-          "name" : "05-edge-light"
+          "image-name" : "05-wireframe.svg",
+          "name" : "05-wireframe"
         },
         {
-          "image-name" : "04-render-pixels.svg",
-          "name" : "04-render-pixels"
+          "image-name" : "04-sphere-rim.svg",
+          "name" : "04-sphere-rim"
         },
         {
-          "image-name" : "03-node-plates.svg",
-          "name" : "03-node-plates"
-        },
-        {
-          "image-name" : "02-cable-core.svg",
-          "name" : "02-cable-core"
+          "image-name" : "03-sphere-body.svg",
+          "name" : "03-sphere-body"
         }
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.36
+        "opacity" : 0.26
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.18
+        "value" : 0.05
       }
     }
   ],

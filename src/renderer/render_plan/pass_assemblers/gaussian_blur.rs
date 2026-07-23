@@ -136,7 +136,10 @@ pub(crate) fn assemble_gaussian_blur(
                 initial_blur_source_texture = Some(src_spec.texture_name.clone());
                 initial_blur_source_sampler_kind = Some(sampler_kind_for_pass_texture(
                     &prepared.scene,
-                    &src_conn.from.node_id,
+                    &crate::renderer::types::PassTextureRef::direct(
+                        &src_conn.from.node_id,
+                        &src_conn.from.port_id,
+                    ),
                 ));
             }
         } else {
@@ -296,12 +299,9 @@ pub(crate) fn assemble_gaussian_blur(
             &bs.pass_output_registry,
             &src_bundle.pass_textures,
         )?;
-        for (upstream_pass_id, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
+        for (texture_ref, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
             src_texture_bindings.push(binding);
-            src_sampler_kinds.push(sampler_kind_for_pass_texture(
-                &prepared.scene,
-                upstream_pass_id,
-            ));
+            src_sampler_kinds.push(sampler_kind_for_pass_texture(&prepared.scene, texture_ref));
         }
 
         let src_pass_name: ResourceName = format!("sys.blur.{layer_id}.src.pass").into();
@@ -717,7 +717,7 @@ pub(crate) fn assemble_gaussian_blur(
     // Register this GuassianBlurPass output for potential downstream chaining.
     let blur_output_tex = output_tex.clone();
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
         texture_name: blur_output_tex.clone(),
         resolution: [blur_w, blur_h],
         format: if is_sampled_output {

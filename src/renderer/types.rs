@@ -162,8 +162,8 @@ impl BakedDataParseMeta {
 /// `RenderPass -> GuassianBlurPass -> GuassianBlurPass -> ...`
 #[derive(Clone, Debug)]
 pub struct PassOutputSpec {
-    /// The node ID that produces this output.
-    pub node_id: String,
+    /// The exact graph output that produces this texture.
+    pub endpoint: OutputEndpoint,
     /// The output texture resource name.
     pub texture_name: ResourceName,
     /// Resolution of the output texture [width, height].
@@ -172,15 +172,61 @@ pub struct PassOutputSpec {
     pub format: TextureFormat,
 }
 
-/// Information about a pass node's input requirements.
-#[derive(Clone, Debug)]
-pub struct PassInputSpec {
-    /// The node ID that requires this input.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct OutputEndpoint {
     pub node_id: String,
-    /// The port ID for the input (e.g., "pass").
     pub port_id: String,
-    /// Expected resolution (if explicitly specified, otherwise inherited).
-    pub explicit_resolution: Option<[u32; 2]>,
+}
+
+impl OutputEndpoint {
+    pub fn new(node_id: impl Into<String>, port_id: impl Into<String>) -> Self {
+        Self {
+            node_id: node_id.into(),
+            port_id: port_id.into(),
+        }
+    }
+}
+
+/// One material sampling site for a pass output.
+///
+/// `binding_id` identifies the consumer-side read. Multiple `PassTexture`
+/// nodes may therefore sample the same source endpoint with independent
+/// sampler settings.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PassTextureRef {
+    pub binding_id: String,
+    pub source: OutputEndpoint,
+    pub sampler_node_id: Option<String>,
+}
+
+impl PassTextureRef {
+    pub fn direct(node_id: impl Into<String>, port_id: impl Into<String>) -> Self {
+        let node_id = node_id.into();
+        let port_id = port_id.into();
+        let binding_id = if port_id == "pass" {
+            node_id.clone()
+        } else {
+            format!("{node_id}.{port_id}")
+        };
+        Self {
+            binding_id,
+            source: OutputEndpoint::new(node_id, port_id),
+            sampler_node_id: None,
+        }
+    }
+
+    pub fn through_pass_texture(
+        pass_texture_node_id: impl Into<String>,
+        source_node_id: impl Into<String>,
+        source_port_id: impl Into<String>,
+    ) -> Self {
+        let pass_texture_node_id = pass_texture_node_id.into();
+        Self {
+            binding_id: pass_texture_node_id.clone(),
+            source: OutputEndpoint::new(source_node_id, source_port_id),
+            sampler_node_id: Some(pass_texture_node_id),
+        }
+    }
 }
 
 /// Registry of pass outputs for resolving chain dependencies.
@@ -197,18 +243,10 @@ impl PassOutputRegistry {
 
     /// Register a pass output.
     pub fn register(&mut self, spec: PassOutputSpec) {
-        self.register_for_port(spec, "pass");
-    }
-
-    /// Register a pass output for a specific output port.
-    pub fn register_for_port(&mut self, spec: PassOutputSpec, port_id: &str) {
-        self.outputs
-            .insert((spec.node_id.clone(), port_id.to_string()), spec);
-    }
-
-    /// Get the output spec for a node.
-    pub fn get(&self, node_id: &str) -> Option<&PassOutputSpec> {
-        self.get_for_port(node_id, "pass")
+        self.outputs.insert(
+            (spec.endpoint.node_id.clone(), spec.endpoint.port_id.clone()),
+            spec,
+        );
     }
 
     /// Get the output spec for a node+port pair.
@@ -217,32 +255,9 @@ impl PassOutputRegistry {
             .get(&(node_id.to_string(), port_id.to_string()))
     }
 
-    /// Get the output texture name for a node.
-    pub fn get_texture(&self, node_id: &str) -> Option<&ResourceName> {
-        self.get_texture_for_port(node_id, "pass")
-    }
-
     /// Get the output texture name for a node+port pair.
     pub fn get_texture_for_port(&self, node_id: &str, port_id: &str) -> Option<&ResourceName> {
         self.get_for_port(node_id, port_id).map(|s| &s.texture_name)
-    }
-
-    /// Get the resolution for a node's output.
-    pub fn get_resolution(&self, node_id: &str) -> Option<[u32; 2]> {
-        self.get(node_id).map(|s| s.resolution)
-    }
-
-    /// Resolve the effective resolution for a pass input.
-    /// If explicit_resolution is Some, use it. Otherwise inherit from upstream.
-    pub fn resolve_resolution(
-        &self,
-        upstream_node_id: &str,
-        explicit_resolution: Option<[u32; 2]>,
-        default_resolution: [u32; 2],
-    ) -> [u32; 2] {
-        explicit_resolution
-            .or_else(|| self.get_resolution(upstream_node_id))
-            .unwrap_or(default_resolution)
     }
 }
 
@@ -419,10 +434,10 @@ pub struct MaterialCompileContext {
     pub image_textures: Vec<String>,
     /// Map from node ID to texture binding index.
     pub image_index_by_node: HashMap<String, usize>,
-    /// List of PassTexture node IDs (upstream pass nodes) referenced in order.
-    pub pass_textures: Vec<String>,
-    /// Map from pass node ID to texture binding index.
-    pub pass_index_by_node: HashMap<String, usize>,
+    /// Pass-output sampling sites referenced in binding order.
+    pub pass_textures: Vec<PassTextureRef>,
+    /// Map from consumer-side binding identity to texture binding index.
+    pub pass_index_by_binding: HashMap<String, usize>,
 
     /// Extra WGSL helper declarations emitted by node compilers (e.g. MathClosure).
     ///
@@ -544,16 +559,21 @@ impl MaterialCompileContext {
         idx
     }
 
-    /// Register a pass texture node and return its binding index.
+    /// Register a direct read of a pass output and return its binding index.
     /// The binding index is offset by the number of image textures to avoid conflicts.
     pub fn register_pass_texture(&mut self, pass_node_id: &str) -> usize {
-        if let Some(&idx) = self.pass_index_by_node.get(pass_node_id) {
+        self.register_pass_texture_ref(PassTextureRef::direct(pass_node_id, "pass"))
+    }
+
+    /// Register a consumer-side pass texture sampling site.
+    pub fn register_pass_texture_ref(&mut self, texture_ref: PassTextureRef) -> usize {
+        if let Some(&idx) = self.pass_index_by_binding.get(&texture_ref.binding_id) {
             return idx;
         }
         let idx = self.pass_textures.len();
-        self.pass_textures.push(pass_node_id.to_string());
-        self.pass_index_by_node
-            .insert(pass_node_id.to_string(), idx);
+        self.pass_index_by_binding
+            .insert(texture_ref.binding_id.clone(), idx);
+        self.pass_textures.push(texture_ref);
         idx
     }
 
@@ -711,8 +731,8 @@ pub struct WgslShaderBundle {
     pub module: String,
     /// ImageTexture node ids referenced by this pass's material graph, in binding order.
     pub image_textures: Vec<String>,
-    /// PassTexture node ids (upstream pass nodes) referenced by this pass's material graph, in binding order.
-    pub pass_textures: Vec<String>,
+    /// Pass-output sampling sites referenced by this material graph, in binding order.
+    pub pass_textures: Vec<PassTextureRef>,
     /// Optional generated graph schema for input nodes referenced by this pass.
     pub graph_schema: Option<GraphSchema>,
     /// Selected graph binding kind used by generated declarations.

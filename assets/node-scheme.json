@@ -353,7 +353,7 @@
     ],
     "sampledTexture": [
       "texture",
-      "pass"
+      "sampledTexture"
     ],
     "ImageFile": [
       "ImageFile"
@@ -4594,7 +4594,7 @@
         {
           "id": "texture",
           "name": "Texture",
-          "type": "texture"
+          "type": "sampledTexture"
         }
       ],
       "defaultParams": {

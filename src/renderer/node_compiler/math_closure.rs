@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
 use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::glsl_snippet::{GlslParam, GlslSnippetSpec, compile_glsl_snippet};
-use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};
+use crate::renderer::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 use crate::renderer::validation::GlslShaderStage;
 
@@ -43,8 +43,8 @@ fn map_port_type(s: Option<&str>) -> Result<ValueType> {
 struct PassTextureInput {
     /// Variable name used in the snippet (e.g., "mip0").
     var_name: String,
-    /// Upstream pass node ID.
-    pass_node_id: String,
+    /// Consumer-side binding identity.
+    binding_id: String,
 }
 
 fn default_value_for(ty: ValueType) -> TypedExpr {
@@ -479,11 +479,12 @@ where
             }
 
             // Register this pass texture for binding.
-            ctx.register_pass_texture(&conn.from.node_id);
+            let texture_ref = PassTextureRef::direct(&conn.from.node_id, &conn.from.port_id);
+            ctx.register_pass_texture_ref(texture_ref.clone());
 
             pass_texture_inputs.push(PassTextureInput {
                 var_name: param_name.clone(),
-                pass_node_id: conn.from.node_id.clone(),
+                binding_id: texture_ref.binding_id,
             });
 
             // Don't add a parameter binding for pass inputs - they're sampled directly.
@@ -538,9 +539,9 @@ where
         let mut glsl_helper_prefix = String::new();
 
         for pti in &pass_texture_inputs {
-            let tex_var = MaterialCompileContext::pass_tex_var_name(&pti.pass_node_id);
-            let samp_var = MaterialCompileContext::pass_sampler_var_name(&pti.pass_node_id);
-            let helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.pass_node_id));
+            let tex_var = MaterialCompileContext::pass_tex_var_name(&pti.binding_id);
+            let samp_var = MaterialCompileContext::pass_sampler_var_name(&pti.binding_id);
+            let helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.binding_id));
             let helper_name_with_suffix = format!("{helper_name}_");
 
             let extra_args = {

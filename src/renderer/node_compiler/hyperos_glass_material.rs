@@ -5,7 +5,7 @@
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
-use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
+use super::super::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
 use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::utils::fmt_f32;
@@ -203,10 +203,11 @@ fn resolve_pass_binding(
         );
     }
 
-    ctx.register_pass_texture(&upstream_id);
-    let tex_var = MaterialCompileContext::pass_tex_var_name(&upstream_id);
-    let samp_var = MaterialCompileContext::pass_sampler_var_name(&upstream_id);
-    Ok(Some((upstream_id, tex_var, samp_var)))
+    let texture_ref = PassTextureRef::direct(&upstream_id, &conn.from.port_id);
+    ctx.register_pass_texture_ref(texture_ref.clone());
+    let tex_var = MaterialCompileContext::pass_tex_var_name(&texture_ref.binding_id);
+    let samp_var = MaterialCompileContext::pass_sampler_var_name(&texture_ref.binding_id);
+    Ok(Some((texture_ref.binding_id, tex_var, samp_var)))
 }
 
 const HYPEROS_GLASS_WGSL_LIB_KEY: &str = "hyperos_glass_material_lib";

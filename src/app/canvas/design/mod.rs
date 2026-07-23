@@ -4,7 +4,10 @@ pub mod mesh_gradient;
 pub mod registry;
 pub mod state;
 
-use rust_wgpu_fiber::{ResourceName, eframe::egui};
+use rust_wgpu_fiber::{
+    ResourceName,
+    eframe::{egui, wgpu},
+};
 
 pub use interaction::{
     DesignInteractionClaims, DesignOverlayInput, DesignOverlayOutput, DesignOverlayStatus,
@@ -19,16 +22,18 @@ pub fn enter_session(
     current: Option<CanvasDesignSession>,
     target: PassDesignTarget,
     previous_preview_texture: Option<ResourceName>,
+    previous_texture_filter: wgpu::FilterMode,
 ) -> Option<CanvasDesignSession> {
     let tool_kind = tool_kind_for_target(&target)?;
-    let (previous_preview_texture, already_owns_preview) = current
+    let (previous_preview_texture, previous_texture_filter, already_owns_preview) = current
         .map(|session| {
             (
                 session.previous_preview_texture,
+                session.previous_texture_filter,
                 session.owns_preview_texture,
             )
         })
-        .unwrap_or((previous_preview_texture, false));
+        .unwrap_or((previous_preview_texture, previous_texture_filter, false));
     let owns_preview_texture = already_owns_preview || target.target_texture.is_some();
     let session_id = format!("design:{}:{}", target.node_id, target.pass_name);
     let tool = match tool_kind {
@@ -44,6 +49,7 @@ pub fn enter_session(
         target,
         session_id,
         previous_preview_texture,
+        previous_texture_filter,
         owns_preview_texture,
         tool,
     })
@@ -155,7 +161,7 @@ mod tests {
             target_texture: None,
             target_size: Some((1, 1)),
         };
-        let mut session = enter_session(None, target, None).unwrap();
+        let mut session = enter_session(None, target, None, wgpu::FilterMode::Nearest).unwrap();
         let snapshot = ResourceSnapshot {
             passes: vec![PassInfo {
                 name: "sys.mesh_gradient.mesh.pass".to_string(),
@@ -206,9 +212,11 @@ mod tests {
             None,
             first_target,
             Some(ResourceName::from("before.design")),
+            wgpu::FilterMode::Nearest,
         )
         .unwrap();
-        let second = enter_session(Some(first), second_target, None).unwrap();
+        let second =
+            enter_session(Some(first), second_target, None, wgpu::FilterMode::Linear).unwrap();
 
         assert_eq!(
             second
@@ -225,11 +233,12 @@ mod tests {
         let target = PassDesignTarget {
             node_id: "ilight".to_string(),
             node_type: "IntelligentLight".to_string(),
-            pass_name: "sys.ilight.ilight.upsample.pass".to_string(),
+            pass_name: "sys.ilight.ilight.pass".to_string(),
             target_texture: Some("rt.ilight".to_string()),
             target_size: Some((640, 480)),
         };
-        let session = enter_session(None, target, None).expect("ilight design session");
+        let session = enter_session(None, target, None, wgpu::FilterMode::Nearest)
+            .expect("ilight design session");
 
         assert!(matches!(
             session.tool,

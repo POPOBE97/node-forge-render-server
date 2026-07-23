@@ -50,7 +50,7 @@ pub(crate) fn assemble_composite(
             })?;
 
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
         texture_name: comp_ctx.target_texture_name.clone(),
         resolution: [
             comp_ctx.target_size_px[0].max(1.0).round() as u32,

@@ -47,10 +47,10 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_33_GradientBlur_11: texture_2d<f32>;
+var pass_tex_GroupInstance_33_PassTexture_BackgroundBlur: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_33_GradientBlur_11: sampler;
+var pass_samp_GroupInstance_33_PassTexture_BackgroundBlur: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -116,8 +116,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_33/ShaderMaterial_BackgroundDarken.material
     let background_darken_alpha_material = shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
         ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
-        pass_tex_GroupInstance_33_GradientBlur_11,
-        pass_samp_GroupInstance_33_GradientBlur_11,
+        pass_tex_GroupInstance_33_PassTexture_BackgroundBlur,
+        pass_samp_GroupInstance_33_PassTexture_BackgroundBlur,
         (graph_inputs.float_input_44).x,
     );
     // Final composite

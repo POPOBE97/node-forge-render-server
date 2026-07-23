@@ -270,7 +270,7 @@ fn pass_source_metadata_by_pass(
             );
         } else if node.node_type == "IntelligentLight" {
             out.insert(
-                format!("sys.ilight.{}.upsample.pass", node.id),
+                format!("sys.ilight.{}.pass", node.id),
                 (Some(node.id.clone()), Some(node.node_type.clone())),
             );
         }
@@ -868,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn intelligent_light_pass_source_metadata_maps_upsample_pass_to_scene_node() {
+    fn intelligent_light_pass_source_metadata_maps_intrinsic_pass_to_scene_node() {
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: Metadata {
@@ -895,7 +895,7 @@ mod tests {
 
         let sources = pass_source_metadata_by_pass(&scene);
         assert_eq!(
-            sources.get("sys.ilight.IntelligentLight_7.upsample.pass"),
+            sources.get("sys.ilight.IntelligentLight_7.pass"),
             Some(&(
                 Some("IntelligentLight_7".to_string()),
                 Some("IntelligentLight".to_string())

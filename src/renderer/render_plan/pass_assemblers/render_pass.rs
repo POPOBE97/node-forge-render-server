@@ -570,12 +570,9 @@ pub(crate) fn assemble_render_pass(
         &bs.pass_output_registry,
         &bundle.pass_textures,
     )?;
-    for (upstream_pass_id, binding) in bundle.pass_textures.iter().zip(pass_bindings) {
+    for (texture_ref, binding) in bundle.pass_textures.iter().zip(pass_bindings) {
         texture_bindings.push(binding);
-        sampler_kinds.push(sampler_kind_for_pass_texture(
-            &prepared.scene,
-            upstream_pass_id,
-        ));
+        sampler_kinds.push(sampler_kind_for_pass_texture(&prepared.scene, texture_ref));
     }
 
     let instance_buffer = if is_instanced {
@@ -688,15 +685,12 @@ pub(crate) fn assemble_render_pass(
 
         bs.composite_passes.push(depth_resolve_pass_name);
 
-        bs.pass_output_registry.register_for_port(
-            PassOutputSpec {
-                node_id: layer_id.to_string(),
-                texture_name: resolved.clone(),
-                resolution: [pass_target_w_u, pass_target_h_u],
-                format: sampled_pass_format,
-            },
-            "depth",
-        );
+        bs.pass_output_registry.register(PassOutputSpec {
+            endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "depth"),
+            texture_name: resolved.clone(),
+            resolution: [pass_target_w_u, pass_target_h_u],
+            format: sampled_pass_format,
+        });
 
         Some(resolved)
     } else {
@@ -960,7 +954,7 @@ pub(crate) fn assemble_render_pass(
 
     // Register output so downstream PassTexture nodes can resolve it.
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
         texture_name: pass_output_texture,
         resolution: [pass_target_w_u, pass_target_h_u],
         format: if is_sampled_output || needs_resolve_intermediate {

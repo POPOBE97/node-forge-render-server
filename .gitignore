@@ -26,6 +26,8 @@
 tests/**/out/
 /tmp/
 *.log
+*.nforge-shm
+*.nforge-wal
 
 # Third-party build output
 /third_party/**/target/

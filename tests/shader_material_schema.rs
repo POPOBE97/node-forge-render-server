@@ -17,15 +17,21 @@ fn node(id: &str, node_type: &str) -> Node {
     }
 }
 
-fn connection(from_port: &str, to_port: &str) -> Connection {
+fn connection(
+    id: &str,
+    from_node: &str,
+    from_port: &str,
+    to_node: &str,
+    to_port: &str,
+) -> Connection {
     Connection {
-        id: "sys.group.edge.5".to_string(),
+        id: id.to_string(),
         from: Endpoint {
-            node_id: "IntelligentLight_30".to_string(),
+            node_id: from_node.to_string(),
             port_id: from_port.to_string(),
         },
         to: Endpoint {
-            node_id: "GroupInstance_32/ShaderMaterial_32".to_string(),
+            node_id: to_node.to_string(),
             port_id: to_port.to_string(),
         },
     }
@@ -42,14 +48,58 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
             created: None,
             modified: None,
         },
-        nodes: vec![node("IntelligentLight_30", "IntelligentLight"), shader],
-        connections: vec![connection("pass", to_port)],
+        nodes: vec![
+            node("IntelligentLight_30", "IntelligentLight"),
+            node("PassTexture_31", "PassTexture"),
+            shader,
+        ],
+        connections: vec![
+            connection(
+                "sys.group.edge.4",
+                "IntelligentLight_30",
+                "pass",
+                "PassTexture_31",
+                "pass",
+            ),
+            connection(
+                "sys.group.edge.5",
+                "PassTexture_31",
+                "texture",
+                "GroupInstance_32/ShaderMaterial_32",
+                to_port,
+            ),
+        ],
         outputs: None,
         groups: Vec::new(),
         assets: Default::default(),
         state_machine: None,
         debug_artifacts: None,
     }
+}
+
+#[test]
+fn rejects_direct_pass_to_shader_material_resource() {
+    let mut scene = scene(
+        NodePort {
+            id: "resource:intelli_tex".to_string(),
+            name: Some("intelli_tex".to_string()),
+            port_type: Some("sampledTexture".to_string()),
+            array_length: None,
+        },
+        "resource:intelli_tex",
+    );
+    scene.nodes.retain(|node| node.id != "PassTexture_31");
+    scene.connections = vec![connection(
+        "sys.group.edge.5",
+        "IntelligentLight_30",
+        "pass",
+        "GroupInstance_32/ShaderMaterial_32",
+        "resource:intelli_tex",
+    )];
+
+    let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
+        .expect_err("pass-to-sampledTexture must require an explicit PassTexture");
+    assert!(error.to_string().contains("type mismatch"));
 }
 
 #[test]

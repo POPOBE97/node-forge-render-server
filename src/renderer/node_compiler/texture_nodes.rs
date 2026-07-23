@@ -3,7 +3,7 @@
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
-use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
+use super::super::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::utils::{coerce_to_type, fmt_f32};
@@ -636,7 +636,9 @@ where
     }
 
     // Register this pass texture for binding.
-    let _pass_index = ctx.register_pass_texture(upstream_node_id);
+    let texture_ref =
+        PassTextureRef::through_pass_texture(&node.id, upstream_node_id, &pass_conn.from.port_id);
+    let _pass_index = ctx.register_pass_texture_ref(texture_ref);
 
     // If an explicit UV input is provided, treat it as user-facing UV semantics
     // (bottom-left origin) and convert to texture-sampling UV space (top-left origin).
@@ -656,8 +658,8 @@ where
         bail!("PassTexture.uv must be vector2, got {:?}", uv_expr.ty);
     }
 
-    let tex_var = MaterialCompileContext::pass_tex_var_name(upstream_node_id);
-    let samp_var = MaterialCompileContext::pass_sampler_var_name(upstream_node_id);
+    let tex_var = MaterialCompileContext::pass_tex_var_name(&node.id);
+    let samp_var = MaterialCompileContext::pass_sampler_var_name(&node.id);
 
     let sample_uv_expr = if has_explicit_uv {
         format!("vec2f(({}).x, 1.0 - ({}).y)", uv_expr.expr, uv_expr.expr)
@@ -677,10 +679,7 @@ where
             ValueType::F32,
             uv_expr.uses_time,
         )),
-        "texture" => Ok(TypedExpr::new(
-            upstream_node_id.clone(),
-            ValueType::Texture2D,
-        )),
+        "texture" => Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D)),
         other => bail!("unsupported PassTexture output port: {other}"),
     }
 }

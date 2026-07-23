@@ -250,12 +250,9 @@ pub(crate) fn assemble_gradient_blur(
 
         let src_pass_bindings =
             resolve_pass_texture_bindings(&bs.pass_output_registry, &src_bundle.pass_textures)?;
-        for (upstream_pass_id, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
+        for (texture_ref, binding) in src_bundle.pass_textures.iter().zip(src_pass_bindings) {
             src_texture_bindings.push(binding);
-            src_sampler_kinds.push(sampler_kind_for_pass_texture(
-                &prepared.scene,
-                upstream_pass_id,
-            ));
+            src_sampler_kinds.push(sampler_kind_for_pass_texture(&prepared.scene, texture_ref));
         }
 
         let src_pass_name: ResourceName = format!("sys.gb.{layer_id}.src.pass").into();
@@ -431,7 +428,7 @@ pub(crate) fn assemble_gradient_blur(
         let mip_h = clamp_min_1(padded_h >> i);
         let tex_name: ResourceName = mip_id.clone().into();
         bs.pass_output_registry.register(PassOutputSpec {
-            node_id: mip_id.clone(),
+            endpoint: crate::renderer::types::OutputEndpoint::new(mip_id.clone(), "pass"),
             texture_name: tex_name,
             resolution: [mip_w, mip_h],
             format: sampled_pass_format,
@@ -547,19 +544,16 @@ pub(crate) fn assemble_gradient_blur(
     // Pass textures (mip textures + any from mask expression).
     let final_pass_bindings =
         resolve_pass_texture_bindings(&bs.pass_output_registry, &composite_bundle.pass_textures)?;
-    for (upstream_pass_id, binding) in composite_bundle
+    for (texture_ref, binding) in composite_bundle
         .pass_textures
         .iter()
         .zip(final_pass_bindings)
     {
         final_texture_bindings.push(binding);
-        if upstream_pass_id.contains("sys.gb.") {
+        if texture_ref.source.node_id.contains("sys.gb.") {
             final_sampler_kinds.push(SamplerKind::LinearClamp);
         } else {
-            final_sampler_kinds.push(sampler_kind_for_pass_texture(
-                &prepared.scene,
-                upstream_pass_id,
-            ));
+            final_sampler_kinds.push(sampler_kind_for_pass_texture(&prepared.scene, texture_ref));
         }
     }
 
@@ -604,7 +598,7 @@ pub(crate) fn assemble_gradient_blur(
     // Register GradientBlur output for downstream chaining.
     let gradient_output_tex = output_tex.clone();
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "output"),
         texture_name: gradient_output_tex.clone(),
         resolution: gb_src_resolution,
         format: if is_sampled_output {

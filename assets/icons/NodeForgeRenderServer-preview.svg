@@ -1,33 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="180" y1="100" x2="850" y2="930" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#28272F"/>
-      <stop offset=".55" stop-color="#141217"/>
-      <stop offset="1" stop-color="#09080B"/>
-    </linearGradient>
-    <linearGradient id="top" x1="250" y1="200" x2="450" y2="410" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF6F52"/>
-      <stop offset="1" stop-color="#EB4225"/>
-    </linearGradient>
-    <linearGradient id="bottom" x1="570" y1="620" x2="770" y2="825" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F05B25"/>
-      <stop offset="1" stop-color="#BC3008"/>
-    </linearGradient>
-    <linearGradient id="cable" x1="350" y1="410" x2="680" y2="620" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF6D4A"/>
-      <stop offset="1" stop-color="#EC491C"/>
+    <linearGradient id="background" x1="128" y1="96" x2="866" y2="930" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#152A4A"/>
+      <stop offset=".5" stop-color="#07152E"/>
+      <stop offset="1" stop-color="#030A19"/>
     </linearGradient>
   </defs>
-  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg)"/>
-  <path d="M352 350L352 414C352 500 405 520 500 546C602 574 672 586 672 610L672 675"
-        fill="none" stroke="url(#cable)" stroke-linecap="round" stroke-width="52"/>
-  <rect x="240" y="190" width="224" height="224" rx="66" fill="url(#top)"/>
-  <rect x="560" y="610" width="224" height="224" rx="66" fill="url(#bottom)"/>
-  <rect x="252" y="202" width="200" height="200" rx="56" fill="none" stroke="#FFE0D5" stroke-width="5" opacity=".28"/>
-  <rect x="572" y="622" width="200" height="200" rx="56" fill="none" stroke="#FFC1AA" stroke-width="5" opacity=".22"/>
-  <rect x="608" y="658" width="128" height="128" rx="34" fill="#32130B" opacity=".86"/>
-  <rect x="638" y="688" width="28" height="28" rx="7" fill="#FFF0DF"/>
-  <rect x="678" y="688" width="28" height="28" rx="7" fill="#FFB079"/>
-  <rect x="638" y="728" width="28" height="28" rx="7" fill="#FF7950"/>
-  <rect x="678" y="728" width="28" height="28" rx="7" fill="#E84B22"/>
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#background)"/>
+  <image href="NodeForgeRenderServer.icon/Assets/03-sphere-body.svg" width="1024" height="1024"/>
+  <image href="NodeForgeRenderServer.icon/Assets/04-sphere-rim.svg" width="1024" height="1024"/>
+  <image href="NodeForgeRenderServer.icon/Assets/05-wireframe.svg" width="1024" height="1024"/>
 </svg>

@@ -126,14 +126,20 @@ pub fn apply_action(
                 .map(|session| session.previous_preview_texture.clone())
                 .unwrap_or_else(|| app.canvas.display.preview_texture_name.clone());
             let target_texture = target.target_texture.clone();
+            let is_intelligent_light = target.node_type == "IntelligentLight";
+            let previous_texture_filter = app.canvas.display.texture_filter;
             app.canvas.design.active = crate::app::canvas::design::enter_session(
                 app.canvas.design.active.take(),
                 target,
                 previous_preview_texture,
+                previous_texture_filter,
             );
             if let Some(target_texture) = target_texture {
                 app.canvas.display.preview_texture_name =
                     Some(ResourceName::from(target_texture.as_str()));
+                if is_intelligent_light {
+                    app.canvas.display.texture_filter = wgpu::FilterMode::Linear;
+                }
                 pixel_overlay::clear_cache(app);
                 app.canvas.invalidation.preview_source_changed();
             }
@@ -142,6 +148,7 @@ pub fn apply_action(
             if let Some(session) = app.canvas.design.active.take()
                 && session.owns_preview_texture
             {
+                app.canvas.display.texture_filter = session.previous_texture_filter;
                 app.canvas.display.preview_texture_name = session.previous_preview_texture;
                 if app.canvas.display.preview_texture_name.is_none()
                     && let Some(id) = app.canvas.display.preview_color_attachment.take()

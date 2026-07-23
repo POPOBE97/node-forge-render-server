@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow, bail};
 use naga::{ArraySize, ImageClass, ImageDimension, ScalarKind, TypeInner, VectorSize};
 
-use super::super::types::{GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType};
+use super::super::types::{
+    GraphFieldKind, MaterialCompileContext, PassTextureRef, TypedExpr, ValueType,
+};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
 use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
@@ -435,14 +437,6 @@ fn resolve_resource(
         )
     })?;
 
-    if is_pass_like_node_type(&upstream.node_type) {
-        ctx.register_pass_texture(&upstream.id);
-        return Ok((
-            MaterialCompileContext::pass_tex_var_name(&upstream.id),
-            MaterialCompileContext::pass_sampler_var_name(&upstream.id),
-        ));
-    }
-
     match upstream.node_type.as_str() {
         "ImageTexture" if connection.from.port_id == "texture" => {
             ctx.register_image_texture(&upstream.id);
@@ -463,14 +457,19 @@ fn resolve_resource(
                     pass.node_type
                 );
             }
-            ctx.register_pass_texture(&pass.id);
+            let texture_ref = PassTextureRef::through_pass_texture(
+                &upstream.id,
+                &pass.id,
+                &pass_connection.from.port_id,
+            );
+            ctx.register_pass_texture_ref(texture_ref);
             Ok((
-                MaterialCompileContext::pass_tex_var_name(&pass.id),
-                MaterialCompileContext::pass_sampler_var_name(&pass.id),
+                MaterialCompileContext::pass_tex_var_name(&upstream.id),
+                MaterialCompileContext::pass_sampler_var_name(&upstream.id),
             ))
         }
         _ => bail!(
-            "ShaderMaterial resource '{port_id}' expects ImageTexture.texture, PassTexture.texture, or a pass output"
+            "ShaderMaterial resource '{port_id}' expects ImageTexture.texture or PassTexture.texture"
         ),
     }
 }

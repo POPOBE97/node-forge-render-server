@@ -162,7 +162,13 @@ pub(crate) fn assemble_bloom(
             texture: src_spec.texture_name.clone(),
             image_node_id: None,
         }],
-        sampler_kinds: vec![sampler_kind_for_pass_texture(scene, &src_conn.from.node_id)],
+        sampler_kinds: vec![sampler_kind_for_pass_texture(
+            scene,
+            &crate::renderer::types::PassTextureRef::direct(
+                &src_conn.from.node_id,
+                &src_conn.from.port_id,
+            ),
+        )],
         blend_state: BlendState::REPLACE,
         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
         sample_count: 1,
@@ -621,7 +627,7 @@ pub(crate) fn assemble_bloom(
     }
 
     bs.pass_output_registry.register(PassOutputSpec {
-        node_id: layer_id.to_string(),
+        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "glare"),
         texture_name: output_tex.clone(),
         resolution: base_resolution,
         format: if is_sampled_output {

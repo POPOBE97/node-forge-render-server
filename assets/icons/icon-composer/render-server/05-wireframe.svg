@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="sphere-clip"><circle cx="512" cy="500" r="300"/></clipPath>
+    <linearGradient id="mesh-fade" x1="210" y1="500" x2="585" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset=".06" stop-color="white"/><stop offset=".48" stop-color="white" stop-opacity=".82"/><stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="mesh-mask"><rect x="190" y="188" width="450" height="625" fill="url(#mesh-fade)"/></mask>
+  </defs>
+  <g clip-path="url(#sphere-clip)" mask="url(#mesh-mask)" fill="none" stroke="#D7F4FF" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" opacity=".78">
+    <path d="M360 225L430 205L500 195 M285 280L355 270L430 260L510 255 M235 360L305 345L380 330L455 325L535 330 M210 450L280 435L355 420L430 415L505 425L570 445 M210 545L280 535L355 525L430 520L505 530L570 550 M235 635L305 625L380 615L455 610L535 615 M285 710L355 700L430 690L510 685 M360 765L430 775L500 785"/>
+    <path d="M360 225L285 280L235 360L210 450L210 545L235 635L285 710L360 765 M360 225L355 270L305 345L280 435L280 535L305 625L355 700L360 765 M430 205L355 270L380 330L355 420L355 525L380 615L355 700L430 775 M430 205L430 260L455 325L430 415L430 520L455 610L430 690L430 775 M500 195L430 260L535 330L505 425L505 530L535 615L510 685L500 785 M500 195L510 255L455 325L505 425L430 520L535 615L430 690L500 785"/>
+    <path d="M285 280L305 345L210 450 M355 270L235 360L280 435 M430 260L380 330L430 415 M510 255L455 325L570 445 M235 360L355 420L280 535 M305 345L430 415L355 525 M380 330L505 425L430 520 M210 450L280 535L235 635 M280 435L355 525L305 625 M355 420L430 520L380 615 M430 415L505 530L455 610 M505 425L570 550L535 615 M210 545L305 625L285 710 M280 535L380 615L355 700 M355 525L455 610L430 690 M430 520L535 615L510 685"/>
+  </g>
+  <g clip-path="url(#sphere-clip)" mask="url(#mesh-mask)" fill="#E9FAFF" opacity=".86">
+    <circle cx="360" cy="225" r="2.8"/><circle cx="430" cy="205" r="2.8"/><circle cx="500" cy="195" r="2.8"/><circle cx="285" cy="280" r="2.8"/><circle cx="355" cy="270" r="2.8"/><circle cx="430" cy="260" r="2.8"/><circle cx="510" cy="255" r="2.8"/><circle cx="235" cy="360" r="2.8"/><circle cx="305" cy="345" r="2.8"/><circle cx="380" cy="330" r="2.8"/><circle cx="455" cy="325" r="2.8"/><circle cx="535" cy="330" r="2.8"/><circle cx="210" cy="450" r="2.8"/><circle cx="280" cy="435" r="2.8"/><circle cx="355" cy="420" r="2.8"/><circle cx="430" cy="415" r="2.8"/><circle cx="505" cy="425" r="2.8"/><circle cx="210" cy="545" r="2.8"/><circle cx="280" cy="535" r="2.8"/><circle cx="355" cy="525" r="2.8"/><circle cx="430" cy="520" r="2.8"/><circle cx="505" cy="530" r="2.8"/><circle cx="235" cy="635" r="2.8"/><circle cx="305" cy="625" r="2.8"/><circle cx="380" cy="615" r="2.8"/><circle cx="455" cy="610" r="2.8"/><circle cx="535" cy="615" r="2.8"/><circle cx="285" cy="710" r="2.8"/><circle cx="355" cy="700" r="2.8"/><circle cx="430" cy="690" r="2.8"/><circle cx="510" cy="685" r="2.8"/><circle cx="360" cy="765" r="2.8"/><circle cx="430" cy="775" r="2.8"/><circle cx="500" cy="785" r="2.8"/>
+  </g>
+</svg>
