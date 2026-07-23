@@ -31,10 +31,10 @@ struct VSOut {
     @location(3) geo_size_px: vec2f,
 };
 @group(1) @binding(0)
-var img_tex_GroupInstance_70_ImageTexture_48: texture_2d<f32>;
+var img_tex_GroupInstance_70_ImageTexture_72: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_GroupInstance_70_ImageTexture_48: sampler;
+var img_samp_GroupInstance_70_ImageTexture_72: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -277,16 +277,16 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    // ImageTexture GroupInstance_70/ImageTexture_48 aspect-correct uv
+    // ImageTexture GroupInstance_70/ImageTexture_72 aspect-correct uv
     let image_texture_uv = aspect_correct_uv_fill(
         (in.uv),
-        vec2f(textureDimensions(img_tex_GroupInstance_70_ImageTexture_48)),
+        vec2f(textureDimensions(img_tex_GroupInstance_70_ImageTexture_72)),
         in.geo_size_px,
     );
-    // ImageTexture GroupInstance_70/ImageTexture_48.color
+    // ImageTexture GroupInstance_70/ImageTexture_72.color
     let image_texture_sample = textureSample(
-        img_tex_GroupInstance_70_ImageTexture_48,
-        img_samp_GroupInstance_70_ImageTexture_48,
+        img_tex_GroupInstance_70_ImageTexture_72,
+        img_samp_GroupInstance_70_ImageTexture_72,
         image_texture_uv,
     );
     // Final composite

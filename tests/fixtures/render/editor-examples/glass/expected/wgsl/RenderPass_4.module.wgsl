@@ -36,6 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
+    // Node: Vector4Input_82
+    vector4_input_82: vec4f,
 };
 
 @group(0) @binding(2)
@@ -48,6 +50,12 @@ var pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42: texture_2d<f32>;
 
 @group(1) @binding(1)
 var pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42: sampler;
+
+@group(1) @binding(2)
+var pass_tex_GroupInstance_79_RenderPass_72: texture_2d<f32>;
+
+@group(1) @binding(3)
+var pass_samp_GroupInstance_79_RenderPass_72: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -530,7 +538,13 @@ fn glass_texture_map(
 
     if (add_foreground) {
         let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
+        let curve_value = mix(
+            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
+            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
+            lighten
+        );
+        col = glass_luminance_curve_lab(col, curve_value, 1.0);
+        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
     }
 
     return col;
@@ -694,21 +708,21 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     let refraction = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     let refraction = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, refract_uv, true, 1.0, 0, pass_tex_GroupInstance_79_RenderPass_72, pass_samp_GroupInstance_79_RenderPass_72, screen_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     let reflection = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     let reflection = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, reflect_uv, true, 1.0, 0, pass_tex_GroupInstance_79_RenderPass_72, pass_samp_GroupInstance_79_RenderPass_72, screen_uv);
 
      // --- Mix refraction + reflection ---
      var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.0, 0.70286721, 0.801292837, 0.900640905), 1.0);
+    glass_mat = glass_luminance_curve_lab(glass_mat, (graph_inputs.vector4_input_82), 1.0);
     //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---
-     var glass_color = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv, false, 1.0, 0, pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv);
+     var glass_color = glass_texture_map(pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42, pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42, screen_uv, true, 1.0, 0, pass_tex_GroupInstance_79_RenderPass_72, pass_samp_GroupInstance_79_RenderPass_72, screen_uv);
      glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
      glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);

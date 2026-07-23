@@ -1064,6 +1064,12 @@ pub(crate) fn run() -> Result<()> {
             .with_resizable(true)
             .with_transparent(false)
             .with_decorations(true)
+            .with_icon(
+                eframe::icon_data::from_png_bytes(
+                    &include_bytes!("../assets/icons/node-forge-icon.png")[..],
+                )
+                .expect("embedded render server icon must be a valid PNG"),
+            )
             .with_fullsize_content_view(false)
             .with_titlebar_shown(true)
             .with_title_shown(true)

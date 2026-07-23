@@ -75,8 +75,8 @@ var img_samp_ImageTexture_68: sampler;
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // ImageTexture ImageTexture_68.color
-    let ui_texture_sample = textureSample(img_tex_ImageTexture_68, img_samp_ImageTexture_68, (in.uv));
+    let image_texture_sample = textureSample(img_tex_ImageTexture_68, img_samp_ImageTexture_68, (in.uv));
     // Final composite
-    let _frag_out = ui_texture_sample;
+    let _frag_out = image_texture_sample;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

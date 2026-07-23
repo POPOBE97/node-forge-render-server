@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_48
-    u_bg_overlay: vec4f,
+    color_input_48: vec4f,
 };
 
 @group(0) @binding(2)
@@ -403,7 +403,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var math_closure_out: vec4f;
     {
-        let x = blendNormal((vec4f((graph_inputs.u_bg_overlay).rgb * (graph_inputs.u_bg_overlay).a, (graph_inputs.u_bg_overlay).a)), (image_texture_sample));
+        let x = blendNormal((vec4f((graph_inputs.color_input_48).rgb * (graph_inputs.color_input_48).a, (graph_inputs.color_input_48).a)), (image_texture_sample));
         let y = math_closure_out_4bd9b11e;
         var output: vec4f;
         output = mc_math_closure_534c24ef(in.uv, x, y);

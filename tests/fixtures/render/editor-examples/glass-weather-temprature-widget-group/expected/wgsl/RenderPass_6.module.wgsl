@@ -34,9 +34,9 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: BoolInput_139
-    show_thumb: vec4i,
+    bool_input_139: vec4i,
     // Node: FloatInput_136
-    thumb_pos: vec4f,
+    float_input_136: vec4f,
     // Node: GroupInstance_128/FloatInput_10
     group_instance_128_float_input_10: vec4f,
     // Node: GroupInstance_128/FloatInput_12
@@ -294,7 +294,45 @@ fn blendLuminance(src: vec4f, dst: vec4f) -> vec4f {
     return blendHSLColor(vec2f(1.0, 0.0), src, dst);
 }
 
-fn mc_edge_color(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
+fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, refract_offset: vec3<f32>) -> vec2<f32> {
+    var uv_1: vec2<f32>;
+    var xy_1: vec2<f32>;
+    var size_1: vec2<f32>;
+    var depth_1: f32;
+    var refract_offset_1: vec3<f32>;
+    var output: vec2<f32> = vec2(0f);
+    var offset: vec2<f32>;
+
+    uv_1 = uv;
+    xy_1 = xy;
+    size_1 = size;
+    depth_1 = depth;
+    refract_offset_1 = refract_offset;
+    let _e13: vec2<f32> = xy_1;
+    let _e14: vec3<f32> = refract_offset_1;
+    let _e16: f32 = depth_1;
+    offset = (_e13 + (_e14.xy * _e16));
+    let _e20: vec2<f32> = offset;
+    let _e22: vec2<f32> = size_1;
+    output = (_e20.xy / _e22);
+    let _e24: vec2<f32> = output;
+    return _e24;
+}
+
+fn mc_math_closure_3c18d25c(uv: vec2<f32>, x: f32) -> f32 {
+    var uv_1: vec2<f32>;
+    var x_1: f32;
+    var output: f32 = 0f;
+
+    uv_1 = uv;
+    x_1 = x;
+    let _e8: f32 = x_1;
+    output = (1f - _e8);
+    let _e10: f32 = output;
+    return _e10;
+}
+
+fn mc_math_closure_8916d25c(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selection: f32, lumin_edge: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var c_edge_1: vec4<f32>;
     var e_1: f32;
@@ -357,69 +395,6 @@ fn mc_edge_color(uv: vec2<f32>, c_edge: vec4<f32>, e: f32, f: f32, l: f32, selec
     output = _e116;
     let _e117: vec4<f32> = output;
     return _e117;
-}
-
-fn mc_edge_highlight(uv: vec2<f32>, sdf: f32, show_thumb: f32) -> f32 {
-    var uv_1: vec2<f32>;
-    var sdf_1: f32;
-    var show_thumb_1: f32;
-    var output: f32 = 0f;
-    var r: f32;
-
-    uv_1 = uv;
-    sdf_1 = sdf;
-    show_thumb_1 = show_thumb;
-    let _e9: f32 = sdf_1;
-    let _e13: f32 = sdf_1;
-    r = max((_e13 + 22f), 0f);
-    let _e19: f32 = r;
-    r = (_e19 / 42f);
-    let _e22: f32 = r;
-    let _e24: f32 = r;
-    let _e26: f32 = r;
-    let _e28: f32 = r;
-    let _e32: f32 = show_thumb_1;
-    output = (f32(exp((-(_e26) * _e28))) * _e32);
-    let _e34: f32 = output;
-    return _e34;
-}
-
-fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, refract_offset: vec3<f32>) -> vec2<f32> {
-    var uv_1: vec2<f32>;
-    var xy_1: vec2<f32>;
-    var size_1: vec2<f32>;
-    var depth_1: f32;
-    var refract_offset_1: vec3<f32>;
-    var output: vec2<f32> = vec2(0f);
-    var offset: vec2<f32>;
-
-    uv_1 = uv;
-    xy_1 = xy;
-    size_1 = size;
-    depth_1 = depth;
-    refract_offset_1 = refract_offset;
-    let _e13: vec2<f32> = xy_1;
-    let _e14: vec3<f32> = refract_offset_1;
-    let _e16: f32 = depth_1;
-    offset = (_e13 + (_e14.xy * _e16));
-    let _e20: vec2<f32> = offset;
-    let _e22: vec2<f32> = size_1;
-    output = (_e20.xy / _e22);
-    let _e24: vec2<f32> = output;
-    return _e24;
-}
-
-fn mc_math_closure_3c18d25c(uv: vec2<f32>, x: f32) -> f32 {
-    var uv_1: vec2<f32>;
-    var x_1: f32;
-    var output: f32 = 0f;
-
-    uv_1 = uv;
-    x_1 = x;
-    let _e8: f32 = x_1;
-    output = (1f - _e8);
-    let _e10: f32 = output;
-    return _e10;
 }
 
 fn mc_math_closure_9138d55c(uv: vec2<f32>, n: vec3<f32>) -> f32 {
@@ -494,7 +469,32 @@ fn mc_math_closure_fe0dcf5c(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<
     return _e18;
 }
 
-fn mc_show_thumb(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: f32) -> vec4<f32> {
+fn mc_show_thumb(uv: vec2<f32>, sdf: f32, show_thumb: f32) -> f32 {
+    var uv_1: vec2<f32>;
+    var sdf_1: f32;
+    var show_thumb_1: f32;
+    var output: f32 = 0f;
+    var r: f32;
+
+    uv_1 = uv;
+    sdf_1 = sdf;
+    show_thumb_1 = show_thumb;
+    let _e9: f32 = sdf_1;
+    let _e13: f32 = sdf_1;
+    r = max((_e13 + 22f), 0f);
+    let _e19: f32 = r;
+    r = (_e19 / 42f);
+    let _e22: f32 = r;
+    let _e24: f32 = r;
+    let _e26: f32 = r;
+    let _e28: f32 = r;
+    let _e32: f32 = show_thumb_1;
+    output = (f32(exp((-(_e26) * _e28))) * _e32);
+    let _e34: f32 = output;
+    return _e34;
+}
+
+fn mc_show_thumb_afa4e2df(uv: vec2<f32>, t: f32, c_ui: vec4<f32>, thumb: f32, show_thumb: f32) -> vec4<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var c_ui_1: vec4<f32>;
@@ -778,19 +778,19 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_math_closure(in.uv, xy, size, depth, refract_offset);
         math_closure_out_dc2d0740 = output;
     }
-    var math_closure_out: vec2f;
+    var math_closure_out_a0a83831: vec2f;
     {
         let uv = math_closure_out_dc2d0740;
         let scale = (graph_inputs.group_instance_128_float_input_89).x;
         var output: vec2f;
         output = mc_math_closure_fe0dcf5c(in.uv, uv, scale);
-        math_closure_out = output;
+        math_closure_out_a0a83831 = output;
     }
     // Pass Texture GroupInstance_128/PassTexture_86.color
     let pass_texture = textureSample(
         pass_tex_GroupInstance_128_GuassianBlurPass_85,
         pass_samp_GroupInstance_128_GuassianBlurPass_85,
-        vec2f((math_closure_out).x, 1.0 - (math_closure_out).y),
+        vec2f((math_closure_out_a0a83831).x, 1.0 - (math_closure_out_a0a83831).y),
     );
     // Remap GroupInstance_128/Remap_64.result
     let remap = smoothstep(
@@ -822,31 +822,31 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var thumb_t_out: vec2f;
     {
-        let t = (graph_inputs.thumb_pos).x;
+        let t = (graph_inputs.float_input_136).x;
         let size = in.geo_size_px;
         var output: vec2f;
         output = mc_thumb_t(in.uv, t, size);
         thumb_t_out = output;
     }
-    var edge_highlight_out: f32;
+    var show_thumb_out: f32;
     {
         let sdf = (length((in.local_px.xy - thumb_t_out)) - 16.5);
-        let show_thumb = ((graph_inputs.show_thumb).x != 0);
+        let show_thumb = ((graph_inputs.bool_input_139).x != 0);
         var output: f32;
-        output = mc_edge_highlight(in.uv, sdf, select(0.0, 1.0, show_thumb));
-        edge_highlight_out = output;
+        output = mc_show_thumb(in.uv, sdf, select(0.0, 1.0, show_thumb));
+        show_thumb_out = output;
     }
-    var edge_color_out: vec4f;
+    var math_closure_out: vec4f;
     {
         let c_edge = pass_texture;
         let e = remap;
         let f = smoothstep(0.0, 0.015, math_closure_out_fe28cf44);
         let l = math_closure_out_77f2a4b0;
-        let selection = edge_highlight_out;
+        let selection = show_thumb_out;
         let lumin_edge = clamp(dot((pass_texture).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
-        output = mc_edge_color(in.uv, c_edge, e, f, l, selection, lumin_edge);
-        edge_color_out = output;
+        output = mc_math_closure_8916d25c(in.uv, c_edge, e, f, l, selection, lumin_edge);
+        math_closure_out = output;
     }
     // ImageTexture GroupInstance_128/ImageTexture_76 aspect-correct uv
     let image_uv = aspect_correct_uv_fill(
@@ -860,17 +860,17 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         img_samp_GroupInstance_128_ImageTexture_76,
         image_uv,
     );
-    var show_thumb_out: vec4f;
+    var show_thumb_out_7d1d8fff: vec4f;
     {
         let t = smoothstep(0.0, 1.0, (length((in.local_px.xy - thumb_t_out)) - 16.5));
         let c_ui = image_sample;
         let thumb = smoothstep(-7.0, -8.0, (length((in.local_px.xy - thumb_t_out)) - 16.5));
-        let show_thumb = ((graph_inputs.show_thumb).x != 0);
+        let show_thumb = ((graph_inputs.bool_input_139).x != 0);
         var output: vec4f;
-        output = mc_show_thumb(in.uv, t, c_ui, thumb, select(0.0, 1.0, show_thumb));
-        show_thumb_out = output;
+        output = mc_show_thumb_afa4e2df(in.uv, t, c_ui, thumb, select(0.0, 1.0, show_thumb));
+        show_thumb_out_7d1d8fff = output;
     }
     // Final composite
-    let _frag_out = blendNormal((show_thumb_out), (edge_color_out));
+    let _frag_out = blendNormal((show_thumb_out_7d1d8fff), (math_closure_out));
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

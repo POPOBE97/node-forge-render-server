@@ -31,6 +31,8 @@ static TEST_CONTEXT_CREATIONS: AtomicU64 = AtomicU64::new(0);
 static TEST_SCRIPT_COMPILATIONS: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 static TEST_WATCHDOG_THREADS: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static TEST_RUNTIME_CREATIONS: AtomicU64 = AtomicU64::new(0);
 
 macro_rules! javascript_error {
     ($scope:expr, $operation:expr) => {{
@@ -118,20 +120,19 @@ pub fn install_document_functions(
         function.validate_stored_artifact()?;
         next.insert(resource_key(&function.scope, &function.node_id), function);
     }
-    *registry()
+    let mut installed = registry()
         .write()
-        .map_err(|_| anyhow!("Mutation Function registry lock poisoned"))? = next;
+        .map_err(|_| anyhow!("Mutation Function registry lock poisoned"))?;
+    *installed = next;
     registry_generation().fetch_add(1, Ordering::AcqRel);
-    FUNCTION_RUNTIME.with(|runtime| *runtime.borrow_mut() = None);
     Ok(())
 }
 
 pub fn clear_document_functions() {
     if let Ok(mut functions) = registry().write() {
         functions.clear();
+        registry_generation().fetch_add(1, Ordering::AcqRel);
     }
-    registry_generation().fetch_add(1, Ordering::AcqRel);
-    FUNCTION_RUNTIME.with(|runtime| *runtime.borrow_mut() = None);
 }
 
 pub fn installed_document_functions() -> Vec<FunctionResource> {
@@ -141,13 +142,22 @@ pub fn installed_document_functions() -> Vec<FunctionResource> {
         .unwrap_or_default()
 }
 
-fn function_for(mutation_id: &str, node_id: &str) -> Result<FunctionResource> {
-    let key = resource_key(&format!("mutation:{mutation_id}"), node_id);
-    registry()
+fn registry_snapshot() -> Result<(u64, HashMap<String, FunctionResource>)> {
+    let functions = registry()
         .read()
-        .map_err(|_| anyhow!("Mutation Function registry lock poisoned"))?
+        .map_err(|_| anyhow!("Mutation Function registry lock poisoned"))?;
+    let generation = registry_generation().load(Ordering::Acquire);
+    Ok((generation, functions.clone()))
+}
+
+fn function_for<'a>(
+    functions: &'a HashMap<String, FunctionResource>,
+    mutation_id: &str,
+    node_id: &str,
+) -> Result<&'a FunctionResource> {
+    let key = resource_key(&format!("mutation:{mutation_id}"), node_id);
+    functions
         .get(&key)
-        .cloned()
         .ok_or_else(|| anyhow!("Mutation Function resource '{key}' is not installed"))
 }
 
@@ -295,7 +305,7 @@ struct PreparedFunction {
     input_keys: Vec<v8::Global<v8::String>>,
     output_keys: Vec<v8::Global<v8::String>>,
     outputs: Vec<ReflectedPort>,
-    source_hash: String,
+    artifact_fingerprint: [u8; 32],
 }
 
 struct MutationJsRuntime {
@@ -308,6 +318,8 @@ struct MutationJsRuntime {
 
 impl MutationJsRuntime {
     fn new(generation: u64) -> Self {
+        #[cfg(test)]
+        TEST_RUNTIME_CREATIONS.fetch_add(1, Ordering::Relaxed);
         let mut runtime = JsRuntime::new(RuntimeOptions::default());
         let watchdog_slot =
             SharedWatchdog::global().register(runtime.v8_isolate().thread_safe_handle());
@@ -324,7 +336,20 @@ impl MutationJsRuntime {
         self.functions
             .get(mutation_id)
             .and_then(|functions| functions.get(&resource.node_id))
-            .is_some_and(|function| function.source_hash == resource.source_hash)
+            .is_some_and(|function| function.artifact_fingerprint == artifact_fingerprint(resource))
+    }
+
+    fn reconcile(&mut self, generation: u64, installed: &HashMap<String, FunctionResource>) {
+        self.functions.retain(|mutation_id, functions| {
+            functions.retain(|node_id, prepared| {
+                let key = resource_key(&format!("mutation:{mutation_id}"), node_id);
+                installed.get(&key).is_some_and(|resource| {
+                    prepared.artifact_fingerprint == artifact_fingerprint(resource)
+                })
+            });
+            !functions.is_empty()
+        });
+        self.generation = generation;
     }
 
     fn prepare(&mut self, resource: &FunctionResource) -> Result<()> {
@@ -390,7 +415,7 @@ impl MutationJsRuntime {
                 input_keys,
                 output_keys,
                 outputs: resource.outputs.clone(),
-                source_hash: resource.source_hash.clone(),
+                artifact_fingerprint: artifact_fingerprint(resource),
             }
         };
         let mutation_id = resource
@@ -415,9 +440,9 @@ impl MutationJsRuntime {
         if remaining_budget.is_zero() {
             bail!("Mutation Function exceeded the Mutation graph frame budget");
         }
-        if self.generation != registry_generation().load(Ordering::Acquire) {
-            bail!("Mutation Function runtime is stale and must be prepared before evaluation");
-        }
+        // Registry changes are reconciled by `prepare` at the next frame boundary.
+        // Keep evaluating the immutable context prepared for the current frame so
+        // a concurrent scene refresh cannot invalidate an in-flight snapshot.
         let (runtime, functions) = (&mut self.runtime, &self.functions);
         let prepared = functions
             .get(mutation_id)
@@ -489,6 +514,35 @@ impl MutationJsRuntime {
         }
         result
     }
+}
+
+fn artifact_fingerprint(resource: &FunctionResource) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(resource.abi_version.to_le_bytes());
+    for value in [
+        resource.scope.as_str(),
+        resource.node_id.as_str(),
+        resource.source_hash.as_str(),
+        resource.compiled_java_script.as_str(),
+    ] {
+        digest.update((value.len() as u64).to_le_bytes());
+        digest.update(value.as_bytes());
+    }
+    for ports in [&resource.inputs, &resource.outputs] {
+        digest.update((ports.len() as u64).to_le_bytes());
+        for port in ports {
+            for value in [
+                port.id.as_str(),
+                port.name.as_str(),
+                port.port_type.as_str(),
+            ] {
+                digest.update((value.len() as u64).to_le_bytes());
+                digest.update(value.as_bytes());
+            }
+            digest.update(port.array_length.unwrap_or(usize::MAX).to_le_bytes());
+        }
+    }
+    digest.finalize().into()
 }
 
 fn persistent_string(
@@ -696,20 +750,18 @@ thread_local! {
 }
 
 pub fn prepare(mutation_id: &str, node_id: &str) -> Result<()> {
-    let resource = function_for(mutation_id, node_id)?;
-    let generation = registry_generation().load(Ordering::Acquire);
+    let (generation, installed) = registry_snapshot()?;
+    let resource = function_for(&installed, mutation_id, node_id)?;
     FUNCTION_RUNTIME.with(|runtime| {
         let mut runtime = runtime.borrow_mut();
-        if runtime
-            .as_ref()
-            .is_none_or(|runtime| runtime.generation != generation)
-        {
+        if runtime.is_none() {
             *runtime = Some(MutationJsRuntime::new(generation));
         }
-        runtime
-            .as_mut()
-            .expect("runtime inserted above")
-            .prepare(&resource)
+        let runtime = runtime.as_mut().expect("runtime inserted above");
+        if runtime.generation != generation {
+            runtime.reconcile(generation, &installed);
+        }
+        runtime.prepare(resource)
     })
 }
 
@@ -953,6 +1005,54 @@ mod tests {
         )
         .expect_err("input arrays must be frozen");
         assert!(error.to_string().contains("execution failed"));
+    }
+
+    #[test]
+    fn reuses_isolate_and_context_across_material_override_scene_refreshes() {
+        let _guard = test_lock();
+        let runtime_creations = TEST_RUNTIME_CREATIONS.load(Ordering::Relaxed);
+        let context_creations = TEST_CONTEXT_CREATIONS.load(Ordering::Relaxed);
+        for index in 0..100 {
+            install_document_functions([resource(
+                "stable node switch",
+                "Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation(input) { return { value: input.value * 2 }; }",
+                vec![port("value", "float")],
+                vec![port("value", "float")],
+            )])
+            .expect("install function");
+            prepare("test", "function").expect("prepare function");
+            assert_eq!(
+                evaluate(
+                    "test",
+                    "function",
+                    &[MutationValue::Float(index as f64)],
+                    Duration::from_millis(20),
+                )
+                .expect("evaluate function"),
+                vec![MutationValue::Float(index as f64 * 2.0)]
+            );
+        }
+        assert!(
+            TEST_CONTEXT_CREATIONS.load(Ordering::Relaxed) - context_creations <= 1,
+            "identical scene updates must preserve prepared contexts"
+        );
+
+        for index in 0..25 {
+            clear_document_functions();
+            let source = format!("replacement node {index}");
+            install_document_functions([resource(
+                &source,
+                "Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation(input) { return { value: input.value }; }",
+                vec![port("value", "float")],
+                vec![port("value", "float")],
+            )])
+            .expect("install replacement");
+            prepare("test", "function").expect("prepare replacement");
+        }
+        assert!(
+            TEST_RUNTIME_CREATIONS.load(Ordering::Relaxed) - runtime_creations <= 1,
+            "node switching must reuse the thread's V8 isolate"
+        );
     }
 
     #[test]

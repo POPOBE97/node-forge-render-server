@@ -469,7 +469,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_32.material
-    let voice_dot_color_material = shader_material_GroupInstance_32_ShaderMaterial_32(
+    let voice_opacity_material = shader_material_GroupInstance_32_ShaderMaterial_32(
         ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_32_IntelligentLight_30,
         pass_samp_GroupInstance_32_IntelligentLight_30,
@@ -490,6 +490,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         vec4f((graph_inputs.color_input_voice_dot_color).rgb * (graph_inputs.color_input_voice_dot_color).a, (graph_inputs.color_input_voice_dot_color).a),
     );
     // Final composite
-    let _frag_out = voice_dot_color_material;
+    let _frag_out = voice_opacity_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

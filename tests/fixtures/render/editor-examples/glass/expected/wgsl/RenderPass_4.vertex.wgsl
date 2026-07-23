@@ -36,6 +36,8 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
+    // Node: Vector4Input_82
+    vector4_input_82: vec4f,
 };
 
 @group(0) @binding(2)
@@ -48,6 +50,12 @@ var pass_tex_sys_group_BackgroundPass_GuassianBlurPass_42: texture_2d<f32>;
 
 @group(1) @binding(1)
 var pass_samp_sys_group_BackgroundPass_GuassianBlurPass_42: sampler;
+
+@group(1) @binding(2)
+var pass_tex_GroupInstance_79_RenderPass_72: texture_2d<f32>;
+
+@group(1) @binding(3)
+var pass_samp_GroupInstance_79_RenderPass_72: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -530,7 +538,13 @@ fn glass_texture_map(
 
     if (add_foreground) {
         let lighten = glass_get_lighten(fg_tex, fg_samp, frag_uv);
-        col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
+        let curve_value = mix(
+            vec4f(0.0/3.0 + 0.0, 1.0/3.0 + 0.0, 2.0/3.0 + 0.0, 3.0/3.0 + 0.0),
+            vec4f(0.0/3.0 + 0.2, 1.0/3.0 + 0.2, 2.0/3.0 + 0.2, 3.0/3.0 + 0.2),
+            lighten
+        );
+        col = glass_luminance_curve_lab(col, curve_value, 1.0);
+        // col = glass_blend_reflect_light(col, lighten * reflect_lighten_opacity, reflect_lighten_blend_mode);
     }
 
     return col;

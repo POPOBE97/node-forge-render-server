@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_48
-    u_bg_overlay: vec4f,
+    color_input_48: vec4f,
 };
 
 @group(0) @binding(2)

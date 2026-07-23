@@ -31,10 +31,10 @@ struct VSOut {
     @location(3) geo_size_px: vec2f,
 };
 @group(1) @binding(0)
-var img_tex_GroupInstance_70_ImageTexture_48: texture_2d<f32>;
+var img_tex_GroupInstance_70_ImageTexture_72: texture_2d<f32>;
 
 @group(1) @binding(1)
-var img_samp_GroupInstance_70_ImageTexture_48: sampler;
+var img_samp_GroupInstance_70_ImageTexture_72: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
