@@ -278,7 +278,7 @@ fn packed_input_value(scene: &crate::dsl::SceneDSL, node: &Node) -> serde_json::
     )
 }
 
-fn resolve_packed_pair(
+pub(crate) fn resolve_packed_pair(
     scene: &crate::dsl::SceneDSL,
     node: &Node,
 ) -> Result<

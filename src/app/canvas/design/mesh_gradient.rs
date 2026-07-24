@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 use crate::{
     dsl::{Node, SceneDSL, incoming_connection},
     protocol::DesignParamPatchPayload,
+    renderer::camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
     ui::{
         color_popover::{ColorPopoverConfig, show_color_popover},
         design_tokens,
@@ -15,6 +16,7 @@ use crate::{
 
 use super::{
     DesignInteractionClaims, DesignOverlayInput, DesignOverlayOutput, DesignOverlayStatus,
+    interaction::{project_local_point, unproject_screen_point},
     state::MeshGradientDesignState,
 };
 
@@ -42,6 +44,7 @@ struct MeshGradientValues {
     colors: [Color32; MAX_POINT_COUNT],
     locked_ports: HashSet<String>,
     target_size: [f32; 2],
+    camera: [f32; 16],
 }
 
 pub fn is_mesh_gradient_design_param(key: &str) -> bool {
@@ -321,7 +324,7 @@ fn emit_position_patch(
     if values.locked_ports.contains(&key) {
         return;
     }
-    let position = screen_to_point(pointer_pos, rect, values.target_size);
+    let position = screen_to_point(pointer_pos, rect, values.target_size, values.camera);
     let mut params = Map::new();
     params.insert(key, json!(position));
     emit_patch(phase, target, session_id, state, params, actions);
@@ -381,7 +384,12 @@ fn show_selected_color_popover(
         return;
     }
 
-    let point = point_to_screen(values.positions[index], rect, values.target_size);
+    let point = point_to_screen(
+        values.positions[index],
+        rect,
+        values.target_size,
+        values.camera,
+    );
     let anchor_rect = Rect::from_center_size(point, Vec2::splat(HANDLE_PICK_RADIUS));
     let mut color = values.colors[index];
     let response = show_color_popover(
@@ -414,7 +422,12 @@ fn draw_preview_handles(
 
     for index in 0..(values.grid_cols * values.grid_rows) {
         let key = position_key(index);
-        let center = point_to_screen(values.positions[index], rect, values.target_size);
+        let center = point_to_screen(
+            values.positions[index],
+            rect,
+            values.target_size,
+            values.camera,
+        );
         let locked = values.locked_ports.contains(&key);
         let fill = if locked {
             design_tokens::white(30)
@@ -460,6 +473,13 @@ fn read_mesh_gradient_values(
     let point_count = grid_cols * grid_rows;
     let mut positions = [[0.0; 2]; MAX_POINT_COUNT];
     let mut colors = [Color32::WHITE; MAX_POINT_COUNT];
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|candidate| (candidate.id.clone(), candidate.clone()))
+        .collect();
+    let camera = resolve_effective_camera_for_pass_node(scene, &nodes_by_id, node, target_size)
+        .unwrap_or_else(|_| legacy_projection_camera_matrix(target_size));
 
     for index in 0..point_count {
         let pos_key = position_key(index);
@@ -480,6 +500,7 @@ fn read_mesh_gradient_values(
         colors,
         locked_ports,
         target_size,
+        camera,
     }
 }
 
@@ -527,7 +548,12 @@ fn param_value<'a>(
 fn nearest_point(pointer_pos: Pos2, rect: Rect, values: &MeshGradientValues) -> Option<usize> {
     let mut best: Option<(usize, f32)> = None;
     for index in 0..(values.grid_cols * values.grid_rows) {
-        let point = point_to_screen(values.positions[index], rect, values.target_size);
+        let point = point_to_screen(
+            values.positions[index],
+            rect,
+            values.target_size,
+            values.camera,
+        );
         let distance = point.distance(pointer_pos);
         if distance <= HANDLE_PICK_RADIUS
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
@@ -538,17 +564,21 @@ fn nearest_point(pointer_pos: Pos2, rect: Rect, values: &MeshGradientValues) -> 
     best.map(|(index, _)| index)
 }
 
-fn point_to_screen(position: [f32; 2], rect: Rect, target_size: [f32; 2]) -> Pos2 {
-    Pos2::new(
-        rect.left() + position[0] / target_size[0].max(1.0) * rect.width(),
-        rect.bottom() - position[1] / target_size[1].max(1.0) * rect.height(),
-    )
+fn point_to_screen(
+    position: [f32; 2],
+    rect: Rect,
+    target_size: [f32; 2],
+    camera: [f32; 16],
+) -> Pos2 {
+    project_local_point(position, rect, target_size, camera)
 }
 
-fn screen_to_point(pos: Pos2, rect: Rect, target_size: [f32; 2]) -> [f32; 2] {
-    let x = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) * target_size[0].max(1.0);
-    let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0) * target_size[1].max(1.0);
-    [x, y]
+fn screen_to_point(pos: Pos2, rect: Rect, target_size: [f32; 2], camera: [f32; 16]) -> [f32; 2] {
+    let point = unproject_screen_point(pos, rect, target_size, camera);
+    [
+        point[0].clamp(0.0, target_size[0].max(1.0)),
+        point[1].clamp(0.0, target_size[1].max(1.0)),
+    ]
 }
 
 fn default_position(
@@ -702,22 +732,40 @@ mod tests {
     fn screen_mapping_uses_render_bottom_origin_for_y() {
         let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 200.0));
         let target_size = [400.0, 200.0];
+        let camera = legacy_projection_camera_matrix(target_size);
 
         assert_eq!(
-            point_to_screen([0.0, 0.0], rect, target_size),
+            point_to_screen([0.0, 0.0], rect, target_size, camera),
             Pos2::new(10.0, 220.0)
         );
         assert_eq!(
-            point_to_screen([400.0, 200.0], rect, target_size),
+            point_to_screen([400.0, 200.0], rect, target_size, camera),
             Pos2::new(410.0, 20.0)
         );
         assert_eq!(
-            screen_to_point(Pos2::new(10.0, 20.0), rect, target_size),
+            screen_to_point(Pos2::new(10.0, 20.0), rect, target_size, camera),
             [0.0, 200.0]
         );
         assert_eq!(
-            screen_to_point(Pos2::new(410.0, 220.0), rect, target_size),
+            screen_to_point(Pos2::new(410.0, 220.0), rect, target_size, camera),
             [400.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn screen_mapping_tracks_mesh_gradient_pass_camera() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+        let target_size = [400.0, 200.0];
+        let mut camera = legacy_projection_camera_matrix(target_size);
+        camera[13] -= 0.5;
+        let local_point = [200.0, 100.0];
+
+        let screen_point = point_to_screen(local_point, rect, target_size, camera);
+
+        assert_eq!(screen_point, Pos2::new(200.0, 150.0));
+        assert_eq!(
+            screen_to_point(screen_point, rect, target_size, camera),
+            local_point
         );
     }
 

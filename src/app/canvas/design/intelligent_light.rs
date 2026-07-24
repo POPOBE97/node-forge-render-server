@@ -4,8 +4,11 @@ use serde_json::{Map, Value, json};
 use crate::{
     dsl::{Node, SceneDSL, incoming_connection},
     protocol::DesignParamPatchPayload,
-    renderer::render_plan::pass_assemblers::intelligent_light::{
-        INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position,
+    renderer::{
+        camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
+        render_plan::pass_assemblers::intelligent_light::{
+            INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position, resolve_packed_pair,
+        },
     },
     ui::{
         color_popover::{ColorPopoverConfig, show_color_popover},
@@ -16,6 +19,7 @@ use crate::{
 
 use super::{
     DesignInteractionClaims, DesignOverlayInput, DesignOverlayOutput, DesignOverlayStatus,
+    interaction::{project_local_point, unproject_screen_point},
     state::IntelligentLightDesignState,
 };
 
@@ -35,6 +39,7 @@ struct IntelligentLightValues {
     position_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
     color_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
     position_space: [f32; 2],
+    camera: [f32; 16],
 }
 
 pub fn is_intelligent_light_design_param(key: &str) -> bool {
@@ -342,7 +347,7 @@ fn emit_position_patch(
         return;
     }
 
-    let position = screen_to_point(pointer_pos, rect, values.position_space);
+    let position = screen_to_point(pointer_pos, rect, values.position_space, values.camera);
     let mut params = Map::new();
     params.insert(position_key(zone_index), json!(position));
     emit_patch(phase, target, session_id, state, params, actions);
@@ -459,7 +464,12 @@ fn show_selected_color_popover(
         return;
     }
 
-    let point = point_to_screen(values.positions[index], rect, values.position_space);
+    let point = point_to_screen(
+        values.positions[index],
+        rect,
+        values.position_space,
+        values.camera,
+    );
     let anchor_rect = Rect::from_center_size(point, Vec2::splat(HANDLE_PICK_RADIUS));
     let mut color = values.colors[index];
     let response = show_color_popover(
@@ -504,7 +514,12 @@ fn draw_preview_handles(
     }
 
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
-        let center = point_to_screen(values.positions[index], rect, values.position_space);
+        let center = point_to_screen(
+            values.positions[index],
+            rect,
+            values.position_space,
+            values.camera,
+        );
         let fill = values.colors[index];
         let stroke = if index == selected_zone {
             Stroke::new(2.0_f32, design_tokens::white(100))
@@ -574,6 +589,38 @@ fn read_intelligent_light_values(
     let mut colors = [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut position_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut color_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
+    let nodes_by_id = scene
+        .nodes
+        .iter()
+        .map(|candidate| (candidate.id.clone(), candidate.clone()))
+        .collect();
+    let camera = resolve_effective_camera_for_pass_node(scene, &nodes_by_id, node, position_space)
+        .unwrap_or_else(|_| legacy_projection_camera_matrix(position_space));
+
+    // Match the renderer's source precedence exactly. PackedInput declarations
+    // are the runtime-writable uniforms in packed mode, so their `value` params
+    // contain the live motion/mutation frame overlay applied to `uniform_scene`.
+    if let Ok(Some((packed_positions, packed_colors))) = resolve_packed_pair(scene, node) {
+        positions = packed_positions.map(|(x, y)| [x, y]);
+        colors = packed_colors.map(|color| {
+            Color32::from_rgb(
+                color_component_to_u8(color[0]),
+                color_component_to_u8(color[1]),
+                color_component_to_u8(color[2]),
+            )
+        });
+        position_locks.fill(true);
+        color_locks.fill(true);
+
+        return IntelligentLightValues {
+            positions,
+            colors,
+            position_locks,
+            color_locks,
+            position_space,
+            camera,
+        };
+    }
 
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
         let pos_key = position_key(index);
@@ -616,6 +663,7 @@ fn read_intelligent_light_values(
         position_locks,
         color_locks,
         position_space,
+        camera,
     }
 }
 
@@ -686,7 +734,12 @@ fn param_value<'a>(
 fn nearest_zone(pointer_pos: Pos2, rect: Rect, values: &IntelligentLightValues) -> Option<usize> {
     let mut best: Option<(usize, f32)> = None;
     for index in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
-        let point = point_to_screen(values.positions[index], rect, values.position_space);
+        let point = point_to_screen(
+            values.positions[index],
+            rect,
+            values.position_space,
+            values.camera,
+        );
         let distance = point.distance(pointer_pos);
         if distance <= HANDLE_PICK_RADIUS
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
@@ -697,17 +750,22 @@ fn nearest_zone(pointer_pos: Pos2, rect: Rect, values: &IntelligentLightValues) 
     best.map(|(index, _)| index)
 }
 
-fn point_to_screen(position: [f32; 2], rect: Rect, position_space: [f32; 2]) -> Pos2 {
-    Pos2::new(
-        rect.left() + position[0] / position_space[0].max(1.0) * rect.width(),
-        rect.bottom() - position[1] / position_space[1].max(1.0) * rect.height(),
-    )
+fn point_to_screen(
+    position: [f32; 2],
+    rect: Rect,
+    position_space: [f32; 2],
+    camera: [f32; 16],
+) -> Pos2 {
+    project_local_point(position, rect, position_space, camera)
 }
 
-fn screen_to_point(pos: Pos2, rect: Rect, position_space: [f32; 2]) -> [f32; 2] {
-    let x = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) * position_space[0].max(1.0);
-    let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0) * position_space[1].max(1.0);
-    [round_position_value(x), round_position_value(y)]
+fn screen_to_point(pos: Pos2, rect: Rect, position_space: [f32; 2], camera: [f32; 16]) -> [f32; 2] {
+    let point = unproject_screen_point(pos, rect, position_space, camera);
+    let point = clamp_pixel_position(point, position_space);
+    [
+        round_position_value(point[0]),
+        round_position_value(point[1]),
+    ]
 }
 
 fn round_position_value(value: f32) -> f32 {
@@ -859,6 +917,7 @@ mod tests {
             position_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
             color_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
             position_space: [60.0, 37.0],
+            camera: legacy_projection_camera_matrix([60.0, 37.0]),
         }
     }
 
@@ -878,22 +937,40 @@ mod tests {
     fn pixel_mapping_uses_render_bottom_origin() {
         let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 200.0));
         let position_space = [400.0, 200.0];
+        let camera = legacy_projection_camera_matrix(position_space);
 
         assert_eq!(
-            point_to_screen([0.0, 0.0], rect, position_space),
+            point_to_screen([0.0, 0.0], rect, position_space, camera),
             Pos2::new(10.0, 220.0)
         );
         assert_eq!(
-            point_to_screen([400.0, 200.0], rect, position_space),
+            point_to_screen([400.0, 200.0], rect, position_space, camera),
             Pos2::new(410.0, 20.0)
         );
         assert_eq!(
-            screen_to_point(Pos2::new(10.0, 20.0), rect, position_space),
+            screen_to_point(Pos2::new(10.0, 20.0), rect, position_space, camera),
             [0.0, 200.0]
         );
         assert_eq!(
-            screen_to_point(Pos2::new(410.0, 220.0), rect, position_space),
+            screen_to_point(Pos2::new(410.0, 220.0), rect, position_space, camera),
             [400.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn pixel_mapping_applies_pass_camera_and_inverts_it_for_editing() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
+        let position_space = [400.0, 200.0];
+        let mut camera = legacy_projection_camera_matrix(position_space);
+        camera[13] -= 0.5;
+        let local_point = [200.0, 100.0];
+
+        let screen_point = point_to_screen(local_point, rect, position_space, camera);
+
+        assert_eq!(screen_point, Pos2::new(200.0, 150.0));
+        assert_eq!(
+            screen_to_point(screen_point, rect, position_space, camera),
+            local_point
         );
     }
 
@@ -1164,5 +1241,99 @@ mod tests {
         let values = read_intelligent_light_values(&scene, node, &target, &state, true);
 
         assert_eq!(values.positions[0], [42.0, 24.0]);
+    }
+
+    #[test]
+    fn packed_animation_values_drive_overlay_positions_and_colors() {
+        let packed_positions = serde_json::json!(
+            (0..INTELLIGENT_LIGHT_ZONE_COUNT)
+                .map(|index| serde_json::json!([index as f32 + 10.0, index as f32 + 20.0]))
+                .collect::<Vec<_>>()
+        );
+        let packed_colors = serde_json::json!(
+            (0..INTELLIGENT_LIGHT_ZONE_COUNT)
+                .map(|index| {
+                    if index == 0 {
+                        serde_json::json!([0.25, 0.5, 0.75, 1.0])
+                    } else {
+                        serde_json::json!([1.0, 1.0, 1.0, 1.0])
+                    }
+                })
+                .collect::<Vec<_>>()
+        );
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "ilight packed animation".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                test_node(
+                    "positions",
+                    "PackedInput",
+                    HashMap::from([
+                        ("elementType".to_string(), json!("vector2")),
+                        ("value".to_string(), packed_positions),
+                    ]),
+                ),
+                test_node(
+                    "colors",
+                    "PackedInput",
+                    HashMap::from([
+                        ("elementType".to_string(), json!("color")),
+                        ("value".to_string(), packed_colors),
+                    ]),
+                ),
+                test_node("ilight", "IntelligentLight", HashMap::new()),
+            ],
+            connections: vec![
+                crate::dsl::Connection {
+                    id: "positions-edge".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "positions".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "ilight".to_string(),
+                        port_id: "positions".to_string(),
+                    },
+                },
+                crate::dsl::Connection {
+                    id: "colors-edge".to_string(),
+                    from: crate::dsl::Endpoint {
+                        node_id: "colors".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: crate::dsl::Endpoint {
+                        node_id: "ilight".to_string(),
+                        port_id: "colors".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let node = scene
+            .nodes
+            .iter()
+            .find(|candidate| candidate.id == "ilight")
+            .expect("ilight node");
+
+        let values = read_intelligent_light_values(
+            &scene,
+            node,
+            &test_target(),
+            &IntelligentLightDesignState::default(),
+            true,
+        );
+
+        assert_eq!(values.positions[0], [10.0, 20.0]);
+        assert_eq!(values.colors[0], Color32::from_rgb(64, 128, 191));
+        assert!(values.position_locks.iter().all(|locked| *locked));
+        assert!(values.color_locks.iter().all(|locked| *locked));
     }
 }
