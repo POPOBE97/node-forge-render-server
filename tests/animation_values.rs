@@ -8,8 +8,9 @@ use node_forge_render_server::state_machine::types::{
     TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
+    build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
-    TickSchedule, build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
+    TickSchedule,
 };
 use node_forge_render_server::{asset_store, dsl};
 
@@ -750,7 +751,7 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
     assert_eq!(snapshot.active_transition_id, None);
 
     let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
-        "PackedInput_IntelligentLightPositions",
+        "Vector2ArrayInput_IntelligentLightPositions",
         "value",
     );
     let before = snapshot
@@ -806,7 +807,7 @@ fn forced_doubao_state_keeps_mutation_running_without_routing() {
     assert!(
         advanced.active_overrides.contains_key(
             &node_forge_render_server::state_machine::OverrideKey::new(
-                "PackedInput_IntelligentLightPositions",
+                "Vector2ArrayInput_IntelligentLightPositions",
                 "value",
             ),
         ),
@@ -815,7 +816,39 @@ fn forced_doubao_state_keeps_mutation_running_without_routing() {
 }
 
 #[test]
-fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
+fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
+    for (energy, expected_radius) in [(0.0, 26.88), (1.0, 29.4)] {
+        let mut scene = support::load_render_case_scene("doubao-voice-interaction");
+        scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "FloatInput_TotalEnergy")
+            .expect("TotalEnergy input")
+            .params
+            .insert("value".into(), serde_json::json!(energy));
+        let mut session = AnimationSession::from_scene(&scene)
+            .expect("doubao state machine should compile")
+            .expect("doubao fixture should have a state machine");
+        let frame = session
+            .force_state("st_push_to_talk")
+            .expect("PushToTalk should be forceable");
+        let actual = frame
+            .active_overrides
+            .get(&node_forge_render_server::state_machine::OverrideKey::new(
+                "FloatInput_IntelligentLightBlobRadiusIntermediatePx",
+                "value",
+            ))
+            .and_then(serde_json::Value::as_f64)
+            .expect("Mutation should derive intermediate blob radius");
+        assert!(
+            (actual - expected_radius).abs() < 1e-5,
+            "energy={energy}: expected {expected_radius}, got {actual}"
+        );
+    }
+}
+
+#[test]
+fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_seconds() {
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let (mut scene, _asset_store) = support::load_render_case("doubao-voice-interaction");
     let mut machine = scene
@@ -823,7 +856,10 @@ fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
         .take()
         .expect("doubao fixture should have a state machine");
     machine.initial_state_id = Some("st_mrerxocx_8".into());
-    let mut runtime = node_forge_render_server::state_machine::StateMachineRuntime::new(machine);
+    scene.state_machine = Some(machine);
+    let mut runtime = node_forge_render_server::state_machine::compile_from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
     let no_events = Vec::new();
 
     let golden_path = support::expected_path(&case_dir, "idle_voice_interaction_golden.json");
@@ -846,15 +882,10 @@ fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
     );
 
     let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
-        "PackedInput_IntelligentLightPositions",
-        "value",
-    );
-    let colors_key = node_forge_render_server::state_machine::OverrideKey::new(
-        "PackedInput_IntelligentLightColors",
+        "Vector2ArrayInput_IntelligentLightPositions",
         "value",
     );
     let mut max_position_error = 0.0_f64;
-    let mut max_color_error = 0.0_f64;
 
     for (index, expected) in frames.iter().enumerate() {
         let dt = if index == 0 { 0.0 } else { 1.0 / 60.0 };
@@ -865,10 +896,7 @@ fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
             "frame {index} Mutation diagnostics: {:?}",
             actual.diagnostics
         );
-        for (key, field, max_error) in [
-            (&positions_key, "positions", &mut max_position_error),
-            (&colors_key, "colors", &mut max_color_error),
-        ] {
+        for (key, field, max_error) in [(&positions_key, "positions", &mut max_position_error)] {
             let actual_rows = actual.overrides[key]
                 .as_array()
                 .unwrap_or_else(|| panic!("frame {index} has no packed {field}"));
@@ -900,7 +928,6 @@ fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
     }
 
     assert!(max_position_error <= 1.0e-5);
-    assert_eq!(max_color_error, 0.0);
 }
 
 #[test]

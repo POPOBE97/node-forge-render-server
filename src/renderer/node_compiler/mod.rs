@@ -176,6 +176,8 @@ fn is_input_like_node(node_type: &str) -> bool {
             | "Vector3Input"
             | "Vector4Input"
             | "PackedInput"
+            | "ColorArrayInput"
+            | "Vector2ArrayInput"
             | "Mat4Input"
             | "TimeInput"
             | "Time"
@@ -259,6 +261,8 @@ fn is_pure_group_node_type(node_type: &str) -> bool {
             | "Vector3Input"
             | "Vector4Input"
             | "PackedInput"
+            | "ColorArrayInput"
+            | "Vector2ArrayInput"
             | "TimeInput"
             | "Time"
             | "MathAdd"
@@ -854,7 +858,9 @@ fn compile_expr(
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,
-        "PackedInput" => input_nodes::compile_packed_input(node, out_port, ctx)?,
+        "PackedInput" | "ColorArrayInput" | "Vector2ArrayInput" => {
+            input_nodes::compile_packed_input(node, out_port, ctx)?
+        }
         "Mat4Input" => input_nodes::compile_mat4_input(node, out_port, ctx)?,
         "TimeInput" => input_nodes::compile_time_input(node, out_port)?,
         "FragCoord" => input_nodes::compile_frag_coord(node, out_port)?,

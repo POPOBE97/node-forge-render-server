@@ -274,6 +274,8 @@ pub enum SidebarAction {
     PlayStateMachine,
     /// Force the State Machine to remain in one State.
     ForceState(String),
+    /// Exit State Machine playback/preview and restore scene base values.
+    ClearStateControl,
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -549,24 +551,28 @@ fn show_state_section(
         let response = button::button_with_width(
             ui,
             ButtonOptions {
-                label: "▶ Play",
-                tooltip: Some("Play the State Machine from the beginning"),
+                label: "Play",
+                tooltip: None,
                 variant: if playing {
-                    ButtonVariant::Outline
+                    ButtonVariant::Default
                 } else {
-                    ButtonVariant::Ghost
+                    ButtonVariant::Secondary
                 },
                 size: ButtonSize::Small,
                 enabled: state.playback_enabled,
                 icon: None,
                 icon_kind: None,
-                visual_override: None,
+                visual_override: playing.then_some(active_state_button_visual()),
                 group_position: ButtonGroupPosition::Single,
             },
             full_width,
         );
-        if response.clicked() && !playing {
-            *sidebar_action = Some(SidebarAction::PlayStateMachine);
+        if response.clicked() {
+            *sidebar_action = Some(if playing {
+                SidebarAction::ClearStateControl
+            } else {
+                SidebarAction::PlayStateMachine
+            });
         }
 
         ui.add_space(SIDEBAR_GRID_ROW_GAP);
@@ -636,23 +642,37 @@ fn show_state_button(
         ui,
         ButtonOptions {
             label: &item.name,
-            tooltip: Some(&item.id),
+            tooltip: None,
             variant: if selected {
-                ButtonVariant::Outline
+                ButtonVariant::Default
             } else {
-                ButtonVariant::Ghost
+                ButtonVariant::Secondary
             },
             size: ButtonSize::Small,
             enabled: true,
             icon: None,
             icon_kind: None,
-            visual_override: None,
+            visual_override: selected.then_some(active_state_button_visual()),
             group_position: ButtonGroupPosition::Single,
         },
         width,
     );
-    if response.clicked() && !selected {
-        *sidebar_action = Some(SidebarAction::ForceState(item.id.clone()));
+    if response.clicked() {
+        *sidebar_action = Some(if selected {
+            SidebarAction::ClearStateControl
+        } else {
+            SidebarAction::ForceState(item.id.clone())
+        });
+    }
+}
+
+fn active_state_button_visual() -> ButtonVisualOverride {
+    ButtonVisualOverride {
+        bg: egui::Color32::from_gray(230),
+        hover_bg: egui::Color32::WHITE,
+        active_bg: egui::Color32::from_gray(210),
+        text: egui::Color32::from_gray(20),
+        border: egui::Color32::from_gray(230),
     }
 }
 

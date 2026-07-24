@@ -337,7 +337,7 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
     let positions = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
-            "PackedInput_IntelligentLightPositions",
+            "Vector2ArrayInput_IntelligentLightPositions",
             "value",
         ))
         .and_then(serde_json::Value::as_array)
@@ -345,7 +345,7 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
     let colors = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
-            "PackedInput_IntelligentLightColors",
+            "ColorArrayInput_IntelligentLightColors",
             "value",
         ))
         .and_then(serde_json::Value::as_array)

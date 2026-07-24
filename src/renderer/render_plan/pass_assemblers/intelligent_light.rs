@@ -3,14 +3,14 @@
 //! Fullscreen shader for an 11-zone intelligent lighting fixture. Geometry is
 //! supplied as packed positions or through the explicit manual zone ports.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use rust_wgpu_fiber::{
-    ResourceName,
     eframe::wgpu::{self, BlendState, Color},
+    ResourceName,
 };
 
 use crate::{
-    dsl::{Node, incoming_connection},
+    dsl::{incoming_connection, Node},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension, PassOutputSpec},
@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::super::pass_spec::{
-    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
+    make_params, PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
 };
 use super::args::{BuilderState, SceneContext};
 
@@ -28,11 +28,20 @@ use super::args::{BuilderState, SceneContext};
 ///
 /// Stored inside `PassExtension::IntelligentLight` and used by the runtime
 /// to recompute the uniform buffer each frame (positions, params, colors).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ILightUpdateConfig {
     pub layer_id: String,
     pub power_fallback: f32,
     pub lightness_fallback: f32,
+    pub blob_radius_fallback: f32,
+    pub opacity_fallback: f32,
+    pub base_color_fallback: [f32; 4],
+    pub presentation_colors_fallback: [[f32; 4]; 3],
+    pub pointer_position_fallback: [f32; 2],
+    pub pointer_color_fallback: [f32; 4],
+    pub pointer_radius_fallback: f32,
+    pub pointer_gain_fallback: f32,
+    pub pointer_opacity_fallback: f32,
 }
 
 pub(crate) const INTELLIGENT_LIGHT_ZONE_COUNT: usize = 11;
@@ -54,18 +63,18 @@ pub(crate) const DEFAULT_INTELLIGENT_LIGHT_LAYOUT: [[f32; 2]; INTELLIGENT_LIGHT_
 
 const DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE: [f32; 2] = [60.0, 37.0];
 
-pub(crate) const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
-    [0.5019608, 0.5254902, 1.0],
-    [1.0, 0.827451, 0.7019608],
-    [1.0, 0.5254902, 0.20784314],
-    [0.5176471, 0.49411765, 1.0],
-    [0.07058824, 0.4117647, 0.9490196],
-    [0.5019608, 0.5254902, 1.0],
-    [1.0, 0.827451, 0.7019608],
-    [1.0, 0.5254902, 0.20784314],
-    [1.0, 0.5254902, 0.20784314],
-    [0.07058824, 0.4117647, 0.9490196],
-    [0.5176471, 0.49411765, 1.0],
+pub(crate) const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 4]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
+    [0.5019608, 0.5254902, 1.0, 1.0],
+    [1.0, 0.827451, 0.7019608, 1.0],
+    [1.0, 0.5254902, 0.20784314, 1.0],
+    [0.5176471, 0.49411765, 1.0, 1.0],
+    [0.07058824, 0.4117647, 0.9490196, 1.0],
+    [0.5019608, 0.5254902, 1.0, 1.0],
+    [1.0, 0.827451, 0.7019608, 1.0],
+    [1.0, 0.5254902, 0.20784314, 1.0],
+    [1.0, 0.5254902, 0.20784314, 1.0],
+    [0.07058824, 0.4117647, 0.9490196, 1.0],
+    [0.5176471, 0.49411765, 1.0, 1.0],
 ];
 
 impl ILightUpdateConfig {
@@ -86,6 +95,85 @@ impl ILightUpdateConfig {
             .and_then(|v| v.as_f64())
             .map(|v| v as f32)
             .unwrap_or(self.lightness_fallback);
+        let blob_radius = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "blobRadius",
+            self.blob_radius_fallback,
+        );
+        let opacity = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "opacity",
+            self.opacity_fallback,
+        );
+        let base_color = resolve_color4_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "baseColor",
+            self.base_color_fallback,
+        );
+        let presentation_colors = [
+            resolve_color4_runtime(
+                scene,
+                &nodes_by_id,
+                &self.layer_id,
+                "presentationColorLeft",
+                self.presentation_colors_fallback[0],
+            ),
+            resolve_color4_runtime(
+                scene,
+                &nodes_by_id,
+                &self.layer_id,
+                "presentationColorCenter",
+                self.presentation_colors_fallback[1],
+            ),
+            resolve_color4_runtime(
+                scene,
+                &nodes_by_id,
+                &self.layer_id,
+                "presentationColorRight",
+                self.presentation_colors_fallback[2],
+            ),
+        ];
+        let pointer_position = resolve_vec2_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "pointerTintPosition",
+            self.pointer_position_fallback,
+        );
+        let pointer_color = resolve_color4_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "pointerTintColor",
+            self.pointer_color_fallback,
+        );
+        let pointer_radius = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "pointerTintRadius",
+            self.pointer_radius_fallback,
+        );
+        let pointer_gain = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "pointerTintGain",
+            self.pointer_gain_fallback,
+        );
+        let pointer_opacity = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "pointerTintOpacity",
+            self.pointer_opacity_fallback,
+        );
 
         let packed = layer_node.and_then(|node| match resolve_packed_pair(scene, node) {
             Ok(value) => value,
@@ -140,8 +228,99 @@ impl ILightUpdateConfig {
             (positions, colors)
         };
 
-        pack_ilight_buffer(&positions, power, lightness, &colors)
+        pack_ilight_buffer(
+            &positions,
+            power,
+            lightness,
+            blob_radius,
+            opacity,
+            &colors,
+            base_color,
+            presentation_colors,
+            pointer_position,
+            pointer_color,
+            pointer_radius,
+            pointer_gain,
+            pointer_opacity,
+        )
     }
+}
+
+fn resolve_f32_runtime(
+    scene: &crate::dsl::SceneDSL,
+    nodes_by_id: &std::collections::HashMap<&str, &crate::dsl::Node>,
+    layer_id: &str,
+    port_id: &str,
+    fallback: f32,
+) -> f32 {
+    incoming_connection(scene, layer_id, port_id)
+        .and_then(|connection| {
+            nodes_by_id
+                .get(connection.from.node_id.as_str())
+                .map(|node| (connection, *node))
+        })
+        .and_then(|(connection, node)| {
+            node.params
+                .get("value")
+                .and_then(json_f32)
+                .or_else(|| node.params.get(&connection.from.port_id).and_then(json_f32))
+        })
+        .or_else(|| {
+            nodes_by_id
+                .get(layer_id)
+                .and_then(|node| node.params.get(port_id))
+                .and_then(json_f32)
+        })
+        .unwrap_or(fallback)
+}
+
+fn resolve_vec2_runtime(
+    scene: &crate::dsl::SceneDSL,
+    nodes_by_id: &std::collections::HashMap<&str, &crate::dsl::Node>,
+    layer_id: &str,
+    port_id: &str,
+    fallback: [f32; 2],
+) -> [f32; 2] {
+    incoming_connection(scene, layer_id, port_id)
+        .and_then(|connection| {
+            nodes_by_id
+                .get(connection.from.node_id.as_str())
+                .map(|node| (connection, *node))
+        })
+        .and_then(|(connection, node)| {
+            resolve_connected_vec2_source(node, &connection.from.port_id)
+        })
+        .or_else(|| {
+            nodes_by_id
+                .get(layer_id)
+                .and_then(|node| parse_vec2_from_params(&node.params, port_id))
+        })
+        .unwrap_or(fallback)
+}
+
+fn resolve_color4_runtime(
+    scene: &crate::dsl::SceneDSL,
+    nodes_by_id: &std::collections::HashMap<&str, &crate::dsl::Node>,
+    layer_id: &str,
+    port_id: &str,
+    fallback: [f32; 4],
+) -> [f32; 4] {
+    incoming_connection(scene, layer_id, port_id)
+        .and_then(|connection| {
+            nodes_by_id
+                .get(connection.from.node_id.as_str())
+                .map(|node| (connection, *node))
+        })
+        .and_then(|(connection, node)| {
+            parse_color4_from_params(&node.params, "value")
+                .or_else(|| parse_color4_from_params(&node.params, &connection.from.port_id))
+        })
+        .or_else(|| {
+            nodes_by_id
+                .get(layer_id)
+                .and_then(|node| parse_color4_from_params(&node.params, port_id))
+        })
+        .unwrap_or(fallback)
 }
 
 fn clamp_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
@@ -207,7 +386,7 @@ fn parse_packed_positions(
 
 fn parse_packed_colors(
     value: &serde_json::Value,
-) -> Result<[[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT]> {
+) -> Result<[[f32; 4]; INTELLIGENT_LIGHT_ZONE_COUNT]> {
     let values = value.as_array().context("colors must be packed<color>")?;
     if values.len() != INTELLIGENT_LIGHT_ZONE_COUNT {
         bail!("colors must contain exactly {INTELLIGENT_LIGHT_ZONE_COUNT} values");
@@ -215,7 +394,7 @@ fn parse_packed_colors(
     let colors = values
         .iter()
         .enumerate()
-        .map(|(index, value)| -> Result<[f32; 3]> {
+        .map(|(index, value)| -> Result<[f32; 4]> {
             let value = value
                 .as_array()
                 .with_context(|| format!("colors[{index}] must be color"))?;
@@ -226,6 +405,7 @@ fn parse_packed_colors(
                 json_f32(&value[0]).with_context(|| format!("colors[{index}].r is invalid"))?,
                 json_f32(&value[1]).with_context(|| format!("colors[{index}].g is invalid"))?,
                 json_f32(&value[2]).with_context(|| format!("colors[{index}].b is invalid"))?,
+                value.get(3).and_then(json_f32).unwrap_or(1.0),
             ];
             if !color.iter().all(|component| component.is_finite()) {
                 bail!("colors[{index}] contains a non-finite component");
@@ -284,7 +464,7 @@ pub(crate) fn resolve_packed_pair(
 ) -> Result<
     Option<(
         [(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT],
-        [[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT],
+        [[f32; 4]; INTELLIGENT_LIGHT_ZONE_COUNT],
     )>,
 > {
     let positions_connection = incoming_connection(scene, &node.id, "positions");
@@ -302,23 +482,40 @@ pub(crate) fn resolve_packed_pair(
                 .iter()
                 .find(|candidate| candidate.id == colors_connection.from.node_id)
                 .context("colors packed source node is missing")?;
-            if positions_node.node_type != "PackedInput"
-                || colors_node.node_type != "PackedInput"
-                || positions_connection.from.port_id != "value"
+            if positions_connection.from.port_id != "value"
                 || colors_connection.from.port_id != "value"
             {
-                bail!("packed mode requires PackedInput.value sources");
+                bail!("packed mode requires packed declaration value sources");
             }
             let positions_type = positions_node
-                .params
-                .get("elementType")
-                .and_then(serde_json::Value::as_str);
+                .outputs
+                .iter()
+                .find(|port| port.id == "value")
+                .and_then(|port| port.port_type.as_deref());
             let colors_type = colors_node
-                .params
-                .get("elementType")
-                .and_then(serde_json::Value::as_str);
-            if positions_type != Some("vector2") || colors_type != Some("color") {
+                .outputs
+                .iter()
+                .find(|port| port.id == "value")
+                .and_then(|port| port.port_type.as_deref());
+            if positions_type != Some("packed<vector2>") || colors_type != Some("packed<color>") {
                 bail!("positions requires packed<vector2> and colors requires packed<color>");
+            }
+            let positions_length = positions_node
+                .outputs
+                .iter()
+                .find(|port| port.id == "value")
+                .and_then(|port| port.array_length);
+            let colors_length = colors_node
+                .outputs
+                .iter()
+                .find(|port| port.id == "value")
+                .and_then(|port| port.array_length);
+            if positions_length != Some(INTELLIGENT_LIGHT_ZONE_COUNT)
+                || colors_length != Some(INTELLIGENT_LIGHT_ZONE_COUNT)
+            {
+                bail!(
+                    "positions and colors packed declarations must each contain {INTELLIGENT_LIGHT_ZONE_COUNT} items"
+                );
             }
             Ok(Some((
                 parse_packed_positions(&packed_input_value(scene, positions_node))?,
@@ -374,18 +571,18 @@ fn resolve_color_runtime(
     nodes_by_id: &std::collections::HashMap<&str, &crate::dsl::Node>,
     layer_id: &str,
     port_id: &str,
-) -> Option<[f32; 3]> {
+) -> Option<[f32; 4]> {
     if let Some(conn) = incoming_connection(scene, layer_id, port_id) {
         if let Some(upstream) = nodes_by_id.get(conn.from.node_id.as_str()) {
-            if let Some(c) = parse_color_from_params(&upstream.params, "value")
-                .or_else(|| parse_color_from_params(&upstream.params, &conn.from.port_id))
+            if let Some(c) = parse_color4_from_params(&upstream.params, "value")
+                .or_else(|| parse_color4_from_params(&upstream.params, &conn.from.port_id))
             {
                 return Some(c);
             }
         }
     }
     if let Some(layer_node) = nodes_by_id.get(layer_id) {
-        if let Some(c) = parse_color_from_params(&layer_node.params, port_id) {
+        if let Some(c) = parse_color4_from_params(&layer_node.params, port_id) {
             return Some(c);
         }
     }
@@ -412,6 +609,54 @@ pub(crate) fn assemble_intelligent_light(
 
     let power = cpu_num_f32(scene, &nodes_by_id, layer_node, "power", 0.0)?;
     let lightness = cpu_num_f32(scene, &nodes_by_id, layer_node, "lightness", 0.75)?;
+    let blob_radius = cpu_num_f32(scene, &nodes_by_id, layer_node, "blobRadius", 18.0)?;
+    let opacity = cpu_num_f32(scene, &nodes_by_id, layer_node, "opacity", 1.0)?;
+    let base_color =
+        resolve_color4_input(sc, layer_node, layer_id, "baseColor", [0.0, 0.0, 0.0, 0.0]);
+    let presentation_colors = [
+        resolve_color4_input(
+            sc,
+            layer_node,
+            layer_id,
+            "presentationColorLeft",
+            [1.0, 1.0, 1.0, 1.0],
+        ),
+        resolve_color4_input(
+            sc,
+            layer_node,
+            layer_id,
+            "presentationColorCenter",
+            [0.0, 0.12941177, 0.45882353, 1.0],
+        ),
+        resolve_color4_input(
+            sc,
+            layer_node,
+            layer_id,
+            "presentationColorRight",
+            [0.14901961, 0.56078434, 1.0, 1.0],
+        ),
+    ];
+    let pointer_position = incoming_connection(scene, layer_id, "pointerTintPosition")
+        .and_then(|connection| {
+            nodes_by_id
+                .get(&connection.from.node_id)
+                .map(|node| (connection, node))
+        })
+        .and_then(|(connection, node)| {
+            resolve_connected_vec2_source(node, &connection.from.port_id)
+        })
+        .or_else(|| parse_vec2_from_params(&layer_node.params, "pointerTintPosition"))
+        .unwrap_or([18.0, 18.0]);
+    let pointer_color = resolve_color4_input(
+        sc,
+        layer_node,
+        layer_id,
+        "pointerTintColor",
+        [0.0, 0.0, 0.0, 0.0],
+    );
+    let pointer_radius = cpu_num_f32(scene, &nodes_by_id, layer_node, "pointerTintRadius", 18.0)?;
+    let pointer_gain = cpu_num_f32(scene, &nodes_by_id, layer_node, "pointerTintGain", 1.0)?;
+    let pointer_opacity = cpu_num_f32(scene, &nodes_by_id, layer_node, "pointerTintOpacity", 0.0)?;
 
     let inter_w = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "width", 60)?;
     let inter_h = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "height", 37)?;
@@ -476,11 +721,34 @@ pub(crate) fn assemble_intelligent_light(
 
     // Build ilight uniform buffer (CPU-computed light positions + params).
     let ilight_buffer_name: ResourceName = format!("params.sys.ilight.{layer_id}.graph").into();
-    let ilight_values = pack_ilight_buffer(&positions, power, lightness, &colors);
+    let ilight_values = pack_ilight_buffer(
+        &positions,
+        power,
+        lightness,
+        blob_radius,
+        opacity,
+        &colors,
+        base_color,
+        presentation_colors,
+        pointer_position,
+        pointer_color,
+        pointer_radius,
+        pointer_gain,
+        pointer_opacity,
+    );
     let ilight_config = ILightUpdateConfig {
         layer_id: layer_id.to_string(),
         power_fallback: power,
         lightness_fallback: lightness,
+        blob_radius_fallback: blob_radius,
+        opacity_fallback: opacity,
+        base_color_fallback: base_color,
+        presentation_colors_fallback: presentation_colors,
+        pointer_position_fallback: pointer_position,
+        pointer_color_fallback: pointer_color,
+        pointer_radius_fallback: pointer_radius,
+        pointer_gain_fallback: pointer_gain,
+        pointer_opacity_fallback: pointer_opacity,
     };
     let graph_binding = GraphBinding {
         buffer_name: ilight_buffer_name,
@@ -610,7 +878,7 @@ fn resolve_color_input(
     layer_node: &Node,
     layer_id: &str,
     port_id: &str,
-) -> [f32; 3] {
+) -> [f32; 4] {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
 
@@ -618,8 +886,8 @@ fn resolve_color_input(
     if let Some(conn) = incoming_connection(scene, layer_id, port_id) {
         if let Some(upstream_node) = nodes_by_id.get(&conn.from.node_id) {
             // Try to read color from upstream node's params ("value" or the port name).
-            if let Some(c) = parse_color_from_params(&upstream_node.params, "value")
-                .or_else(|| parse_color_from_params(&upstream_node.params, &conn.from.port_id))
+            if let Some(c) = parse_color4_from_params(&upstream_node.params, "value")
+                .or_else(|| parse_color4_from_params(&upstream_node.params, &conn.from.port_id))
             {
                 return c;
             }
@@ -627,7 +895,7 @@ fn resolve_color_input(
     }
 
     // 2. Check inline params on the IntelligentLight node itself.
-    if let Some(c) = parse_color_from_params(&layer_node.params, port_id) {
+    if let Some(c) = parse_color4_from_params(&layer_node.params, port_id) {
         return c;
     }
 
@@ -635,43 +903,58 @@ fn resolve_color_input(
         .strip_prefix("color")
         .and_then(|suffix| suffix.parse::<usize>().ok())
         .and_then(|index| DEFAULT_INTELLIGENT_LIGHT_COLORS.get(index).copied())
-        .unwrap_or([1.0, 1.0, 1.0])
+        .unwrap_or([1.0, 1.0, 1.0, 1.0])
 }
 
-/// Parse a color value from a params map. Supports:
-/// - Hex string: "#RRGGBB" or "#RGB"
-/// - Object: { "r": f, "g": f, "b": f }
-/// - Array: [r, g, b]
-fn parse_color_from_params(
+fn resolve_color4_input(
+    sc: &SceneContext<'_>,
+    layer_node: &Node,
+    layer_id: &str,
+    port_id: &str,
+    fallback: [f32; 4],
+) -> [f32; 4] {
+    let scene = sc.scene();
+    let nodes_by_id = sc.nodes_by_id();
+    incoming_connection(scene, layer_id, port_id)
+        .and_then(|connection| {
+            nodes_by_id
+                .get(&connection.from.node_id)
+                .map(|node| (connection, node))
+        })
+        .and_then(|(connection, node)| {
+            parse_color4_from_params(&node.params, "value")
+                .or_else(|| parse_color4_from_params(&node.params, &connection.from.port_id))
+        })
+        .or_else(|| parse_color4_from_params(&layer_node.params, port_id))
+        .unwrap_or(fallback)
+}
+
+fn parse_color4_from_params(
     params: &std::collections::HashMap<String, serde_json::Value>,
     key: &str,
-) -> Option<[f32; 3]> {
+) -> Option<[f32; 4]> {
     let value = params.get(key)?;
-
-    // Hex string
-    if let Some(s) = value.as_str() {
-        return parse_hex_color(s);
+    if let Some(rgb) = value.as_str().and_then(parse_hex_color) {
+        return Some([rgb[0], rgb[1], rgb[2], 1.0]);
     }
-
-    // Object { r, g, b }
-    if let Some(obj) = value.as_object() {
-        let r = obj.get("r").and_then(json_f32).unwrap_or(1.0);
-        let g = obj.get("g").and_then(json_f32).unwrap_or(1.0);
-        let b = obj.get("b").and_then(json_f32).unwrap_or(1.0);
-        return Some([r, g, b]);
+    if let Some(object) = value.as_object() {
+        return Some([
+            object.get("r").and_then(json_f32).unwrap_or(1.0),
+            object.get("g").and_then(json_f32).unwrap_or(1.0),
+            object.get("b").and_then(json_f32).unwrap_or(1.0),
+            object.get("a").and_then(json_f32).unwrap_or(1.0),
+        ]);
     }
-
-    // Array [r, g, b]
-    if let Some(arr) = value.as_array() {
-        if arr.len() >= 3 {
-            let r = json_f32(&arr[0]).unwrap_or(1.0);
-            let g = json_f32(&arr[1]).unwrap_or(1.0);
-            let b = json_f32(&arr[2]).unwrap_or(1.0);
-            return Some([r, g, b]);
-        }
+    let array = value.as_array()?;
+    if array.len() < 3 {
+        return None;
     }
-
-    None
+    Some([
+        array.first().and_then(json_f32).unwrap_or(1.0),
+        array.get(1).and_then(json_f32).unwrap_or(1.0),
+        array.get(2).and_then(json_f32).unwrap_or(1.0),
+        array.get(3).and_then(json_f32).unwrap_or(1.0),
+    ])
 }
 
 fn parse_vec2_from_params(
@@ -737,14 +1020,24 @@ pub(crate) fn build_intelligent_light_wgsl(node: &Node) -> String {
     )
 }
 
-// lights: array<vec4f, 11> (176) + params: vec4f (16) + colors: array<vec4f, 11> (176) = 368
-pub(crate) const ILIGHT_BUFFER_SIZE: u64 = 368;
+// lights (176) + params (16) + colors (176) + base (16) + presentation (48)
+// + pointer position/radius/gain (16) + pointer color (16) + pointer params (16) = 480.
+pub(crate) const ILIGHT_BUFFER_SIZE: u64 = 480;
 
 pub(crate) fn pack_ilight_buffer(
     positions: &[(f32, f32); INTELLIGENT_LIGHT_ZONE_COUNT],
     power: f32,
     lightness: f32,
-    colors: &[[f32; 3]; INTELLIGENT_LIGHT_ZONE_COUNT],
+    blob_radius: f32,
+    opacity: f32,
+    colors: &[[f32; 4]; INTELLIGENT_LIGHT_ZONE_COUNT],
+    base_color: [f32; 4],
+    presentation_colors: [[f32; 4]; 3],
+    pointer_position: [f32; 2],
+    pointer_color: [f32; 4],
+    pointer_radius: f32,
+    pointer_gain: f32,
+    pointer_opacity: f32,
 ) -> Vec<u8> {
     let mut bytes = vec![0u8; ILIGHT_BUFFER_SIZE as usize];
     // lights: offset 0, 11 × vec4f
@@ -757,6 +1050,8 @@ pub(crate) fn pack_ilight_buffer(
     let params_base = 11 * 16;
     bytes[params_base..params_base + 4].copy_from_slice(&power.to_ne_bytes());
     bytes[params_base + 4..params_base + 8].copy_from_slice(&lightness.to_ne_bytes());
+    bytes[params_base + 8..params_base + 12].copy_from_slice(&blob_radius.to_ne_bytes());
+    bytes[params_base + 12..params_base + 16].copy_from_slice(&opacity.to_ne_bytes());
     // colors: offset 192, 11 × vec4f
     let colors_base = 12 * 16;
     for (i, c) in colors.iter().enumerate() {
@@ -764,9 +1059,32 @@ pub(crate) fn pack_ilight_buffer(
         bytes[base..base + 4].copy_from_slice(&c[0].to_ne_bytes());
         bytes[base + 4..base + 8].copy_from_slice(&c[1].to_ne_bytes());
         bytes[base + 8..base + 12].copy_from_slice(&c[2].to_ne_bytes());
-        bytes[base + 12..base + 16].copy_from_slice(&1.0f32.to_ne_bytes()); // w = 1.0
+        bytes[base + 12..base + 16].copy_from_slice(&c[3].to_ne_bytes());
     }
+    write_vec4(&mut bytes, 368, base_color);
+    for (index, color) in presentation_colors.into_iter().enumerate() {
+        write_vec4(&mut bytes, 384 + index * 16, color);
+    }
+    write_vec4(
+        &mut bytes,
+        432,
+        [
+            pointer_position[0],
+            pointer_position[1],
+            pointer_radius,
+            pointer_gain,
+        ],
+    );
+    write_vec4(&mut bytes, 448, pointer_color);
+    write_vec4(&mut bytes, 464, [pointer_opacity, 0.0, 0.0, 0.0]);
     bytes
+}
+
+fn write_vec4(bytes: &mut [u8], offset: usize, value: [f32; 4]) {
+    for (index, component) in value.into_iter().enumerate() {
+        let start = offset + index * 4;
+        bytes[start..start + 4].copy_from_slice(&component.to_ne_bytes());
+    }
 }
 
 // ── Unit tests ─────────────────────────────────────────────────────────
@@ -776,7 +1094,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
 
     fn test_node(
         node_id: &str,
@@ -826,6 +1144,10 @@ mod tests {
         let g = f32::from_ne_bytes(bytes[base + 4..base + 8].try_into().unwrap());
         let b = f32::from_ne_bytes(bytes[base + 8..base + 12].try_into().unwrap());
         (r, g, b)
+    }
+
+    fn read_f32(bytes: &[u8], offset: usize) -> f32 {
+        f32::from_ne_bytes(bytes[offset..offset + 4].try_into().unwrap())
     }
 
     fn make_test_scene(
@@ -878,6 +1200,7 @@ mod tests {
             layer_id: "ilight".to_string(),
             power_fallback: 0.0,
             lightness_fallback: 0.75,
+            ..Default::default()
         };
 
         let bytes = cfg.pack_buffer(&scene);
@@ -936,6 +1259,7 @@ mod tests {
             layer_id: "ilight".to_string(),
             power_fallback: 0.0,
             lightness_fallback: 0.75,
+            ..Default::default()
         };
 
         let bytes = cfg.pack_buffer(&scene);
@@ -962,6 +1286,7 @@ mod tests {
             layer_id: "ilight".to_string(),
             power_fallback: 0.0,
             lightness_fallback: 0.75,
+            ..Default::default()
         };
 
         let bytes = cfg.pack_buffer(&scene);
@@ -1015,6 +1340,7 @@ mod tests {
             layer_id: "ilight".to_string(),
             power_fallback: 0.0,
             lightness_fallback: 0.75,
+            ..Default::default()
         };
 
         let bytes = cfg.pack_buffer(&scene);
@@ -1026,8 +1352,49 @@ mod tests {
     }
 
     #[test]
+    fn pack_buffer_uses_extended_android_color_and_pointer_abi() {
+        let scene = make_test_scene(
+            serde_json::json!({
+                "blobRadius": 14.373333,
+                "opacity": 0.6,
+                "baseColor": [0.1, 0.2, 0.3, 0.4],
+                "presentationColorLeft": "#ffffff",
+                "presentationColorCenter": "#002175",
+                "presentationColorRight": "#268fff",
+                "pointerTintPosition": [12.0, 13.0],
+                "pointerTintColor": "#0e4ab1",
+                "pointerTintRadius": 6.0,
+                "pointerTintGain": 1.55,
+                "pointerTintOpacity": 0.8,
+                "color0": [1.0, 1.0, 1.0, 0.25]
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let bytes = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            ..Default::default()
+        }
+        .pack_buffer(&scene);
+
+        assert_eq!(bytes.len(), ILIGHT_BUFFER_SIZE as usize);
+        assert_near(read_f32(&bytes, 184) as f64, 14.373333, 1e-5, "blob radius");
+        assert_near(read_f32(&bytes, 188) as f64, 0.6, 1e-6, "opacity");
+        assert_near(read_f32(&bytes, 368) as f64, 0.1, 1e-6, "base color r");
+        assert_near(read_f32(&bytes, 204) as f64, 0.25, 1e-6, "zone color alpha");
+        assert_near(read_f32(&bytes, 432) as f64, 12.0, 1e-6, "pointer x");
+        assert_near(read_f32(&bytes, 436) as f64, 13.0, 1e-6, "pointer y");
+        assert_near(read_f32(&bytes, 440) as f64, 6.0, 1e-6, "pointer radius");
+        assert_near(read_f32(&bytes, 444) as f64, 1.55, 1e-6, "pointer gain");
+        assert_near(read_f32(&bytes, 464) as f64, 0.8, 1e-6, "pointer opacity");
+    }
+
+    #[test]
     fn packed_mode_requires_complete_exact_sized_position_and_color_arrays() {
-        let positions = test_node(
+        let mut positions = test_node(
             "positions",
             "PackedInput",
             HashMap::from([
@@ -1041,7 +1408,13 @@ mod tests {
                 ),
             ]),
         );
-        let colors = test_node(
+        positions.outputs.push(NodePort {
+            id: "value".to_string(),
+            name: Some("Value".to_string()),
+            port_type: Some("packed<vector2>".to_string()),
+            array_length: Some(INTELLIGENT_LIGHT_ZONE_COUNT),
+        });
+        let mut colors = test_node(
             "colors",
             "PackedInput",
             HashMap::from([
@@ -1055,6 +1428,12 @@ mod tests {
                 ),
             ]),
         );
+        colors.outputs.push(NodePort {
+            id: "value".to_string(),
+            name: Some("Value".to_string()),
+            port_type: Some("packed<color>".to_string()),
+            array_length: Some(INTELLIGENT_LIGHT_ZONE_COUNT),
+        });
         let positions_edge = Connection {
             id: "positions-edge".to_string(),
             from: Endpoint {
@@ -1082,11 +1461,9 @@ mod tests {
             vec![positions.clone(), colors.clone()],
             vec![positions_edge.clone(), colors_edge.clone()],
         );
-        assert!(
-            resolve_packed_pair(&complete, &complete.nodes[0])
-                .unwrap()
-                .is_some()
-        );
+        assert!(resolve_packed_pair(&complete, &complete.nodes[0])
+            .unwrap()
+            .is_some());
 
         let positions_only = make_test_scene(
             serde_json::Map::new(),

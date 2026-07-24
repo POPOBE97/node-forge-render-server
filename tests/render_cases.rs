@@ -468,6 +468,10 @@ fn run_case(case: &Case) {
         }
     }
 
+    if std::env::var("WGSL_ONLY").is_ok_and(|value| value != "0") {
+        return;
+    }
+
     // (2) Render headless and compare basic image properties
     let out_dir = case_dir.join("out");
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {

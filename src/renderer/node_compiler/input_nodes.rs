@@ -198,7 +198,7 @@ pub fn compile_packed_input(
     ctx: &mut MaterialCompileContext,
 ) -> Result<TypedExpr> {
     if out_port.unwrap_or("value") != "value" {
-        bail!("PackedInput: unsupported output port");
+        bail!("{}: unsupported output port", node.node_type);
     }
     let length = node
         .outputs
@@ -207,13 +207,21 @@ pub fn compile_packed_input(
         .and_then(|port| port.array_length)
         .unwrap_or(node.inputs.len());
     if length == 0 {
-        bail!("PackedInput '{}': array length must be positive", node.id);
+        bail!(
+            "{} '{}': array length must be positive",
+            node.node_type,
+            node.id
+        );
     }
-    let element_type = node
-        .params
-        .get("elementType")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("float");
+    let element_type = match node.node_type.as_str() {
+        "ColorArrayInput" => "color",
+        "Vector2ArrayInput" => "vector2",
+        _ => node
+            .params
+            .get("elementType")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("float"),
+    };
     let (kind, value_type, element_expr): (
         GraphFieldKind,
         ValueType,
@@ -259,7 +267,8 @@ pub fn compile_packed_input(
             }),
         ),
         other => bail!(
-            "PackedInput '{}': unsupported element type '{other}'",
+            "{} '{}': unsupported element type '{other}'",
+            node.node_type,
             node.id
         ),
     };

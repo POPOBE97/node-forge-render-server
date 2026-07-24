@@ -2,8 +2,12 @@ use std::collections::HashMap;
 
 use node_forge_render_server::{
     dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL},
+    renderer,
+    renderer::validation,
     schema::{load_default_scheme, validate_scene_against},
 };
+
+mod support;
 
 fn node(id: &str, node_type: &str) -> Node {
     Node {
@@ -132,11 +136,9 @@ fn rejects_shader_material_port_not_present_in_reflected_inputs() {
 
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
         .expect_err("undeclared resource port must fail");
-    assert!(
-        error
-            .to_string()
-            .contains("unknown to port 'GroupInstance_32/ShaderMaterial_32.resource:intelli_tex'")
-    );
+    assert!(error
+        .to_string()
+        .contains("unknown to port 'GroupInstance_32/ShaderMaterial_32.resource:intelli_tex'"));
 }
 
 #[test]
@@ -154,4 +156,37 @@ fn rejects_shader_material_resource_with_forged_value_type() {
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
         .expect_err("resource port must use sampledTexture");
     assert!(error.to_string().contains("uses unknown to port"));
+}
+
+#[test]
+fn aligned_voice_interaction_shaders_compile_without_a_gpu() {
+    for case_name in ["intelligent-light", "doubao-voice-interaction"] {
+        let (scene, assets) = support::load_render_case(case_name);
+        let bundles =
+            renderer::build_all_pass_wgsl_bundles_from_scene_with_assets(&scene, Some(&assets))
+                .unwrap_or_else(|error| {
+                    panic!("{case_name}: failed to build shader bundles: {error:#}")
+                });
+
+        for (pass_id, bundle) in bundles {
+            validation::validate_wgsl_with_context(
+                &bundle.module,
+                &format!("{case_name}, pass {pass_id}"),
+            )
+            .unwrap_or_else(|error| panic!("{case_name}, pass {pass_id}: {error:#}"));
+
+            if pass_id.contains("sys.ilight.") {
+                assert!(
+                    !bundle.module.contains("particle"),
+                    "{case_name}, pass {pass_id}: particles must not be in IntelligentLight"
+                );
+            }
+            if case_name == "doubao-voice-interaction"
+                && pass_id == "GroupInstance_32/RenderPass_26"
+            {
+                assert!(bundle.module.contains("apply_particles"));
+                assert!(!bundle.module.contains("pow(intelligent_light"));
+            }
+        }
+    }
 }

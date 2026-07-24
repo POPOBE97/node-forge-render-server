@@ -635,7 +635,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Shape SDF ---
      let edge = f32(30.0);
-     let edge_pow = f32(4.0);
+     let edge_pow = f32(2.0);
      let radius_px = f32((graph_inputs.float_input_37).x);
      let safe_edge = max(edge, 1e-6);
      let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
@@ -660,21 +660,21 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
      let refractive_index = f32((graph_inputs.float_input_input_bar_refraction_index).x);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
-     let refract_thickness = mix((f32(50.0) - edge) * 2.0, f32(50.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
+     let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
      let refraction = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
-     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(0.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
+     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
      let reflection = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
 
      // --- Mix refraction + reflection ---
-     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 0.5, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.504067242, 0.496327668, 0.872433841, 1.20117557), 1.0);
-    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.5), glass_mat.a);
+     var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
+    glass_mat = glass_luminance_curve_lab(glass_mat, vec4f(0.0, 0.333299994, 0.666999996, 1.0), 1.0);
+    //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---
      var glass_color = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
@@ -702,7 +702,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      }
 
      // --- Apply inner glass color ---
-     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 0.200000003).rgb, vec4f(1.0, 1.0, 1.0, 0.200000003).a);
+     glass_color_ratio = mix(glass_color_ratio, vec4f(1.0, 1.0, 1.0, 1.0).rgb, vec4f(1.0, 1.0, 1.0, 1.0).a);
 
      // --- Apply color ratio + inner color ---
      glass_mat = vec4f(glass_mat.rgb * mix(vec3f(1.0), glass_color_ratio, 1.0), glass_mat.a);
@@ -710,8 +710,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
 
      // --- Directional lighting ---
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(0.5, -0.699999988, 0.0), 0.5, 0.319999993);
-     let lighting2 = glass_calculate_lighting(light_normal, vec3f(0.5, -0.699999988, 0.0) * vec3f(-1.0, -1.0, 1.0), 0.400000006, 0.319999993);
+     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.100000001, -0.600000024, -0.100000001), 1.0, 0.400000006);
+     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.100000001, -0.600000024, -0.100000001) * vec3f(-1.0, -1.0, 1.0), 0.600000024, 0.400000006);
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
      glass_mat += lighting1 + lighting2;
 
@@ -719,7 +719,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      glass_mat = vec4f(pow(glass_mat.rgb, vec3f(1.0)), glass_mat.a);
 
      // --- Apply unshade factor ---
-     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(1.0, 1.0, 1.0, 0.200000003).rgb, 0.0), glass_mat.a);
+     glass_mat = vec4f(mix(glass_mat.rgb, vec4f(1.0, 1.0, 1.0, 1.0).rgb, 0.0), glass_mat.a);
 
      // --- Apply overall alpha ---
      glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * (graph_inputs.float_input_43).x);

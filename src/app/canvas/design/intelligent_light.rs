@@ -756,16 +756,28 @@ fn point_to_screen(
     position_space: [f32; 2],
     camera: [f32; 16],
 ) -> Pos2 {
-    project_local_point(position, rect, position_space, camera)
+    project_local_point(
+        intelligent_light_position_to_local(position, position_space),
+        rect,
+        position_space,
+        camera,
+    )
 }
 
 fn screen_to_point(pos: Pos2, rect: Rect, position_space: [f32; 2], camera: [f32; 16]) -> [f32; 2] {
-    let point = unproject_screen_point(pos, rect, position_space, camera);
+    let point = intelligent_light_position_to_local(
+        unproject_screen_point(pos, rect, position_space, camera),
+        position_space,
+    );
     let point = clamp_pixel_position(point, position_space);
     [
         round_position_value(point[0]),
         round_position_value(point[1]),
     ]
+}
+
+fn intelligent_light_position_to_local(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
+    [position[0], position_space[1].max(1.0) - position[1]]
 }
 
 fn round_position_value(value: f32) -> f32 {
@@ -934,26 +946,26 @@ mod tests {
     }
 
     #[test]
-    fn pixel_mapping_uses_render_bottom_origin() {
+    fn pixel_mapping_matches_shader_y_flip() {
         let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 200.0));
         let position_space = [400.0, 200.0];
         let camera = legacy_projection_camera_matrix(position_space);
 
         assert_eq!(
             point_to_screen([0.0, 0.0], rect, position_space, camera),
-            Pos2::new(10.0, 220.0)
+            Pos2::new(10.0, 20.0)
         );
         assert_eq!(
             point_to_screen([400.0, 200.0], rect, position_space, camera),
-            Pos2::new(410.0, 20.0)
+            Pos2::new(410.0, 220.0)
         );
         assert_eq!(
             screen_to_point(Pos2::new(10.0, 20.0), rect, position_space, camera),
-            [0.0, 200.0]
+            [0.0, 0.0]
         );
         assert_eq!(
             screen_to_point(Pos2::new(410.0, 220.0), rect, position_space, camera),
-            [400.0, 0.0]
+            [400.0, 200.0]
         );
     }
 

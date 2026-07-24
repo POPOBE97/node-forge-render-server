@@ -195,6 +195,8 @@ fn is_value_driven_input_node_type(node_type: &str) -> bool {
             | "Mat4Input"
             | "ColorInput"
             | "PackedInput"
+            | "ColorArrayInput"
+            | "Vector2ArrayInput"
             | "ShaderMaterial"
     )
 }
@@ -264,6 +266,30 @@ pub(crate) fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &Scen
         };
         if prev.node_type != updated.node_type {
             return false;
+        }
+        if matches!(
+            updated.node_type.as_str(),
+            "ColorArrayInput" | "Vector2ArrayInput"
+        ) {
+            let previous_length = prev
+                .params
+                .get("value")
+                .and_then(Value::as_array)
+                .map(Vec::len);
+            let updated_length = updated
+                .params
+                .get("value")
+                .and_then(Value::as_array)
+                .map(Vec::len);
+            if updated_length.is_some() && updated_length != previous_length {
+                return false;
+            }
+            if !updated.outputs.is_empty()
+                && serde_json::to_value(&prev.outputs).ok()
+                    != serde_json::to_value(&updated.outputs).ok()
+            {
+                return false;
+            }
         }
         if !is_value_driven_input_node_type(updated.node_type.as_str()) {
             return false;
@@ -538,6 +564,57 @@ mod tests {
             assets_removed: None,
         };
         assert!(delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
+    fn array_input_value_delta_requires_stable_length() {
+        let mut scene = base_scene();
+        let mut declaration = node(
+            "ColorArrayInput_1",
+            "ColorArrayInput",
+            json!({"value": [[1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0]]}),
+        );
+        declaration.outputs.push(crate::dsl::NodePort {
+            id: "value".to_string(),
+            name: Some("Value".to_string()),
+            port_type: Some("packed<color>".to_string()),
+            array_length: Some(2),
+        });
+        scene.nodes[0] = declaration;
+        let cache = SceneCache::from_scene_update(&scene);
+
+        let make_delta = |value| SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "ColorArrayInput_1",
+                    "ColorArrayInput",
+                    json!({"value": value}),
+                )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            state_machine: None,
+            debug_artifacts: None,
+            assets_added: None,
+            assets_removed: None,
+        };
+
+        assert!(delta_updates_only_uniform_values(
+            &cache,
+            &make_delta(json!([[0.5, 0.0, 0.0, 1.0], [0.0, 0.5, 0.0, 1.0]]))
+        ));
+        assert!(!delta_updates_only_uniform_values(
+            &cache,
+            &make_delta(json!([[0.5, 0.0, 0.0, 1.0]]))
+        ));
     }
 
     #[test]

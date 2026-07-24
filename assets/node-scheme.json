@@ -13,6 +13,7 @@
     "BloomNode",
     "BoolInput",
     "CheckerTexture",
+    "ColorArrayInput",
     "ColorInput",
     "ColorMix",
     "ColorRamp",
@@ -92,6 +93,7 @@
     "TimeInput",
     "TransformGeometry",
     "Upsample",
+    "Vector2ArrayInput",
     "Vector2Input",
     "Vector3Input",
     "Vector4Input",
@@ -693,6 +695,30 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "ColorArrayInput",
+      "label": "Color Array Input",
+      "category": "Input",
+      "description": "Declare a packed color uniform with inline editable values",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "packed<color>"
+        }
+      ],
+      "defaultParams": {
+        "value": [
+          [
+            1,
+            1,
+            1,
+            1
+          ]
+        ]
+      }
     },
     {
       "type": "ColorInput",
@@ -2542,6 +2568,110 @@
           "name": "Lightness",
           "type": "float",
           "default": 0.75,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "blobRadius",
+          "name": "Blob Radius",
+          "type": "float",
+          "default": 18,
+          "range": {
+            "min": 0,
+            "max": 4096,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "opacity",
+          "name": "Opacity",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "baseColor",
+          "name": "Base Color",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "presentationColorLeft",
+          "name": "Presentation Left",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
+          "id": "presentationColorCenter",
+          "name": "Presentation Center",
+          "type": "color",
+          "default": "#002175"
+        },
+        {
+          "id": "presentationColorRight",
+          "name": "Presentation Right",
+          "type": "color",
+          "default": "#268fff"
+        },
+        {
+          "id": "pointerTintPosition",
+          "name": "Pointer Tint Position",
+          "type": "vector2",
+          "default": [
+            18,
+            18
+          ]
+        },
+        {
+          "id": "pointerTintColor",
+          "name": "Pointer Tint Color",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "pointerTintRadius",
+          "name": "Pointer Tint Radius",
+          "type": "float",
+          "default": 18,
+          "range": {
+            "min": 0,
+            "max": 4096,
+            "step": 0.1
+          }
+        },
+        {
+          "id": "pointerTintGain",
+          "name": "Pointer Tint Gain",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 16,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "pointerTintOpacity",
+          "name": "Pointer Tint Opacity",
+          "type": "float",
+          "default": 0,
           "range": {
             "min": 0,
             "max": 1,
@@ -5614,6 +5744,28 @@
         "dst_factor": "one-minus-src-alpha",
         "src_alpha_factor": "one",
         "dst_alpha_factor": "one-minus-src-alpha"
+      }
+    },
+    {
+      "type": "Vector2ArrayInput",
+      "label": "Vector2 Array Input",
+      "category": "Input",
+      "description": "Declare a packed Vector2 uniform with inline editable values",
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "packed<vector2>"
+        }
+      ],
+      "defaultParams": {
+        "value": [
+          [
+            0,
+            0
+          ]
+        ]
       }
     },
     {

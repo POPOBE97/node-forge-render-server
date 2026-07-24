@@ -10,6 +10,8 @@ use super::{
     ingest::IngestPhase,
 };
 
+const TIMELINE_PANEL_MAX_HEIGHT: f32 = 240.0;
+
 pub(super) struct PresentPhase {
     pub sidebar_animating: bool,
     pub pan_zoom_animating: bool,
@@ -152,6 +154,7 @@ pub(super) fn run(
     {
         egui::Panel::bottom("timeline_panel")
             .resizable(false)
+            .max_size(TIMELINE_PANEL_MAX_HEIGHT)
             .frame(
                 egui::Frame::NONE
                     .fill(crate::color::lab(7.78201, -0.000_014_901_2, 0.0))
@@ -159,10 +162,15 @@ pub(super) fn run(
                     .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_gray(32))),
             )
             .show_inside(ui, |ui| {
-                let interaction = ui::timeline_panel::show_timeline(ui, buf);
-                if let Some(idx) = interaction.hovered_frame_index {
-                    timeline_hover = Some(ui::debug_sidebar::TimelineHover { frame_index: idx });
-                }
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        let interaction = ui::timeline_panel::show_timeline(ui, buf);
+                        if let Some(idx) = interaction.hovered_frame_index {
+                            timeline_hover =
+                                Some(ui::debug_sidebar::TimelineHover { frame_index: idx });
+                        }
+                    });
             });
     }
 

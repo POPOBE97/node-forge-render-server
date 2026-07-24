@@ -21,6 +21,7 @@ use crate::{
 pub enum AppCommand {
     PlayStateMachine,
     ForceState(String),
+    ClearStateControl,
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
@@ -52,6 +53,7 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
     match action {
         ui::debug_sidebar::SidebarAction::PlayStateMachine => AppCommand::PlayStateMachine,
         ui::debug_sidebar::SidebarAction::ForceState(state_id) => AppCommand::ForceState(state_id),
+        ui::debug_sidebar::SidebarAction::ClearStateControl => AppCommand::ClearStateControl,
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
@@ -162,6 +164,10 @@ pub fn dispatch(
                 app,
                 crate::app::StateControlSelection::State(state_id),
             )?;
+            ctx.request_repaint();
+        }
+        AppCommand::ClearStateControl => {
+            scene_runtime::clear_state_control(app);
             ctx.request_repaint();
         }
         AppCommand::Canvas(action) => {
@@ -466,8 +472,10 @@ mod tests {
     fn sidebar_state_controls_map_to_local_commands() {
         let play = from_sidebar_action(SidebarAction::PlayStateMachine);
         let state = from_sidebar_action(SidebarAction::ForceState("entry".to_string()));
+        let clear = from_sidebar_action(SidebarAction::ClearStateControl);
         assert!(matches!(play, AppCommand::PlayStateMachine));
         assert!(matches!(state, AppCommand::ForceState(state_id) if state_id == "entry"));
+        assert!(matches!(clear, AppCommand::ClearStateControl));
     }
 
     #[test]

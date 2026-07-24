@@ -1,9 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, fs, path::PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
-use crate::dsl::{parse_f32, parse_texture_format, parse_u32, Connection, Node, SceneDSL};
+use crate::dsl::{Connection, Node, SceneDSL, parse_f32, parse_texture_format, parse_u32};
 
 const DEFAULT_NODE_SCHEME_JSON: &str = include_str!("../assets/node-scheme.json");
 const DEFAULT_NODE_SCHEME_REL_PATH: &str = "assets/node-scheme.json";
@@ -821,7 +821,10 @@ fn validate_connection(
                 ));
                 return;
             }
-        } else if from_node.node_type == "DataParse" || from_node.node_type == "PackedInput" {
+        } else if matches!(
+            from_node.node_type.as_str(),
+            "DataParse" | "PackedInput" | "ColorArrayInput" | "Vector2ArrayInput"
+        ) {
             if let Some(spec) = dynamic_port_type(&from_node.outputs, &c.from.port_id) {
                 Cow::Owned(spec)
             } else {

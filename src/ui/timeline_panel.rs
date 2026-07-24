@@ -78,17 +78,20 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
     // away.  Re-engage when they scroll back near the end.
     let was_pinned = scroll_x >= max_scroll - CELL_W;
 
-    // Handle mouse wheel / trackpad inside the grid viewport.
-    // Map vertical scroll to horizontal (standard UX for horizontal-only
-    // panels) and also accept native horizontal scroll (trackpad swipe).
+    // Handle horizontal trackpad scrolling inside the grid viewport. Shift +
+    // mouse wheel also scrolls horizontally; an unmodified vertical wheel is
+    // left to the panel's vertical scroll area.
     let mut user_scrolled = false;
     if ui.rect_contains_pointer(grid_clip_rect) {
-        let delta = ui.ctx().input(|i| i.smooth_scroll_delta);
-        // Prefer horizontal if present, otherwise use vertical.
+        let (delta, shift_pressed) = ui
+            .ctx()
+            .input(|i| (i.smooth_scroll_delta, i.modifiers.shift));
         let dx = if delta.x.abs() > 0.5 {
             delta.x
-        } else {
+        } else if shift_pressed {
             delta.y
+        } else {
+            0.0
         };
         if dx.abs() > 0.5 {
             scroll_x = (scroll_x - dx).clamp(0.0, max_scroll);

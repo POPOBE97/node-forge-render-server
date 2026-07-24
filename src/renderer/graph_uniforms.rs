@@ -409,8 +409,11 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
             .ok_or_else(|| anyhow!("graph uniform node not found: {}", field.node_id))?;
         let shader_value =
             shader_parameter.and_then(|(_, parameter_id)| node.params.get(parameter_id));
-        let packed_input_value =
-            (node.node_type == "PackedInput").then(|| connected_packed_input_value(scene, node));
+        let packed_input_value = match node.node_type.as_str() {
+            "PackedInput" => Some(connected_packed_input_value(scene, node)),
+            "ColorArrayInput" | "Vector2ArrayInput" => node.params.get("value").cloned(),
+            _ => None,
+        };
         let array_value = shader_value.or(packed_input_value.as_ref());
 
         match field.kind {
@@ -579,6 +582,8 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
             | "Mat4Input"
             | "ColorInput"
             | "PackedInput"
+            | "ColorArrayInput"
+            | "Vector2ArrayInput"
     )
 }
 

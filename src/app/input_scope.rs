@@ -1,18 +1,20 @@
 use rust_wgpu_fiber::eframe::egui;
 
-use super::types::App;
+use super::types::{App, StateControlSelection};
 
 fn animation_canvas_input_active_state(
-    state_control_active: bool,
+    state_control_selection: Option<&StateControlSelection>,
     has_animation_session: bool,
     design_active: bool,
 ) -> bool {
-    state_control_active && has_animation_session && !design_active
+    matches!(state_control_selection, Some(StateControlSelection::Play))
+        && has_animation_session
+        && !design_active
 }
 
 pub(super) fn animation_canvas_input_active(app: &App) -> bool {
     animation_canvas_input_active_state(
-        app.runtime.state_control_selection.is_some(),
+        app.runtime.state_control_selection.as_ref(),
         app.runtime.animation_session.is_some(),
         app.canvas.design.active.is_some(),
     )
@@ -67,15 +69,36 @@ mod tests {
         animation_canvas_input_active_state, canvas_keyboard_events_enabled_state,
         debug_shortcut_scope_enabled_state,
     };
+    use crate::app::StateControlSelection;
     use rust_wgpu_fiber::eframe::egui;
 
     #[test]
-    fn animation_canvas_input_requires_a_selected_state_and_session() {
-        assert!(!animation_canvas_input_active_state(false, false, false));
-        assert!(!animation_canvas_input_active_state(true, false, false));
-        assert!(!animation_canvas_input_active_state(false, true, false));
-        assert!(animation_canvas_input_active_state(true, true, false));
-        assert!(!animation_canvas_input_active_state(true, true, true));
+    fn animation_canvas_input_is_only_captured_while_playing() {
+        let play = StateControlSelection::Play;
+        let pinned = StateControlSelection::State("visible".to_string());
+
+        assert!(!animation_canvas_input_active_state(None, false, false));
+        assert!(!animation_canvas_input_active_state(
+            Some(&play),
+            false,
+            false
+        ));
+        assert!(!animation_canvas_input_active_state(None, true, false));
+        assert!(animation_canvas_input_active_state(
+            Some(&play),
+            true,
+            false
+        ));
+        assert!(!animation_canvas_input_active_state(
+            Some(&pinned),
+            true,
+            false
+        ));
+        assert!(!animation_canvas_input_active_state(
+            Some(&play),
+            true,
+            true
+        ));
     }
 
     #[test]

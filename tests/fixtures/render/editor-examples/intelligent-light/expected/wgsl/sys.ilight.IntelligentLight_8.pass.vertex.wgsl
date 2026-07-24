@@ -17,6 +17,11 @@ struct ILightData {
     lights: array<vec4f, 11>,
     params: vec4f,
     colors: array<vec4f, 11>,
+    base_color: vec4f,
+    presentation_colors: array<vec4f, 3>,
+    pointer_position_radius_gain: vec4f,
+    pointer_color: vec4f,
+    pointer_params: vec4f,
 };
 
 @group(0) @binding(0)
@@ -53,6 +58,34 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 // ── Constants ────────────────────────────────────────────────────────
 
 const NUM_LIGHTS: u32 = 11u;
-const BASE_COLOR: vec3f = vec3f(0.0, 0.5884, 1.0);
+const LIGHT_COLOR_GAIN: f32 = 1.325;
+
+fn blend_normal(src: vec4f, dst: vec4f) -> vec4f {
+    return vec4f(
+        src.rgb + dst.rgb * (1.0 - src.a),
+        src.a + dst.a * (1.0 - src.a),
+    );
+}
+
+fn presentation_color(x: f32) -> vec3f {
+    if (x < 0.5) {
+        return mix(
+            srgb_to_linear(max(ilight_data.presentation_colors[0].rgb, vec3f(0.0))),
+            srgb_to_linear(max(ilight_data.presentation_colors[1].rgb, vec3f(0.0))),
+            smoothstep(0.0, 0.5, x),
+        );
+    }
+    return mix(
+        srgb_to_linear(max(ilight_data.presentation_colors[1].rgb, vec3f(0.0))),
+        srgb_to_linear(max(ilight_data.presentation_colors[2].rgb, vec3f(0.0))),
+        smoothstep(0.5, 1.0, x),
+    );
+}
+
+fn srgb_to_linear(value: vec3f) -> vec3f {
+    let low = value / 12.92;
+    let high = pow((value + vec3f(0.055)) / 1.055, vec3f(2.4));
+    return select(high, low, value <= vec3f(0.04045));
+}
 
 // ── Fragment shader ──────────────────────────────────────────────────
