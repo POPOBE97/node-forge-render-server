@@ -19,6 +19,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum AppCommand {
+    PlayStateMachine,
+    ForceState(String),
     Canvas(CanvasAction),
     PickReferenceImage,
     ClearReference,
@@ -48,6 +50,8 @@ pub enum AppCommand {
 
 pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppCommand {
     match action {
+        ui::debug_sidebar::SidebarAction::PlayStateMachine => AppCommand::PlayStateMachine,
+        ui::debug_sidebar::SidebarAction::ForceState(state_id) => AppCommand::ForceState(state_id),
         ui::debug_sidebar::SidebarAction::PreviewTexture(name) => AppCommand::Canvas(
             CanvasAction::SetPreviewTexture(ResourceName::from(name.as_str())),
         ),
@@ -149,6 +153,17 @@ pub fn dispatch(
     command: AppCommand,
 ) -> anyhow::Result<()> {
     match command {
+        AppCommand::PlayStateMachine => {
+            scene_runtime::select_state_control(app, crate::app::StateControlSelection::Play)?;
+            ctx.request_repaint();
+        }
+        AppCommand::ForceState(state_id) => {
+            scene_runtime::select_state_control(
+                app,
+                crate::app::StateControlSelection::State(state_id),
+            )?;
+            ctx.request_repaint();
+        }
         AppCommand::Canvas(action) => {
             let _ = canvas::reducer::apply_action(app, render_state, renderer, action)?;
         }
@@ -446,6 +461,14 @@ mod tests {
         ui::debug_sidebar::SidebarAction,
     };
     use rust_wgpu_fiber::shader_space::PassCaptureMode;
+
+    #[test]
+    fn sidebar_state_controls_map_to_local_commands() {
+        let play = from_sidebar_action(SidebarAction::PlayStateMachine);
+        let state = from_sidebar_action(SidebarAction::ForceState("entry".to_string()));
+        assert!(matches!(play, AppCommand::PlayStateMachine));
+        assert!(matches!(state, AppCommand::ForceState(state_id) if state_id == "entry"));
+    }
 
     #[test]
     fn sidebar_texture_preview_maps_to_canvas_command() {

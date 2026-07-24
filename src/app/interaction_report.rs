@@ -15,11 +15,33 @@ pub fn is_clean_rendering_state(
     !design_session_active
 }
 
+#[cfg(test)]
 pub fn collect_interaction_payloads(
     events: &[egui::Event],
     canvas_rect: Rect,
     pointer_hover_pos: Option<egui::Pos2>,
     clean_state: bool,
+    focus_latched: &mut bool,
+) -> Vec<InteractionEventPayload> {
+    let mut captured_keys = std::collections::HashSet::new();
+    collect_interaction_payloads_with_keyboard_scope(
+        events,
+        canvas_rect,
+        pointer_hover_pos,
+        clean_state,
+        true,
+        &mut captured_keys,
+        focus_latched,
+    )
+}
+
+pub fn collect_interaction_payloads_with_keyboard_scope(
+    events: &[egui::Event],
+    canvas_rect: Rect,
+    pointer_hover_pos: Option<egui::Pos2>,
+    clean_state: bool,
+    keyboard_events_enabled: bool,
+    captured_keys: &mut std::collections::HashSet<egui::Key>,
     focus_latched: &mut bool,
 ) -> Vec<InteractionEventPayload> {
     let mut immediate = Vec::new();
@@ -42,8 +64,21 @@ pub fn collect_interaction_payloads(
                 repeat,
                 modifiers,
             } => {
-                if !*focus_latched {
+                let was_captured = captured_keys.contains(key)
+                    || physical_key.is_some_and(|physical| captured_keys.contains(&physical));
+                if (!keyboard_events_enabled || !*focus_latched) && (*pressed || !was_captured) {
                     continue;
+                }
+                if *pressed {
+                    captured_keys.insert(*key);
+                    if let Some(physical) = physical_key {
+                        captured_keys.insert(*physical);
+                    }
+                } else {
+                    captured_keys.remove(key);
+                    if let Some(physical) = physical_key {
+                        captured_keys.remove(physical);
+                    }
                 }
                 let data = InteractionEventData {
                     key: Some(InteractionKeyData {
@@ -289,7 +324,10 @@ fn key_to_w3c(key: egui::Key) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_interaction_payloads, is_clean_rendering_state};
+    use super::{
+        collect_interaction_payloads, collect_interaction_payloads_with_keyboard_scope,
+        is_clean_rendering_state,
+    };
     use crate::{
         animation::AnimationSession,
         state_machine::types::{AnimationStateType, TransitionMotionNode},
@@ -619,6 +657,76 @@ mod tests {
             .expect("key payload");
         assert_eq!(key.key, "a");
         assert_eq!(key.physical_key.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn disabled_canvas_keyboard_scope_drops_keys_without_losing_focus() {
+        let mut focus = true;
+        let mut captured_keys = std::collections::HashSet::new();
+        let events = vec![egui::Event::Key {
+            key: egui::Key::W,
+            physical_key: Some(egui::Key::W),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }];
+
+        let output = collect_interaction_payloads_with_keyboard_scope(
+            &events,
+            canvas_rect(),
+            None,
+            true,
+            false,
+            &mut captured_keys,
+            &mut focus,
+        );
+
+        assert!(output.is_empty());
+        assert!(captured_keys.is_empty());
+        assert!(focus);
+    }
+
+    #[test]
+    fn canvas_key_up_follows_its_key_down_after_scope_moves_to_sidebar() {
+        let mut focus = true;
+        let mut captured_keys = std::collections::HashSet::new();
+        let key_down = egui::Event::Key {
+            key: egui::Key::W,
+            physical_key: Some(egui::Key::W),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let down = collect_interaction_payloads_with_keyboard_scope(
+            &[key_down],
+            canvas_rect(),
+            None,
+            true,
+            true,
+            &mut captured_keys,
+            &mut focus,
+        );
+        assert_eq!(event_types(&down), vec!["keydown"]);
+        assert!(captured_keys.contains(&egui::Key::W));
+
+        let key_up = egui::Event::Key {
+            key: egui::Key::W,
+            physical_key: Some(egui::Key::W),
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let up = collect_interaction_payloads_with_keyboard_scope(
+            &[key_up],
+            canvas_rect(),
+            None,
+            true,
+            false,
+            &mut captured_keys,
+            &mut focus,
+        );
+        assert_eq!(event_types(&up), vec!["keyup"]);
+        assert!(captured_keys.is_empty());
     }
 
     #[test]

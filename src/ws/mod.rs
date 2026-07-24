@@ -96,12 +96,6 @@ pub enum ParsedSceneSource {
     SceneDelta,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnimationControlAction {
-    Play,
-    Stop,
-}
-
 #[derive(Debug, Clone)]
 pub enum SceneUpdate {
     Parsed {
@@ -118,10 +112,6 @@ pub enum SceneUpdate {
     ParseError {
         message: String,
         request_id: Option<String>,
-    },
-    /// Animation play/stop control from the editor.
-    AnimationControl {
-        action: AnimationControlAction,
     },
     DebugArtifactUpsert {
         item: DebugArtifactItem,

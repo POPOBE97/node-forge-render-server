@@ -10,7 +10,8 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 use crate::{protocol, renderer, ws};
 
 use super::types::{
-    App, scene_reference_desired_source, scene_reference_image_alpha_mode, scene_uses_time,
+    App, StateControlSelection, scene_reference_desired_source, scene_reference_image_alpha_mode,
+    scene_uses_time,
 };
 
 #[derive(Clone, Debug)]
@@ -28,6 +29,127 @@ pub struct SceneApplyResult {
     pub reset_viewport: bool,
     pub previous_output_hash: Option<u64>,
     pub matrix_update: MatrixSceneUpdate,
+}
+
+fn apply_state_machine_overrides(
+    app: &mut App,
+    overrides: &std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>,
+) {
+    if let Some(uniform_scene) = app.runtime.uniform_scene.as_mut() {
+        crate::state_machine::apply_overrides(uniform_scene, overrides);
+    }
+    if let Some(uniform_scene) = app.runtime.uniform_scene.as_ref() {
+        let _ = apply_graph_uniform_updates_parts(
+            &mut app.core.passes,
+            &mut app.core.shader_space,
+            uniform_scene,
+        );
+    }
+    app.runtime.scene_redraw_pending = true;
+}
+
+pub(super) fn select_state_control(app: &mut App, selection: StateControlSelection) -> Result<()> {
+    if app.runtime.state_control_selection.as_ref() == Some(&selection) {
+        return Ok(());
+    }
+
+    match &selection {
+        StateControlSelection::Play => {
+            let restores = app
+                .runtime
+                .animation_session
+                .as_mut()
+                .ok_or_else(|| anyhow!("scene has no valid State Machine"))?
+                .reset();
+            apply_state_machine_overrides(app, &restores);
+            if let Some(buffer) = app.runtime.timeline_buffer.as_mut() {
+                buffer.clear();
+            }
+            app.runtime.last_live_overrides = None;
+            app.runtime.timeline_pre_hover_overrides = None;
+            app.runtime.timeline_preview_was_active = false;
+            eprintln!("[animation] play");
+        }
+        StateControlSelection::State(state_id) => {
+            let step = app
+                .runtime
+                .animation_session
+                .as_mut()
+                .ok_or_else(|| anyhow!("scene has no valid State Machine"))?
+                .force_state(state_id)?;
+            apply_state_machine_overrides(app, &step.active_overrides);
+            app.runtime.last_live_overrides = Some(step.active_overrides);
+            app.runtime.timeline_pre_hover_overrides = None;
+            app.runtime.timeline_preview_was_active = false;
+            eprintln!("[animation] force state {state_id}");
+        }
+    }
+
+    app.runtime.state_control_selection = Some(selection);
+    app.runtime.time_value_secs = 0.0;
+    Ok(())
+}
+
+pub(super) fn clear_state_control(app: &mut App) {
+    let restores = app
+        .runtime
+        .animation_session
+        .as_mut()
+        .map(crate::animation::AnimationSession::reset)
+        .unwrap_or_default();
+    apply_state_machine_overrides(app, &restores);
+    app.runtime.state_control_selection = None;
+    app.runtime.last_live_overrides = None;
+    app.runtime.timeline_pre_hover_overrides = None;
+    app.runtime.timeline_preview_was_active = false;
+    app.runtime.time_value_secs = 0.0;
+}
+
+fn restore_state_control_after_scene_change(
+    app: &mut App,
+    selection: Option<StateControlSelection>,
+) {
+    app.runtime.state_control_selection = None;
+    let Some(selection) = selection else {
+        return;
+    };
+    if let Err(error) = select_state_control(app, selection) {
+        eprintln!("[animation] clearing unavailable State selection: {error:#}");
+        app.runtime.state_control_selection = None;
+    }
+}
+
+fn update_animation_base_values(app: &mut App, updated_nodes: &[crate::dsl::Node]) {
+    let updates = updated_nodes
+        .iter()
+        .flat_map(|node| {
+            node.params.iter().map(|(param_name, value)| {
+                (
+                    crate::state_machine::OverrideKey::new(&node.id, param_name),
+                    value.clone(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if updates.is_empty() {
+        return;
+    }
+    if let Some(session) = app.runtime.animation_session.as_mut() {
+        session.update_base_values(&updates);
+    }
+
+    if matches!(
+        app.runtime.state_control_selection,
+        Some(StateControlSelection::State(_))
+    ) && let Some(step) = app
+        .runtime
+        .animation_session
+        .as_mut()
+        .map(|session| session.step(0.0))
+    {
+        apply_state_machine_overrides(app, &step.active_overrides);
+        app.runtime.last_live_overrides = Some(step.active_overrides);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -572,6 +694,7 @@ pub fn apply_scene_update(
                     }
                     app.runtime.scene_uses_time = scene_uses_time(&uniform_scene);
                     app.runtime.uniform_scene = Some(uniform_scene);
+                    update_animation_base_values(app, &updated_nodes);
                     app.runtime.uniform_only_update_count =
                         app.runtime.uniform_only_update_count.saturating_add(1);
                     SceneApplyResult {
@@ -590,6 +713,10 @@ pub fn apply_scene_update(
                     }
                     app.runtime.scene_uses_time = false;
                     app.runtime.uniform_scene = None;
+                    app.runtime.state_control_selection = None;
+                    app.runtime.last_live_overrides = None;
+                    app.runtime.timeline_pre_hover_overrides = None;
+                    app.runtime.timeline_preview_was_active = false;
                     let message = format!("uniform-only update failed: {e:#}");
                     eprintln!("[scene-runtime] {message}");
                     broadcast_error(app, request_id, "UNIFORM_UPDATE_FAILED", message);
@@ -609,6 +736,7 @@ pub fn apply_scene_update(
             source,
             perf_trace: _,
         } => {
+            let previous_state_control_selection = app.runtime.state_control_selection.clone();
             let missing_debug_artifact_ids = app
                 .shell
                 .debug_artifacts
@@ -666,6 +794,10 @@ pub fn apply_scene_update(
                             app.runtime.last_live_overrides = None;
                             app.runtime.timeline_pre_hover_overrides = None;
                             app.runtime.timeline_preview_was_active = false;
+                            restore_state_control_after_scene_change(
+                                app,
+                                previous_state_control_selection,
+                            );
                             app.runtime.uniform_only_update_count =
                                 app.runtime.uniform_only_update_count.saturating_add(1);
                             if let Ok(mut g) = app.runtime.last_good.lock() {
@@ -741,6 +873,7 @@ pub fn apply_scene_update(
                     app.runtime.last_live_overrides = None;
                     app.runtime.timeline_pre_hover_overrides = None;
                     app.runtime.timeline_preview_was_active = false;
+                    restore_state_control_after_scene_change(app, previous_state_control_selection);
 
                     if let Ok(mut g) = app.runtime.last_good.lock() {
                         *g = Some(scene);
@@ -768,6 +901,7 @@ pub fn apply_scene_update(
                     app.runtime.last_live_overrides = None;
                     app.runtime.timeline_pre_hover_overrides = None;
                     app.runtime.timeline_preview_was_active = false;
+                    app.runtime.state_control_selection = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -791,6 +925,7 @@ pub fn apply_scene_update(
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
                     app.runtime.animation_session = None;
+                    app.runtime.state_control_selection = None;
                     broadcast_error(app, request_id, "PANIC", message);
                     apply_error_plane(app, render_state);
                     SceneApplyResult {
@@ -844,85 +979,14 @@ pub fn apply_scene_update(
             app.canvas.reference.scene_desired = None;
             app.canvas.reference.scene_alpha_mode = None;
             app.runtime.scene_uses_time = false;
+            app.runtime.state_control_selection = None;
+            app.runtime.last_live_overrides = None;
+            app.runtime.timeline_pre_hover_overrides = None;
+            app.runtime.timeline_preview_was_active = false;
             broadcast_error(app, request_id, "PARSE_ERROR", message);
             apply_error_plane(app, render_state);
             SceneApplyResult {
                 did_rebuild_shader_space: true,
-                texture_filter_override: None,
-                reset_viewport: false,
-                previous_output_hash: None,
-                matrix_update: MatrixSceneUpdate::None,
-            }
-        }
-        ws::SceneUpdate::AnimationControl { action } => {
-            match action {
-                ws::AnimationControlAction::Play => {
-                    if !app.runtime.animation_playing {
-                        app.runtime.animation_playing = true;
-                        eprintln!("[animation] play");
-
-                        // Reset the animation session so the state machine
-                        // starts from the initial state every time.
-                        if let Some(session) = app.runtime.animation_session.as_mut() {
-                            let restores = session.reset();
-                            if !restores.is_empty() {
-                                if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
-                                    crate::state_machine::apply_overrides(uniform_scene, &restores);
-                                }
-                            }
-                        }
-                        if let Some(ref uniform_scene) = app.runtime.uniform_scene {
-                            let _ = apply_graph_uniform_updates_parts(
-                                &mut app.core.passes,
-                                &mut app.core.shader_space,
-                                uniform_scene,
-                            );
-                        }
-
-                        // Clear and reinitialize the timeline buffer for a fresh recording.
-                        if let Some(ref mut buf) = app.runtime.timeline_buffer {
-                            buf.clear();
-                        }
-                        app.runtime.last_live_overrides = None;
-                        app.runtime.timeline_pre_hover_overrides = None;
-                        app.runtime.timeline_preview_was_active = false;
-
-                        app.runtime.time_value_secs = 0.0;
-                        app.runtime.scene_redraw_pending = true;
-                    }
-                }
-                ws::AnimationControlAction::Stop => {
-                    if app.runtime.animation_playing {
-                        app.runtime.animation_playing = false;
-                        eprintln!("[animation] stop");
-
-                        // Timeline buffer is intentionally preserved on Stop
-                        // so the user can scrub/inspect the captured window.
-                        app.runtime.timeline_preview_was_active = false;
-
-                        // Reset the animation session and restore base values.
-                        if let Some(session) = app.runtime.animation_session.as_mut() {
-                            let restores = session.reset();
-                            if !restores.is_empty() {
-                                if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
-                                    crate::state_machine::apply_overrides(uniform_scene, &restores);
-                                }
-                            }
-                        }
-                        if let Some(ref uniform_scene) = app.runtime.uniform_scene {
-                            let _ = apply_graph_uniform_updates_parts(
-                                &mut app.core.passes,
-                                &mut app.core.shader_space,
-                                uniform_scene,
-                            );
-                        }
-                        app.runtime.time_value_secs = 0.0;
-                        app.runtime.scene_redraw_pending = true;
-                    }
-                }
-            }
-            SceneApplyResult {
-                did_rebuild_shader_space: false,
                 texture_filter_override: None,
                 reset_viewport: false,
                 previous_output_hash: None,

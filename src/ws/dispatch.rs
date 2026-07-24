@@ -669,54 +669,6 @@ pub(super) fn handle_text_message(
                 }
             }
         }
-        "animation_control" => {
-            let payload = match msg.payload {
-                Some(p) => p,
-                None => {
-                    send_error(
-                        ws,
-                        msg.request_id,
-                        "PARSE_ERROR",
-                        "animation_control missing payload",
-                    );
-                    return Ok(());
-                }
-            };
-
-            let action_str = match payload.get("action").and_then(|v| v.as_str()) {
-                Some(a) => a,
-                None => {
-                    send_error(
-                        ws,
-                        msg.request_id,
-                        "PARSE_ERROR",
-                        "animation_control payload missing 'action' field",
-                    );
-                    return Ok(());
-                }
-            };
-
-            let action = match action_str {
-                "play" => AnimationControlAction::Play,
-                "stop" => AnimationControlAction::Stop,
-                other => {
-                    send_error(
-                        ws,
-                        msg.request_id,
-                        "PARSE_ERROR",
-                        &format!("unknown animation_control action: {other}"),
-                    );
-                    return Ok(());
-                }
-            };
-
-            send_scene_update(
-                scene_tx,
-                scene_drop_rx,
-                SceneUpdate::AnimationControl { action },
-                ui_wake,
-            );
-        }
         other => {
             send_error(
                 ws,
@@ -901,11 +853,6 @@ fn send_scene_update(
                 // Channel is full; keep the existing message rather than
                 // replacing it. A future update will replace it naturally.
                 false
-            }
-            SceneUpdate::AnimationControl { .. } => {
-                // Control messages are critical; flush the channel to deliver.
-                while scene_drop_rx.try_recv().is_ok() {}
-                scene_tx.try_send(update).is_ok()
             }
             SceneUpdate::DebugArtifactUpsert { .. }
             | SceneUpdate::DebugArtifactBinaryUpsert { .. }

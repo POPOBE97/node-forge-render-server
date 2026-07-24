@@ -42,6 +42,10 @@ pub struct StateMachineRuntime {
     /// Current active state id.
     current_state_id: String,
 
+    /// Debug-only forced state. While set, routing is disabled and the
+    /// selected state's logical targets are reasserted every frame.
+    forced_state_id: Option<String>,
+
     /// Wall-clock time accumulated since scene start (seconds).
     scene_time: f64,
 
@@ -444,6 +448,7 @@ impl StateMachineRuntime {
             mutation_index,
             motion_graph_index,
             current_state_id: initial,
+            forced_state_id: None,
             scene_time: 0.0,
             state_local_times,
             logical_state_initialized: false,
@@ -471,6 +476,7 @@ impl StateMachineRuntime {
             .unwrap_or_default();
 
         self.current_state_id = initial;
+        self.forced_state_id = None;
         self.scene_time = 0.0;
         // Re-initialize all state local times to 0.0 (same as construction).
         for v in self.state_local_times.values_mut() {
@@ -481,6 +487,25 @@ impl StateMachineRuntime {
         self.runtime_input = RuntimeInputSnapshot::default();
         self.trigger_holds = TriggerHoldState::default();
         self.finished = false;
+    }
+
+    /// Force the runtime to remain in one State for debug inspection.
+    ///
+    /// Entry, Any, Exit, and ordinary animation states are all valid debug
+    /// targets. Mutation nodes are graph resources rather than selectable
+    /// States and are rejected.
+    pub fn force_state(&mut self, state_id: &str) -> Result<()> {
+        let state = self
+            .find_state(state_id)
+            .ok_or_else(|| anyhow::anyhow!("state '{state_id}' not found"))?;
+        if state.resolved_type() == AnimationStateType::MutationNode {
+            bail!("mutation node '{state_id}' cannot be forced as a State");
+        }
+
+        self.reset();
+        self.current_state_id = state_id.to_string();
+        self.forced_state_id = Some(state_id.to_string());
+        Ok(())
     }
 
     /// Update the latest mouse position visible to mutation nodes.
@@ -513,6 +538,7 @@ impl StateMachineRuntime {
         }
 
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        let forced = self.forced_state_id.is_some();
         self.scene_time += dt;
         self.trigger_holds.process_events(self.scene_time, events);
         let mut diagnostics: Vec<String> = Vec::new();
@@ -523,7 +549,7 @@ impl StateMachineRuntime {
         let current_id = self.current_state_id.clone();
         if self
             .find_state(&current_id)
-            .is_some_and(|state| state.resolved_type() != AnimationStateType::ExitState)
+            .is_some_and(|state| forced || state.resolved_type() != AnimationStateType::ExitState)
             && let Some(time) = self.state_local_times.get_mut(&current_id)
         {
             *time += dt;
@@ -549,7 +575,7 @@ impl StateMachineRuntime {
         // Establish the logical state's values through the animation engine
         // before routing. This makes an initial state's presentation the
         // source of a transition fired on the first tick.
-        if !self.logical_state_initialized {
+        if !self.logical_state_initialized || forced {
             self.motion_engine
                 .commit_logical_values(self.state_parameter_patch(&current_id));
             self.logical_state_initialized = true;
@@ -558,7 +584,7 @@ impl StateMachineRuntime {
         // Transitions remain interruptible while a previous visual driver is
         // active. Routing uses the logical current state (already the target
         // of the previous transition).
-        if let Some(transition) = self.pick_transition(params, events) {
+        if !forced && let Some(transition) = self.pick_transition(params, events) {
             self.state_local_times
                 .insert(transition.target.clone(), 0.0);
             let target_patch = self.state_parameter_patch(&transition.target);
@@ -588,6 +614,7 @@ impl StateMachineRuntime {
             .iter()
             .find(|state| state.resolved_type() == AnimationStateType::AnyState)
             .cloned()
+            && any_state.id != target_state_id
             && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
         {
             match self.evaluate_mutation_state(mutation_id, &any_state.id, &post_motion_snapshot) {
@@ -618,7 +645,7 @@ impl StateMachineRuntime {
         frame_overrides.extend(mutation_patch);
 
         // Exit becomes terminal only after its visual transition completes.
-        if let Some(state) = self.find_state(&self.current_state_id) {
+        if !forced && let Some(state) = self.find_state(&self.current_state_id) {
             if state.resolved_type() == AnimationStateType::ExitState
                 && self.motion_engine.active_transition_id().is_none()
             {
@@ -649,6 +676,11 @@ impl StateMachineRuntime {
     /// Get the active transition id, if a transition is currently running.
     pub fn active_transition_id(&self) -> Option<&str> {
         self.motion_engine.active_transition_id()
+    }
+
+    /// Get the debug-forced state id, when routing is disabled.
+    pub fn forced_state_id(&self) -> Option<&str> {
+        self.forced_state_id.as_deref()
     }
 
     /// Get the definition.
@@ -2315,5 +2347,73 @@ mod tests {
             runtime.tick(0.0, &HashMap::new(), &vec![]).current_state_id,
             "exit"
         );
+    }
+
+    #[test]
+    fn forced_states_disable_routing_and_exit_completion() {
+        let mut sm = minimal_sm();
+        sm.transitions.push(AnimationTransition {
+            id: "entry-to-exit".into(),
+            source: "entry".into(),
+            target: "exit".into(),
+            motion_graph_id: "instant".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        runtime.force_state("entry").unwrap();
+        let entry = runtime.tick(0.5, &HashMap::new(), &vec![]);
+        assert_eq!(entry.current_state_id, "entry");
+        assert_eq!(entry.state_local_times.get("entry"), Some(&0.5));
+        assert!(!entry.finished);
+
+        runtime.force_state("exit").unwrap();
+        let exit = runtime.tick(0.5, &HashMap::new(), &vec![]);
+        assert_eq!(exit.current_state_id, "exit");
+        assert_eq!(exit.state_local_times.get("exit"), Some(&0.5));
+        assert!(!exit.finished);
+
+        runtime.force_state("any").unwrap();
+        let any = runtime.tick(0.25, &HashMap::new(), &vec![]);
+        assert_eq!(any.current_state_id, "any");
+        assert_eq!(any.state_local_times.get("any"), Some(&0.25));
+    }
+
+    #[test]
+    fn forced_state_resets_to_base_and_rejects_mutation_nodes() {
+        let mut sm = minimal_sm();
+        sm.states.push(AnimationState {
+            id: "visible".into(),
+            name: "Visible".into(),
+            position: None,
+            parameter_overrides: HashMap::from([(
+                "DeclaredUniform:value".into(),
+                serde_json::json!(1.0),
+            )]),
+            state_type: AnimationStateType::AnimationState,
+            mutation_id: None,
+        });
+        sm.states.push(AnimationState {
+            id: "mutation-node".into(),
+            name: "Mutation".into(),
+            position: None,
+            parameter_overrides: HashMap::new(),
+            state_type: AnimationStateType::MutationNode,
+            mutation_id: Some("mutation".into()),
+        });
+        let key = OverrideKey::new("DeclaredUniform", "value");
+        let mut runtime = StateMachineRuntime::with_initial_values(
+            sm,
+            HashMap::from([(key.clone(), serde_json::json!(0.0))]),
+        );
+
+        runtime.force_state("visible").unwrap();
+        let visible = runtime.tick(0.0, &HashMap::new(), &vec![]);
+        assert_eq!(visible.overrides.get(&key), Some(&serde_json::json!(1.0)));
+
+        runtime.force_state("entry").unwrap();
+        let entry = runtime.tick(0.0, &HashMap::new(), &vec![]);
+        assert_eq!(entry.overrides.get(&key), Some(&serde_json::json!(0.0)));
+        assert!(runtime.force_state("mutation-node").is_err());
+        assert!(runtime.force_state("missing").is_err());
     }
 }

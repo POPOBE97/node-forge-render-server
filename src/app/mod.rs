@@ -1,6 +1,7 @@
 mod canvas;
 pub(crate) mod display_metrics;
 mod frame;
+mod input_scope;
 mod interaction_report;
 mod layout_math;
 pub(crate) mod matrix_render;
@@ -12,7 +13,7 @@ mod window_mode;
 pub use types::{
     AnalysisTab, App, AppInit, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel,
     QualifierSettings, RefImageAlphaMode, RefImageMode, ResourcePoolInfo, SampledPixel,
-    ShortwirePastedReferenceImage, ShortwireReferenceImage, TestMode,
+    ShortwirePastedReferenceImage, ShortwireReferenceImage, StateControlSelection, TestMode,
 };
 
 use rust_wgpu_fiber::eframe::{self, egui};

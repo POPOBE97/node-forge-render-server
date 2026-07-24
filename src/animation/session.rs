@@ -230,6 +230,20 @@ impl AnimationSession {
         self.runtime.set_mouse_position(position);
     }
 
+    /// Reset and force the session to remain in one selectable State.
+    /// Returns the initial frame for immediate application by the UI.
+    pub fn force_state(&mut self, state_id: &str) -> Result<AnimationStep> {
+        self.runtime.force_state(state_id)?;
+        self.scene_time = 0.0;
+        self.active_overrides.clear();
+        self.pending_events.clear();
+        self.first_tick_fired = false;
+        self.cached_state_local_times.clear();
+        self.cached_finished = false;
+        self.cached_motion_channels.clear();
+        Ok(self.step(0.0))
+    }
+
     /// Whether the session is still active (runtime not finished).
     pub fn is_active(&self) -> bool {
         !self.runtime.finished

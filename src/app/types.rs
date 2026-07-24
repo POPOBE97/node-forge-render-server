@@ -354,9 +354,8 @@ pub(super) struct AppRuntime {
     pub force_continuous_redraw: bool,
     pub scene_redraw_pending: bool,
     pub animation_session: Option<crate::animation::AnimationSession>,
-    /// Whether the animation state machine is actively playing.
-    /// Defaults to `false`; toggled by `animation_control` WebSocket messages.
-    pub animation_playing: bool,
+    /// Local debug-sidebar State/Play selection. `None` displays scene base values.
+    pub state_control_selection: Option<StateControlSelection>,
     /// Rolling timeline buffer recording per-frame state-machine snapshots.
     /// `None` when the current scene has no state machine.
     pub timeline_buffer: Option<crate::animation::TimelineBuffer>,
@@ -379,6 +378,12 @@ pub(super) struct AppRuntime {
     pub time_value_secs: f32,
     pub time_last_raw_secs: f32,
     pub latest_render_profile: Option<RenderProfile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StateControlSelection {
+    Play,
+    State(String),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -676,7 +681,7 @@ impl App {
                 force_continuous_redraw: init.force_continuous_redraw,
                 scene_redraw_pending: true,
                 animation_session: init.animation_session,
-                animation_playing: false,
+                state_control_selection: None,
                 timeline_buffer: None,
                 last_live_overrides: None,
                 timeline_pre_hover_overrides: None,

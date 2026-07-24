@@ -1,6 +1,9 @@
 use crate::{
     animation::AnimationStep,
-    app::{scene_runtime, types::App},
+    app::{
+        scene_runtime,
+        types::{App, StateControlSelection},
+    },
     state_machine,
     state_machine::types::StateMachine,
 };
@@ -19,12 +22,16 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     let delta_t = (raw_t - app.runtime.time_last_raw_secs).max(0.0);
     app.runtime.time_last_raw_secs = raw_t;
 
-    let effective_dt = if app.runtime.time_updates_enabled && app.runtime.animation_playing {
+    let state_control_selection = app.runtime.state_control_selection.clone();
+    let state_control_active = state_control_selection.is_some();
+    let playing = matches!(state_control_selection, Some(StateControlSelection::Play));
+
+    let effective_dt = if app.runtime.time_updates_enabled && state_control_active {
         delta_t
     } else {
         0.0
     };
-    let anim_step = if app.runtime.animation_playing {
+    let anim_step = if state_control_active {
         app.runtime
             .animation_session
             .as_mut()
@@ -74,7 +81,8 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         // Record timeline frame for the debug sidebar timeline tab.
         // Skip recording when paused (effective_dt == 0) to avoid
         // duplicate frames at the same scene_time.
-        if effective_dt > 0.0
+        if playing
+            && effective_dt > 0.0
             && step.needs_redraw
             && let Some(ref mut buf) = app.runtime.timeline_buffer
         {
@@ -119,6 +127,12 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             });
         }
         app.runtime.last_live_overrides = Some(step.active_overrides.clone());
+        if playing && step.finished {
+            scene_runtime::clear_state_control(app);
+            animation_current_state_id = None;
+            animation_active_transition_id = None;
+            animation_values_changed = true;
+        }
     } else if app.runtime.time_updates_enabled {
         app.runtime.time_value_secs += delta_t;
     }
@@ -130,7 +144,7 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     );
 
     let time_driven_scene = app.runtime.scene_uses_time && app.runtime.time_updates_enabled;
-    let animation_session_active = app.runtime.animation_playing
+    let animation_session_active = app.runtime.state_control_selection.is_some()
         && app
             .runtime
             .animation_session

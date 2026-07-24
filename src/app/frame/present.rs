@@ -1,7 +1,7 @@
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
-    app::{canvas, display_metrics, scene_runtime, types::App, window_mode},
+    app::{canvas, display_metrics, input_scope, scene_runtime, types::App, window_mode},
     ui,
 };
 
@@ -17,18 +17,18 @@ pub(super) struct PresentPhase {
 }
 
 fn timeline_toggle_shortcut_requested(
-    egui_wants_keyboard_input: bool,
+    text_edit_focused: bool,
     command_pressed: bool,
     j_pressed: bool,
 ) -> bool {
-    !egui_wants_keyboard_input && command_pressed && j_pressed
+    !text_edit_focused && command_pressed && j_pressed
 }
 
 fn timeline_toggle_shortcut_pressed(ctx: &egui::Context) -> bool {
-    let egui_wants_keyboard_input = ctx.egui_wants_keyboard_input();
+    let text_edit_focused = ctx.text_edit_focused();
     let (command_pressed, j_pressed) =
         ctx.input(|input| (input.modifiers.command, input.key_pressed(egui::Key::J)));
-    timeline_toggle_shortcut_requested(egui_wants_keyboard_input, command_pressed, j_pressed)
+    timeline_toggle_shortcut_requested(text_edit_focused, command_pressed, j_pressed)
 }
 
 pub(super) fn run(
@@ -42,7 +42,7 @@ pub(super) fn run(
     let now = ingest.frame_time;
     let frame_state = window_mode::update_window_mode_frame(app, now);
     window_mode::maybe_apply_startup_sidebar_sizing(app, ctx);
-    if timeline_toggle_shortcut_pressed(ctx) {
+    if input_scope::debug_shortcuts_enabled(app, ctx) && timeline_toggle_shortcut_pressed(ctx) {
         app.shell.timeline_visible = !app.shell.timeline_visible;
     }
 
@@ -102,6 +102,42 @@ pub(super) fn run(
         mode: app.canvas.display.pass_capture_mode,
         enabled: app.canvas.display.pass_capture.is_some(),
     };
+    let state_sidebar_items = app
+        .runtime
+        .animation_session
+        .as_ref()
+        .map(|session| {
+            session
+                .runtime()
+                .definition()
+                .states
+                .iter()
+                .filter_map(|state| {
+                    use crate::state_machine::types::AnimationStateType;
+                    let kind = match state.resolved_type() {
+                        AnimationStateType::AnimationState => {
+                            ui::debug_sidebar::StateSidebarKind::State
+                        }
+                        AnimationStateType::EntryState => {
+                            ui::debug_sidebar::StateSidebarKind::Entry
+                        }
+                        AnimationStateType::AnyState => ui::debug_sidebar::StateSidebarKind::Any,
+                        AnimationStateType::ExitState => ui::debug_sidebar::StateSidebarKind::Exit,
+                        AnimationStateType::MutationNode => return None,
+                    };
+                    Some(ui::debug_sidebar::StateSidebarItem {
+                        id: state.id.clone(),
+                        name: if state.name.trim().is_empty() {
+                            state.id.clone()
+                        } else {
+                            state.name.clone()
+                        },
+                        kind,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let mut pending_commands = Vec::<AppCommand>::new();
     let mut sidebar_result = ui::debug_sidebar::SidebarResult::default();
@@ -130,6 +166,7 @@ pub(super) fn run(
             });
     }
 
+    app.canvas.interactions.last_debug_sidebar_rect = None;
     if sidebar_w > 0.0 {
         egui::Panel::left("debug_sidebar")
             .exact_size(sidebar_w)
@@ -137,6 +174,7 @@ pub(super) fn run(
             .frame(egui::Frame::NONE)
             .show_inside(ui, |ui| {
                 let clip_rect = ui.available_rect_before_wrap();
+                app.canvas.interactions.last_debug_sidebar_rect = Some(clip_rect);
                 let x_offset = -sidebar_full_w * (1.0 - frame_state.sidebar_factor);
                 let sidebar_rect = egui::Rect::from_min_size(
                     clip_rect.min + egui::vec2(x_offset, 0.0),
@@ -157,6 +195,11 @@ pub(super) fn run(
                     display_sidebar_state,
                     android_reference_status.clone(),
                     reference_sidebar_state.as_ref(),
+                    ui::debug_sidebar::StateSidebarState {
+                        items: &state_sidebar_items,
+                        selection: app.runtime.state_control_selection.as_ref(),
+                        playback_enabled: app.runtime.animation_session.is_some(),
+                    },
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,
                         resource_pools: &app.shell.resource_pools,

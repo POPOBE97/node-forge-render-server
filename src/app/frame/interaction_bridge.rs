@@ -2,7 +2,7 @@ use rust_wgpu_fiber::eframe::egui;
 
 use crate::{
     animation::AnimationStep,
-    app::{interaction_report, types::App},
+    app::{input_scope, interaction_report, types::App},
     protocol,
     state_machine::MousePosition,
     ui,
@@ -175,12 +175,16 @@ pub fn collect_early_canvas_interactions(
         .last_canvas_rect
         .unwrap_or_else(|| ctx.content_rect());
     let pointer_hover_pos = ctx.input(|i| i.pointer.hover_pos());
+    let canvas_keyboard_events_enabled =
+        input_scope::canvas_keyboard_events_enabled(app, pointer_hover_pos);
 
-    let mut payloads = interaction_report::collect_interaction_payloads(
+    let mut payloads = interaction_report::collect_interaction_payloads_with_keyboard_scope(
         frame_events.as_slice(),
         canvas_rect,
         pointer_hover_pos,
         interaction_clean_state,
+        canvas_keyboard_events_enabled,
+        &mut app.canvas.interactions.canvas_captured_keys,
         &mut app.canvas.interactions.canvas_event_focus_latched,
     );
 
@@ -201,7 +205,7 @@ pub fn collect_early_canvas_interactions(
         app.canvas.interactions.last_display_resolution,
     );
 
-    if app.runtime.animation_playing
+    if app.runtime.state_control_selection.is_some()
         && let Some(session) = app.runtime.animation_session.as_mut()
     {
         if let Some(mouse_position) = latest_mouse_position {

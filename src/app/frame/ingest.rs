@@ -3,7 +3,7 @@ use std::time::Instant;
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
-    app::{canvas, scene_runtime, texture_bridge, types::App},
+    app::{canvas, input_scope, scene_runtime, texture_bridge, types::App},
     protocol,
     ui::pass_debug_window,
 };
@@ -86,7 +86,9 @@ pub(super) fn run(
 ) -> IngestPhase {
     log_shortwire_input_ingest(app, ctx);
 
-    if android_screencap_clipboard_shortcut_pressed(ctx) {
+    if input_scope::debug_shortcuts_enabled(app, ctx)
+        && android_screencap_clipboard_shortcut_pressed(ctx)
+    {
         canvas::ops::begin_android_screencap_clipboard_copy(&mut app.canvas.async_ops, frame_time);
         ctx.request_repaint();
     }

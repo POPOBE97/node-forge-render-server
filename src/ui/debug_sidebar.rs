@@ -5,7 +5,7 @@ use std::hash::Hash;
 use crate::android_reference::AndroidReferenceStatus;
 use crate::app::{
     AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel, QualifierSettings,
-    RefImageMode, ResourcePoolInfo, TestMode, display_metrics,
+    RefImageMode, ResourcePoolInfo, StateControlSelection, TestMode, display_metrics,
 };
 
 use super::button::{
@@ -32,6 +32,7 @@ const SIDEBAR_RESIZE_CONTENT_GUTTER_W: f32 = SIDEBAR_RESIZE_HANDLE_W + 1.0;
 const SIDEBAR_DIVIDER_COLOR: egui::Color32 = egui::Color32::from_gray(32);
 const ANALYSIS_PANEL_ASPECT: f32 = 400.0 / 768.0;
 const SIDEBAR_GRID_COLUMNS: usize = 4;
+const STATE_GRID_COLUMNS: usize = 3;
 const SIDEBAR_GRID_GAP: f32 = 8.0;
 const SIDEBAR_GRID_LABEL_GAP: f32 = 4.0;
 const SIDEBAR_GRID_ROW_GAP: f32 = 8.0;
@@ -269,6 +270,10 @@ pub fn sidebar_width(ctx: &egui::Context) -> f32 {
 /// Action returned from the sidebar to the app.
 #[derive(Clone, Debug)]
 pub enum SidebarAction {
+    /// Start State Machine playback from the beginning.
+    PlayStateMachine,
+    /// Force the State Machine to remain in one State.
+    ForceState(String),
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -373,6 +378,27 @@ pub struct PassCaptureSidebarState {
     pub enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateSidebarKind {
+    State,
+    Entry,
+    Any,
+    Exit,
+}
+
+#[derive(Clone, Debug)]
+pub struct StateSidebarItem {
+    pub id: String,
+    pub name: String,
+    pub kind: StateSidebarKind,
+}
+
+pub struct StateSidebarState<'a> {
+    pub items: &'a [StateSidebarItem],
+    pub selection: Option<&'a StateControlSelection>,
+    pub playback_enabled: bool,
+}
+
 pub fn show_in_rect(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
@@ -387,6 +413,7 @@ pub fn show_in_rect(
     display: DisplaySidebarState,
     android_reference: AndroidReferenceStatus,
     reference: Option<&ReferenceSidebarState>,
+    state_control: StateSidebarState<'_>,
     test_mode_state: TestModeSidebarState<'_>,
     pass_capture_state: PassCaptureSidebarState,
     tree_nodes: &[FileTreeNode],
@@ -456,6 +483,10 @@ pub fn show_in_rect(
                     .show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             with_sidebar_content_padding(ui, |ui| {
+                                show_state_section(ui, &state_control, &mut sidebar_action);
+                            });
+                            section_divider(ui);
+                            with_sidebar_content_padding(ui, |ui| {
                                 show_test_mode_section(ui, &test_mode_state, &mut sidebar_action);
                             });
                             section_divider(ui);
@@ -504,6 +535,124 @@ pub fn show_in_rect(
 
     SidebarResult {
         action: sidebar_action,
+    }
+}
+
+fn show_state_section(
+    ui: &mut egui::Ui,
+    state: &StateSidebarState<'_>,
+    sidebar_action: &mut Option<SidebarAction>,
+) {
+    two_column_section::section(ui, "State", |ui| {
+        let playing = matches!(state.selection, Some(StateControlSelection::Play));
+        let full_width = ui.available_width();
+        let response = button::button_with_width(
+            ui,
+            ButtonOptions {
+                label: "▶ Play",
+                tooltip: Some("Play the State Machine from the beginning"),
+                variant: if playing {
+                    ButtonVariant::Outline
+                } else {
+                    ButtonVariant::Ghost
+                },
+                size: ButtonSize::Small,
+                enabled: state.playback_enabled,
+                icon: None,
+                icon_kind: None,
+                visual_override: None,
+                group_position: ButtonGroupPosition::Single,
+            },
+            full_width,
+        );
+        if response.clicked() && !playing {
+            *sidebar_action = Some(SidebarAction::PlayStateMachine);
+        }
+
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        if state.items.is_empty() {
+            ui.label(design_tokens::rich_text(
+                "No states in scene",
+                TextRole::InactiveItemTitle,
+            ));
+        } else {
+            let column_width = (ui.available_width()
+                - SIDEBAR_GRID_GAP * (STATE_GRID_COLUMNS - 1) as f32)
+                / STATE_GRID_COLUMNS as f32;
+            let control_kinds = [
+                StateSidebarKind::Entry,
+                StateSidebarKind::Any,
+                StateSidebarKind::Exit,
+            ];
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
+                for kind in control_kinds {
+                    if let Some(item) = state.items.iter().find(|item| item.kind == kind) {
+                        show_state_button(ui, item, column_width, state.selection, sidebar_action);
+                    } else {
+                        ui.allocate_space(egui::vec2(
+                            column_width,
+                            design_tokens::button_size_token(ButtonSize::Small).height,
+                        ));
+                    }
+                }
+            });
+
+            let ordinary_states = state
+                .items
+                .iter()
+                .filter(|item| item.kind == StateSidebarKind::State)
+                .collect::<Vec<_>>();
+            if !ordinary_states.is_empty() {
+                ui.add_space(SIDEBAR_GRID_ROW_GAP);
+            }
+            for (row_index, row) in ordinary_states.chunks(STATE_GRID_COLUMNS).enumerate() {
+                if row_index > 0 {
+                    ui.add_space(SIDEBAR_GRID_ROW_GAP);
+                }
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
+                    for item in row {
+                        show_state_button(ui, item, column_width, state.selection, sidebar_action);
+                    }
+                });
+            }
+        }
+    });
+}
+
+fn show_state_button(
+    ui: &mut egui::Ui,
+    item: &StateSidebarItem,
+    width: f32,
+    selection: Option<&StateControlSelection>,
+    sidebar_action: &mut Option<SidebarAction>,
+) {
+    let selected = matches!(
+        selection,
+        Some(StateControlSelection::State(selected_id)) if selected_id == &item.id
+    );
+    let response = button::button_with_width(
+        ui,
+        ButtonOptions {
+            label: &item.name,
+            tooltip: Some(&item.id),
+            variant: if selected {
+                ButtonVariant::Outline
+            } else {
+                ButtonVariant::Ghost
+            },
+            size: ButtonSize::Small,
+            enabled: true,
+            icon: None,
+            icon_kind: None,
+            visual_override: None,
+            group_position: ButtonGroupPosition::Single,
+        },
+        width,
+    );
+    if response.clicked() && !selected {
+        *sidebar_action = Some(SidebarAction::ForceState(item.id.clone()));
     }
 }
 

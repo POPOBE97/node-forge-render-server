@@ -419,6 +419,22 @@ fn paint_button_icon(
 }
 
 pub fn button(ui: &mut egui::Ui, options: ButtonOptions<'_>) -> egui::Response {
+    button_with_width_impl(ui, options, None)
+}
+
+pub fn button_with_width(
+    ui: &mut egui::Ui,
+    options: ButtonOptions<'_>,
+    width: f32,
+) -> egui::Response {
+    button_with_width_impl(ui, options, Some(width.max(0.0)))
+}
+
+fn button_with_width_impl(
+    ui: &mut egui::Ui,
+    options: ButtonOptions<'_>,
+    width: Option<f32>,
+) -> egui::Response {
     let icon_only = is_icon_only(options);
     let has_icon_and_text = options.icon_kind.is_some() && !options.label.is_empty();
     let size_token = design_tokens::button_size_token(options.size);
@@ -472,7 +488,11 @@ pub fn button(ui: &mut egui::Ui, options: ButtonOptions<'_>) -> egui::Response {
     let button = egui::Button::new(label)
         .frame(true)
         .corner_radius(corner_radius)
-        .min_size(egui::vec2(min_width, size_token.height));
+        .min_size(egui::vec2(
+            width.unwrap_or(min_width).max(min_width),
+            size_token.height,
+        ))
+        .truncate();
 
     ui.scope(|ui| {
         let mut style = ui.style().as_ref().clone();
@@ -510,7 +530,14 @@ pub fn button(ui: &mut egui::Ui, options: ButtonOptions<'_>) -> egui::Response {
         style.visuals.widgets.active.expansion = style.visuals.widgets.inactive.expansion;
         ui.set_style(style);
 
-        let mut response = ui.add_enabled(options.enabled, button);
+        let mut response = if let Some(width) = width {
+            ui.add_enabled_ui(options.enabled, |ui| {
+                ui.add_sized(egui::vec2(width, size_token.height), button)
+            })
+            .inner
+        } else {
+            ui.add_enabled(options.enabled, button)
+        };
         response = apply_response_affordance(response, options.tooltip, options.enabled);
         if let Some(icon_kind) = options.icon_kind {
             let icon_rect = paint_button_icon(

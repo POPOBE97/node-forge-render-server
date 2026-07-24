@@ -783,6 +783,38 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
 }
 
 #[test]
+fn forced_doubao_state_keeps_mutation_running_without_routing() {
+    let case_dir = support::render_case_dir("doubao-voice-interaction");
+    let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    let state_id = "st_mrerw3qg_6";
+
+    let initial = session
+        .force_state(state_id)
+        .expect("ordinary State should be forceable");
+    assert_eq!(initial.current_state_id, state_id);
+    assert_eq!(initial.active_transition_id, None);
+
+    session.fire_event(space_event("keydown"));
+    let advanced = session.step(0.5);
+    assert_eq!(advanced.current_state_id, state_id);
+    assert_eq!(advanced.active_transition_id, None);
+    assert_eq!(advanced.scene_time_secs, 0.5);
+    assert_eq!(advanced.state_local_times.get(state_id), Some(&0.5));
+    assert!(
+        advanced.active_overrides.contains_key(
+            &node_forge_render_server::state_machine::OverrideKey::new(
+                "PackedInput_IntelligentLightPositions",
+                "value",
+            ),
+        ),
+        "forced State should continue evaluating its Mutation overlay"
+    );
+}
+
+#[test]
 fn doubao_idle_intelligent_light_matches_voice_interaction_for_ten_seconds() {
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let (mut scene, _asset_store) = support::load_render_case("doubao-voice-interaction");

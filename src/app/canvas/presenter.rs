@@ -23,7 +23,7 @@ use crate::{
         },
         display_metrics,
         frame::commands::AppCommand,
-        matrix_render, texture_bridge,
+        input_scope, matrix_render, texture_bridge,
         types::{App, RefImageMode, RefImageSource, ViewportOperationIndicatorVisual},
         window_mode::WindowModeFrame,
     },
@@ -72,22 +72,6 @@ fn temporary_output_active(app: &App) -> bool {
         .uniform_scene
         .as_ref()
         .is_some_and(scene_has_temporary_output)
-}
-
-fn animation_consumes_canvas_input_state(
-    animation_playing: bool,
-    has_animation_session: bool,
-    design_active: bool,
-) -> bool {
-    animation_playing && has_animation_session && !design_active
-}
-
-fn animation_consumes_canvas_input(app: &App) -> bool {
-    animation_consumes_canvas_input_state(
-        app.runtime.animation_playing,
-        app.runtime.animation_session.is_some(),
-        app.canvas.design.active.is_some(),
-    )
 }
 
 fn apply_action(
@@ -1045,10 +1029,11 @@ pub fn show_canvas(
 ) -> CanvasFrameResult {
     let mut frame_result = CanvasFrameResult::default();
     let current_display_metrics = display_metrics::current_display_metrics(ctx);
-    let animation_input_active = animation_consumes_canvas_input(app);
+    let animation_input_active = input_scope::animation_canvas_input_active(app);
     let normal_canvas_interactions_enabled = !animation_input_active;
+    let debug_shortcuts_enabled = input_scope::debug_shortcuts_enabled(app, ctx);
 
-    if normal_canvas_interactions_enabled
+    if debug_shortcuts_enabled
         && ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.command)
     {
         apply_action(
@@ -1063,11 +1048,9 @@ pub fn show_canvas(
         );
     }
 
-    let plain_shortcuts_enabled =
-        normal_canvas_interactions_enabled && !ctx.egui_wants_keyboard_input();
     let shortwire_active_for_canvas =
         pass_debug_window::has_active_shortwire(&app.shell.pass_debug_windows);
-    if plain_shortcuts_enabled {
+    if debug_shortcuts_enabled {
         if ctx.input(|i| i.key_pressed(egui::Key::F)) {
             frame_result.commands.push(AppCommand::ToggleCanvasOnly);
         }
@@ -1178,7 +1161,7 @@ pub fn show_canvas(
         reference::maybe_handle_reference_drop(app, ctx, render_state);
     }
 
-    let escape_pressed = plain_shortcuts_enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let escape_pressed = debug_shortcuts_enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let design_escape_consumed = if escape_pressed {
         if let Some(session) = app.canvas.design.active.as_mut() {
             let escape_result = design::handle_escape(session);
@@ -1209,7 +1192,7 @@ pub fn show_canvas(
 
     if app.canvas.display.preview_texture_name.is_some()
         && app.canvas.design.active.is_none()
-        && plain_shortcuts_enabled
+        && debug_shortcuts_enabled
         && escape_pressed
         && !design_escape_consumed
     {
@@ -1337,14 +1320,14 @@ pub fn show_canvas(
             })
             .unwrap_or_else(|| "none".to_string());
         eprintln!(
-            "[shortwire-paste] request command_v_pressed={command_v_pressed} command_v_released={command_v_released} paste_events={paste_event_count} paste_chars={paste_event_chars} shortwire_active={shortwire_active_for_canvas} canvas_accepts={canvas_accepts_keyboard_paste} response_hovered={} focus_latched={} plain_shortcuts_enabled={plain_shortcuts_enabled} raw_focused={raw_focused} current_ref={current_ref}",
+            "[shortwire-paste] request command_v_pressed={command_v_pressed} command_v_released={command_v_released} paste_events={paste_event_count} paste_chars={paste_event_chars} shortwire_active={shortwire_active_for_canvas} canvas_accepts={canvas_accepts_keyboard_paste} response_hovered={} focus_latched={} debug_shortcuts_enabled={debug_shortcuts_enabled} raw_focused={raw_focused} current_ref={current_ref}",
             response.hovered(),
             app.canvas.interactions.canvas_event_focus_latched,
         );
     }
     if shortwire_active_for_canvas
         && shortwire_paste_requested
-        && (canvas_accepts_keyboard_paste || plain_shortcuts_enabled)
+        && (canvas_accepts_keyboard_paste || debug_shortcuts_enabled)
     {
         eprintln!("[shortwire-paste] invoking clipboard image read");
         match reference::paste_shortwire_reference_from_clipboard(app, ctx, render_state) {
@@ -1399,8 +1382,8 @@ pub fn show_canvas(
         }
     } else if shortwire_paste_requested {
         eprintln!(
-            "[shortwire-paste] request blocked shortwire_active={shortwire_active_for_canvas} canvas_gate={} shortcut_gate={plain_shortcuts_enabled}",
-            canvas_accepts_keyboard_paste || plain_shortcuts_enabled,
+            "[shortwire-paste] request blocked shortwire_active={shortwire_active_for_canvas} canvas_gate={} shortcut_gate={debug_shortcuts_enabled}",
+            canvas_accepts_keyboard_paste || debug_shortcuts_enabled,
         );
     }
 
@@ -1647,7 +1630,7 @@ pub fn show_canvas(
                     scene: app.runtime.uniform_scene.as_ref(),
                     resource_snapshot: app.shell.resource_snapshot.as_ref(),
                     editor_connected: app.core.ws_hub.client_count() > 0,
-                    animation_playing: app.runtime.animation_playing,
+                    animation_playing: app.runtime.state_control_selection.is_some(),
                     canvas_rect,
                     image_rect: viewport_frame.image_rect,
                     display_resolution: display_frame.effective_resolution,
@@ -2175,18 +2158,4 @@ fn maybe_sample_matrix_clicked_pixel(
         renderer,
         CanvasAction::SamplePixel { x, y, rgba },
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::animation_consumes_canvas_input_state;
-
-    #[test]
-    fn animation_canvas_input_gate_skips_design_sessions() {
-        assert!(!animation_consumes_canvas_input_state(false, false, false));
-        assert!(!animation_consumes_canvas_input_state(true, false, false));
-        assert!(!animation_consumes_canvas_input_state(false, true, false));
-        assert!(animation_consumes_canvas_input_state(true, true, false));
-        assert!(!animation_consumes_canvas_input_state(true, true, true));
-    }
 }
