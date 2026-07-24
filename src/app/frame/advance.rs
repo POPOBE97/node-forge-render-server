@@ -15,6 +15,8 @@ pub(super) struct AdvancePhase {
     pub time_driven_scene: bool,
     pub animation_session_active: bool,
     pub should_redraw_scene: bool,
+    pub frame_uniform_values:
+        std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>,
 }
 
 pub(super) fn run(app: &mut App) -> AdvancePhase {
@@ -151,6 +153,8 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             .as_ref()
             .is_some_and(|session| session.is_active());
 
+    let frame_uniform_values = collect_frame_uniform_values(app);
+
     // Track for next frame's pause→play edge detection.
     app.runtime.time_updates_enabled_prev_frame = app.runtime.time_updates_enabled;
 
@@ -162,7 +166,17 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             || time_driven_scene
             || app.runtime.capture_redraw_active
             || app.runtime.force_continuous_redraw,
+        frame_uniform_values,
     }
+}
+
+fn collect_frame_uniform_values(
+    app: &App,
+) -> std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value> {
+    let Some(session) = app.runtime.animation_session.as_ref() else {
+        return std::collections::HashMap::new();
+    };
+    session.presentation_snapshot()
 }
 
 fn interaction_sync_state_id(step: &AnimationStep, _sm: Option<&StateMachine>) -> String {

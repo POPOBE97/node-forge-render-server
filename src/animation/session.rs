@@ -254,6 +254,23 @@ impl AnimationSession {
         self.scene_time
     }
 
+    /// Build the immutable declaration-side value snapshot consumed by renderers.
+    ///
+    /// Mutation output is overlaid for presentation only. Callers must not feed
+    /// this snapshot back into the motion engine or a later Mutation evaluation.
+    pub(crate) fn presentation_snapshot(&self) -> HashMap<OverrideKey, serde_json::Value> {
+        let mut snapshot = state_machine::trace::tracked_override_keys(self.runtime.definition())
+            .into_iter()
+            .filter_map(|raw_key| {
+                let key = OverrideKey::parse(&raw_key)?;
+                let value = self.base_values.get(&key)?.clone();
+                Some((key, value))
+            })
+            .collect::<HashMap<_, _>>();
+        snapshot.extend(self.active_overrides.clone());
+        snapshot
+    }
+
     /// Reset the session: rewind the clock, reset the runtime to its initial
     /// state, and clear all active overrides. Returns the set of active keys
     /// that should be restored to their base values.

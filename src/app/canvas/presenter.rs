@@ -1736,7 +1736,7 @@ fn matrix_row_gap_px(state: &matrix_render::MatrixRenderState) -> f32 {
     }
 }
 
-fn matrix_cell_screen_rect(
+pub(crate) fn matrix_cell_screen_rect(
     state: &matrix_render::MatrixRenderState,
     coord: matrix_render::MatrixCellCoord,
     image_rect: Rect,
@@ -1774,16 +1774,43 @@ fn matrix_display_cell_screen_rect(
     )
 }
 
-fn matrix_hit_test(
+fn matrix_hit_test_coords<I>(
+    state: &matrix_render::MatrixRenderState,
+    cells: I,
+    pointer_pos: egui::Pos2,
+    image_rect: Rect,
+    zoom: f32,
+) -> Option<matrix_render::MatrixCellCoord>
+where
+    I: IntoIterator<
+        Item = (
+            matrix_render::MatrixCellCoord,
+            matrix_render::MatrixCellCoord,
+        ),
+    >,
+{
+    cells.into_iter().find_map(|(coord, display_coord)| {
+        let rect = matrix_display_cell_screen_rect(state, display_coord, image_rect, zoom);
+        rect.contains(pointer_pos).then_some(coord)
+    })
+}
+
+pub(crate) fn matrix_hit_test(
     state: &matrix_render::MatrixRenderState,
     pointer_pos: egui::Pos2,
     image_rect: Rect,
     zoom: f32,
 ) -> Option<matrix_render::MatrixCellCoord> {
-    state.cells.iter().find_map(|cell| {
-        let rect = matrix_display_cell_screen_rect(state, cell.display_coord, image_rect, zoom);
-        rect.contains(pointer_pos).then_some(cell.coord)
-    })
+    matrix_hit_test_coords(
+        state,
+        state
+            .cells
+            .iter()
+            .map(|cell| (cell.coord, cell.display_coord)),
+        pointer_pos,
+        image_rect,
+        zoom,
+    )
 }
 
 fn update_matrix_hover(app: &mut App, ctx: &egui::Context, canvas_rect: Rect, image_rect: Rect) {
@@ -2158,4 +2185,38 @@ fn maybe_sample_matrix_clicked_pixel(
         renderer,
         CanvasAction::SamplePixel { x, y, rgba },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matrix_hit_test_coords;
+    use crate::app::{matrix_render::MatrixCellCoord, matrix_render::MatrixRenderState};
+    use rust_wgpu_fiber::eframe::egui;
+
+    #[test]
+    fn matrix_hit_test_distinguishes_cells_from_grid_gaps() {
+        let mut state = MatrixRenderState::default();
+        state.cell_resolution = [100, 50];
+        state.show_labels = false;
+        let cells = [
+            (
+                MatrixCellCoord { row: 0, col: 0 },
+                MatrixCellCoord { row: 0, col: 0 },
+            ),
+            (
+                MatrixCellCoord { row: 0, col: 1 },
+                MatrixCellCoord { row: 0, col: 1 },
+            ),
+        ];
+        let image_rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(408.0, 100.0));
+
+        assert_eq!(
+            matrix_hit_test_coords(&state, cells, egui::pos2(220.0, 50.0), image_rect, 2.0,),
+            Some(MatrixCellCoord { row: 0, col: 1 })
+        );
+        assert_eq!(
+            matrix_hit_test_coords(&state, cells, egui::pos2(204.0, 50.0), image_rect, 2.0,),
+            None
+        );
+    }
 }

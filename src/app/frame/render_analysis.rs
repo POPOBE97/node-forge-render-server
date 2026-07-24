@@ -2,7 +2,7 @@ use rust_wgpu_fiber::eframe::{egui_wgpu, wgpu};
 
 use crate::{
     app::{
-        canvas, texture_bridge,
+        canvas, matrix_render, texture_bridge,
         types::{AnalysisSourceDomain, App, DiffMetricMode, DiffStats, RefImageMode, TestMode},
     },
     renderer, ui,
@@ -30,6 +30,7 @@ pub(super) fn run(
     renderer_guard: &mut egui_wgpu::Renderer,
     ingest: &IngestPhase,
     advance: &AdvancePhase,
+    matrix_cells_added: bool,
 ) {
     if advance.should_redraw_scene {
         let t = app.runtime.time_value_secs;
@@ -62,6 +63,24 @@ pub(super) fn run(
     let matrix_active =
         app.shell.test_mode == TestMode::Matrix && !app.shell.matrix_state.cells.is_empty();
     if matrix_active {
+        if advance.should_redraw_scene || matrix_cells_added {
+            let result = matrix_render::render_matrix_dynamic_frame(
+                &mut app.shell.matrix_state,
+                &advance.frame_uniform_values,
+                app.runtime.time_value_secs,
+                advance.should_redraw_scene,
+                render_state,
+                renderer_guard,
+                app.canvas.display.texture_filter,
+                app.canvas.display.hdr_preview_clamp_enabled,
+            );
+            if result.failed_cells > 0 {
+                eprintln!(
+                    "[matrix] dynamic frame rendered {} cells with {} failures",
+                    result.rendered_cells, result.failed_cells
+                );
+            }
+        }
         run_matrix_analysis(app, render_state, renderer_guard);
         if ingest.did_rebuild_shader_space {
             let _ = render_state

@@ -139,6 +139,54 @@ fn annotate_frag_pixel_positions(
     latest
 }
 
+fn annotate_matrix_frag_pixel_positions(
+    payloads: &mut [protocol::InteractionEventPayload],
+    canvas_rect: egui::Rect,
+    image_rect: Option<egui::Rect>,
+    zoom: f32,
+    matrix_state: &crate::app::matrix_render::MatrixRenderState,
+) -> Option<MousePosition> {
+    let image_rect = image_rect?;
+    let mut latest = None;
+
+    for payload in payloads {
+        let Some(position) = payload
+            .data
+            .as_mut()
+            .and_then(|data| data.position.as_mut())
+        else {
+            continue;
+        };
+        let point = egui::pos2(
+            canvas_rect.min.x + position.canvas_x,
+            canvas_rect.min.y + position.canvas_y,
+        );
+        let Some(coord) =
+            crate::app::canvas::presenter::matrix_hit_test(matrix_state, point, image_rect, zoom)
+        else {
+            continue;
+        };
+        let Some(cell_rect) = crate::app::canvas::presenter::matrix_cell_screen_rect(
+            matrix_state,
+            coord,
+            image_rect,
+            zoom,
+        ) else {
+            continue;
+        };
+        let Some(mouse_position) =
+            frag_pixel_position_from_screen_pos(point, cell_rect, matrix_state.cell_resolution)
+        else {
+            continue;
+        };
+        position.frag_pixel_x = Some(mouse_position.x as f32);
+        position.frag_pixel_y = Some(mouse_position.y as f32);
+        latest = Some(mouse_position);
+    }
+
+    latest
+}
+
 fn state_transition_payloads(
     previous_state_id: Option<&str>,
     current_state_id: Option<&str>,
@@ -198,12 +246,24 @@ pub fn collect_early_canvas_interactions(
         &mut app.interaction_bridge.interaction_event_seq,
     );
 
-    let latest_mouse_position = annotate_frag_pixel_positions(
-        &mut payloads,
-        canvas_rect,
-        app.canvas.interactions.last_image_rect,
-        app.canvas.interactions.last_display_resolution,
-    );
+    let matrix_active = app.shell.test_mode == crate::app::types::TestMode::Matrix
+        && !app.shell.matrix_state.cells.is_empty();
+    let latest_mouse_position = if matrix_active {
+        annotate_matrix_frag_pixel_positions(
+            &mut payloads,
+            canvas_rect,
+            app.canvas.interactions.last_image_rect,
+            app.canvas.viewport.zoom,
+            &app.shell.matrix_state,
+        )
+    } else {
+        annotate_frag_pixel_positions(
+            &mut payloads,
+            canvas_rect,
+            app.canvas.interactions.last_image_rect,
+            app.canvas.interactions.last_display_resolution,
+        )
+    };
 
     if app.runtime.state_control_selection.is_some()
         && let Some(session) = app.runtime.animation_session.as_mut()

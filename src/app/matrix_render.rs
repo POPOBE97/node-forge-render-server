@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -23,6 +24,7 @@ use crate::{
     asset_store::AssetStore,
     dsl::SceneDSL,
     renderer,
+    state_machine::OverrideKey,
     ui::{
         clipping_map::ClippingMapRenderer, diff_renderer::DiffRenderer,
         hdr_clamp::HdrClampRenderer, qualifier_map::QualifierMapRenderer,
@@ -45,6 +47,7 @@ pub struct MatrixCell {
     pub pass_bindings: Vec<renderer::PassBindings>,
     pub pipeline_signature: [u8; 32],
     pub output_texture_name: ResourceName,
+    pub dynamic_sync_pending: bool,
     pub egui_texture_id: Option<egui::TextureId>,
     pub hdr_clamp_renderer: Option<HdrClampRenderer>,
     pub hdr_clamped_egui_id: Option<egui::TextureId>,
@@ -205,6 +208,12 @@ pub struct MatrixPollResult {
 pub enum MatrixUniformRefreshResult {
     Refreshed,
     NeedsFullRebuild,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MatrixDynamicRenderResult {
+    pub rendered_cells: usize,
+    pub failed_cells: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -733,6 +742,7 @@ fn register_built_cell(
         pass_bindings: cell.pass_bindings,
         pipeline_signature: cell.pipeline_signature,
         output_texture_name: cell.output_texture_name,
+        dynamic_sync_pending: true,
         egui_texture_id: Some(egui_id),
         hdr_clamp_renderer: None,
         hdr_clamped_egui_id: None,
@@ -772,6 +782,83 @@ fn invalidate_matrix_cell_outputs(cell: &mut MatrixCell) {
     cell.diff_stats = None;
     cell.last_clipping_request_key = None;
     cell.last_qualifier_request_key = None;
+}
+
+fn apply_frame_uniform_values(
+    scene: &mut SceneDSL,
+    values: &HashMap<OverrideKey, serde_json::Value>,
+) -> Result<usize> {
+    let mut changed = 0usize;
+    for (key, value) in values {
+        let Some(node) = scene.nodes.iter_mut().find(|node| node.id == key.node_id) else {
+            // Each Matrix variation contains only the declarations materialized by
+            // that Render Graph branch. A globally valid presentation key can
+            // therefore be absent from a particular cell. Keep projection exact:
+            // never suffix-match or reverse-resolve a consumer/group-internal ID.
+            continue;
+        };
+        if node.params.get(&key.param_name) != Some(value) {
+            node.params.insert(key.param_name.clone(), value.clone());
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+pub fn render_matrix_dynamic_frame(
+    state: &mut MatrixRenderState,
+    frame_uniform_values: &HashMap<OverrideKey, serde_json::Value>,
+    time_secs: f32,
+    render_all_cells: bool,
+    render_state: &egui_wgpu::RenderState,
+    renderer: &mut egui_wgpu::Renderer,
+    filter: wgpu::FilterMode,
+    hdr_clamp_enabled: bool,
+) -> MatrixDynamicRenderResult {
+    let mut result = MatrixDynamicRenderResult::default();
+
+    for cell in &mut state.cells {
+        if !render_all_cells && !cell.dynamic_sync_pending {
+            continue;
+        }
+        let render_result = (|| -> Result<()> {
+            let mut frame_scene = cell.variant_scene.clone();
+            apply_frame_uniform_values(&mut frame_scene, frame_uniform_values)?;
+            super::scene_runtime::apply_graph_uniform_updates_parts(
+                &mut cell.pass_bindings,
+                &mut cell.shader_space,
+                &frame_scene,
+            )?;
+            for pass in &mut cell.pass_bindings {
+                let mut params = pass.base_params;
+                params.time = time_secs;
+                renderer::update_pass_params(&cell.shader_space, pass, &params)?;
+            }
+            cell.shader_space.render();
+            Ok(())
+        })();
+
+        match render_result {
+            Ok(()) => {
+                invalidate_matrix_cell_outputs(cell);
+                cell.dynamic_sync_pending = false;
+                result.rendered_cells += 1;
+            }
+            Err(error) => {
+                result.failed_cells += 1;
+                eprintln!(
+                    "[matrix] failed to render dynamic cell [{}, {}]: {error:#}",
+                    cell.coord.row, cell.coord.col
+                );
+            }
+        }
+    }
+
+    if result.rendered_cells > 0 && hdr_clamp_enabled {
+        sync_matrix_hdr_clamp(state, render_state, renderer, true, filter);
+    }
+
+    result
 }
 
 pub fn refresh_matrix_cells_uniform_only(
@@ -864,7 +951,109 @@ pub fn ensure_cell_pixel_cache(cell: &mut MatrixCell) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MatrixCellCoord, matrix_display_coord, matrix_display_layout};
+    use std::collections::HashMap;
+
+    use super::{
+        MatrixCellCoord, apply_frame_uniform_values, matrix_display_coord, matrix_display_layout,
+    };
+    use crate::{
+        dsl::{Metadata, Node, SceneDSL},
+        state_machine::OverrideKey,
+    };
+
+    fn frame_value_scene() -> SceneDSL {
+        SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "matrix-frame-values".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                Node {
+                    id: "AnimatedUniform".to_string(),
+                    node_type: "FloatInput".to_string(),
+                    params: HashMap::from([("value".to_string(), serde_json::json!(0.0))]),
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    wgsl_override: None,
+                },
+                Node {
+                    id: "Variation".to_string(),
+                    node_type: "ResourcePool".to_string(),
+                    params: HashMap::from([("selectedIndex".to_string(), serde_json::json!(3))]),
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    wgsl_override: None,
+                },
+            ],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        }
+    }
+
+    #[test]
+    fn frame_values_update_only_exact_uniform_declarations() {
+        let mut scene = frame_value_scene();
+        let values = HashMap::from([(
+            OverrideKey::new("AnimatedUniform", "value"),
+            serde_json::json!(0.75),
+        )]);
+
+        let changed = apply_frame_uniform_values(&mut scene, &values).expect("apply frame values");
+
+        assert_eq!(changed, 1);
+        assert_eq!(scene.nodes[0].params["value"], serde_json::json!(0.75));
+        assert_eq!(scene.nodes[1].params["selectedIndex"], serde_json::json!(3));
+    }
+
+    #[test]
+    fn frame_values_propagate_to_all_variants_without_collapsing_them() {
+        let mut first = frame_value_scene();
+        let mut second = frame_value_scene();
+        first.nodes[1]
+            .params
+            .insert("selectedIndex".to_string(), serde_json::json!(0));
+        second.nodes[1]
+            .params
+            .insert("selectedIndex".to_string(), serde_json::json!(1));
+        let values = HashMap::from([(
+            OverrideKey::new("AnimatedUniform", "value"),
+            serde_json::json!(0.5),
+        )]);
+
+        apply_frame_uniform_values(&mut first, &values).expect("apply first variant");
+        apply_frame_uniform_values(&mut second, &values).expect("apply second variant");
+
+        assert_eq!(first.nodes[0].params["value"], serde_json::json!(0.5));
+        assert_eq!(second.nodes[0].params["value"], serde_json::json!(0.5));
+        assert_eq!(first.nodes[1].params["selectedIndex"], serde_json::json!(0));
+        assert_eq!(
+            second.nodes[1].params["selectedIndex"],
+            serde_json::json!(1)
+        );
+    }
+
+    #[test]
+    fn frame_values_skip_absent_variant_declarations_without_suffix_matching() {
+        let mut scene = frame_value_scene();
+        let values = HashMap::from([(
+            OverrideKey::new("Group/AnimatedUniform", "value"),
+            serde_json::json!(1.0),
+        )]);
+
+        let changed =
+            apply_frame_uniform_values(&mut scene, &values).expect("project frame values");
+
+        assert_eq!(changed, 0);
+        assert_eq!(scene.nodes[0].params["value"], serde_json::json!(0.0));
+    }
 
     #[test]
     fn matrix_layout_is_unwrapped_when_max_cols_is_zero() {

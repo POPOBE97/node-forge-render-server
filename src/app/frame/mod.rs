@@ -48,20 +48,29 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
     let ingest_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     let t1 = Instant::now();
-    if app.shell.test_mode == TestMode::Matrix {
-        let _ = matrix_render::poll_matrix_rebuild(
+    let matrix_poll = if app.shell.test_mode == TestMode::Matrix {
+        matrix_render::poll_matrix_rebuild(
             &mut app.shell.matrix_state,
             render_state,
             &mut renderer_guard,
             app.canvas.display.texture_filter,
             app.canvas.display.hdr_preview_clamp_enabled,
-        );
-    }
+        )
+    } else {
+        matrix_render::MatrixPollResult::default()
+    };
     let advance = advance::run(app);
     let advance_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
     let t2 = Instant::now();
-    render_analysis::run(app, render_state, &mut renderer_guard, &ingest, &advance);
+    render_analysis::run(
+        app,
+        render_state,
+        &mut renderer_guard,
+        &ingest,
+        &advance,
+        matrix_poll.added_cells > 0,
+    );
     let analysis_ms = t2.elapsed().as_secs_f64() * 1000.0;
 
     let t3 = Instant::now();
