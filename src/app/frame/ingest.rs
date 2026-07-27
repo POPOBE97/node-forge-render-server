@@ -136,6 +136,15 @@ pub(super) fn run(
         let apply_started_at = Instant::now();
         let apply_result = scene_runtime::apply_scene_update(app, ctx, render_state, update);
         let renderer_apply_ms = apply_started_at.elapsed().as_secs_f64() * 1000.0;
+        let rebuild_reason =
+            apply_result
+                .did_rebuild_shader_space
+                .then_some(match perf_update_kind {
+                    "scene_delta" => "scene_delta_pipeline_signature_changed",
+                    "scene_update" => "full_scene_pipeline_signature_changed",
+                    "uniform_delta" => "uniform_fast_path_fallback",
+                    _ => "scene_update_rebuild",
+                });
         if let Some(trace) = perf_trace {
             crate::ws::broadcast_scene_perf_trace(
                 &app.core.ws_hub,
@@ -143,6 +152,7 @@ pub(super) fn run(
                 renderer_queue_ms,
                 renderer_apply_ms,
                 apply_result.did_rebuild_shader_space,
+                rebuild_reason,
                 perf_update_kind,
             );
         }

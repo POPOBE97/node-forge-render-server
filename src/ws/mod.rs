@@ -278,6 +278,7 @@ struct ScenePerfTracePayload {
     renderer_apply_ms: f64,
     end_to_end_ms: f64,
     did_rebuild_shader_space: bool,
+    rebuild_reason: Option<String>,
     update_kind: String,
 }
 
@@ -287,6 +288,7 @@ pub fn broadcast_scene_perf_trace(
     renderer_queue_ms: f64,
     renderer_apply_ms: f64,
     did_rebuild_shader_space: bool,
+    rebuild_reason: Option<&str>,
     update_kind: &str,
 ) {
     let end_to_end_ms = now_millis().saturating_sub(trace.client_sent_at_ms) as f64;
@@ -305,6 +307,7 @@ pub fn broadcast_scene_perf_trace(
             renderer_apply_ms,
             end_to_end_ms,
             did_rebuild_shader_space,
+            rebuild_reason: rebuild_reason.map(str::to_string),
             update_kind: update_kind.to_string(),
         }),
     };
