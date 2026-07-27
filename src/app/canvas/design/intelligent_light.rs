@@ -599,7 +599,7 @@ fn read_intelligent_light_values(
 
     // Match the renderer's source precedence exactly. PackedInput declarations
     // are the runtime-writable uniforms in packed mode, so their `value` params
-    // contain the live motion/mutation frame overlay applied to `uniform_scene`.
+    // contain the MotionEngine-owned physical values applied to `uniform_scene`.
     if let Ok(Some((packed_positions, packed_colors))) = resolve_packed_pair(scene, node) {
         positions = packed_positions.map(|(x, y)| [x, y]);
         colors = packed_colors.map(|color| {

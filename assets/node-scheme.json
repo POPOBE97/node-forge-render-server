@@ -6141,9 +6141,7 @@
         "cosine-in",
         "cosine-out",
         "cosine-in-out",
-        "instant",
-        "RepeatTimeline",
-        "SpringFollow"
+        "instant"
       ],
       "anyPropertyKey": "*",
       "springDefaults": {
@@ -6167,27 +6165,6 @@
         "cosine-out",
         "cosine-in-out"
       ],
-      "repeatTimeline": {
-        "defaults": {
-          "from": 0,
-          "to": 1,
-          "duration": 1,
-          "easing": "linear",
-          "mode": "pingPong"
-        },
-        "modes": [
-          "pingPong",
-          "restart"
-        ],
-        "allowedConsumer": "SpringFollow"
-      },
-      "springFollow": {
-        "defaults": {
-          "duration": 0.45,
-          "bounce": 0.1
-        },
-        "requiredSource": "RepeatTimeline"
-      },
       "blending": {
         "ownerNodeTypes": [
           "linear",

@@ -136,28 +136,20 @@ fn parse_custom_blend_state(params: &HashMap<String, serde_json::Value>) -> Resu
 pub(crate) fn parse_render_pass_blend_state(
     params: &HashMap<String, serde_json::Value>,
 ) -> Result<BlendState> {
-    // Start with preset if present; otherwise default to REPLACE.
-    // Note: RenderPass has scheme defaults for blendfunc/factors. If a user sets only
-    // `blend_preset=replace` (common intent: disable blending), those default factor keys will
-    // still exist in params after default-merging. We must treat replace/off/none/opaque as
-    // authoritative and ignore factor overrides.
+    // Named presets are authoritative. The editor and scheme materialize blend factor params even
+    // for named presets, so interpreting those fields as overrides creates two sources of truth.
+    // Only the custom preset gives the explicit factor fields semantic meaning.
     if let Some(preset) = parse_str(params, "blend_preset") {
         let preset_norm = normalize_blend_token(preset);
-        if matches!(preset_norm.as_str(), "opaque" | "none" | "off" | "replace") {
-            return Ok(BlendState::REPLACE);
-        }
         if preset_norm == "custom" {
             return parse_custom_blend_state(params);
         }
+        return default_blend_state_for_preset(&preset_norm);
     }
 
-    let mut state = if let Some(preset) = parse_str(params, "blend_preset") {
-        default_blend_state_for_preset(preset)?
-    } else {
-        BlendState::REPLACE
-    };
+    let mut state = BlendState::REPLACE;
 
-    // Override with explicit params if present.
+    // Without a preset, explicit params define the blend state directly.
     if let Some(op) = parse_str(params, "blendfunc") {
         let op = parse_blend_operation(op)?;
         state.color.operation = op;
@@ -233,6 +225,33 @@ mod tests {
         let mut params: HashMap<String, serde_json::Value> = HashMap::new();
         params.insert("blend_preset".to_string(), json!("add"));
         let got = parse_render_pass_blend_state(&params).expect("parse add blend preset");
+        let expected = BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        assert_blend_state_eq(got, expected);
+    }
+
+    #[test]
+    fn named_add_preset_ignores_materialized_factor_params() {
+        let params: HashMap<String, serde_json::Value> = HashMap::from([
+            ("blend_preset".to_string(), json!("add")),
+            ("blendfunc".to_string(), json!("add")),
+            ("src_factor".to_string(), json!("one")),
+            ("dst_factor".to_string(), json!("one")),
+            ("src_alpha_factor".to_string(), json!("one")),
+            ("dst_alpha_factor".to_string(), json!("one")),
+        ]);
+        let got = parse_render_pass_blend_state(&params)
+            .expect("parse add preset with materialized factor params");
         let expected = BlendState {
             color: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,

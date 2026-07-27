@@ -313,16 +313,11 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
         for connection in &graph.connections {
             let from = node_by_id.get(connection.from.node_id.as_str()).copied();
             let to = node_by_id.get(connection.to.node_id.as_str()).copied();
-            let repeat_follow = matches!(from, Some(TransitionMotionNode::RepeatTimeline { .. }))
-                && connection.from.port_id == "target"
-                && matches!(to, Some(TransitionMotionNode::SpringFollow { .. }))
-                && connection.to.port_id == "target";
-            if !repeat_follow
-                && (from.is_some_and(TransitionMotionNode::is_timing)
-                    || to.is_some_and(TransitionMotionNode::is_timing))
+            if from.is_some_and(TransitionMotionNode::is_timing)
+                || to.is_some_and(TransitionMotionNode::is_timing)
             {
                 bail!(
-                    "state_machine validation: transition motion graph '{}' only allows RepeatTimeline.target -> SpringFollow.target timing chains",
+                    "state_machine validation: transition motion graph '{}' timing nodes bind directly to boundary channels",
                     graph.id
                 );
             }
@@ -484,63 +479,6 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 continue;
             }
             match node {
-                TransitionMotionNode::RepeatTimeline {
-                    from, to, duration, ..
-                } => {
-                    if !from.is_finite() || !to.is_finite() {
-                        bail!("state_machine validation: repeat timeline endpoints must be finite");
-                    }
-                    if !duration.is_finite() || *duration <= 0.0 {
-                        bail!("state_machine validation: repeat timeline duration must be > 0");
-                    }
-                    let valid_consumer = graph.connections.iter().any(|connection| {
-                        connection.from.node_id == node.id()
-                            && connection.from.port_id == "target"
-                            && connection.to.port_id == "target"
-                            && node_by_id.get(connection.to.node_id.as_str()).is_some_and(
-                                |target| {
-                                    matches!(target, TransitionMotionNode::SpringFollow { .. })
-                                },
-                            )
-                    });
-                    if !valid_consumer {
-                        bail!(
-                            "state_machine validation: RepeatTimeline must drive SpringFollow.target"
-                        );
-                    }
-                }
-                TransitionMotionNode::SpringFollow {
-                    duration, bounce, ..
-                } => {
-                    if !duration.is_finite() || *duration <= 0.0 {
-                        bail!("state_machine validation: spring follow duration must be > 0");
-                    }
-                    if !bounce.is_finite() || !(-1.0..1.0).contains(bounce) {
-                        bail!("state_machine validation: spring follow bounce must be in (-1, 1)");
-                    }
-                    let repeat_inputs = graph
-                        .connections
-                        .iter()
-                        .filter(|connection| {
-                            connection.to.node_id == node.id()
-                                && connection.to.port_id == "target"
-                                && connection.from.port_id == "target"
-                                && node_by_id
-                                    .get(connection.from.node_id.as_str())
-                                    .is_some_and(|source| {
-                                        matches!(
-                                            source,
-                                            TransitionMotionNode::RepeatTimeline { .. }
-                                        )
-                                    })
-                        })
-                        .count();
-                    if repeat_inputs != 1 {
-                        bail!(
-                            "state_machine validation: SpringFollow requires exactly one RepeatTimeline target"
-                        );
-                    }
-                }
                 TransitionMotionNode::Spring {
                     duration,
                     bounce,

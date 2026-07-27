@@ -71,28 +71,113 @@ practical and revert unrelated formatting churn before finishing.
 
 ## Renderer invariants (do not break)
 
-### Motion-Driven Rendering Runtime Rules
+### MotionEngine Runtime Architecture
 
-- The root `../AGENTS.md` Motion-Driven Rendering Architecture section is authoritative. These
-  runtime rules apply even where current code still contains technical debt.
-- The renderer executes the canonical Render Graph; it does not reconstruct missing authoring
-  intent. Graph schemas and uniform packing must originate from explicit uniform declaration nodes
-  and preserve their declared DSL types.
-- Group expansion is structural only. It may materialize explicit graph connections and group
-  bindings, but it must not create a Mutation data path by copying `GroupInstance` params, scanning
-  consumers, matching special port names, or resolving consumer IDs into group-internal nodes.
-- Animation and Mutation overrides target explicit uniform declarations only. Do not accept a
-  consumer or `GroupInstance` target and reverse-map it by ID, ID suffix, group binding, or port
-  name.
-- Keep the `MotionEngine` presentation state separate from render-frame values. Evaluate Mutation
-  against an immutable post-motion snapshot, overlay its patch in a frame-local value map, and pass
-  that map to uniform packing without committing it back to the `MotionEngine`.
-- Treat missing declarations, graph edges, and group bindings as errors rather than synthesizing
-  hidden forwarding or missing-edge fallbacks.
-- Preserve semantic types through buffer layout and packing. ABI-compatible representations such
-  as `packed<color>` and `packed<vector4>` are not interchangeable.
-- Missing uniform or packed-uniform support must be implemented across the DSL/editor/protocol and
-  renderer instead of being emulated with consumer-specific renderer behavior.
+State, Mutation Function, and Transition are descriptions. `MotionEngine` is the single source of
+truth for all live values, velocities, and driver state:
+
+```text
+State S + Mutation Function M + Transition T + frame inputs u(t)
+                              │
+                              ▼
+MotionEngine
+  Mutation setTo/to -> target system Q,Qdot
+  Transition driver -> error system E,Edot
+  physical state    -> P=Q+E, V=Qdot+Edot
+                              │
+                              ▼
+Uniform packing / Render Graph
+```
+
+For every writable declaration, the engine owns:
+
+- target value and velocity `Q,Qdot`;
+- Mutation driver state, including a continuously retargeted spring;
+- transition error and error velocity `E,Edot`;
+- Transition driver state;
+- final physical value and velocity `P,V`.
+
+The renderer, condition/debug readers that need presentation state, the next Transition, and
+interruption logic read only engine-owned `P,V`. There is no post-motion snapshot plus Mutation
+overlay.
+
+#### Mutation Function ABI
+
+A Function input bound to a declaration present in both `MutationDefinition.inputs` and
+`MutationDefinition.outputs` is a call-scoped handle:
+
+```ts
+interface MotionParam<T> {
+  readonly value: T
+  readonly velocity: T
+  setTo(target: T, velocity?: T): T
+  to(target: T, spring: { duration: number; bounce: number }): T
+}
+```
+
+`value` and `velocity` expose `Q,Qdot`, not `P,V`. `setTo` and `to` forward to the same
+`MotionEngine` implementations used elsewhere; the Function runtime must never implement a second
+spring. Both methods return the resulting `Q` for same-frame pure derivation. Ordinary Function
+return values may feed pure graph computation but never write a uniform implicitly.
+
+Handles derive identity from the formal Mutation input binding (`nodeId:paramName`). They are
+unforgeable, valid only during one call, and cannot target strings, consumers, `GroupInstance`
+nodes, or group-internal renderer nodes. `MutationDefinition.outputs` is the writable capability
+list used for validation, editor UI, tracing, and handle creation.
+
+#### Mutation transaction
+
+Run all active Mutation Functions for a frame against one cloned MotionEngine working state.
+Commit that state atomically only after the entire Mutation graph succeeds. A throw, timeout,
+invalid type, missing capability, or duplicate motion call discards the working state and preserves
+the previous committed engine exactly.
+
+One declaration may receive at most one `setTo` or `to` call per frame. Duplicate calls are
+diagnostics, never last-write-wins. Each driver advances at most once per frame.
+
+Repeated per-frame `to(target, spring)` retargets the existing spring from its saved value and
+velocity and advances it once; it never recreates the driver or resets elapsed time merely because
+the Function called it again. `setTo` writes `Q` directly. With no explicit velocity, finite
+difference adjacent target samples; activation at `dt=0` starts at zero velocity and does not
+advance sample history.
+
+#### State activation and Transition
+
+On entry:
+
+1. Save the old physical `P0,V0`.
+2. Activate the target State and reset its local time.
+3. Run its Mutation Function once with `dt=0` to establish `Q0,Qdot0`.
+4. Create `E0=P0-Q0` and `Edot0=V0-Qdot0`.
+
+Each tick runs Mutation first to update `Q,Qdot`, advances the Transition ErrorDriver toward zero,
+then stores `P=Q+E` and `V=Qdot+Edot`. Spring, timeline, and instant Transition nodes all operate on
+error: spring/timeline decay it to zero; instant sets it to zero.
+
+Transition completion tests only `E,Edot`. A Mutation spring may continue after
+`active_transition_id` clears. If Mutation and Transition both use springs, they drive different
+systems: Mutation drives `Q`; Transition drives `E`. Interruption snapshots that frame's final
+`P,V`, establishes the new target `Q,Qdot`, and rebuilds error, preserving physical continuity.
+
+#### Debug and trace
+
+Per-channel diagnostics expose target `Q,Qdot`, transition error `E,Edot`, final `P,V`, Mutation
+driver kind, Transition driver kind, completion, and active transition identity. Debugging must not
+infer any of these from renderer uniforms.
+
+#### Forbidden models
+
+- Mutation frame overlays or post-motion patches;
+- Function return value to uniform writes;
+- Mutation output/passthrough value propagation as a write path;
+- Transition follow/repeat drivers or persistent transition channels;
+- runtime state outside `MotionEngine`;
+- implicit target resolution through consumers, IDs, suffixes, group bindings, or port names.
+
+The renderer executes the canonical Render Graph and never reconstructs missing authoring intent.
+Treat missing declarations, graph edges, or bindings as schema errors. Preserve semantic types
+through GPU packing; ABI-compatible storage such as `packed<color>` and `packed<vector4>` does not
+make those types interchangeable.
 
 Type coercion (`src/renderer/utils.rs`):
 - Scalar numeric: `f32` <-> `i32`, `bool` -> `f32`/`i32`

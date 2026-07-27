@@ -20,7 +20,7 @@ use std::{
 
 use anyhow::{Result, bail};
 
-use super::types::*;
+use super::{motion::MotionEngine, types::*};
 
 const MUTATION_GRAPH_FRAME_BUDGET: Duration = Duration::from_millis(4);
 
@@ -142,6 +142,21 @@ impl AnimValue {
             }
         }
     }
+
+    pub fn zero_like(&self) -> Self {
+        match self {
+            Self::Float(_) => Self::Float(0.0),
+            Self::Int(_) => Self::Int(0),
+            Self::Bool(_) => Self::Bool(false),
+            Self::Vec2(_) => Self::Vec2([0.0; 2]),
+            Self::Vec3(_) => Self::Vec3([0.0; 3]),
+            Self::Vec4(_) => Self::Vec4([0.0; 4]),
+            Self::Color(_) => Self::Color([0.0; 4]),
+            Self::Packed(values) => {
+                Self::Packed(values.iter().map(Self::zero_like).collect())
+            }
+        }
+    }
 }
 
 impl Default for AnimValue {
@@ -180,6 +195,7 @@ pub struct MutationInputContext {
     pub local_elapsed_time: f64,
     /// Latest mouse position in render-target frag pixel coordinates.
     pub mouse_position: Option<MousePosition>,
+    pub dt: f64,
 }
 
 /// Evaluate a mutation definition given its input context.
@@ -188,6 +204,15 @@ pub struct MutationInputContext {
 pub fn evaluate_mutation(
     mutation: &MutationDefinition,
     ctx: &MutationInputContext,
+) -> Result<HashMap<String, MutationValue>> {
+    let mut motion_engine = MotionEngine::new();
+    evaluate_mutation_with_motion(mutation, ctx, &mut motion_engine)
+}
+
+pub fn evaluate_mutation_with_motion(
+    mutation: &MutationDefinition,
+    ctx: &MutationInputContext,
+    motion_engine: &mut MotionEngine,
 ) -> Result<HashMap<String, MutationValue>> {
     let has_inner_graph = !mutation.nodes.is_empty() || !mutation.connections.is_empty();
     let has_passthroughs = !mutation.passthrough_bindings.is_empty();
@@ -237,7 +262,14 @@ pub fn evaluate_mutation(
                 }
             }
 
-            evaluate_inner_node(&mutation.id, node, &mut port_values, remaining_budget)?;
+            evaluate_inner_node(
+                mutation,
+                node,
+                &mut port_values,
+                motion_engine,
+                ctx.dt,
+                remaining_budget,
+            )?;
             if Instant::now() >= deadline {
                 bail!(
                     "Mutation graph '{}' exceeded its 4ms frame budget",
@@ -405,9 +437,11 @@ fn resolve_builtin_value(name: &str, ctx: &MutationInputContext) -> Option<Mutat
 // ---------------------------------------------------------------------------
 
 fn evaluate_inner_node<'a>(
-    mutation_id: &str,
+    mutation: &MutationDefinition,
     node: &'a MutationInnerNode,
     port_values: &mut HashMap<(&'a str, &'a str), MutationValue>,
+    motion_engine: &mut MotionEngine,
+    dt: f64,
     remaining_budget: Duration,
 ) -> Result<()> {
     match node.node_type {
@@ -438,10 +472,30 @@ fn evaluate_inner_node<'a>(
                 .iter()
                 .map(|port| get_port_value(node, port.id.as_str(), port_values).unwrap_or_default())
                 .collect::<Vec<_>>();
-            let result = super::mutation_function::evaluate(
-                mutation_id,
+            let result = super::mutation_function::evaluate_with_motion(
+                &mutation.id,
                 &node.id,
                 &input,
+                &node
+                    .inputs
+                    .iter()
+                    .map(|port| {
+                        mutation
+                            .input_bindings
+                            .iter()
+                            .find(|binding| {
+                                binding.to.node_id == node.id
+                                    && binding.to.port_id == port.id
+                                    && mutation
+                                        .outputs
+                                        .iter()
+                                        .any(|output| output.id == binding.port_id)
+                            })
+                            .and_then(|binding| OverrideKey::parse(&binding.port_id))
+                    })
+                    .collect::<Vec<_>>(),
+                motion_engine,
+                dt,
                 remaining_budget,
             )?;
             if result.len() != node.outputs.len() {
@@ -668,6 +722,7 @@ mod tests {
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,
             mouse_position: None,
+            dt: 0.0,
         }
     }
 

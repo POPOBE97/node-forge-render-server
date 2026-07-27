@@ -228,24 +228,24 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
         returned
             .overrides
             .get(&state_machine::OverrideKey::new("Vector2Input_80", "x")),
-        Some(&serde_json::json!(0)),
-        "Mutation output must not feed the next frame after its state is left"
+        Some(&serde_json::json!(333.0)),
+        "Transition interruption must preserve the MotionEngine physical value"
     );
     assert_eq!(
         returned
             .overrides
             .get(&state_machine::OverrideKey::new("Vector2Input_80", "y")),
-        Some(&serde_json::json!(0)),
-        "Mutation output must not feed the next frame after its state is left"
+        Some(&serde_json::json!(444.0)),
+        "Transition interruption must preserve the MotionEngine physical value"
     );
     let returning_value = returned
         .overrides
         .get(&state_machine::OverrideKey::new("FloatInput_81", "value"))
         .and_then(serde_json::Value::as_f64)
         .expect("return Timeline should emit a numeric presentation value");
-    assert_eq!(
-        returning_value, 0.0,
-        "returning to a state with no new opacity target must preserve its motion snapshot"
+    assert!(
+        returning_value > 0.0,
+        "Transition error must preserve opacity continuity before settling"
     );
 
     let settled = rt.tick(0.4, &Default::default(), &vec![]);
@@ -322,10 +322,31 @@ fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
 }
 
 #[test]
-fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
+fn doubao_nforge_executes_shared_driver_function_into_motion_targets() {
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let function = state_machine::mutation_function::installed_document_functions()
+        .into_iter()
+        .find(|function| {
+            function.scope == "mutation:mutation_ilight_idle"
+                && function.node_id == "function_ilight_idle"
+        })
+        .expect("shared Intelligent Light Mutation Function must be installed");
+    assert_eq!(
+        function
+            .inputs
+            .iter()
+            .filter(|input| input.motion)
+            .count(),
+        11,
+        "every derived Intelligent Light uniform must be a MotionParam"
+    );
+    assert_eq!(
+        function.source.matches(".setTo(").count(),
+        11,
+        "every derived Intelligent Light uniform must be written explicitly"
+    );
     let mut runtime = state_machine::compile_from_scene(&scene)
         .expect("doubao state machine should compile")
         .expect("doubao scene should have a state machine");
@@ -341,7 +362,8 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
             "value",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("shared Intelligent Light Mutation must output packed positions");
+        .expect("shared Intelligent Light Mutation must set packed positions")
+        .clone();
     let colors = frame
         .overrides
         .get(&state_machine::OverrideKey::new(
@@ -349,7 +371,7 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
             "value",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("shared Intelligent Light Mutation must output packed colors");
+        .expect("shared Intelligent Light Mutation must set packed colors");
     assert_eq!(positions.len(), 11);
     assert_eq!(colors.len(), 11);
     assert!(positions.iter().all(|value| {
@@ -368,4 +390,157 @@ fn doubao_nforge_executes_shared_driver_function_to_packed_outputs() {
                     .all(|component| component.as_f64().is_some())
         })
     }));
+
+    let next_frame = runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
+    let next_positions = next_frame
+        .overrides
+        .get(&state_machine::OverrideKey::new(
+            "Vector2ArrayInput_IntelligentLightPositions",
+            "value",
+        ))
+        .and_then(serde_json::Value::as_array)
+        .expect("MotionEngine must retain the next packed position target");
+    assert_ne!(
+        &positions, next_positions,
+        "scene-time-driven setTo calls must update MotionEngine across frames"
+    );
+}
+
+#[test]
+fn doubao_thinking_mutation_retargets_snap_springs() {
+    let path = support::render_case_archive("doubao-voice-interaction");
+    let (scene, _asset_store) =
+        node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let mut runtime = state_machine::compile_from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao scene should have a state machine");
+    runtime.force_state("st_thinking").unwrap();
+
+    let mut minimum_target = f64::INFINITY;
+    let mut maximum_target = f64::NEG_INFINITY;
+    let mut minimum_position_x = f64::INFINITY;
+    let mut maximum_position_x = f64::NEG_INFINITY;
+    for frame_index in 0..120 {
+        let frame = runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
+        assert!(frame.diagnostics.is_empty(), "{:?}", frame.diagnostics);
+        let channel = frame
+            .motion_channels
+            .iter()
+            .find(|channel| {
+                channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value"
+            })
+            .expect("Thinking snap target must have a MotionEngine channel");
+        assert_eq!(channel.mutation_driver, "spring");
+        assert_eq!(channel.transition_error, vec![0.0]);
+        let target = channel.target_value[0];
+        minimum_target = minimum_target.min(target);
+        maximum_target = maximum_target.max(target);
+        let position_x = frame
+            .overrides
+            .get(&state_machine::OverrideKey::new(
+                "Vector2ArrayInput_IntelligentLightPositions",
+                "value",
+            ))
+            .and_then(serde_json::Value::as_array)
+            .and_then(|positions| positions.first())
+            .and_then(serde_json::Value::as_array)
+            .and_then(|position| position.first())
+            .and_then(serde_json::Value::as_f64)
+            .expect("Thinking Mutation must update rendered Intelligent Light positions");
+        minimum_position_x = minimum_position_x.min(position_x);
+        maximum_position_x = maximum_position_x.max(position_x);
+        assert!(
+            frame_index == 0 || target != 0.5,
+            "forced-state preview must not reset the Mutation spring every frame"
+        );
+    }
+    assert!(minimum_target < 0.48, "{minimum_target}");
+    assert!(maximum_target > 0.52, "{maximum_target}");
+    assert!(
+        maximum_position_x - minimum_position_x > 5.0,
+        "visible positions did not follow the snap spring: {minimum_position_x}..{maximum_position_x}"
+    );
+}
+
+#[test]
+fn doubao_listening_to_thinking_keeps_following_after_transition() {
+    let path = support::render_case_archive("doubao-voice-interaction");
+    let (scene, _asset_store) =
+        node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let mut runtime = state_machine::compile_from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao scene should have a state machine");
+
+    let key_down = state_machine::FiredEvent {
+        event_type: "keydown".into(),
+        key: Some(" ".into()),
+        ..Default::default()
+    };
+    runtime.tick(1.0 / 60.0, &Default::default(), &vec![key_down]);
+    for _ in 0..30 {
+        if runtime.current_state_id() == "st_listening" {
+            break;
+        }
+        runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
+    }
+    assert_eq!(runtime.current_state_id(), "st_listening");
+
+    let key_up = state_machine::FiredEvent {
+        event_type: "keyup".into(),
+        key: Some(" ".into()),
+        ..Default::default()
+    };
+    let entered = runtime.tick(1.0 / 60.0, &Default::default(), &vec![key_up]);
+    assert_eq!(entered.current_state_id, "st_thinking");
+
+    let mut saw_active_transition = false;
+    let mut saw_completed_transition = false;
+    let mut post_transition_minimum_target = f64::INFINITY;
+    let mut post_transition_maximum_target = f64::NEG_INFINITY;
+    let mut minimum_position_x = f64::INFINITY;
+    let mut maximum_position_x = f64::NEG_INFINITY;
+    for _ in 0..180 {
+        let frame = runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
+        assert!(frame.diagnostics.is_empty(), "{:?}", frame.diagnostics);
+        let snap = frame
+            .motion_channels
+            .iter()
+            .find(|channel| {
+                channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value"
+            })
+            .expect("Thinking snap target must have a MotionEngine channel");
+        if frame.active_transition_id.is_some() {
+            saw_active_transition = true;
+        } else if frame.current_state_id == "st_thinking" {
+            saw_completed_transition = true;
+            post_transition_minimum_target =
+                post_transition_minimum_target.min(snap.target_value[0]);
+            post_transition_maximum_target =
+                post_transition_maximum_target.max(snap.target_value[0]);
+        }
+        let position_x = frame
+            .overrides
+            .get(&state_machine::OverrideKey::new(
+                "Vector2ArrayInput_IntelligentLightPositions",
+                "value",
+            ))
+            .and_then(serde_json::Value::as_array)
+            .and_then(|positions| positions.first())
+            .and_then(serde_json::Value::as_array)
+            .and_then(|position| position.first())
+            .and_then(serde_json::Value::as_f64)
+            .expect("Thinking Mutation must update rendered Intelligent Light positions");
+        minimum_position_x = minimum_position_x.min(position_x);
+        maximum_position_x = maximum_position_x.max(position_x);
+    }
+    assert!(saw_active_transition);
+    assert!(saw_completed_transition);
+    assert!(
+        post_transition_maximum_target - post_transition_minimum_target > 0.02,
+        "Mutation spring stopped after Transition completion"
+    );
+    assert!(
+        maximum_position_x - minimum_position_x > 5.0,
+        "visible positions did not move through the transition"
+    );
 }
