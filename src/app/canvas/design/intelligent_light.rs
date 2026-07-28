@@ -1273,6 +1273,34 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         );
+        let mut positions_node = test_node(
+            "positions",
+            "PackedInput",
+            HashMap::from([
+                ("elementType".to_string(), json!("vector2")),
+                ("value".to_string(), packed_positions),
+            ]),
+        );
+        positions_node.outputs.push(crate::dsl::NodePort {
+            id: "value".to_string(),
+            name: None,
+            port_type: Some("packed<vector2>".to_string()),
+            array_length: Some(INTELLIGENT_LIGHT_ZONE_COUNT),
+        });
+        let mut colors_node = test_node(
+            "colors",
+            "PackedInput",
+            HashMap::from([
+                ("elementType".to_string(), json!("color")),
+                ("value".to_string(), packed_colors),
+            ]),
+        );
+        colors_node.outputs.push(crate::dsl::NodePort {
+            id: "value".to_string(),
+            name: None,
+            port_type: Some("packed<color>".to_string()),
+            array_length: Some(INTELLIGENT_LIGHT_ZONE_COUNT),
+        });
         let scene = SceneDSL {
             version: "1".to_string(),
             metadata: crate::dsl::Metadata {
@@ -1281,22 +1309,8 @@ mod tests {
                 modified: None,
             },
             nodes: vec![
-                test_node(
-                    "positions",
-                    "PackedInput",
-                    HashMap::from([
-                        ("elementType".to_string(), json!("vector2")),
-                        ("value".to_string(), packed_positions),
-                    ]),
-                ),
-                test_node(
-                    "colors",
-                    "PackedInput",
-                    HashMap::from([
-                        ("elementType".to_string(), json!("color")),
-                        ("value".to_string(), packed_colors),
-                    ]),
-                ),
+                positions_node,
+                colors_node,
                 test_node("ilight", "IntelligentLight", HashMap::new()),
             ],
             connections: vec![

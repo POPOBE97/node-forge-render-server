@@ -125,7 +125,7 @@ pub(super) fn run(
                         }
                         AnimationStateType::AnyState => ui::debug_sidebar::StateSidebarKind::Any,
                         AnimationStateType::ExitState => ui::debug_sidebar::StateSidebarKind::Exit,
-                        AnimationStateType::MutationNode => return None,
+                        AnimationStateType::DerivationNode => return None,
                     };
                     Some(ui::debug_sidebar::StateSidebarItem {
                         id: state.id.clone(),

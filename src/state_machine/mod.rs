@@ -8,7 +8,7 @@
 //!
 //! - [`types`]      — DSL types (serde structs matching the JSON contract)
 //! - [`validation`] — Structural/semantic validation (fail-fast)
-//! - [`mutation`]   — Mutation inner-graph compiler/evaluator
+//! - [`graph`]      — State Mutation / render Derivation graph evaluator
 //! - [`runtime`]    — Tick-driven state-machine runtime
 //! - [`easing`]     — Easing functions
 //! - [`timeline`]   — Deterministic tick schedule helpers
@@ -34,9 +34,9 @@
 //! ```
 
 pub mod easing;
+pub mod graph;
+pub mod graph_function;
 pub mod motion;
-pub mod mutation;
-pub mod mutation_function;
 pub mod runtime;
 pub mod timeline;
 pub mod trace;
@@ -53,7 +53,7 @@ pub use trace::{
     round_f64, tracked_override_keys,
 };
 pub use types::{EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine};
-pub use validation::validate;
+pub use validation::{validate, validate_scene_declarations};
 
 use std::collections::HashMap;
 
@@ -73,7 +73,8 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
     };
 
     validate(&sm)?;
-    mutation_function::prepare_state_machine(&sm)?;
+    validate_scene_declarations(scene, &sm)?;
+    graph_function::prepare_state_machine(&sm)?;
 
     Ok(Some(StateMachineRuntime::with_initial_values(
         sm,

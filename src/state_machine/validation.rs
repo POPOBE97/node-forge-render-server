@@ -2,11 +2,13 @@
 //!
 //! All checks are intentionally fail-fast: on the first error encountered
 //! an `Err` is returned with a human-readable diagnostic that includes
-//! relevant IDs (stateId / transitionId / mutationId).
+//! relevant IDs (stateId / transitionId / derivationId).
 
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Result, bail};
+
+use crate::dsl::SceneDSL;
 
 use super::types::*;
 
@@ -17,12 +19,235 @@ use super::types::*;
 pub fn validate(sm: &StateMachine) -> Result<()> {
     validate_state_ids(sm)?;
     validate_builtin_states(sm)?;
-    validate_mutation_ids(sm)?;
-    validate_mutation_ownership(sm)?;
+    validate_graph_ownership(sm)?;
     validate_transition_endpoints(sm)?;
     validate_transition_direction_constraints(sm)?;
-    validate_mutation_internals(sm)?;
+    validate_graphs(sm)?;
     validate_motion_graphs(sm)?;
+    Ok(())
+}
+
+/// Validate graph boundary identities against the writable declarations in the
+/// complete Render Graph. This is scene-level because declarations may live in
+/// the root graph or inside a reusable Group.
+pub fn validate_scene_declarations(scene: &SceneDSL, sm: &StateMachine) -> Result<()> {
+    let declarations = collect_formal_render_declarations(scene)?;
+    let runtime_inputs = [
+        "sceneElapsedTime",
+        "localElapsedTime",
+        "mouse.position.x",
+        "mouse.position.y",
+    ]
+    .into_iter()
+    .collect::<HashSet<_>>();
+
+    for state in sm
+        .states
+        .iter()
+        .filter(|state| state.state_type == AnimationStateType::AnimationState)
+    {
+        let graph = state
+            .mutation_graph
+            .as_ref()
+            .expect("graph ownership validation requires a regular State mutationGraph");
+        for input in &graph.inputs {
+            if runtime_inputs.contains(input.id.as_str()) {
+                validate_runtime_input_port(
+                    input,
+                    &format!("State '{}' Mutation input", state.id),
+                )?;
+            } else {
+                validate_formal_declaration_port(
+                    input,
+                    &declarations,
+                    &format!("State '{}' Mutation input", state.id),
+                )?;
+            }
+        }
+        for output in &graph.outputs {
+            validate_formal_declaration_port(
+                output,
+                &declarations,
+                &format!("State '{}' output", state.id),
+            )?;
+        }
+        let output_ids = graph
+            .outputs
+            .iter()
+            .map(|port| port.id.as_str())
+            .collect::<HashSet<_>>();
+        for declaration_id in declarations.keys() {
+            if !output_ids.contains(declaration_id.as_str()) {
+                bail!(
+                    "state_machine validation: State '{}' State Outputs is missing formal declaration '{}'",
+                    state.id,
+                    declaration_id
+                );
+            }
+        }
+    }
+
+    for derivation in &sm.derivations {
+        for input in &derivation.inputs {
+            if runtime_inputs.contains(input.id.as_str()) {
+                validate_runtime_input_port(
+                    input,
+                    &format!("Derivation '{}' input", derivation.id),
+                )?;
+            } else {
+                validate_formal_declaration_port(
+                    input,
+                    &declarations,
+                    &format!("Derivation '{}' input", derivation.id),
+                )?;
+            }
+        }
+        for output in &derivation.outputs {
+            validate_formal_declaration_port(
+                output,
+                &declarations,
+                &format!("Derivation '{}' output", derivation.id),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormalRenderDeclaration {
+    port_type: String,
+    array_length: Option<usize>,
+}
+
+fn collect_formal_render_declarations(
+    scene: &SceneDSL,
+) -> Result<HashMap<String, FormalRenderDeclaration>> {
+    let mut declarations = HashMap::new();
+    for node in &scene.nodes {
+        for (param_id, port_type) in referenceable_params(node.node_type.as_str()) {
+            let array_length = port_type
+                .starts_with("packed<")
+                .then(|| {
+                    node.params
+                        .get(*param_id)
+                        .and_then(serde_json::Value::as_array)
+                        .map(Vec::len)
+                })
+                .flatten();
+            insert_formal_declaration(
+                &mut declarations,
+                format!("{}:{param_id}", node.id),
+                FormalRenderDeclaration {
+                    port_type: (*port_type).to_string(),
+                    array_length,
+                },
+            )?;
+        }
+
+        if node.node_type == "PackedInput" {
+            let output = node.outputs.iter().find(|port| port.id == "value");
+            let element_type = node
+                .params
+                .get("elementType")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| {
+                    matches!(
+                        *value,
+                        "float" | "int" | "bool" | "vector2" | "vector3" | "vector4" | "color"
+                    )
+                })
+                .unwrap_or("float");
+            let array_length = output
+                .and_then(|port| port.array_length)
+                .or_else(|| {
+                    node.params
+                        .get("value")
+                        .and_then(serde_json::Value::as_array)
+                        .map(Vec::len)
+                })
+                .or_else(|| (!node.inputs.is_empty()).then_some(node.inputs.len()));
+            insert_formal_declaration(
+                &mut declarations,
+                format!("{}:value", node.id),
+                FormalRenderDeclaration {
+                    port_type: output
+                        .and_then(|port| port.port_type.clone())
+                        .unwrap_or_else(|| format!("packed<{element_type}>")),
+                    array_length,
+                },
+            )?;
+        }
+    }
+    Ok(declarations)
+}
+
+fn referenceable_params(node_type: &str) -> &'static [(&'static str, &'static str)] {
+    match node_type {
+        "ColorInput" => &[("value", "color")],
+        "FloatInput" => &[("value", "float")],
+        "IntInput" => &[("value", "int")],
+        "BoolInput" => &[("value", "bool")],
+        "Vector2Input" => &[("x", "float"), ("y", "float")],
+        "Vector3Input" => &[("x", "float"), ("y", "float"), ("z", "float")],
+        "Vector4Input" => &[
+            ("x", "float"),
+            ("y", "float"),
+            ("z", "float"),
+            ("w", "float"),
+        ],
+        "ColorArrayInput" => &[("value", "packed<color>")],
+        "Vector2ArrayInput" => &[("value", "packed<vector2>")],
+        _ => &[],
+    }
+}
+
+fn insert_formal_declaration(
+    declarations: &mut HashMap<String, FormalRenderDeclaration>,
+    id: String,
+    declaration: FormalRenderDeclaration,
+) -> Result<()> {
+    if let Some(existing) = declarations.insert(id.clone(), declaration.clone())
+        && existing != declaration
+    {
+        bail!(
+            "state_machine validation: formal render declaration '{id}' has conflicting definitions"
+        );
+    }
+    Ok(())
+}
+
+fn validate_runtime_input_port(port: &GraphPort, owner: &str) -> Result<()> {
+    if port.port_type.as_deref() != Some("float") || port.array_length.is_some() {
+        bail!(
+            "state_machine validation: {owner} '{}' must be a scalar float runtime input",
+            port.id
+        );
+    }
+    Ok(())
+}
+
+fn validate_formal_declaration_port(
+    port: &GraphPort,
+    declarations: &HashMap<String, FormalRenderDeclaration>,
+    owner: &str,
+) -> Result<()> {
+    let declaration = declarations.get(&port.id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "state_machine validation: {owner} '{}' is not a formal writable Render Graph declaration",
+            port.id
+        )
+    })?;
+    if port.port_type.as_deref() != Some(declaration.port_type.as_str())
+        || port.array_length != declaration.array_length
+    {
+        bail!(
+            "state_machine validation: {owner} '{}' must exactly match type '{}' and fixed length {:?}",
+            port.id,
+            declaration.port_type,
+            declaration.array_length
+        );
+    }
     Ok(())
 }
 
@@ -65,11 +290,11 @@ fn validate_builtin_states(sm: &StateMachine) -> Result<()> {
     }
     if let Some(initial_state_id) = sm.initial_state_id.as_deref()
         && sm.states.iter().any(|state| {
-            state.id == initial_state_id && state.state_type == AnimationStateType::MutationNode
+            state.id == initial_state_id && state.state_type == AnimationStateType::DerivationNode
         })
     {
         bail!(
-            "state_machine validation: initialStateId '{}' cannot reference a mutationNode",
+            "state_machine validation: initialStateId '{}' cannot reference a derivationNode",
             initial_state_id
         );
     }
@@ -77,111 +302,136 @@ fn validate_builtin_states(sm: &StateMachine) -> Result<()> {
     Ok(())
 }
 
-// ── Mutation ID uniqueness ─────────────────────────────────────────────────
+// ── State-private Mutation and shared Derivation ownership ─────────────────
 
-fn validate_mutation_ids(sm: &StateMachine) -> Result<()> {
-    let mut seen: HashSet<&str> = HashSet::new();
-    for m in &sm.mutations {
-        if !seen.insert(m.id.as_str()) {
-            bail!("state_machine validation: duplicate mutation id '{}'", m.id);
+fn validate_graph_ownership(sm: &StateMachine) -> Result<()> {
+    let mut derivation_ids = HashSet::new();
+    for derivation in &sm.derivations {
+        if !derivation_ids.insert(derivation.id.as_str()) {
+            bail!(
+                "state_machine validation: duplicate Derivation id '{}'",
+                derivation.id
+            );
         }
     }
-    Ok(())
-}
-
-// ── State-local MutationDefinition ownership ───────────────────────────────
-
-fn validate_mutation_ownership(sm: &StateMachine) -> Result<()> {
-    let mutation_ids: HashSet<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
-    let mut owner_by_mutation: HashMap<&str, &str> = HashMap::new();
+    let mut owner_by_derivation: HashMap<&str, &str> = HashMap::new();
     let state_by_id: HashMap<&str, &AnimationState> = sm
         .states
         .iter()
         .map(|state| (state.id.as_str(), state))
         .collect();
 
-    for s in &sm.states {
-        if s.state_type == AnimationStateType::MutationNode && s.mutation_id.is_none() {
-            bail!(
-                "state_machine validation: mutation node '{}' is missing mutationId",
-                s.id
-            );
-        }
-        if s.state_type != AnimationStateType::MutationNode && s.mutation_id.is_some() {
-            bail!(
-                "state_machine validation: state '{}' stores mutationId but is not a mutationNode",
-                s.id
-            );
-        }
-        match s.mutation_id.as_deref() {
-            None => continue,
-            Some(mid) if !mutation_ids.contains(mid) => bail!(
-                "state_machine validation: mutation node '{}' references missing mutation '{mid}'",
-                s.id
-            ),
-            Some(mid) => {
-                if let Some(existing) = owner_by_mutation.insert(mid, s.id.as_str()) {
+    for state in &sm.states {
+        match state.state_type {
+            AnimationStateType::AnimationState => {
+                if state.mutation_graph.is_none() {
                     bail!(
-                        "state_machine validation: mutation '{mid}' is shared by mutation nodes '{existing}' and '{}'",
-                        s.id
+                        "state_machine validation: animationState '{}' is missing its private mutationGraph",
+                        state.id
+                    );
+                }
+                if state.derivation_id.is_some() {
+                    bail!(
+                        "state_machine validation: animationState '{}' cannot store derivationId",
+                        state.id
+                    );
+                }
+            }
+            AnimationStateType::DerivationNode => {
+                if state.mutation_graph.is_some() {
+                    bail!(
+                        "state_machine validation: derivationNode '{}' cannot own mutationGraph",
+                        state.id
+                    );
+                }
+                let derivation_id = state.derivation_id.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "state_machine validation: derivationNode '{}' is missing derivationId",
+                        state.id
+                    )
+                })?;
+                if !derivation_ids.contains(derivation_id) {
+                    bail!(
+                        "state_machine validation: derivationNode '{}' references missing Derivation '{}'",
+                        state.id,
+                        derivation_id
+                    );
+                }
+                if let Some(existing) = owner_by_derivation.insert(derivation_id, state.id.as_str())
+                {
+                    bail!(
+                        "state_machine validation: Derivation '{}' is owned by nodes '{}' and '{}'",
+                        derivation_id,
+                        existing,
+                        state.id
+                    );
+                }
+            }
+            AnimationStateType::EntryState
+            | AnimationStateType::AnyState
+            | AnimationStateType::ExitState => {
+                if state.mutation_graph.is_some() || state.derivation_id.is_some() {
+                    bail!(
+                        "state_machine validation: built-in state '{}' cannot own a graph",
+                        state.id
                     );
                 }
             }
         }
     }
-    for mutation in &sm.mutations {
-        if !owner_by_mutation.contains_key(mutation.id.as_str()) {
+    for derivation in &sm.derivations {
+        if !owner_by_derivation.contains_key(derivation.id.as_str()) {
             bail!(
-                "state_machine validation: mutation '{}' is not owned by any mutationNode",
-                mutation.id
+                "state_machine validation: Derivation '{}' has no derivationNode owner",
+                derivation.id
             );
         }
     }
 
     let mut binding_ids = HashSet::new();
     let mut bound_state_ids: HashMap<&str, &str> = HashMap::new();
-    for binding in &sm.mutation_bindings {
+    for binding in &sm.derivation_bindings {
         if !binding_ids.insert(binding.id.as_str()) {
             bail!(
-                "state_machine validation: duplicate Mutation binding id '{}'",
+                "state_machine validation: duplicate Derivation binding id '{}'",
                 binding.id
             );
         }
         let state = state_by_id.get(binding.state_id.as_str()).ok_or_else(|| {
             anyhow::anyhow!(
-                "state_machine validation: Mutation binding '{}' references missing State '{}'",
+                "state_machine validation: Derivation binding '{}' references missing State '{}'",
                 binding.id,
                 binding.state_id
             )
         })?;
-        if state.state_type == AnimationStateType::MutationNode {
+        if state.state_type != AnimationStateType::AnimationState {
             bail!(
-                "state_machine validation: Mutation binding '{}' state endpoint '{}' is a mutationNode",
+                "state_machine validation: Derivation binding '{}' endpoint '{}' is not an animationState",
                 binding.id,
                 binding.state_id
             );
         }
-        let mutation_node = state_by_id
-            .get(binding.mutation_node_id.as_str())
+        let derivation_node = state_by_id
+            .get(binding.derivation_node_id.as_str())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "state_machine validation: Mutation binding '{}' references missing Mutation node '{}'",
+                    "state_machine validation: Derivation binding '{}' references missing derivationNode '{}'",
                     binding.id,
-                    binding.mutation_node_id
+                    binding.derivation_node_id
                 )
             })?;
-        if mutation_node.state_type != AnimationStateType::MutationNode {
+        if derivation_node.state_type != AnimationStateType::DerivationNode {
             bail!(
-                "state_machine validation: Mutation binding '{}' endpoint '{}' is not a mutationNode",
+                "state_machine validation: Derivation binding '{}' endpoint '{}' is not a derivationNode",
                 binding.id,
-                binding.mutation_node_id
+                binding.derivation_node_id
             );
         }
         if let Some(existing) =
             bound_state_ids.insert(binding.state_id.as_str(), binding.id.as_str())
         {
             bail!(
-                "state_machine validation: State '{}' has multiple Mutation bindings '{}' and '{}'",
+                "state_machine validation: State '{}' has multiple Derivation bindings '{}' and '{}'",
                 binding.state_id,
                 existing,
                 binding.id
@@ -231,13 +481,13 @@ fn validate_transition_endpoints(sm: &StateMachine) -> Result<()> {
         }
         if state_by_id
             .get(t.source.as_str())
-            .is_some_and(|state| state.state_type == AnimationStateType::MutationNode)
+            .is_some_and(|state| state.state_type == AnimationStateType::DerivationNode)
             || state_by_id
                 .get(t.target.as_str())
-                .is_some_and(|state| state.state_type == AnimationStateType::MutationNode)
+                .is_some_and(|state| state.state_type == AnimationStateType::DerivationNode)
         {
             bail!(
-                "state_machine validation: transition '{}' cannot use a mutationNode as source or target",
+                "state_machine validation: transition '{}' cannot use a derivationNode as source or target",
                 t.id
             );
         }
@@ -555,173 +805,390 @@ fn validate_transition_direction_constraints(sm: &StateMachine) -> Result<()> {
     Ok(())
 }
 
-// ── Mutation internal graph ────────────────────────────────────────────────
+// ── State Mutation and Render Derivation graphs ────────────────────────────
 
-fn validate_mutation_internals(sm: &StateMachine) -> Result<()> {
-    for m in &sm.mutations {
-        validate_mutation_inner_node_ids(m)?;
-        validate_mutation_connections(m)?;
-        validate_mutation_bindings(m)?;
-        validate_mutation_output_uniqueness(m)?;
-    }
-    Ok(())
-}
-
-fn validate_mutation_inner_node_ids(m: &MutationDefinition) -> Result<()> {
-    let mut seen: HashSet<&str> = HashSet::new();
-    for n in &m.nodes {
-        if !seen.insert(n.id.as_str()) {
-            bail!(
-                "state_machine validation: mutation '{}' has duplicate inner-node id '{}'",
-                m.id,
-                n.id
-            );
-        }
-        if n.inputs.iter().any(|port| port.motion == Some(true)) {
-            bail!(
-                "state_machine validation: mutation '{}' Function '{}' has a Motion input; Motion is return-only",
-                m.id,
-                n.id
-            );
-        }
-    }
-    Ok(())
-}
-
-fn validate_mutation_connections(m: &MutationDefinition) -> Result<()> {
-    let node_by_id: HashMap<&str, &MutationInnerNode> =
-        m.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    for c in &m.connections {
-        let Some(_) = node_by_id.get(c.from.node_id.as_str()) else {
-            bail!(
-                "state_machine validation: mutation '{}' connection '{}' from references missing node '{}'",
-                m.id,
-                c.id,
-                c.from.node_id
-            );
-        };
-        let Some(_) = node_by_id.get(c.to.node_id.as_str()) else {
-            bail!(
-                "state_machine validation: mutation '{}' connection '{}' to references missing node '{}'",
-                m.id,
-                c.id,
-                c.to.node_id
-            );
-        };
-    }
-
-    Ok(())
-}
-
-fn validate_mutation_bindings(m: &MutationDefinition) -> Result<()> {
-    let node_by_id: HashMap<&str, &MutationInnerNode> =
-        m.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-
-    for b in &m.input_bindings {
-        let Some(node) = node_by_id.get(b.to.node_id.as_str()) else {
-            bail!(
-                "state_machine validation: mutation '{}' inputBinding port '{}' targets missing node '{}'",
-                m.id,
-                b.port_id,
-                b.to.node_id
-            );
-        };
-        let Some(_) = node.inputs.iter().find(|port| port.id == b.to.port_id) else {
-            bail!(
-                "state_machine validation: mutation '{}' inputBinding target port '{}.{}' does not exist",
-                m.id,
-                b.to.node_id,
-                b.to.port_id
-            );
-        };
-    }
-
-    for b in &m.output_bindings {
-        let Some(node) = node_by_id.get(b.from.node_id.as_str()) else {
-            bail!(
-                "state_machine validation: mutation '{}' outputBinding port '{}' sources from missing node '{}'",
-                m.id,
-                b.port_id,
-                b.from.node_id
-            );
-        };
-        let Some(port) = node.outputs.iter().find(|port| port.id == b.from.port_id) else {
-            bail!(
-                "state_machine validation: mutation '{}' outputBinding source port '{}.{}' does not exist",
-                m.id,
-                b.from.node_id,
-                b.from.port_id
-            );
-        };
-        if port.motion == Some(true) && OverrideKey::parse(&b.port_id).is_none() {
-            bail!(
-                "state_machine validation: mutation '{}' Motion output '{}.{}' must bind to a declaration output",
-                m.id,
-                b.from.node_id,
-                b.from.port_id
-            );
+fn validate_graphs(sm: &StateMachine) -> Result<()> {
+    for state in &sm.states {
+        if let Some(graph) = &state.mutation_graph {
+            validate_graph_core(
+                &format!("State '{}' Mutation", state.id),
+                &graph.inputs,
+                &graph.outputs,
+                &graph.nodes,
+                &graph.connections,
+                true,
+            )?;
+            validate_boundary_bindings(
+                &format!("State '{}' Mutation", state.id),
+                &graph.inputs,
+                &graph.outputs,
+                &graph.nodes,
+                graph
+                    .input_bindings
+                    .iter()
+                    .map(|binding| (binding.state_port_id.as_str(), &binding.to)),
+                graph
+                    .output_bindings
+                    .iter()
+                    .map(|binding| (binding.state_port_id.as_str(), &binding.from)),
+                std::iter::empty(),
+                true,
+            )?;
         }
     }
-
-    for node in &m.nodes {
-        for port in node.outputs.iter().filter(|port| port.motion == Some(true)) {
-            let count = m
+    for derivation in &sm.derivations {
+        validate_graph_core(
+            &format!("Derivation '{}'", derivation.id),
+            &derivation.inputs,
+            &derivation.outputs,
+            &derivation.nodes,
+            &derivation.connections,
+            false,
+        )?;
+        validate_boundary_bindings(
+            &format!("Derivation '{}'", derivation.id),
+            &derivation.inputs,
+            &derivation.outputs,
+            &derivation.nodes,
+            derivation
+                .input_bindings
+                .iter()
+                .map(|binding| (binding.port_id.as_str(), &binding.to)),
+            derivation
                 .output_bindings
                 .iter()
-                .filter(|binding| {
-                    binding.from.node_id == node.id && binding.from.port_id == port.id
-                })
-                .count();
-            if count != 1 {
-                bail!(
-                    "state_machine validation: mutation '{}' Motion output '{}.{}' must bind exactly once to a declaration output",
-                    m.id,
-                    node.id,
-                    port.id
-                );
+                .map(|binding| (binding.port_id.as_str(), &binding.from)),
+            derivation
+                .passthrough_bindings
+                .iter()
+                .map(|binding| (binding.from_port_id.as_str(), binding.to_port_id.as_str())),
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_graph_core(
+    label: &str,
+    _inputs: &[GraphPort],
+    _outputs: &[GraphPort],
+    nodes: &[GraphInnerNode],
+    connections: &[GraphConnection],
+    is_mutation: bool,
+) -> Result<()> {
+    let mut ids = HashSet::new();
+    for node in nodes {
+        if !ids.insert(node.id.as_str()) {
+            bail!("{label} has duplicate node id '{}'", node.id);
+        }
+        if node.inputs.iter().any(|port| port.motion == Some(true)) {
+            bail!(
+                "{label} node '{}' has a Motion input; Motion is return-only",
+                node.id
+            );
+        }
+        match (is_mutation, node.node_type) {
+            (true, GraphInnerNodeType::DerivationFunction) => {
+                bail!("{label} cannot contain a DerivationFunction")
+            }
+            (false, GraphInnerNodeType::MutationFunction) => {
+                bail!("{label} cannot contain a MutationFunction")
+            }
+            _ => {}
+        }
+        if !is_mutation && node.outputs.iter().any(|port| port.motion == Some(true)) {
+            bail!("{label} cannot declare a Motion output");
+        }
+    }
+
+    let node_by_id = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let mut incoming = HashSet::new();
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut indegree = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), 0usize))
+        .collect::<HashMap<_, _>>();
+    for connection in connections {
+        let source = node_by_id
+            .get(connection.from.node_id.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} connection '{}' has missing source node",
+                    connection.id
+                )
+            })?;
+        let target = node_by_id
+            .get(connection.to.node_id.as_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} connection '{}' has missing target node",
+                    connection.id
+                )
+            })?;
+        let source_port = source
+            .outputs
+            .iter()
+            .find(|port| port.id == connection.from.port_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} connection '{}' has missing source port",
+                    connection.id
+                )
+            })?;
+        let target_port = target
+            .inputs
+            .iter()
+            .find(|port| port.id == connection.to.port_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} connection '{}' has missing target port",
+                    connection.id
+                )
+            })?;
+        validate_port_compatibility(label, source_port, target_port)?;
+        if !incoming.insert((
+            connection.to.node_id.as_str(),
+            connection.to.port_id.as_str(),
+        )) {
+            bail!(
+                "{label} input '{}.{}' has multiple writers",
+                connection.to.node_id,
+                connection.to.port_id
+            );
+        }
+        adjacency
+            .entry(connection.from.node_id.as_str())
+            .or_default()
+            .push(connection.to.node_id.as_str());
+        *indegree
+            .get_mut(connection.to.node_id.as_str())
+            .expect("validated target exists") += 1;
+    }
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(id, count)| (*count == 0).then_some(*id))
+        .collect::<Vec<_>>();
+    let mut visited = 0usize;
+    while let Some(id) = ready.pop() {
+        visited += 1;
+        for target in adjacency.get(id).into_iter().flatten() {
+            let count = indegree
+                .get_mut(target)
+                .expect("validated graph node exists");
+            *count -= 1;
+            if *count == 0 {
+                ready.push(target);
+            }
+        }
+    }
+    if visited != nodes.len() {
+        bail!("{label} contains a cycle");
+    }
+    Ok(())
+}
+
+fn validate_boundary_bindings<'a>(
+    label: &str,
+    inputs: &[GraphPort],
+    outputs: &[GraphPort],
+    nodes: &'a [GraphInnerNode],
+    input_bindings: impl Iterator<Item = (&'a str, &'a GraphEndpoint)>,
+    output_bindings: impl Iterator<Item = (&'a str, &'a GraphEndpoint)>,
+    passthrough_bindings: impl Iterator<Item = (&'a str, &'a str)>,
+    is_mutation: bool,
+) -> Result<()> {
+    let node_by_id = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let mut written_inputs = HashSet::new();
+    for (boundary_id, endpoint) in input_bindings {
+        let boundary = inputs
+            .iter()
+            .find(|port| port.id == boundary_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} input binding references missing boundary port '{boundary_id}'"
+                )
+            })?;
+        let node = node_by_id.get(endpoint.node_id.as_str()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{label} input binding references missing node '{}'",
+                endpoint.node_id
+            )
+        })?;
+        let port = node
+            .inputs
+            .iter()
+            .find(|port| port.id == endpoint.port_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} input binding references missing port '{}.{}'",
+                    endpoint.node_id,
+                    endpoint.port_id
+                )
+            })?;
+        validate_port_compatibility(label, boundary, port)?;
+        if !written_inputs.insert((endpoint.node_id.as_str(), endpoint.port_id.as_str())) {
+            bail!(
+                "{label} input '{}.{}' has multiple writers",
+                endpoint.node_id,
+                endpoint.port_id
+            );
+        }
+    }
+
+    let mut written_outputs = HashSet::new();
+    let mut bound_motion_sources = HashMap::<(&str, &str), usize>::new();
+    for (boundary_id, endpoint) in output_bindings {
+        let boundary = outputs
+            .iter()
+            .find(|port| port.id == boundary_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} output binding references missing boundary port '{boundary_id}'"
+                )
+            })?;
+        if OverrideKey::parse(boundary_id).is_none() {
+            bail!("{label} output '{boundary_id}' is not a formal render declaration");
+        }
+        let node = node_by_id.get(endpoint.node_id.as_str()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{label} output binding references missing node '{}'",
+                endpoint.node_id
+            )
+        })?;
+        let port = node
+            .outputs
+            .iter()
+            .find(|port| port.id == endpoint.port_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{label} output binding references missing port '{}.{}'",
+                    endpoint.node_id,
+                    endpoint.port_id
+                )
+            })?;
+        validate_port_compatibility(label, port, boundary)?;
+        if is_mutation && port.motion != Some(true) {
+            bail!("{label} State Output '{boundary_id}' must be driven by Motion<T>");
+        }
+        if !is_mutation && port.motion == Some(true) {
+            bail!("{label} cannot bind Motion<T> to a render output");
+        }
+        if !written_outputs.insert(boundary_id) {
+            bail!("{label} output '{boundary_id}' has multiple writers");
+        }
+        *bound_motion_sources
+            .entry((endpoint.node_id.as_str(), endpoint.port_id.as_str()))
+            .or_default() += 1;
+    }
+    if is_mutation {
+        for node in nodes {
+            for port in node.outputs.iter().filter(|port| port.motion == Some(true)) {
+                let count = bound_motion_sources
+                    .get(&(node.id.as_str(), port.id.as_str()))
+                    .copied()
+                    .unwrap_or(0);
+                if count != 1 {
+                    bail!(
+                        "{label} Motion output '{}.{}' must bind exactly once to State Outputs",
+                        node.id,
+                        port.id
+                    );
+                }
             }
         }
     }
 
+    for (from_id, to_id) in passthrough_bindings {
+        let from = inputs
+            .iter()
+            .find(|port| port.id == from_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("{label} passthrough references missing input '{from_id}'")
+            })?;
+        let to = outputs
+            .iter()
+            .find(|port| port.id == to_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("{label} passthrough references missing output '{to_id}'")
+            })?;
+        validate_port_compatibility(label, from, to)?;
+        if !written_outputs.insert(to_id) {
+            bail!("{label} output '{to_id}' has multiple writers");
+        }
+    }
     Ok(())
 }
 
-/// Validate that no two binding types write to the same output port.
-///
-/// An output port may be written by at most one of:
-/// - An `outputBinding` (via `portId`)
-/// - A `passthroughBinding` (via `outputPortId`)
-///
-/// Duplicates are validation errors.
-fn validate_mutation_output_uniqueness(m: &MutationDefinition) -> Result<()> {
-    let mut seen: HashSet<&str> = HashSet::new();
-
-    for b in &m.output_bindings {
-        if !seen.insert(b.port_id.as_str()) {
-            bail!(
-                "state_machine validation: mutation '{}' has duplicate output for port '{}'",
-                m.id,
-                b.port_id
-            );
-        }
+fn validate_port_compatibility(label: &str, source: &GraphPort, target: &GraphPort) -> Result<()> {
+    let source_type = source.port_type.as_deref().unwrap_or("any");
+    let target_type = target.port_type.as_deref().unwrap_or("any");
+    let compatible = target_type == "any"
+        || source_type == target_type
+        || matches!(
+            (source_type, target_type),
+            ("float" | "int" | "bool", "float" | "int")
+                | (
+                    "float" | "int" | "bool",
+                    "vector2" | "vector3" | "vector4" | "color"
+                )
+                | (
+                    "vector2" | "vector3" | "vector4" | "color",
+                    "vector2" | "vector3" | "vector4" | "color"
+                )
+        );
+    if !compatible || (source.array_length.is_some() && source.array_length != target.array_length)
+    {
+        bail!(
+            "{label} has incompatible ports '{}' ({source_type}, {:?}) -> '{}' ({target_type}, {:?})",
+            source.id,
+            source.array_length,
+            target.id,
+            target.array_length
+        );
     }
-
-    for pt in &m.passthrough_bindings {
-        if !seen.insert(pt.to_port_id.as_str()) {
-            bail!(
-                "state_machine validation: mutation '{}' has duplicate output for port '{}' (passthrough conflicts with existing binding)",
-                m.id,
-                pt.to_port_id
-            );
-        }
-    }
-
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::Node;
+
+    fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
+        SceneDSL {
+            version: "3.0".into(),
+            metadata: crate::dsl::Metadata {
+                name: "Validation test".into(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections: vec![],
+            outputs: None,
+            groups: vec![],
+            assets: HashMap::new(),
+            state_machine: Some(sm),
+            debug_artifacts: None,
+        }
+    }
+
+    fn render_node(id: &str, node_type: &str, params: HashMap<String, serde_json::Value>) -> Node {
+        Node {
+            id: id.into(),
+            node_type: node_type.into(),
+            params,
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        }
+    }
 
     fn minimal_sm() -> StateMachine {
         StateMachine {
@@ -734,7 +1201,8 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::EntryState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "any".into(),
@@ -742,7 +1210,8 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::AnyState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "exit".into(),
@@ -750,12 +1219,13 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::ExitState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
             ],
             transitions: vec![],
-            mutation_bindings: vec![],
-            mutations: vec![],
+            derivation_bindings: vec![],
+            derivations: vec![],
             motion_graphs: vec![instant_motion_graph()],
             initial_state_id: Some("entry".into()),
             viewport: None,
@@ -763,7 +1233,7 @@ mod tests {
     }
 
     fn instant_motion_graph() -> TransitionMotionGraph {
-        let port = MutationPort {
+        let port = GraphPort {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
@@ -783,14 +1253,14 @@ mod tests {
             connections: vec![],
             input_bindings: vec![TransitionMotionInputBinding {
                 port_id: "*".into(),
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![TransitionMotionOutputBinding {
                 port_id: "*".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
@@ -801,8 +1271,8 @@ mod tests {
         }
     }
 
-    fn empty_mutation(id: &str) -> MutationDefinition {
-        MutationDefinition {
+    fn empty_derivation(id: &str) -> DerivationDefinition {
+        DerivationDefinition {
             id: id.into(),
             name: id.into(),
             inputs: vec![],
@@ -812,6 +1282,7 @@ mod tests {
             input_bindings: vec![],
             output_bindings: vec![],
             passthrough_bindings: vec![],
+            layout: None,
             viewport: None,
         }
     }
@@ -823,24 +1294,107 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: Some(empty_state_mutation()),
+            derivation_id: None,
         }
     }
 
-    fn mutation_node(id: &str, mutation_id: &str) -> AnimationState {
+    fn derivation_node(id: &str, derivation_id: &str) -> AnimationState {
         AnimationState {
             id: id.into(),
             name: id.into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::MutationNode,
-            mutation_id: Some(mutation_id.into()),
+            state_type: AnimationStateType::DerivationNode,
+            mutation_graph: None,
+            derivation_id: Some(derivation_id.into()),
+        }
+    }
+
+    fn empty_state_mutation() -> StateMutationGraph {
+        StateMutationGraph {
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            layout: StateMutationGraphLayout {
+                parameter_positions: HashMap::new(),
+                runtime_input_position: Position::default(),
+                output_position: Position::default(),
+                runtime_input_collapsed: false,
+                output_collapsed: false,
+            },
+            viewport: None,
         }
     }
 
     #[test]
     fn minimal_valid() {
         assert!(validate(&minimal_sm()).is_ok());
+    }
+
+    #[test]
+    fn scene_declarations_reject_derivation_output_targeting_a_consumer_port() {
+        let mut sm = minimal_sm();
+        sm.states.push(regular_state("state"));
+        sm.states.push(derivation_node("derive_node", "derive"));
+        let mut derivation = empty_derivation("derive");
+        derivation.outputs.push(GraphPort {
+            id: "consumer:opacity".into(),
+            name: Some("Consumer opacity".into()),
+            port_type: Some("float".into()),
+            array_length: None,
+            motion: None,
+        });
+        sm.derivations.push(derivation);
+        validate(&sm).expect("the graph is structurally valid before scene identity validation");
+
+        let scene = scene_with_state_machine(
+            sm.clone(),
+            vec![render_node("consumer", "Composite", HashMap::new())],
+        );
+        let error = validate_scene_declarations(&scene, &sm)
+            .expect_err("consumer inputs cannot establish Derivation output identity")
+            .to_string();
+        assert!(error.contains("not a formal writable Render Graph declaration"));
+    }
+
+    #[test]
+    fn scene_declarations_enforce_packed_array_length() {
+        let mut sm = minimal_sm();
+        let mut state = regular_state("state");
+        state
+            .mutation_graph
+            .as_mut()
+            .expect("regular State owns Mutation graph")
+            .outputs
+            .push(GraphPort {
+                id: "colors:value".into(),
+                name: Some("Colors".into()),
+                port_type: Some("packed<color>".into()),
+                array_length: Some(1),
+                motion: None,
+            });
+        sm.states.push(state);
+        validate(&sm).expect("the graph is structurally valid before scene identity validation");
+
+        let scene = scene_with_state_machine(
+            sm.clone(),
+            vec![render_node(
+                "colors",
+                "ColorArrayInput",
+                HashMap::from([(
+                    "value".into(),
+                    serde_json::json!([[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 1.0]]),
+                )]),
+            )],
+        );
+        let error = validate_scene_declarations(&scene, &sm)
+            .expect_err("State Outputs must keep the declaration's fixed length")
+            .to_string();
+        assert!(error.contains("fixed length Some(2)"));
     }
 
     #[test]
@@ -866,24 +1420,24 @@ mod tests {
             label: None,
         });
         graph.connections = vec![
-            MutationConnection {
+            GraphConnection {
                 id: "a".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "motion2".into(),
                     port_id: "value".into(),
                 },
             },
-            MutationConnection {
+            GraphConnection {
                 id: "b".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "motion2".into(),
                     port_id: "value".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
@@ -903,7 +1457,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("duplicate state id"), "{err}");
@@ -919,18 +1474,19 @@ mod tests {
     }
 
     #[test]
-    fn mutation_node_missing_ref() {
+    fn derivation_node_missing_ref() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
             id: "mut1".into(),
             name: "M1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::MutationNode,
-            mutation_id: Some("nonexistent".into()),
+            state_type: AnimationStateType::DerivationNode,
+            mutation_graph: None,
+            derivation_id: Some("nonexistent".into()),
         });
         let err = validate(&sm).unwrap_err().to_string();
-        assert!(err.contains("missing mutation"), "{err}");
+        assert!(err.contains("missing Derivation"), "{err}");
     }
 
     #[test]
@@ -942,7 +1498,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: Some(empty_state_mutation()),
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
@@ -963,7 +1520,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: Some(empty_state_mutation()),
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
@@ -992,99 +1550,108 @@ mod tests {
     }
 
     #[test]
-    fn mutation_node_can_feed_multiple_states() {
+    fn derivation_node_can_feed_multiple_states() {
         let mut sm = minimal_sm();
         sm.states.extend([
             regular_state("state_a"),
             regular_state("state_b"),
-            mutation_node("mutation_node", "mutation"),
+            derivation_node("derivation_node", "derivation"),
         ]);
-        sm.mutations.push(empty_mutation("mutation"));
-        sm.mutation_bindings.extend([
-            MutationStateBinding {
+        sm.derivations.push(empty_derivation("derivation"));
+        sm.derivation_bindings.extend([
+            DerivationStateBinding {
                 id: "binding_a".into(),
                 state_id: "state_a".into(),
-                mutation_node_id: "mutation_node".into(),
+                derivation_node_id: "derivation_node".into(),
             },
-            MutationStateBinding {
+            DerivationStateBinding {
                 id: "binding_b".into(),
                 state_id: "state_b".into(),
-                mutation_node_id: "mutation_node".into(),
+                derivation_node_id: "derivation_node".into(),
             },
         ]);
 
-        validate(&sm).expect("a Mutation node output may fan out to multiple States");
+        validate(&sm).expect("a Derivation node output may fan out to multiple States");
     }
 
     #[test]
-    fn state_cannot_receive_multiple_mutations() {
+    fn state_cannot_receive_multiple_derivations() {
         let mut sm = minimal_sm();
         sm.states.extend([
             regular_state("state"),
-            mutation_node("mutation_a_node", "mutation_a"),
-            mutation_node("mutation_b_node", "mutation_b"),
+            derivation_node("derivation_a_node", "derivation_a"),
+            derivation_node("derivation_b_node", "derivation_b"),
         ]);
-        sm.mutations
-            .extend([empty_mutation("mutation_a"), empty_mutation("mutation_b")]);
-        sm.mutation_bindings.extend([
-            MutationStateBinding {
+        sm.derivations.extend([
+            empty_derivation("derivation_a"),
+            empty_derivation("derivation_b"),
+        ]);
+        sm.derivation_bindings.extend([
+            DerivationStateBinding {
                 id: "binding_a".into(),
                 state_id: "state".into(),
-                mutation_node_id: "mutation_a_node".into(),
+                derivation_node_id: "derivation_a_node".into(),
             },
-            MutationStateBinding {
+            DerivationStateBinding {
                 id: "binding_b".into(),
                 state_id: "state".into(),
-                mutation_node_id: "mutation_b_node".into(),
+                derivation_node_id: "derivation_b_node".into(),
             },
         ]);
 
         let error = validate(&sm).unwrap_err().to_string();
-        assert!(error.contains("multiple Mutation bindings"), "{error}");
+        assert!(error.contains("multiple Derivation bindings"), "{error}");
     }
 
     #[test]
     fn passthrough_duplicate_output_rejected() {
         let mut sm = minimal_sm();
-        let mutation = MutationDefinition {
+        let derivation = DerivationDefinition {
             id: "m1".into(),
             name: "M1".into(),
-            inputs: vec![],
-            outputs: vec![MutationPort {
+            inputs: vec![GraphPort {
+                id: "sceneElapsedTime".into(),
+                name: Some("Scene Elapsed Time".into()),
+                port_type: Some("float".into()),
+                array_length: None,
+                motion: None,
+            }],
+            outputs: vec![GraphPort {
                 id: "X:value".into(),
                 name: Some("X".into()),
                 port_type: Some("float".into()),
                 array_length: None,
                 motion: None,
             }],
-            nodes: vec![MutationInnerNode {
+            nodes: vec![GraphInnerNode {
                 id: "n".into(),
-                node_type: MutationInnerNodeType::FloatInput,
+                node_type: GraphInnerNodeType::FloatInput,
                 params: [("value".into(), serde_json::json!(42.0))]
                     .into_iter()
                     .collect(),
                 inputs: vec![],
-                outputs: vec![MutationPort {
+                outputs: vec![GraphPort {
                     id: "value".into(),
                     name: None,
-                    port_type: None,
+                    port_type: Some("float".into()),
                     array_length: None,
                     motion: None,
                 }],
             }],
             connections: vec![],
             input_bindings: vec![],
-            output_bindings: vec![MutationOutputBinding {
+            output_bindings: vec![DerivationOutputBinding {
                 port_id: "X:value".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "n".into(),
                     port_id: "value".into(),
                 },
             }],
-            passthrough_bindings: vec![MutationPassthroughBinding {
+            passthrough_bindings: vec![DerivationPassthroughBinding {
                 from_port_id: "sceneElapsedTime".into(),
                 to_port_id: "X:value".into(),
             }],
+            layout: None,
             viewport: None,
         };
         sm.states.push(AnimationState {
@@ -1092,25 +1659,33 @@ mod tests {
             name: "S1".into(),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::MutationNode,
-            mutation_id: Some("m1".into()),
+            state_type: AnimationStateType::DerivationNode,
+            mutation_graph: None,
+            derivation_id: Some("m1".into()),
         });
-        sm.mutations.push(mutation);
+        sm.derivations.push(derivation);
         let err = validate(&sm).unwrap_err().to_string();
         assert!(
-            err.contains("duplicate output") && err.contains("passthrough"),
-            "expected passthrough conflict error, got: {err}"
+            err.contains("output 'X:value' has multiple writers"),
+            "{err}"
         );
     }
 
     #[test]
     fn declaration_binding_is_an_ordinary_state_value_input() {
-        let mut mutation = empty_mutation("mutation");
-        mutation.nodes.push(MutationInnerNode {
+        let mut mutation = empty_state_mutation();
+        mutation.inputs.push(GraphPort {
+            id: "FloatInput:value".into(),
+            name: Some("FloatInput.value".into()),
+            port_type: Some("float".into()),
+            array_length: None,
+            motion: None,
+        });
+        mutation.nodes.push(GraphInnerNode {
             id: "function".into(),
-            node_type: MutationInnerNodeType::MutationFunction,
+            node_type: GraphInnerNodeType::MutationFunction,
             params: HashMap::new(),
-            inputs: vec![MutationPort {
+            inputs: vec![GraphPort {
                 id: "value".into(),
                 name: Some("value".into()),
                 port_type: Some("float".into()),
@@ -1119,25 +1694,29 @@ mod tests {
             }],
             outputs: vec![],
         });
-        mutation.input_bindings.push(MutationInputBinding {
-            port_id: "FloatInput:value".into(),
-            to: MutationEndpoint {
+        mutation.input_bindings.push(StateMutationInputBinding {
+            state_port_id: "FloatInput:value".into(),
+            to: GraphEndpoint {
                 node_id: "function".into(),
                 port_id: "value".into(),
             },
         });
 
-        validate_mutation_bindings(&mutation).expect("Mutation Inputs expose S as ordinary values");
+        let mut sm = minimal_sm();
+        let mut state = regular_state("state");
+        state.mutation_graph = Some(mutation);
+        sm.states.push(state);
+        validate(&sm).expect("Mutation Inputs expose S as ordinary values");
     }
 
     #[test]
     fn motion_is_return_only() {
-        let mut mutation = empty_mutation("mutation");
-        mutation.nodes.push(MutationInnerNode {
+        let mut mutation = empty_state_mutation();
+        mutation.nodes.push(GraphInnerNode {
             id: "function".into(),
-            node_type: MutationInnerNodeType::MutationFunction,
+            node_type: GraphInnerNodeType::MutationFunction,
             params: HashMap::new(),
-            inputs: vec![MutationPort {
+            inputs: vec![GraphPort {
                 id: "value".into(),
                 name: Some("value".into()),
                 port_type: Some("float".into()),
@@ -1147,7 +1726,11 @@ mod tests {
             outputs: vec![],
         });
 
-        let error = validate_mutation_inner_node_ids(&mutation)
+        let mut sm = minimal_sm();
+        let mut state = regular_state("state");
+        state.mutation_graph = Some(mutation);
+        sm.states.push(state);
+        let error = validate(&sm)
             .expect_err("Motion inputs must be rejected")
             .to_string();
         assert!(error.contains("return-only"), "{error}");
@@ -1155,14 +1738,21 @@ mod tests {
 
     #[test]
     fn motion_output_must_bind_to_one_declaration_and_may_feed_downstream() {
-        let mut mutation = empty_mutation("mutation");
+        let mut mutation = empty_state_mutation();
+        mutation.outputs.push(GraphPort {
+            id: "FloatInput:value".into(),
+            name: Some("FloatInput.value".into()),
+            port_type: Some("float".into()),
+            array_length: None,
+            motion: None,
+        });
         mutation.nodes.extend([
-            MutationInnerNode {
+            GraphInnerNode {
                 id: "first".into(),
-                node_type: MutationInnerNodeType::MutationFunction,
+                node_type: GraphInnerNodeType::MutationFunction,
                 params: HashMap::new(),
                 inputs: vec![],
-                outputs: vec![MutationPort {
+                outputs: vec![GraphPort {
                     id: "value".into(),
                     name: Some("physical".into()),
                     port_type: Some("float".into()),
@@ -1170,11 +1760,11 @@ mod tests {
                     motion: Some(true),
                 }],
             },
-            MutationInnerNode {
+            GraphInnerNode {
                 id: "second".into(),
-                node_type: MutationInnerNodeType::MutationFunction,
+                node_type: GraphInnerNodeType::MutationFunction,
                 params: HashMap::new(),
-                inputs: vec![MutationPort {
+                inputs: vec![GraphPort {
                     id: "value".into(),
                     name: Some("value".into()),
                     port_type: Some("float".into()),
@@ -1184,26 +1774,29 @@ mod tests {
                 outputs: vec![],
             },
         ]);
-        mutation.connections.push(MutationConnection {
+        mutation.connections.push(GraphConnection {
             id: "first_to_second".into(),
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "first".into(),
                 port_id: "value".into(),
             },
-            to: MutationEndpoint {
+            to: GraphEndpoint {
                 node_id: "second".into(),
                 port_id: "value".into(),
             },
         });
-        mutation.output_bindings.push(MutationOutputBinding {
-            port_id: "FloatInput:value".into(),
-            from: MutationEndpoint {
+        mutation.output_bindings.push(StateMutationOutputBinding {
+            state_port_id: "FloatInput:value".into(),
+            from: GraphEndpoint {
                 node_id: "first".into(),
                 port_id: "value".into(),
             },
         });
 
-        validate_mutation_connections(&mutation).expect("Q may flow to downstream Functions");
-        validate_mutation_bindings(&mutation).expect("Motion output has one declaration identity");
+        let mut sm = minimal_sm();
+        let mut state = regular_state("state");
+        state.mutation_graph = Some(mutation);
+        sm.states.push(state);
+        validate(&sm).expect("Q may flow downstream and bind to one State Output identity");
     }
 }

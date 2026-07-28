@@ -3,9 +3,9 @@
  * Golden value generator for the back-pin-pin animation test case.
  *
  * State machine:
- *   EntryState --[mousedown, delay:0.3, duration:0.3, ease:linear]--> TimeCycleMutationNode
+ *   EntryState --[mousedown, delay:0.3, duration:0.3, ease:linear]--> TimeCycleDerivationNode
  *
- * TimeCycleMutation passes sceneElapsedTime through to FloatInput_53:value.
+ * TimeCycleDerivation passes sceneElapsedTime through to FloatInput_53:value.
  *
  * Timeline (60 fps, 0–10s, include_end=true → 601 frames):
  *   - Frames 0–59:  Entry state, value=0, no transition
@@ -146,7 +146,7 @@ for (let i = 0; i < totalFrames; i++) {
     const ticksSinceBlendStart = i - BLEND_START_FRAME;
     rawStateLocalTime = ticksSinceBlendStart * STEP;
 
-    // Mutation passes sceneElapsedTime → FloatInput_53:value.
+    // Derivation passes sceneElapsedTime → FloatInput_53:value.
     rawValue = rawSceneTime;
   }
 

@@ -859,7 +859,7 @@ fn fs_main() -> @location(0) vec4f {
         let frag_out_definition_range = frag_out
             .definition_source_range
             .expect("expected _frag_out source jump range");
-        assert_eq!(frag_out_definition_range.line, 764);
+        assert_eq!(frag_out_definition_range.line, 778);
         assert_eq!(
             &doc.module_source
                 [frag_out_definition_range.start_byte..frag_out_definition_range.end_byte],
@@ -884,7 +884,7 @@ fn fs_main() -> @location(0) vec4f {
         let material_out_definition_range = material_out
             .definition_source_range
             .expect("expected glass_material_material_out source jump range");
-        assert_eq!(material_out_definition_range.line, 760);
+        assert_eq!(material_out_definition_range.line, 774);
         assert_eq!(
             &doc.module_source
                 [material_out_definition_range.start_byte..material_out_definition_range.end_byte],
@@ -903,7 +903,7 @@ fn fs_main() -> @location(0) vec4f {
                 .source_range
                 .expect("expected material_out definition occurrence")
                 .line,
-            760
+            774
         );
         let material_value = child_target(&doc, material_out_definition, "glass_mat", None);
         assert_node_range_selects(
@@ -918,11 +918,11 @@ fn fs_main() -> @location(0) vec4f {
         let material_value_definition_range = material_value
             .definition_source_range
             .expect("expected glass_mat source jump range from material_out");
-        assert_eq!(material_value_definition_range.line, 759);
+        assert_eq!(material_value_definition_range.line, 773);
 
         let mut glass_nodes = Vec::new();
         collect_target_nodes_by_name(&doc, glass_mat, "glass_mat", &mut glass_nodes);
-        for line in [741, 740, 739] {
+        for line in [755, 754, 753] {
             let mut line_nodes = Vec::new();
             collect_target_nodes_on_line(glass_mat, &glass_id, line, &mut line_nodes);
             assert!(
@@ -930,26 +930,26 @@ fn fs_main() -> @location(0) vec4f {
                 "expected glass_mat dependency tree to include line {line}"
             );
         }
-        let mut line_707_nodes = Vec::new();
-        collect_target_nodes_on_line(glass_mat, &glass_id, 707, &mut line_707_nodes);
+        let mut line_721_nodes = Vec::new();
+        collect_target_nodes_on_line(glass_mat, &glass_id, 721, &mut line_721_nodes);
         assert!(
-            line_707_nodes.iter().any(|node| node
+            line_721_nodes.iter().any(|node| node
                 .definition_source_range
-                .is_some_and(|source_range| source_range.line == 706)),
-            "line 707 glass_mat references should expose the initial definition on line 706"
+                .is_some_and(|source_range| source_range.line == 720)),
+            "line 721 glass_mat references should expose the initial definition on line 720"
         );
-        for (name, definition_line) in [("refraction", 697), ("reflection", 703)] {
+        for (name, definition_line) in [("refraction", 711), ("reflection", 717)] {
             let mut nodes = Vec::new();
             collect_target_nodes_by_name(&doc, glass_mat, name, &mut nodes);
             assert!(
                 nodes
                     .iter()
                     .any(|node| node.source_range.is_some_and(|source_range| {
-                        source_range.line == 706
+                        source_range.line == 720
                             && &doc.module_source[source_range.start_byte..source_range.end_byte]
                                 == name
                     })),
-                "{name} should keep its line 706 mix() occurrence"
+                "{name} should keep its line 720 mix() occurrence"
             );
             assert!(
                 nodes.iter().any(
@@ -963,20 +963,20 @@ fn fs_main() -> @location(0) vec4f {
             );
         }
 
-        let alpha_759_ranges = glass_nodes
+        let alpha_773_ranges = glass_nodes
             .iter()
             .filter_map(|node| node.source_range)
             .filter(|range| {
-                range.line == 759
+                range.line == 773
                     && &doc.module_source[range.start_byte..range.end_byte] == "glass_mat.a"
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            alpha_759_ranges.len(),
+            alpha_773_ranges.len(),
             2,
-            "expected two distinct alpha references on line 759"
+            "expected two distinct alpha references on line 773"
         );
-        assert_ne!(alpha_759_ranges[0], alpha_759_ranges[1]);
+        assert_ne!(alpha_773_ranges[0], alpha_773_ranges[1]);
     }
 
     #[test]

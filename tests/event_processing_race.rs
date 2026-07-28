@@ -22,10 +22,30 @@ use proptest::prelude::*;
 use node_forge_render_server::animation::AnimationSession;
 use node_forge_render_server::dsl::{Metadata, SceneDSL};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, MutationDefinition,
-    MutationEndpoint, MutationStateBinding, Position, StateMachine, TransitionConditionBinding,
+    AnimationState, AnimationStateType, AnimationTransition, DerivationDefinition,
+    DerivationStateBinding, EventModifiers, GraphEndpoint, Position, StateMachine,
+    StateMutationGraph, StateMutationGraphLayout, TransitionConditionBinding,
     TransitionMotionGraph, TransitionMotionNode,
 };
+
+fn empty_state_mutation() -> StateMutationGraph {
+    StateMutationGraph {
+        inputs: vec![],
+        outputs: vec![],
+        nodes: vec![],
+        connections: vec![],
+        input_bindings: vec![],
+        output_bindings: vec![],
+        layout: StateMutationGraphLayout {
+            parameter_positions: HashMap::new(),
+            runtime_input_position: Position::default(),
+            output_position: Position::default(),
+            runtime_input_collapsed: false,
+            output_collapsed: false,
+        },
+        viewport: None,
+    }
+}
 
 fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
     let mut graph = TransitionMotionGraph::instant(id);
@@ -39,7 +59,7 @@ fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
         ignore_repeat: true,
     });
     graph.condition_binding = Some(TransitionConditionBinding::Node {
-        from: MutationEndpoint {
+        from: GraphEndpoint {
             node_id: "trigger".into(),
             port_id: "fired".into(),
         },
@@ -60,7 +80,8 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::EntryState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
             AnimationState {
                 id: "any".into(),
@@ -68,7 +89,8 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnyState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
             AnimationState {
                 id: "exit".into(),
@@ -76,7 +98,8 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::ExitState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
             AnimationState {
                 id: "target".into(),
@@ -84,7 +107,8 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
-                mutation_id: None,
+                mutation_graph: Some(empty_state_mutation()),
+                derivation_id: None,
             },
         ],
         transitions: vec![AnimationTransition {
@@ -93,15 +117,15 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
             target: "target".into(),
             motion_graph_id: "instant".into(),
         }],
-        mutation_bindings: vec![],
-        mutations: vec![],
+        derivation_bindings: vec![],
+        derivations: vec![],
         motion_graphs: vec![event_motion_graph("instant", event_name)],
         initial_state_id: Some("entry".into()),
         viewport: None,
     };
 
     SceneDSL {
-        version: "2.0".into(),
+        version: "3.0".into(),
         metadata: Metadata {
             name: "Test Scene".into(),
             created: None,
@@ -128,7 +152,8 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::EntryState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
             AnimationState {
                 id: "idle".into(),
@@ -136,7 +161,8 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
-                mutation_id: None,
+                mutation_graph: Some(empty_state_mutation()),
+                derivation_id: None,
             },
             AnimationState {
                 id: "any".into(),
@@ -144,23 +170,26 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnyState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
             AnimationState {
-                id: "mutation".into(),
-                name: "Mutation".into(),
+                id: "pressed".into(),
+                name: "Pressed".into(),
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
-                mutation_id: None,
+                mutation_graph: Some(empty_state_mutation()),
+                derivation_id: None,
             },
             AnimationState {
-                id: "mutation_node".into(),
-                name: "Press Mutation".into(),
+                id: "derivation_node".into(),
+                name: "Press Derivation".into(),
                 position: None,
                 parameter_overrides: Default::default(),
-                state_type: AnimationStateType::MutationNode,
-                mutation_id: Some("mut_press".into()),
+                state_type: AnimationStateType::DerivationNode,
+                mutation_graph: None,
+                derivation_id: Some("derivation_press".into()),
             },
             AnimationState {
                 id: "exit".into(),
@@ -168,7 +197,8 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 position: None,
                 parameter_overrides: Default::default(),
                 state_type: AnimationStateType::ExitState,
-                mutation_id: None,
+                mutation_graph: None,
+                derivation_id: None,
             },
         ],
         transitions: vec![
@@ -181,24 +211,24 @@ fn scene_with_press_release_transitions() -> SceneDSL {
             AnimationTransition {
                 id: "tr_down".into(),
                 source: "idle".into(),
-                target: "mutation".into(),
+                target: "pressed".into(),
                 motion_graph_id: "motion_down".into(),
             },
             AnimationTransition {
                 id: "tr_up".into(),
-                source: "mutation".into(),
+                source: "pressed".into(),
                 target: "idle".into(),
                 motion_graph_id: "motion_up".into(),
             },
         ],
-        mutation_bindings: vec![MutationStateBinding {
-            id: "binding_mutation".into(),
-            state_id: "mutation".into(),
-            mutation_node_id: "mutation_node".into(),
+        derivation_bindings: vec![DerivationStateBinding {
+            id: "binding_derivation".into(),
+            state_id: "pressed".into(),
+            derivation_node_id: "derivation_node".into(),
         }],
-        mutations: vec![MutationDefinition {
-            id: "mut_press".into(),
-            name: "Press Mutation".into(),
+        derivations: vec![DerivationDefinition {
+            id: "derivation_press".into(),
+            name: "Press Derivation".into(),
             inputs: vec![],
             outputs: vec![],
             nodes: vec![],
@@ -206,6 +236,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
             input_bindings: vec![],
             output_bindings: vec![],
             passthrough_bindings: vec![],
+            layout: None,
             viewport: None,
         }],
         motion_graphs: vec![
@@ -218,7 +249,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
     };
 
     SceneDSL {
-        version: "2.0".into(),
+        version: "3.0".into(),
         metadata: Metadata {
             name: "Press Release Scene".into(),
             created: None,
@@ -248,7 +279,7 @@ fn event_name_strategy() -> impl Strategy<Value = String> {
 }
 
 #[test]
-fn mouseup_exits_mutation_even_without_fixed_step_tick() {
+fn mouseup_exits_pressed_state_even_without_fixed_step_tick() {
     let scene = scene_with_press_release_transitions();
     let mut session = AnimationSession::from_scene(&scene)
         .expect("session should build")
@@ -257,7 +288,7 @@ fn mouseup_exits_mutation_even_without_fixed_step_tick() {
     assert_eq!(session.step(0.0).current_state_id, "idle");
 
     session.fire_event("mousedown");
-    assert_eq!(session.step(1.0 / 30.0).current_state_id, "mutation");
+    assert_eq!(session.step(1.0 / 30.0).current_state_id, "pressed");
 
     session.fire_event("mouseup");
     let result = session.step(0.001);
@@ -469,7 +500,7 @@ proptest! {
     /// **Validates: Requirements 3.1, 3.4**
     ///
     /// For any positive dt, when no interaction events are present and the
-    /// state machine has no time-driven mutations, `session.step(dt)` with
+    /// state machine has no time-driven derivations, `session.step(dt)` with
     /// empty `pending_events` produces `needs_redraw: false` because no
     /// override values change.
     #[test]
@@ -483,7 +514,7 @@ proptest! {
 
         // Initialize.
         let init = session.step(0.0);
-        // After init, active_overrides is empty (no mutations in this scene).
+        // After init, active_overrides is empty (no derivations in this scene).
         prop_assert!(!init.needs_redraw || init.active_overrides.is_empty(),
             "init step should have empty overrides for this scene");
 

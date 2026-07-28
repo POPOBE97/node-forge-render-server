@@ -136,7 +136,7 @@ pub fn load_from_scene_dir(scene: &SceneDSL, base_dir: &Path) -> Result<AssetSto
     // A non-.nforge scene must not inherit document-local material overrides
     // from a previously loaded SQLite document in the same process.
     crate::renderer::node_compiler::template_loader::install_document_overrides(std::iter::empty());
-    crate::state_machine::mutation_function::clear_document_functions();
+    crate::state_machine::graph_function::clear_document_functions();
     let store = AssetStore::new();
     for (asset_id, entry) in &scene.assets {
         let file_path = base_dir.join(&entry.path);
@@ -261,7 +261,7 @@ mod tests {
         let artifact_path = "debug-artifacts/pass__Main__patch__default/Main.patches.json";
         let initial_patch_text = r#"{"version":1,"patches":{"old":{}}}"#;
         let scene_json = serde_json::json!({
-            "version": "1.0",
+            "version": "3.0",
             "metadata": {
                 "name": "debug artifact scene",
                 "created": null,

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsl::SceneDSL;
 
+use super::graph;
 use super::motion::MotionChannelDebug;
-use super::mutation;
 use super::runtime::TickResult;
 use super::timeline::TickSchedule;
 use super::types::{OverrideKey, StateMachine};
@@ -140,11 +140,18 @@ pub fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
         }
     }
 
-    // Unified target resolution: discovers keys from both output bindings
-    // and passthrough bindings via the single-source-of-truth resolver.
-    for m in &sm.mutations {
-        for ok in mutation::all_output_target_keys(m) {
+    for derivation in &sm.derivations {
+        for ok in graph::all_output_target_keys(derivation) {
             keys.insert(format!("{}:{}", ok.node_id, ok.param_name));
+        }
+    }
+    for state in &sm.states {
+        if let Some(mutation) = &state.mutation_graph {
+            for binding in &mutation.output_bindings {
+                if OverrideKey::parse(&binding.state_port_id).is_some() {
+                    keys.insert(binding.state_port_id.clone());
+                }
+            }
         }
     }
 
@@ -256,6 +263,7 @@ mod tests {
         let mut sorted = trace.tracked_keys.clone();
         sorted.sort();
         assert_eq!(trace.tracked_keys, sorted);
+        assert_eq!(trace.tracked_keys, vec!["FloatInput_53:value"]);
 
         for frame in &trace.frames {
             assert_eq!(frame.values.len(), trace.tracked_keys.len());

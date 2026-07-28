@@ -191,16 +191,15 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
                 );
             }
         }
-        let thinking_mutation = machine
-            .mutations
-            .iter()
-            .find(|mutation| mutation.id == "mutation_ms2xj2gx_6")
-            .expect("doubao fixture should have the Thinking Mutation");
+        let thinking_mutation = thinking
+            .mutation_graph
+            .as_ref()
+            .expect("Thinking should own a private Mutation graph");
         let thinking_function = thinking_mutation
             .nodes
             .iter()
             .find(|node| node.id == "function_thinking")
-            .expect("Thinking target Function must exist");
+            .expect("Thinking Mutation Function must exist");
         assert_eq!(
             thinking_function
                 .inputs
@@ -226,7 +225,7 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
         ] {
             assert!(
                 thinking_mutation.input_bindings.iter().any(|binding| {
-                    binding.port_id == mutation_port_id
+                    binding.state_port_id == mutation_port_id
                         && binding.to.node_id == "function_thinking"
                         && binding.to.port_id == function_port_id
                 }),
@@ -234,14 +233,31 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             );
             assert!(
                 thinking_mutation.output_bindings.iter().any(|binding| {
-                    binding.port_id == mutation_port_id
+                    binding.state_port_id == mutation_port_id
                         && binding.from.node_id == "function_thinking"
                         && binding.from.port_id == function_port_id
                 }),
                 "Thinking.{function_port_id} must bind its Q to the declaration output"
             );
         }
-        for (mutation_port_id, function_port_id) in [
+        let thinking_derivation = machine
+            .derivations
+            .iter()
+            .find(|derivation| derivation.id == "mutation_ms2xj2gx_6")
+            .expect("doubao fixture should have the Thinking Derivation");
+        let derivation_function = thinking_derivation
+            .nodes
+            .iter()
+            .find(|node| node.id == "function_ilight_thinking")
+            .expect("Thinking render Derivation Function must exist");
+        assert!(
+            derivation_function
+                .outputs
+                .iter()
+                .all(|port| port.motion != Some(true)),
+            "Derivation Function must return only ordinary render values"
+        );
+        for (state_port_id, function_port_id) in [
             (SNAP_PRIMARY_KEY, "snapTargetPrimary"),
             (
                 "FloatInput_IntelligentLightSnapTargetTSecondary:value",
@@ -249,29 +265,20 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             ),
         ] {
             assert!(
-                thinking_mutation.connections.iter().any(|connection| {
-                    connection.from.node_id == "function_thinking"
-                        && connection.from.port_id
-                            == if function_port_id == "snapTargetPrimary" {
-                                "primary"
-                            } else {
-                                "secondary"
-                            }
-                        && connection.to.node_id == "function_ilight_thinking"
-                        && connection.to.port_id == function_port_id
+                thinking_derivation.input_bindings.iter().any(|binding| {
+                    binding.port_id == state_port_id
+                        && binding.to.node_id == "function_ilight_thinking"
+                        && binding.to.port_id == function_port_id
                 }),
-                "downstream Function must visibly consume M1(S) for '{mutation_port_id}'"
+                "Derivation Function must consume final physical P for '{state_port_id}'"
             );
         }
         assert!(
-            thinking_mutation.input_bindings.iter().all(|binding| {
-                !(binding.to.node_id == "function_ilight_thinking"
-                    && matches!(
-                        binding.to.port_id.as_str(),
-                        "snapTargetPrimary" | "snapTargetSecondary"
-                    ))
-            }),
-            "downstream Q dependencies must not be hidden as duplicate boundary bindings"
+            thinking_derivation
+                .nodes
+                .iter()
+                .all(|node| node.id != "function_thinking"),
+            "Mutation Function must not remain in the render Derivation"
         );
         let mut session = AnimationSession::from_scene(&scene)
             .expect("doubao state machine should compile")

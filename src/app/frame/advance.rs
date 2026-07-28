@@ -199,7 +199,8 @@ mod tests {
             position: Some(Position { x: 0.0, y: 0.0 }),
             parameter_overrides: HashMap::new(),
             state_type,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         }
     }
 
@@ -235,8 +236,8 @@ mod tests {
                 target: "mutation".into(),
                 motion_graph_id: "motion".into(),
             }],
-            mutation_bindings: Vec::new(),
-            mutations: Vec::new(),
+            derivation_bindings: Vec::new(),
+            derivations: Vec::new(),
             motion_graphs: Vec::new(),
             initial_state_id: Some("entry".into()),
             viewport: None,
@@ -264,8 +265,8 @@ mod tests {
                 target: "mutation".into(),
                 motion_graph_id: "motion".into(),
             }],
-            mutation_bindings: Vec::new(),
-            mutations: Vec::new(),
+            derivation_bindings: Vec::new(),
+            derivations: Vec::new(),
             motion_graphs: Vec::new(),
             initial_state_id: Some("entry".into()),
             viewport: None,

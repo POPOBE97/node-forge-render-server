@@ -498,10 +498,18 @@ mod tests {
                     .states
                     .iter()
                     .find(|state| state.id == transition.target)
-                    .is_some_and(|state| state.mutation_id.is_some())
+                    .and_then(|state| state.mutation_graph.as_ref())
+                    .is_some_and(|graph| {
+                        graph.output_bindings.iter().any(|binding| {
+                            matches!(
+                                binding.state_port_id.as_str(),
+                                "Vector2Input_80:x" | "Vector2Input_80:y"
+                            )
+                        })
+                    })
                     && trigger_matches
             })
-            .expect("glass.nforge should have a mousedown transition to Mutation");
+            .expect("glass.nforge should have a mousedown transition to a State Mutation");
 
         let mut focus = false;
         let clean_state = is_clean_rendering_state(true, true, false);

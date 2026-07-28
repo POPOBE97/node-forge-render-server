@@ -256,8 +256,8 @@ impl AnimationSession {
 
     /// Build the immutable declaration-side value snapshot consumed by renderers.
     ///
-    /// Mutation output is overlaid for presentation only. Callers must not feed
-    /// this snapshot back into the motion engine or a later Mutation evaluation.
+    /// Final physical values and Derivation output are overlaid for presentation only. Callers
+    /// must not feed this snapshot back into MotionEngine or a later Mutation evaluation.
     pub(crate) fn presentation_snapshot(&self) -> HashMap<OverrideKey, serde_json::Value> {
         let mut snapshot = state_machine::trace::tracked_override_keys(self.runtime.definition())
             .into_iter()

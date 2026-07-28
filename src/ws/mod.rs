@@ -130,7 +130,7 @@ pub enum SceneUpdate {
 #[serde(rename_all = "camelCase")]
 struct RuntimeSceneUpdatePayload {
     scene: SceneDSL,
-    functions: Vec<crate::state_machine::mutation_function::FunctionResource>,
+    functions: Vec<crate::state_machine::graph_function::FunctionResource>,
 }
 
 #[derive(Debug, Clone)]

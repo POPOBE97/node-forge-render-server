@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::{Result, bail};
 
+use super::graph::{self, GraphEvaluationPhase, GraphInputContext, GraphValue};
 use super::motion::{MotionChannelDebug, MotionEngine};
-use super::mutation::{self, MutationEvaluationPhase, MutationInputContext, MutationValue};
 use super::types::*;
 
 // ---------------------------------------------------------------------------
@@ -33,8 +33,8 @@ pub struct StateMachineRuntime {
     /// The compiled definition (immutable after construction).
     definition: StateMachine,
 
-    /// Lookup: mutation id → index into `definition.mutations`.
-    mutation_index: HashMap<String, usize>,
+    /// Lookup: Derivation id → index into `definition.derivations`.
+    derivation_index: HashMap<String, usize>,
 
     /// Lookup: transition motion graph id → index into `definition.motion_graphs`.
     motion_graph_index: HashMap<String, usize>,
@@ -61,27 +61,31 @@ pub struct StateMachineRuntime {
     /// Per-property physical/timeline presentation drivers.
     motion_engine: MotionEngine,
 
-    /// Independent declarations that participate in S/Q/E/P solving. Plain
-    /// Mutation outputs such as packed positions are derived after P is
+    /// Independent declarations that participate in S/Q/E/P solving.
+    /// Derivation outputs such as packed positions are computed after P is
     /// solved and never become MotionEngine channels.
     motion_owned_keys: HashSet<OverrideKey>,
 
-    /// Complete declaration snapshot for ordinary, non-Motion Mutation
-    /// inputs. Keeping it outside MotionEngine prevents static inputs and
-    /// derived outputs from becoming solver coordinates.
+    /// Complete declaration snapshot for ordinary Derivation inputs. Keeping
+    /// it outside MotionEngine prevents static inputs and derived outputs
+    /// from becoming solver coordinates.
     declaration_values: HashMap<OverrideKey, serde_json::Value>,
     initial_declaration_values: HashMap<OverrideKey, serde_json::Value>,
 
-    /// Plain Mutation outputs derived from the current physical P snapshot.
+    /// Plain Derivation outputs computed from the current physical P snapshot.
     /// These values are merged into the render overrides but are not motion
     /// coordinates and therefore own no Q/E/P or driver state.
     derived_values: HashMap<OverrideKey, serde_json::Value>,
 
-    /// Latest runtime input snapshot available to mutations.
+    /// Last successful output snapshot for each Derivation. A failed D frame
+    /// retains only that Derivation's own snapshot.
+    derivation_snapshots: HashMap<String, HashMap<OverrideKey, serde_json::Value>>,
+
+    /// Latest runtime input snapshot available to State Mutation and Derivation graphs.
     runtime_input: RuntimeInputSnapshot,
 
-    /// Cold-start error captured while preparing persistent Mutation Function contexts.
-    mutation_prepare_error: Option<String>,
+    /// Cold-start error captured while preparing persistent Graph Function contexts.
+    function_prepare_error: Option<String>,
 
     /// Persistent key/mouse press bookkeeping used by Event Trigger holdingTime outputs.
     trigger_holds: TriggerHoldState,
@@ -429,14 +433,14 @@ impl StateMachineRuntime {
             .into_iter()
             .filter(|(key, _)| motion_owned_keys.contains(key))
             .collect();
-        let mutation_prepare_error = super::mutation_function::prepare_state_machine(&definition)
+        let function_prepare_error = super::graph_function::prepare_state_machine(&definition)
             .err()
             .map(|error| format!("{error:#}"));
-        let mutation_index: HashMap<String, usize> = definition
-            .mutations
+        let derivation_index: HashMap<String, usize> = definition
+            .derivations
             .iter()
             .enumerate()
-            .map(|(i, m)| (m.id.clone(), i))
+            .map(|(index, derivation)| (derivation.id.clone(), index))
             .collect();
         let motion_graph_index = definition
             .motion_graphs
@@ -467,7 +471,7 @@ impl StateMachineRuntime {
 
         Self {
             definition,
-            mutation_index,
+            derivation_index,
             motion_graph_index,
             current_state_id: initial,
             forced_state_id: None,
@@ -479,8 +483,9 @@ impl StateMachineRuntime {
             initial_declaration_values: declaration_values.clone(),
             declaration_values,
             derived_values: HashMap::new(),
+            derivation_snapshots: HashMap::new(),
             runtime_input: RuntimeInputSnapshot::default(),
-            mutation_prepare_error,
+            function_prepare_error,
             trigger_holds: TriggerHoldState::default(),
             finished: false,
         }
@@ -513,6 +518,7 @@ impl StateMachineRuntime {
         self.declaration_values
             .clone_from(&self.initial_declaration_values);
         self.derived_values.clear();
+        self.derivation_snapshots.clear();
         self.runtime_input = RuntimeInputSnapshot::default();
         self.trigger_holds = TriggerHoldState::default();
         self.finished = false;
@@ -521,14 +527,14 @@ impl StateMachineRuntime {
     /// Force the runtime to remain in one State for debug inspection.
     ///
     /// Entry, Any, Exit, and ordinary animation states are all valid debug
-    /// targets. Mutation nodes are graph resources rather than selectable
+    /// targets. Derivation nodes are graph resources rather than selectable
     /// States and are rejected.
     pub fn force_state(&mut self, state_id: &str) -> Result<()> {
         let state = self
             .find_state(state_id)
             .ok_or_else(|| anyhow::anyhow!("state '{state_id}' not found"))?;
-        if state.resolved_type() == AnimationStateType::MutationNode {
-            bail!("mutation node '{state_id}' cannot be forced as a State");
+        if state.resolved_type() == AnimationStateType::DerivationNode {
+            bail!("derivation node '{state_id}' cannot be forced as a State");
         }
 
         self.reset();
@@ -537,7 +543,7 @@ impl StateMachineRuntime {
         Ok(())
     }
 
-    /// Update the latest mouse position visible to mutation nodes.
+    /// Update the latest mouse position visible to graph runtime inputs.
     pub fn set_mouse_position(&mut self, position: MousePosition) {
         self.runtime_input.mouse_position = Some(position);
     }
@@ -613,45 +619,34 @@ impl StateMachineRuntime {
 
         let mut target_initialized_this_tick = false;
 
-        // Establish the initial target system before routing. Mutation writes
-        // are committed only when the whole Function evaluation succeeds.
+        // Establish the initial target system before routing. State S and
+        // Mutation Q/Qdot commit atomically.
         if !self.logical_state_initialized {
-            self.motion_engine
-                .commit_logical_values(self.state_parameter_patch(&current_id));
-            if let Some(mutation_id) = self
-                .mutation_id_bound_to_state(&current_id)
-                .map(str::to_string)
-            {
-                let writable_keys = self.mutation_writable_keys(&mutation_id);
-                self.motion_engine
-                    .seed_targets_from_state(writable_keys.iter());
-                let mut working = self.motion_engine.clone();
-                working.begin_mutation_frame();
-                match self.evaluate_mutation_state(
-                    &mutation_id,
-                    &current_id,
-                    0.0,
-                    &mut working,
-                    MutationEvaluationPhase::Target,
-                ) {
-                    Ok(_) => self.motion_engine = working,
-                    Err(error) => diagnostics.push(format!(
-                        "mutation evaluation error (state={}, mutation={}): {error}",
-                        current_id, mutation_id
-                    )),
+            let mut working = self.motion_engine.clone();
+            working.begin_mutation_frame();
+            working.commit_logical_values(self.state_parameter_patch(&current_id));
+            let writable_keys = self.state_mutation_writable_keys(&current_id);
+            working.seed_targets_from_state(writable_keys.iter());
+            match self.evaluate_state_mutation(&current_id, 0.0, &mut working) {
+                Ok(_) => {
+                    self.motion_engine = working;
+                    self.logical_state_initialized = true;
+                    target_initialized_this_tick = true;
                 }
+                Err(error) => diagnostics.push(format!(
+                    "Mutation evaluation error during activation (state={current_id}): {error}"
+                )),
             }
-            self.logical_state_initialized = true;
-            target_initialized_this_tick = true;
         }
 
         // Transitions remain interruptible while a previous visual driver is
         // active. Routing uses the logical current state (already the target
         // of the previous transition).
-        if !forced && let Some(transition) = self.pick_transition(params, events) {
+        if self.logical_state_initialized
+            && !forced
+            && let Some(transition) = self.pick_transition(params, events)
+        {
             let previous = self.motion_engine.clone();
-            self.state_local_times
-                .insert(transition.target.clone(), 0.0);
             let target_patch = self.state_parameter_patch(&transition.target);
             // State overrides alone select the authored Transition route.
             // Mutation Motion outputs establish Q before the residual is
@@ -670,168 +665,84 @@ impl StateMachineRuntime {
                 let mut target_engine = self.motion_engine.clone();
                 target_engine.begin_mutation_frame();
                 target_engine.commit_logical_values(target_patch);
-                if let Some(mutation_id) = self
-                    .mutation_id_bound_to_state(&transition.target)
-                    .map(str::to_string)
-                {
-                    let writable_keys = self.mutation_writable_keys(&mutation_id);
-                    target_engine.seed_targets_from_state(writable_keys.iter());
-                    let state_fallback = target_engine.clone();
-                    match self.evaluate_mutation_state(
-                        &mutation_id,
-                        &transition.target,
-                        0.0,
-                        &mut target_engine,
-                        MutationEvaluationPhase::Target,
-                    ) {
-                        Ok(_) => {}
-                        Err(error) => {
-                            diagnostics.push(format!(
-                                "mutation evaluation error (state={}, mutation={}): {error}",
-                                transition.target, mutation_id
-                            ));
-                            target_engine = state_fallback;
-                        }
+                let writable_keys = self.state_mutation_writable_keys(&transition.target);
+                target_engine.seed_targets_from_state(writable_keys.iter());
+                match self.evaluate_state_mutation(&transition.target, 0.0, &mut target_engine) {
+                    Ok(_) => {
+                        target_engine.begin_transition_from(
+                            &transition.id,
+                            &graph,
+                            &previous,
+                            &transition_keys,
+                        );
+                        self.motion_engine = target_engine;
+                        self.state_local_times
+                            .insert(transition.target.clone(), 0.0);
+                        self.current_state_id = transition.target;
+                        // Advance the newly activated M once in the ordinary
+                        // frame after its dt=0 activation transaction.
+                        target_initialized_this_tick = false;
                     }
+                    Err(error) => diagnostics.push(format!(
+                        "Mutation evaluation rejected State activation (state={}): {error}",
+                        transition.target
+                    )),
                 }
-                target_engine.begin_transition_from(
-                    &transition.id,
-                    &graph,
-                    &previous,
-                    &transition_keys,
-                );
-                self.motion_engine = target_engine;
             }
-            self.current_state_id = transition.target;
-            // The prepass above establishes Motion Q before Transition E.
-            // The normal frame then advances Q and derives render-only values
-            // from the resulting physical P.
-            target_initialized_this_tick = false;
         }
 
         let target_state_id = self.current_state_id.clone();
 
-        // All Mutation Functions in the frame share one working MotionEngine.
-        // A failure discards every target-system write from this transaction.
+        // A failed ordinary Mutation frame discards every Q/Qdot/driver write.
         let mut working_motion = self.motion_engine.clone();
         if !target_initialized_this_tick {
             working_motion.begin_mutation_frame();
         }
-        let mut mutation_failed = false;
-
-        if let Some(any_state) = self
-            .definition
-            .states
-            .iter()
-            .find(|state| state.resolved_type() == AnimationStateType::AnyState)
-            .cloned()
-            && any_state.id != target_state_id
-            && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
-        {
-            match self.evaluate_mutation_state(
-                mutation_id,
-                &any_state.id,
-                dt,
-                &mut working_motion,
-                MutationEvaluationPhase::Target,
-            ) {
-                Ok(_) => {}
+        if self.logical_state_initialized && !target_initialized_this_tick {
+            match self.evaluate_state_mutation(&target_state_id, dt, &mut working_motion) {
+                Ok(_) => self.motion_engine = working_motion,
                 Err(error) => {
                     diagnostics.push(format!(
-                        "mutation evaluation error (state={}, mutation={}): {error}",
-                        any_state.id, mutation_id
+                        "Mutation frame transaction rolled back (state={}): {error}",
+                        target_state_id
                     ));
-                    mutation_failed = true;
                 }
             }
-        }
-
-        if !target_initialized_this_tick
-            && let Some(target_state) = self.find_state(&target_state_id).cloned()
-            && let Some(mutation_id) = self.mutation_id_bound_to_state(&target_state.id)
-        {
-            match self.evaluate_mutation_state(
-                mutation_id,
-                &target_state.id,
-                dt,
-                &mut working_motion,
-                MutationEvaluationPhase::Target,
-            ) {
-                Ok(_) => {}
-                Err(error) => {
-                    diagnostics.push(format!(
-                        "mutation evaluation error (state={}, mutation={}): {error}",
-                        target_state.id, mutation_id
-                    ));
-                    mutation_failed = true;
-                }
-            }
-        }
-        if !mutation_failed {
-            self.motion_engine = working_motion;
         }
 
         // Motion outputs have now produced Q. Transition advances residual
         // E/Edot and publishes physical P for independent motion channels.
         let motion_step = self.motion_engine.step(dt);
 
-        // Plain outputs are projections of the solved physical state. During
-        // this phase, an upstream Motion edge resolves to P (never Q), so a
-        // derived positions array follows its animated dependencies without
-        // owning another spring or Transition residual.
+        // Derivation D observes only solved physical P plus explicit frame
+        // inputs. It cannot mutate or roll back MotionEngine.
         let mut render_motion = self.motion_engine.clone();
-        let mut next_derived = HashMap::new();
-        let mut render_failed = false;
-
-        if let Some(any_state) = self
-            .definition
-            .states
-            .iter()
-            .find(|state| state.resolved_type() == AnimationStateType::AnyState)
-            .cloned()
-            && any_state.id != target_state_id
-            && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
+        self.derived_values.clear();
+        if let Some(derivation_id) = self
+            .derivation_id_bound_to_state(&target_state_id)
+            .map(str::to_string)
         {
-            match self.evaluate_mutation_state(
-                mutation_id,
-                &any_state.id,
-                dt,
-                &mut render_motion,
-                MutationEvaluationPhase::Render,
-            ) {
-                Ok(outputs) => extend_derived_values(&mut next_derived, outputs),
+            match self.evaluate_derivation(&derivation_id, &target_state_id, dt, &mut render_motion)
+            {
+                Ok(outputs) => {
+                    let mut snapshot = HashMap::new();
+                    extend_derivation_values(&mut snapshot, outputs);
+                    self.derivation_snapshots
+                        .insert(derivation_id.clone(), snapshot.clone());
+                    self.derived_values = snapshot;
+                }
                 Err(error) => {
                     diagnostics.push(format!(
-                        "mutation derived evaluation error (state={}, mutation={}): {error}",
-                        any_state.id, mutation_id
+                        "Derivation evaluation failed (state={}, derivation={}): {error}",
+                        target_state_id, derivation_id
                     ));
-                    render_failed = true;
+                    self.derived_values = self
+                        .derivation_snapshots
+                        .get(&derivation_id)
+                        .cloned()
+                        .unwrap_or_default();
                 }
             }
-        }
-
-        if let Some(target_state) = self.find_state(&target_state_id).cloned()
-            && let Some(mutation_id) = self.mutation_id_bound_to_state(&target_state.id)
-        {
-            match self.evaluate_mutation_state(
-                mutation_id,
-                &target_state.id,
-                dt,
-                &mut render_motion,
-                MutationEvaluationPhase::Render,
-            ) {
-                Ok(outputs) => extend_derived_values(&mut next_derived, outputs),
-                Err(error) => {
-                    diagnostics.push(format!(
-                        "mutation derived evaluation error (state={}, mutation={}): {error}",
-                        target_state.id, mutation_id
-                    ));
-                    render_failed = true;
-                }
-            }
-        }
-        if !render_failed {
-            self.derived_values = next_derived;
         }
 
         // Exit becomes terminal only after its visual transition completes.
@@ -1141,105 +1052,146 @@ impl StateMachineRuntime {
         }
     }
 
-    fn evaluate_mutation_state(
+    fn evaluate_state_mutation(
         &self,
-        mutation_id: &str,
         state_id: &str,
         dt: f64,
         motion_engine: &mut MotionEngine,
-        phase: MutationEvaluationPhase,
-    ) -> Result<HashMap<String, MutationValue>> {
-        if let Some(error) = &self.mutation_prepare_error {
-            bail!("Mutation Function preparation failed before playback: {error}");
+    ) -> Result<HashMap<String, GraphValue>> {
+        if let Some(error) = &self.function_prepare_error {
+            bail!("Graph Function preparation failed before playback: {error}");
         }
-        let mutation_idx = self
-            .mutation_index
-            .get(mutation_id)
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("mutation '{mutation_id}' not found"))?;
-        let mutation = &self.definition.mutations[mutation_idx];
+        let Some(state) = self.find_state(state_id) else {
+            bail!("state '{state_id}' not found");
+        };
+        let Some(mutation_graph) = state.mutation_graph.as_ref() else {
+            return Ok(HashMap::new());
+        };
+        let graph = mutation_graph.as_executable(state_id);
 
-        // Target solving starts from State S. After Transition has produced
-        // physical P, the same declaration inputs resolve to P while deriving
-        // render-only outputs. Explicit upstream Motion edges follow the same
-        // phase rule inside the Mutation evaluator.
-        let mut input_values: HashMap<String, MutationValue> = HashMap::new();
-        for input_port in &mutation.inputs {
+        // Mutation sees State S and explicit runtime inputs; it never observes
+        // render Derivation values.
+        let mut input_values: HashMap<String, GraphValue> = HashMap::new();
+        for input_port in &graph.inputs {
             if let Some(key) = OverrideKey::parse(&input_port.id)
-                && let Some(value) = match phase {
-                    MutationEvaluationPhase::Render => motion_engine
-                        .physical_value(&key)
-                        .or_else(|| self.declaration_values.get(&key).cloned()),
-                    MutationEvaluationPhase::All | MutationEvaluationPhase::Target => motion_engine
-                        .state_value(&key)
-                        .or_else(|| self.declaration_values.get(&key).cloned()),
-                }
+                && let Some(value) = motion_engine
+                    .state_value(&key)
+                    .or_else(|| self.declaration_values.get(&key).cloned())
                 && let Some(value) =
-                    MutationValue::from_json_typed(&value, input_port.port_type.as_deref())
+                    GraphValue::from_json_typed(&value, input_port.port_type.as_deref())
             {
                 input_values.insert(input_port.id.clone(), value);
             }
         }
-        let ctx = MutationInputContext {
+        let ctx = GraphInputContext {
             values: input_values,
             scene_elapsed_time: self.scene_time,
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
             mouse_position: self.runtime_input.mouse_position,
             dt,
         };
-        mutation::evaluate_mutation_with_motion_phase(mutation, &ctx, motion_engine, phase)
+        graph::evaluate_graph_with_motion_phase(
+            &graph,
+            &ctx,
+            motion_engine,
+            GraphEvaluationPhase::Target,
+        )
     }
 
-    fn mutation_id_bound_to_state(&self, state_id: &str) -> Option<&str> {
+    fn evaluate_derivation(
+        &self,
+        derivation_id: &str,
+        state_id: &str,
+        dt: f64,
+        motion_engine: &mut MotionEngine,
+    ) -> Result<HashMap<String, GraphValue>> {
+        if let Some(error) = &self.function_prepare_error {
+            bail!("Graph Function preparation failed before playback: {error}");
+        }
+        let derivation = self
+            .derivation_index
+            .get(derivation_id)
+            .and_then(|index| self.definition.derivations.get(*index))
+            .ok_or_else(|| anyhow::anyhow!("Derivation '{derivation_id}' not found"))?;
+        let mut input_values = HashMap::new();
+        for input_port in &derivation.inputs {
+            if let Some(key) = OverrideKey::parse(&input_port.id)
+                && let Some(value) = motion_engine
+                    .physical_value(&key)
+                    .or_else(|| self.declaration_values.get(&key).cloned())
+                && let Some(value) =
+                    GraphValue::from_json_typed(&value, input_port.port_type.as_deref())
+            {
+                input_values.insert(input_port.id.clone(), value);
+            }
+        }
+        let ctx = GraphInputContext {
+            values: input_values,
+            scene_elapsed_time: self.scene_time,
+            local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
+            mouse_position: self.runtime_input.mouse_position,
+            dt,
+        };
+        graph::evaluate_graph_with_motion_phase(
+            derivation,
+            &ctx,
+            motion_engine,
+            GraphEvaluationPhase::Render,
+        )
+    }
+
+    fn derivation_id_bound_to_state(&self, state_id: &str) -> Option<&str> {
         let binding = self
             .definition
-            .mutation_bindings
+            .derivation_bindings
             .iter()
             .find(|binding| binding.state_id == state_id)?;
         self.definition
             .states
             .iter()
             .find(|state| {
-                state.id == binding.mutation_node_id
-                    && state.state_type == AnimationStateType::MutationNode
+                state.id == binding.derivation_node_id
+                    && state.state_type == AnimationStateType::DerivationNode
             })?
-            .mutation_id
+            .derivation_id
             .as_deref()
     }
 
-    fn mutation_writable_keys(&self, mutation_id: &str) -> Vec<OverrideKey> {
-        let Some(index) = self.mutation_index.get(mutation_id).copied() else {
+    fn state_mutation_writable_keys(&self, state_id: &str) -> Vec<OverrideKey> {
+        let Some(graph) = self
+            .find_state(state_id)
+            .and_then(|state| state.mutation_graph.as_ref())
+        else {
             return Vec::new();
         };
-        let mutation = &self.definition.mutations[index];
-        mutation
+        graph
             .nodes
             .iter()
-            .filter(|node| node.node_type == MutationInnerNodeType::MutationFunction)
+            .filter(|node| node.node_type == GraphInnerNodeType::MutationFunction)
             .flat_map(|node| {
                 node.outputs
                     .iter()
                     .filter(|port| port.motion == Some(true))
                     .filter_map(|port| {
-                        mutation
+                        graph
                             .output_bindings
                             .iter()
                             .find(|binding| {
                                 binding.from.node_id == node.id && binding.from.port_id == port.id
                             })
-                            .and_then(|binding| OverrideKey::parse(&binding.port_id))
+                            .and_then(|binding| OverrideKey::parse(&binding.state_port_id))
                     })
             })
             .collect()
     }
 }
 
-fn extend_derived_values(
+fn extend_derivation_values(
     target: &mut HashMap<OverrideKey, serde_json::Value>,
-    outputs: HashMap<String, MutationValue>,
+    outputs: HashMap<String, GraphValue>,
 ) {
     for (port_id, value) in outputs {
-        for (key, value) in mutation::expand_output_overrides(&port_id, &value) {
+        for (key, value) in graph::expand_output_overrides(&port_id, &value) {
             target.insert(key, value);
         }
     }
@@ -1253,9 +1205,12 @@ fn collect_motion_owned_keys(definition: &StateMachine) -> HashSet<OverrideKey> 
         .filter_map(|key| OverrideKey::parse(key))
         .collect::<HashSet<_>>();
 
-    for mutation in &definition.mutations {
-        for binding in &mutation.output_bindings {
-            let is_motion_output = mutation
+    for state in &definition.states {
+        let Some(graph) = state.mutation_graph.as_ref() else {
+            continue;
+        };
+        for binding in &graph.output_bindings {
+            let is_motion_output = graph
                 .nodes
                 .iter()
                 .find(|node| node.id == binding.from.node_id)
@@ -1265,7 +1220,7 @@ fn collect_motion_owned_keys(definition: &StateMachine) -> HashSet<OverrideKey> 
                         .find(|port| port.id == binding.from.port_id)
                 })
                 .is_some_and(|port| port.motion == Some(true));
-            if is_motion_output && let Some(key) = OverrideKey::parse(&binding.port_id) {
+            if is_motion_output && let Some(key) = OverrideKey::parse(&binding.state_port_id) {
                 keys.insert(key);
             }
         }
@@ -1288,7 +1243,8 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::EntryState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "any".into(),
@@ -1296,7 +1252,8 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::AnyState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "exit".into(),
@@ -1304,12 +1261,13 @@ mod tests {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::ExitState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
             ],
             transitions: vec![],
-            mutation_bindings: vec![],
-            mutations: vec![],
+            derivation_bindings: vec![],
+            derivations: vec![],
             motion_graphs: vec![
                 instant_motion_graph("instant"),
                 timeline_motion_graph("timeline", 0.3),
@@ -1320,25 +1278,26 @@ mod tests {
         }
     }
 
-    fn bind_mutation(sm: &mut StateMachine, state_id: &str, mutation_id: &str) {
-        let mutation_node_id = format!("mutation_node_{state_id}");
+    fn bind_derivation(sm: &mut StateMachine, state_id: &str, derivation_id: &str) {
+        let derivation_node_id = format!("derivation_node_{state_id}");
         sm.states.push(AnimationState {
-            id: mutation_node_id.clone(),
-            name: format!("{state_id} Mutation"),
+            id: derivation_node_id.clone(),
+            name: format!("{state_id} Derivation"),
             position: None,
             parameter_overrides: Default::default(),
-            state_type: AnimationStateType::MutationNode,
-            mutation_id: Some(mutation_id.into()),
+            state_type: AnimationStateType::DerivationNode,
+            mutation_graph: None,
+            derivation_id: Some(derivation_id.into()),
         });
-        sm.mutation_bindings.push(MutationStateBinding {
+        sm.derivation_bindings.push(DerivationStateBinding {
             id: format!("binding_{state_id}"),
             state_id: state_id.into(),
-            mutation_node_id,
+            derivation_node_id,
         });
     }
 
-    fn motion_ports() -> (Vec<MutationPort>, Vec<MutationPort>) {
-        let port = MutationPort {
+    fn motion_ports() -> (Vec<GraphPort>, Vec<GraphPort>) {
+        let port = GraphPort {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
@@ -1363,14 +1322,14 @@ mod tests {
             connections: vec![],
             input_bindings: vec![TransitionMotionInputBinding {
                 port_id: "*".into(),
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![TransitionMotionOutputBinding {
                 port_id: "*".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
@@ -1411,7 +1370,7 @@ mod tests {
             ignore_repeat: true,
         });
         graph.condition_binding = Some(TransitionConditionBinding::Node {
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "trigger".into(),
                 port_id: "fired".into(),
             },
@@ -1423,7 +1382,7 @@ mod tests {
         mut graph: TransitionMotionGraph,
         input_port_id: &str,
     ) -> TransitionMotionGraph {
-        graph.inputs.push(MutationPort {
+        graph.inputs.push(GraphPort {
             id: input_port_id.into(),
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
@@ -1441,7 +1400,7 @@ mod tests {
         event_type: &str,
         input_port_id: &str,
     ) -> TransitionMotionGraph {
-        graph.inputs.push(MutationPort {
+        graph.inputs.push(GraphPort {
             id: input_port_id.into(),
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
@@ -1463,26 +1422,26 @@ mod tests {
             label: None,
             op: LogicOp::And,
         });
-        graph.connections.push(MutationConnection {
+        graph.connections.push(GraphConnection {
             id: "trigger-to-condition".into(),
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "trigger".into(),
                 port_id: "fired".into(),
             },
-            to: MutationEndpoint {
+            to: GraphEndpoint {
                 node_id: "condition".into(),
                 port_id: "a".into(),
             },
         });
         graph.input_bindings.push(TransitionMotionInputBinding {
             port_id: input_port_id.into(),
-            to: MutationEndpoint {
+            to: GraphEndpoint {
                 node_id: "condition".into(),
                 port_id: "b".into(),
             },
         });
         graph.condition_binding = Some(TransitionConditionBinding::Node {
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "condition".into(),
                 port_id: "result".into(),
             },
@@ -1508,7 +1467,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
@@ -1538,7 +1498,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.states.push(AnimationState {
             id: "b".into(),
@@ -1546,7 +1507,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "entry_to_a".into(),
@@ -1592,7 +1554,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.states.push(AnimationState {
             id: "b".into(),
@@ -1600,7 +1563,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "entry_to_a".into(),
@@ -1662,7 +1626,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
@@ -1695,7 +1660,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.motion_graphs.push(with_bool_input_condition(
             instant_motion_graph("flag-condition"),
@@ -1730,7 +1696,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.motion_graphs.push(with_event_condition(
             instant_motion_graph("click-condition"),
@@ -1758,16 +1725,17 @@ mod tests {
     fn any_state_event_transition_can_start_from_entry_state() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
-            id: "mutation".into(),
-            name: "Mutation".into(),
+            id: "derived".into(),
+            name: "Derived".into(),
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
-        sm.mutations.push(MutationDefinition {
-            id: "m1".into(),
-            name: "Mutation".into(),
+        sm.derivations.push(DerivationDefinition {
+            id: "d1".into(),
+            name: "Derivation".into(),
             inputs: vec![],
             outputs: vec![],
             nodes: vec![],
@@ -1775,17 +1743,18 @@ mod tests {
             input_bindings: vec![],
             output_bindings: vec![],
             passthrough_bindings: vec![],
+            layout: None,
             viewport: None,
         });
-        bind_mutation(&mut sm, "mutation", "m1");
+        bind_derivation(&mut sm, "derived", "d1");
         sm.motion_graphs.push(with_event_condition(
             timeline_motion_graph("mousedown-condition", 0.3),
             "mousedown",
         ));
         sm.transitions.push(AnimationTransition {
-            id: "tr_any_mutation".into(),
+            id: "tr_any_derived".into(),
             source: "any".into(),
-            target: "mutation".into(),
+            target: "derived".into(),
             motion_graph_id: "mousedown-condition".into(),
         });
 
@@ -1796,11 +1765,11 @@ mod tests {
         assert_eq!(idle.active_transition_id, None);
 
         let triggered = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
-        assert_eq!(triggered.current_state_id, "mutation");
+        assert_eq!(triggered.current_state_id, "derived");
         assert_eq!(triggered.active_transition_id, None);
 
         let completed = rt.tick(0.4, &HashMap::new(), &vec![]);
-        assert_eq!(completed.current_state_id, "mutation");
+        assert_eq!(completed.current_state_id, "derived");
     }
 
     #[test]
@@ -1818,19 +1787,20 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
-        sm.mutations.push(MutationDefinition {
+        sm.derivations.push(DerivationDefinition {
             id: "dynamic_target".into(),
             name: "Dynamic Target".into(),
-            inputs: vec![MutationPort {
+            inputs: vec![GraphPort {
                 id: "localElapsedTime".into(),
                 name: Some("Local Elapsed Time".into()),
                 port_type: Some("float".into()),
                 array_length: None,
                 motion: None,
             }],
-            outputs: vec![MutationPort {
+            outputs: vec![GraphPort {
                 id: "Node:derived".into(),
                 name: Some("Node.derived".into()),
                 port_type: Some("float".into()),
@@ -1841,13 +1811,14 @@ mod tests {
             connections: vec![],
             input_bindings: vec![],
             output_bindings: vec![],
-            passthrough_bindings: vec![MutationPassthroughBinding {
+            passthrough_bindings: vec![DerivationPassthroughBinding {
                 from_port_id: "localElapsedTime".into(),
                 to_port_id: "Node:derived".into(),
             }],
+            layout: None,
             viewport: None,
         });
-        bind_mutation(&mut sm, "dynamic", "dynamic_target");
+        bind_derivation(&mut sm, "dynamic", "dynamic_target");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_dynamic".into(),
             source: "entry".into(),
@@ -1868,7 +1839,7 @@ mod tests {
             .overrides
             .get(&OverrideKey::new("Node", "derived"))
             .and_then(serde_json::Value::as_f64)
-            .expect("Mutation passthrough output");
+            .expect("Derivation passthrough output");
         assert!((value - 0.1).abs() < 1e-8, "value={value}");
         assert_eq!(advancing.state_local_times.get("dynamic"), Some(&0.1));
         assert!(
@@ -1890,7 +1861,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.states.push(AnimationState {
             id: "b".into(),
@@ -1900,19 +1872,20 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
-        sm.mutations.push(MutationDefinition {
-            id: "a_mutation".into(),
-            name: "A Mutation".into(),
-            inputs: vec![MutationPort {
+        sm.derivations.push(DerivationDefinition {
+            id: "a_derivation".into(),
+            name: "A Derivation".into(),
+            inputs: vec![GraphPort {
                 id: "localElapsedTime".into(),
                 name: None,
                 port_type: Some("float".into()),
                 array_length: None,
                 motion: None,
             }],
-            outputs: vec![MutationPort {
+            outputs: vec![GraphPort {
                 id: "Node:x".into(),
                 name: None,
                 port_type: Some("float".into()),
@@ -1923,13 +1896,14 @@ mod tests {
             connections: vec![],
             input_bindings: vec![],
             output_bindings: vec![],
-            passthrough_bindings: vec![MutationPassthroughBinding {
+            passthrough_bindings: vec![DerivationPassthroughBinding {
                 from_port_id: "localElapsedTime".into(),
                 to_port_id: "Node:x".into(),
             }],
+            layout: None,
             viewport: None,
         });
-        bind_mutation(&mut sm, "a", "a_mutation");
+        bind_derivation(&mut sm, "a", "a_derivation");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_a".into(),
             source: "entry".into(),
@@ -1963,12 +1937,12 @@ mod tests {
     }
 
     #[test]
-    fn any_and_target_derived_outputs_share_physical_snapshot_with_target_precedence() {
-        fn mutation(id: &str, seen_output: &str, conflict_value: f64) -> MutationDefinition {
-            MutationDefinition {
+    fn active_state_derivation_reads_the_transitioned_physical_snapshot() {
+        fn derivation(id: &str, seen_output: &str, conflict_value: f64) -> DerivationDefinition {
+            DerivationDefinition {
                 id: id.into(),
                 name: id.into(),
-                inputs: vec![MutationPort {
+                inputs: vec![GraphPort {
                     id: "Node:x".into(),
                     name: None,
                     port_type: Some("float".into()),
@@ -1976,14 +1950,14 @@ mod tests {
                     motion: None,
                 }],
                 outputs: vec![
-                    MutationPort {
+                    GraphPort {
                         id: seen_output.into(),
                         name: None,
                         port_type: Some("float".into()),
                         array_length: None,
                         motion: None,
                     },
-                    MutationPort {
+                    GraphPort {
                         id: "Node:conflict".into(),
                         name: None,
                         port_type: Some("float".into()),
@@ -1991,12 +1965,12 @@ mod tests {
                         motion: None,
                     },
                 ],
-                nodes: vec![MutationInnerNode {
+                nodes: vec![GraphInnerNode {
                     id: "constant".into(),
-                    node_type: MutationInnerNodeType::FloatInput,
+                    node_type: GraphInnerNodeType::FloatInput,
                     params: HashMap::from([("value".into(), serde_json::json!(conflict_value))]),
                     inputs: vec![],
-                    outputs: vec![MutationPort {
+                    outputs: vec![GraphPort {
                         id: "value".into(),
                         name: None,
                         port_type: Some("float".into()),
@@ -2006,17 +1980,18 @@ mod tests {
                 }],
                 connections: vec![],
                 input_bindings: vec![],
-                output_bindings: vec![MutationOutputBinding {
+                output_bindings: vec![DerivationOutputBinding {
                     port_id: "Node:conflict".into(),
-                    from: MutationEndpoint {
+                    from: GraphEndpoint {
                         node_id: "constant".into(),
                         port_id: "value".into(),
                     },
                 }],
-                passthrough_bindings: vec![MutationPassthroughBinding {
+                passthrough_bindings: vec![DerivationPassthroughBinding {
                     from_port_id: "Node:x".into(),
                     to_port_id: seen_output.into(),
                 }],
+                layout: None,
                 viewport: None,
             }
         }
@@ -2036,14 +2011,12 @@ mod tests {
                 .into_iter()
                 .collect(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
-        sm.mutations
-            .push(mutation("any_mutation", "Node:anySeen", 1.0));
-        sm.mutations
-            .push(mutation("target_mutation", "Node:targetSeen", 2.0));
-        bind_mutation(&mut sm, "any", "any_mutation");
-        bind_mutation(&mut sm, "target", "target_mutation");
+        sm.derivations
+            .push(derivation("target_derivation", "Node:targetSeen", 2.0));
+        bind_derivation(&mut sm, "target", "target_derivation");
         sm.transitions.push(AnimationTransition {
             id: "entry_to_target".into(),
             source: "entry".into(),
@@ -2052,10 +2025,6 @@ mod tests {
         });
 
         let result = StateMachineRuntime::new(sm).tick(0.5, &HashMap::new(), &vec![]);
-        assert_eq!(
-            result.overrides.get(&OverrideKey::new("Node", "anySeen")),
-            Some(&serde_json::json!(5.0))
-        );
         assert_eq!(
             result
                 .overrides
@@ -2072,26 +2041,27 @@ mod tests {
     fn mouse_passthrough_is_render_derived_without_motion_channels() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
-            id: "mutation".into(),
-            name: "Mutation".into(),
+            id: "derived".into(),
+            name: "Derived".into(),
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
-        sm.mutations.push(MutationDefinition {
-            id: "m_mouse".into(),
-            name: "Mouse Mutation".into(),
+        sm.derivations.push(DerivationDefinition {
+            id: "d_mouse".into(),
+            name: "Mouse Derivation".into(),
             inputs: vec![],
             outputs: vec![
-                MutationPort {
+                GraphPort {
                     id: "MouseX:value".into(),
                     name: Some("MouseX.value".into()),
                     port_type: Some("float".into()),
                     array_length: None,
                     motion: None,
                 },
-                MutationPort {
+                GraphPort {
                     id: "MouseY:value".into(),
                     name: Some("MouseY.value".into()),
                     port_type: Some("float".into()),
@@ -2104,18 +2074,19 @@ mod tests {
             input_bindings: vec![],
             output_bindings: vec![],
             passthrough_bindings: vec![
-                MutationPassthroughBinding {
+                DerivationPassthroughBinding {
                     from_port_id: "mouse.position.x".into(),
                     to_port_id: "MouseX:value".into(),
                 },
-                MutationPassthroughBinding {
+                DerivationPassthroughBinding {
                     from_port_id: "mouse.position.y".into(),
                     to_port_id: "MouseY:value".into(),
                 },
             ],
+            layout: None,
             viewport: None,
         });
-        bind_mutation(&mut sm, "mutation", "m_mouse");
+        bind_derivation(&mut sm, "derived", "d_mouse");
         sm.motion_graphs.push(with_event_condition(
             instant_motion_graph("mousedown-instant"),
             "mousedown",
@@ -2123,7 +2094,7 @@ mod tests {
         sm.transitions.push(AnimationTransition {
             id: "entry_to_mouse".into(),
             source: "entry".into(),
-            target: "mutation".into(),
+            target: "derived".into(),
             motion_graph_id: "mousedown-instant".into(),
         });
 
@@ -2132,7 +2103,7 @@ mod tests {
 
         let result = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
 
-        assert_eq!(result.current_state_id, "mutation");
+        assert_eq!(result.current_state_id, "derived");
         assert_eq!(
             result.overrides.get(&OverrideKey::new("MouseX", "value")),
             Some(&serde_json::json!(321.0))
@@ -2180,7 +2151,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.transitions.push(AnimationTransition {
             id: "t1".into(),
@@ -2207,7 +2179,8 @@ mod tests {
             position: None,
             parameter_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.motion_graphs.push(with_event_and_bool_input_condition(
             instant_motion_graph("go-and-ready"),
@@ -2256,7 +2229,7 @@ mod tests {
             ignore_repeat: true,
         });
         graph.condition_binding = Some(TransitionConditionBinding::Node {
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "space".into(),
                 port_id: "fired".into(),
             },
@@ -2401,31 +2374,31 @@ mod tests {
             },
         ]);
         graph.connections.extend([
-            MutationConnection {
+            GraphConnection {
                 id: "holding-time".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "down".into(),
                     port_id: "holdingTime".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "held-long-enough".into(),
                     port_id: "a".into(),
                 },
             },
-            MutationConnection {
+            GraphConnection {
                 id: "threshold".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "threshold".into(),
                     port_id: "value".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "held-long-enough".into(),
                     port_id: "b".into(),
                 },
             },
         ]);
         graph.condition_binding = Some(TransitionConditionBinding::Node {
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "held-long-enough".into(),
                 port_id: "result".into(),
             },
@@ -2509,7 +2482,7 @@ mod tests {
     fn graph_owned_mouse_range_is_composed_from_logic_nodes() {
         let mut sm = minimal_sm();
         let mut graph = instant_motion_graph("mouse-range");
-        graph.inputs.push(MutationPort {
+        graph.inputs.push(GraphPort {
             id: "mouse.position.x".into(),
             name: Some("Mouse Position X".into()),
             port_type: Some("float".into()),
@@ -2551,60 +2524,60 @@ mod tests {
         for node_id in ["gte", "lte"] {
             graph.input_bindings.push(TransitionMotionInputBinding {
                 port_id: "mouse.position.x".into(),
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: node_id.into(),
                     port_id: "a".into(),
                 },
             });
         }
         graph.connections.extend([
-            MutationConnection {
+            GraphConnection {
                 id: "lower-gte".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "lower".into(),
                     port_id: "value".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "gte".into(),
                     port_id: "b".into(),
                 },
             },
-            MutationConnection {
+            GraphConnection {
                 id: "upper-lte".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "upper".into(),
                     port_id: "value".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "lte".into(),
                     port_id: "b".into(),
                 },
             },
-            MutationConnection {
+            GraphConnection {
                 id: "gte-inside".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "gte".into(),
                     port_id: "result".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "inside".into(),
                     port_id: "a".into(),
                 },
             },
-            MutationConnection {
+            GraphConnection {
                 id: "lte-inside".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "lte".into(),
                     port_id: "result".into(),
                 },
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "inside".into(),
                     port_id: "b".into(),
                 },
             },
         ]);
         graph.condition_binding = Some(TransitionConditionBinding::Node {
-            from: MutationEndpoint {
+            from: GraphEndpoint {
                 node_id: "inside".into(),
                 port_id: "result".into(),
             },
@@ -2660,7 +2633,7 @@ mod tests {
     }
 
     #[test]
-    fn forced_state_resets_to_base_and_rejects_mutation_nodes() {
+    fn forced_state_resets_to_base_and_rejects_derivation_nodes() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
             id: "visible".into(),
@@ -2671,15 +2644,17 @@ mod tests {
                 serde_json::json!(1.0),
             )]),
             state_type: AnimationStateType::AnimationState,
-            mutation_id: None,
+            mutation_graph: None,
+            derivation_id: None,
         });
         sm.states.push(AnimationState {
-            id: "mutation-node".into(),
-            name: "Mutation".into(),
+            id: "derivation-node".into(),
+            name: "Derivation".into(),
             position: None,
             parameter_overrides: HashMap::new(),
-            state_type: AnimationStateType::MutationNode,
-            mutation_id: Some("mutation".into()),
+            state_type: AnimationStateType::DerivationNode,
+            mutation_graph: None,
+            derivation_id: Some("derivation".into()),
         });
         let key = OverrideKey::new("DeclaredUniform", "value");
         let mut runtime = StateMachineRuntime::with_initial_values(
@@ -2694,7 +2669,7 @@ mod tests {
         runtime.force_state("entry").unwrap();
         let entry = runtime.tick(0.0, &HashMap::new(), &vec![]);
         assert_eq!(entry.overrides.get(&key), Some(&serde_json::json!(0.0)));
-        assert!(runtime.force_state("mutation-node").is_err());
+        assert!(runtime.force_state("derivation-node").is_err());
         assert!(runtime.force_state("missing").is_err());
     }
 
@@ -2702,23 +2677,23 @@ mod tests {
     fn render_only_outputs_never_enter_motion_engine() {
         let mut sm = minimal_sm();
         let render_key = OverrideKey::new("ComputedOutput", "value");
-        sm.mutations.push(MutationDefinition {
+        sm.derivations.push(DerivationDefinition {
             id: "computed-output".into(),
             name: "Computed output".into(),
             inputs: vec![],
-            outputs: vec![MutationPort {
+            outputs: vec![GraphPort {
                 id: "ComputedOutput:value".into(),
                 name: Some("Computed output".into()),
                 port_type: Some("float".into()),
                 array_length: None,
                 motion: None,
             }],
-            nodes: vec![MutationInnerNode {
+            nodes: vec![GraphInnerNode {
                 id: "constant".into(),
-                node_type: MutationInnerNodeType::FloatInput,
+                node_type: GraphInnerNodeType::FloatInput,
                 params: HashMap::from([("value".into(), serde_json::json!(1.0))]),
                 inputs: vec![],
-                outputs: vec![MutationPort {
+                outputs: vec![GraphPort {
                     id: "value".into(),
                     name: Some("Value".into()),
                     port_type: Some("float".into()),
@@ -2728,14 +2703,15 @@ mod tests {
             }],
             connections: vec![],
             input_bindings: vec![],
-            output_bindings: vec![MutationOutputBinding {
+            output_bindings: vec![DerivationOutputBinding {
                 port_id: "ComputedOutput:value".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "constant".into(),
                     port_id: "value".into(),
                 },
             }],
             passthrough_bindings: vec![],
+            layout: None,
             viewport: None,
         });
         let mut runtime = StateMachineRuntime::with_initial_values(

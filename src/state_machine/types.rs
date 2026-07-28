@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Root of the state-machine definition embedded in `SceneDSL.stateMachine`.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct StateMachine {
     pub id: String,
     #[serde(default)]
@@ -22,10 +23,10 @@ pub struct StateMachine {
     pub states: Vec<AnimationState>,
     #[serde(default)]
     pub transitions: Vec<AnimationTransition>,
-    #[serde(default, rename = "mutationBindings")]
-    pub mutation_bindings: Vec<MutationStateBinding>,
+    #[serde(default, rename = "derivationBindings")]
+    pub derivation_bindings: Vec<DerivationStateBinding>,
     #[serde(default)]
-    pub mutations: Vec<MutationDefinition>,
+    pub derivations: Vec<DerivationDefinition>,
     #[serde(default, rename = "motionGraphs")]
     pub motion_graphs: Vec<TransitionMotionGraph>,
     #[serde(default, rename = "initialStateId")]
@@ -47,11 +48,12 @@ pub enum AnimationStateType {
     AnyState,
     ExitState,
     AnimationState,
-    MutationNode,
+    DerivationNode,
 }
 
 /// A single state in the state graph.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct AnimationState {
     pub id: String,
     #[serde(default)]
@@ -62,9 +64,12 @@ pub struct AnimationState {
     pub parameter_overrides: HashMap<String, serde_json::Value>,
     #[serde(rename = "type")]
     pub state_type: AnimationStateType,
-    /// Mutation graph owned by a standalone `mutationNode`.
-    #[serde(default, rename = "mutationId")]
-    pub mutation_id: Option<String>,
+    /// Private Mutation graph owned by a regular animation State.
+    #[serde(default, rename = "mutationGraph")]
+    pub mutation_graph: Option<StateMutationGraph>,
+    /// Shared Derivation referenced by a standalone `derivationNode`.
+    #[serde(default, rename = "derivationId")]
+    pub derivation_id: Option<String>,
 }
 
 impl AnimationState {
@@ -89,12 +94,12 @@ pub struct AnimationTransition {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct MutationStateBinding {
+pub struct DerivationStateBinding {
     pub id: String,
     #[serde(rename = "stateId")]
     pub state_id: String,
-    #[serde(rename = "mutationNodeId")]
-    pub mutation_node_id: String,
+    #[serde(rename = "derivationNodeId")]
+    pub derivation_node_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -445,13 +450,13 @@ pub struct TransitionMotionGraph {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub inputs: Vec<MutationPort>,
+    pub inputs: Vec<GraphPort>,
     #[serde(default)]
-    pub outputs: Vec<MutationPort>,
+    pub outputs: Vec<GraphPort>,
     #[serde(default)]
     pub nodes: Vec<TransitionMotionNode>,
     #[serde(default)]
-    pub connections: Vec<MutationConnection>,
+    pub connections: Vec<GraphConnection>,
     #[serde(default, rename = "inputBindings")]
     pub input_bindings: Vec<TransitionMotionInputBinding>,
     #[serde(default, rename = "outputBindings")]
@@ -468,7 +473,7 @@ impl TransitionMotionGraph {
     /// Build the canonical `Any -> Instant -> Any` graph used for edges that
     /// should update all properties without interpolation.
     pub fn instant(id: impl Into<String>) -> Self {
-        let port = MutationPort {
+        let port = GraphPort {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
@@ -488,14 +493,14 @@ impl TransitionMotionGraph {
             connections: vec![],
             input_bindings: vec![TransitionMotionInputBinding {
                 port_id: "*".into(),
-                to: MutationEndpoint {
+                to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![TransitionMotionOutputBinding {
                 port_id: "*".into(),
-                from: MutationEndpoint {
+                from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
@@ -511,14 +516,14 @@ impl TransitionMotionGraph {
 pub struct TransitionMotionInputBinding {
     #[serde(rename = "motionPortId")]
     pub port_id: String,
-    pub to: MutationEndpoint,
+    pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TransitionMotionOutputBinding {
     #[serde(rename = "motionPortId")]
     pub port_id: String,
-    pub from: MutationEndpoint,
+    pub from: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -537,42 +542,137 @@ pub enum TransitionConditionBinding {
         input_port_id: String,
     },
     Node {
-        from: MutationEndpoint,
+        from: GraphEndpoint,
     },
 }
 
 // ---------------------------------------------------------------------------
-// Mutations
+// State Mutation and Render Derivation graphs
 // ---------------------------------------------------------------------------
 
-/// A reusable mutation subgraph.
+/// A reusable, stateless render Derivation graph.
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationDefinition {
+pub struct DerivationDefinition {
     pub id: String,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub inputs: Vec<MutationPort>,
+    pub inputs: Vec<GraphPort>,
     #[serde(default)]
-    pub outputs: Vec<MutationPort>,
+    pub outputs: Vec<GraphPort>,
     #[serde(default)]
-    pub nodes: Vec<MutationInnerNode>,
+    pub nodes: Vec<GraphInnerNode>,
     #[serde(default)]
-    pub connections: Vec<MutationConnection>,
+    pub connections: Vec<GraphConnection>,
     #[serde(default, rename = "inputBindings")]
-    pub input_bindings: Vec<MutationInputBinding>,
+    pub input_bindings: Vec<DerivationInputBinding>,
     #[serde(default, rename = "outputBindings")]
-    pub output_bindings: Vec<MutationOutputBinding>,
+    pub output_bindings: Vec<DerivationOutputBinding>,
     #[serde(default, rename = "passthroughBindings")]
-    pub passthrough_bindings: Vec<MutationPassthroughBinding>,
+    pub passthrough_bindings: Vec<DerivationPassthroughBinding>,
+    #[serde(default)]
+    pub layout: Option<DerivationGraphLayout>,
     /// Editor-only viewport metadata — ignored at runtime.
     #[serde(default)]
     pub viewport: Option<Viewport>,
 }
 
+/// A private Mutation graph embedded in one regular State.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct MutationPort {
+pub struct StateMutationGraph {
+    #[serde(default)]
+    pub inputs: Vec<GraphPort>,
+    #[serde(default)]
+    pub outputs: Vec<GraphPort>,
+    #[serde(default)]
+    pub nodes: Vec<GraphInnerNode>,
+    #[serde(default)]
+    pub connections: Vec<GraphConnection>,
+    #[serde(default, rename = "inputBindings")]
+    pub input_bindings: Vec<StateMutationInputBinding>,
+    #[serde(default, rename = "outputBindings")]
+    pub output_bindings: Vec<StateMutationOutputBinding>,
+    pub layout: StateMutationGraphLayout,
+    #[serde(default)]
+    pub viewport: Option<Viewport>,
+}
+
+impl StateMutationGraph {
+    pub fn as_executable(&self, state_id: &str) -> DerivationDefinition {
+        DerivationDefinition {
+            id: state_id.to_string(),
+            name: format!("{state_id} Mutation"),
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            nodes: self.nodes.clone(),
+            connections: self.connections.clone(),
+            input_bindings: self
+                .input_bindings
+                .iter()
+                .map(|binding| DerivationInputBinding {
+                    port_id: binding.state_port_id.clone(),
+                    to: binding.to.clone(),
+                })
+                .collect(),
+            output_bindings: self
+                .output_bindings
+                .iter()
+                .map(|binding| DerivationOutputBinding {
+                    port_id: binding.state_port_id.clone(),
+                    from: binding.from.clone(),
+                })
+                .collect(),
+            passthrough_bindings: Vec::new(),
+            layout: None,
+            viewport: self.viewport,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct StateMutationInputBinding {
+    #[serde(rename = "statePortId")]
+    pub state_port_id: String,
+    pub to: GraphEndpoint,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct StateMutationOutputBinding {
+    #[serde(rename = "statePortId")]
+    pub state_port_id: String,
+    pub from: GraphEndpoint,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateMutationGraphLayout {
+    #[serde(default)]
+    pub parameter_positions: HashMap<String, Position>,
+    pub runtime_input_position: Position,
+    pub output_position: Position,
+    #[serde(default)]
+    pub runtime_input_collapsed: bool,
+    #[serde(default)]
+    pub output_collapsed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DerivationGraphLayout {
+    pub input_position: Position,
+    pub output_position: Position,
+    #[serde(default)]
+    pub input_collapsed: bool,
+    #[serde(default)]
+    pub output_collapsed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct GraphPort {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
@@ -587,11 +687,13 @@ pub struct MutationPort {
 /// Supported inner-node types for mutation subgraphs (v1).
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
-pub enum MutationInnerNodeType {
+pub enum GraphInnerNodeType {
     #[serde(rename = "FloatInput")]
     FloatInput,
     #[serde(rename = "MutationFunction")]
     MutationFunction,
+    #[serde(rename = "DerivationFunction")]
+    DerivationFunction,
     #[serde(rename = "PackArray")]
     PackArray,
     #[serde(rename = "MathAdd")]
@@ -607,27 +709,27 @@ pub enum MutationInnerNodeType {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationInnerNode {
+pub struct GraphInnerNode {
     pub id: String,
     #[serde(rename = "type")]
-    pub node_type: MutationInnerNodeType,
+    pub node_type: GraphInnerNodeType,
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
     #[serde(default)]
-    pub inputs: Vec<MutationPort>,
+    pub inputs: Vec<GraphPort>,
     #[serde(default)]
-    pub outputs: Vec<MutationPort>,
+    pub outputs: Vec<GraphPort>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationConnection {
+pub struct GraphConnection {
     pub id: String,
-    pub from: MutationEndpoint,
-    pub to: MutationEndpoint,
+    pub from: GraphEndpoint,
+    pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationEndpoint {
+pub struct GraphEndpoint {
     #[serde(rename = "nodeId")]
     pub node_id: String,
     #[serde(rename = "portId")]
@@ -635,21 +737,21 @@ pub struct MutationEndpoint {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationInputBinding {
-    /// Port on the mutation boundary.
-    #[serde(rename = "mutationPortId")]
+pub struct DerivationInputBinding {
+    /// Port on the Derivation boundary.
+    #[serde(rename = "derivationPortId")]
     pub port_id: String,
     /// Where the value is fed into the inner graph.
-    pub to: MutationEndpoint,
+    pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationOutputBinding {
-    /// Port on the mutation boundary.
-    #[serde(rename = "mutationPortId")]
+pub struct DerivationOutputBinding {
+    /// Port on the Derivation boundary.
+    #[serde(rename = "derivationPortId")]
     pub port_id: String,
     /// Where the value comes from in the inner graph.
-    pub from: MutationEndpoint,
+    pub from: GraphEndpoint,
 }
 
 /// A direct boundary-to-boundary passthrough binding.
@@ -658,11 +760,11 @@ pub struct MutationOutputBinding {
 /// inner nodes.  Typically used for wiring built-in time ports
 /// (e.g. `sceneElapsedTime`) straight to override targets.
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MutationPassthroughBinding {
-    /// Input port id on the mutation boundary (source of value).
+pub struct DerivationPassthroughBinding {
+    /// Input port id on the Derivation boundary (source of value).
     #[serde(rename = "inputPortId")]
     pub from_port_id: String,
-    /// Output port id on the mutation boundary (destination).
+    /// Output port id on the Derivation boundary (destination).
     #[serde(rename = "outputPortId")]
     pub to_port_id: String,
 }
@@ -706,7 +808,7 @@ pub struct RuntimeInputSnapshot {
 /// A typed key for runtime parameter overrides produced by the state machine.
 ///
 /// Encodes `nodeId:paramName` — the same format used by the editor's
-/// mutation interface ports.
+/// State Mutation and Derivation interface ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OverrideKey {
     pub node_id: String,
@@ -737,14 +839,14 @@ impl OverrideKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        MutationInnerNodeType, MutationInputBinding, MutationOutputBinding,
-        MutationPassthroughBinding, MutationPort, TimelinePreset, TransitionMotionNode,
+        DerivationInputBinding, DerivationOutputBinding, DerivationPassthroughBinding,
+        GraphInnerNodeType, GraphPort, TimelinePreset, TransitionMotionNode,
     };
 
     #[test]
-    fn mutation_input_binding_parses_editor_port_name() {
-        let parsed: MutationInputBinding = serde_json::from_value(serde_json::json!({
-            "mutationPortId": "Vector2Input_74:x",
+    fn derivation_input_binding_parses_editor_port_name() {
+        let parsed: DerivationInputBinding = serde_json::from_value(serde_json::json!({
+            "derivationPortId": "Vector2Input_74:x",
             "to": {
                 "nodeId": "mouse",
                 "portId": "position.x",
@@ -758,9 +860,9 @@ mod tests {
     }
 
     #[test]
-    fn mutation_output_binding_parses_editor_port_name() {
-        let parsed: MutationOutputBinding = serde_json::from_value(serde_json::json!({
-            "mutationPortId": "Vector2Input_74:x",
+    fn derivation_output_binding_parses_editor_port_name() {
+        let parsed: DerivationOutputBinding = serde_json::from_value(serde_json::json!({
+            "derivationPortId": "Vector2Input_74:x",
             "from": {
                 "nodeId": "mouse",
                 "portId": "position.x",
@@ -774,8 +876,8 @@ mod tests {
     }
 
     #[test]
-    fn mutation_passthrough_binding_parses_editor_port_names() {
-        let parsed: MutationPassthroughBinding = serde_json::from_value(serde_json::json!({
+    fn derivation_passthrough_binding_parses_editor_port_names() {
+        let parsed: DerivationPassthroughBinding = serde_json::from_value(serde_json::json!({
             "inputPortId": "sceneElapsedTime",
             "outputPortId": "FloatInput_53:value",
         }))
@@ -787,20 +889,20 @@ mod tests {
 
     #[test]
     fn pack_array_inner_node_type_deserializes() {
-        let parsed: MutationInnerNodeType = serde_json::from_value(serde_json::json!("PackArray"))
+        let parsed: GraphInnerNodeType = serde_json::from_value(serde_json::json!("PackArray"))
             .expect("PackArray inner node type should deserialize");
 
-        assert_eq!(parsed, MutationInnerNodeType::PackArray);
+        assert_eq!(parsed, GraphInnerNodeType::PackArray);
     }
 
     #[test]
     fn packed_port_type_deserializes() {
-        let parsed: MutationPort = serde_json::from_value(serde_json::json!({
+        let parsed: GraphPort = serde_json::from_value(serde_json::json!({
             "id": "packed",
             "name": "Packed",
             "type": "packed<float>",
         }))
-        .expect("packed mutation port should deserialize");
+        .expect("packed graph port should deserialize");
 
         assert_eq!(parsed.port_type.as_deref(), Some("packed<float>"));
     }

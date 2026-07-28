@@ -106,7 +106,7 @@ pub(super) fn handle_text_message(
                     payload: Some(serde_json::to_value(RuntimeSceneUpdatePayload {
                         scene,
                         functions:
-                            crate::state_machine::mutation_function::installed_document_functions(),
+                            crate::state_machine::graph_function::installed_document_functions(),
                     })?),
                 };
                 let _ = ws.send(Message::Text(serde_json::to_string(&resp)?));
@@ -160,10 +160,16 @@ pub(super) fn handle_text_message(
 
             dsl::materialize_scene_node_labels_from_raw_json(&mut scene, &raw_scene);
 
-            if let Err(error) = crate::state_machine::mutation_function::install_document_functions(
-                runtime_payload.functions,
-            ) {
-                let message = format!("invalid Mutation Function resources: {error:#}");
+            if let Err(error) = crate::state_machine::graph_function::validate_function_resources(
+                &scene,
+                &runtime_payload.functions,
+            )
+            .and_then(|()| {
+                crate::state_machine::graph_function::install_document_functions(
+                    runtime_payload.functions,
+                )
+            }) {
+                let message = format!("invalid Graph Function resources: {error:#}");
                 send_error(ws, msg.request_id.clone(), "VALIDATION_ERROR", &message);
                 send_scene_update(
                     scene_tx,

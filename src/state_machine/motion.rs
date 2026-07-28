@@ -1480,7 +1480,7 @@ mod tests {
     use super::*;
 
     fn wildcard_spring_graph(duration: f64, bounce: f64) -> TransitionMotionGraph {
-        let any_port = super::super::types::MutationPort {
+        let any_port = super::super::types::GraphPort {
             id: "*".into(),
             name: Some("Any".into()),
             port_type: Some("any".into()),
@@ -1503,14 +1503,14 @@ mod tests {
             connections: vec![],
             input_bindings: vec![super::super::types::TransitionMotionInputBinding {
                 port_id: "*".into(),
-                to: super::super::types::MutationEndpoint {
+                to: super::super::types::GraphEndpoint {
                     node_id: "spring".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![super::super::types::TransitionMotionOutputBinding {
                 port_id: "*".into(),
-                from: super::super::types::MutationEndpoint {
+                from: super::super::types::GraphEndpoint {
                     node_id: "spring".into(),
                     port_id: "value".into(),
                 },
@@ -2084,7 +2084,7 @@ mod tests {
     fn property_specific_motion_overrides_the_any_fallback() {
         let ports = ["*", "Node:x", "Node:y"]
             .into_iter()
-            .map(|id| super::super::types::MutationPort {
+            .map(|id| super::super::types::GraphPort {
                 id: id.into(),
                 name: Some(id.into()),
                 port_type: Some("float".into()),
@@ -2137,7 +2137,7 @@ mod tests {
                 .map(
                     |(port, node)| super::super::types::TransitionMotionInputBinding {
                         port_id: port.into(),
-                        to: super::super::types::MutationEndpoint {
+                        to: super::super::types::GraphEndpoint {
                             node_id: node.into(),
                             port_id: "value".into(),
                         },
@@ -2149,7 +2149,7 @@ mod tests {
                 .map(
                     |(port, node)| super::super::types::TransitionMotionOutputBinding {
                         port_id: port.into(),
-                        from: super::super::types::MutationEndpoint {
+                        from: super::super::types::GraphEndpoint {
                             node_id: node.into(),
                             port_id: "value".into(),
                         },

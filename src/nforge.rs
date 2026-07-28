@@ -16,7 +16,8 @@ use crate::{
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 2;
+const FORMAT_VERSION: i64 = 3;
+const SCENE_DSL_VERSION: &str = "3.0";
 const CHANGE_LOG_RETENTION: i64 = 10_000;
 
 fn now_millis() -> u128 {
@@ -138,6 +139,11 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
             |row| row.get(0),
         )
         .context("invalid .nforge document row")?;
+    if scene_version != SCENE_DSL_VERSION {
+        bail!(
+            "unsupported SceneDSL version '{scene_version}' (expected {SCENE_DSL_VERSION})"
+        );
+    }
 
     let mut sections = BTreeMap::<String, Value>::new();
     {
@@ -155,7 +161,8 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
     let mut root_nodes = Vec::new();
     let mut root_connections = Vec::new();
     let mut groups = Vec::new();
-    let mut mutations = BTreeMap::<String, Value>::new();
+    let mut state_graphs = BTreeMap::<String, Value>::new();
+    let mut derivations = BTreeMap::<String, Value>::new();
     {
         let mut statement = connection.prepare(
             "SELECT scope_id, scope_kind, owner_id, definition_json
@@ -195,10 +202,17 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
                 object.insert("nodes".to_string(), Value::Array(nodes));
                 object.insert("connections".to_string(), Value::Array(connections));
             }
-            if kind == "group" {
-                groups.push(definition);
-            } else if let Some(owner_id) = owner_id {
-                mutations.insert(owner_id, definition);
+            match (kind.as_str(), owner_id) {
+                ("group", _) => groups.push(definition),
+                ("state", Some(owner_id)) => {
+                    state_graphs.insert(owner_id, definition);
+                }
+                ("derivation", Some(owner_id)) => {
+                    derivations.insert(owner_id, definition);
+                }
+                (unsupported, _) => {
+                    bail!("unsupported graph scope kind '{unsupported}' in v3 .nforge");
+                }
             }
         }
     }
@@ -261,15 +275,13 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
         for row in rows {
             functions.push(
-                serde_json::from_str::<crate::state_machine::mutation_function::FunctionResource>(
+                serde_json::from_str::<crate::state_machine::graph_function::FunctionResource>(
                     &row?,
                 )
-                .context("invalid Mutation Function resource in .nforge")?,
+                .context("invalid Graph Function resource in .nforge")?,
             );
         }
     }
-    crate::state_machine::mutation_function::install_document_functions(functions)?;
-
     let mut debug_store = DebugArtifactStore::default();
     let mut debug_items = HashMap::<String, DebugArtifactItem>::new();
     let mut debug_contents = Vec::<(DebugArtifactItem, Vec<u8>)>::new();
@@ -299,17 +311,41 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         .filter(|value| !value.is_null());
     if let Some(header) = state_machine.as_mut().and_then(Value::as_object_mut) {
         let order = header
-            .remove("mutationOrder")
+            .remove("derivationOrder")
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
         let mut ordered = Vec::new();
         for id in order.iter().filter_map(Value::as_str) {
-            if let Some(mutation) = mutations.remove(id) {
-                ordered.push(mutation);
+            if let Some(derivation) = derivations.remove(id) {
+                ordered.push(derivation);
             }
         }
-        ordered.extend(mutations.into_values());
-        header.insert("mutations".to_string(), Value::Array(ordered));
+        ordered.extend(derivations.into_values());
+        header.insert("derivations".to_string(), Value::Array(ordered));
+
+        let states = header
+            .get_mut("states")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| anyhow::anyhow!("stateMachine.states is missing in v3 .nforge"))?;
+        for state in states {
+            let Some(object) = state.as_object_mut() else {
+                bail!("invalid State definition in v3 .nforge");
+            };
+            if object.get("type").and_then(Value::as_str) != Some("animationState") {
+                continue;
+            }
+            let state_id = object
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("animationState id is missing"))?;
+            let graph = state_graphs.remove(state_id).ok_or_else(|| {
+                anyhow::anyhow!("missing state graph scope 'state:{state_id}'")
+            })?;
+            object.insert("mutationGraph".to_string(), graph);
+        }
+        if let Some(extra) = state_graphs.keys().next() {
+            bail!("orphan state graph scope 'state:{extra}'");
+        }
     }
 
     let mut scene = sections
@@ -354,6 +390,8 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
     let mut parsed: SceneDSL = serde_json::from_value(Value::Object(scene))
         .context("failed to parse SceneDSL from .nforge")?;
     crate::dsl::normalize_scene_defaults(&mut parsed)?;
+    crate::state_machine::graph_function::validate_function_resources(&parsed, &functions)?;
+    crate::state_machine::graph_function::install_document_functions(functions)?;
     debug_store.sync_manifest(parsed.debug_artifacts.clone());
     for (item, content) in debug_contents {
         if item.mime_type.starts_with("text/") {

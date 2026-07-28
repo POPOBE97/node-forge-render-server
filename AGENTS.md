@@ -73,56 +73,31 @@ practical and revert unrelated formatting churn before finishing.
 
 ### MotionEngine Runtime Architecture
 
-State, Mutation Function, and Transition are descriptions. MotionEngine solves only independent
-motion declarations:
+Use `S` for authored/inherited semantic State values, `Q,Qdot` for Mutation targets, `E,Edot` for
+the remaining State-switch residual, and `P,V` for final physical values:
 
 ```text
-Target phase
-  State S -> Mutation Motion returns -> Q,Qdot
-  Transition residual                -> E,Edot
-  MotionEngine physical state        -> P=Q-E, V=Qdot-Edot
-
-Derived phase
-  physical P -> plain Mutation functions -> D(P), e.g. positions/colors
-
-Uniform packing / Render Graph <- P + D(P)
+State override / inherit -> S
+State mutationGraph M(S,t) -> Q,Qdot
+Transition residual -> E,Edot
+MotionEngine -> P=Q-E, V=Qdot-Edot
+Derivation D(P, frame inputs) -> GPU uniforms
+Render Graph
 ```
 
-For Motion fields, `Q = Mmotion(S)`. `MotionEngine` is the single source of truth for their animated
-values, velocities, and driver state.
-
-At the graph boundary:
-
-```text
-E = Q - P_current
-P_next = P_current + Transition(E)
-```
-
-Internally the engine stores the remaining residual `R = E - Transition(E)`, so the same result is
-represented as `P_next = Q - R`.
-
-For every independent Motion field, the engine owns:
-
-- resolved State value `S`;
-- target value and velocity `Q,Qdot`;
-- Mutation driver state, including a continuously retargeted spring;
-- final physical value and velocity `P,V`.
-
-Only a Function return typed `Motion<T>` contributes a MotionEngine field. A plain computed return
-such as packed positions/colors is a derived render value. It owns no `S/Q/E/P`, velocity, Mutation
-driver, Transition driver, or debug motion channel.
-
-Endpoint State overrides define the authored Transition boundary and select property-specific
-routes or the Any wildcard. Mutation Motion capability and plain derived outputs never expand that
-boundary. Mutation-only Motion channels retain `E=Edot=0`; derived values have no residual at all.
-
-Interruption logic reads only engine-owned `P,V`. After P is solved, the runtime evaluates plain
-Mutation outputs from P and merges them with P for uniform packing. A derived value is recomputed,
-not interpolated: it animates because its physical dependencies animate.
+- A regular State owns one private `mutationGraph`; Entry, Any, and Exit own none.
+- Mutation Functions exist only in `state:` scopes. Their `Motion<T>` returns create MotionEngine
+  channels and establish `Q,Qdot`.
+- Derivation Functions exist only in `derivation:` scopes. They are pure render derivations, cannot
+  return Motion, cannot mutate MotionEngine, and read final `P` rather than `S` or `Q`.
+- State overrides alone define Transition eligibility and wildcard routing. Mutation-only channels
+  keep `E=Edot=0`; Derivation outputs have no MotionEngine state.
+- Rendering consumes absolute `P_render` values from final `P` and Derivation outputs. `S` and `Q`
+  never bypass Transition into rendering.
 
 #### Mutation Function ABI
 
-Mutation Functions use ABI v6:
+Graph Functions use ABI v7. Mutation Functions expose the Motion helpers:
 
 ```ts
 interface Motion<T> {
@@ -136,28 +111,19 @@ declare function to<T>(
 ): Motion<T>
 ```
 
-Every Function input is an ordinary value. In the target phase, Mutation boundary declaration
-inputs expose resolved `S`, and a Function-to-Function Motion edge exposes resolved `Q`. In the
-derived phase, the same declaration inputs and Motion edges expose physical `P`, never the
-descriptor object.
-
-`Motion<T>` is return-only. Each Motion output binds exactly once to a formal Mutation output
-declaration; that binding supplies MotionEngine identity. The same output may also connect to
-downstream Functions. `setTo/to` descriptors are interpreted by MotionEngine's existing drivers;
-the Function runtime must never implement a second spring. Writable input handles, consumer-based
-identity, and hidden forwarding are forbidden.
+Every Function input is an ordinary value. `Motion<T>` is return-only and each Motion output binds
+exactly once to a formal State Output declaration. Derivation Functions have no Motion helpers and
+must return ordinary values. Function resources carry `kind`; scope, node type, ABI, source hash,
+and reflected ports must agree.
 
 #### Mutation transaction
 
-Target evaluation runs the graph slice required by Motion outputs against one cloned MotionEngine.
-Motion returns establish Q and downstream target Functions consume resolved Q. Commit only after
-the target slice succeeds. A throw, timeout, invalid type, missing binding, shape mismatch, or
-duplicate Motion application discards that target transaction and preserves the previous engine.
-
-Only after that atomic Q commit may Transition advance `E,Edot` and publish `P,V`. Derived
-evaluation then runs the graph slice required by plain outputs. In this phase Motion descriptors
-are not applied: their edges resolve from engine P. A derived-evaluation failure preserves the
-previous derived snapshot and never rolls back or mutates MotionEngine.
+Mutation evaluation runs against a cloned MotionEngine transaction. A throw, timeout, invalid type,
+missing binding, fixed-length mismatch, or duplicate Motion writer discards the transaction.
+Activation failure rejects the State switch; ordinary-frame failure preserves the last committed
+MotionEngine state. After Transition publishes `P,V`, the active shared Derivation runs. A failed
+Derivation preserves only that Derivation's previous successful snapshot and never rolls back
+MotionEngine.
 
 One declaration may receive at most one Motion return per frame. Duplicate applications are
 diagnostics, never last-write-wins. Each driver advances at most once per frame.
@@ -179,7 +145,8 @@ On entry:
 4. For endpoint State override fields only, create `E0=Q0-P0` and
    `Edot0=Qdot0-V0`.
 5. Advance target `Q,Qdot` and Transition residual `E,Edot`, producing physical `P,V`.
-6. Evaluate plain outputs as `D(P)` and send `P + D(P)` to uniform packing and rendering.
+6. Evaluate the bound Derivation as `D(P, frame_inputs)` and send absolute render values to uniform
+   packing and rendering.
 
 Each tick first updates Motion `Q,Qdot`, advances the Transition ErrorDriver toward zero, stores
 `P=Q-E` and `V=Qdot-Edot`, and finally recomputes derived values from P. Spring, timeline, and
@@ -199,10 +166,11 @@ infer any of these from renderer uniforms.
 
 #### Forbidden models
 
-- implicit Mutation frame overlays or output writes without an explicit output binding;
+- using “Mutation” for stateless render derivation;
+- implicit Derivation output writes without an explicit output declaration and binding;
 - writable Function input handles or Function inputs typed as `Motion<T>`;
 - implicit dependencies or forwarding not represented by a graph edge;
-- putting plain Mutation outputs such as positions into MotionEngine;
+- putting Derivation outputs such as positions or colors into MotionEngine;
 - giving derived outputs Q/E/P, velocities, springs, Transition ports, or wildcard matches;
 - deriving render values from S or Q after physical P has been solved;
 - sending Q or a Q overlay directly to rendering;

@@ -112,6 +112,7 @@ pub struct DebugTargetAnchor {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SceneDSL {
+    #[serde(deserialize_with = "deserialize_scene_version")]
     pub version: String,
     pub metadata: Metadata,
     pub nodes: Vec<Node>,
@@ -129,6 +130,19 @@ pub struct SceneDSL {
         skip_serializing_if = "Option::is_none"
     )]
     pub debug_artifacts: Option<DebugArtifacts>,
+}
+
+fn deserialize_scene_version<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let version = String::deserialize(deserializer)?;
+    if version != "3.0" {
+        return Err(serde::de::Error::custom(format!(
+            "unsupported SceneDSL version '{version}' (expected 3.0)"
+        )));
+    }
+    Ok(version)
 }
 
 /// A reusable subgraph definition referenced by `GroupInstance` nodes.

@@ -41,7 +41,7 @@ pub fn load_render_case_scene(name: &str) -> SceneDSL {
     load_render_case(name).0
 }
 
-/// Archive loading installs the document's Mutation Function resources in a
+/// Archive loading installs the document's Graph Function resources in a
 /// process-global runtime registry. Integration tests in one binary must keep
 /// load + compile/evaluation atomic with respect to one another.
 pub fn function_registry_lock() -> MutexGuard<'static, ()> {

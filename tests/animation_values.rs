@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use node_forge_render_server::animation::{AnimationSession, AnimationStep};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, MutationEndpoint,
-    Position, StateMachine, TransitionConditionBinding, TransitionMotionGraph,
-    TransitionMotionNode,
+    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, GraphEndpoint,
+    GraphPort, Position, StateMachine, StateMutationGraph, StateMutationGraphLayout,
+    TransitionConditionBinding, TransitionMotionGraph, TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
@@ -27,12 +27,38 @@ fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
         ignore_repeat: true,
     });
     graph.condition_binding = Some(TransitionConditionBinding::Node {
-        from: MutationEndpoint {
+        from: GraphEndpoint {
             node_id: "trigger".into(),
             port_id: "fired".into(),
         },
     });
     graph
+}
+
+fn empty_state_mutation() -> StateMutationGraph {
+    let target = GraphPort {
+        id: "Target:value".into(),
+        name: Some("Target".into()),
+        port_type: Some("float".into()),
+        array_length: None,
+        motion: None,
+    };
+    StateMutationGraph {
+        inputs: vec![target.clone()],
+        outputs: vec![target],
+        nodes: vec![],
+        connections: vec![],
+        input_bindings: vec![],
+        output_bindings: vec![],
+        layout: StateMutationGraphLayout {
+            parameter_positions: HashMap::new(),
+            runtime_input_position: Position::default(),
+            output_position: Position::default(),
+            runtime_input_collapsed: false,
+            output_collapsed: false,
+        },
+        viewport: None,
+    }
 }
 
 fn space_event(event_type: &str) -> FiredEvent {
@@ -346,7 +372,7 @@ fn generate_trace_via_session(
 
 fn sticky_override_test_scene() -> dsl::SceneDSL {
     dsl::SceneDSL {
-        version: "1.0".into(),
+        version: "3.0".into(),
         metadata: dsl::Metadata {
             name: "Sticky Override Test".into(),
             created: None,
@@ -377,7 +403,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::EntryState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "any".into(),
@@ -385,7 +412,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::AnyState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "exit".into(),
@@ -393,7 +421,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::ExitState,
-                    mutation_id: None,
+                    mutation_graph: None,
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "a".into(),
@@ -403,7 +432,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                         .into_iter()
                         .collect(),
                     state_type: AnimationStateType::AnimationState,
-                    mutation_id: None,
+                    mutation_graph: Some(empty_state_mutation()),
+                    derivation_id: None,
                 },
                 AnimationState {
                     id: "b".into(),
@@ -411,7 +441,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     position: None,
                     parameter_overrides: Default::default(),
                     state_type: AnimationStateType::AnimationState,
-                    mutation_id: None,
+                    mutation_graph: Some(empty_state_mutation()),
+                    derivation_id: None,
                 },
             ],
             transitions: vec![
@@ -428,8 +459,8 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     motion_graph_id: "motion_a_to_b".into(),
                 },
             ],
-            mutation_bindings: vec![],
-            mutations: vec![],
+            derivation_bindings: vec![],
+            derivations: vec![],
             motion_graphs: vec![
                 TransitionMotionGraph::instant("motion_entry_to_a"),
                 event_motion_graph("motion_a_to_b", "go"),
@@ -753,7 +784,7 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
 }
 
 #[test]
-fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
+fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() {
     let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
@@ -761,33 +792,33 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
         .state_machine
         .as_ref()
         .expect("doubao fixture should have a state machine");
-    let mutation_by_node: BTreeMap<&str, &str> = machine
+    let derivation_by_node: BTreeMap<&str, &str> = machine
         .states
         .iter()
         .filter_map(|state| {
             state
-                .mutation_id
+                .derivation_id
                 .as_deref()
-                .map(|mutation_id| (state.id.as_str(), mutation_id))
+                .map(|derivation_id| (state.id.as_str(), derivation_id))
         })
         .collect();
-    let mutation_by_state: BTreeMap<&str, &str> = machine
-        .mutation_bindings
+    let derivation_by_state: BTreeMap<&str, &str> = machine
+        .derivation_bindings
         .iter()
         .map(|binding| {
-            let mutation_id = mutation_by_node
-                .get(binding.mutation_node_id.as_str())
+            let derivation_id = derivation_by_node
+                .get(binding.derivation_node_id.as_str())
                 .unwrap_or_else(|| {
                     panic!(
-                        "binding '{}' references Mutation node '{}' without a mutationId",
-                        binding.id, binding.mutation_node_id
+                        "binding '{}' references Derivation node '{}' without a derivationId",
+                        binding.id, binding.derivation_node_id
                     )
                 });
-            (binding.state_id.as_str(), *mutation_id)
+            (binding.state_id.as_str(), *derivation_id)
         })
         .collect();
     assert_eq!(
-        mutation_by_state.keys().copied().collect::<BTreeSet<_>>(),
+        derivation_by_state.keys().copied().collect::<BTreeSet<_>>(),
         BTreeSet::from([
             "st_listening",
             "st_mrerw3qg_6",
@@ -797,9 +828,9 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
             "st_speaking",
             "st_thinking",
         ]),
-        "unexpected set of logical States with Mutation bindings"
+        "unexpected set of logical States with Derivation bindings"
     );
-    let shared_mutation = mutation_by_state["st_mrerxocx_8"];
+    let shared_derivation = derivation_by_state["st_mrerxocx_8"];
     for state_id in [
         "st_mrerw3qg_6",
         "st_mrerxocx_8",
@@ -809,22 +840,25 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
         "st_push_to_talk_cancel",
     ] {
         assert_eq!(
-            mutation_by_state[state_id], shared_mutation,
-            "State '{state_id}' must use the shared Intelligent Light Mutation"
+            derivation_by_state[state_id], shared_derivation,
+            "State '{state_id}' must use the shared Intelligent Light Derivation"
         );
     }
     assert_ne!(
-        mutation_by_state["st_thinking"], shared_mutation,
-        "Thinking must own an independent Mutation"
+        derivation_by_state["st_thinking"], shared_derivation,
+        "Thinking must own an independent Derivation"
     );
     assert_eq!(
         machine
-            .mutations
+            .derivations
             .iter()
-            .map(|mutation| mutation.id.as_str())
+            .map(|derivation| derivation.id.as_str())
             .collect::<BTreeSet<_>>(),
-        mutation_by_state.values().copied().collect::<BTreeSet<_>>(),
-        "every declared Mutation must be bound, with no undeclared bindings"
+        derivation_by_state
+            .values()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        "every declared Derivation must be bound, with no undeclared bindings"
     );
 
     let mut session = AnimationSession::from_scene(&scene)
@@ -860,7 +894,7 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
         .active_overrides
         .get(&positions_key)
         .cloned()
-        .expect("shared Mutation should produce Intelligent Light positions");
+        .expect("shared Derivation should produce Intelligent Light positions");
     assert_eq!(
         before.as_array().map(Vec::len),
         Some(11),
@@ -880,13 +914,13 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
     assert!(advanced.scene_time_secs > before_scene_time);
     assert!(
         advanced.diagnostics.is_empty(),
-        "Mutation evaluation emitted diagnostics: {:?}",
+        "Derivation evaluation emitted diagnostics: {:?}",
         advanced.diagnostics
     );
 }
 
 #[test]
-fn forced_doubao_state_keeps_mutation_running_without_routing() {
+fn forced_doubao_state_keeps_derivation_running_without_routing() {
     let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
@@ -914,7 +948,7 @@ fn forced_doubao_state_keeps_mutation_running_without_routing() {
                 "value",
             ),
         ),
-        "forced State should continue evaluating its derived Mutation outputs"
+        "forced State should continue evaluating its Derivation outputs"
     );
 }
 
@@ -943,7 +977,7 @@ fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
                 "value",
             ))
             .and_then(serde_json::Value::as_f64)
-            .expect("Mutation should derive intermediate blob radius");
+            .expect("Derivation should produce intermediate blob radius");
         assert!(
             (actual - expected_radius).abs() < 1e-5,
             "energy={energy}: expected {expected_radius}, got {actual}"
@@ -1004,7 +1038,7 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
         "captured Intelligent Light width must be positive"
     );
     let captured_normal_offset = golden_motion_value("intelligentLightCurveNormalOffsetPx");
-    // The external capture records dp-like width/offset values, while the archive Mutation
+    // The external capture records dp-like width/offset values, while the archive Derivation
     // consumes full-size px, so convert both with the same captured-to-full-size width ratio.
     let full_size_normal_offset = captured_normal_offset * full_size_width / captured_width;
     idle.parameter_overrides.insert(
@@ -1030,7 +1064,7 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
         assert_eq!(actual.current_state_id, "st_mrerxocx_8");
         assert!(
             actual.diagnostics.is_empty(),
-            "frame {index} Mutation diagnostics: {:?}",
+            "frame {index} Derivation diagnostics: {:?}",
             actual.diagnostics
         );
         for (key, field, max_error) in [(&positions_key, "positions", &mut max_position_error)] {

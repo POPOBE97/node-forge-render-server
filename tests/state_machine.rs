@@ -64,8 +64,8 @@ fn back_pin_pin_scene_parses_state_machine() {
     let sm = scene.state_machine.as_ref().unwrap();
     assert_eq!(sm.id, "sm_mmamfug8_2");
     assert_eq!(sm.states.len(), 8);
-    assert_eq!(sm.mutations.len(), 1);
-    assert_eq!(sm.mutation_bindings.len(), 1);
+    assert_eq!(sm.derivations.len(), 1);
+    assert_eq!(sm.derivation_bindings.len(), 1);
     assert_eq!(sm.initial_state_id.as_deref(), Some("st_mmamj2am_3"));
 }
 
@@ -87,18 +87,18 @@ fn back_pin_pin_compile_and_tick() {
 
     assert_eq!(rt.current_state_id(), "st_mmamj2am_3");
 
-    // Without mousedown event the transition to the Mutation-bound State should NOT fire.
+    // Without mousedown event the transition to the Derivation-bound State should NOT fire.
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
     // Fire mousedown — the logical state changes immediately. This State has
-    // no authored overrides, so its plain Mutation outputs are derived for
+    // no authored overrides, so its Derivation outputs are recomputed for
     // rendering and do not create a Transition channel.
     let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert_eq!(result.active_transition_id, None);
 
-    // The state-local time Mutation continues to update independently.
+    // The state-local time Derivation continues to update independently.
     let result = rt.tick(2.4, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert_eq!(result.active_transition_id, None);
@@ -106,7 +106,7 @@ fn back_pin_pin_compile_and_tick() {
 }
 
 #[test]
-fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
+fn editor_glass_nforge_mousedown_runs_state_mutation() {
     let _function_registry = support::function_registry_lock();
     use node_forge_render_server::state_machine::types::{
         AnimationStateType, TransitionMotionNode,
@@ -159,12 +159,21 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
 
                 source_type == Some(AnimationStateType::AnimationState)
                     && sm
-                        .mutation_bindings
+                        .states
                         .iter()
-                        .any(|binding| binding.state_id == transition.target)
+                        .find(|state| state.id == transition.target)
+                        .and_then(|state| state.mutation_graph.as_ref())
+                        .is_some_and(|graph| {
+                            graph.output_bindings.iter().any(|binding| {
+                                matches!(
+                                    binding.state_port_id.as_str(),
+                                    "Vector2Input_80:x" | "Vector2Input_80:y"
+                                )
+                            })
+                        })
                     && trigger_matches
             })
-            .expect("glass.nforge should have a mousedown transition to a Mutation-bound State");
+            .expect("glass.nforge should have a mousedown transition to a State Mutation");
 
         (
             mousedown_to_mutation.id.clone(),
@@ -307,22 +316,22 @@ fn back_pin_pin_state_types_correct() {
             .iter()
             .any(|(_, t)| *t == AnimationStateType::ExitState)
     );
-    assert!(sm.states.iter().any(|state| state.mutation_id.is_some()));
+    assert!(sm.states.iter().any(|state| state.derivation_id.is_some()));
 }
 
 #[test]
-fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
+fn back_pin_pin_derivation_nodes_reference_valid_definitions() {
     let _function_registry = support::function_registry_lock();
     let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
 
-    let mutation_ids: Vec<&str> = sm.mutations.iter().map(|m| m.id.as_str()).collect();
+    let derivation_ids: Vec<&str> = sm.derivations.iter().map(|m| m.id.as_str()).collect();
     for s in &sm.states {
-        if s.mutation_id.is_some() {
-            let mid = s.mutation_id.as_deref().unwrap();
+        if s.derivation_id.is_some() {
+            let mid = s.derivation_id.as_deref().unwrap();
             assert!(
-                mutation_ids.contains(&mid),
-                "state '{}' references missing mutation '{}'",
+                derivation_ids.contains(&mid),
+                "state '{}' references missing Derivation '{}'",
                 s.id,
                 mid,
             );
@@ -336,37 +345,45 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
-    let function = state_machine::mutation_function::installed_document_functions()
+    let function = state_machine::graph_function::installed_document_functions()
         .into_iter()
         .find(|function| {
-            function.scope == "mutation:mutation_ilight_idle"
+            function.scope == "derivation:mutation_ilight_idle"
                 && function.node_id == "function_ilight_idle"
         })
-        .expect("shared Intelligent Light Mutation Function must be installed");
+        .expect("shared Intelligent Light Derivation Function must be installed");
+    assert_eq!(function.kind, "derivation");
     assert!(
         function
             .inputs
             .iter()
             .all(|input| input.motion != Some(true)),
-        "Mutation Function inputs must be ordinary graph values"
+        "Derivation Function inputs must be ordinary graph values"
+    );
+    assert!(
+        function
+            .outputs
+            .iter()
+            .all(|output| output.motion != Some(true)),
+        "Derivation Function outputs must be ordinary graph values"
     );
     assert_eq!(
         function.source.matches(".setTo(").count(),
         0,
         "plain Function outputs must not create explicit Motion drivers"
     );
-    let mutation = scene
+    let derivation = scene
         .state_machine
         .as_ref()
         .and_then(|machine| {
             machine
-                .mutations
+                .derivations
                 .iter()
-                .find(|mutation| mutation.id == "mutation_ilight_idle")
+                .find(|derivation| derivation.id == "mutation_ilight_idle")
         })
-        .expect("shared Intelligent Light Mutation must exist");
+        .expect("shared Intelligent Light Derivation must exist");
     assert_eq!(
-        mutation.output_bindings.len(),
+        derivation.output_bindings.len(),
         11,
         "every computed Intelligent Light field must be an explicit derived output"
     );
@@ -385,7 +402,7 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
             "value",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("shared Intelligent Light Mutation must set packed positions")
+        .expect("shared Intelligent Light Derivation must set packed positions")
         .clone();
     let colors = frame
         .overrides
@@ -394,7 +411,7 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
             "value",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("shared Intelligent Light Mutation must set packed colors");
+        .expect("shared Intelligent Light Derivation must set packed colors");
     assert_eq!(positions.len(), 11);
     assert_eq!(colors.len(), 11);
     assert!(positions.iter().all(|value| {
@@ -425,7 +442,7 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
         .expect("physical-P derivation must produce the next packed positions");
     assert_ne!(
         &positions, next_positions,
-        "scene-time-driven Mutation output must update positions across frames"
+        "scene-time-driven Derivation output must update positions across frames"
     );
 }
 
@@ -468,7 +485,7 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
             .and_then(serde_json::Value::as_array)
             .and_then(|position| position.first())
             .and_then(serde_json::Value::as_f64)
-            .expect("Thinking Mutation must update rendered Intelligent Light positions");
+            .expect("Thinking Derivation must update rendered Intelligent Light positions");
         minimum_position_x = minimum_position_x.min(position_x);
         maximum_position_x = maximum_position_x.max(position_x);
         assert!(
@@ -569,7 +586,7 @@ fn doubao_listening_to_thinking_keeps_following_after_transition() {
             .and_then(serde_json::Value::as_array)
             .and_then(|position| position.first())
             .and_then(serde_json::Value::as_f64)
-            .expect("Thinking Mutation must update rendered Intelligent Light positions");
+            .expect("Thinking Derivation must update rendered Intelligent Light positions");
         minimum_position_x = minimum_position_x.min(position_x);
         maximum_position_x = maximum_position_x.max(position_x);
         final_transition_channels = frame

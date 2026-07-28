@@ -203,13 +203,10 @@ impl PassTextureRef {
     pub fn direct(node_id: impl Into<String>, port_id: impl Into<String>) -> Self {
         let node_id = node_id.into();
         let port_id = port_id.into();
-        let binding_id = if port_id == "pass" {
-            node_id.clone()
-        } else {
-            format!("{node_id}.{port_id}")
-        };
         Self {
-            binding_id,
+            // Keep the consumer binding identity stable when a pass's sole formal output is
+            // renamed from the historical `pass` port (for example `glare` or `output`).
+            binding_id: node_id.clone(),
             source: OutputEndpoint::new(node_id, port_id),
             sampler_node_id: None,
         }

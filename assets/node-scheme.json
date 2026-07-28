@@ -5951,6 +5951,12 @@
         "description": "Built-in AnyState. Source-only transition endpoint."
       },
       {
+        "type": "derivationNode",
+        "label": "Derivation",
+        "category": "States",
+        "description": "State-local target solver and render derivation"
+      },
+      {
         "type": "entryState",
         "label": "Entry",
         "category": "Built-ins",
@@ -5961,15 +5967,18 @@
         "label": "Exit",
         "category": "Built-ins",
         "description": "Built-in exit state. Target-only transition endpoint."
-      },
-      {
-        "type": "mutationNode",
-        "label": "Mutation",
-        "category": "States",
-        "description": "State-local post-motion Mutation node"
       }
     ],
     "innerNodes": [
+      {
+        "type": "DerivationFunction",
+        "label": "Derivation Function",
+        "category": "Core",
+        "description": "Pure render derivation; Motion, setTo, and to are unavailable",
+        "inputs": [],
+        "outputs": [],
+        "defaultParams": {}
+      },
       {
         "type": "FloatInput",
         "label": "Float Input",
@@ -6099,7 +6108,7 @@
         "type": "MutationFunction",
         "label": "Mutation Function",
         "category": "Core",
-        "description": "Run a pure TypeScript function over the post-motion current snapshot",
+        "description": "Compute State target values; returned Motion values may drive Q/Qdot",
         "inputs": [],
         "outputs": [],
         "defaultParams": {}
