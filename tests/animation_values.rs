@@ -8,9 +8,8 @@ use node_forge_render_server::state_machine::types::{
     TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
-    build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
-    TickSchedule,
+    TickSchedule, build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
 };
 use node_forge_render_server::{asset_store, dsl};
 
@@ -41,6 +40,55 @@ fn space_event(event_type: &str) -> FiredEvent {
         event_type: event_type.into(),
         key: Some(" ".into()),
         ..Default::default()
+    }
+}
+
+fn state_override<'a>(
+    machine: &'a StateMachine,
+    state_id: &str,
+    node_id: &str,
+    param_name: &str,
+) -> &'a serde_json::Value {
+    let state = machine
+        .states
+        .iter()
+        .find(|state| state.id == state_id)
+        .unwrap_or_else(|| panic!("missing canonical State '{state_id}'"));
+    let key = format!("{node_id}:{param_name}");
+    state
+        .parameter_overrides
+        .get(&key)
+        .unwrap_or_else(|| panic!("State '{state_id}' has no canonical override for '{key}'"))
+}
+
+fn assert_state_override_values(
+    snapshot: &AnimationStep,
+    machine: &StateMachine,
+    state_id: &str,
+    keys: &[(&str, &str)],
+) {
+    for &(node_id, param_name) in keys {
+        let expected = state_override(machine, state_id, node_id, param_name);
+        let actual = snapshot
+            .active_overrides
+            .get(&node_forge_render_server::state_machine::OverrideKey::new(
+                node_id, param_name,
+            ))
+            .unwrap_or_else(|| {
+                panic!("final snapshot has no override for {state_id} {node_id}:{param_name}")
+            });
+        if let (Some(actual), Some(expected)) = (actual.as_f64(), expected.as_f64()) {
+            assert!(
+                (actual - expected).abs() <= 1.0e-9,
+                "final snap mismatch for {state_id} {node_id}:{param_name}: \
+                 expected {expected}, got {actual}"
+            );
+        } else {
+            assert_eq!(
+                actual, expected,
+                "final snap mismatch for {state_id} {node_id}:{param_name}"
+            );
+        }
     }
 }
 
@@ -395,6 +443,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
 
 #[test]
 fn animation_session_keeps_values_when_next_state_omits_override() {
+    let _function_registry = support::function_registry_lock();
     let scene = sticky_override_test_scene();
     let mut session = AnimationSession::from_scene(&scene)
         .expect("animation session should compile")
@@ -434,8 +483,13 @@ fn animation_session_keeps_values_when_next_state_omits_override() {
 
 #[test]
 fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
+    let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    let machine = scene
+        .state_machine
+        .as_ref()
+        .expect("doubao fixture should have a state machine");
     let mut session = AnimationSession::from_scene(&scene)
         .expect("doubao state machine should compile")
         .expect("doubao fixture should have a state machine");
@@ -447,11 +501,11 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         settled_off = session.step(1.0 / 60.0);
     }
     assert_eq!(settled_off.current_state_id, "st_mrerw3qg_6");
-    assert_eq!(
-        settled_off.active_overrides.get(
-            &node_forge_render_server::state_machine::OverrideKey::new("Vector2Input_35", "x")
-        ),
-        Some(&serde_json::json!(216.0))
+    assert_state_override_values(
+        &settled_off,
+        machine,
+        "st_mrerw3qg_6",
+        &[("Vector2Input_35", "x")],
     );
 
     session.fire_event(space_event("keydown"));
@@ -494,43 +548,44 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
     assert_eq!(completed.active_transition_id, None);
     assert_eq!(completed.current_state_id, "st_mrerxocx_8");
 
-    let expected = [
-        ("FloatInput_38", "value", serde_json::json!(480.0)),
-        ("FloatInput_39", "value", serde_json::json!(0.0)),
-        ("FloatInput_40", "value", serde_json::json!(0.0)),
-        ("FloatInput_41", "value", serde_json::json!(512.0)),
-        ("Vector2Input_35", "x", serde_json::json!(1008.0)),
-        ("Vector2Input_35", "y", serde_json::json!(168.0)),
-        ("Vector2Input_36", "x", serde_json::json!(540.0)),
-        ("Vector2Input_36", "y", serde_json::json!(186.0)),
-        ("FloatInput_37", "value", serde_json::json!(60.0)),
-        ("Vector2Input_38", "x", serde_json::json!(1008.0)),
-        ("Vector2Input_38", "y", serde_json::json!(168.0)),
-        ("FloatInput_42", "value", serde_json::json!(1.0)),
-        ("FloatInput_43", "value", serde_json::json!(1.0)),
-        ("FloatInput_44", "value", serde_json::json!(0.3)),
-        ("FloatInput_45", "value", serde_json::json!(0.0)),
-        ("FloatInput_46", "value", serde_json::json!(1.0)),
-        ("FloatInput_47", "value", serde_json::json!(1.0)),
-        ("FloatInput_48", "value", serde_json::json!(0.0)),
-        ("FloatInput_49", "value", serde_json::json!(0.0)),
-        ("FloatInput_50", "value", serde_json::json!(0.0)),
-    ];
-    for (node_id, param_name, value) in expected {
-        assert_eq!(
-            completed.active_overrides.get(
-                &node_forge_render_server::state_machine::OverrideKey::new(node_id, param_name)
-            ),
-            Some(&value),
-            "final snap mismatch for {node_id}:{param_name}"
-        );
-    }
+    assert_state_override_values(
+        &completed,
+        machine,
+        "st_mrerxocx_8",
+        &[
+            ("FloatInput_38", "value"),
+            ("FloatInput_39", "value"),
+            ("FloatInput_40", "value"),
+            ("FloatInput_41", "value"),
+            ("Vector2Input_35", "x"),
+            ("Vector2Input_35", "y"),
+            ("Vector2Input_36", "x"),
+            ("Vector2Input_36", "y"),
+            ("FloatInput_37", "value"),
+            ("Vector2Input_38", "x"),
+            ("Vector2Input_38", "y"),
+            ("FloatInput_42", "value"),
+            ("FloatInput_43", "value"),
+            ("FloatInput_44", "value"),
+            ("FloatInput_45", "value"),
+            ("FloatInput_46", "value"),
+            ("FloatInput_47", "value"),
+            ("FloatInput_48", "value"),
+            ("FloatInput_49", "value"),
+            ("FloatInput_50", "value"),
+        ],
+    );
 }
 
 #[test]
 fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
+    let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
+    let machine = scene
+        .state_machine
+        .as_ref()
+        .expect("doubao fixture should have a state machine");
     for (from_node, from_port, to_node, to_port) in [
         (
             "ImageTexture_InputBarUI",
@@ -603,26 +658,22 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
     };
 
     let assert_listening_values = |snapshot: &AnimationStep| {
-        let expected = [
-            ("FloatInput_42", serde_json::json!(0.0)),
-            ("FloatInput_43", serde_json::json!(1.0)),
-            ("FloatInput_44", serde_json::json!(0.3)),
-            ("FloatInput_45", serde_json::json!(0.0)),
-            ("FloatInput_46", serde_json::json!(1.0)),
-            ("FloatInput_47", serde_json::json!(0.0)),
-            ("FloatInput_48", serde_json::json!(1.0)),
-            ("FloatInput_49", serde_json::json!(1.0)),
-            ("FloatInput_50", serde_json::json!(1.0)),
-        ];
-        for (node_id, value) in expected {
-            assert_eq!(
-                snapshot.active_overrides.get(
-                    &node_forge_render_server::state_machine::OverrideKey::new(node_id, "value")
-                ),
-                Some(&value),
-                "Listening final snap mismatch for {node_id}:value"
-            );
-        }
+        assert_state_override_values(
+            snapshot,
+            machine,
+            "st_listening",
+            &[
+                ("FloatInput_42", "value"),
+                ("FloatInput_43", "value"),
+                ("FloatInput_44", "value"),
+                ("FloatInput_45", "value"),
+                ("FloatInput_46", "value"),
+                ("FloatInput_47", "value"),
+                ("FloatInput_48", "value"),
+                ("FloatInput_49", "value"),
+                ("FloatInput_50", "value"),
+            ],
+        );
     };
 
     let mut off_session = AnimationSession::from_scene(&scene)
@@ -673,13 +724,11 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
     idle_session.step(0.0);
     let idle = settle(&mut idle_session);
     assert_eq!(idle.current_state_id, "st_mrerxocx_8");
-    assert_eq!(
-        idle.active_overrides
-            .get(&node_forge_render_server::state_machine::OverrideKey::new(
-                "FloatInput_42",
-                "value"
-            )),
-        Some(&serde_json::json!(1.0))
+    assert_state_override_values(
+        &idle,
+        machine,
+        "st_mrerxocx_8",
+        &[("FloatInput_42", "value")],
     );
 
     idle_session.fire_event(space_event("keydown"));
@@ -705,24 +754,77 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
 
 #[test]
 fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
+    let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
     let machine = scene
         .state_machine
         .as_ref()
         .expect("doubao fixture should have a state machine");
+    let mutation_by_node: BTreeMap<&str, &str> = machine
+        .states
+        .iter()
+        .filter_map(|state| {
+            state
+                .mutation_id
+                .as_deref()
+                .map(|mutation_id| (state.id.as_str(), mutation_id))
+        })
+        .collect();
+    let mutation_by_state: BTreeMap<&str, &str> = machine
+        .mutation_bindings
+        .iter()
+        .map(|binding| {
+            let mutation_id = mutation_by_node
+                .get(binding.mutation_node_id.as_str())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "binding '{}' references Mutation node '{}' without a mutationId",
+                        binding.id, binding.mutation_node_id
+                    )
+                });
+            (binding.state_id.as_str(), *mutation_id)
+        })
+        .collect();
     assert_eq!(
-        machine.mutations.len(),
-        1,
-        "expected one shared Mutation scope"
+        mutation_by_state.keys().copied().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "st_listening",
+            "st_mrerw3qg_6",
+            "st_mrerxocx_8",
+            "st_push_to_talk",
+            "st_push_to_talk_cancel",
+            "st_speaking",
+            "st_thinking",
+        ]),
+        "unexpected set of logical States with Mutation bindings"
     );
-    assert_eq!(machine.mutation_bindings.len(), 7);
-    assert!(
+    let shared_mutation = mutation_by_state["st_mrerxocx_8"];
+    for state_id in [
+        "st_mrerw3qg_6",
+        "st_mrerxocx_8",
+        "st_listening",
+        "st_speaking",
+        "st_push_to_talk",
+        "st_push_to_talk_cancel",
+    ] {
+        assert_eq!(
+            mutation_by_state[state_id], shared_mutation,
+            "State '{state_id}' must use the shared Intelligent Light Mutation"
+        );
+    }
+    assert_ne!(
+        mutation_by_state["st_thinking"], shared_mutation,
+        "Thinking must own an independent Mutation"
+    );
+    assert_eq!(
         machine
-            .mutation_bindings
+            .mutations
             .iter()
-            .all(|binding| binding.mutation_node_id == "mutation_node_st_mrerxocx_8"),
-        "all logical States must use the shared Intelligent Light Mutation node"
+            .map(|mutation| mutation.id.as_str())
+            .collect::<BTreeSet<_>>(),
+        mutation_by_state.values().copied().collect::<BTreeSet<_>>(),
+        "every declared Mutation must be bound, with no undeclared bindings"
     );
 
     let mut session = AnimationSession::from_scene(&scene)
@@ -785,6 +887,7 @@ fn doubao_shared_intelligent_light_mutation_advances_with_global_scene_time() {
 
 #[test]
 fn forced_doubao_state_keeps_mutation_running_without_routing() {
+    let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let scene = load_case_scene(&case_dir).expect("doubao fixture should load");
     let mut session = AnimationSession::from_scene(&scene)
@@ -811,12 +914,13 @@ fn forced_doubao_state_keeps_mutation_running_without_routing() {
                 "value",
             ),
         ),
-        "forced State should continue evaluating its Mutation overlay"
+        "forced State should continue evaluating its derived Mutation outputs"
     );
 }
 
 #[test]
 fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
+    let _function_registry = support::function_registry_lock();
     for (energy, expected_radius) in [(0.0, 26.88), (1.0, 29.4)] {
         let mut scene = support::load_render_case_scene("doubao-voice-interaction");
         scene
@@ -849,19 +953,9 @@ fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
 
 #[test]
 fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_seconds() {
+    let _function_registry = support::function_registry_lock();
     let case_dir = support::render_case_dir("doubao-voice-interaction");
     let (mut scene, _asset_store) = support::load_render_case("doubao-voice-interaction");
-    let mut machine = scene
-        .state_machine
-        .take()
-        .expect("doubao fixture should have a state machine");
-    machine.initial_state_id = Some("st_mrerxocx_8".into());
-    scene.state_machine = Some(machine);
-    let mut runtime = node_forge_render_server::state_machine::compile_from_scene(&scene)
-        .expect("doubao state machine should compile")
-        .expect("doubao fixture should have a state machine");
-    let no_events = Vec::new();
-
     let golden_path = support::expected_path(&case_dir, "idle_voice_interaction_golden.json");
     let golden: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&golden_path)
@@ -880,6 +974,49 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
         601,
         "10 seconds at 60 fps must include 601 frames"
     );
+    let golden_motion_value = |name: &str| {
+        golden["motionParameters"]
+            .as_array()
+            .and_then(|parameters| {
+                parameters
+                    .iter()
+                    .find(|parameter| parameter["name"] == name)
+            })
+            .and_then(|parameter| parameter["value"].as_f64())
+            .unwrap_or_else(|| panic!("Idle golden has no numeric Motion parameter '{name}'"))
+    };
+
+    let mut machine = scene
+        .state_machine
+        .take()
+        .expect("doubao fixture should have a state machine");
+    let idle = machine
+        .states
+        .iter_mut()
+        .find(|state| state.id == "st_mrerxocx_8")
+        .expect("doubao fixture should have an Idle State");
+    let full_size_width = idle.parameter_overrides["Vector2Input_35:x"]
+        .as_f64()
+        .expect("Idle width override must be numeric");
+    let captured_width = golden_motion_value("intelligentLightWidthDp");
+    assert!(
+        captured_width.is_finite() && captured_width > 0.0,
+        "captured Intelligent Light width must be positive"
+    );
+    let captured_normal_offset = golden_motion_value("intelligentLightCurveNormalOffsetPx");
+    // The external capture records dp-like width/offset values, while the archive Mutation
+    // consumes full-size px, so convert both with the same captured-to-full-size width ratio.
+    let full_size_normal_offset = captured_normal_offset * full_size_width / captured_width;
+    idle.parameter_overrides.insert(
+        "FloatInput_IntelligentLightCurveNormalOffsetPx:value".into(),
+        serde_json::json!(full_size_normal_offset),
+    );
+    machine.initial_state_id = Some("st_mrerxocx_8".into());
+    scene.state_machine = Some(machine);
+    let mut runtime = node_forge_render_server::state_machine::compile_from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    let no_events = Vec::new();
 
     let positions_key = node_forge_render_server::state_machine::OverrideKey::new(
         "Vector2ArrayInput_IntelligentLightPositions",
@@ -932,6 +1069,7 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
 
 #[test]
 fn animation_value_traces_match_goldens() {
+    let _function_registry = support::function_registry_lock();
     let mut failures: Vec<String> = Vec::new();
 
     for case_dir in discover_case_dirs() {

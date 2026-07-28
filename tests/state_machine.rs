@@ -20,6 +20,7 @@ fn editor_glass_nforge_path() -> std::path::PathBuf {
 
 #[test]
 fn apply_overrides_targets_only_exact_uniform_declarations() {
+    let _function_registry = support::function_registry_lock();
     let mut scene = back_pin_pin_scene();
     let template = scene
         .nodes
@@ -54,6 +55,7 @@ fn apply_overrides_targets_only_exact_uniform_declarations() {
 
 #[test]
 fn back_pin_pin_scene_parses_state_machine() {
+    let _function_registry = support::function_registry_lock();
     let scene = back_pin_pin_scene();
     assert!(
         scene.state_machine.is_some(),
@@ -69,6 +71,7 @@ fn back_pin_pin_scene_parses_state_machine() {
 
 #[test]
 fn back_pin_pin_state_machine_validates() {
+    let _function_registry = support::function_registry_lock();
     let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
     state_machine::validate(sm).expect("state machine should be valid");
@@ -76,6 +79,7 @@ fn back_pin_pin_state_machine_validates() {
 
 #[test]
 fn back_pin_pin_compile_and_tick() {
+    let _function_registry = support::function_registry_lock();
     let scene = back_pin_pin_scene();
     let mut rt = state_machine::compile_from_scene(&scene)
         .expect("compile should succeed")
@@ -87,9 +91,9 @@ fn back_pin_pin_compile_and_tick() {
     let result = rt.tick(0.016, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj2am_3");
 
-    // Fire mousedown — the logical state changes immediately. This transition
-    // has no state target values, so the AnimationEngine has no channels to run;
-    // the target State's post-motion Mutation starts on the same tick.
+    // Fire mousedown — the logical state changes immediately. This State has
+    // no authored overrides, so its plain Mutation outputs are derived for
+    // rendering and do not create a Transition channel.
     let result = rt.tick(0.016, &Default::default(), &vec!["mousedown".into()]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
     assert_eq!(result.active_transition_id, None);
@@ -97,11 +101,13 @@ fn back_pin_pin_compile_and_tick() {
     // The state-local time Mutation continues to update independently.
     let result = rt.tick(2.4, &Default::default(), &vec![]);
     assert_eq!(result.current_state_id, "st_mmamj4me_7");
+    assert_eq!(result.active_transition_id, None);
     assert!(!result.finished);
 }
 
 #[test]
 fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
+    let _function_registry = support::function_registry_lock();
     use node_forge_render_server::state_machine::types::{
         AnimationStateType, TransitionMotionNode,
     };
@@ -259,6 +265,7 @@ fn editor_glass_nforge_any_state_mousedown_updates_mouse_override() {
 
 #[test]
 fn back_pin_pin_apply_overrides_no_crash() {
+    let _function_registry = support::function_registry_lock();
     let mut scene = back_pin_pin_scene();
     let mut rt = state_machine::compile_from_scene(&scene).unwrap().unwrap();
 
@@ -273,6 +280,7 @@ fn back_pin_pin_apply_overrides_no_crash() {
 
 #[test]
 fn back_pin_pin_state_types_correct() {
+    let _function_registry = support::function_registry_lock();
     use node_forge_render_server::state_machine::types::AnimationStateType;
 
     let scene = back_pin_pin_scene();
@@ -304,6 +312,7 @@ fn back_pin_pin_state_types_correct() {
 
 #[test]
 fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
+    let _function_registry = support::function_registry_lock();
     let scene = back_pin_pin_scene();
     let sm = scene.state_machine.as_ref().unwrap();
 
@@ -322,7 +331,8 @@ fn back_pin_pin_state_owned_mutations_reference_valid_definitions() {
 }
 
 #[test]
-fn doubao_nforge_executes_shared_driver_function_into_motion_targets() {
+fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
+    let _function_registry = support::function_registry_lock();
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
@@ -333,19 +343,32 @@ fn doubao_nforge_executes_shared_driver_function_into_motion_targets() {
                 && function.node_id == "function_ilight_idle"
         })
         .expect("shared Intelligent Light Mutation Function must be installed");
-    assert_eq!(
+    assert!(
         function
             .inputs
             .iter()
-            .filter(|input| input.motion)
-            .count(),
-        11,
-        "every derived Intelligent Light uniform must be a MotionParam"
+            .all(|input| input.motion != Some(true)),
+        "Mutation Function inputs must be ordinary graph values"
     );
     assert_eq!(
         function.source.matches(".setTo(").count(),
+        0,
+        "plain Function outputs must not create explicit Motion drivers"
+    );
+    let mutation = scene
+        .state_machine
+        .as_ref()
+        .and_then(|machine| {
+            machine
+                .mutations
+                .iter()
+                .find(|mutation| mutation.id == "mutation_ilight_idle")
+        })
+        .expect("shared Intelligent Light Mutation must exist");
+    assert_eq!(
+        mutation.output_bindings.len(),
         11,
-        "every derived Intelligent Light uniform must be written explicitly"
+        "every computed Intelligent Light field must be an explicit derived output"
     );
     let mut runtime = state_machine::compile_from_scene(&scene)
         .expect("doubao state machine should compile")
@@ -399,15 +422,16 @@ fn doubao_nforge_executes_shared_driver_function_into_motion_targets() {
             "value",
         ))
         .and_then(serde_json::Value::as_array)
-        .expect("MotionEngine must retain the next packed position target");
+        .expect("physical-P derivation must produce the next packed positions");
     assert_ne!(
         &positions, next_positions,
-        "scene-time-driven setTo calls must update MotionEngine across frames"
+        "scene-time-driven Mutation output must update positions across frames"
     );
 }
 
 #[test]
 fn doubao_thinking_mutation_retargets_snap_springs() {
+    let _function_registry = support::function_registry_lock();
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
@@ -426,9 +450,7 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
         let channel = frame
             .motion_channels
             .iter()
-            .find(|channel| {
-                channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value"
-            })
+            .find(|channel| channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value")
             .expect("Thinking snap target must have a MotionEngine channel");
         assert_eq!(channel.mutation_driver, "spring");
         assert_eq!(channel.transition_error, vec![0.0]);
@@ -464,9 +486,26 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
 
 #[test]
 fn doubao_listening_to_thinking_keeps_following_after_transition() {
+    let _function_registry = support::function_registry_lock();
     let path = support::render_case_archive("doubao-voice-interaction");
-    let (scene, _asset_store) =
+    let (mut scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let machine = scene
+        .state_machine
+        .as_mut()
+        .expect("doubao scene should have a state machine");
+    let outgoing_graphs = machine
+        .transitions
+        .iter()
+        .filter(|transition| transition.source == "st_thinking")
+        .map(|transition| transition.motion_graph_id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    machine
+        .transitions
+        .retain(|transition| transition.source != "st_thinking");
+    machine
+        .motion_graphs
+        .retain(|graph| !outgoing_graphs.contains(&graph.id));
     let mut runtime = state_machine::compile_from_scene(&scene)
         .expect("doubao state machine should compile")
         .expect("doubao scene should have a state machine");
@@ -499,15 +538,16 @@ fn doubao_listening_to_thinking_keeps_following_after_transition() {
     let mut post_transition_maximum_target = f64::NEG_INFINITY;
     let mut minimum_position_x = f64::INFINITY;
     let mut maximum_position_x = f64::NEG_INFINITY;
+    let mut final_transition_channels = Vec::new();
+    let mut final_transition_id = None;
+    let mut final_state_id = String::new();
     for _ in 0..180 {
         let frame = runtime.tick(1.0 / 60.0, &Default::default(), &vec![]);
         assert!(frame.diagnostics.is_empty(), "{:?}", frame.diagnostics);
         let snap = frame
             .motion_channels
             .iter()
-            .find(|channel| {
-                channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value"
-            })
+            .find(|channel| channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value")
             .expect("Thinking snap target must have a MotionEngine channel");
         if frame.active_transition_id.is_some() {
             saw_active_transition = true;
@@ -532,9 +572,26 @@ fn doubao_listening_to_thinking_keeps_following_after_transition() {
             .expect("Thinking Mutation must update rendered Intelligent Light positions");
         minimum_position_x = minimum_position_x.min(position_x);
         maximum_position_x = maximum_position_x.max(position_x);
+        final_transition_channels = frame
+            .motion_channels
+            .iter()
+            .filter(|channel| channel.transition_driver != "hold")
+            .map(|channel| {
+                (
+                    channel.key.clone(),
+                    channel.transition_driver.clone(),
+                    channel.transition_error.clone(),
+                )
+            })
+            .collect();
+        final_transition_id = frame.active_transition_id.clone();
+        final_state_id = frame.current_state_id.clone();
     }
     assert!(saw_active_transition);
-    assert!(saw_completed_transition);
+    assert!(
+        saw_completed_transition,
+        "Transition remained active in state {final_state_id}; active={final_transition_id:?}, unfinished channels: {final_transition_channels:?}"
+    );
     assert!(
         post_transition_maximum_target - post_transition_minimum_target > 0.02,
         "Mutation spring stopped after Transition completion"

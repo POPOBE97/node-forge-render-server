@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use anyhow::{Result, bail};
 
 use super::motion::{MotionChannelDebug, MotionEngine};
-use super::mutation::{self, MutationInputContext, MutationValue};
+use super::mutation::{self, MutationEvaluationPhase, MutationInputContext, MutationValue};
 use super::types::*;
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,22 @@ pub struct StateMachineRuntime {
 
     /// Per-property physical/timeline presentation drivers.
     motion_engine: MotionEngine,
+
+    /// Independent declarations that participate in S/Q/E/P solving. Plain
+    /// Mutation outputs such as packed positions are derived after P is
+    /// solved and never become MotionEngine channels.
+    motion_owned_keys: HashSet<OverrideKey>,
+
+    /// Complete declaration snapshot for ordinary, non-Motion Mutation
+    /// inputs. Keeping it outside MotionEngine prevents static inputs and
+    /// derived outputs from becoming solver coordinates.
+    declaration_values: HashMap<OverrideKey, serde_json::Value>,
+    initial_declaration_values: HashMap<OverrideKey, serde_json::Value>,
+
+    /// Plain Mutation outputs derived from the current physical P snapshot.
+    /// These values are merged into the render overrides but are not motion
+    /// coordinates and therefore own no Q/E/P or driver state.
+    derived_values: HashMap<OverrideKey, serde_json::Value>,
 
     /// Latest runtime input snapshot available to mutations.
     runtime_input: RuntimeInputSnapshot,
@@ -401,12 +417,18 @@ impl StateMachineRuntime {
         Self::with_initial_values(definition, HashMap::new())
     }
 
-    /// Construct a runtime with the scene's current uniform snapshot owned by
-    /// the animation engine from the first frame onward.
+    /// Construct a runtime from the scene's current declaration snapshot.
+    /// Only independent Motion fields are installed into MotionEngine.
     pub fn with_initial_values(
         definition: StateMachine,
         initial_values: HashMap<OverrideKey, serde_json::Value>,
     ) -> Self {
+        let motion_owned_keys = collect_motion_owned_keys(&definition);
+        let declaration_values = initial_values.clone();
+        let motion_initial_values = initial_values
+            .into_iter()
+            .filter(|(key, _)| motion_owned_keys.contains(key))
+            .collect();
         let mutation_prepare_error = super::mutation_function::prepare_state_machine(&definition)
             .err()
             .map(|error| format!("{error:#}"));
@@ -452,7 +474,11 @@ impl StateMachineRuntime {
             scene_time: 0.0,
             state_local_times,
             logical_state_initialized: false,
-            motion_engine: MotionEngine::with_initial_values(initial_values),
+            motion_engine: MotionEngine::with_initial_values(motion_initial_values),
+            motion_owned_keys,
+            initial_declaration_values: declaration_values.clone(),
+            declaration_values,
+            derived_values: HashMap::new(),
             runtime_input: RuntimeInputSnapshot::default(),
             mutation_prepare_error,
             trigger_holds: TriggerHoldState::default(),
@@ -484,6 +510,9 @@ impl StateMachineRuntime {
         }
         self.logical_state_initialized = false;
         self.motion_engine.reset();
+        self.declaration_values
+            .clone_from(&self.initial_declaration_values);
+        self.derived_values.clear();
         self.runtime_input = RuntimeInputSnapshot::default();
         self.trigger_holds = TriggerHoldState::default();
         self.finished = false;
@@ -513,18 +542,28 @@ impl StateMachineRuntime {
         self.runtime_input.mouse_position = Some(position);
     }
 
-    /// Merge external UniformDelta values into the animation engine. Running
-    /// channels retain transaction priority; idle channels accept the update
-    /// immediately.
+    /// Merge external UniformDelta values into the declaration snapshot.
+    /// Independent Motion channels also receive eligible updates; ordinary
+    /// derived inputs remain outside MotionEngine.
     pub fn update_current_values(&mut self, updates: &[(OverrideKey, serde_json::Value)]) {
-        self.motion_engine.update_external_values(updates);
+        for (key, value) in updates {
+            self.declaration_values.insert(key.clone(), value.clone());
+        }
+        let motion_updates = updates
+            .iter()
+            .filter(|(key, _)| self.motion_owned_keys.contains(key))
+            .cloned()
+            .collect::<Vec<_>>();
+        self.motion_engine.update_external_values(&motion_updates);
     }
 
     /// Advance the state machine by `dt` seconds and produce overrides.
     pub fn tick(&mut self, dt: f64, params: &ExternalParams, events: &FiredEvents) -> TickResult {
         if self.finished {
+            let mut overrides = self.motion_engine.current_values().clone();
+            overrides.extend(self.derived_values.clone());
             return TickResult {
-                overrides: self.motion_engine.current_values().clone(),
+                overrides,
                 finished: true,
                 current_state_id: self.current_state_id.clone(),
                 scene_time_secs: self.scene_time,
@@ -579,11 +618,23 @@ impl StateMachineRuntime {
         if !self.logical_state_initialized {
             self.motion_engine
                 .commit_logical_values(self.state_parameter_patch(&current_id));
-            if let Some(mutation_id) = self.mutation_id_bound_to_state(&current_id) {
+            if let Some(mutation_id) = self
+                .mutation_id_bound_to_state(&current_id)
+                .map(str::to_string)
+            {
+                let writable_keys = self.mutation_writable_keys(&mutation_id);
+                self.motion_engine
+                    .seed_targets_from_state(writable_keys.iter());
                 let mut working = self.motion_engine.clone();
                 working.begin_mutation_frame();
-                match self.evaluate_mutation_state(mutation_id, &current_id, 0.0, &mut working) {
-                    Ok(()) => self.motion_engine = working,
+                match self.evaluate_mutation_state(
+                    &mutation_id,
+                    &current_id,
+                    0.0,
+                    &mut working,
+                    MutationEvaluationPhase::Target,
+                ) {
+                    Ok(_) => self.motion_engine = working,
                     Err(error) => diagnostics.push(format!(
                         "mutation evaluation error (state={}, mutation={}): {error}",
                         current_id, mutation_id
@@ -602,6 +653,14 @@ impl StateMachineRuntime {
             self.state_local_times
                 .insert(transition.target.clone(), 0.0);
             let target_patch = self.state_parameter_patch(&transition.target);
+            // State overrides alone select the authored Transition route.
+            // Mutation Motion outputs establish Q before the residual is
+            // created, but plain derived outputs never join this key set.
+            let mut transition_keys = self
+                .state_parameter_patch(&transition.source)
+                .into_keys()
+                .collect::<HashSet<_>>();
+            transition_keys.extend(target_patch.keys().cloned());
             let graph = self
                 .motion_graph_index
                 .get(&transition.motion_graph_id)
@@ -611,25 +670,43 @@ impl StateMachineRuntime {
                 let mut target_engine = self.motion_engine.clone();
                 target_engine.begin_mutation_frame();
                 target_engine.commit_logical_values(target_patch);
-                if let Some(mutation_id) = self.mutation_id_bound_to_state(&transition.target) {
-                    if let Err(error) = self.evaluate_mutation_state(
-                        mutation_id,
+                if let Some(mutation_id) = self
+                    .mutation_id_bound_to_state(&transition.target)
+                    .map(str::to_string)
+                {
+                    let writable_keys = self.mutation_writable_keys(&mutation_id);
+                    target_engine.seed_targets_from_state(writable_keys.iter());
+                    let state_fallback = target_engine.clone();
+                    match self.evaluate_mutation_state(
+                        &mutation_id,
                         &transition.target,
                         0.0,
                         &mut target_engine,
+                        MutationEvaluationPhase::Target,
                     ) {
-                        diagnostics.push(format!(
-                            "mutation evaluation error (state={}, mutation={}): {error}",
-                            transition.target, mutation_id
-                        ));
-                        target_engine = self.motion_engine.clone();
+                        Ok(_) => {}
+                        Err(error) => {
+                            diagnostics.push(format!(
+                                "mutation evaluation error (state={}, mutation={}): {error}",
+                                transition.target, mutation_id
+                            ));
+                            target_engine = state_fallback;
+                        }
                     }
                 }
-                target_engine.begin_transition_from(&transition.id, &graph, &previous);
+                target_engine.begin_transition_from(
+                    &transition.id,
+                    &graph,
+                    &previous,
+                    &transition_keys,
+                );
                 self.motion_engine = target_engine;
             }
             self.current_state_id = transition.target;
-            target_initialized_this_tick = true;
+            // The prepass above establishes Motion Q before Transition E.
+            // The normal frame then advances Q and derives render-only values
+            // from the resulting physical P.
+            target_initialized_this_tick = false;
         }
 
         let target_state_id = self.current_state_id.clone();
@@ -651,8 +728,14 @@ impl StateMachineRuntime {
             && any_state.id != target_state_id
             && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
         {
-            match self.evaluate_mutation_state(mutation_id, &any_state.id, dt, &mut working_motion) {
-                Ok(()) => {}
+            match self.evaluate_mutation_state(
+                mutation_id,
+                &any_state.id,
+                dt,
+                &mut working_motion,
+                MutationEvaluationPhase::Target,
+            ) {
+                Ok(_) => {}
                 Err(error) => {
                     diagnostics.push(format!(
                         "mutation evaluation error (state={}, mutation={}): {error}",
@@ -667,9 +750,14 @@ impl StateMachineRuntime {
             && let Some(target_state) = self.find_state(&target_state_id).cloned()
             && let Some(mutation_id) = self.mutation_id_bound_to_state(&target_state.id)
         {
-            match self.evaluate_mutation_state(mutation_id, &target_state.id, dt, &mut working_motion)
-            {
-                Ok(()) => {}
+            match self.evaluate_mutation_state(
+                mutation_id,
+                &target_state.id,
+                dt,
+                &mut working_motion,
+                MutationEvaluationPhase::Target,
+            ) {
+                Ok(_) => {}
                 Err(error) => {
                     diagnostics.push(format!(
                         "mutation evaluation error (state={}, mutation={}): {error}",
@@ -683,9 +771,68 @@ impl StateMachineRuntime {
             self.motion_engine = working_motion;
         }
 
-        // Mutation advances Q/Qdot; Transition advances E/Edot; the engine
-        // materializes the only renderable P/V snapshot.
+        // Motion outputs have now produced Q. Transition advances residual
+        // E/Edot and publishes physical P for independent motion channels.
         let motion_step = self.motion_engine.step(dt);
+
+        // Plain outputs are projections of the solved physical state. During
+        // this phase, an upstream Motion edge resolves to P (never Q), so a
+        // derived positions array follows its animated dependencies without
+        // owning another spring or Transition residual.
+        let mut render_motion = self.motion_engine.clone();
+        let mut next_derived = HashMap::new();
+        let mut render_failed = false;
+
+        if let Some(any_state) = self
+            .definition
+            .states
+            .iter()
+            .find(|state| state.resolved_type() == AnimationStateType::AnyState)
+            .cloned()
+            && any_state.id != target_state_id
+            && let Some(mutation_id) = self.mutation_id_bound_to_state(&any_state.id)
+        {
+            match self.evaluate_mutation_state(
+                mutation_id,
+                &any_state.id,
+                dt,
+                &mut render_motion,
+                MutationEvaluationPhase::Render,
+            ) {
+                Ok(outputs) => extend_derived_values(&mut next_derived, outputs),
+                Err(error) => {
+                    diagnostics.push(format!(
+                        "mutation derived evaluation error (state={}, mutation={}): {error}",
+                        any_state.id, mutation_id
+                    ));
+                    render_failed = true;
+                }
+            }
+        }
+
+        if let Some(target_state) = self.find_state(&target_state_id).cloned()
+            && let Some(mutation_id) = self.mutation_id_bound_to_state(&target_state.id)
+        {
+            match self.evaluate_mutation_state(
+                mutation_id,
+                &target_state.id,
+                dt,
+                &mut render_motion,
+                MutationEvaluationPhase::Render,
+            ) {
+                Ok(outputs) => extend_derived_values(&mut next_derived, outputs),
+                Err(error) => {
+                    diagnostics.push(format!(
+                        "mutation derived evaluation error (state={}, mutation={}): {error}",
+                        target_state.id, mutation_id
+                    ));
+                    render_failed = true;
+                }
+            }
+        }
+        if !render_failed {
+            self.derived_values = next_derived;
+        }
 
         // Exit becomes terminal only after its visual transition completes.
         if !forced && let Some(state) = self.find_state(&self.current_state_id) {
@@ -696,8 +843,11 @@ impl StateMachineRuntime {
             }
         }
 
+        let mut overrides = self.motion_engine.current_values().clone();
+        overrides.extend(self.derived_values.clone());
+
         TickResult {
-            overrides: self.motion_engine.current_values().clone(),
+            overrides,
             diagnostics,
             finished: self.finished,
             current_state_id: self.current_state_id.clone(),
@@ -997,7 +1147,8 @@ impl StateMachineRuntime {
         state_id: &str,
         dt: f64,
         motion_engine: &mut MotionEngine,
-    ) -> Result<()> {
+        phase: MutationEvaluationPhase,
+    ) -> Result<HashMap<String, MutationValue>> {
         if let Some(error) = &self.mutation_prepare_error {
             bail!("Mutation Function preparation failed before playback: {error}");
         }
@@ -1008,11 +1159,21 @@ impl StateMachineRuntime {
             .ok_or_else(|| anyhow::anyhow!("mutation '{mutation_id}' not found"))?;
         let mutation = &self.definition.mutations[mutation_idx];
 
-        // Mutation reads the target system Q/Qdot, never presentation P/V.
+        // Target solving starts from State S. After Transition has produced
+        // physical P, the same declaration inputs resolve to P while deriving
+        // render-only outputs. Explicit upstream Motion edges follow the same
+        // phase rule inside the Mutation evaluator.
         let mut input_values: HashMap<String, MutationValue> = HashMap::new();
         for input_port in &mutation.inputs {
             if let Some(key) = OverrideKey::parse(&input_port.id)
-                && let Some(value) = motion_engine.target_value(&key)
+                && let Some(value) = match phase {
+                    MutationEvaluationPhase::Render => motion_engine
+                        .physical_value(&key)
+                        .or_else(|| self.declaration_values.get(&key).cloned()),
+                    MutationEvaluationPhase::All | MutationEvaluationPhase::Target => motion_engine
+                        .state_value(&key)
+                        .or_else(|| self.declaration_values.get(&key).cloned()),
+                }
                 && let Some(value) =
                     MutationValue::from_json_typed(&value, input_port.port_type.as_deref())
             {
@@ -1026,8 +1187,7 @@ impl StateMachineRuntime {
             mouse_position: self.runtime_input.mouse_position,
             dt,
         };
-        mutation::evaluate_mutation_with_motion(mutation, &ctx, motion_engine)?;
-        Ok(())
+        mutation::evaluate_mutation_with_motion_phase(mutation, &ctx, motion_engine, phase)
     }
 
     fn mutation_id_bound_to_state(&self, state_id: &str) -> Option<&str> {
@@ -1046,6 +1206,71 @@ impl StateMachineRuntime {
             .mutation_id
             .as_deref()
     }
+
+    fn mutation_writable_keys(&self, mutation_id: &str) -> Vec<OverrideKey> {
+        let Some(index) = self.mutation_index.get(mutation_id).copied() else {
+            return Vec::new();
+        };
+        let mutation = &self.definition.mutations[index];
+        mutation
+            .nodes
+            .iter()
+            .filter(|node| node.node_type == MutationInnerNodeType::MutationFunction)
+            .flat_map(|node| {
+                node.outputs
+                    .iter()
+                    .filter(|port| port.motion == Some(true))
+                    .filter_map(|port| {
+                        mutation
+                            .output_bindings
+                            .iter()
+                            .find(|binding| {
+                                binding.from.node_id == node.id && binding.from.port_id == port.id
+                            })
+                            .and_then(|binding| OverrideKey::parse(&binding.port_id))
+                    })
+            })
+            .collect()
+    }
+}
+
+fn extend_derived_values(
+    target: &mut HashMap<OverrideKey, serde_json::Value>,
+    outputs: HashMap<String, MutationValue>,
+) {
+    for (port_id, value) in outputs {
+        for (key, value) in mutation::expand_output_overrides(&port_id, &value) {
+            target.insert(key, value);
+        }
+    }
+}
+
+fn collect_motion_owned_keys(definition: &StateMachine) -> HashSet<OverrideKey> {
+    let mut keys = definition
+        .states
+        .iter()
+        .flat_map(|state| state.parameter_overrides.keys())
+        .filter_map(|key| OverrideKey::parse(key))
+        .collect::<HashSet<_>>();
+
+    for mutation in &definition.mutations {
+        for binding in &mutation.output_bindings {
+            let is_motion_output = mutation
+                .nodes
+                .iter()
+                .find(|node| node.id == binding.from.node_id)
+                .and_then(|node| {
+                    node.outputs
+                        .iter()
+                        .find(|port| port.id == binding.from.port_id)
+                })
+                .is_some_and(|port| port.motion == Some(true));
+            if is_motion_output && let Some(key) = OverrideKey::parse(&binding.port_id) {
+                keys.insert(key);
+            }
+        }
+    }
+    keys
 }
 
 #[cfg(test)]
@@ -1118,6 +1343,7 @@ mod tests {
             name: Some("Any".into()),
             port_type: Some("any".into()),
             array_length: None,
+            motion: None,
         };
         (vec![port.clone()], vec![port])
     }
@@ -1202,6 +1428,7 @@ mod tests {
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
             array_length: None,
+            motion: None,
         });
         graph.condition_binding = Some(TransitionConditionBinding::Input {
             input_port_id: input_port_id.into(),
@@ -1219,6 +1446,7 @@ mod tests {
             name: Some(input_port_id.into()),
             port_type: Some("bool".into()),
             array_length: None,
+            motion: None,
         });
         graph.nodes.push(TransitionMotionNode::EventTrigger {
             id: "trigger".into(),
@@ -1576,7 +1804,7 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_mutation_boundary_values_do_not_write_motion_state() {
+    fn explicit_passthrough_is_render_derived_without_a_motion_channel() {
         let mut sm = minimal_sm();
         sm.states
             .iter_mut()
@@ -1600,12 +1828,14 @@ mod tests {
                 name: Some("Local Elapsed Time".into()),
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
             outputs: vec![MutationPort {
-                id: "Node:x".into(),
-                name: Some("Node.x".into()),
+                id: "Node:derived".into(),
+                name: Some("Node.derived".into()),
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
             nodes: vec![],
             connections: vec![],
@@ -1613,7 +1843,7 @@ mod tests {
             output_bindings: vec![],
             passthrough_bindings: vec![MutationPassthroughBinding {
                 from_port_id: "localElapsedTime".into(),
-                to_port_id: "Node:x".into(),
+                to_port_id: "Node:derived".into(),
             }],
             viewport: None,
         });
@@ -1629,22 +1859,28 @@ mod tests {
         let entered = runtime.tick(0.1, &HashMap::new(), &vec![]);
         assert_eq!(entered.current_state_id, "dynamic");
         assert_eq!(
-            entered.overrides.get(&OverrideKey::new("Node", "x")),
+            entered.overrides.get(&OverrideKey::new("Node", "derived")),
             Some(&serde_json::json!(0.0))
         );
 
         let advancing = runtime.tick(0.1, &HashMap::new(), &vec![]);
         let value = advancing
             .overrides
-            .get(&OverrideKey::new("Node", "x"))
+            .get(&OverrideKey::new("Node", "derived"))
             .and_then(serde_json::Value::as_f64)
-            .expect("dynamic Timeline output");
-        assert!(value.abs() < 1e-8, "value={value}");
+            .expect("Mutation passthrough output");
+        assert!((value - 0.1).abs() < 1e-8, "value={value}");
         assert_eq!(advancing.state_local_times.get("dynamic"), Some(&0.1));
+        assert!(
+            advancing
+                .motion_channels
+                .iter()
+                .all(|channel| channel.key != "Node:derived")
+        );
     }
 
     #[test]
-    fn transition_source_ignores_legacy_mutation_boundary_values() {
+    fn transition_source_reads_motion_p_not_render_derived_overlay() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
             id: "a".into(),
@@ -1674,12 +1910,14 @@ mod tests {
                 name: None,
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
             outputs: vec![MutationPort {
                 id: "Node:x".into(),
                 name: None,
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
             nodes: vec![],
             connections: vec![],
@@ -1712,18 +1950,20 @@ mod tests {
         let idle = runtime.tick(0.2, &HashMap::new(), &vec![]);
         assert_eq!(
             idle.overrides.get(&OverrideKey::new("Node", "x")),
-            Some(&serde_json::json!(0.0))
+            Some(&serde_json::json!(0.2))
         );
         let interrupted = runtime.tick(0.0, &HashMap::new(), &vec!["go".into()]);
         assert_eq!(interrupted.active_transition_id.as_deref(), Some("a_to_b"));
-        assert_eq!(
-            interrupted.overrides.get(&OverrideKey::new("Node", "x")),
-            Some(&serde_json::json!(0.0))
-        );
+        let interrupted_x = interrupted
+            .overrides
+            .get(&OverrideKey::new("Node", "x"))
+            .and_then(serde_json::Value::as_f64)
+            .expect("MotionEngine P");
+        assert!((interrupted_x - 0.0).abs() <= 1.0e-9);
     }
 
     #[test]
-    fn legacy_mutation_boundary_values_never_become_uniform_writes() {
+    fn any_and_target_derived_outputs_share_physical_snapshot_with_target_precedence() {
         fn mutation(id: &str, seen_output: &str, conflict_value: f64) -> MutationDefinition {
             MutationDefinition {
                 id: id.into(),
@@ -1733,6 +1973,7 @@ mod tests {
                     name: None,
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 }],
                 outputs: vec![
                     MutationPort {
@@ -1740,12 +1981,14 @@ mod tests {
                         name: None,
                         port_type: Some("float".into()),
                         array_length: None,
+                        motion: None,
                     },
                     MutationPort {
                         id: "Node:conflict".into(),
                         name: None,
                         port_type: Some("float".into()),
                         array_length: None,
+                        motion: None,
                     },
                 ],
                 nodes: vec![MutationInnerNode {
@@ -1758,6 +2001,7 @@ mod tests {
                         name: None,
                         port_type: Some("float".into()),
                         array_length: None,
+                        motion: None,
                     }],
                 }],
                 connections: vec![],
@@ -1808,16 +2052,24 @@ mod tests {
         });
 
         let result = StateMachineRuntime::new(sm).tick(0.5, &HashMap::new(), &vec![]);
-        assert_eq!(result.overrides.get(&OverrideKey::new("Node", "anySeen")), None);
         assert_eq!(
-            result.overrides.get(&OverrideKey::new("Node", "targetSeen")),
-            None
+            result.overrides.get(&OverrideKey::new("Node", "anySeen")),
+            Some(&serde_json::json!(5.0))
         );
-        assert_eq!(result.overrides.get(&OverrideKey::new("Node", "conflict")), None);
+        assert_eq!(
+            result
+                .overrides
+                .get(&OverrideKey::new("Node", "targetSeen")),
+            Some(&serde_json::json!(5.0))
+        );
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("Node", "conflict")),
+            Some(&serde_json::json!(2.0))
+        );
     }
 
     #[test]
-    fn legacy_mouse_passthrough_does_not_write_uniforms() {
+    fn mouse_passthrough_is_render_derived_without_motion_channels() {
         let mut sm = minimal_sm();
         sm.states.push(AnimationState {
             id: "mutation".into(),
@@ -1837,12 +2089,14 @@ mod tests {
                     name: Some("MouseX.value".into()),
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "MouseY:value".into(),
                     name: Some("MouseY.value".into()),
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
             ],
             nodes: vec![],
@@ -1879,8 +2133,26 @@ mod tests {
         let result = rt.tick(0.016, &HashMap::new(), &vec!["mousedown".into()]);
 
         assert_eq!(result.current_state_id, "mutation");
-        assert_eq!(result.overrides.get(&OverrideKey::new("MouseX", "value")), None);
-        assert_eq!(result.overrides.get(&OverrideKey::new("MouseY", "value")), None);
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("MouseX", "value")),
+            Some(&serde_json::json!(321.0))
+        );
+        assert_eq!(
+            result.overrides.get(&OverrideKey::new("MouseY", "value")),
+            Some(&serde_json::json!(654.0))
+        );
+        assert!(
+            result
+                .motion_channels
+                .iter()
+                .all(|channel| channel.key != "MouseX:value")
+        );
+        assert!(
+            result
+                .motion_channels
+                .iter()
+                .all(|channel| channel.key != "MouseY:value")
+        );
     }
 
     #[test]
@@ -2242,6 +2514,7 @@ mod tests {
             name: Some("Mouse Position X".into()),
             port_type: Some("float".into()),
             array_length: None,
+            motion: None,
         });
         graph.nodes.extend([
             TransitionMotionNode::FloatInput {
@@ -2423,5 +2696,61 @@ mod tests {
         assert_eq!(entry.overrides.get(&key), Some(&serde_json::json!(0.0)));
         assert!(runtime.force_state("mutation-node").is_err());
         assert!(runtime.force_state("missing").is_err());
+    }
+
+    #[test]
+    fn render_only_outputs_never_enter_motion_engine() {
+        let mut sm = minimal_sm();
+        let render_key = OverrideKey::new("ComputedOutput", "value");
+        sm.mutations.push(MutationDefinition {
+            id: "computed-output".into(),
+            name: "Computed output".into(),
+            inputs: vec![],
+            outputs: vec![MutationPort {
+                id: "ComputedOutput:value".into(),
+                name: Some("Computed output".into()),
+                port_type: Some("float".into()),
+                array_length: None,
+                motion: None,
+            }],
+            nodes: vec![MutationInnerNode {
+                id: "constant".into(),
+                node_type: MutationInnerNodeType::FloatInput,
+                params: HashMap::from([("value".into(), serde_json::json!(1.0))]),
+                inputs: vec![],
+                outputs: vec![MutationPort {
+                    id: "value".into(),
+                    name: Some("Value".into()),
+                    port_type: Some("float".into()),
+                    array_length: None,
+                    motion: None,
+                }],
+            }],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![MutationOutputBinding {
+                port_id: "ComputedOutput:value".into(),
+                from: MutationEndpoint {
+                    node_id: "constant".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
+            viewport: None,
+        });
+        let mut runtime = StateMachineRuntime::with_initial_values(
+            sm,
+            HashMap::from([(render_key.clone(), serde_json::json!(0.0))]),
+        );
+
+        assert_eq!(
+            runtime.motion_engine.current_values().get(&render_key),
+            None
+        );
+        runtime.update_current_values(&[(render_key.clone(), serde_json::json!(2.0))]);
+        assert_eq!(
+            runtime.motion_engine.current_values().get(&render_key),
+            None
+        );
     }
 }

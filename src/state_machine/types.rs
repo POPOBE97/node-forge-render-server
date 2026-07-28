@@ -473,6 +473,7 @@ impl TransitionMotionGraph {
             name: Some("Any".into()),
             port_type: Some("any".into()),
             array_length: None,
+            motion: None,
         };
         Self {
             id: id.into(),
@@ -570,6 +571,7 @@ pub struct MutationDefinition {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MutationPort {
     pub id: String,
     #[serde(default)]
@@ -578,6 +580,8 @@ pub struct MutationPort {
     pub port_type: Option<String>,
     #[serde(default, rename = "arrayLength")]
     pub array_length: Option<usize>,
+    #[serde(default)]
+    pub motion: Option<bool>,
 }
 
 /// Supported inner-node types for mutation subgraphs (v1).

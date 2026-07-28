@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
         Arc, Mutex, OnceLock, RwLock, Weak,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -15,12 +15,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{
-    motion::MotionEngine,
     mutation::MutationValue,
-    types::{MutationInnerNodeType, OverrideKey, StateMachine},
+    types::{MutationInnerNodeType, StateMachine},
 };
 
-const MUTATION_FUNCTION_ABI_VERSION: u32 = 3;
+const MUTATION_FUNCTION_ABI_VERSION: u32 = 6;
 const WATCHDOG_IDLE: u8 = 0;
 const WATCHDOG_ARMED: u8 = 1;
 const WATCHDOG_FIRING: u8 = 2;
@@ -46,7 +45,7 @@ macro_rules! javascript_error {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReflectedPort {
     pub id: String,
     pub name: String,
@@ -55,11 +54,11 @@ pub struct ReflectedPort {
     #[serde(default)]
     pub array_length: Option<usize>,
     #[serde(default)]
-    pub motion: bool,
+    pub motion: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FunctionResource {
     pub scope: String,
     pub node_id: String,
@@ -305,192 +304,25 @@ fn watchdog_loop(inner: Arc<WatchdogInner>) {
 struct PreparedFunction {
     context: v8::Global<v8::Context>,
     function: v8::Global<v8::Function>,
+    motion_kind: v8::Global<v8::Symbol>,
     input_keys: Vec<v8::Global<v8::String>>,
     output_keys: Vec<v8::Global<v8::String>>,
-    inputs: Vec<ReflectedPort>,
     outputs: Vec<ReflectedPort>,
     artifact_fingerprint: [u8; 32],
 }
 
-struct MotionFunctionContext {
-    engine: MotionEngine,
-    dt: f64,
-    calls: HashSet<OverrideKey>,
-    ports: HashMap<OverrideKey, ReflectedPort>,
-    error: Option<String>,
-}
-
-thread_local! {
-    static MOTION_FUNCTION_CONTEXT: RefCell<Option<MotionFunctionContext>> = const { RefCell::new(None) };
-}
-
-fn callback_error(
-    scope: &mut v8::PinScope<'_, '_>,
-    message: impl Into<String>,
-) {
-    let message = message.into();
-    MOTION_FUNCTION_CONTEXT.with(|context| {
-        if let Some(context) = context.borrow_mut().as_mut() {
-            context.error = Some(message.clone());
-        }
-    });
-    if let Some(message) = v8::String::new(scope, &message) {
-        let exception = v8::Exception::error(scope, message);
-        scope.throw_exception(exception);
-    }
-}
-
-fn motion_key_from_callback(
-    scope: &mut v8::PinScope<'_, '_>,
-    args: &v8::FunctionCallbackArguments<'_>,
-) -> Result<OverrideKey> {
-    let key = args.data().to_rust_string_lossy(scope);
-    OverrideKey::parse(&key).ok_or_else(|| anyhow!("invalid MotionParam key '{key}'"))
-}
-
-fn motion_set_to_callback(
-    scope: &mut v8::PinScope<'_, '_>,
-    args: v8::FunctionCallbackArguments<'_>,
-    mut rv: v8::ReturnValue<'_>,
-) {
-    let result = (|| -> Result<MutationValue> {
-        let key = motion_key_from_callback(scope, &args)?;
-        MOTION_FUNCTION_CONTEXT.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            let context = slot
-                .as_mut()
-                .ok_or_else(|| anyhow!("MotionParam used outside Mutation Function evaluation"))?;
-            if !context.calls.insert(key.clone()) {
-                bail!("MotionParam '{key:?}' was written more than once in one frame");
-            }
-            let port = context
-                .ports
-                .get(&key)
-                .ok_or_else(|| anyhow!("MotionParam has no writable declaration"))?;
-            let target = mutation_value_from_v8(scope, args.get(0), port)?;
-            let velocity = if args.length() > 1 && !args.get(1).is_undefined() {
-                Some(mutation_value_from_v8(scope, args.get(1), port)?.to_json())
-            } else {
-                None
-            };
-            let value = context
-                .engine
-                .set_to(&key, target.to_json(), velocity, context.dt)?;
-            MutationValue::from_json_typed(&value, Some(&port.port_type))
-                .ok_or_else(|| anyhow!("MotionEngine setTo returned an incompatible value"))
-        })
-    })();
-    match result {
-        Ok(value) => match mutation_value_to_v8(scope, &value) {
-            Ok(value) => rv.set(value),
-            Err(error) => callback_error(scope, error.to_string()),
-        },
-        Err(error) => callback_error(scope, error.to_string()),
-    }
-}
-
-fn motion_to_callback(
-    scope: &mut v8::PinScope<'_, '_>,
-    args: v8::FunctionCallbackArguments<'_>,
-    mut rv: v8::ReturnValue<'_>,
-) {
-    let result = (|| -> Result<MutationValue> {
-        let key = motion_key_from_callback(scope, &args)?;
-        MOTION_FUNCTION_CONTEXT.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            let context = slot
-                .as_mut()
-                .ok_or_else(|| anyhow!("MotionParam used outside Mutation Function evaluation"))?;
-            if !context.calls.insert(key.clone()) {
-                bail!("MotionParam '{key:?}' was written more than once in one frame");
-            }
-            let port = context
-                .ports
-                .get(&key)
-                .ok_or_else(|| anyhow!("MotionParam has no writable declaration"))?;
-            let target = mutation_value_from_v8(scope, args.get(0), port)?;
-            let options = args
-                .get(1)
-                .to_object(scope)
-                .ok_or_else(|| anyhow!("to requires spring options"))?;
-            let duration_key = v8::String::new(scope, "duration").unwrap();
-            let bounce_key = v8::String::new(scope, "bounce").unwrap();
-            let duration = options
-                .get(scope, duration_key.into())
-                .and_then(|value| value.number_value(scope))
-                .ok_or_else(|| anyhow!("to spring duration must be numeric"))?;
-            let bounce = options
-                .get(scope, bounce_key.into())
-                .and_then(|value| value.number_value(scope))
-                .ok_or_else(|| anyhow!("to spring bounce must be numeric"))?;
-            let value =
-                context
-                    .engine
-                    .to(&key, target.to_json(), duration, bounce, context.dt)?;
-            MutationValue::from_json_typed(&value, Some(&port.port_type))
-                .ok_or_else(|| anyhow!("MotionEngine to returned an incompatible value"))
-        })
-    })();
-    match result {
-        Ok(value) => match mutation_value_to_v8(scope, &value) {
-            Ok(value) => rv.set(value),
-            Err(error) => callback_error(scope, error.to_string()),
-        },
-        Err(error) => callback_error(scope, error.to_string()),
-    }
-}
-
-fn motion_param_to_v8<'s>(
-    scope: &mut v8::PinScope<'s, '_>,
-    engine: &MotionEngine,
-    key: &OverrideKey,
-    port: &ReflectedPort,
-) -> Result<v8::Local<'s, v8::Value>> {
-    let value = engine
-        .target_value(key)
-        .and_then(|value| MutationValue::from_json_typed(&value, Some(&port.port_type)))
-        .unwrap_or_default();
-    let velocity = engine
-        .target_velocity(key)
-        .and_then(|value| MutationValue::from_json_typed(&value, Some(&port.port_type)))
-        .unwrap_or_else(|| value.zero_like());
-    let object = v8::Object::new(scope);
-    let value_key = v8::String::new(scope, "value").unwrap();
-    let velocity_key = v8::String::new(scope, "velocity").unwrap();
-    let value = mutation_value_to_v8(scope, &value)?;
-    let velocity = mutation_value_to_v8(scope, &velocity)?;
-    object
-        .set(scope, value_key.into(), value)
-        .ok_or_else(|| anyhow!("failed to set MotionParam.value"))?;
-    object
-        .set(scope, velocity_key.into(), velocity)
-        .ok_or_else(|| anyhow!("failed to set MotionParam.velocity"))?;
-
-    let callback_data = v8::String::new(scope, &key_string(key))
-        .ok_or_else(|| anyhow!("MotionParam key is too large"))?;
-    let set_to = v8::Function::builder(motion_set_to_callback)
-        .data(callback_data.into())
-        .build(scope)
-        .ok_or_else(|| anyhow!("failed to create MotionParam.setTo"))?;
-    let callback_data = v8::String::new(scope, &key_string(key))
-        .ok_or_else(|| anyhow!("MotionParam key is too large"))?;
-    let to = v8::Function::builder(motion_to_callback)
-        .data(callback_data.into())
-        .build(scope)
-        .ok_or_else(|| anyhow!("failed to create MotionParam.to"))?;
-    let set_to_key = v8::String::new(scope, "setTo").unwrap();
-    let to_key = v8::String::new(scope, "to").unwrap();
-    object
-        .set(scope, set_to_key.into(), set_to.into())
-        .ok_or_else(|| anyhow!("failed to install MotionParam.setTo"))?;
-    object
-        .set(scope, to_key.into(), to.into())
-        .ok_or_else(|| anyhow!("failed to install MotionParam.to"))?;
-    Ok(object.into())
-}
-
-fn key_string(key: &OverrideKey) -> String {
-    format!("{}:{}", key.node_id, key.param_name)
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionOutput {
+    Value(MutationValue),
+    SetTo {
+        target: MutationValue,
+        velocity: Option<MutationValue>,
+    },
+    To {
+        target: MutationValue,
+        duration: f64,
+        bounce: f64,
+    },
 }
 
 struct MutationJsRuntime {
@@ -561,18 +393,25 @@ impl MutationJsRuntime {
                 .ok_or_else(|| javascript_error!(scope, "installation failed"))?;
             let installed = installed
                 .to_object(scope)
-                .ok_or_else(|| anyhow!("Mutation Function ABI v2 installer returned no object"))?;
+                .ok_or_else(|| anyhow!("Mutation Function ABI v6 installer returned no object"))?;
             let entry_key = v8::String::new(scope, "entry").unwrap();
             let bindings_key = v8::String::new(scope, "bindings").unwrap();
+            let motion_kind_key = v8::String::new(scope, "motionKind").unwrap();
             let entry = installed
                 .get(scope, entry_key.into())
                 .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
-                .ok_or_else(|| anyhow!("Mutation Function ABI v2 installer returned no entry"))?;
+                .ok_or_else(|| anyhow!("Mutation Function ABI v6 installer returned no entry"))?;
             let bindings = installed
                 .get(scope, bindings_key.into())
                 .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
                 .ok_or_else(|| {
-                    anyhow!("Mutation Function ABI v2 installer returned no bindings array")
+                    anyhow!("Mutation Function ABI v6 installer returned no bindings array")
+                })?;
+            let motion_kind = installed
+                .get(scope, motion_kind_key.into())
+                .and_then(|value| v8::Local::<v8::Symbol>::try_from(value).ok())
+                .ok_or_else(|| {
+                    anyhow!("Mutation Function ABI v6 installer returned no motion symbol")
                 })?;
             for index in 0..bindings.length() {
                 let binding = bindings
@@ -597,9 +436,9 @@ impl MutationJsRuntime {
             PreparedFunction {
                 context: v8::Global::new(scope, context),
                 function: v8::Global::new(scope, entry),
+                motion_kind: v8::Global::new(scope, motion_kind),
                 input_keys,
                 output_keys,
-                inputs: resource.inputs.clone(),
                 outputs: resource.outputs.clone(),
                 artifact_fingerprint: artifact_fingerprint(resource),
             }
@@ -621,11 +460,8 @@ impl MutationJsRuntime {
         mutation_id: &str,
         node_id: &str,
         inputs: &[MutationValue],
-        motion_keys: &[Option<OverrideKey>],
-        motion_engine: &mut MotionEngine,
-        dt: f64,
         remaining_budget: Duration,
-    ) -> Result<Vec<MutationValue>> {
+    ) -> Result<Vec<FunctionOutput>> {
         if remaining_budget.is_zero() {
             bail!("Mutation Function exceeded the Mutation graph frame budget");
         }
@@ -648,12 +484,8 @@ impl MutationJsRuntime {
                 inputs.len()
             );
         }
-        if motion_keys.len() != inputs.len() {
-            bail!("Mutation Function motion binding count does not match its inputs");
-        }
-
         SharedWatchdog::global().arm(&self.watchdog_slot, remaining_budget);
-        let result = (|| -> Result<Vec<MutationValue>> {
+        let result = (|| -> Result<Vec<FunctionOutput>> {
             let isolate = runtime.v8_isolate();
             v8::scope!(handle_scope, isolate);
             let context = v8::Local::new(handle_scope, &prepared.context);
@@ -661,72 +493,52 @@ impl MutationJsRuntime {
             v8::tc_scope!(let scope, scope);
 
             let input = v8::Object::new(scope);
-            let mut motion_ports = HashMap::new();
-            for (index, (((value, key), motion_key), port)) in inputs
-                .iter()
-                .zip(&prepared.input_keys)
-                .zip(motion_keys)
-                .zip(&prepared.inputs)
-                .enumerate()
-            {
+            for (index, (value, key)) in inputs.iter().zip(&prepared.input_keys).enumerate() {
                 let key = v8::Local::new(scope, key);
-                let value = if port.motion {
-                    let motion_key = motion_key.as_ref().ok_or_else(|| {
-                        anyhow!(
-                            "Mutation Function '{node_id}.{}' is MotionParam but has no writable declaration binding",
-                            port.id
-                        )
-                    })?;
-                    motion_ports.insert(motion_key.clone(), port.clone());
-                    motion_param_to_v8(scope, motion_engine, motion_key, port)?
-                } else {
-                    mutation_value_to_v8(scope, value).with_context(|| {
-                        format!("failed to encode Mutation Function input at index {index}")
-                    })?
-                };
+                let value = mutation_value_to_v8(scope, value).with_context(|| {
+                    format!("failed to encode Mutation Function input at index {index}")
+                })?;
                 if input.set(scope, key.into(), value) != Some(true) {
                     bail!("failed to set Mutation Function input at index {index}");
                 }
             }
             deep_freeze(scope, input.into())?;
 
-            MOTION_FUNCTION_CONTEXT.with(|slot| {
-                *slot.borrow_mut() = Some(MotionFunctionContext {
-                    engine: motion_engine.clone(),
-                    dt,
-                    calls: HashSet::new(),
-                    ports: motion_ports,
-                    error: None,
-                });
-            });
-
             let function = v8::Local::new(scope, &prepared.function);
             let receiver = v8::undefined(scope).into();
             let returned = function.call(scope, receiver, &[input.into()]);
-            let motion_context = MOTION_FUNCTION_CONTEXT
-                .with(|slot| slot.borrow_mut().take())
-                .ok_or_else(|| anyhow!("Mutation Function motion context disappeared"))?;
-            if let Some(error) = motion_context.error {
-                bail!("{error}");
-            }
-            let returned =
-                returned.ok_or_else(|| javascript_error!(scope, "execution failed"))?;
+            let returned = returned.ok_or_else(|| javascript_error!(scope, "execution failed"))?;
             let outputs = if prepared.outputs.is_empty() {
                 Vec::new()
             } else {
-                let returned = returned
-                    .to_object(scope)
-                    .ok_or_else(|| anyhow!("Mutation Function '{node_id}' must return an object"))?;
+                let returned = returned.to_object(scope).ok_or_else(|| {
+                    anyhow!("Mutation Function '{node_id}' must return an object")
+                })?;
                 prepared
                     .outputs
                     .iter()
                     .zip(&prepared.output_keys)
-                    .map(|(port, key)| {
+                    .map(|(port, key)| -> Result<FunctionOutput> {
                         let key = v8::Local::new(scope, key);
                         let value = returned.get(scope, key.into()).ok_or_else(|| {
                             anyhow!("Mutation Function '{node_id}' omitted output '{}'", port.id)
                         })?;
-                        mutation_value_from_v8(scope, value, port).with_context(|| {
+                        if port.motion == Some(true) {
+                            let motion_kind = v8::Local::new(scope, &prepared.motion_kind);
+                            return motion_output_from_v8(
+                                scope,
+                                value,
+                                port,
+                                motion_kind,
+                            )
+                            .with_context(|| {
+                                format!(
+                                    "Mutation Function '{node_id}.{}' must return setTo(...) or to(...)",
+                                    port.id
+                                )
+                            });
+                        }
+                        mutation_value_from_v8(scope, value, port).map(FunctionOutput::Value).with_context(|| {
                             format!(
                                 "Mutation Function '{node_id}.{}' returned a value incompatible with '{}'",
                                 port.id, port.port_type
@@ -735,7 +547,6 @@ impl MutationJsRuntime {
                     })
                     .collect::<Result<Vec<_>>>()?
             };
-            *motion_engine = motion_context.engine;
             Ok(outputs)
         })();
         let timed_out = SharedWatchdog::global().disarm(&self.watchdog_slot);
@@ -745,6 +556,55 @@ impl MutationJsRuntime {
             bail!("Mutation Function exceeded the Mutation graph frame budget");
         }
         result
+    }
+}
+
+fn motion_output_from_v8(
+    scope: &mut v8::PinScope<'_, '_>,
+    value: v8::Local<'_, v8::Value>,
+    port: &ReflectedPort,
+    motion_kind: v8::Local<'_, v8::Symbol>,
+) -> Result<FunctionOutput> {
+    let object = value
+        .to_object(scope)
+        .ok_or_else(|| anyhow!("Motion output is not an object"))?;
+    let kind = object
+        .get(scope, motion_kind.into())
+        .map(|value| value.to_rust_string_lossy(scope))
+        .ok_or_else(|| anyhow!("Motion output was not created by setTo(...) or to(...)"))?;
+    let target_key = v8::String::new(scope, "target").unwrap();
+    let target = object
+        .get(scope, target_key.into())
+        .ok_or_else(|| anyhow!("Motion output omitted target"))
+        .and_then(|value| mutation_value_from_v8(scope, value, port))?;
+    match kind.as_str() {
+        "setTo" => {
+            let velocity_key = v8::String::new(scope, "velocity").unwrap();
+            let velocity = object
+                .get(scope, velocity_key.into())
+                .filter(|value| !value.is_undefined())
+                .map(|value| mutation_value_from_v8(scope, value, port))
+                .transpose()?;
+            Ok(FunctionOutput::SetTo { target, velocity })
+        }
+        "to" => {
+            let duration_key = v8::String::new(scope, "duration").unwrap();
+            let bounce_key = v8::String::new(scope, "bounce").unwrap();
+            let duration = object
+                .get(scope, duration_key.into())
+                .and_then(|value| value.number_value(scope))
+                .ok_or_else(|| anyhow!("to(...) duration must be numeric"))?;
+            let bounce = object
+                .get(scope, bounce_key.into())
+                .and_then(|value| value.number_value(scope))
+                .ok_or_else(|| anyhow!("to(...) bounce must be numeric"))?;
+            Ok(FunctionOutput::To {
+                target,
+                duration,
+                bounce,
+            })
+        }
+        _ => bail!("unknown Motion output kind '{kind}'"),
     }
 }
 
@@ -772,7 +632,7 @@ fn artifact_fingerprint(resource: &FunctionResource) -> [u8; 32] {
                 digest.update(value.as_bytes());
             }
             digest.update(port.array_length.unwrap_or(usize::MAX).to_le_bytes());
-            digest.update([u8::from(port.motion)]);
+            digest.update([u8::from(port.motion == Some(true))]);
         }
     }
     digest.finalize().into()
@@ -1009,15 +869,12 @@ pub fn prepare_state_machine(state_machine: &StateMachine) -> Result<()> {
     Ok(())
 }
 
-pub fn evaluate_with_motion(
+pub fn evaluate_function(
     mutation_id: &str,
     node_id: &str,
     inputs: &[MutationValue],
-    motion_keys: &[Option<OverrideKey>],
-    motion_engine: &mut MotionEngine,
-    dt: f64,
     remaining_budget: Duration,
-) -> Result<Vec<MutationValue>> {
+) -> Result<Vec<FunctionOutput>> {
     FUNCTION_RUNTIME.with(|runtime| {
         runtime
             .borrow_mut()
@@ -1027,15 +884,7 @@ pub fn evaluate_with_motion(
                     "Mutation Function runtime was not prepared before evaluating 'mutation:{mutation_id}/{node_id}'"
                 )
             })?
-            .evaluate(
-                mutation_id,
-                node_id,
-                inputs,
-                motion_keys,
-                motion_engine,
-                dt,
-                remaining_budget,
-            )
+            .evaluate(mutation_id, node_id, inputs, remaining_budget)
     })
 }
 
@@ -1046,17 +895,15 @@ fn evaluate(
     inputs: &[MutationValue],
     remaining_budget: Duration,
 ) -> Result<Vec<MutationValue>> {
-    let mut motion_engine = MotionEngine::new();
-    let motion_keys = vec![None; inputs.len()];
-    evaluate_with_motion(
-        mutation_id,
-        node_id,
-        inputs,
-        &motion_keys,
-        &mut motion_engine,
-        0.0,
-        remaining_budget,
-    )
+    evaluate_function(mutation_id, node_id, inputs, remaining_budget)?
+        .into_iter()
+        .map(|output| match output {
+            FunctionOutput::Value(value) => Ok(value),
+            FunctionOutput::SetTo { .. } | FunctionOutput::To { .. } => {
+                bail!("test helper expected ordinary Function outputs")
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1079,10 +926,18 @@ mod tests {
         let compiled_java_script = format!(
             r#"(() => {{
               "use strict";
+              const motionKind = Symbol("motion-kind");
+              const setTo = (target, velocity) => Object.freeze({{
+                [motionKind]: "setTo", target, velocity
+              }});
+              const to = (target, spring) => Object.freeze({{
+                [motionKind]: "to", target,
+                duration: spring.duration, bounce: spring.bounce
+              }});
               const module = {{ exports: {{}} }};
               const exports = module.exports;
               {body}
-              return {{ entry: module.exports.default, bindings: [mutation] }};
+              return {{ entry: module.exports.default, bindings: [mutation], motionKind }};
             }})()"#
         );
         FunctionResource {
@@ -1104,85 +959,64 @@ mod tests {
             name: id.into(),
             port_type: port_type.into(),
             array_length: None,
-            motion: false,
+            motion: None,
         }
     }
 
     fn packed_port(id: &str, port_type: &str, length: usize) -> ReflectedPort {
         ReflectedPort {
             array_length: Some(length),
+            motion: None,
             ..port(id, port_type)
         }
     }
 
     #[test]
-    fn motion_param_writes_commit_atomically_and_reject_duplicates() {
+    fn motion_is_a_return_value_and_inputs_are_plain_values() {
         let _guard = test_lock();
         let mut motion_port = port("x", "float");
-        motion_port.motion = true;
+        motion_port.motion = Some(true);
         install_document_functions([resource(
-            "motion transaction",
-            "Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation(input) { input.x.setTo(2); if (input.fail) throw new Error('fail'); if (input.duplicate) input.x.to(3, { duration: 0.8, bounce: 0.1 }); }",
-            vec![motion_port, port("fail", "bool"), port("duplicate", "bool")],
-            vec![],
+            "motion return value",
+            "Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation(input) { return { x: to(input.x + 1, { duration: 0.8, bounce: 0.1 }) }; }",
+            vec![port("x", "float")],
+            vec![motion_port],
         )])
         .expect("install function");
         prepare("test", "function").expect("prepare function");
-        let key = OverrideKey::new("Node", "value");
-        let initial = HashMap::from([(key.clone(), serde_json::json!(1.0))]);
-
-        let mut engine = MotionEngine::with_initial_values(initial.clone());
-        evaluate_with_motion(
+        let outputs = evaluate_function(
             "test",
             "function",
-            &[
-                MutationValue::Float(1.0),
-                MutationValue::Bool(false),
-                MutationValue::Bool(false),
-            ],
-            &[Some(key.clone()), None, None],
-            &mut engine,
-            1.0 / 60.0,
+            &[MutationValue::Float(2.0)],
             Duration::from_millis(20),
         )
-        .expect("setTo commits");
-        assert_eq!(engine.target_value(&key), Some(serde_json::json!(2.0)));
+        .expect("motion output is reflected from the Function return value");
+        assert_eq!(
+            outputs,
+            vec![FunctionOutput::To {
+                target: MutationValue::Float(3.0),
+                duration: 0.8,
+                bounce: 0.1,
+            }]
+        );
+    }
 
-        let mut engine = MotionEngine::with_initial_values(initial.clone());
-        let error = evaluate_with_motion(
-            "test",
-            "function",
-            &[
-                MutationValue::Float(1.0),
-                MutationValue::Bool(true),
-                MutationValue::Bool(false),
-            ],
-            &[Some(key.clone()), None, None],
-            &mut engine,
-            1.0 / 60.0,
-            Duration::from_millis(20),
-        )
-        .expect_err("throw rolls back");
-        assert!(error.to_string().contains("execution failed"));
-        assert_eq!(engine.target_value(&key), Some(serde_json::json!(1.0)));
-
-        let mut engine = MotionEngine::with_initial_values(initial);
-        let error = evaluate_with_motion(
-            "test",
-            "function",
-            &[
-                MutationValue::Float(1.0),
-                MutationValue::Bool(false),
-                MutationValue::Bool(true),
-            ],
-            &[Some(key.clone()), None, None],
-            &mut engine,
-            1.0 / 60.0,
-            Duration::from_millis(20),
-        )
-        .expect_err("duplicate write is rejected");
-        assert!(error.to_string().contains("more than once"));
-        assert_eq!(engine.target_value(&key), Some(serde_json::json!(1.0)));
+    #[test]
+    fn abi_v4_function_resources_are_rejected() {
+        let _guard = test_lock();
+        let mut stale = resource(
+            "old abi",
+            "Object.defineProperty(exports, \"__esModule\", { value: true }); exports.default = mutation; function mutation() {}",
+            vec![],
+            vec![],
+        );
+        stale.abi_version = 4;
+        let error = install_document_functions([stale]).expect_err("ABI v4 must be rejected");
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("unsupported Mutation Function ABI 4 (expected 6)"),
+            "{message}"
+        );
     }
 
     #[test]

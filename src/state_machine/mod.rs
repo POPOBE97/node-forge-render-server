@@ -81,9 +81,9 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
     )))
 }
 
-/// Collect the scene's complete current uniform/parameter snapshot. The
-/// animation engine owns this map so State, Motion, Mutation, external deltas,
-/// and renderer output all share one source of truth.
+/// Collect the scene's current uniform/parameter snapshot.
+/// `StateMachineRuntime` keeps ordinary declaration inputs outside
+/// MotionEngine and installs only independent State/Motion fields as channels.
 pub(crate) fn collect_scene_current_values(
     scene: &SceneDSL,
 ) -> HashMap<OverrideKey, serde_json::Value> {

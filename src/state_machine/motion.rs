@@ -23,6 +23,7 @@ const NANOS_PER_SECOND: f64 = 1_000_000_000.0;
 pub struct MotionChannelDebug {
     pub key: String,
     pub driver: String,
+    pub state_value: Vec<f64>,
     pub value: Vec<f64>,
     pub velocity: Vec<f64>,
     pub target_value: Vec<f64>,
@@ -48,6 +49,7 @@ pub struct MotionEngine {
     channels: HashMap<OverrideKey, Channel>,
     active_transition_id: Option<String>,
     initial_values: HashMap<OverrideKey, serde_json::Value>,
+    state_values: HashMap<OverrideKey, serde_json::Value>,
     current_values: HashMap<OverrideKey, serde_json::Value>,
     mutation_frame_calls: HashSet<OverrideKey>,
 }
@@ -61,6 +63,7 @@ impl MotionEngine {
         Self {
             channels: HashMap::new(),
             active_transition_id: None,
+            state_values: initial_values.clone(),
             current_values: initial_values.clone(),
             initial_values,
             mutation_frame_calls: HashSet::new(),
@@ -71,6 +74,7 @@ impl MotionEngine {
         self.channels.clear();
         self.active_transition_id = None;
         self.mutation_frame_calls.clear();
+        self.state_values.clone_from(&self.initial_values);
         self.current_values.clone_from(&self.initial_values);
     }
 
@@ -95,24 +99,24 @@ impl MotionEngine {
         graph: &TransitionMotionGraph,
     ) {
         let previous = self.clone();
+        let transition_keys = target.keys().cloned().collect();
         self.commit_logical_values(target.clone());
-        self.begin_transition_from(transition_id, graph, &previous);
+        self.begin_transition_from(transition_id, graph, &previous, &transition_keys);
     }
 
-    /// Establish transition error after the target State and its Mutation
-    /// Function have produced Q/Qdot. The previous engine supplies the
-    /// interruption-safe physical P/V source.
+    /// Establish transition error after the target State and its Motion
+    /// outputs have produced Q/Qdot. `transition_keys` contains only
+    /// declarations authored as overrides on the Transition endpoints.
     pub fn begin_transition_from(
         &mut self,
         transition_id: &str,
         graph: &TransitionMotionGraph,
         previous: &MotionEngine,
+        transition_keys: &HashSet<OverrideKey>,
     ) {
         let plans = compile_channel_plans(graph);
-        let mut keys = previous.channels.keys().cloned().collect::<Vec<_>>();
-        keys.extend(self.channels.keys().cloned());
+        let mut keys = transition_keys.iter().cloned().collect::<Vec<_>>();
         keys.sort_by(|left, right| key_string(left).cmp(&key_string(right)));
-        keys.dedup();
 
         for key in keys {
             let previous_sample = previous
@@ -130,9 +134,10 @@ impl MotionEngine {
             let Some(previous_sample) = previous_sample else {
                 continue;
             };
-            let channel = self.channels.entry(key.clone()).or_insert_with(|| {
-                Channel::hold(previous_sample.value.to_json())
-            });
+            let channel = self
+                .channels
+                .entry(key.clone())
+                .or_insert_with(|| Channel::hold(previous_sample.value.to_json()));
             let plan = plans
                 .specific
                 .get(&key_string(&key))
@@ -142,6 +147,16 @@ impl MotionEngine {
             channel.start_error(previous_sample, plan);
             self.current_values
                 .insert(key, channel.sample().value.to_json());
+        }
+
+        // Motion channels outside the authored State route do not participate
+        // in this Transition and must not retain stale residual error.
+        for (key, channel) in &mut self.channels {
+            if !transition_keys.contains(key) {
+                channel.finish_transition();
+                self.current_values
+                    .insert(key.clone(), channel.sample().value.to_json());
+            }
         }
         self.active_transition_id = Some(transition_id.to_string());
     }
@@ -163,10 +178,12 @@ impl MotionEngine {
         self.transition_to(transition_id, target, graph);
     }
 
-    /// Commit logical State targets when no transition transaction is active.
-    /// These are animation-engine writes, not Mutation post-processing writes.
+    /// Resolve State override values into S and seed Q from S. Callers may
+    /// subsequently run Mutation to replace or integrate Q before Transition
+    /// residual error is established.
     pub fn commit_logical_values(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
         for (key, value) in patch {
+            self.state_values.insert(key.clone(), value.clone());
             let channel = self
                 .channels
                 .entry(key.clone())
@@ -177,8 +194,33 @@ impl MotionEngine {
         }
     }
 
+    /// Re-seed writable target-system channels from their resolved State
+    /// values when a State activates. Ordinary frames never call this, so a
+    /// continuously retargeted Mutation spring is not recreated every tick.
+    pub fn seed_targets_from_state<'a>(&mut self, keys: impl IntoIterator<Item = &'a OverrideKey>) {
+        for key in keys {
+            let Some(value) = self.state_values.get(key).cloned() else {
+                continue;
+            };
+            let channel = self
+                .channels
+                .entry(key.clone())
+                .or_insert_with(|| Channel::hold(value.clone()));
+            channel.set_static_target(value);
+            self.current_values
+                .insert(key.clone(), channel.sample().value.to_json());
+        }
+    }
+
+    /// Override the readable physical snapshot without changing target
+    /// channels. Retained for low-level MotionEngine tests; Mutation Function
+    /// inputs read resolved S and therefore do not use this snapshot.
+    pub fn use_physical_inputs_from(&mut self, previous: &MotionEngine) {
+        self.current_values.clone_from(&previous.current_values);
+    }
+
     /// Directly set a Mutation target channel. This updates the target-system
-    /// sample Q/Qdot; the presentation sample remains Q + transition error.
+    /// sample Q/Qdot; the presentation sample remains Q - transition error.
     pub fn set_to(
         &mut self,
         key: &OverrideKey,
@@ -187,7 +229,10 @@ impl MotionEngine {
         dt: f64,
     ) -> anyhow::Result<serde_json::Value> {
         if !self.mutation_frame_calls.insert(key.clone()) {
-            anyhow::bail!("MotionParam '{}' was called more than once this frame", key_string(key));
+            anyhow::bail!(
+                "Motion output '{}' was applied more than once this frame",
+                key_string(key)
+            );
         }
         let fallback = self
             .current_values
@@ -200,7 +245,8 @@ impl MotionEngine {
             .or_insert_with(|| Channel::hold(fallback));
         channel.set_to(target, velocity, kotlin_frame_seconds(dt))?;
         let sample = channel.sample();
-        self.current_values.insert(key.clone(), sample.value.to_json());
+        self.current_values
+            .insert(key.clone(), sample.value.to_json());
         Ok(channel.target_sample().value.to_json())
     }
 
@@ -215,7 +261,10 @@ impl MotionEngine {
         dt: f64,
     ) -> anyhow::Result<serde_json::Value> {
         if !self.mutation_frame_calls.insert(key.clone()) {
-            anyhow::bail!("MotionParam '{}' was called more than once this frame", key_string(key));
+            anyhow::bail!(
+                "Motion output '{}' was applied more than once this frame",
+                key_string(key)
+            );
         }
         let fallback = self
             .current_values
@@ -228,7 +277,8 @@ impl MotionEngine {
             .or_insert_with(|| Channel::hold(fallback));
         channel.to(target, duration, bounce, kotlin_frame_seconds(dt))?;
         let sample = channel.sample();
-        self.current_values.insert(key.clone(), sample.value.to_json());
+        self.current_values
+            .insert(key.clone(), sample.value.to_json());
         Ok(channel.target_sample().value.to_json())
     }
 
@@ -237,7 +287,11 @@ impl MotionEngine {
     pub fn update_external_values(&mut self, updates: &[(OverrideKey, serde_json::Value)]) {
         for (key, value) in updates {
             self.initial_values.insert(key.clone(), value.clone());
-            let transaction_is_active = self.channels.get(key).is_some_and(Channel::transition_active);
+            self.state_values.insert(key.clone(), value.clone());
+            let transaction_is_active = self
+                .channels
+                .get(key)
+                .is_some_and(Channel::transition_active);
             if !transaction_is_active {
                 let channel = self
                     .channels
@@ -254,6 +308,13 @@ impl MotionEngine {
         &self.current_values
     }
 
+    pub fn state_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+        self.state_values
+            .get(key)
+            .cloned()
+            .or_else(|| self.initial_values.get(key).cloned())
+    }
+
     pub fn target_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
         self.channels
             .get(key)
@@ -267,6 +328,16 @@ impl MotionEngine {
             .map(|channel| channel.target_sample().velocity.to_json())
     }
 
+    pub fn physical_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+        self.current_values.get(key).cloned()
+    }
+
+    pub fn physical_velocity(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+        self.channels
+            .get(key)
+            .map(|channel| channel.sample().velocity.to_json())
+    }
+
     pub fn step(&mut self, dt: f64) -> MotionStep {
         let dt = kotlin_frame_seconds(dt);
         let mut result = MotionStep::default();
@@ -277,12 +348,19 @@ impl MotionEngine {
             let sample = channel.sample();
             let target = channel.target_sample();
             let error = channel.error_sample();
+            let state_value = self
+                .state_values
+                .get(key)
+                .and_then(NumericValue::from_json)
+                .map(|value| value.components().to_vec())
+                .unwrap_or_default();
             let value = sample.value.to_json();
             self.current_values.insert(key.clone(), value.clone());
             result.overrides.insert(key.clone(), value);
             result.channels.push(MotionChannelDebug {
                 key: key_string(key),
                 driver: sample.driver.to_string(),
+                state_value,
                 value: sample.value.components().to_vec(),
                 velocity: sample.velocity.components().to_vec(),
                 target_value: target.value.components().to_vec(),
@@ -454,8 +532,8 @@ impl Channel {
                 if current_value.has_same_shape(&target.value)
                     && current_velocity.has_same_shape(&target.velocity) =>
             {
-                let error_value = subtract_values(current_value, &target.value);
-                let error_velocity = subtract_values(current_velocity, &target.velocity);
+                let error_value = subtract_values(&target.value, current_value);
+                let error_velocity = subtract_values(&target.velocity, current_velocity);
                 Driver::start_numeric(
                     None,
                     error_value.clone(),
@@ -545,8 +623,8 @@ impl Channel {
         let target = self.target.sample();
         let error = self.transition_error.sample();
         DriverSample {
-            value: add_values(&target.value, &error.value),
-            velocity: add_values(&target.velocity, &error.velocity),
+            value: subtract_values(&target.value, &error.value),
+            velocity: subtract_values(&target.velocity, &error.velocity),
             driver: error.driver,
             completed: error.completed,
             persistent: false,
@@ -580,19 +658,6 @@ fn zero_driver_like(value: &NumericValue) -> Driver {
         value: zero.clone(),
         velocity: zero,
     })
-}
-
-fn add_values(left: &NumericValue, right: &NumericValue) -> NumericValue {
-    if !left.has_same_shape(right) {
-        return left.clone();
-    }
-    left.same_shape(
-        left.components()
-            .iter()
-            .zip(right.components())
-            .map(|(left, right)| left + right)
-            .collect(),
-    )
 }
 
 fn subtract_values(left: &NumericValue, right: &NumericValue) -> NumericValue {
@@ -1343,6 +1408,7 @@ struct DiscreteDriver {
 }
 
 impl DiscreteDriver {
+    #[cfg(test)]
     fn new(
         outgoing: Option<Driver>,
         from: serde_json::Value,
@@ -1412,6 +1478,48 @@ fn same_components(a: &NumericValue, b: &NumericValue) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wildcard_spring_graph(duration: f64, bounce: f64) -> TransitionMotionGraph {
+        let any_port = super::super::types::MutationPort {
+            id: "*".into(),
+            name: Some("Any".into()),
+            port_type: Some("any".into()),
+            array_length: None,
+            motion: None,
+        };
+        TransitionMotionGraph {
+            id: "motion".into(),
+            name: "Wildcard".into(),
+            inputs: vec![any_port.clone()],
+            outputs: vec![any_port],
+            nodes: vec![TransitionMotionNode::Spring {
+                id: "spring".into(),
+                position: Default::default(),
+                label: None,
+                duration,
+                bounce,
+                delay: 0.0,
+            }],
+            connections: vec![],
+            input_bindings: vec![super::super::types::TransitionMotionInputBinding {
+                port_id: "*".into(),
+                to: super::super::types::MutationEndpoint {
+                    node_id: "spring".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            output_bindings: vec![super::super::types::TransitionMotionOutputBinding {
+                port_id: "*".into(),
+                from: super::super::types::MutationEndpoint {
+                    node_id: "spring".into(),
+                    port_id: "value".into(),
+                },
+            }],
+            passthrough_bindings: vec![],
+            condition_binding: None,
+            viewport: None,
+        }
+    }
 
     #[derive(Deserialize)]
     struct GroundTruth {
@@ -1981,6 +2089,7 @@ mod tests {
                 name: Some(id.into()),
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             })
             .collect::<Vec<_>>();
         let graph = TransitionMotionGraph {
@@ -2079,5 +2188,108 @@ mod tests {
             Some("timeline+tween")
         );
         assert_eq!(drivers.get("Node:z").map(String::as_str), Some("timeline"));
+    }
+
+    #[test]
+    fn wildcard_transition_does_not_drive_mutation_only_channels() {
+        let graph = wildcard_spring_graph(0.5, 0.2);
+        let state_key = OverrideKey::new("StateInput", "value");
+        let mutation_key = OverrideKey::new("DerivedPositions", "value");
+        let mut previous = MotionEngine::with_initial_values(HashMap::from([
+            (state_key.clone(), serde_json::json!(0.0)),
+            (mutation_key.clone(), serde_json::json!([[0.0, 0.0]])),
+        ]));
+        previous
+            .commit_logical_values(HashMap::from([(state_key.clone(), serde_json::json!(0.0))]));
+        previous.begin_mutation_frame();
+        previous
+            .set_to(&mutation_key, serde_json::json!([[0.0, 0.0]]), None, 0.0)
+            .unwrap();
+
+        let mut target = previous.clone();
+        target.commit_logical_values(HashMap::from([(state_key.clone(), serde_json::json!(1.0))]));
+        target.begin_mutation_frame();
+        target
+            .set_to(&mutation_key, serde_json::json!([[10.0, 20.0]]), None, 0.0)
+            .unwrap();
+        target.begin_transition_from("transition", &graph, &previous, &HashSet::from([state_key]));
+        target.begin_mutation_frame();
+        target
+            .set_to(
+                &mutation_key,
+                serde_json::json!([[10.0, 20.0]]),
+                None,
+                1.0 / 60.0,
+            )
+            .unwrap();
+
+        let step = target.step(0.0);
+        let state = step
+            .channels
+            .iter()
+            .find(|channel| channel.key == "StateInput:value")
+            .unwrap();
+        let mutation = step
+            .channels
+            .iter()
+            .find(|channel| channel.key == "DerivedPositions:value")
+            .unwrap();
+        assert_eq!(state.transition_driver, "spring");
+        assert_eq!(mutation.transition_driver, "hold");
+        assert!(
+            mutation
+                .transition_error
+                .iter()
+                .all(|value| value.abs() <= 1.0e-9)
+        );
+        assert_eq!(mutation.value, mutation.target_value);
+        assert!(
+            mutation
+                .target_velocity
+                .iter()
+                .all(|value| value.abs() <= 1.0e-9)
+        );
+    }
+
+    #[test]
+    fn state_mutation_spring_is_solved_before_transition_residual() {
+        let graph = wildcard_spring_graph(0.25, 0.15);
+        let key = OverrideKey::new("Snap", "value");
+        let mut previous = MotionEngine::with_initial_values(HashMap::from([(
+            key.clone(),
+            serde_json::json!(0.3),
+        )]));
+        previous.commit_logical_values(HashMap::from([(key.clone(), serde_json::json!(0.3))]));
+
+        let mut target = previous.clone();
+        target.commit_logical_values(HashMap::from([(key.clone(), serde_json::json!(0.5))]));
+        target.seed_targets_from_state([&key]);
+        target.begin_mutation_frame();
+        target
+            .to(&key, serde_json::json!(0.4), 0.8, 0.1, 0.0)
+            .unwrap();
+        target.begin_transition_from(
+            "transition",
+            &graph,
+            &previous,
+            &HashSet::from([key.clone()]),
+        );
+
+        let step = target.step(0.0);
+        let channel = step
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Snap:value")
+            .unwrap();
+        assert_eq!(channel.state_value, vec![0.5]);
+        assert_eq!(channel.target_value, vec![0.5]);
+        assert_eq!(channel.transition_error, vec![0.2]);
+        assert_eq!(channel.value, vec![0.3]);
+        assert_eq!(channel.mutation_driver, "spring");
+        assert_eq!(channel.transition_driver, "spring");
+        assert!(
+            (channel.value[0] - (channel.target_value[0] - channel.transition_error[0])).abs()
+                <= 1.0e-9
+        );
     }
 }

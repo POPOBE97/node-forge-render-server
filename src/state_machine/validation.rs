@@ -577,57 +577,109 @@ fn validate_mutation_inner_node_ids(m: &MutationDefinition) -> Result<()> {
                 n.id
             );
         }
+        if n.inputs.iter().any(|port| port.motion == Some(true)) {
+            bail!(
+                "state_machine validation: mutation '{}' Function '{}' has a Motion input; Motion is return-only",
+                m.id,
+                n.id
+            );
+        }
     }
     Ok(())
 }
 
 fn validate_mutation_connections(m: &MutationDefinition) -> Result<()> {
-    let node_ids: HashSet<&str> = m.nodes.iter().map(|n| n.id.as_str()).collect();
-
+    let node_by_id: HashMap<&str, &MutationInnerNode> =
+        m.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     for c in &m.connections {
-        if !node_ids.contains(c.from.node_id.as_str()) {
+        let Some(_) = node_by_id.get(c.from.node_id.as_str()) else {
             bail!(
                 "state_machine validation: mutation '{}' connection '{}' from references missing node '{}'",
                 m.id,
                 c.id,
                 c.from.node_id
             );
-        }
-        if !node_ids.contains(c.to.node_id.as_str()) {
+        };
+        let Some(_) = node_by_id.get(c.to.node_id.as_str()) else {
             bail!(
                 "state_machine validation: mutation '{}' connection '{}' to references missing node '{}'",
                 m.id,
                 c.id,
                 c.to.node_id
             );
-        }
+        };
     }
 
     Ok(())
 }
 
 fn validate_mutation_bindings(m: &MutationDefinition) -> Result<()> {
-    let node_ids: HashSet<&str> = m.nodes.iter().map(|n| n.id.as_str()).collect();
+    let node_by_id: HashMap<&str, &MutationInnerNode> =
+        m.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     for b in &m.input_bindings {
-        if !node_ids.contains(b.to.node_id.as_str()) {
+        let Some(node) = node_by_id.get(b.to.node_id.as_str()) else {
             bail!(
                 "state_machine validation: mutation '{}' inputBinding port '{}' targets missing node '{}'",
                 m.id,
                 b.port_id,
                 b.to.node_id
             );
-        }
+        };
+        let Some(_) = node.inputs.iter().find(|port| port.id == b.to.port_id) else {
+            bail!(
+                "state_machine validation: mutation '{}' inputBinding target port '{}.{}' does not exist",
+                m.id,
+                b.to.node_id,
+                b.to.port_id
+            );
+        };
     }
 
     for b in &m.output_bindings {
-        if !node_ids.contains(b.from.node_id.as_str()) {
+        let Some(node) = node_by_id.get(b.from.node_id.as_str()) else {
             bail!(
                 "state_machine validation: mutation '{}' outputBinding port '{}' sources from missing node '{}'",
                 m.id,
                 b.port_id,
                 b.from.node_id
             );
+        };
+        let Some(port) = node.outputs.iter().find(|port| port.id == b.from.port_id) else {
+            bail!(
+                "state_machine validation: mutation '{}' outputBinding source port '{}.{}' does not exist",
+                m.id,
+                b.from.node_id,
+                b.from.port_id
+            );
+        };
+        if port.motion == Some(true) && OverrideKey::parse(&b.port_id).is_none() {
+            bail!(
+                "state_machine validation: mutation '{}' Motion output '{}.{}' must bind to a declaration output",
+                m.id,
+                b.from.node_id,
+                b.from.port_id
+            );
+        }
+    }
+
+    for node in &m.nodes {
+        for port in node.outputs.iter().filter(|port| port.motion == Some(true)) {
+            let count = m
+                .output_bindings
+                .iter()
+                .filter(|binding| {
+                    binding.from.node_id == node.id && binding.from.port_id == port.id
+                })
+                .count();
+            if count != 1 {
+                bail!(
+                    "state_machine validation: mutation '{}' Motion output '{}.{}' must bind exactly once to a declaration output",
+                    m.id,
+                    node.id,
+                    port.id
+                );
+            }
         }
     }
 
@@ -716,6 +768,7 @@ mod tests {
             name: Some("Any".into()),
             port_type: Some("any".into()),
             array_length: None,
+            motion: None,
         };
         TransitionMotionGraph {
             id: "instant".into(),
@@ -1002,6 +1055,7 @@ mod tests {
                 name: Some("X".into()),
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
             nodes: vec![MutationInnerNode {
                 id: "n".into(),
@@ -1015,6 +1069,7 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 }],
             }],
             connections: vec![],
@@ -1046,5 +1101,109 @@ mod tests {
             err.contains("duplicate output") && err.contains("passthrough"),
             "expected passthrough conflict error, got: {err}"
         );
+    }
+
+    #[test]
+    fn declaration_binding_is_an_ordinary_state_value_input() {
+        let mut mutation = empty_mutation("mutation");
+        mutation.nodes.push(MutationInnerNode {
+            id: "function".into(),
+            node_type: MutationInnerNodeType::MutationFunction,
+            params: HashMap::new(),
+            inputs: vec![MutationPort {
+                id: "value".into(),
+                name: Some("value".into()),
+                port_type: Some("float".into()),
+                array_length: None,
+                motion: None,
+            }],
+            outputs: vec![],
+        });
+        mutation.input_bindings.push(MutationInputBinding {
+            port_id: "FloatInput:value".into(),
+            to: MutationEndpoint {
+                node_id: "function".into(),
+                port_id: "value".into(),
+            },
+        });
+
+        validate_mutation_bindings(&mutation).expect("Mutation Inputs expose S as ordinary values");
+    }
+
+    #[test]
+    fn motion_is_return_only() {
+        let mut mutation = empty_mutation("mutation");
+        mutation.nodes.push(MutationInnerNode {
+            id: "function".into(),
+            node_type: MutationInnerNodeType::MutationFunction,
+            params: HashMap::new(),
+            inputs: vec![MutationPort {
+                id: "value".into(),
+                name: Some("value".into()),
+                port_type: Some("float".into()),
+                array_length: None,
+                motion: Some(true),
+            }],
+            outputs: vec![],
+        });
+
+        let error = validate_mutation_inner_node_ids(&mutation)
+            .expect_err("Motion inputs must be rejected")
+            .to_string();
+        assert!(error.contains("return-only"), "{error}");
+    }
+
+    #[test]
+    fn motion_output_must_bind_to_one_declaration_and_may_feed_downstream() {
+        let mut mutation = empty_mutation("mutation");
+        mutation.nodes.extend([
+            MutationInnerNode {
+                id: "first".into(),
+                node_type: MutationInnerNodeType::MutationFunction,
+                params: HashMap::new(),
+                inputs: vec![],
+                outputs: vec![MutationPort {
+                    id: "value".into(),
+                    name: Some("physical".into()),
+                    port_type: Some("float".into()),
+                    array_length: None,
+                    motion: Some(true),
+                }],
+            },
+            MutationInnerNode {
+                id: "second".into(),
+                node_type: MutationInnerNodeType::MutationFunction,
+                params: HashMap::new(),
+                inputs: vec![MutationPort {
+                    id: "value".into(),
+                    name: Some("value".into()),
+                    port_type: Some("float".into()),
+                    array_length: None,
+                    motion: None,
+                }],
+                outputs: vec![],
+            },
+        ]);
+        mutation.connections.push(MutationConnection {
+            id: "first_to_second".into(),
+            from: MutationEndpoint {
+                node_id: "first".into(),
+                port_id: "value".into(),
+            },
+            to: MutationEndpoint {
+                node_id: "second".into(),
+                port_id: "value".into(),
+            },
+        });
+        mutation.output_bindings.push(MutationOutputBinding {
+            port_id: "FloatInput:value".into(),
+            from: MutationEndpoint {
+                node_id: "first".into(),
+                port_id: "value".into(),
+            },
+        });
+
+        validate_mutation_connections(&mutation).expect("Q may flow to downstream Functions");
+        validate_mutation_bindings(&mutation).expect("Motion output has one declaration identity");
     }
 }

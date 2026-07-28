@@ -152,9 +152,7 @@ impl AnimValue {
             Self::Vec3(_) => Self::Vec3([0.0; 3]),
             Self::Vec4(_) => Self::Vec4([0.0; 4]),
             Self::Color(_) => Self::Color([0.0; 4]),
-            Self::Packed(values) => {
-                Self::Packed(values.iter().map(Self::zero_like).collect())
-            }
+            Self::Packed(values) => Self::Packed(values.iter().map(Self::zero_like).collect()),
         }
     }
 }
@@ -185,6 +183,13 @@ impl From<[f64; 4]> for AnimValue {
 
 pub type MutationValue = AnimValue;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MutationEvaluationPhase {
+    All,
+    Target,
+    Render,
+}
+
 /// Input context supplied to mutation evaluation.
 pub struct MutationInputContext {
     /// Current parameter snapshot keyed by mutation-input port id.
@@ -214,8 +219,18 @@ pub fn evaluate_mutation_with_motion(
     ctx: &MutationInputContext,
     motion_engine: &mut MotionEngine,
 ) -> Result<HashMap<String, MutationValue>> {
+    evaluate_mutation_with_motion_phase(mutation, ctx, motion_engine, MutationEvaluationPhase::All)
+}
+
+pub fn evaluate_mutation_with_motion_phase(
+    mutation: &MutationDefinition,
+    ctx: &MutationInputContext,
+    motion_engine: &mut MotionEngine,
+    phase: MutationEvaluationPhase,
+) -> Result<HashMap<String, MutationValue>> {
     let has_inner_graph = !mutation.nodes.is_empty() || !mutation.connections.is_empty();
-    let has_passthroughs = !mutation.passthrough_bindings.is_empty();
+    let has_passthroughs =
+        phase != MutationEvaluationPhase::Target && !mutation.passthrough_bindings.is_empty();
 
     // Fast path: nothing to evaluate.
     if !has_inner_graph && !has_passthroughs {
@@ -229,6 +244,7 @@ pub fn evaluate_mutation_with_motion(
         let nodes_by_id: HashMap<&str, &MutationInnerNode> =
             mutation.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
+        let required_nodes = required_node_ids(mutation, phase);
         let order = topological_sort(&mutation.nodes, &mutation.connections)?;
         let deadline = Instant::now() + MUTATION_GRAPH_FRAME_BUDGET;
 
@@ -240,6 +256,9 @@ pub fn evaluate_mutation_with_motion(
         }
 
         for node_id in &order {
+            if !required_nodes.contains(node_id.as_str()) {
+                continue;
+            }
             let remaining_budget = deadline.saturating_duration_since(Instant::now());
             if remaining_budget.is_zero() {
                 bail!(
@@ -269,6 +288,7 @@ pub fn evaluate_mutation_with_motion(
                 motion_engine,
                 ctx.dt,
                 remaining_budget,
+                phase,
             )?;
             if Instant::now() >= deadline {
                 bail!(
@@ -278,26 +298,37 @@ pub fn evaluate_mutation_with_motion(
             }
         }
 
-        for b in &mutation.output_bindings {
-            let val = port_values
-                .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
-                .cloned()
-                .unwrap_or_default();
-            outputs.insert(b.port_id.clone(), val);
+        if phase != MutationEvaluationPhase::Target {
+            for b in &mutation.output_bindings {
+                let is_motion_output = nodes_by_id
+                    .get(b.from.node_id.as_str())
+                    .and_then(|node| node.outputs.iter().find(|port| port.id == b.from.port_id))
+                    .is_some_and(|port| port.motion == Some(true));
+                if is_motion_output {
+                    continue;
+                }
+                let val = port_values
+                    .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
+                    .cloned()
+                    .unwrap_or_default();
+                outputs.insert(b.port_id.clone(), val);
+            }
         }
     }
 
     // ── Apply passthrough bindings ─────────────────────────────────────
     // Passthroughs map an input boundary port directly to an output port.
     // They only write to output ports not already written by output bindings.
-    for pt in &mutation.passthrough_bindings {
-        if outputs.contains_key(&pt.to_port_id) {
-            // Output already written by an output binding — skip (validation
-            // catches duplicates as errors, but be defensive at runtime).
-            continue;
+    if phase != MutationEvaluationPhase::Target {
+        for pt in &mutation.passthrough_bindings {
+            if outputs.contains_key(&pt.to_port_id) {
+                // Output already written by an output binding — skip (validation
+                // catches duplicates as errors, but be defensive at runtime).
+                continue;
+            }
+            let value = resolve_passthrough_input_value(&pt.from_port_id, mutation, ctx);
+            outputs.insert(pt.to_port_id.clone(), value);
         }
-        let value = resolve_passthrough_input_value(&pt.from_port_id, mutation, ctx);
-        outputs.insert(pt.to_port_id.clone(), value);
     }
 
     for port in &mutation.outputs {
@@ -318,6 +349,52 @@ pub fn evaluate_mutation_with_motion(
     }
 
     Ok(outputs)
+}
+
+fn required_node_ids(
+    mutation: &MutationDefinition,
+    phase: MutationEvaluationPhase,
+) -> HashSet<&str> {
+    if phase == MutationEvaluationPhase::All {
+        return mutation.nodes.iter().map(|node| node.id.as_str()).collect();
+    }
+
+    let mut required: HashSet<&str> = match phase {
+        MutationEvaluationPhase::Target => mutation
+            .nodes
+            .iter()
+            .filter(|node| node.outputs.iter().any(|port| port.motion == Some(true)))
+            .map(|node| node.id.as_str())
+            .collect(),
+        MutationEvaluationPhase::Render => mutation
+            .output_bindings
+            .iter()
+            .filter_map(|binding| {
+                let node = mutation
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == binding.from.node_id)?;
+                let port = node
+                    .outputs
+                    .iter()
+                    .find(|port| port.id == binding.from.port_id)?;
+                (port.motion != Some(true)).then_some(node.id.as_str())
+            })
+            .collect(),
+        MutationEvaluationPhase::All => unreachable!(),
+    };
+
+    loop {
+        let previous_len = required.len();
+        for connection in &mutation.connections {
+            if required.contains(connection.to.node_id.as_str()) {
+                required.insert(connection.from.node_id.as_str());
+            }
+        }
+        if required.len() == previous_len {
+            return required;
+        }
+    }
 }
 
 /// Resolve the value for a passthrough binding's input port.
@@ -443,6 +520,7 @@ fn evaluate_inner_node<'a>(
     motion_engine: &mut MotionEngine,
     dt: f64,
     remaining_budget: Duration,
+    phase: MutationEvaluationPhase,
 ) -> Result<()> {
     match node.node_type {
         MutationInnerNodeType::FloatInput => {
@@ -472,30 +550,10 @@ fn evaluate_inner_node<'a>(
                 .iter()
                 .map(|port| get_port_value(node, port.id.as_str(), port_values).unwrap_or_default())
                 .collect::<Vec<_>>();
-            let result = super::mutation_function::evaluate_with_motion(
+            let result = super::mutation_function::evaluate_function(
                 &mutation.id,
                 &node.id,
                 &input,
-                &node
-                    .inputs
-                    .iter()
-                    .map(|port| {
-                        mutation
-                            .input_bindings
-                            .iter()
-                            .find(|binding| {
-                                binding.to.node_id == node.id
-                                    && binding.to.port_id == port.id
-                                    && mutation
-                                        .outputs
-                                        .iter()
-                                        .any(|output| output.id == binding.port_id)
-                            })
-                            .and_then(|binding| OverrideKey::parse(&binding.port_id))
-                    })
-                    .collect::<Vec<_>>(),
-                motion_engine,
-                dt,
                 remaining_budget,
             )?;
             if result.len() != node.outputs.len() {
@@ -506,7 +564,75 @@ fn evaluate_inner_node<'a>(
                     node.outputs.len()
                 );
             }
-            for (output, value) in node.outputs.iter().zip(result) {
+            for (output, result) in node.outputs.iter().zip(result) {
+                let value = if output.motion == Some(true) {
+                    let key = motion_output_key(mutation, node, output)?;
+                    let value = match (phase, result) {
+                        (
+                            MutationEvaluationPhase::Render,
+                            super::mutation_function::FunctionOutput::SetTo { .. }
+                            | super::mutation_function::FunctionOutput::To { .. },
+                        ) => motion_engine.physical_value(&key).ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "MotionEngine has no physical value for '{}.{}'",
+                                node.id,
+                                output.id
+                            )
+                        })?,
+                        (
+                            MutationEvaluationPhase::Render,
+                            super::mutation_function::FunctionOutput::Value(_),
+                        ) => bail!(
+                            "Mutation Function '{}.{}' must return setTo(...) or to(...)",
+                            node.id,
+                            output.id
+                        ),
+                        (
+                            MutationEvaluationPhase::All | MutationEvaluationPhase::Target,
+                            super::mutation_function::FunctionOutput::SetTo { target, velocity },
+                        ) => motion_engine.set_to(
+                            &key,
+                            target.to_json(),
+                            velocity.map(|value| value.to_json()),
+                            dt,
+                        )?,
+                        (
+                            MutationEvaluationPhase::All | MutationEvaluationPhase::Target,
+                            super::mutation_function::FunctionOutput::To {
+                                target,
+                                duration,
+                                bounce,
+                            },
+                        ) => motion_engine.to(&key, target.to_json(), duration, bounce, dt)?,
+                        (
+                            MutationEvaluationPhase::All | MutationEvaluationPhase::Target,
+                            super::mutation_function::FunctionOutput::Value(_),
+                        ) => bail!(
+                            "Mutation Function '{}.{}' must return setTo(...) or to(...)",
+                            node.id,
+                            output.id
+                        ),
+                    };
+                    MutationValue::from_json_typed(&value, output.port_type.as_deref()).ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "MotionEngine returned an incompatible value for '{}.{}'",
+                                node.id,
+                                output.id
+                            )
+                        },
+                    )?
+                } else {
+                    match result {
+                        super::mutation_function::FunctionOutput::Value(value) => value,
+                        super::mutation_function::FunctionOutput::SetTo { .. }
+                        | super::mutation_function::FunctionOutput::To { .. } => bail!(
+                            "Mutation Function '{}.{}' returned Motion from a plain output",
+                            node.id,
+                            output.id
+                        ),
+                    }
+                };
                 write_output_if_declared_or_default(node, port_values, output.id.as_str(), value);
             }
         }
@@ -556,6 +682,39 @@ fn evaluate_inner_node<'a>(
         }
     }
     Ok(())
+}
+
+fn motion_output_key(
+    mutation: &MutationDefinition,
+    node: &MutationInnerNode,
+    output: &MutationPort,
+) -> Result<OverrideKey> {
+    let mut bindings = mutation
+        .output_bindings
+        .iter()
+        .filter(|binding| binding.from.node_id == node.id && binding.from.port_id == output.id);
+    let binding = bindings.next().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Motion output '{}.{}' must bind to a declaration output",
+            node.id,
+            output.id
+        )
+    })?;
+    if bindings.next().is_some() {
+        bail!(
+            "Motion output '{}.{}' must bind to exactly one declaration output",
+            node.id,
+            output.id
+        );
+    }
+    OverrideKey::parse(&binding.port_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Motion output '{}.{}' binding '{}' is not a declaration",
+            node.id,
+            output.id,
+            binding.port_id
+        )
+    })
 }
 
 fn write_output_if_declared_or_default<'a>(
@@ -763,6 +922,7 @@ mod tests {
                 name: Some("Value".into()),
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
         });
         m.output_bindings.push(MutationOutputBinding {
@@ -790,12 +950,14 @@ mod tests {
                     name: None,
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "input2".into(),
                     name: None,
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -803,6 +965,7 @@ mod tests {
                 name: None,
                 port_type: Some("packed<float>".into()),
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -856,12 +1019,14 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -869,6 +1034,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -914,12 +1080,14 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -927,6 +1095,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -972,18 +1141,21 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "a".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -991,6 +1163,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1044,12 +1217,14 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -1057,6 +1232,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1124,12 +1300,14 @@ mod tests {
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "dynamic_fixed_2".into(),
                     name: None,
                     port_type: None,
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -1137,6 +1315,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1180,6 +1359,7 @@ mod tests {
             name: Some("uTime.value".into()),
             port_type: Some("float".into()),
             array_length: None,
+            motion: None,
         });
         m.passthrough_bindings
             .push(super::MutationPassthroughBinding {
@@ -1210,12 +1390,14 @@ mod tests {
                     name: None,
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
                 MutationPort {
                     id: "b".into(),
                     name: None,
                     port_type: Some("float".into()),
                     array_length: None,
+                    motion: None,
                 },
             ],
             outputs: vec![MutationPort {
@@ -1223,6 +1405,7 @@ mod tests {
                 name: None,
                 port_type: Some("float".into()),
                 array_length: None,
+                motion: None,
             }],
         });
         m.input_bindings.push(MutationInputBinding {
@@ -1280,6 +1463,7 @@ mod tests {
             name: Some("Color Input.value".into()),
             port_type: Some("float".into()),
             array_length: None,
+            motion: None,
         });
         m.input_bindings.push(MutationInputBinding {
             port_id: "ColorInput_7:value".into(),
@@ -1321,6 +1505,7 @@ mod tests {
                 name: None,
                 port_type: None,
                 array_length: None,
+                motion: None,
             }],
         });
         // Output binding writes to "Result:value" via inner graph.

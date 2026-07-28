@@ -156,14 +156,12 @@ pub fn build_initial_values(
     tracked_keys: &[String],
 ) -> BTreeMap<String, serde_json::Value> {
     let mut out = BTreeMap::new();
+    let scene_values = super::collect_scene_current_values(scene);
 
     for key in tracked_keys {
         let value = match OverrideKey::parse(key) {
-            Some(parsed) => scene
-                .nodes
-                .iter()
-                .find(|n| n.id == parsed.node_id)
-                .and_then(|n| n.params.get(parsed.param_name.as_str()))
+            Some(parsed) => scene_values
+                .get(&parsed)
                 .cloned()
                 .unwrap_or(serde_json::Value::Null),
             None => serde_json::Value::Null,
