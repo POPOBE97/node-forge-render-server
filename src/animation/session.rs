@@ -18,7 +18,8 @@ use crate::state_machine::{
 /// Result of a single `AnimationSession::step()` call.
 #[derive(Debug, Clone)]
 pub struct AnimationStep {
-    /// Current animation parameter state (full sticky set, not per-state deltas).
+    /// GPU uniform writes for this frame. This is normally the active
+    /// Derivation output set and may include one-time authored-value restores.
     pub active_overrides: HashMap<OverrideKey, serde_json::Value>,
     /// True if any override values changed since last step.
     pub needs_redraw: bool,
@@ -167,10 +168,24 @@ impl AnimationSession {
         // empty on frames where the fixed-step clock hasn't accumulated
         // enough time for a tick.
         let needs_redraw;
+        let mut frame_overrides = None;
         if let Some(ref result) = last_tick_result {
             let new_overrides = result.overrides.clone();
             needs_redraw = new_overrides != self.active_overrides;
 
+            // A Derivation binding is state-scoped. When switching to a State
+            // that no longer derives a previously active GPU uniform, restore
+            // the authored declaration value exactly once. The restore is a
+            // render-side write only and never becomes MotionEngine state.
+            let mut writes = new_overrides.clone();
+            for key in self.active_overrides.keys() {
+                if !new_overrides.contains_key(key)
+                    && let Some(base) = self.base_values.get(key)
+                {
+                    writes.insert(key.clone(), base.clone());
+                }
+            }
+            frame_overrides = Some(writes);
             self.active_overrides = new_overrides;
         } else {
             // No tick this frame — keep existing overrides, nothing changed.
@@ -193,7 +208,7 @@ impl AnimationSession {
         };
 
         AnimationStep {
-            active_overrides: self.active_overrides.clone(),
+            active_overrides: frame_overrides.unwrap_or_else(|| self.active_overrides.clone()),
             needs_redraw,
             scene_time_secs: self.scene_time,
             active: !is_finished,
@@ -214,7 +229,6 @@ impl AnimationSession {
         for (key, value) in updates {
             self.base_values.insert(key.clone(), value.clone());
         }
-        self.runtime.update_current_values(updates);
     }
 
     /// Queue an event to fire on the next `step()`.
@@ -235,7 +249,6 @@ impl AnimationSession {
     pub fn force_state(&mut self, state_id: &str) -> Result<AnimationStep> {
         self.runtime.force_state(state_id)?;
         self.scene_time = 0.0;
-        self.active_overrides.clear();
         self.pending_events.clear();
         self.first_tick_fired = false;
         self.cached_state_local_times.clear();

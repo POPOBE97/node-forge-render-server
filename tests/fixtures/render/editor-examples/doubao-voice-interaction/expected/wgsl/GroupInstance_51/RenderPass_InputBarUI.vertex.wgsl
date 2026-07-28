@@ -33,6 +33,8 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
+    // Node: FloatInput_42
+    float_input_42: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
@@ -41,12 +43,6 @@ struct GraphInputs {
 
 @group(0) @binding(2)
 var<uniform> graph_inputs: GraphInputs;
-
-struct ShaderMaterialParams {
-    shader_GroupInstance_51_ShaderMaterial_InputBarUI_opacity: vec4f,
-};
-@group(0) @binding(3)
-var<storage, read> shader_material_params: ShaderMaterialParams;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;

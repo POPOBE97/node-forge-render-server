@@ -320,7 +320,7 @@ pub fn evaluate_graph_with_motion_phase(
                     .get(&(b.from.node_id.as_str(), b.from.port_id.as_str()))
                     .cloned()
                     .unwrap_or_default();
-                outputs.insert(b.port_id.clone(), val);
+                outputs.insert(b.uniform.id(), val);
             }
         }
     }
@@ -330,13 +330,14 @@ pub fn evaluate_graph_with_motion_phase(
     // They only write to output ports not already written by output bindings.
     if phase != GraphEvaluationPhase::Target {
         for pt in &graph_definition.passthrough_bindings {
-            if outputs.contains_key(&pt.to_port_id) {
+            let uniform_id = pt.uniform.id();
+            if outputs.contains_key(&uniform_id) {
                 // Output already written by an output binding — skip (validation
                 // catches duplicates as errors, but be defensive at runtime).
                 continue;
             }
-            let value = resolve_passthrough_input_value(&pt.from_port_id, graph_definition, ctx);
-            outputs.insert(pt.to_port_id.clone(), value);
+            let value = resolve_passthrough_input_value(pt.source.id(), graph_definition, ctx);
+            outputs.insert(uniform_id, value);
         }
     }
 
@@ -428,7 +429,7 @@ fn resolve_passthrough_input_value(
     // Check if the from_port_id matches a graph_definition input port and a
     // corresponding input binding.
     for b in &graph_definition.input_bindings {
-        if b.port_id == from_port_id {
+        if b.source.id() == from_port_id {
             return resolve_input_binding_value(b, ctx);
         }
     }
@@ -472,21 +473,19 @@ pub fn all_output_target_keys(graph_definition: &DerivationDefinition) -> Vec<Ov
 
     // From output bindings.
     for b in &graph_definition.output_bindings {
-        for key in expand_output_target_keys(&b.port_id) {
-            let s = format!("{}:{}", key.node_id, key.param_name);
-            if seen.insert(s) {
-                keys.push(key);
-            }
+        let key = b.uniform.key();
+        let s = format!("{}:{}", key.node_id, key.param_name);
+        if seen.insert(s) {
+            keys.push(key);
         }
     }
 
     // From passthrough bindings.
     for pt in &graph_definition.passthrough_bindings {
-        for key in expand_output_target_keys(&pt.to_port_id) {
-            let s = format!("{}:{}", key.node_id, key.param_name);
-            if seen.insert(s) {
-                keys.push(key);
-            }
+        let key = pt.uniform.key();
+        let s = format!("{}:{}", key.node_id, key.param_name);
+        if seen.insert(s) {
+            keys.push(key);
         }
     }
 
@@ -501,13 +500,13 @@ fn resolve_input_binding_value(
     binding: &DerivationInputBinding,
     ctx: &GraphInputContext,
 ) -> GraphValue {
-    if let Some(value) = resolve_builtin_value(&binding.port_id, ctx) {
+    if let Some(value) = resolve_builtin_value(binding.source.id(), ctx) {
         return value;
     }
 
     // Fall back to the current animated/root parameter snapshot.
     ctx.values
-        .get(&binding.port_id)
+        .get(binding.source.id())
         .cloned()
         .unwrap_or_default()
 }
@@ -709,7 +708,7 @@ fn motion_output_key(
     graph_definition: &DerivationDefinition,
     node: &GraphInnerNode,
     output: &GraphPort,
-) -> Result<OverrideKey> {
+) -> Result<StateParamKey> {
     let mut bindings = graph_definition
         .output_bindings
         .iter()
@@ -728,14 +727,16 @@ fn motion_output_key(
             output.id
         );
     }
-    OverrideKey::parse(&binding.port_id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Motion output '{}.{}' binding '{}' is not a declaration",
+    if binding.uniform.node_id.is_empty() {
+        Ok(StateParamKey::new(&binding.uniform.param_id))
+    } else {
+        bail!(
+            "Motion output '{}.{}' cannot bind to GPU uniform '{}'",
             node.id,
             output.id,
-            binding.port_id
+            binding.uniform.id()
         )
-    })
+    }
 }
 
 fn write_output_if_declared_or_default<'a>(

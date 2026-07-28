@@ -197,7 +197,7 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             position: Some(Position { x: 0.0, y: 0.0 }),
-            parameter_overrides: HashMap::new(),
+            state_param_overrides: HashMap::new(),
             state_type,
             mutation_graph: None,
             derivation_id: None,
@@ -224,6 +224,8 @@ mod tests {
         let sm = StateMachine {
             id: "sm".into(),
             name: "State Machine".into(),
+            state_params: Vec::new(),
+            state_param_layout: Default::default(),
             states: vec![
                 state("entry", AnimationStateType::EntryState),
                 state("any", AnimationStateType::AnyState),
@@ -253,6 +255,8 @@ mod tests {
         let sm = StateMachine {
             id: "sm".into(),
             name: "State Machine".into(),
+            state_params: Vec::new(),
+            state_param_layout: Default::default(),
             states: vec![
                 state("entry", AnimationStateType::EntryState),
                 state("any", AnimationStateType::AnyState),

@@ -52,7 +52,9 @@ pub use trace::{
     canonicalize_json_value, generate_trace_for_scene, generate_trace_for_scene_with_events,
     round_f64, tracked_override_keys,
 };
-pub use types::{EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine};
+pub use types::{
+    EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine, StateParamKey,
+};
 pub use validation::{validate, validate_scene_declarations};
 
 use std::collections::HashMap;
@@ -78,8 +80,23 @@ pub fn compile_from_scene(scene: &SceneDSL) -> Result<Option<StateMachineRuntime
 
     Ok(Some(StateMachineRuntime::with_initial_values(
         sm,
-        collect_scene_current_values(scene),
+        collect_state_param_defaults(scene.state_machine.as_ref().expect("checked above")),
     )))
+}
+
+fn collect_state_param_defaults(
+    state_machine: &StateMachine,
+) -> HashMap<StateParamKey, serde_json::Value> {
+    state_machine
+        .state_params
+        .iter()
+        .map(|declaration| {
+            (
+                StateParamKey::new(&declaration.id),
+                declaration.default_value.clone(),
+            )
+        })
+        .collect()
 }
 
 /// Collect the scene's current uniform/parameter snapshot.

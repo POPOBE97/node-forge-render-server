@@ -45,10 +45,10 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_Downsample_13: texture_2d<f32>;
+var pass_tex_PassTexture_37: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_Downsample_13: sampler;
+var pass_samp_PassTexture_37: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---

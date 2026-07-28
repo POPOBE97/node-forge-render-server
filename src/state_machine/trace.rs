@@ -132,26 +132,9 @@ pub fn generate_trace_for_scene_with_events(
 pub fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
 
-    for state in &sm.states {
-        for key in state.parameter_overrides.keys() {
-            if OverrideKey::parse(key).is_some() {
-                keys.insert(key.clone());
-            }
-        }
-    }
-
     for derivation in &sm.derivations {
         for ok in graph::all_output_target_keys(derivation) {
             keys.insert(format!("{}:{}", ok.node_id, ok.param_name));
-        }
-    }
-    for state in &sm.states {
-        if let Some(mutation) = &state.mutation_graph {
-            for binding in &mutation.output_bindings {
-                if OverrideKey::parse(&binding.state_port_id).is_some() {
-                    keys.insert(binding.state_port_id.clone());
-                }
-            }
         }
     }
 

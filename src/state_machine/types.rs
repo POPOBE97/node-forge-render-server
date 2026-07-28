@@ -19,6 +19,10 @@ pub struct StateMachine {
     pub id: String,
     #[serde(default)]
     pub name: String,
+    #[serde(default, rename = "stateParams")]
+    pub state_params: Vec<StateParamDeclaration>,
+    #[serde(default, rename = "stateParamLayout")]
+    pub state_param_layout: StateParamLayout,
     #[serde(default)]
     pub states: Vec<AnimationState>,
     #[serde(default)]
@@ -34,6 +38,87 @@ pub struct StateMachine {
     /// Editor-only viewport metadata — ignored at runtime.
     #[serde(default)]
     pub viewport: Option<Viewport>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct StateParamDeclaration {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub param_type: String,
+    #[serde(rename = "defaultValue")]
+    pub default_value: serde_json::Value,
+    #[serde(default, rename = "arrayLength")]
+    pub array_length: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct StateParamLayout {
+    pub position: Position,
+    #[serde(default)]
+    pub collapsed: bool,
+}
+
+impl Default for StateParamLayout {
+    fn default() -> Self {
+        Self {
+            position: Position {
+                x: -320.0,
+                y: -120.0,
+            },
+            collapsed: false,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum StateValueSource {
+    StateParam {
+        #[serde(rename = "stateParamId")]
+        state_param_id: String,
+    },
+    FrameInput {
+        #[serde(rename = "frameInputId")]
+        frame_input_id: String,
+    },
+}
+
+impl StateValueSource {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::StateParam { state_param_id } => state_param_id,
+            Self::FrameInput { frame_input_id } => frame_input_id,
+        }
+    }
+
+    pub fn state_param_id(&self) -> Option<&str> {
+        match self {
+            Self::StateParam { state_param_id } => Some(state_param_id),
+            Self::FrameInput { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct GpuUniformRef {
+    #[serde(rename = "nodeId")]
+    pub node_id: String,
+    #[serde(rename = "paramId")]
+    pub param_id: String,
+}
+
+impl GpuUniformRef {
+    pub fn key(&self) -> OverrideKey {
+        OverrideKey::new(&self.node_id, &self.param_id)
+    }
+
+    pub fn id(&self) -> String {
+        format!("{}:{}", self.node_id, self.param_id)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,8 +145,8 @@ pub struct AnimationState {
     pub name: String,
     #[serde(default)]
     pub position: Option<Position>,
-    #[serde(default, rename = "parameterOverrides")]
-    pub parameter_overrides: HashMap<String, serde_json::Value>,
+    #[serde(default, rename = "stateParamOverrides")]
+    pub state_param_overrides: HashMap<String, serde_json::Value>,
     #[serde(rename = "type")]
     pub state_type: AnimationStateType,
     /// Private Mutation graph owned by a regular animation State.
@@ -445,13 +530,14 @@ impl TransitionMotionNode {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TransitionMotionGraph {
     pub id: String,
     #[serde(default)]
     pub name: String,
-    #[serde(default)]
+    #[serde(skip)]
     pub inputs: Vec<GraphPort>,
-    #[serde(default)]
+    #[serde(skip)]
     pub outputs: Vec<GraphPort>,
     #[serde(default)]
     pub nodes: Vec<TransitionMotionNode>,
@@ -466,6 +552,8 @@ pub struct TransitionMotionGraph {
     #[serde(default, rename = "conditionBinding")]
     pub condition_binding: Option<TransitionConditionBinding>,
     #[serde(default)]
+    pub layout: Option<TransitionMotionGraphLayout>,
+    #[serde(default)]
     pub viewport: Option<Viewport>,
 }
 
@@ -473,18 +561,11 @@ impl TransitionMotionGraph {
     /// Build the canonical `Any -> Instant -> Any` graph used for edges that
     /// should update all properties without interpolation.
     pub fn instant(id: impl Into<String>) -> Self {
-        let port = GraphPort {
-            id: "*".into(),
-            name: Some("Any".into()),
-            port_type: Some("any".into()),
-            array_length: None,
-            motion: None,
-        };
         Self {
             id: id.into(),
             name: "Instant".into(),
-            inputs: vec![port.clone()],
-            outputs: vec![port],
+            inputs: vec![],
+            outputs: vec![],
             nodes: vec![TransitionMotionNode::Instant {
                 id: "motion".into(),
                 position: Position::default(),
@@ -492,14 +573,16 @@ impl TransitionMotionGraph {
             }],
             connections: vec![],
             input_bindings: vec![TransitionMotionInputBinding {
-                port_id: "*".into(),
+                source: StateValueSource::StateParam {
+                    state_param_id: "*".into(),
+                },
                 to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![TransitionMotionOutputBinding {
-                port_id: "*".into(),
+                state_param_id: "*".into(),
                 from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
@@ -507,43 +590,53 @@ impl TransitionMotionGraph {
             }],
             passthrough_bindings: vec![],
             condition_binding: None,
+            layout: None,
             viewport: None,
         }
     }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TransitionMotionInputBinding {
-    #[serde(rename = "motionPortId")]
-    pub port_id: String,
+    pub source: StateValueSource,
     pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TransitionMotionOutputBinding {
-    #[serde(rename = "motionPortId")]
-    pub port_id: String,
+    #[serde(rename = "stateParamId")]
+    pub state_param_id: String,
     pub from: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TransitionMotionPassthroughBinding {
-    #[serde(rename = "inputPortId")]
-    pub from_port_id: String,
-    #[serde(rename = "outputPortId")]
-    pub to_port_id: String,
+    #[serde(rename = "stateParamId")]
+    pub state_param_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "source", rename_all = "lowercase")]
+#[serde(tag = "source", rename_all = "lowercase", deny_unknown_fields)]
 pub enum TransitionConditionBinding {
-    Input {
-        #[serde(rename = "inputPortId")]
-        input_port_id: String,
-    },
-    Node {
-        from: GraphEndpoint,
-    },
+    Input { input: StateValueSource },
+    Node { from: GraphEndpoint },
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TransitionMotionGraphLayout {
+    pub input_position: Position,
+    pub output_position: Position,
+    pub condition_output_position: Position,
+    #[serde(default)]
+    pub input_collapsed: bool,
+    #[serde(default)]
+    pub output_collapsed: bool,
+    #[serde(default)]
+    pub condition_output_collapsed: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -552,13 +645,14 @@ pub enum TransitionConditionBinding {
 
 /// A reusable, stateless render Derivation graph.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct DerivationDefinition {
     pub id: String,
     #[serde(default)]
     pub name: String,
-    #[serde(default)]
+    #[serde(skip)]
     pub inputs: Vec<GraphPort>,
-    #[serde(default)]
+    #[serde(skip)]
     pub outputs: Vec<GraphPort>,
     #[serde(default)]
     pub nodes: Vec<GraphInnerNode>,
@@ -581,9 +675,9 @@ pub struct DerivationDefinition {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StateMutationGraph {
-    #[serde(default)]
+    #[serde(skip)]
     pub inputs: Vec<GraphPort>,
-    #[serde(default)]
+    #[serde(skip)]
     pub outputs: Vec<GraphPort>,
     #[serde(default)]
     pub nodes: Vec<GraphInnerNode>,
@@ -611,7 +705,7 @@ impl StateMutationGraph {
                 .input_bindings
                 .iter()
                 .map(|binding| DerivationInputBinding {
-                    port_id: binding.state_port_id.clone(),
+                    source: binding.source.clone(),
                     to: binding.to.clone(),
                 })
                 .collect(),
@@ -619,7 +713,10 @@ impl StateMutationGraph {
                 .output_bindings
                 .iter()
                 .map(|binding| DerivationOutputBinding {
-                    port_id: binding.state_port_id.clone(),
+                    uniform: GpuUniformRef {
+                        node_id: String::new(),
+                        param_id: binding.state_param_id.clone(),
+                    },
                     from: binding.from.clone(),
                 })
                 .collect(),
@@ -633,16 +730,15 @@ impl StateMutationGraph {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StateMutationInputBinding {
-    #[serde(rename = "statePortId")]
-    pub state_port_id: String,
+    pub source: StateValueSource,
     pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StateMutationOutputBinding {
-    #[serde(rename = "statePortId")]
-    pub state_port_id: String,
+    #[serde(rename = "stateParamId")]
+    pub state_param_id: String,
     pub from: GraphEndpoint,
 }
 
@@ -737,20 +833,16 @@ pub struct GraphEndpoint {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DerivationInputBinding {
-    /// Port on the Derivation boundary.
-    #[serde(rename = "derivationPortId")]
-    pub port_id: String,
-    /// Where the value is fed into the inner graph.
+    pub source: StateValueSource,
     pub to: GraphEndpoint,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DerivationOutputBinding {
-    /// Port on the Derivation boundary.
-    #[serde(rename = "derivationPortId")]
-    pub port_id: String,
-    /// Where the value comes from in the inner graph.
+    pub uniform: GpuUniformRef,
     pub from: GraphEndpoint,
 }
 
@@ -760,13 +852,10 @@ pub struct DerivationOutputBinding {
 /// inner nodes.  Typically used for wiring built-in time ports
 /// (e.g. `sceneElapsedTime`) straight to override targets.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DerivationPassthroughBinding {
-    /// Input port id on the Derivation boundary (source of value).
-    #[serde(rename = "inputPortId")]
-    pub from_port_id: String,
-    /// Output port id on the Derivation boundary (destination).
-    #[serde(rename = "outputPortId")]
-    pub to_port_id: String,
+    pub source: StateValueSource,
+    pub uniform: GpuUniformRef,
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +893,20 @@ pub struct RuntimeInputSnapshot {
 // ---------------------------------------------------------------------------
 // Override key
 // ---------------------------------------------------------------------------
+
+/// Stable semantic identity owned by the State Machine.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StateParamKey(pub String);
+
+impl StateParamKey {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// A typed key for runtime parameter overrides produced by the state machine.
 ///
@@ -846,7 +949,10 @@ mod tests {
     #[test]
     fn derivation_input_binding_parses_editor_port_name() {
         let parsed: DerivationInputBinding = serde_json::from_value(serde_json::json!({
-            "derivationPortId": "Vector2Input_74:x",
+            "source": {
+                "kind": "stateParam",
+                "stateParamId": "position_x"
+            },
             "to": {
                 "nodeId": "mouse",
                 "portId": "position.x",
@@ -854,7 +960,7 @@ mod tests {
         }))
         .expect("editor input binding should deserialize");
 
-        assert_eq!(parsed.port_id, "Vector2Input_74:x");
+        assert_eq!(parsed.source.state_param_id(), Some("position_x"));
         assert_eq!(parsed.to.node_id, "mouse");
         assert_eq!(parsed.to.port_id, "position.x");
     }
@@ -862,7 +968,10 @@ mod tests {
     #[test]
     fn derivation_output_binding_parses_editor_port_name() {
         let parsed: DerivationOutputBinding = serde_json::from_value(serde_json::json!({
-            "derivationPortId": "Vector2Input_74:x",
+            "uniform": {
+                "nodeId": "Vector2Input_74",
+                "paramId": "x"
+            },
             "from": {
                 "nodeId": "mouse",
                 "portId": "position.x",
@@ -870,7 +979,7 @@ mod tests {
         }))
         .expect("editor output binding should deserialize");
 
-        assert_eq!(parsed.port_id, "Vector2Input_74:x");
+        assert_eq!(parsed.uniform.id(), "Vector2Input_74:x");
         assert_eq!(parsed.from.node_id, "mouse");
         assert_eq!(parsed.from.port_id, "position.x");
     }
@@ -878,13 +987,19 @@ mod tests {
     #[test]
     fn derivation_passthrough_binding_parses_editor_port_names() {
         let parsed: DerivationPassthroughBinding = serde_json::from_value(serde_json::json!({
-            "inputPortId": "sceneElapsedTime",
-            "outputPortId": "FloatInput_53:value",
+            "source": {
+                "kind": "frameInput",
+                "frameInputId": "sceneElapsedTime"
+            },
+            "uniform": {
+                "nodeId": "FloatInput_53",
+                "paramId": "value"
+            }
         }))
         .expect("editor passthrough binding should deserialize");
 
-        assert_eq!(parsed.from_port_id, "sceneElapsedTime");
-        assert_eq!(parsed.to_port_id, "FloatInput_53:value");
+        assert_eq!(parsed.source.id(), "sceneElapsedTime");
+        assert_eq!(parsed.uniform.id(), "FloatInput_53:value");
     }
 
     #[test]

@@ -137,9 +137,9 @@ where
     D: serde::Deserializer<'de>,
 {
     let version = String::deserialize(deserializer)?;
-    if version != "3.0" {
+    if version != "4.0" {
         return Err(serde::de::Error::custom(format!(
-            "unsupported SceneDSL version '{version}' (expected 3.0)"
+            "unsupported SceneDSL version '{version}' (expected 4.0)"
         )));
     }
     Ok(version)

@@ -500,11 +500,19 @@ mod tests {
                     .find(|state| state.id == transition.target)
                     .and_then(|state| state.mutation_graph.as_ref())
                     .is_some_and(|graph| {
+                        let mouse_position_params = sm
+                            .state_params
+                            .iter()
+                            .filter(|param| {
+                                matches!(
+                                    param.name.as_str(),
+                                    "Mouse Position.x" | "Mouse Position.y"
+                                )
+                            })
+                            .map(|param| param.id.as_str())
+                            .collect::<std::collections::HashSet<_>>();
                         graph.output_bindings.iter().any(|binding| {
-                            matches!(
-                                binding.state_port_id.as_str(),
-                                "Vector2Input_80:x" | "Vector2Input_80:y"
-                            )
+                            mouse_position_params.contains(binding.state_param_id.as_str())
                         })
                     })
                     && trigger_matches

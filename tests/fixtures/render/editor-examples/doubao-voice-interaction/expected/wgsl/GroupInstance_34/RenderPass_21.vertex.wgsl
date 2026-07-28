@@ -51,10 +51,10 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_33_RenderPass_BackgroundDarken: texture_2d<f32>;
+var pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_33_RenderPass_BackgroundDarken: sampler;
+var pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---

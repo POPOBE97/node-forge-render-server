@@ -17,6 +17,7 @@ use super::types::*;
 /// Returns `Ok(())` when the definition is structurally sound, or an `Err`
 /// with an actionable diagnostic on the first violation encountered.
 pub fn validate(sm: &StateMachine) -> Result<()> {
+    validate_state_params(sm)?;
     validate_state_ids(sm)?;
     validate_builtin_states(sm)?;
     validate_graph_ownership(sm)?;
@@ -32,85 +33,197 @@ pub fn validate(sm: &StateMachine) -> Result<()> {
 /// the root graph or inside a reusable Group.
 pub fn validate_scene_declarations(scene: &SceneDSL, sm: &StateMachine) -> Result<()> {
     let declarations = collect_formal_render_declarations(scene)?;
-    let runtime_inputs = [
-        "sceneElapsedTime",
-        "localElapsedTime",
-        "mouse.position.x",
-        "mouse.position.y",
-    ]
-    .into_iter()
-    .collect::<HashSet<_>>();
-
-    for state in sm
-        .states
-        .iter()
-        .filter(|state| state.state_type == AnimationStateType::AnimationState)
-    {
-        let graph = state
-            .mutation_graph
-            .as_ref()
-            .expect("graph ownership validation requires a regular State mutationGraph");
-        for input in &graph.inputs {
-            if runtime_inputs.contains(input.id.as_str()) {
-                validate_runtime_input_port(
-                    input,
-                    &format!("State '{}' Mutation input", state.id),
-                )?;
-            } else {
-                validate_formal_declaration_port(
-                    input,
-                    &declarations,
-                    &format!("State '{}' Mutation input", state.id),
-                )?;
-            }
-        }
-        for output in &graph.outputs {
-            validate_formal_declaration_port(
-                output,
-                &declarations,
-                &format!("State '{}' output", state.id),
+    for derivation in &sm.derivations {
+        for binding in &derivation.output_bindings {
+            let target_id = binding.uniform.id();
+            let target = declarations.get(&target_id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "state_machine validation: Derivation '{}' output references missing GPU uniform '{}'",
+                    derivation.id,
+                    target_id
+                )
+            })?;
+            let source = graph_output_port(&derivation.nodes, &binding.from, &derivation.id)?;
+            validate_port_type(
+                source.port_type.as_deref(),
+                source.array_length,
+                target,
+                &format!("Derivation '{}' GPU uniform '{}'", derivation.id, target_id),
             )?;
         }
-        let output_ids = graph
-            .outputs
-            .iter()
-            .map(|port| port.id.as_str())
-            .collect::<HashSet<_>>();
-        for declaration_id in declarations.keys() {
-            if !output_ids.contains(declaration_id.as_str()) {
+        for binding in &derivation.passthrough_bindings {
+            let target_id = binding.uniform.id();
+            let target = declarations.get(&target_id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "state_machine validation: Derivation '{}' passthrough references missing GPU uniform '{}'",
+                    derivation.id,
+                    target_id
+                )
+            })?;
+            let source = source_port(sm, &binding.source)?;
+            validate_port_type(
+                source.port_type.as_deref(),
+                source.array_length,
+                target,
+                &format!("Derivation '{}' GPU uniform '{}'", derivation.id, target_id),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_state_params(sm: &StateMachine) -> Result<()> {
+    let mut ids = HashSet::new();
+    for declaration in &sm.state_params {
+        if !ids.insert(declaration.id.as_str()) {
+            bail!(
+                "state_machine validation: duplicate State Param id '{}'",
+                declaration.id
+            );
+        }
+        let packed = declaration.param_type.starts_with("packed<");
+        if packed != declaration.array_length.is_some() {
+            bail!(
+                "state_machine validation: State Param '{}' must declare arrayLength exactly when packed",
+                declaration.id
+            );
+        }
+    }
+    for state in &sm.states {
+        for id in state.state_param_overrides.keys() {
+            if !ids.contains(id.as_str()) {
                 bail!(
-                    "state_machine validation: State '{}' State Outputs is missing formal declaration '{}'",
+                    "state_machine validation: State '{}' overrides missing State Param '{}'",
                     state.id,
-                    declaration_id
+                    id
                 );
             }
         }
     }
+    Ok(())
+}
 
-    for derivation in &sm.derivations {
-        for input in &derivation.inputs {
-            if runtime_inputs.contains(input.id.as_str()) {
-                validate_runtime_input_port(
-                    input,
-                    &format!("Derivation '{}' input", derivation.id),
-                )?;
+fn validate_source(sm: &StateMachine, source: &StateValueSource) -> Result<()> {
+    match source {
+        StateValueSource::StateParam { state_param_id } => {
+            if state_param_id == "*"
+                || sm
+                    .state_params
+                    .iter()
+                    .any(|declaration| declaration.id == *state_param_id)
+            {
+                Ok(())
             } else {
-                validate_formal_declaration_port(
-                    input,
-                    &declarations,
-                    &format!("Derivation '{}' input", derivation.id),
-                )?;
+                bail!(
+                    "state_machine validation: missing State Param '{}'",
+                    state_param_id
+                )
             }
         }
-        for output in &derivation.outputs {
-            validate_formal_declaration_port(
-                output,
-                &declarations,
-                &format!("Derivation '{}' output", derivation.id),
-            )?;
+        StateValueSource::FrameInput { frame_input_id } => {
+            if matches!(
+                frame_input_id.as_str(),
+                "sceneElapsedTime" | "localElapsedTime" | "mouse.position.x" | "mouse.position.y"
+            ) {
+                Ok(())
+            } else {
+                bail!(
+                    "state_machine validation: unknown frame input '{}'",
+                    frame_input_id
+                )
+            }
         }
     }
+}
 
+fn state_param_port(sm: &StateMachine, state_param_id: &str) -> Result<GraphPort> {
+    let declaration = sm
+        .state_params
+        .iter()
+        .find(|declaration| declaration.id == state_param_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!("state_machine validation: missing State Param '{state_param_id}'")
+        })?;
+    Ok(GraphPort {
+        id: declaration.id.clone(),
+        name: Some(declaration.name.clone()),
+        port_type: Some(declaration.param_type.clone()),
+        array_length: declaration.array_length,
+        motion: None,
+    })
+}
+
+fn source_port(sm: &StateMachine, source: &StateValueSource) -> Result<GraphPort> {
+    validate_source(sm, source)?;
+    match source {
+        StateValueSource::StateParam { state_param_id } => state_param_port(sm, state_param_id),
+        StateValueSource::FrameInput { frame_input_id } => Ok(GraphPort {
+            id: frame_input_id.clone(),
+            name: None,
+            port_type: Some("float".into()),
+            array_length: None,
+            motion: None,
+        }),
+    }
+}
+
+fn graph_input_port<'a>(
+    nodes: &'a [GraphInnerNode],
+    endpoint: &GraphEndpoint,
+    label: &str,
+) -> Result<&'a GraphPort> {
+    let node = nodes
+        .iter()
+        .find(|node| node.id == endpoint.node_id)
+        .ok_or_else(|| anyhow::anyhow!("{label} references missing node '{}'", endpoint.node_id))?;
+    node.inputs
+        .iter()
+        .find(|port| port.id == endpoint.port_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{label} references missing input '{}.{}'",
+                endpoint.node_id,
+                endpoint.port_id
+            )
+        })
+}
+
+fn graph_output_port<'a>(
+    nodes: &'a [GraphInnerNode],
+    endpoint: &GraphEndpoint,
+    label: &str,
+) -> Result<&'a GraphPort> {
+    let node = nodes
+        .iter()
+        .find(|node| node.id == endpoint.node_id)
+        .ok_or_else(|| anyhow::anyhow!("{label} references missing node '{}'", endpoint.node_id))?;
+    node.outputs
+        .iter()
+        .find(|port| port.id == endpoint.port_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{label} references missing output '{}.{}'",
+                endpoint.node_id,
+                endpoint.port_id
+            )
+        })
+}
+
+fn validate_port_type(
+    source_type: Option<&str>,
+    source_array_length: Option<usize>,
+    target: &FormalRenderDeclaration,
+    label: &str,
+) -> Result<()> {
+    if source_type != Some(target.port_type.as_str()) || source_array_length != target.array_length
+    {
+        bail!(
+            "state_machine validation: {label} must exactly match type '{}' and fixed length {:?}",
+            target.port_type,
+            target.array_length
+        );
+    }
     Ok(())
 }
 
@@ -212,40 +325,6 @@ fn insert_formal_declaration(
     {
         bail!(
             "state_machine validation: formal render declaration '{id}' has conflicting definitions"
-        );
-    }
-    Ok(())
-}
-
-fn validate_runtime_input_port(port: &GraphPort, owner: &str) -> Result<()> {
-    if port.port_type.as_deref() != Some("float") || port.array_length.is_some() {
-        bail!(
-            "state_machine validation: {owner} '{}' must be a scalar float runtime input",
-            port.id
-        );
-    }
-    Ok(())
-}
-
-fn validate_formal_declaration_port(
-    port: &GraphPort,
-    declarations: &HashMap<String, FormalRenderDeclaration>,
-    owner: &str,
-) -> Result<()> {
-    let declaration = declarations.get(&port.id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "state_machine validation: {owner} '{}' is not a formal writable Render Graph declaration",
-            port.id
-        )
-    })?;
-    if port.port_type.as_deref() != Some(declaration.port_type.as_str())
-        || port.array_length != declaration.array_length
-    {
-        bail!(
-            "state_machine validation: {owner} '{}' must exactly match type '{}' and fixed length {:?}",
-            port.id,
-            declaration.port_type,
-            declaration.array_length
         );
     }
     Ok(())
@@ -513,8 +592,11 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 graph.id
             );
         }
-        let input_ids: HashSet<&str> = graph.inputs.iter().map(|port| port.id.as_str()).collect();
-        let output_ids: HashSet<&str> = graph.outputs.iter().map(|port| port.id.as_str()).collect();
+        let state_param_ids = sm
+            .state_params
+            .iter()
+            .map(|declaration| declaration.id.as_str())
+            .collect::<HashSet<_>>();
         let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut incoming_count: HashMap<&str, usize> =
             node_ids.iter().map(|node_id| (*node_id, 0)).collect();
@@ -575,13 +657,12 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
 
         let mut input_channel_by_node: HashMap<&str, &str> = HashMap::new();
         for binding in &graph.input_bindings {
-            if !input_ids.contains(binding.port_id.as_str())
-                || !node_ids.contains(binding.to.node_id.as_str())
-            {
+            validate_source(sm, &binding.source)?;
+            if !node_ids.contains(binding.to.node_id.as_str()) {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has invalid input binding '{}'",
                     graph.id,
-                    binding.port_id
+                    binding.source.id()
                 );
             }
             if !node_by_id
@@ -590,8 +671,15 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
             {
                 continue;
             }
+            if binding.source.state_param_id().is_none() {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' timing node '{}' requires a State Param input",
+                    graph.id,
+                    binding.to.node_id
+                );
+            }
             if input_channel_by_node
-                .insert(binding.to.node_id.as_str(), binding.port_id.as_str())
+                .insert(binding.to.node_id.as_str(), binding.source.id())
                 .is_some()
             {
                 bail!(
@@ -603,13 +691,14 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
         }
         let mut covered_outputs = HashSet::new();
         for binding in &graph.output_bindings {
-            if !output_ids.contains(binding.port_id.as_str())
+            if (binding.state_param_id != "*"
+                && !state_param_ids.contains(binding.state_param_id.as_str()))
                 || !node_ids.contains(binding.from.node_id.as_str())
             {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has invalid output binding '{}'",
                     graph.id,
-                    binding.port_id
+                    binding.state_param_id
                 );
             }
             if !node_by_id
@@ -619,7 +708,7 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 bail!(
                     "state_machine validation: transition motion graph '{}' output '{}' must be driven by a timing node",
                     graph.id,
-                    binding.port_id
+                    binding.state_param_id
                 );
             }
             let input_channel = input_channel_by_node
@@ -632,61 +721,48 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                         binding.from.node_id
                     )
                 })?;
-            if input_channel != binding.port_id {
+            if input_channel != binding.state_param_id {
                 bail!(
                     "state_machine validation: transition motion graph '{}' crosses property '{}' to '{}'",
                     graph.id,
                     input_channel,
-                    binding.port_id
+                    binding.state_param_id
                 );
             }
-            if !covered_outputs.insert(binding.port_id.as_str()) {
+            if !covered_outputs.insert(binding.state_param_id.as_str()) {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
                     graph.id,
-                    binding.port_id
+                    binding.state_param_id
                 );
             }
         }
         for passthrough in &graph.passthrough_bindings {
-            if !input_ids.contains(passthrough.from_port_id.as_str())
-                || !output_ids.contains(passthrough.to_port_id.as_str())
+            if passthrough.state_param_id != "*"
+                && !state_param_ids.contains(passthrough.state_param_id.as_str())
             {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has invalid passthrough",
                     graph.id
                 );
             }
-            if passthrough.from_port_id != passthrough.to_port_id {
-                bail!(
-                    "state_machine validation: transition motion graph '{}' crosses passthrough properties",
-                    graph.id
-                );
-            }
-            if !covered_outputs.insert(passthrough.to_port_id.as_str()) {
+            if !covered_outputs.insert(passthrough.state_param_id.as_str()) {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
                     graph.id,
-                    passthrough.to_port_id
-                );
-            }
-        }
-        let has_any_fallback = covered_outputs.contains("*");
-        for output_id in &output_ids {
-            if !has_any_fallback && !covered_outputs.contains(output_id) {
-                bail!(
-                    "state_machine validation: transition motion graph '{}' leaves property '{}' uncovered",
-                    graph.id,
-                    output_id
+                    passthrough.state_param_id
                 );
             }
         }
 
         match graph.condition_binding.as_ref() {
             None => {}
-            Some(TransitionConditionBinding::Input { input_port_id }) => {
-                let valid = graph.inputs.iter().any(|port| {
-                    port.id == *input_port_id && port.port_type.as_deref() == Some("bool")
+            Some(TransitionConditionBinding::Input { input }) => {
+                validate_source(sm, input)?;
+                let valid = input.state_param_id().is_some_and(|id| {
+                    sm.state_params
+                        .iter()
+                        .any(|declaration| declaration.id == id && declaration.param_type == "bool")
                 });
                 if !valid {
                     bail!(
@@ -810,68 +886,100 @@ fn validate_transition_direction_constraints(sm: &StateMachine) -> Result<()> {
 fn validate_graphs(sm: &StateMachine) -> Result<()> {
     for state in &sm.states {
         if let Some(graph) = &state.mutation_graph {
-            validate_graph_core(
-                &format!("State '{}' Mutation", state.id),
-                &graph.inputs,
-                &graph.outputs,
-                &graph.nodes,
-                &graph.connections,
-                true,
-            )?;
-            validate_boundary_bindings(
-                &format!("State '{}' Mutation", state.id),
-                &graph.inputs,
-                &graph.outputs,
-                &graph.nodes,
-                graph
-                    .input_bindings
-                    .iter()
-                    .map(|binding| (binding.state_port_id.as_str(), &binding.to)),
-                graph
-                    .output_bindings
-                    .iter()
-                    .map(|binding| (binding.state_port_id.as_str(), &binding.from)),
-                std::iter::empty(),
-                true,
-            )?;
+            let label = format!("State '{}' Mutation", state.id);
+            validate_graph_core(&label, &graph.nodes, &graph.connections, true)?;
+            let mut input_targets = HashSet::new();
+            for binding in &graph.input_bindings {
+                let source = source_port(sm, &binding.source)?;
+                let target = graph_input_port(&graph.nodes, &binding.to, &label)?;
+                validate_port_compatibility(&label, &source, target)?;
+                if !input_targets.insert((&binding.to.node_id, &binding.to.port_id)) {
+                    bail!(
+                        "{label} input '{}.{}' has multiple writers",
+                        binding.to.node_id,
+                        binding.to.port_id
+                    );
+                }
+            }
+            let mut output_ids = HashSet::new();
+            let mut motion_sources = HashMap::new();
+            for binding in &graph.output_bindings {
+                let target = state_param_port(sm, &binding.state_param_id)?;
+                let source = graph_output_port(&graph.nodes, &binding.from, &label)?;
+                validate_port_compatibility(&label, source, &target)?;
+                if source.motion != Some(true) {
+                    bail!(
+                        "{label} State Param '{}' must be driven by Motion<T>",
+                        binding.state_param_id
+                    );
+                }
+                if !output_ids.insert(binding.state_param_id.as_str()) {
+                    bail!(
+                        "{label} State Param '{}' has multiple writers",
+                        binding.state_param_id
+                    );
+                }
+                *motion_sources
+                    .entry((binding.from.node_id.as_str(), binding.from.port_id.as_str()))
+                    .or_insert(0usize) += 1;
+            }
+            for node in &graph.nodes {
+                for output in node.outputs.iter().filter(|port| port.motion == Some(true)) {
+                    let count = motion_sources
+                        .get(&(node.id.as_str(), output.id.as_str()))
+                        .copied()
+                        .unwrap_or_default();
+                    if count != 1 {
+                        bail!(
+                            "{label} Motion output '{}.{}' must bind exactly once to a State Param",
+                            node.id,
+                            output.id
+                        );
+                    }
+                }
+            }
         }
     }
     for derivation in &sm.derivations {
-        validate_graph_core(
-            &format!("Derivation '{}'", derivation.id),
-            &derivation.inputs,
-            &derivation.outputs,
-            &derivation.nodes,
-            &derivation.connections,
-            false,
-        )?;
-        validate_boundary_bindings(
-            &format!("Derivation '{}'", derivation.id),
-            &derivation.inputs,
-            &derivation.outputs,
-            &derivation.nodes,
-            derivation
-                .input_bindings
-                .iter()
-                .map(|binding| (binding.port_id.as_str(), &binding.to)),
-            derivation
-                .output_bindings
-                .iter()
-                .map(|binding| (binding.port_id.as_str(), &binding.from)),
-            derivation
-                .passthrough_bindings
-                .iter()
-                .map(|binding| (binding.from_port_id.as_str(), binding.to_port_id.as_str())),
-            false,
-        )?;
+        let label = format!("Derivation '{}'", derivation.id);
+        validate_graph_core(&label, &derivation.nodes, &derivation.connections, false)?;
+        let mut input_targets = HashSet::new();
+        for binding in &derivation.input_bindings {
+            let source = source_port(sm, &binding.source)?;
+            let target = graph_input_port(&derivation.nodes, &binding.to, &label)?;
+            validate_port_compatibility(&label, &source, target)?;
+            if !input_targets.insert((&binding.to.node_id, &binding.to.port_id)) {
+                bail!(
+                    "{label} input '{}.{}' has multiple writers",
+                    binding.to.node_id,
+                    binding.to.port_id
+                );
+            }
+        }
+        let mut uniform_ids = HashSet::new();
+        for binding in &derivation.output_bindings {
+            let source = graph_output_port(&derivation.nodes, &binding.from, &label)?;
+            if source.motion == Some(true) {
+                bail!("{label} cannot bind Motion<T> to a GPU uniform");
+            }
+            let uniform_id = binding.uniform.id();
+            if !uniform_ids.insert(uniform_id.clone()) {
+                bail!("{label} GPU uniform '{uniform_id}' has multiple writers");
+            }
+        }
+        for binding in &derivation.passthrough_bindings {
+            validate_source(sm, &binding.source)?;
+            let uniform_id = binding.uniform.id();
+            if !uniform_ids.insert(uniform_id.clone()) {
+                bail!("{label} GPU uniform '{uniform_id}' has multiple writers");
+            }
+        }
     }
     Ok(())
 }
 
 fn validate_graph_core(
     label: &str,
-    _inputs: &[GraphPort],
-    _outputs: &[GraphPort],
     nodes: &[GraphInnerNode],
     connections: &[GraphConnection],
     is_mutation: bool,
@@ -990,141 +1098,6 @@ fn validate_graph_core(
     Ok(())
 }
 
-fn validate_boundary_bindings<'a>(
-    label: &str,
-    inputs: &[GraphPort],
-    outputs: &[GraphPort],
-    nodes: &'a [GraphInnerNode],
-    input_bindings: impl Iterator<Item = (&'a str, &'a GraphEndpoint)>,
-    output_bindings: impl Iterator<Item = (&'a str, &'a GraphEndpoint)>,
-    passthrough_bindings: impl Iterator<Item = (&'a str, &'a str)>,
-    is_mutation: bool,
-) -> Result<()> {
-    let node_by_id = nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node))
-        .collect::<HashMap<_, _>>();
-    let mut written_inputs = HashSet::new();
-    for (boundary_id, endpoint) in input_bindings {
-        let boundary = inputs
-            .iter()
-            .find(|port| port.id == boundary_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{label} input binding references missing boundary port '{boundary_id}'"
-                )
-            })?;
-        let node = node_by_id.get(endpoint.node_id.as_str()).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{label} input binding references missing node '{}'",
-                endpoint.node_id
-            )
-        })?;
-        let port = node
-            .inputs
-            .iter()
-            .find(|port| port.id == endpoint.port_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{label} input binding references missing port '{}.{}'",
-                    endpoint.node_id,
-                    endpoint.port_id
-                )
-            })?;
-        validate_port_compatibility(label, boundary, port)?;
-        if !written_inputs.insert((endpoint.node_id.as_str(), endpoint.port_id.as_str())) {
-            bail!(
-                "{label} input '{}.{}' has multiple writers",
-                endpoint.node_id,
-                endpoint.port_id
-            );
-        }
-    }
-
-    let mut written_outputs = HashSet::new();
-    let mut bound_motion_sources = HashMap::<(&str, &str), usize>::new();
-    for (boundary_id, endpoint) in output_bindings {
-        let boundary = outputs
-            .iter()
-            .find(|port| port.id == boundary_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{label} output binding references missing boundary port '{boundary_id}'"
-                )
-            })?;
-        if OverrideKey::parse(boundary_id).is_none() {
-            bail!("{label} output '{boundary_id}' is not a formal render declaration");
-        }
-        let node = node_by_id.get(endpoint.node_id.as_str()).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{label} output binding references missing node '{}'",
-                endpoint.node_id
-            )
-        })?;
-        let port = node
-            .outputs
-            .iter()
-            .find(|port| port.id == endpoint.port_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{label} output binding references missing port '{}.{}'",
-                    endpoint.node_id,
-                    endpoint.port_id
-                )
-            })?;
-        validate_port_compatibility(label, port, boundary)?;
-        if is_mutation && port.motion != Some(true) {
-            bail!("{label} State Output '{boundary_id}' must be driven by Motion<T>");
-        }
-        if !is_mutation && port.motion == Some(true) {
-            bail!("{label} cannot bind Motion<T> to a render output");
-        }
-        if !written_outputs.insert(boundary_id) {
-            bail!("{label} output '{boundary_id}' has multiple writers");
-        }
-        *bound_motion_sources
-            .entry((endpoint.node_id.as_str(), endpoint.port_id.as_str()))
-            .or_default() += 1;
-    }
-    if is_mutation {
-        for node in nodes {
-            for port in node.outputs.iter().filter(|port| port.motion == Some(true)) {
-                let count = bound_motion_sources
-                    .get(&(node.id.as_str(), port.id.as_str()))
-                    .copied()
-                    .unwrap_or(0);
-                if count != 1 {
-                    bail!(
-                        "{label} Motion output '{}.{}' must bind exactly once to State Outputs",
-                        node.id,
-                        port.id
-                    );
-                }
-            }
-        }
-    }
-
-    for (from_id, to_id) in passthrough_bindings {
-        let from = inputs
-            .iter()
-            .find(|port| port.id == from_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("{label} passthrough references missing input '{from_id}'")
-            })?;
-        let to = outputs
-            .iter()
-            .find(|port| port.id == to_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("{label} passthrough references missing output '{to_id}'")
-            })?;
-        validate_port_compatibility(label, from, to)?;
-        if !written_outputs.insert(to_id) {
-            bail!("{label} output '{to_id}' has multiple writers");
-        }
-    }
-    Ok(())
-}
-
 fn validate_port_compatibility(label: &str, source: &GraphPort, target: &GraphPort) -> Result<()> {
     let source_type = source.port_type.as_deref().unwrap_or("any");
     let target_type = target.port_type.as_deref().unwrap_or("any");
@@ -1162,7 +1135,7 @@ mod tests {
 
     fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
         SceneDSL {
-            version: "3.0".into(),
+            version: "4.0".into(),
             metadata: crate::dsl::Metadata {
                 name: "Validation test".into(),
                 created: None,
@@ -1194,12 +1167,14 @@ mod tests {
         StateMachine {
             id: "sm1".into(),
             name: "Test".into(),
+            state_params: vec![],
+            state_param_layout: Default::default(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),
                     name: "Entry".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::EntryState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -1208,7 +1183,7 @@ mod tests {
                     id: "any".into(),
                     name: "Any".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::AnyState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -1217,7 +1192,7 @@ mod tests {
                     id: "exit".into(),
                     name: "Exit".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::ExitState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -1252,14 +1227,16 @@ mod tests {
             }],
             connections: vec![],
             input_bindings: vec![TransitionMotionInputBinding {
-                port_id: "*".into(),
+                source: StateValueSource::StateParam {
+                    state_param_id: "*".into(),
+                },
                 to: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![TransitionMotionOutputBinding {
-                port_id: "*".into(),
+                state_param_id: "*".into(),
                 from: GraphEndpoint {
                     node_id: "motion".into(),
                     port_id: "value".into(),
@@ -1267,6 +1244,7 @@ mod tests {
             }],
             passthrough_bindings: vec![],
             condition_binding: None,
+            layout: None,
             viewport: None,
         }
     }
@@ -1292,7 +1270,7 @@ mod tests {
             id: id.into(),
             name: id.into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
             mutation_graph: Some(empty_state_mutation()),
             derivation_id: None,
@@ -1304,7 +1282,7 @@ mod tests {
             id: id.into(),
             name: id.into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::DerivationNode,
             mutation_graph: None,
             derivation_id: Some(derivation_id.into()),
@@ -1341,12 +1319,28 @@ mod tests {
         sm.states.push(regular_state("state"));
         sm.states.push(derivation_node("derive_node", "derive"));
         let mut derivation = empty_derivation("derive");
-        derivation.outputs.push(GraphPort {
-            id: "consumer:opacity".into(),
-            name: Some("Consumer opacity".into()),
-            port_type: Some("float".into()),
-            array_length: None,
-            motion: None,
+        derivation.nodes.push(GraphInnerNode {
+            id: "value".into(),
+            node_type: GraphInnerNodeType::FloatInput,
+            params: HashMap::from([("value".into(), serde_json::json!(1.0))]),
+            inputs: vec![],
+            outputs: vec![GraphPort {
+                id: "value".into(),
+                name: Some("Value".into()),
+                port_type: Some("float".into()),
+                array_length: None,
+                motion: None,
+            }],
+        });
+        derivation.output_bindings.push(DerivationOutputBinding {
+            uniform: GpuUniformRef {
+                node_id: "consumer".into(),
+                param_id: "opacity".into(),
+            },
+            from: GraphEndpoint {
+                node_id: "value".into(),
+                port_id: "value".into(),
+            },
         });
         sm.derivations.push(derivation);
         validate(&sm).expect("the graph is structurally valid before scene identity validation");
@@ -1358,26 +1352,39 @@ mod tests {
         let error = validate_scene_declarations(&scene, &sm)
             .expect_err("consumer inputs cannot establish Derivation output identity")
             .to_string();
-        assert!(error.contains("not a formal writable Render Graph declaration"));
+        assert!(error.contains("missing GPU uniform 'consumer:opacity'"));
     }
 
     #[test]
     fn scene_declarations_enforce_packed_array_length() {
         let mut sm = minimal_sm();
-        let mut state = regular_state("state");
-        state
-            .mutation_graph
-            .as_mut()
-            .expect("regular State owns Mutation graph")
-            .outputs
-            .push(GraphPort {
-                id: "colors:value".into(),
-                name: Some("Colors".into()),
+        sm.states.push(regular_state("state"));
+        sm.states.push(derivation_node("derive_node", "derive"));
+        let mut derivation = empty_derivation("derive");
+        derivation.nodes.push(GraphInnerNode {
+            id: "pack".into(),
+            node_type: GraphInnerNodeType::PackArray,
+            params: HashMap::new(),
+            inputs: vec![],
+            outputs: vec![GraphPort {
+                id: "packed".into(),
+                name: Some("Packed".into()),
                 port_type: Some("packed<color>".into()),
                 array_length: Some(1),
                 motion: None,
-            });
-        sm.states.push(state);
+            }],
+        });
+        derivation.output_bindings.push(DerivationOutputBinding {
+            uniform: GpuUniformRef {
+                node_id: "colors".into(),
+                param_id: "value".into(),
+            },
+            from: GraphEndpoint {
+                node_id: "pack".into(),
+                port_id: "packed".into(),
+            },
+        });
+        sm.derivations.push(derivation);
         validate(&sm).expect("the graph is structurally valid before scene identity validation");
 
         let scene = scene_with_state_machine(
@@ -1400,11 +1407,27 @@ mod tests {
     #[test]
     fn motion_graph_rejects_cross_property_routes() {
         let mut sm = minimal_sm();
+        sm.state_params.extend([
+            StateParamDeclaration {
+                id: "Node:x".into(),
+                name: "X".into(),
+                param_type: "float".into(),
+                default_value: serde_json::json!(0.0),
+                array_length: None,
+            },
+            StateParamDeclaration {
+                id: "Node:y".into(),
+                name: "Y".into(),
+                param_type: "float".into(),
+                default_value: serde_json::json!(0.0),
+                array_length: None,
+            },
+        ]);
         let graph = &mut sm.motion_graphs[0];
-        graph.inputs[0].id = "Node:x".into();
-        graph.outputs[0].id = "Node:y".into();
-        graph.input_bindings[0].port_id = "Node:x".into();
-        graph.output_bindings[0].port_id = "Node:y".into();
+        graph.input_bindings[0].source = StateValueSource::StateParam {
+            state_param_id: "Node:x".into(),
+        };
+        graph.output_bindings[0].state_param_id = "Node:y".into();
 
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("crosses property"), "{err}");
@@ -1455,7 +1478,7 @@ mod tests {
             id: "entry".into(),
             name: "Dup".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
             mutation_graph: None,
             derivation_id: None,
@@ -1480,7 +1503,7 @@ mod tests {
             id: "mut1".into(),
             name: "M1".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::DerivationNode,
             mutation_graph: None,
             derivation_id: Some("nonexistent".into()),
@@ -1496,7 +1519,7 @@ mod tests {
             id: "s1".into(),
             name: "S1".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
             mutation_graph: Some(empty_state_mutation()),
             derivation_id: None,
@@ -1518,7 +1541,7 @@ mod tests {
             id: "s1".into(),
             name: "S1".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::AnimationState,
             mutation_graph: Some(empty_state_mutation()),
             derivation_id: None,
@@ -1641,15 +1664,23 @@ mod tests {
             connections: vec![],
             input_bindings: vec![],
             output_bindings: vec![DerivationOutputBinding {
-                port_id: "X:value".into(),
+                uniform: GpuUniformRef {
+                    node_id: "X".into(),
+                    param_id: "value".into(),
+                },
                 from: GraphEndpoint {
                     node_id: "n".into(),
                     port_id: "value".into(),
                 },
             }],
             passthrough_bindings: vec![DerivationPassthroughBinding {
-                from_port_id: "sceneElapsedTime".into(),
-                to_port_id: "X:value".into(),
+                source: StateValueSource::FrameInput {
+                    frame_input_id: "sceneElapsedTime".into(),
+                },
+                uniform: GpuUniformRef {
+                    node_id: "X".into(),
+                    param_id: "value".into(),
+                },
             }],
             layout: None,
             viewport: None,
@@ -1658,7 +1689,7 @@ mod tests {
             id: "s1".into(),
             name: "S1".into(),
             position: None,
-            parameter_overrides: Default::default(),
+            state_param_overrides: Default::default(),
             state_type: AnimationStateType::DerivationNode,
             mutation_graph: None,
             derivation_id: Some("m1".into()),
@@ -1666,7 +1697,7 @@ mod tests {
         sm.derivations.push(derivation);
         let err = validate(&sm).unwrap_err().to_string();
         assert!(
-            err.contains("output 'X:value' has multiple writers"),
+            err.contains("GPU uniform 'X:value' has multiple writers"),
             "{err}"
         );
     }
@@ -1695,7 +1726,9 @@ mod tests {
             outputs: vec![],
         });
         mutation.input_bindings.push(StateMutationInputBinding {
-            state_port_id: "FloatInput:value".into(),
+            source: StateValueSource::StateParam {
+                state_param_id: "FloatInput:value".into(),
+            },
             to: GraphEndpoint {
                 node_id: "function".into(),
                 port_id: "value".into(),
@@ -1703,6 +1736,13 @@ mod tests {
         });
 
         let mut sm = minimal_sm();
+        sm.state_params.push(StateParamDeclaration {
+            id: "FloatInput:value".into(),
+            name: "Value".into(),
+            param_type: "float".into(),
+            default_value: serde_json::json!(0.0),
+            array_length: None,
+        });
         let mut state = regular_state("state");
         state.mutation_graph = Some(mutation);
         sm.states.push(state);
@@ -1786,7 +1826,7 @@ mod tests {
             },
         });
         mutation.output_bindings.push(StateMutationOutputBinding {
-            state_port_id: "FloatInput:value".into(),
+            state_param_id: "FloatInput:value".into(),
             from: GraphEndpoint {
                 node_id: "first".into(),
                 port_id: "value".into(),
@@ -1794,6 +1834,13 @@ mod tests {
         });
 
         let mut sm = minimal_sm();
+        sm.state_params.push(StateParamDeclaration {
+            id: "FloatInput:value".into(),
+            name: "Value".into(),
+            param_type: "float".into(),
+            default_value: serde_json::json!(0.0),
+            array_length: None,
+        });
         let mut state = regular_state("state");
         state.mutation_graph = Some(mutation);
         sm.states.push(state);

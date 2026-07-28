@@ -10,8 +10,10 @@ use std::f64::consts::PI;
 use serde::{Deserialize, Serialize};
 
 use super::easing::ease;
+#[cfg(test)]
+use super::types::StateValueSource;
 use super::types::{
-    EasingKind, OverrideKey, TimelineBlending, TimelinePreset, TransitionMotionGraph,
+    EasingKind, StateParamKey, TimelineBlending, TimelinePreset, TransitionMotionGraph,
     TransitionMotionNode,
 };
 
@@ -39,19 +41,19 @@ pub struct MotionChannelDebug {
 
 #[derive(Debug, Clone, Default)]
 pub struct MotionStep {
-    pub overrides: HashMap<OverrideKey, serde_json::Value>,
+    pub overrides: HashMap<StateParamKey, serde_json::Value>,
     pub channels: Vec<MotionChannelDebug>,
     pub active: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct MotionEngine {
-    channels: HashMap<OverrideKey, Channel>,
+    channels: HashMap<StateParamKey, Channel>,
     active_transition_id: Option<String>,
-    initial_values: HashMap<OverrideKey, serde_json::Value>,
-    state_values: HashMap<OverrideKey, serde_json::Value>,
-    current_values: HashMap<OverrideKey, serde_json::Value>,
-    mutation_frame_calls: HashSet<OverrideKey>,
+    initial_values: HashMap<StateParamKey, serde_json::Value>,
+    state_values: HashMap<StateParamKey, serde_json::Value>,
+    current_values: HashMap<StateParamKey, serde_json::Value>,
+    mutation_frame_calls: HashSet<StateParamKey>,
 }
 
 impl MotionEngine {
@@ -59,7 +61,7 @@ impl MotionEngine {
         Self::with_initial_values(HashMap::new())
     }
 
-    pub fn with_initial_values(initial_values: HashMap<OverrideKey, serde_json::Value>) -> Self {
+    pub fn with_initial_values(initial_values: HashMap<StateParamKey, serde_json::Value>) -> Self {
         Self {
             channels: HashMap::new(),
             active_transition_id: None,
@@ -95,7 +97,7 @@ impl MotionEngine {
     pub fn transition_to(
         &mut self,
         transition_id: &str,
-        target: &HashMap<OverrideKey, serde_json::Value>,
+        target: &HashMap<StateParamKey, serde_json::Value>,
         graph: &TransitionMotionGraph,
     ) {
         let previous = self.clone();
@@ -112,7 +114,7 @@ impl MotionEngine {
         transition_id: &str,
         graph: &TransitionMotionGraph,
         previous: &MotionEngine,
-        transition_keys: &HashSet<OverrideKey>,
+        transition_keys: &HashSet<StateParamKey>,
     ) {
         let plans = compile_channel_plans(graph);
         let mut keys = transition_keys.iter().cloned().collect::<Vec<_>>();
@@ -168,9 +170,9 @@ impl MotionEngine {
         &mut self,
         transition_id: &str,
         graph: &TransitionMotionGraph,
-        source: &HashMap<OverrideKey, serde_json::Value>,
-        target: &HashMap<OverrideKey, serde_json::Value>,
-        sticky: &HashMap<OverrideKey, serde_json::Value>,
+        source: &HashMap<StateParamKey, serde_json::Value>,
+        target: &HashMap<StateParamKey, serde_json::Value>,
+        sticky: &HashMap<StateParamKey, serde_json::Value>,
     ) {
         for (key, value) in sticky.iter().chain(source.iter()) {
             self.current_values.insert(key.clone(), value.clone());
@@ -181,7 +183,7 @@ impl MotionEngine {
     /// Resolve State override values into S and seed Q from S. Callers may
     /// subsequently run Mutation to replace or integrate Q before Transition
     /// residual error is established.
-    pub fn commit_logical_values(&mut self, patch: HashMap<OverrideKey, serde_json::Value>) {
+    pub fn commit_logical_values(&mut self, patch: HashMap<StateParamKey, serde_json::Value>) {
         for (key, value) in patch {
             self.state_values.insert(key.clone(), value.clone());
             let channel = self
@@ -197,7 +199,10 @@ impl MotionEngine {
     /// Re-seed writable target-system channels from their resolved State
     /// values when a State activates. Ordinary frames never call this, so a
     /// continuously retargeted Mutation spring is not recreated every tick.
-    pub fn seed_targets_from_state<'a>(&mut self, keys: impl IntoIterator<Item = &'a OverrideKey>) {
+    pub fn seed_targets_from_state<'a>(
+        &mut self,
+        keys: impl IntoIterator<Item = &'a StateParamKey>,
+    ) {
         for key in keys {
             let Some(value) = self.state_values.get(key).cloned() else {
                 continue;
@@ -223,7 +228,7 @@ impl MotionEngine {
     /// sample Q/Qdot; the presentation sample remains Q - transition error.
     pub fn set_to(
         &mut self,
-        key: &OverrideKey,
+        key: &StateParamKey,
         target: serde_json::Value,
         velocity: Option<serde_json::Value>,
         dt: f64,
@@ -254,7 +259,7 @@ impl MotionEngine {
     /// position or velocity.
     pub fn to(
         &mut self,
-        key: &OverrideKey,
+        key: &StateParamKey,
         target: serde_json::Value,
         duration: f64,
         bounce: f64,
@@ -284,7 +289,7 @@ impl MotionEngine {
 
     /// Update global uniform values from outside the state machine. An active
     /// animation transaction retains priority until its channel completes.
-    pub fn update_external_values(&mut self, updates: &[(OverrideKey, serde_json::Value)]) {
+    pub fn update_external_values(&mut self, updates: &[(StateParamKey, serde_json::Value)]) {
         for (key, value) in updates {
             self.initial_values.insert(key.clone(), value.clone());
             self.state_values.insert(key.clone(), value.clone());
@@ -304,35 +309,35 @@ impl MotionEngine {
         }
     }
 
-    pub fn current_values(&self) -> &HashMap<OverrideKey, serde_json::Value> {
+    pub fn current_values(&self) -> &HashMap<StateParamKey, serde_json::Value> {
         &self.current_values
     }
 
-    pub fn state_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+    pub fn state_value(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.state_values
             .get(key)
             .cloned()
             .or_else(|| self.initial_values.get(key).cloned())
     }
 
-    pub fn target_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+    pub fn target_value(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.channels
             .get(key)
             .map(|channel| channel.target_sample().value.to_json())
             .or_else(|| self.current_values.get(key).cloned())
     }
 
-    pub fn target_velocity(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+    pub fn target_velocity(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.channels
             .get(key)
             .map(|channel| channel.target_sample().velocity.to_json())
     }
 
-    pub fn physical_value(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+    pub fn physical_value(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.current_values.get(key).cloned()
     }
 
-    pub fn physical_velocity(&self, key: &OverrideKey) -> Option<serde_json::Value> {
+    pub fn physical_velocity(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.channels
             .get(key)
             .map(|channel| channel.sample().velocity.to_json())
@@ -400,8 +405,8 @@ fn kotlin_frame_seconds(dt: f64) -> f64 {
     f64::from((nanos as f64 / NANOS_PER_SECOND) as f32)
 }
 
-fn key_string(key: &OverrideKey) -> String {
-    format!("{}:{}", key.node_id, key.param_name)
+fn key_string(key: &StateParamKey) -> String {
+    key.as_str().to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -416,7 +421,7 @@ fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
     let inputs_by_node: HashMap<&str, &str> = graph
         .input_bindings
         .iter()
-        .map(|binding| (binding.to.node_id.as_str(), binding.port_id.as_str()))
+        .map(|binding| (binding.to.node_id.as_str(), binding.source.id()))
         .collect();
     let mut plans = CompiledPlans {
         fallback: None,
@@ -430,30 +435,27 @@ fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
         let input_port = inputs_by_node
             .get(binding.from.node_id.as_str())
             .copied()
-            .unwrap_or(binding.port_id.as_str());
-        if input_port != binding.port_id {
+            .unwrap_or(binding.state_param_id.as_str());
+        if input_port != binding.state_param_id {
             continue;
         }
         let plan = MotionPlan::from_node(node);
         let Some(plan) = plan else {
             continue;
         };
-        if binding.port_id == ANY_CHANNEL {
+        if binding.state_param_id == ANY_CHANNEL {
             plans.fallback = Some(plan);
         } else {
-            plans.specific.insert(binding.port_id.clone(), plan);
+            plans.specific.insert(binding.state_param_id.clone(), plan);
         }
     }
     for passthrough in &graph.passthrough_bindings {
-        if passthrough.from_port_id != passthrough.to_port_id {
-            continue;
-        }
-        if passthrough.to_port_id == ANY_CHANNEL {
+        if passthrough.state_param_id == ANY_CHANNEL {
             plans.fallback = Some(MotionPlan::Instant);
         } else {
             plans
                 .specific
-                .insert(passthrough.to_port_id.clone(), MotionPlan::Instant);
+                .insert(passthrough.state_param_id.clone(), MotionPlan::Instant);
         }
     }
     plans
@@ -1502,14 +1504,16 @@ mod tests {
             }],
             connections: vec![],
             input_bindings: vec![super::super::types::TransitionMotionInputBinding {
-                port_id: "*".into(),
+                source: StateValueSource::StateParam {
+                    state_param_id: "*".into(),
+                },
                 to: super::super::types::GraphEndpoint {
                     node_id: "spring".into(),
                     port_id: "value".into(),
                 },
             }],
             output_bindings: vec![super::super::types::TransitionMotionOutputBinding {
-                port_id: "*".into(),
+                state_param_id: "*".into(),
                 from: super::super::types::GraphEndpoint {
                     node_id: "spring".into(),
                     port_id: "value".into(),
@@ -1517,6 +1521,7 @@ mod tests {
             }],
             passthrough_bindings: vec![],
             condition_binding: None,
+            layout: None,
             viewport: None,
         }
     }
@@ -2136,7 +2141,9 @@ mod tests {
                 .into_iter()
                 .map(
                     |(port, node)| super::super::types::TransitionMotionInputBinding {
-                        port_id: port.into(),
+                        source: StateValueSource::StateParam {
+                            state_param_id: port.into(),
+                        },
                         to: super::super::types::GraphEndpoint {
                             node_id: node.into(),
                             port_id: "value".into(),
@@ -2148,7 +2155,7 @@ mod tests {
                 .into_iter()
                 .map(
                     |(port, node)| super::super::types::TransitionMotionOutputBinding {
-                        port_id: port.into(),
+                        state_param_id: port.into(),
                         from: super::super::types::GraphEndpoint {
                             node_id: node.into(),
                             port_id: "value".into(),
@@ -2158,19 +2165,20 @@ mod tests {
                 .collect(),
             passthrough_bindings: vec![],
             condition_binding: None,
+            layout: None,
             viewport: None,
         };
         let source = [
-            (OverrideKey::new("Node", "x"), serde_json::json!(0.0)),
-            (OverrideKey::new("Node", "y"), serde_json::json!(0.0)),
-            (OverrideKey::new("Node", "z"), serde_json::json!(0.0)),
+            (StateParamKey::new("Node:x"), serde_json::json!(0.0)),
+            (StateParamKey::new("Node:y"), serde_json::json!(0.0)),
+            (StateParamKey::new("Node:z"), serde_json::json!(0.0)),
         ]
         .into_iter()
         .collect();
         let target = [
-            (OverrideKey::new("Node", "x"), serde_json::json!(1.0)),
-            (OverrideKey::new("Node", "y"), serde_json::json!(1.0)),
-            (OverrideKey::new("Node", "z"), serde_json::json!(1.0)),
+            (StateParamKey::new("Node:x"), serde_json::json!(1.0)),
+            (StateParamKey::new("Node:y"), serde_json::json!(1.0)),
+            (StateParamKey::new("Node:z"), serde_json::json!(1.0)),
         ]
         .into_iter()
         .collect();
@@ -2193,8 +2201,8 @@ mod tests {
     #[test]
     fn wildcard_transition_does_not_drive_mutation_only_channels() {
         let graph = wildcard_spring_graph(0.5, 0.2);
-        let state_key = OverrideKey::new("StateInput", "value");
-        let mutation_key = OverrideKey::new("DerivedPositions", "value");
+        let state_key = StateParamKey::new("StateInput:value");
+        let mutation_key = StateParamKey::new("DerivedPositions:value");
         let mut previous = MotionEngine::with_initial_values(HashMap::from([
             (state_key.clone(), serde_json::json!(0.0)),
             (mutation_key.clone(), serde_json::json!([[0.0, 0.0]])),
@@ -2254,7 +2262,7 @@ mod tests {
     #[test]
     fn state_mutation_spring_is_solved_before_transition_residual() {
         let graph = wildcard_spring_graph(0.25, 0.15);
-        let key = OverrideKey::new("Snap", "value");
+        let key = StateParamKey::new("Snap:value");
         let mut previous = MotionEngine::with_initial_values(HashMap::from([(
             key.clone(),
             serde_json::json!(0.3),

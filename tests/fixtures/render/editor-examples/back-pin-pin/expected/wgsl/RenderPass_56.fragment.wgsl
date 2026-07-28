@@ -35,8 +35,8 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
-    // Node: GroupInstance_59/FloatInput_53
-    node_GroupInstance_59_FloatInput_53_22997734: vec4f,
+    // Node: FloatInput_53
+    node_FloatInput_53_b820f720: vec4f,
     // Node: GroupInstance_62/ColorInput_68
     group_instance_62_color_input_68: vec4f,
 };
@@ -99,7 +99,7 @@ fn mc_color(uv: vec2<f32>, uv_1: vec2<f32>, front_color: vec4<f32>, input3_: vec
 
 
 // --- Extra WGSL declarations (generated) ---
-fn mc_math_closure(uv: vec2<f32>, t: f32) -> vec3<f32> {
+fn mc_rotation_y(uv: vec2<f32>, t: f32) -> vec3<f32> {
     var uv_1: vec2<f32>;
     var t_1: f32;
     var output: vec3<f32> = vec3(0f);

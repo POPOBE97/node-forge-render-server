@@ -16,8 +16,8 @@ use crate::{
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 3;
-const SCENE_DSL_VERSION: &str = "3.0";
+const FORMAT_VERSION: i64 = 4;
+const SCENE_DSL_VERSION: &str = "4.0";
 const CHANGE_LOG_RETENTION: i64 = 10_000;
 
 fn now_millis() -> u128 {
@@ -140,9 +140,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         )
         .context("invalid .nforge document row")?;
     if scene_version != SCENE_DSL_VERSION {
-        bail!(
-            "unsupported SceneDSL version '{scene_version}' (expected {SCENE_DSL_VERSION})"
-        );
+        bail!("unsupported SceneDSL version '{scene_version}' (expected {SCENE_DSL_VERSION})");
     }
 
     let mut sections = BTreeMap::<String, Value>::new();
@@ -338,9 +336,9 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow::anyhow!("animationState id is missing"))?;
-            let graph = state_graphs.remove(state_id).ok_or_else(|| {
-                anyhow::anyhow!("missing state graph scope 'state:{state_id}'")
-            })?;
+            let graph = state_graphs
+                .remove(state_id)
+                .ok_or_else(|| anyhow::anyhow!("missing state graph scope 'state:{state_id}'"))?;
             object.insert("mutationGraph".to_string(), graph);
         }
         if let Some(extra) = state_graphs.keys().next() {

@@ -97,7 +97,7 @@ Render Graph
 
 #### Mutation Function ABI
 
-Graph Functions use ABI v7. Mutation Functions expose the Motion helpers:
+Graph Functions use ABI v8. Mutation Functions expose the Motion helpers:
 
 ```ts
 interface Motion<T> {

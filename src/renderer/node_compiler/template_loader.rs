@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -5,9 +6,16 @@ use std::sync::{OnceLock, RwLock};
 
 static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static OVERRIDE_CACHE: OnceLock<RwLock<HashMap<PathBuf, String>>> = OnceLock::new();
-static DOCUMENT_OVERRIDES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static MATERIALS_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    /// Archive-local material sources belong to the document currently loaded
+    /// by this render thread. Keeping them thread-local prevents concurrent
+    /// archive compilation (notably the test runner) from replacing another
+    /// document's shader sources midway through planning.
+    static DOCUMENT_OVERRIDES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
 
 /// Returns the root directory for per-node WGSL material override files,
 /// resolved once from `NODE_FORGE_MATERIALS_DIR` at first call.
@@ -34,16 +42,12 @@ pub fn resolve_override_path(rel: &str) -> Option<PathBuf> {
     Some(root.join(stripped))
 }
 
-fn document_overrides() -> &'static RwLock<HashMap<String, String>> {
-    DOCUMENT_OVERRIDES.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
 pub fn install_document_overrides(overrides: impl IntoIterator<Item = (String, String)>) {
-    let Ok(mut current) = document_overrides().write() else {
-        return;
-    };
-    current.clear();
-    current.extend(overrides);
+    DOCUMENT_OVERRIDES.with(|current| {
+        let mut current = current.borrow_mut();
+        current.clear();
+        current.extend(overrides);
+    });
     GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -92,10 +96,10 @@ pub fn load_template_with_override(
 ) -> String {
     if let Some(path) = override_abs_path {
         if let Some(node_id) = path.file_stem().and_then(|value| value.to_str())
-            && let Ok(overrides) = document_overrides().read()
-            && let Some(content) = overrides.get(node_id)
+            && let Some(content) =
+                DOCUMENT_OVERRIDES.with(|overrides| overrides.borrow().get(node_id).cloned())
         {
-            return content.clone();
+            return content;
         }
         {
             let c = override_cache().read().unwrap();
@@ -134,4 +138,30 @@ pub fn invalidate_cache() {
 
 pub fn generation() -> u64 {
     GENERATION.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+
+    use super::*;
+
+    #[test]
+    fn document_overrides_are_isolated_between_render_threads() {
+        let barrier = Arc::new(Barrier::new(2));
+        let handles = ["thread-a", "thread-b"].map(|source| {
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                install_document_overrides([("SharedNode".to_string(), source.to_string())]);
+                barrier.wait();
+                load_template_with_override(
+                    Some(Path::new("materials/SharedNode.wgsl")),
+                    "shader_material_default.wgsl",
+                )
+            })
+        });
+
+        let values = handles.map(|handle| handle.join().expect("render thread should finish"));
+        assert_eq!(values, ["thread-a", "thread-b"]);
+    }
 }

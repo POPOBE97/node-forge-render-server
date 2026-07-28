@@ -73,12 +73,14 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
     let sm = StateMachine {
         id: "sm_test".into(),
         name: "Test SM".into(),
+        state_params: vec![],
+        state_param_layout: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),
                 name: "Entry".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::EntryState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -87,7 +89,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 id: "any".into(),
                 name: "Any".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::AnyState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -96,7 +98,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 id: "exit".into(),
                 name: "Exit".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::ExitState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -105,7 +107,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
                 id: "target".into(),
                 name: "Target".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
                 mutation_graph: Some(empty_state_mutation()),
                 derivation_id: None,
@@ -125,7 +127,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
     };
 
     SceneDSL {
-        version: "3.0".into(),
+        version: "4.0".into(),
         metadata: Metadata {
             name: "Test Scene".into(),
             created: None,
@@ -145,12 +147,14 @@ fn scene_with_press_release_transitions() -> SceneDSL {
     let sm = StateMachine {
         id: "sm_press_release".into(),
         name: "Press Release SM".into(),
+        state_params: vec![],
+        state_param_layout: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),
                 name: "Entry".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::EntryState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -159,7 +163,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "idle".into(),
                 name: "Idle".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
                 mutation_graph: Some(empty_state_mutation()),
                 derivation_id: None,
@@ -168,7 +172,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "any".into(),
                 name: "Any".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::AnyState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -177,7 +181,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "pressed".into(),
                 name: "Pressed".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::AnimationState,
                 mutation_graph: Some(empty_state_mutation()),
                 derivation_id: None,
@@ -186,7 +190,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "derivation_node".into(),
                 name: "Press Derivation".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::DerivationNode,
                 mutation_graph: None,
                 derivation_id: Some("derivation_press".into()),
@@ -195,7 +199,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
                 id: "exit".into(),
                 name: "Exit".into(),
                 position: None,
-                parameter_overrides: Default::default(),
+                state_param_overrides: Default::default(),
                 state_type: AnimationStateType::ExitState,
                 mutation_graph: None,
                 derivation_id: None,
@@ -249,7 +253,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
     };
 
     SceneDSL {
-        version: "3.0".into(),
+        version: "4.0".into(),
         metadata: Metadata {
             name: "Press Release Scene".into(),
             created: None,

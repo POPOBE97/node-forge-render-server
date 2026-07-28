@@ -65,10 +65,10 @@ var img_tex_GroupInstance_128_ImageTexture_76: texture_2d<f32>;
 var img_samp_GroupInstance_128_ImageTexture_76: sampler;
 
 @group(1) @binding(2)
-var pass_tex_GroupInstance_128_GuassianBlurPass_85: texture_2d<f32>;
+var pass_tex_GroupInstance_128_PassTexture_86: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp_GroupInstance_128_GuassianBlurPass_85: sampler;
+var pass_samp_GroupInstance_128_PassTexture_86: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---

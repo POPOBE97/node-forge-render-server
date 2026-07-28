@@ -4,7 +4,8 @@ use node_forge_render_server::state_machine::FiredEvent;
 mod support;
 
 const POSITIONS_KEY: &str = "Vector2ArrayInput_IntelligentLightPositions:value";
-const SNAP_PRIMARY_KEY: &str = "FloatInput_IntelligentLightSnapTargetTPrimary:value";
+const SNAP_PRIMARY_PARAM_ID: &str = "sp_5e510047b6cb8f4d";
+const SNAP_SECONDARY_PARAM_ID: &str = "sp_653078b6ffd2ce9c";
 
 fn space_event(event_type: &str) -> FiredEvent {
     FiredEvent {
@@ -67,26 +68,28 @@ fn doubao_positions_are_derived_from_physical_p_without_a_motion_channel() {
         .expect("Idle -> Listening should own a Motion Graph");
 
     assert!(
-        graph.inputs.iter().all(|port| port.id != POSITIONS_KEY)
-            && graph.outputs.iter().all(|port| port.id != POSITIONS_KEY),
-        "derived positions must not have an authored Transition boundary port"
+        machine
+            .state_params
+            .iter()
+            .all(|param| param.name != "IntelligentLightPositions"),
+        "derived positions must not be a State Param"
     );
     assert!(
         graph
             .input_bindings
             .iter()
-            .all(|binding| binding.port_id != POSITIONS_KEY)
+            .all(|binding| binding.source.id() != POSITIONS_KEY)
             && graph
                 .output_bindings
                 .iter()
-                .all(|binding| binding.port_id != POSITIONS_KEY),
+                .all(|binding| binding.state_param_id != POSITIONS_KEY),
         "derived positions must not have a property-specific Transition route"
     );
     assert!(
         graph
             .input_bindings
             .iter()
-            .any(|binding| binding.port_id == SNAP_PRIMARY_KEY),
+            .any(|binding| binding.source.id() == SNAP_PRIMARY_PARAM_ID),
         "the State-owned snap parameter should retain its authored Transition spring"
     );
 
@@ -118,7 +121,7 @@ fn doubao_positions_are_derived_from_physical_p_without_a_motion_channel() {
         first_active.diagnostics
     );
 
-    let snap = channel(&first_active, SNAP_PRIMARY_KEY);
+    let snap = channel(&first_active, SNAP_PRIMARY_PARAM_ID);
     assert_eq!(snap.transition_driver, "spring");
     assert!(
         first_active
@@ -154,13 +157,13 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             .find(|state| state.id == "st_thinking")
             .expect("doubao fixture should have Thinking");
         let thinking_primary = thinking
-            .parameter_overrides
-            .get(SNAP_PRIMARY_KEY)
+            .state_param_overrides
+            .get(SNAP_PRIMARY_PARAM_ID)
             .and_then(serde_json::Value::as_f64)
             .expect("Thinking should override primary snap");
         let thinking_secondary = thinking
-            .parameter_overrides
-            .get("FloatInput_IntelligentLightSnapTargetTSecondary:value")
+            .state_param_overrides
+            .get(SNAP_SECONDARY_PARAM_ID)
             .and_then(serde_json::Value::as_f64)
             .expect("Thinking should override secondary snap");
         for transition_id in ["tr_listening_to_thinking", "tr_push_to_talk_to_thinking"] {
@@ -174,19 +177,16 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
                 .iter()
                 .find(|graph| graph.id == transition.motion_graph_id)
                 .expect("transition should own a Motion Graph");
-            for key in [
-                SNAP_PRIMARY_KEY,
-                "FloatInput_IntelligentLightSnapTargetTSecondary:value",
-            ] {
+            for key in [SNAP_PRIMARY_PARAM_ID, SNAP_SECONDARY_PARAM_ID] {
                 assert!(
                     graph
                         .input_bindings
                         .iter()
-                        .all(|binding| binding.port_id != key)
+                        .all(|binding| binding.source.id() != key)
                         && graph
                             .output_bindings
                             .iter()
-                            .all(|binding| binding.port_id != key),
+                            .all(|binding| binding.state_param_id != key),
                     "'{transition_id}' must let State-owned '{key}' use Any"
                 );
             }
@@ -217,15 +217,12 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             "Thinking Function must return Motion values"
         );
         for (mutation_port_id, function_port_id) in [
-            (SNAP_PRIMARY_KEY, "primary"),
-            (
-                "FloatInput_IntelligentLightSnapTargetTSecondary:value",
-                "secondary",
-            ),
+            (SNAP_PRIMARY_PARAM_ID, "primary"),
+            (SNAP_SECONDARY_PARAM_ID, "secondary"),
         ] {
             assert!(
                 thinking_mutation.input_bindings.iter().any(|binding| {
-                    binding.state_port_id == mutation_port_id
+                    binding.source.id() == mutation_port_id
                         && binding.to.node_id == "function_thinking"
                         && binding.to.port_id == function_port_id
                 }),
@@ -233,7 +230,7 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             );
             assert!(
                 thinking_mutation.output_bindings.iter().any(|binding| {
-                    binding.state_port_id == mutation_port_id
+                    binding.state_param_id == mutation_port_id
                         && binding.from.node_id == "function_thinking"
                         && binding.from.port_id == function_port_id
                 }),
@@ -258,15 +255,12 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             "Derivation Function must return only ordinary render values"
         );
         for (state_port_id, function_port_id) in [
-            (SNAP_PRIMARY_KEY, "snapTargetPrimary"),
-            (
-                "FloatInput_IntelligentLightSnapTargetTSecondary:value",
-                "snapTargetSecondary",
-            ),
+            (SNAP_PRIMARY_PARAM_ID, "snapTargetPrimary"),
+            (SNAP_SECONDARY_PARAM_ID, "snapTargetSecondary"),
         ] {
             assert!(
                 thinking_derivation.input_bindings.iter().any(|binding| {
-                    binding.port_id == state_port_id
+                    binding.source.id() == state_port_id
                         && binding.to.node_id == "function_ilight_thinking"
                         && binding.to.port_id == function_port_id
                 }),
@@ -304,7 +298,7 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             entered_thinking.active_transition_id.as_deref(),
             Some("tr_listening_to_thinking")
         );
-        let initial_snap = channel(&entered_thinking, SNAP_PRIMARY_KEY);
+        let initial_snap = channel(&entered_thinking, SNAP_PRIMARY_PARAM_ID);
         assert_eq!(initial_snap.state_value, vec![thinking_primary]);
         assert_eq!(initial_snap.mutation_driver, "spring");
         assert_eq!(initial_snap.transition_driver, "spring");
@@ -332,14 +326,11 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
         for _ in 0..6 {
             at_100ms = session.step(1.0 / 60.0);
         }
-        let snap_at_100ms = channel(&at_100ms, SNAP_PRIMARY_KEY);
+        let snap_at_100ms = channel(&at_100ms, SNAP_PRIMARY_PARAM_ID);
         assert_eq!(snap_at_100ms.mutation_driver, "spring");
         assert_eq!(snap_at_100ms.transition_driver, "spring");
         assert_eq!(snap_at_100ms.state_value, vec![thinking_primary]);
-        let secondary_at_100ms = channel(
-            &at_100ms,
-            "FloatInput_IntelligentLightSnapTargetTSecondary:value",
-        );
+        let secondary_at_100ms = channel(&at_100ms, SNAP_SECONDARY_PARAM_ID);
         assert_eq!(secondary_at_100ms.state_value, vec![thinking_secondary]);
         assert!(
             (snap_at_100ms.value[0]
@@ -352,7 +343,7 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
         assert_eq!(completed.current_state_id, "st_thinking");
         assert_eq!(completed.active_transition_id, None);
         let after_completion = session.step(0.1);
-        let continuing_snap = channel(&after_completion, SNAP_PRIMARY_KEY);
+        let continuing_snap = channel(&after_completion, SNAP_PRIMARY_PARAM_ID);
         assert_eq!(continuing_snap.mutation_driver, "spring");
         assert_eq!(continuing_snap.transition_driver, "hold");
         assert_eq!(continuing_snap.transition_error, vec![0.0]);
@@ -371,7 +362,7 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
                 .iter()
                 .find(|state| state.id == "st_thinking")
         })
-        .and_then(|state| state.parameter_overrides.get(SNAP_PRIMARY_KEY))
+        .and_then(|state| state.state_param_overrides.get(SNAP_PRIMARY_PARAM_ID))
         .and_then(serde_json::Value::as_f64)
         .expect("Thinking should override primary snap");
     let mut session = AnimationSession::from_scene(&scene)
@@ -409,7 +400,7 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     println!("| t | value | S | Q | E | P/render | Mutation | Transition | active |");
     println!("|---:|---|---:|---:|---:|---:|---|---|---|");
     for ((frame, step), expected) in samples.iter().zip(expected) {
-        let sample = channel(step, SNAP_PRIMARY_KEY);
+        let sample = channel(step, SNAP_PRIMARY_PARAM_ID);
         let state = sample.state_value.first().copied().unwrap_or(f64::NAN);
         let target = sample.target_value.first().copied().unwrap_or(f64::NAN);
         let error = sample.transition_error.first().copied().unwrap_or(f64::NAN);
@@ -459,11 +450,11 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
         "Listening -> Thinking must not jump positions at dt=0"
     );
 
-    let initial_snap = channel(&samples[0].1, SNAP_PRIMARY_KEY);
+    let initial_snap = channel(&samples[0].1, SNAP_PRIMARY_PARAM_ID);
     assert_eq!(initial_snap.state_value, vec![expected_snap_state]);
     assert_eq!(initial_snap.mutation_driver, "spring");
     assert_eq!(initial_snap.transition_driver, "spring");
-    let final_snap = channel(&samples.last().unwrap().1, SNAP_PRIMARY_KEY);
+    let final_snap = channel(&samples.last().unwrap().1, SNAP_PRIMARY_PARAM_ID);
     assert_eq!(final_snap.mutation_driver, "spring");
     let mut completion_frame = 48usize;
     let mut completed = step;
@@ -474,12 +465,12 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     println!(
         "Transition active duration: {}ms; snap mutation driver at completion: {}",
         completion_frame * 1000 / 60,
-        channel(&completed, SNAP_PRIMARY_KEY).mutation_driver
+        channel(&completed, SNAP_PRIMARY_PARAM_ID).mutation_driver
     );
     assert_eq!(completion_frame, 79, "Transition active duration changed");
     assert_eq!(completed.active_transition_id, None);
     assert_eq!(
-        channel(&completed, SNAP_PRIMARY_KEY).transition_driver,
+        channel(&completed, SNAP_PRIMARY_PARAM_ID).transition_driver,
         "hold"
     );
 }

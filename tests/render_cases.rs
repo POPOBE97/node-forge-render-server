@@ -33,6 +33,10 @@ fn default_baseline_png(case_name: &'static str) -> Option<&'static str> {
         "bloom-nodes" => None,
         "hdr-bloom-nodes" => None,
         "mesh-gradient" => None,
+        // Doubao has dedicated State Param / Motion / Derivation numeric goldens.
+        // Its 1080p HDR animation frames are intentionally not committed as ~350 MB
+        // of duplicate pixel baselines.
+        "doubao-voice-interaction" => None,
         // This case previously validated output against the ImageTexture source.
         // It now uses baseline.png to avoid duplicating GPU sampling/interpolation details in tests.
         _ => Some("baseline.png"),

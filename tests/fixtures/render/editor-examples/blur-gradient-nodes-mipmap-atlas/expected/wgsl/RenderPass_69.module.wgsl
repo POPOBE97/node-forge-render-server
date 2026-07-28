@@ -45,10 +45,10 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_Downsample_22: texture_2d<f32>;
+var pass_tex_PassTexture_70: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_Downsample_22: sampler;
+var pass_samp_PassTexture_70: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -116,8 +116,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     // Pass Texture PassTexture_70.color
     let pass_texture = textureSample(
-        pass_tex_Downsample_22,
-        pass_samp_Downsample_22,
+        pass_tex_PassTexture_70,
+        pass_samp_PassTexture_70,
         vec2f((math_closure_out).x, 1.0 - (math_closure_out).y),
     );
     // Final composite

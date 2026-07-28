@@ -20,7 +20,7 @@ use super::{
 };
 use crate::dsl::SceneDSL;
 
-const GRAPH_FUNCTION_ABI_VERSION: u32 = 7;
+const GRAPH_FUNCTION_ABI_VERSION: u32 = 8;
 const WATCHDOG_IDLE: u8 = 0;
 const WATCHDOG_ARMED: u8 = 1;
 const WATCHDOG_FIRING: u8 = 2;
@@ -531,19 +531,19 @@ impl GraphJsRuntime {
                 .ok_or_else(|| javascript_error!(scope, "installation failed"))?;
             let installed = installed
                 .to_object(scope)
-                .ok_or_else(|| anyhow!("Graph Function ABI v7 installer returned no object"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v8 installer returned no object"))?;
             let entry_key = v8::String::new(scope, "entry").unwrap();
             let bindings_key = v8::String::new(scope, "bindings").unwrap();
             let motion_kind_key = v8::String::new(scope, "motionKind").unwrap();
             let entry = installed
                 .get(scope, entry_key.into())
                 .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
-                .ok_or_else(|| anyhow!("Graph Function ABI v7 installer returned no entry"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v8 installer returned no entry"))?;
             let bindings = installed
                 .get(scope, bindings_key.into())
                 .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
                 .ok_or_else(|| {
-                    anyhow!("Graph Function ABI v7 installer returned no bindings array")
+                    anyhow!("Graph Function ABI v8 installer returned no bindings array")
                 })?;
             let motion_kind = installed
                 .get(scope, motion_kind_key.into())
@@ -555,7 +555,7 @@ impl GraphJsRuntime {
                 .any(|output| output.motion == Some(true))
                 && motion_kind.is_none()
             {
-                bail!("Graph Function ABI v7 installer returned no motion symbol");
+                bail!("Graph Function ABI v8 installer returned no motion symbol");
             }
             for index in 0..bindings.length() {
                 let binding = bindings
@@ -1047,7 +1047,7 @@ mod tests {
 
     fn scene_with_mutation_function() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
-            "version": "3.0",
+            "version": "4.0",
             "metadata": { "name": "function validation" },
             "nodes": [],
             "connections": [],
@@ -1064,8 +1064,6 @@ mod tests {
                         "name": "Active",
                         "type": "animationState",
                         "mutationGraph": {
-                            "inputs": [],
-                            "outputs": [],
                             "nodes": [{
                                 "id": "fn",
                                 "type": "MutationFunction",

@@ -65,10 +65,10 @@ var img_tex_GroupInstance_135_ImageTexture_76: texture_2d<f32>;
 var img_samp_GroupInstance_135_ImageTexture_76: sampler;
 
 @group(1) @binding(2)
-var pass_tex_GroupInstance_135_GuassianBlurPass_85: texture_2d<f32>;
+var pass_tex_GroupInstance_135_PassTexture_86: texture_2d<f32>;
 
 @group(1) @binding(3)
-var pass_samp_GroupInstance_135_GuassianBlurPass_85: sampler;
+var pass_samp_GroupInstance_135_PassTexture_86: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -788,8 +788,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     // Pass Texture GroupInstance_135/PassTexture_86.color
     let pass_texture = textureSample(
-        pass_tex_GroupInstance_135_GuassianBlurPass_85,
-        pass_samp_GroupInstance_135_GuassianBlurPass_85,
+        pass_tex_GroupInstance_135_PassTexture_86,
+        pass_samp_GroupInstance_135_PassTexture_86,
         vec2f((math_closure_out_4ae96100).x, 1.0 - (math_closure_out_4ae96100).y),
     );
     // Remap GroupInstance_135/Remap_64.result

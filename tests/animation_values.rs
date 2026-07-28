@@ -3,9 +3,11 @@ use std::path::{Path, PathBuf};
 
 use node_forge_render_server::animation::{AnimationSession, AnimationStep};
 use node_forge_render_server::state_machine::types::{
-    AnimationState, AnimationStateType, AnimationTransition, EventModifiers, GraphEndpoint,
-    GraphPort, Position, StateMachine, StateMutationGraph, StateMutationGraphLayout,
-    TransitionConditionBinding, TransitionMotionGraph, TransitionMotionNode,
+    AnimationState, AnimationStateType, AnimationTransition, DerivationDefinition,
+    DerivationPassthroughBinding, DerivationStateBinding, EventModifiers, GpuUniformRef,
+    GraphEndpoint, GraphPort, Position, StateMachine, StateMutationGraph, StateMutationGraphLayout,
+    StateParamDeclaration, StateValueSource, TransitionConditionBinding, TransitionMotionGraph,
+    TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
@@ -37,7 +39,7 @@ fn event_motion_graph(id: &str, event_type: &str) -> TransitionMotionGraph {
 
 fn empty_state_mutation() -> StateMutationGraph {
     let target = GraphPort {
-        id: "Target:value".into(),
+        id: "target_value".into(),
         name: Some("Target".into()),
         port_type: Some("float".into()),
         array_length: None,
@@ -69,22 +71,83 @@ fn space_event(event_type: &str) -> FiredEvent {
     }
 }
 
+fn state_param_id<'a>(machine: &'a StateMachine, name: &str) -> &'a str {
+    machine
+        .state_params
+        .iter()
+        .find(|param| param.name == name)
+        .map(|param| param.id.as_str())
+        .unwrap_or_else(|| panic!("missing State Param '{name}'"))
+}
+
 fn state_override<'a>(
     machine: &'a StateMachine,
     state_id: &str,
-    node_id: &str,
-    param_name: &str,
+    state_param_id: &str,
 ) -> &'a serde_json::Value {
     let state = machine
         .states
         .iter()
         .find(|state| state.id == state_id)
         .unwrap_or_else(|| panic!("missing canonical State '{state_id}'"));
-    let key = format!("{node_id}:{param_name}");
     state
-        .parameter_overrides
-        .get(&key)
-        .unwrap_or_else(|| panic!("State '{state_id}' has no canonical override for '{key}'"))
+        .state_param_overrides
+        .get(state_param_id)
+        .unwrap_or_else(|| {
+            panic!(
+                "State '{state_id}' has no canonical override for State Param '{state_param_id}'"
+            )
+        })
+}
+
+fn passthrough_state_param_for_uniform<'a>(
+    machine: &'a StateMachine,
+    state_id: &str,
+    node_id: &str,
+    param_name: &str,
+) -> &'a str {
+    let binding = machine
+        .derivation_bindings
+        .iter()
+        .find(|binding| binding.state_id == state_id)
+        .unwrap_or_else(|| panic!("State '{state_id}' has no Derivation binding"));
+    let derivation_id = machine
+        .states
+        .iter()
+        .find(|state| state.id == binding.derivation_node_id)
+        .and_then(|state| state.derivation_id.as_deref())
+        .unwrap_or_else(|| {
+            panic!(
+                "Derivation node '{}' for State '{state_id}' is missing",
+                binding.derivation_node_id
+            )
+        });
+    let derivation = machine
+        .derivations
+        .iter()
+        .find(|derivation| derivation.id == derivation_id)
+        .unwrap_or_else(|| panic!("missing Derivation '{derivation_id}'"));
+    let passthrough = derivation
+        .passthrough_bindings
+        .iter()
+        .find(|binding| {
+            binding.uniform.node_id == node_id && binding.uniform.param_id == param_name
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "Derivation '{derivation_id}' has no State Param passthrough to \
+                 '{node_id}:{param_name}'"
+            )
+        });
+    match &passthrough.source {
+        StateValueSource::StateParam { state_param_id } => state_param_id,
+        StateValueSource::FrameInput { frame_input_id } => {
+            panic!(
+                "GPU uniform '{node_id}:{param_name}' is sourced from frame input \
+                 '{frame_input_id}', not a State Param"
+            )
+        }
+    }
 }
 
 fn assert_state_override_values(
@@ -94,7 +157,9 @@ fn assert_state_override_values(
     keys: &[(&str, &str)],
 ) {
     for &(node_id, param_name) in keys {
-        let expected = state_override(machine, state_id, node_id, param_name);
+        let state_param_id =
+            passthrough_state_param_for_uniform(machine, state_id, node_id, param_name);
+        let expected = state_override(machine, state_id, state_param_id);
         let actual = snapshot
             .active_overrides
             .get(&node_forge_render_server::state_machine::OverrideKey::new(
@@ -372,7 +437,7 @@ fn generate_trace_via_session(
 
 fn sticky_override_test_scene() -> dsl::SceneDSL {
     dsl::SceneDSL {
-        version: "3.0".into(),
+        version: "4.0".into(),
         metadata: dsl::Metadata {
             name: "Sticky Override Test".into(),
             created: None,
@@ -396,12 +461,20 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
         state_machine: Some(StateMachine {
             id: "sm_sticky".into(),
             name: "Sticky".into(),
+            state_params: vec![StateParamDeclaration {
+                id: "target_value".into(),
+                name: "Target value".into(),
+                param_type: "float".into(),
+                default_value: serde_json::json!(0.0),
+                array_length: None,
+            }],
+            state_param_layout: Default::default(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),
                     name: "Entry".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::EntryState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -410,7 +483,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     id: "any".into(),
                     name: "Any".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::AnyState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -419,7 +492,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     id: "exit".into(),
                     name: "Exit".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::ExitState,
                     mutation_graph: None,
                     derivation_id: None,
@@ -428,7 +501,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     id: "a".into(),
                     name: "A".into(),
                     position: None,
-                    parameter_overrides: [("Target:value".into(), serde_json::json!(5.0))]
+                    state_param_overrides: [("target_value".into(), serde_json::json!(5.0))]
                         .into_iter()
                         .collect(),
                     state_type: AnimationStateType::AnimationState,
@@ -439,10 +512,19 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     id: "b".into(),
                     name: "B".into(),
                     position: None,
-                    parameter_overrides: Default::default(),
+                    state_param_overrides: Default::default(),
                     state_type: AnimationStateType::AnimationState,
                     mutation_graph: Some(empty_state_mutation()),
                     derivation_id: None,
+                },
+                AnimationState {
+                    id: "target_derivation_node".into(),
+                    name: "Target Derivation".into(),
+                    position: None,
+                    state_param_overrides: Default::default(),
+                    state_type: AnimationStateType::DerivationNode,
+                    mutation_graph: None,
+                    derivation_id: Some("target_derivation".into()),
                 },
             ],
             transitions: vec![
@@ -459,8 +541,39 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     motion_graph_id: "motion_a_to_b".into(),
                 },
             ],
-            derivation_bindings: vec![],
-            derivations: vec![],
+            derivation_bindings: vec![
+                DerivationStateBinding {
+                    id: "derive_a".into(),
+                    state_id: "a".into(),
+                    derivation_node_id: "target_derivation_node".into(),
+                },
+                DerivationStateBinding {
+                    id: "derive_b".into(),
+                    state_id: "b".into(),
+                    derivation_node_id: "target_derivation_node".into(),
+                },
+            ],
+            derivations: vec![DerivationDefinition {
+                id: "target_derivation".into(),
+                name: "Target Derivation".into(),
+                inputs: vec![],
+                outputs: vec![],
+                nodes: vec![],
+                connections: vec![],
+                input_bindings: vec![],
+                output_bindings: vec![],
+                passthrough_bindings: vec![DerivationPassthroughBinding {
+                    source: StateValueSource::StateParam {
+                        state_param_id: "target_value".into(),
+                    },
+                    uniform: GpuUniformRef {
+                        node_id: "Target".into(),
+                        param_id: "value".into(),
+                    },
+                }],
+                layout: None,
+                viewport: None,
+            }],
             motion_graphs: vec![
                 TransitionMotionGraph::instant("motion_entry_to_a"),
                 event_motion_graph("motion_a_to_b", "go"),
@@ -557,16 +670,21 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         .iter()
         .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
         .collect();
-    for key in [
-        "FloatInput_40:value",
-        "FloatInput_41:value",
-        "Vector2Input_35:x",
-        "Vector2Input_35:y",
-        "Vector2Input_36:y",
-        "Vector2Input_38:x",
-        "Vector2Input_38:y",
+    for name in [
+        "GradientBlurStartSigma",
+        "GradientBlurEndSigma",
+        "InputBarSizePx.x",
+        "InputBarSizePx.y",
+        "InputBarPositionPx.y",
+        "LightBloomSizePx.x",
+        "LightBloomSizePx.y",
     ] {
-        assert_eq!(drivers.get(key), Some(&"spring"), "wrong driver for {key}");
+        let key = state_param_id(machine, name);
+        assert_eq!(
+            drivers.get(key),
+            Some(&"spring"),
+            "wrong driver for State Param '{name}' ({key})"
+        );
     }
 
     let mut completed = started;
@@ -726,19 +844,20 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         .iter()
         .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
         .collect();
-    for key in [
-        "FloatInput_40:value",
-        "FloatInput_41:value",
-        "Vector2Input_35:x",
-        "Vector2Input_35:y",
-        "Vector2Input_36:y",
-        "Vector2Input_38:x",
-        "Vector2Input_38:y",
+    for name in [
+        "GradientBlurStartSigma",
+        "GradientBlurEndSigma",
+        "InputBarSizePx.x",
+        "InputBarSizePx.y",
+        "InputBarPositionPx.y",
+        "LightBloomSizePx.x",
+        "LightBloomSizePx.y",
     ] {
+        let key = state_param_id(machine, name);
         assert_eq!(
             off_drivers.get(key),
             Some(&"spring"),
-            "wrong Off -> Listening driver for {key}"
+            "wrong Off -> Listening driver for State Param '{name}' ({key})"
         );
     }
     let completed_off_to_listening = settle(&mut off_session);
@@ -773,7 +892,7 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
     let ui_opacity = idle_to_listening
         .motion_channels
         .iter()
-        .find(|channel| channel.key == "FloatInput_42:value")
+        .find(|channel| channel.key == state_param_id(machine, "InputBarUiOpacity"))
         .expect("InputBarUiOpacity should have a motion channel");
     assert_eq!(ui_opacity.driver, "spring");
     assert!(!ui_opacity.completed);
@@ -953,17 +1072,102 @@ fn forced_doubao_state_keeps_derivation_running_without_routing() {
 }
 
 #[test]
+fn leaving_a_derivation_state_restores_the_authored_gpu_uniform_once() {
+    let _function_registry = support::function_registry_lock();
+    let scene = support::load_render_case_scene("back-pin-pin");
+    let machine = scene.state_machine.as_ref().expect("state machine");
+    let binding = machine
+        .derivation_bindings
+        .first()
+        .expect("fixture should bind a Derivation");
+    let derivation_node = machine
+        .states
+        .iter()
+        .find(|state| state.id == binding.derivation_node_id)
+        .expect("Derivation node");
+    let derivation_id = derivation_node
+        .derivation_id
+        .as_deref()
+        .expect("Derivation definition ID");
+    let output = machine
+        .derivations
+        .iter()
+        .find(|derivation| derivation.id == derivation_id)
+        .and_then(|derivation| {
+            derivation
+                .output_bindings
+                .first()
+                .map(|binding| binding.uniform.clone())
+                .or_else(|| {
+                    derivation
+                        .passthrough_bindings
+                        .first()
+                        .map(|binding| binding.uniform.clone())
+                })
+        })
+        .expect("Derivation GPU output");
+    let unbound_state = machine
+        .states
+        .iter()
+        .find(|state| {
+            state.resolved_type() == AnimationStateType::AnimationState
+                && !machine
+                    .derivation_bindings
+                    .iter()
+                    .any(|candidate| candidate.state_id == state.id)
+        })
+        .expect("fixture should have an unbound State");
+    let key = node_forge_render_server::state_machine::OverrideKey::new(
+        &output.node_id,
+        &output.param_id,
+    );
+    let authored = scene
+        .nodes
+        .iter()
+        .find(|node| node.id == output.node_id)
+        .and_then(|node| node.params.get(&output.param_id))
+        .cloned()
+        .expect("authored GPU uniform value");
+
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("state machine should compile")
+        .expect("animation session");
+    let derived = session
+        .force_state(&binding.state_id)
+        .expect("Derivation-bound State should be forceable");
+    assert!(
+        derived.active_overrides.contains_key(&key),
+        "Derivation-bound State should write its GPU uniform"
+    );
+
+    let restore = session
+        .force_state(&unbound_state.id)
+        .expect("unbound State should be forceable");
+    assert_eq!(
+        restore.active_overrides.get(&key),
+        Some(&authored),
+        "leaving the Derivation binding should restore the shader-authored value"
+    );
+    assert!(
+        session.step(0.0).active_overrides.get(&key).is_none(),
+        "authored-value restoration should be a one-frame GPU write, not MotionEngine state"
+    );
+}
+
+#[test]
 fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
     let _function_registry = support::function_registry_lock();
     for (energy, expected_radius) in [(0.0, 26.88), (1.0, 29.4)] {
         let mut scene = support::load_render_case_scene("doubao-voice-interaction");
         scene
-            .nodes
+            .state_machine
+            .as_mut()
+            .expect("doubao fixture should have a state machine")
+            .state_params
             .iter_mut()
-            .find(|node| node.id == "FloatInput_TotalEnergy")
-            .expect("TotalEnergy input")
-            .params
-            .insert("value".into(), serde_json::json!(energy));
+            .find(|param| param.name == "TotalEnergy")
+            .expect("TotalEnergy State Param")
+            .default_value = serde_json::json!(energy);
         let mut session = AnimationSession::from_scene(&scene)
             .expect("doubao state machine should compile")
             .expect("doubao fixture should have a state machine");
@@ -1024,12 +1228,15 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
         .state_machine
         .take()
         .expect("doubao fixture should have a state machine");
+    let full_size_width_param = state_param_id(&machine, "InputBarSizePx.x").to_owned();
+    let normal_offset_param =
+        state_param_id(&machine, "IntelligentLightCurveNormalOffsetPx").to_owned();
     let idle = machine
         .states
         .iter_mut()
         .find(|state| state.id == "st_mrerxocx_8")
         .expect("doubao fixture should have an Idle State");
-    let full_size_width = idle.parameter_overrides["Vector2Input_35:x"]
+    let full_size_width = idle.state_param_overrides[&full_size_width_param]
         .as_f64()
         .expect("Idle width override must be numeric");
     let captured_width = golden_motion_value("intelligentLightWidthDp");
@@ -1041,8 +1248,8 @@ fn doubao_idle_intelligent_light_positions_match_voice_interaction_for_ten_secon
     // The external capture records dp-like width/offset values, while the archive Derivation
     // consumes full-size px, so convert both with the same captured-to-full-size width ratio.
     let full_size_normal_offset = captured_normal_offset * full_size_width / captured_width;
-    idle.parameter_overrides.insert(
-        "FloatInput_IntelligentLightCurveNormalOffsetPx:value".into(),
+    idle.state_param_overrides.insert(
+        normal_offset_param,
         serde_json::json!(full_size_normal_offset),
     );
     machine.initial_state_id = Some("st_mrerxocx_8".into());

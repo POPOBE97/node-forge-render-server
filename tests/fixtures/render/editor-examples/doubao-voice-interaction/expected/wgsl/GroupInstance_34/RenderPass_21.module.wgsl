@@ -51,10 +51,10 @@ var<uniform> graph_inputs: GraphInputs;
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 @group(1) @binding(0)
-var pass_tex_GroupInstance_33_RenderPass_BackgroundDarken: texture_2d<f32>;
+var pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23: texture_2d<f32>;
 
 @group(1) @binding(1)
-var pass_samp_GroupInstance_33_RenderPass_BackgroundDarken: sampler;
+var pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23: sampler;
 
 
 // --- Extra WGSL declarations (generated) ---
@@ -698,13 +698,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
-     let refraction = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
+     let refraction = glass_texture_map(pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
      let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
-     let reflection = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
+     let reflection = glass_texture_map(pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv);
 
      // --- Mix refraction + reflection ---
      var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
@@ -712,7 +712,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---
-     var glass_color = glass_texture_map(pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv, false, 1.0, 0, pass_tex_GroupInstance_33_RenderPass_BackgroundDarken, pass_samp_GroupInstance_33_RenderPass_BackgroundDarken, screen_uv);
+     var glass_color = glass_texture_map(pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv, false, 1.0, 0, pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv);
      glass_color = glass_adjust_color(glass_color, 1.0, 0.0);
      glass_color = vec4f(mix(glass_color.rgb, vec3f(1.0), 0.0), glass_color.a);
      let glass_color_luma = clamp(glass_luma(glass_color.rgb), 0.0, 1.0);
@@ -745,8 +745,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
 
      // --- Directional lighting ---
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.100000001, -0.600000024, -0.100000001), 1.0, 0.400000006);
-     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.100000001, -0.600000024, -0.100000001) * vec3f(-1.0, -1.0, 1.0), 0.600000024, 0.400000006);
+     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001), 0.600000024, 0.400000006);
+     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001) * vec3f(-1.0, -1.0, 1.0), 0.400000006, 0.400000006);
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
      glass_mat += lighting1 + lighting2;
 

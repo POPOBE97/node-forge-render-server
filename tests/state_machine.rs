@@ -10,6 +10,15 @@ fn back_pin_pin_scene() -> dsl::SceneDSL {
     support::load_render_case_scene("back-pin-pin")
 }
 
+fn scene_state_param_id(scene: &dsl::SceneDSL, name: &str) -> String {
+    scene
+        .state_machine
+        .as_ref()
+        .and_then(|machine| machine.state_params.iter().find(|param| param.name == name))
+        .map(|param| param.id.clone())
+        .unwrap_or_else(|| panic!("missing State Param '{name}'"))
+}
+
 fn editor_glass_nforge_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -164,11 +173,19 @@ fn editor_glass_nforge_mousedown_runs_state_mutation() {
                         .find(|state| state.id == transition.target)
                         .and_then(|state| state.mutation_graph.as_ref())
                         .is_some_and(|graph| {
+                            let mouse_params = sm
+                                .state_params
+                                .iter()
+                                .filter(|param| {
+                                    matches!(
+                                        param.name.as_str(),
+                                        "Mouse Position.x" | "Mouse Position.y"
+                                    )
+                                })
+                                .map(|param| param.id.as_str())
+                                .collect::<std::collections::HashSet<_>>();
                             graph.output_bindings.iter().any(|binding| {
-                                matches!(
-                                    binding.state_port_id.as_str(),
-                                    "Vector2Input_80:x" | "Vector2Input_80:y"
-                                )
+                                mouse_params.contains(binding.state_param_id.as_str())
                             })
                         })
                     && trigger_matches
@@ -452,6 +469,7 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
     let path = support::render_case_archive("doubao-voice-interaction");
     let (scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let snap_target_param = scene_state_param_id(&scene, "IntelligentLightSnapTargetTPrimary");
     let mut runtime = state_machine::compile_from_scene(&scene)
         .expect("doubao state machine should compile")
         .expect("doubao scene should have a state machine");
@@ -467,7 +485,7 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
         let channel = frame
             .motion_channels
             .iter()
-            .find(|channel| channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value")
+            .find(|channel| channel.key == snap_target_param)
             .expect("Thinking snap target must have a MotionEngine channel");
         assert_eq!(channel.mutation_driver, "spring");
         assert_eq!(channel.transition_error, vec![0.0]);
@@ -507,6 +525,7 @@ fn doubao_listening_to_thinking_keeps_following_after_transition() {
     let path = support::render_case_archive("doubao-voice-interaction");
     let (mut scene, _asset_store) =
         node_forge_render_server::asset_store::load_from_nforge(&path).unwrap();
+    let snap_target_param = scene_state_param_id(&scene, "IntelligentLightSnapTargetTPrimary");
     let machine = scene
         .state_machine
         .as_mut()
@@ -564,7 +583,7 @@ fn doubao_listening_to_thinking_keeps_following_after_transition() {
         let snap = frame
             .motion_channels
             .iter()
-            .find(|channel| channel.key == "FloatInput_IntelligentLightSnapTargetTPrimary:value")
+            .find(|channel| channel.key == snap_target_param)
             .expect("Thinking snap target must have a MotionEngine channel");
         if frame.active_transition_id.is_some() {
             saw_active_transition = true;
