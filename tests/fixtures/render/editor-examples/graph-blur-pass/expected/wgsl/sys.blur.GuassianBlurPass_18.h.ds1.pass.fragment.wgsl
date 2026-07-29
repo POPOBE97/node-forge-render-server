@@ -13,6 +13,8 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -25,7 +27,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
@@ -39,13 +41,14 @@ var src_samp: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
+ let xy = in.uv * original;
  let k = array<f32, 8>(0.202875838, 0.190085858, 0.0817791, 0.021707874, 0.003551335, 0, 0, 0);
  let o = array<f32, 8>(0.652716517, 2.422937155, 4.363707066, 6.308340073, 8.257984161, 0, 0, 0);
+ let tap_count: u32 = 5u;
  var color = vec4f(0.0);
- for (var i: u32 = 0u; i < 8u; i = i + 1u) {
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
      let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
      let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
      color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];

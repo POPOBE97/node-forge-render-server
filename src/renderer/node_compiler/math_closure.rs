@@ -6,12 +6,12 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
-use crate::renderer::geometry_resolver::is_pass_like_node_type;
 use crate::renderer::glsl_snippet::{GlslParam, GlslSnippetSpec, compile_glsl_snippet};
-use crate::renderer::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
+use crate::renderer::pass_source::resolve_pass_source_ref;
+use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 use crate::renderer::validation::GlslShaderStage;
 
@@ -459,27 +459,10 @@ where
 
         // Handle pass texture inputs specially.
         if port_ty == ValueType::Texture2D {
-            // Find the connected pass node.
             let conn = incoming_connection(scene, &node.id, &port.id)
                 .ok_or_else(|| anyhow!("MathClosure pass input '{}' is not connected", port.id))?;
-            let upstream_node = nodes_by_id.get(&conn.from.node_id).ok_or_else(|| {
-                anyhow!(
-                    "MathClosure: upstream node not found: {}",
-                    conn.from.node_id
-                )
-            })?;
-
-            // Validate that upstream is a pass-producing node.
-            if !is_pass_like_node_type(&upstream_node.node_type) {
-                bail!(
-                    "MathClosure pass input '{}' must be connected to a pass node, got {}",
-                    param_name,
-                    upstream_node.node_type
-                );
-            }
-
-            // Register this pass texture for binding.
-            let texture_ref = PassTextureRef::direct(&conn.from.node_id, &conn.from.port_id);
+            let texture_ref = resolve_pass_source_ref(scene, nodes_by_id, &conn.from)
+                .with_context(|| format!("resolve MathClosure pass input '{param_name}'"))?;
             ctx.register_pass_texture_ref(texture_ref.clone());
 
             pass_texture_inputs.push(PassTextureInput {

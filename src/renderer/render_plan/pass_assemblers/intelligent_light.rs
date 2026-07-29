@@ -3,14 +3,14 @@
 //! Fullscreen shader for an 11-zone intelligent lighting fixture. Geometry is
 //! supplied as packed positions or through the explicit manual zone ports.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use rust_wgpu_fiber::{
-    eframe::wgpu::{self, BlendState, Color},
     ResourceName,
+    eframe::wgpu::{self, BlendState, Color},
 };
 
 use crate::{
-    dsl::{incoming_connection, Node},
+    dsl::{Node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension, PassOutputSpec},
@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::super::pass_spec::{
-    make_params, PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl,
+    PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
 use super::args::{BuilderState, SceneContext};
 
@@ -1461,9 +1461,11 @@ mod tests {
             vec![positions.clone(), colors.clone()],
             vec![positions_edge.clone(), colors_edge.clone()],
         );
-        assert!(resolve_packed_pair(&complete, &complete.nodes[0])
-            .unwrap()
-            .is_some());
+        assert!(
+            resolve_packed_pair(&complete, &complete.nodes[0])
+                .unwrap()
+                .is_some()
+        );
 
         let positions_only = make_test_scene(
             serde_json::Map::new(),

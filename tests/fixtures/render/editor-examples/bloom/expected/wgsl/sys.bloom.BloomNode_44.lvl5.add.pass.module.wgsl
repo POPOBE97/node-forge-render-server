@@ -52,6 +52,11 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     let base = textureSample(base_tex, base_samp, in.uv);
     let add = textureSample(add_tex, add_samp, in.uv);
+    let base_strength = params.color.x;
+    let add_strength = params.color.y;
     // RGB is additive (HDR glow), alpha is coverage clamped to [0,1].
-    return vec4f(base.rgb + add.rgb, clamp(base.a + add.a, 0.0, 1.0));
+    return vec4f(
+        base.rgb * base_strength + add.rgb * add_strength,
+        clamp(base.a * base_strength + add.a * add_strength, 0.0, 1.0),
+    );
 }

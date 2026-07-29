@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
-use super::super::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
+use super::super::types::{MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
-use crate::renderer::geometry_resolver::is_pass_like_node_type;
+use crate::renderer::pass_source::resolve_pass_source_ref;
 use crate::renderer::utils::{coerce_to_type, fmt_f32};
 
 /// Stable key for the aspect-correction WGSL helpers in `extra_wgsl_decls`.
@@ -622,22 +622,11 @@ where
     let pass_conn = incoming_connection(scene, &node.id, "pass")
         .ok_or_else(|| anyhow::anyhow!("PassTexture.pass input is not connected"))?;
 
-    let upstream_node_id = &pass_conn.from.node_id;
-    let upstream_node = nodes_by_id.get(upstream_node_id).ok_or_else(|| {
-        anyhow::anyhow!("PassTexture upstream node not found: {}", upstream_node_id)
-    })?;
-
-    // Validate that upstream is a pass-producing node.
-    if !is_pass_like_node_type(&upstream_node.node_type) {
-        bail!(
-            "PassTexture.pass must be connected to a pass node, got {}",
-            upstream_node.node_type
-        );
-    }
-
-    // Register this pass texture for binding.
-    let texture_ref =
-        PassTextureRef::through_pass_texture(&node.id, upstream_node_id, &pass_conn.from.port_id);
+    // Resolve nested PassTexture.pass aliases to the concrete producer. This node is the sampling
+    // site, so its sampler and binding identity override any upstream alias.
+    let mut texture_ref = resolve_pass_source_ref(scene, nodes_by_id, &pass_conn.from)?;
+    texture_ref.binding_id = node.id.clone();
+    texture_ref.sampler_node_id = Some(node.id.clone());
     let _pass_index = ctx.register_pass_texture_ref(texture_ref);
 
     // If an explicit UV input is provided, treat it as user-facing UV semantics
@@ -679,7 +668,7 @@ where
             ValueType::F32,
             uv_expr.uses_time,
         )),
-        "texture" => Ok(TypedExpr::new(node.id.clone(), ValueType::Texture2D)),
+        "pass" => bail!("PassTexture.pass is a pass alias and cannot be compiled as a color value"),
         other => bail!("unsupported PassTexture output port: {other}"),
     }
 }

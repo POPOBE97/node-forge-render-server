@@ -13,6 +13,8 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 @group(0) @binding(0)
@@ -24,15 +26,26 @@ var<uniform> params: Params;
      // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
      @location(1) frag_coord_gl: vec2f,
      // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-     @location(2) local_px: vec2f,
+     @location(2) local_px: vec3f,
      // Geometry size in pixels after applying geometry/instance transforms.
      @location(3) geo_size_px: vec2f,
   };
+
+
+struct GraphInputs {
+    // Node: Vector2Input_20
+    node_Vector2Input_20_ab5b42bd: vec4f,
+};
+
+@group(0) @binding(2)
+var<uniform> graph_inputs: GraphInputs;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return vec4f(in.uv, 0.0, 1.0);
+    // Final composite
+    let _frag_out = vec4f(vec2f(in.uv.x, 1.0 - in.uv.y), 0.0, 1.0);
+    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

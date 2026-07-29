@@ -68,7 +68,7 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
             connection(
                 "sys.group.edge.5",
                 "PassTexture_31",
-                "texture",
+                "pass",
                 "GroupInstance_32/ShaderMaterial_32",
                 to_port,
             ),
@@ -82,12 +82,12 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
 }
 
 #[test]
-fn rejects_direct_pass_to_shader_material_resource() {
+fn accepts_direct_pass_to_shader_material_resource() {
     let mut scene = scene(
         NodePort {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
-            port_type: Some("sampledTexture".to_string()),
+            port_type: Some("pass".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
@@ -101,9 +101,8 @@ fn rejects_direct_pass_to_shader_material_resource() {
         "resource:intelli_tex",
     )];
 
-    let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect_err("pass-to-sampledTexture must require an explicit PassTexture");
-    assert!(error.to_string().contains("type mismatch"));
+    validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
+        .expect("direct pass should satisfy a custom shader resource");
 }
 
 #[test]
@@ -112,14 +111,14 @@ fn accepts_reflected_shader_material_resource_port_after_group_expansion() {
         NodePort {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
-            port_type: Some("sampledTexture".to_string()),
+            port_type: Some("pass".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
     );
 
     validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect("reflected sampled resource port should validate");
+        .expect("reflected pass resource port should validate");
 }
 
 #[test]
@@ -128,7 +127,7 @@ fn rejects_shader_material_port_not_present_in_reflected_inputs() {
         NodePort {
             id: "resource:other".to_string(),
             name: Some("other".to_string()),
-            port_type: Some("sampledTexture".to_string()),
+            port_type: Some("pass".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
@@ -136,9 +135,11 @@ fn rejects_shader_material_port_not_present_in_reflected_inputs() {
 
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
         .expect_err("undeclared resource port must fail");
-    assert!(error
-        .to_string()
-        .contains("unknown to port 'GroupInstance_32/ShaderMaterial_32.resource:intelli_tex'"));
+    assert!(
+        error
+            .to_string()
+            .contains("unknown to port 'GroupInstance_32/ShaderMaterial_32.resource:intelli_tex'")
+    );
 }
 
 #[test]
@@ -154,7 +155,24 @@ fn rejects_shader_material_resource_with_forged_value_type() {
     );
 
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect_err("resource port must use sampledTexture");
+        .expect_err("resource port must use pass");
+    assert!(error.to_string().contains("uses unknown to port"));
+}
+
+#[test]
+fn rejects_custom_shader_resource_exposed_as_texture() {
+    let scene = scene(
+        NodePort {
+            id: "resource:intelli_tex".to_string(),
+            name: Some("intelli_tex".to_string()),
+            port_type: Some("texture".to_string()),
+            array_length: None,
+        },
+        "resource:intelli_tex",
+    );
+
+    let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
+        .expect_err("custom shader resources must be exposed as pass");
     assert!(error.to_string().contains("uses unknown to port"));
 }
 

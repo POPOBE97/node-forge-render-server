@@ -726,7 +726,7 @@ fn validate_connection(
         };
 
         let valid = if port_id.starts_with("resource:") {
-            port_type == "sampledTexture"
+            port_type == "pass"
         } else if port_id.starts_with("param:") {
             matches!(
                 port_type.as_str(),

@@ -9,6 +9,8 @@ mod pass_dedup;
 mod pipeline;
 mod types;
 
+#[cfg(test)]
+pub(crate) use auto_wrap::materialize_pass_inputs;
 pub use composite::{composite_layers_in_draw_order, composition_layers_by_id};
 pub(crate) use data_parse::bake_data_parse_nodes;
 pub use pipeline::prepare_scene;

@@ -228,7 +228,7 @@ pub fn pass_sample_event(
         "targetTexture": pass_info.and_then(|info| info.target_texture.as_deref()),
         "targetSize": pass_info.and_then(|info| info.target_size.map(|(w, h)| [w, h])),
         "targetFormat": pass_info.and_then(|info| info.target_format.as_deref()),
-        "sampledTextures": pass_info
+        "sampledPasses": pass_info
             .map(|info| info.sampled_textures.clone())
             .unwrap_or_default(),
         "draw": {

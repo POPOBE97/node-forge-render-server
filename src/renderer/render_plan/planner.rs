@@ -16,7 +16,7 @@ use crate::{
     renderer::{
         ShaderSpacePresentationMode,
         camera::legacy_projection_camera_matrix,
-        geometry_resolver::{is_pass_like_node_type, resolve_scene_draw_contexts},
+        geometry_resolver::resolve_scene_draw_contexts,
         graph_uniforms::{compute_pipeline_signature_for_pass_bindings, hash_bytes},
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         scene_prep::{PreparedScene, ScenePrepReport, prepare_scene_with_report},
@@ -153,7 +153,7 @@ impl RenderPlanner {
             mut gaussian_source_pass_ids,
             mut bloom_source_pass_ids,
             mut gradient_source_pass_ids,
-        ) = collect_processing_source_pass_ids(&prepared);
+        ) = collect_processing_source_pass_ids(&prepared)?;
 
         let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
         let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
@@ -651,13 +651,13 @@ fn target_size_from_params(target_size: [f32; 2]) -> Option<[u32; 2]> {
 
 fn collect_processing_source_pass_ids(
     prepared: &PreparedScene,
-) -> (
+) -> Result<(
     HashSet<String>,
     HashSet<String>,
     HashSet<String>,
     HashSet<String>,
     HashSet<String>,
-) {
+)> {
     let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
     let mut upsample_source_pass_ids: HashSet<String> = HashSet::new();
     let mut gaussian_source_pass_ids: HashSet<String> = HashSet::new();
@@ -667,54 +667,82 @@ fn collect_processing_source_pass_ids(
     for (node_id, node) in &prepared.nodes_by_id {
         if node.node_type == "Downsample" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                downsample_source_pass_ids.insert(conn.from.node_id.clone());
+                downsample_source_pass_ids.insert(
+                    crate::renderer::pass_source::resolve_pass_source_ref(
+                        &prepared.scene,
+                        &prepared.nodes_by_id,
+                        &conn.from,
+                    )?
+                    .source
+                    .node_id,
+                );
             }
             continue;
         }
         if node.node_type == "Upsample" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                upsample_source_pass_ids.insert(conn.from.node_id.clone());
+                upsample_source_pass_ids.insert(
+                    crate::renderer::pass_source::resolve_pass_source_ref(
+                        &prepared.scene,
+                        &prepared.nodes_by_id,
+                        &conn.from,
+                    )?
+                    .source
+                    .node_id,
+                );
             }
             continue;
         }
         if node.node_type == "GuassianBlurPass" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
-                gaussian_source_pass_ids.insert(conn.from.node_id.clone());
+                gaussian_source_pass_ids.insert(
+                    crate::renderer::pass_source::resolve_pass_source_ref(
+                        &prepared.scene,
+                        &prepared.nodes_by_id,
+                        &conn.from,
+                    )?
+                    .source
+                    .node_id,
+                );
             }
             continue;
         }
         if node.node_type == "BloomNode" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
-                let src_is_pass_like = prepared
-                    .nodes_by_id
-                    .get(&conn.from.node_id)
-                    .is_some_and(|n| is_pass_like_node_type(&n.node_type));
-                if src_is_pass_like {
-                    bloom_source_pass_ids.insert(conn.from.node_id.clone());
-                }
+                bloom_source_pass_ids.insert(
+                    crate::renderer::pass_source::resolve_pass_source_ref(
+                        &prepared.scene,
+                        &prepared.nodes_by_id,
+                        &conn.from,
+                    )?
+                    .source
+                    .node_id,
+                );
             }
             continue;
         }
         if node.node_type == "GradientBlur" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                let src_is_pass_like = prepared
-                    .nodes_by_id
-                    .get(&conn.from.node_id)
-                    .is_some_and(|n| is_pass_like_node_type(&n.node_type));
-                if src_is_pass_like {
-                    gradient_source_pass_ids.insert(conn.from.node_id.clone());
-                }
+                gradient_source_pass_ids.insert(
+                    crate::renderer::pass_source::resolve_pass_source_ref(
+                        &prepared.scene,
+                        &prepared.nodes_by_id,
+                        &conn.from,
+                    )?
+                    .source
+                    .node_id,
+                );
             }
         }
     }
 
-    (
+    Ok((
         downsample_source_pass_ids,
         upsample_source_pass_ids,
         gaussian_source_pass_ids,
         bloom_source_pass_ids,
         gradient_source_pass_ids,
-    )
+    ))
 }
 
 fn normalize_first_write_load_ops(
@@ -1018,40 +1046,55 @@ mod tests {
     }
 
     #[test]
-    fn doubao_samples_intelligent_light_intrinsic_without_fullscreen_output() -> Result<()> {
+    fn doubao_bloom_uses_additive_composite_and_unit_level_strengths() -> Result<()> {
         let (scene, assets) = load_case("doubao-voice-interaction")?;
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
             assets.as_ref(),
             None,
         )?;
-        let node_id = intelligent_light_node_id(&plan);
-        let output = plan
-            .resources
-            .pass_output_registry
-            .get_for_port(&node_id, "pass")
-            .expect("IntelligentLight.pass output");
 
-        assert_eq!(output.resolution, [36, 36]);
-        assert!(output.texture_name.as_str().ends_with(".inter"));
+        let add_passes: Vec<_> = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .filter(|spec| {
+                spec.name.as_str().contains("sys.bloom.")
+                    && spec.name.as_str().ends_with(".add.pass")
+            })
+            .collect();
+        assert_eq!(add_passes.len(), 5);
         assert!(
-            plan.resources
-                .render_pass_specs
+            add_passes
                 .iter()
-                .flat_map(|spec| spec.texture_bindings.iter())
-                .any(|binding| binding.texture == output.texture_name)
+                .all(|spec| spec.params.color[..2] == [1.0, 1.0])
         );
-        assert!(
-            plan.resources
-                .render_pass_specs
-                .iter()
-                .all(|spec| !spec.name.as_str().contains(".upsample.pass"))
+
+        let output_pass = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .find(|spec| {
+                spec.name.as_str().contains("sys.bloom.")
+                    && spec.name.as_str().ends_with(".out.pass")
+            })
+            .expect("doubao Bloom output pass");
+        assert_eq!(output_pass.params.color[0], 1.0);
+        assert_eq!(
+            output_pass.blend_state.color.src_factor,
+            wgpu::BlendFactor::One
         );
-        assert!(
-            plan.resources
-                .textures
-                .iter()
-                .all(|texture| texture.name.as_str() != format!("sys.ilight.{node_id}.out"))
+        assert_eq!(
+            output_pass.blend_state.color.dst_factor,
+            wgpu::BlendFactor::One
+        );
+        assert_eq!(
+            output_pass.blend_state.alpha.src_factor,
+            wgpu::BlendFactor::One
+        );
+        assert_eq!(
+            output_pass.blend_state.alpha.dst_factor,
+            wgpu::BlendFactor::OneMinusSrcAlpha
         );
         Ok(())
     }
@@ -1229,12 +1272,12 @@ mod tests {
         "node_5.present.sdr.srgb:Rgba8Unorm:1080x2400:samples=1",
         "node_5:Rgba8UnormSrgb:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_17.h:Rgba8Unorm:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_17.src:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_17.v:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_18.h:Rgba8Unorm:1080x2400:samples=1",
-        "sys.blur.GuassianBlurPass_18.src:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_18.v:Rgba8Unorm:1080x2400:samples=1",
         "sys.pass.node_11.out:Rgba8Unorm:1080x2400:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_22.out:Rgba8Unorm:1080x2400:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_25.out:Rgba8Unorm:1080x2400:samples=1",
     ],
     image_textures: [
         "sys.image.node_15.src",
@@ -1244,10 +1287,10 @@ mod tests {
     ],
     pass_order: [
         "node_11.pass",
-        "sys.blur.GuassianBlurPass_17.src.pass",
+        "sys.auto.fullscreen.pass.edge_22.pass",
         "sys.blur.GuassianBlurPass_17.h.ds1.pass",
         "sys.blur.GuassianBlurPass_17.v.ds1.pass",
-        "sys.blur.GuassianBlurPass_18.src.pass",
+        "sys.auto.fullscreen.pass.edge_25.pass",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass",
         "sys.blur.GuassianBlurPass_18.upsample_bilinear.ds1.pass",
@@ -1256,10 +1299,10 @@ mod tests {
     ],
     load_ops: [
         "node_11.pass->sys.pass.node_11.out/Clear",
-        "sys.blur.GuassianBlurPass_17.src.pass->sys.blur.GuassianBlurPass_17.src/Clear",
+        "sys.auto.fullscreen.pass.edge_22.pass->sys.pass.sys.auto.fullscreen.pass.edge_22.out/Clear",
         "sys.blur.GuassianBlurPass_17.h.ds1.pass->sys.blur.GuassianBlurPass_17.h/Clear",
         "sys.blur.GuassianBlurPass_17.v.ds1.pass->sys.blur.GuassianBlurPass_17.v/Clear",
-        "sys.blur.GuassianBlurPass_18.src.pass->sys.blur.GuassianBlurPass_18.src/Clear",
+        "sys.auto.fullscreen.pass.edge_25.pass->sys.pass.sys.auto.fullscreen.pass.edge_25.out/Clear",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass->sys.blur.GuassianBlurPass_18.h/Clear",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass->sys.blur.GuassianBlurPass_18.v/Clear",
         "sys.blur.GuassianBlurPass_18.upsample_bilinear.ds1.pass->node_5/Clear",
@@ -1274,6 +1317,8 @@ mod tests {
         "GuassianBlurPass_18:pass->node_5:1080x2400:Rgba8UnormSrgb",
         "node_11:pass->sys.pass.node_11.out:1080x2400:Rgba8Unorm",
         "node_2:pass->node_5:1080x2400:Rgba8UnormSrgb",
+        "sys.auto.fullscreen.pass.edge_22:pass->sys.pass.sys.auto.fullscreen.pass.edge_22.out:1080x2400:Rgba8Unorm",
+        "sys.auto.fullscreen.pass.edge_25:pass->sys.pass.sys.auto.fullscreen.pass.edge_25.out:1080x2400:Rgba8Unorm",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1307,19 +1352,14 @@ mod tests {
         "sys.blur.GuassianBlurPass_23.h:Rgba16Float:16x37:samples=1",
         "sys.blur.GuassianBlurPass_23.v:Rgba16Float:16x37:samples=1",
         "sys.blur.GuassianBlurPass_27.h:Rgba16Float:33x75:samples=1",
-        "sys.blur.GuassianBlurPass_27.src:Rgba16Float:33x75:samples=1",
         "sys.blur.GuassianBlurPass_27.v:Rgba16Float:33x75:samples=1",
         "sys.blur.GuassianBlurPass_31.h:Rgba16Float:67x150:samples=1",
-        "sys.blur.GuassianBlurPass_31.src:Rgba16Float:67x150:samples=1",
         "sys.blur.GuassianBlurPass_31.v:Rgba16Float:67x150:samples=1",
         "sys.blur.GuassianBlurPass_34.h:Rgba16Float:135x300:samples=1",
-        "sys.blur.GuassianBlurPass_34.src:Rgba16Float:135x300:samples=1",
         "sys.blur.GuassianBlurPass_34.v:Rgba16Float:135x300:samples=1",
         "sys.blur.GuassianBlurPass_37.h:Rgba16Float:270x600:samples=1",
-        "sys.blur.GuassianBlurPass_37.src:Rgba16Float:270x600:samples=1",
         "sys.blur.GuassianBlurPass_37.v:Rgba16Float:270x600:samples=1",
         "sys.blur.GuassianBlurPass_40.h:Rgba16Float:540x1200:samples=1",
-        "sys.blur.GuassianBlurPass_40.src:Rgba16Float:540x1200:samples=1",
         "sys.blur.GuassianBlurPass_40.v:Rgba16Float:540x1200:samples=1",
         "sys.downsample.Downsample_10.out:Rgba16Float:540x1200:samples=1",
         "sys.downsample.Downsample_12.out:Rgba16Float:270x600:samples=1",
@@ -1329,6 +1369,11 @@ mod tests {
         "sys.downsample.Downsample_20.out:Rgba16Float:16x37:samples=1",
         "sys.msaa.sys.pass.RenderPass_4.out.4.color:Rgba16Float:1080x2400:samples=4",
         "sys.pass.RenderPass_4.out:Rgba16Float:1080x2400:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_52.out:Rgba16Float:33x75:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_54.out:Rgba16Float:67x150:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_59.out:Rgba16Float:135x300:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_64.out:Rgba16Float:270x600:samples=1",
+        "sys.pass.sys.auto.fullscreen.pass.edge_69.out:Rgba16Float:540x1200:samples=1",
         "sys.upsample.Upsample_24.out:Rgba16Float:33x75:samples=1",
         "sys.upsample.Upsample_28.out:Rgba16Float:67x150:samples=1",
         "sys.upsample.Upsample_32.out:Rgba16Float:135x300:samples=1",
@@ -1349,23 +1394,23 @@ mod tests {
         "sys.blur.GuassianBlurPass_23.h.ds1.pass",
         "sys.blur.GuassianBlurPass_23.v.ds1.pass",
         "sys.upsample.Upsample_24.pass",
-        "sys.blur.GuassianBlurPass_27.src.pass",
+        "sys.auto.fullscreen.pass.edge_52.pass",
         "sys.blur.GuassianBlurPass_27.h.ds1.pass",
         "sys.blur.GuassianBlurPass_27.v.ds1.pass",
         "sys.upsample.Upsample_28.pass",
-        "sys.blur.GuassianBlurPass_31.src.pass",
+        "sys.auto.fullscreen.pass.edge_54.pass",
         "sys.blur.GuassianBlurPass_31.h.ds1.pass",
         "sys.blur.GuassianBlurPass_31.v.ds1.pass",
         "sys.upsample.Upsample_32.pass",
-        "sys.blur.GuassianBlurPass_34.src.pass",
+        "sys.auto.fullscreen.pass.edge_59.pass",
         "sys.blur.GuassianBlurPass_34.h.ds1.pass",
         "sys.blur.GuassianBlurPass_34.v.ds1.pass",
         "sys.upsample.Upsample_35.pass",
-        "sys.blur.GuassianBlurPass_37.src.pass",
+        "sys.auto.fullscreen.pass.edge_64.pass",
         "sys.blur.GuassianBlurPass_37.h.ds1.pass",
         "sys.blur.GuassianBlurPass_37.v.ds1.pass",
         "sys.upsample.Upsample_38.pass",
-        "sys.blur.GuassianBlurPass_40.src.pass",
+        "sys.auto.fullscreen.pass.edge_69.pass",
         "sys.blur.GuassianBlurPass_40.h.ds1.pass",
         "sys.blur.GuassianBlurPass_40.v.ds1.pass",
         "sys.upsample.Upsample_41.pass",
@@ -1382,23 +1427,23 @@ mod tests {
         "sys.blur.GuassianBlurPass_23.h.ds1.pass->sys.blur.GuassianBlurPass_23.h/Clear",
         "sys.blur.GuassianBlurPass_23.v.ds1.pass->sys.blur.GuassianBlurPass_23.v/Clear",
         "sys.upsample.Upsample_24.pass->sys.upsample.Upsample_24.out/Clear",
-        "sys.blur.GuassianBlurPass_27.src.pass->sys.blur.GuassianBlurPass_27.src/Clear",
+        "sys.auto.fullscreen.pass.edge_52.pass->sys.pass.sys.auto.fullscreen.pass.edge_52.out/Clear",
         "sys.blur.GuassianBlurPass_27.h.ds1.pass->sys.blur.GuassianBlurPass_27.h/Clear",
         "sys.blur.GuassianBlurPass_27.v.ds1.pass->sys.blur.GuassianBlurPass_27.v/Clear",
         "sys.upsample.Upsample_28.pass->sys.upsample.Upsample_28.out/Clear",
-        "sys.blur.GuassianBlurPass_31.src.pass->sys.blur.GuassianBlurPass_31.src/Clear",
+        "sys.auto.fullscreen.pass.edge_54.pass->sys.pass.sys.auto.fullscreen.pass.edge_54.out/Clear",
         "sys.blur.GuassianBlurPass_31.h.ds1.pass->sys.blur.GuassianBlurPass_31.h/Clear",
         "sys.blur.GuassianBlurPass_31.v.ds1.pass->sys.blur.GuassianBlurPass_31.v/Clear",
         "sys.upsample.Upsample_32.pass->sys.upsample.Upsample_32.out/Clear",
-        "sys.blur.GuassianBlurPass_34.src.pass->sys.blur.GuassianBlurPass_34.src/Clear",
+        "sys.auto.fullscreen.pass.edge_59.pass->sys.pass.sys.auto.fullscreen.pass.edge_59.out/Clear",
         "sys.blur.GuassianBlurPass_34.h.ds1.pass->sys.blur.GuassianBlurPass_34.h/Clear",
         "sys.blur.GuassianBlurPass_34.v.ds1.pass->sys.blur.GuassianBlurPass_34.v/Clear",
         "sys.upsample.Upsample_35.pass->sys.upsample.Upsample_35.out/Clear",
-        "sys.blur.GuassianBlurPass_37.src.pass->sys.blur.GuassianBlurPass_37.src/Clear",
+        "sys.auto.fullscreen.pass.edge_64.pass->sys.pass.sys.auto.fullscreen.pass.edge_64.out/Clear",
         "sys.blur.GuassianBlurPass_37.h.ds1.pass->sys.blur.GuassianBlurPass_37.h/Clear",
         "sys.blur.GuassianBlurPass_37.v.ds1.pass->sys.blur.GuassianBlurPass_37.v/Clear",
         "sys.upsample.Upsample_38.pass->sys.upsample.Upsample_38.out/Clear",
-        "sys.blur.GuassianBlurPass_40.src.pass->sys.blur.GuassianBlurPass_40.src/Clear",
+        "sys.auto.fullscreen.pass.edge_69.pass->sys.pass.sys.auto.fullscreen.pass.edge_69.out/Clear",
         "sys.blur.GuassianBlurPass_40.h.ds1.pass->sys.blur.GuassianBlurPass_40.h/Clear",
         "sys.blur.GuassianBlurPass_40.v.ds1.pass->sys.blur.GuassianBlurPass_40.v/Clear",
         "sys.upsample.Upsample_41.pass->sys.upsample.Upsample_41.out/Clear",
@@ -1429,6 +1474,11 @@ mod tests {
         "Upsample_35:output->sys.upsample.Upsample_35.out:270x600:Rgba16Float",
         "Upsample_38:output->sys.upsample.Upsample_38.out:540x1200:Rgba16Float",
         "Upsample_41:output->sys.upsample.Upsample_41.out:1080x2400:Rgba16Float",
+        "sys.auto.fullscreen.pass.edge_52:pass->sys.pass.sys.auto.fullscreen.pass.edge_52.out:33x75:Rgba16Float",
+        "sys.auto.fullscreen.pass.edge_54:pass->sys.pass.sys.auto.fullscreen.pass.edge_54.out:67x150:Rgba16Float",
+        "sys.auto.fullscreen.pass.edge_59:pass->sys.pass.sys.auto.fullscreen.pass.edge_59.out:135x300:Rgba16Float",
+        "sys.auto.fullscreen.pass.edge_64:pass->sys.pass.sys.auto.fullscreen.pass.edge_64.out:270x600:Rgba16Float",
+        "sys.auto.fullscreen.pass.edge_69:pass->sys.pass.sys.auto.fullscreen.pass.edge_69.out:540x1200:Rgba16Float",
         "sys.auto.fullscreen.pass.edge_75:pass->RenderTexture_6:1080x2400:Rgba16Float",
     ],
 }"#;

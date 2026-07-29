@@ -23,10 +23,10 @@ fn get_from_port_type(
 ) -> Option<schema::PortTypeSpec> {
     let node = nodes_by_id.get(node_id)?;
 
-    if node.node_type == "DataParse" {
-        let p = node.outputs.iter().find(|p| p.id == port_id)?;
-        let ty = p.port_type.as_ref()?;
-        return Some(schema::PortTypeSpec::One(ty.clone()));
+    if let Some(port) = node.outputs.iter().find(|port| port.id == port_id) {
+        if let Some(port_type) = port.port_type.as_ref() {
+            return Some(schema::PortTypeSpec::One(port_type.clone()));
+        }
     }
 
     let ty = scheme.nodes.get(&node.node_type)?.outputs.get(port_id)?;
@@ -47,7 +47,9 @@ fn get_to_port_type(
         return Some(t.clone());
     }
 
-    // Composite supports dynamic layer inputs (dynamic_*) that behave like its base pass input.
+    // Composite dynamic layers are always surface inputs. Older persisted dynamic ports can carry
+    // the source expression's type, so resolve them to the base pass contract before consulting
+    // node-local dynamic metadata.
     if node.node_type == "Composite" && port_id.starts_with("dynamic_") {
         if let Some(pass_ty) = node_scheme.inputs.get("pass") {
             return Some(pass_ty.clone());
@@ -55,15 +57,20 @@ fn get_to_port_type(
         return Some(schema::PortTypeSpec::One("pass".to_string()));
     }
 
+    if let Some(port) = node.inputs.iter().find(|port| port.id == port_id) {
+        if let Some(port_type) = port.port_type.as_ref() {
+            return Some(schema::PortTypeSpec::One(port_type.clone()));
+        }
+    }
+
     None
 }
 
-/// If a `pass`-typed input is driven by a primitive shader value (color/vec*/float/int/bool),
-/// synthesize a default fullscreen RenderPass (and geometry) and rewire the connection.
-pub(crate) fn auto_wrap_primitive_pass_inputs(
-    scene: &mut SceneDSL,
-    scheme: &schema::NodeScheme,
-) -> usize {
+/// Materialize every non-pass source connected to a `pass` input as a fullscreen RenderPass.
+///
+/// Shader values compile directly as the generated pass material. A raw `ImageTexture.texture`
+/// source uses the same node's sampled `color` output, preserving its UV and sampler semantics.
+pub(crate) fn materialize_pass_inputs(scene: &mut SceneDSL, scheme: &schema::NodeScheme) -> usize {
     let nodes_by_id: HashMap<String, Node> = scene
         .nodes
         .iter()
@@ -105,16 +112,6 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
     // Plan first (no mutation of vectors while iterating).
     let mut plans: Vec<WrapPlan> = Vec::new();
     for (idx, c) in scene.connections.iter().enumerate() {
-        // GuassianBlurPass has a dedicated blur-source WGSL path that can consume
-        // compatible non-pass inputs directly, so avoid generating an extra
-        // auto fullscreen bridge pass for its `pass` input.
-        if nodes_by_id
-            .get(&c.to.node_id)
-            .is_some_and(|n| n.node_type == "GuassianBlurPass" || n.node_type == "GradientBlur")
-        {
-            continue;
-        }
-
         let Some(to_ty) = get_to_port_type(scheme, &nodes_by_id, &c.to.node_id, &c.to.port_id)
         else {
             continue;
@@ -162,10 +159,25 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
             })
             .unwrap_or_default();
 
+        let original_from = if port_type_contains(&from_ty, "texture") {
+            let Some(source_node) = nodes_by_id.get(&c.from.node_id) else {
+                continue;
+            };
+            if source_node.node_type != "ImageTexture" || c.from.port_id != "texture" {
+                continue;
+            }
+            Endpoint {
+                node_id: c.from.node_id.clone(),
+                port_id: "color".to_string(),
+            }
+        } else {
+            c.from.clone()
+        };
+
         plans.push(WrapPlan {
             conn_index: idx,
             conn_id: c.id.clone(),
-            original_from: c.from.clone(),
+            original_from,
             pass_id: format!("sys.auto.fullscreen.pass.{}", c.id),
             geo_id: format!("sys.auto.fullscreen.geo.{}", c.id),
             blend_params,
@@ -231,4 +243,160 @@ pub(crate) fn auto_wrap_primitive_pass_inputs(
     scene.connections.extend(new_connections);
 
     plans.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
+
+    use super::materialize_pass_inputs;
+
+    fn node(id: &str, node_type: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        }
+    }
+
+    fn scene(nodes: Vec<Node>, from: Endpoint, to: Endpoint) -> SceneDSL {
+        SceneDSL {
+            version: "4.0".to_string(),
+            metadata: Metadata {
+                name: "materialize pass".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections: vec![Connection {
+                id: "edge".to_string(),
+                from,
+                to,
+            }],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        }
+    }
+
+    #[test]
+    fn materializes_raw_image_texture_through_its_color_output() {
+        let mut scene = scene(
+            vec![
+                node("image", "ImageTexture"),
+                node("composite", "Composite"),
+            ],
+            Endpoint {
+                node_id: "image".to_string(),
+                port_id: "texture".to_string(),
+            },
+            Endpoint {
+                node_id: "composite".to_string(),
+                port_id: "pass".to_string(),
+            },
+        );
+
+        let count =
+            materialize_pass_inputs(&mut scene, &crate::schema::load_default_scheme().unwrap());
+
+        assert_eq!(count, 1);
+        assert!(scene.connections.iter().any(|connection| {
+            connection.from.node_id == "image"
+                && connection.from.port_id == "color"
+                && connection.to.node_id == "sys.auto.fullscreen.pass.edge"
+                && connection.to.port_id == "material"
+        }));
+    }
+
+    #[test]
+    fn materializes_composite_dynamic_inputs_even_with_persisted_color_metadata() {
+        let mut composite = node("composite", "Composite");
+        composite.inputs.push(NodePort {
+            id: "dynamic_color".to_string(),
+            name: Some("Layer".to_string()),
+            port_type: Some("color".to_string()),
+            array_length: None,
+        });
+        let mut scene = scene(
+            vec![node("color", "ColorInput"), composite],
+            Endpoint {
+                node_id: "color".to_string(),
+                port_id: "color".to_string(),
+            },
+            Endpoint {
+                node_id: "composite".to_string(),
+                port_id: "dynamic_color".to_string(),
+            },
+        );
+
+        let count =
+            materialize_pass_inputs(&mut scene, &crate::schema::load_default_scheme().unwrap());
+
+        assert_eq!(count, 1);
+        assert!(scene.connections.iter().any(|connection| {
+            connection.from.node_id == "sys.auto.fullscreen.pass.edge"
+                && connection.from.port_id == "pass"
+                && connection.to.node_id == "composite"
+                && connection.to.port_id == "dynamic_color"
+        }));
+    }
+
+    #[test]
+    fn materializes_dynamic_custom_shader_pass_inputs_and_blur_sources() {
+        let mut shader = node("shader", "ShaderMaterial");
+        shader.inputs.push(NodePort {
+            id: "resource:content".to_string(),
+            name: Some("content".to_string()),
+            port_type: Some("pass".to_string()),
+            array_length: None,
+        });
+        let mut shader_scene = scene(
+            vec![node("color", "ColorInput"), shader],
+            Endpoint {
+                node_id: "color".to_string(),
+                port_id: "color".to_string(),
+            },
+            Endpoint {
+                node_id: "shader".to_string(),
+                port_id: "resource:content".to_string(),
+            },
+        );
+        assert_eq!(
+            materialize_pass_inputs(
+                &mut shader_scene,
+                &crate::schema::load_default_scheme().unwrap()
+            ),
+            1
+        );
+
+        let mut blur_scene = scene(
+            vec![
+                node("color", "ColorInput"),
+                node("blur", "GuassianBlurPass"),
+            ],
+            Endpoint {
+                node_id: "color".to_string(),
+                port_id: "color".to_string(),
+            },
+            Endpoint {
+                node_id: "blur".to_string(),
+                port_id: "pass".to_string(),
+            },
+        );
+        assert_eq!(
+            materialize_pass_inputs(
+                &mut blur_scene,
+                &crate::schema::load_default_scheme().unwrap()
+            ),
+            1
+        );
+    }
 }

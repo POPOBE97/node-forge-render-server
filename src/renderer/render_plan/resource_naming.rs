@@ -12,7 +12,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{SceneDSL, incoming_connection},
+    dsl::SceneDSL,
     renderer::{
         camera::legacy_projection_camera_matrix, types::PassOutputRegistry, wgsl::clamp_min_1,
         wgsl_bloom::BLOOM_MAX_MIPS,
@@ -187,11 +187,7 @@ pub(crate) fn bloom_downsample_level_count(mut size: [u32; 2]) -> u32 {
     levels
 }
 
-pub(crate) fn parse_tint_from_node_or_default(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, crate::dsl::Node>,
-    bloom_node: &crate::dsl::Node,
-) -> Result<[f32; 4]> {
+pub(crate) fn parse_tint_param_or_default(bloom_node: &crate::dsl::Node) -> [f32; 4] {
     fn json_num(v: &serde_json::Value) -> Option<f32> {
         v.as_f64()
             .map(|x| x as f32)
@@ -230,31 +226,11 @@ pub(crate) fn parse_tint_from_node_or_default(
         None
     }
 
-    if let Some(conn) = incoming_connection(scene, &bloom_node.id, "tint") {
-        let Some(src_node) = nodes_by_id.get(&conn.from.node_id) else {
-            bail!("BloomNode {}.tint upstream node missing", bloom_node.id);
-        };
-        if src_node.node_type == "ColorInput" {
-            if let Some(v) = src_node.params.get("value").and_then(parse_color) {
-                return Ok(v.map(|c| c.clamp(0.0, 1.0)));
-            }
-            bail!(
-                "BloomNode {}.tint expected ColorInput.value as vec3/vec4",
-                bloom_node.id
-            );
-        }
-        bail!(
-            "BloomNode {}.tint expects color-compatible input, got {}",
-            bloom_node.id,
-            src_node.node_type
-        );
-    }
-
     if let Some(v) = bloom_node.params.get("tint").and_then(parse_color) {
-        return Ok(v.map(|c| c.clamp(0.0, 1.0)));
+        return v.map(|c| c.clamp(0.0, 1.0));
     }
 
-    Ok([1.0, 1.0, 1.0, 1.0])
+    [1.0, 1.0, 1.0, 1.0]
 }
 
 // ── Camera helpers ───────────────────────────────────────────────────────
@@ -285,10 +261,10 @@ pub(crate) fn resolve_chain_camera_for_first_pass(
     }
 }
 
-// ── Pass dependency graph resolution ─────────────────────────────────────
+// ── Materialization-pass resolution ──────────────────────────────────────
 
-pub(crate) fn infer_uniform_resolution_from_pass_deps(
-    blur_node_id: &str,
+pub(crate) fn infer_materialization_resolution(
+    materialization_pass_id: &str,
     pass_texture_refs: &[crate::renderer::types::PassTextureRef],
     pass_output_registry: &PassOutputRegistry,
 ) -> Result<Option<[u32; 2]>> {
@@ -296,15 +272,14 @@ pub(crate) fn infer_uniform_resolution_from_pass_deps(
         return Ok(None);
     }
 
-    let mut resolved: Vec<(String, [u32; 2])> = Vec::with_capacity(pass_texture_refs.len());
+    let mut resolved = Vec::with_capacity(pass_texture_refs.len());
     for texture_ref in pass_texture_refs {
         let Some(spec) = pass_output_registry
             .get_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
         else {
             bail!(
-                "GuassianBlurPass {blur_node_id} non-pass source depends on upstream pass \
-{}.{}, but its output is not registered yet. Ensure upstream dependencies \
-render earlier in Composite draw order.",
+                "materialization pass {materialization_pass_id} depends on upstream pass {}.{}, \
+but its output is not registered yet",
                 texture_ref.source.node_id,
                 texture_ref.source.port_id
             );
@@ -319,17 +294,20 @@ render earlier in Composite draw order.",
     }
 
     let first_resolution = resolved[0].1;
-    if resolved.iter().all(|(_, res)| *res == first_resolution) {
+    if resolved
+        .iter()
+        .all(|(_, resolution)| *resolution == first_resolution)
+    {
         return Ok(Some(first_resolution));
     }
 
     let details = resolved
         .iter()
-        .map(|(node_id, [w, h])| format!("{node_id}={w}x{h}"))
+        .map(|(endpoint, [width, height])| format!("{endpoint}={width}x{height}"))
         .collect::<Vec<_>>()
         .join(", ");
     bail!(
-        "GuassianBlurPass {blur_node_id} non-pass source samples pass textures with mismatched \
+        "materialization pass {materialization_pass_id} samples pass surfaces with mismatched \
 resolutions: {details}"
     );
 }
@@ -514,70 +492,55 @@ mod tests {
     }
 
     #[test]
-    fn infer_blur_source_resolution_from_uniform_pass_deps() {
-        let mut reg = PassOutputRegistry::new();
-        reg.register(PassOutputSpec {
-            endpoint: OutputEndpoint::new("p0", "pass"),
-            texture_name: "tex.p0".into(),
-            resolution: [33, 75],
-            format: TextureFormat::Rgba8Unorm,
-        });
-        reg.register(PassOutputSpec {
-            endpoint: OutputEndpoint::new("p1", "pass"),
-            texture_name: "tex.p1".into(),
-            resolution: [33, 75],
-            format: TextureFormat::Rgba8Unorm,
-        });
+    fn materialization_resolution_uses_uniform_pass_dependencies() {
+        let mut registry = PassOutputRegistry::new();
+        for pass_id in ["p0", "p1"] {
+            registry.register(PassOutputSpec {
+                endpoint: OutputEndpoint::new(pass_id, "pass"),
+                texture_name: format!("tex.{pass_id}").into(),
+                resolution: [33, 75],
+                format: TextureFormat::Rgba8Unorm,
+            });
+        }
 
-        let got = infer_uniform_resolution_from_pass_deps(
-            "blur_1",
+        let resolution = infer_materialization_resolution(
+            "sys.auto.fullscreen.pass.edge",
             &[
                 PassTextureRef::direct("p0", "pass"),
                 PassTextureRef::direct("p1", "pass"),
             ],
-            &reg,
+            &registry,
         )
-        .expect("resolution inference should succeed");
-        assert_eq!(got, Some([33, 75]));
+        .expect("uniform pass dependencies should resolve");
+
+        assert_eq!(resolution, Some([33, 75]));
     }
 
     #[test]
-    fn infer_blur_source_resolution_errors_on_mixed_sizes() {
-        let mut reg = PassOutputRegistry::new();
-        reg.register(PassOutputSpec {
-            endpoint: OutputEndpoint::new("p0", "pass"),
-            texture_name: "tex.p0".into(),
-            resolution: [33, 75],
-            format: TextureFormat::Rgba8Unorm,
-        });
-        reg.register(PassOutputSpec {
-            endpoint: OutputEndpoint::new("p1", "pass"),
-            texture_name: "tex.p1".into(),
-            resolution: [67, 150],
-            format: TextureFormat::Rgba8Unorm,
-        });
+    fn materialization_resolution_rejects_mixed_pass_dependencies() {
+        let mut registry = PassOutputRegistry::new();
+        for (pass_id, resolution) in [("p0", [33, 75]), ("p1", [67, 150])] {
+            registry.register(PassOutputSpec {
+                endpoint: OutputEndpoint::new(pass_id, "pass"),
+                texture_name: format!("tex.{pass_id}").into(),
+                resolution,
+                format: TextureFormat::Rgba8Unorm,
+            });
+        }
 
-        let err = infer_uniform_resolution_from_pass_deps(
-            "blur_1",
+        let error = infer_materialization_resolution(
+            "sys.auto.fullscreen.pass.edge",
             &[
                 PassTextureRef::direct("p0", "pass"),
                 PassTextureRef::direct("p1", "pass"),
             ],
-            &reg,
+            &registry,
         )
-        .expect_err("mismatched sizes must fail");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("GuassianBlurPass blur_1"));
-        assert!(msg.contains("p0.pass=33x75"));
-        assert!(msg.contains("p1.pass=67x150"));
-    }
+        .expect_err("mixed pass dependency sizes must fail");
 
-    #[test]
-    fn infer_blur_source_resolution_returns_none_without_pass_deps() {
-        let reg = PassOutputRegistry::new();
-        let got = infer_uniform_resolution_from_pass_deps("blur_1", &[], &reg)
-            .expect("empty deps should not fail");
-        assert_eq!(got, None);
+        let message = error.to_string();
+        assert!(message.contains("p0.pass=33x75"));
+        assert!(message.contains("p1.pass=67x150"));
     }
 
     #[test]

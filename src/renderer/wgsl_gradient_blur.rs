@@ -19,7 +19,7 @@ use crate::{
     renderer::{
         node_compiler::compile_material_expr,
         types::{GraphBindingKind, MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle},
-        utils::{coerce_to_type, to_vec4_color},
+        utils::coerce_to_type,
         wgsl::{build_fullscreen_textured_bundle, graph_inputs_wgsl_decl, merge_graph_input_kinds},
     },
 };
@@ -56,7 +56,7 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     gb_node_id: &str,
-    forced_graph_binding_kind: Option<GraphBindingKind>,
+    _forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
     let Some(conn) = incoming_connection(scene, gb_node_id, "source") else {
         return Ok(build_fullscreen_textured_bundle(
@@ -64,82 +64,11 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
         ));
     };
 
-    let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
-        matches!(
-            node.node_type.as_str(),
-            "RenderPass"
-                | "BloomNode"
-                | "GuassianBlurPass"
-                | "Downsample"
-                | "Upsample"
-                | "GradientBlur"
-                | "MeshGradient"
-                | "Composite"
-        )
-    });
-
-    if source_is_pass {
-        let mut bundle =
-            crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
-        bundle.pass_textures = vec![crate::renderer::types::PassTextureRef::direct(
-            &conn.from.node_id,
-            &conn.from.port_id,
-        )];
-        return Ok(bundle);
-    }
-
-    // Non-pass source: compile the connected material expression.
-    let mut material_ctx = MaterialCompileContext::default();
-    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-    let fragment_expr = compile_material_expr(
-        scene,
-        nodes_by_id,
-        &conn.from.node_id,
-        Some(&conn.from.port_id),
-        &mut material_ctx,
-        &mut cache,
-    )?;
-    let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
-
-    let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
-    let graph_binding_kind = graph_schema
-        .as_ref()
-        .map(|_| forced_graph_binding_kind.unwrap_or(GraphBindingKind::Uniform));
-
-    let mut common = PARAMS_AND_VSOUT.to_string();
-
-    if let (Some(schema), Some(kind)) = (graph_schema.as_ref(), graph_binding_kind) {
-        common.push_str(&graph_inputs_wgsl_decl(schema, kind));
-    }
-    common.push_str(&material_ctx.wgsl_decls());
-
-    let vertex = FULLSCREEN_VERTEX;
-    let fragment = format!(
-        r#"
-@fragment
-fn fs_main(in: VSOut) -> @location(0) vec4f {{
-{fragment_body}
-}}
-"#
-    );
-
-    let vertex_src = format!("{common}{vertex}");
-    let fragment_src = format!("{common}{fragment}");
-    let module = format!("{common}{vertex}{fragment}");
-
-    Ok(WgslShaderBundle {
-        common,
-        vertex: vertex_src,
-        fragment: fragment_src,
-        compute: None,
-        module,
-        image_textures: material_ctx.image_textures,
-        pass_textures: material_ctx.pass_textures,
-        graph_schema,
-        graph_binding_kind,
-        shader_parameter_schema: None,
-    })
+    let texture_ref =
+        crate::renderer::pass_source::resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?;
+    let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
+    bundle.pass_textures = vec![texture_ref];
+    Ok(bundle)
 }
 
 // ---------------------------------------------------------------------------

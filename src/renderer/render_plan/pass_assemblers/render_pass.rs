@@ -29,7 +29,7 @@ use crate::{
         utils::{as_bytes_slice, cpu_num_u32_floor},
         wgsl::{
             build_dynamic_rect_compose_bundle, build_fullscreen_textured_bundle,
-            build_pass_wgsl_bundle_with_graph_binding,
+            build_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
         },
     },
 };
@@ -39,8 +39,9 @@ use super::super::pass_spec::{
     build_depth_resolve_wgsl, make_params,
 };
 use super::super::resource_naming::{
-    parse_render_pass_cull_mode, parse_render_pass_depth_test, readable_pass_name_for_node,
-    sampled_render_pass_output_size, select_effective_msaa_sample_count,
+    infer_materialization_resolution, parse_render_pass_cull_mode, parse_render_pass_depth_test,
+    readable_pass_name_for_node, sampled_render_pass_output_size,
+    select_effective_msaa_sample_count,
 };
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use crate::renderer::shader_space::sampler::{
@@ -120,11 +121,35 @@ pub(crate) fn assemble_render_pass(
     let is_blur_source = bs.gaussian_source_pass_ids.contains(layer_id)
         || bs.bloom_source_pass_ids.contains(layer_id)
         || bs.gradient_source_pass_ids.contains(layer_id);
-    let pass_coord_size = sc
+    let is_auto_materialization_pass = layer_id.starts_with("sys.auto.fullscreen.pass.");
+    let preserve_geometry_extent_for_processing = !is_auto_materialization_pass
+        && (is_downsample_source || is_upsample_source || is_blur_source);
+    let mut pass_coord_size = sc
         .draw_coord_size_by_pass
         .get(layer_id)
         .copied()
         .unwrap_or([tgt_w, tgt_h]);
+    if is_auto_materialization_pass {
+        let dependency_bundle = build_pass_wgsl_bundle(
+            &prepared.scene,
+            nodes_by_id,
+            None,
+            None,
+            layer_id,
+            false,
+            None,
+            Vec::new(),
+            String::new(),
+            false,
+        )?;
+        if let Some([width, height]) = infer_materialization_resolution(
+            layer_id,
+            &dependency_bundle.pass_textures,
+            &bs.pass_output_registry,
+        )? {
+            pass_coord_size = [width as f32, height as f32];
+        }
+    }
     let pass_coord_w_u = pass_coord_size[0].max(1.0).round() as u32;
     let pass_coord_h_u = pass_coord_size[1].max(1.0).round() as u32;
 
@@ -200,7 +225,7 @@ pub(crate) fn assemble_render_pass(
             let out_tex: ResourceName = format!("sys.pass.{layer_id}.out").into();
             let [w_u, h_u] = sampled_render_pass_output_size(
                 has_processing_consumer,
-                is_downsample_source || is_upsample_source || is_blur_source,
+                preserve_geometry_extent_for_processing,
                 [pass_coord_w_u, pass_coord_h_u],
                 [geo_w, geo_h],
             );
@@ -380,7 +405,8 @@ pub(crate) fn assemble_render_pass(
     let use_fullscreen_main_pass = use_fullscreen_for_downsample_source
         || use_fullscreen_for_upsample_source
         || use_fullscreen_for_extend_blur_source
-        || use_fullscreen_for_local_blit;
+        || use_fullscreen_for_local_blit
+        || is_auto_materialization_pass;
     let pass_camera = resolve_effective_camera_for_pass_node(
         &prepared.scene,
         nodes_by_id,

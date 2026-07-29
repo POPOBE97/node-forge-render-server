@@ -20,6 +20,10 @@ const HEADER_ROW_H: f32 = 16.0;
 const VALUE_ROW_H: f32 = 20.0;
 const LABEL_COL_W: f32 = 120.0;
 const DIAMOND_HALF: f32 = 3.5;
+const TOOLTIP_CONTENT_W: f32 = 320.0;
+const TOOLTIP_COL_MAX_W: f32 = 150.0;
+const TOOLTIP_MAX_DETAIL_ROWS: usize = 6;
+const TOOLTIP_MAX_DIAGNOSTICS: usize = 3;
 
 /// Result of a single frame of timeline widget interaction.
 #[derive(Debug, Clone, Default)]
@@ -319,10 +323,17 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
             let section_font =
                 design_tokens::font_id(design_tokens::FONT_SIZE_9, design_tokens::FontWeight::Bold);
             let section_color = design_tokens::white(40);
+            let screen_right = ui.ctx().input(|i| i.content_rect().max.x);
+            let tooltip_outer_w = TOOLTIP_CONTENT_W + 20.0;
+            let (tooltip_x, tooltip_pivot) = if pointer.x + 12.0 + tooltip_outer_w <= screen_right {
+                (pointer.x + 12.0, egui::Align2::LEFT_BOTTOM)
+            } else {
+                (pointer.x - 12.0, egui::Align2::RIGHT_BOTTOM)
+            };
 
             egui::Area::new(ui.id().with("timeline_tooltip"))
-                .fixed_pos(egui::pos2(pointer.x + 12.0, total_rect.min.y))
-                .pivot(egui::Align2::LEFT_BOTTOM)
+                .fixed_pos(egui::pos2(tooltip_x, total_rect.min.y))
+                .pivot(tooltip_pivot)
                 .order(egui::Order::Tooltip)
                 .show(ui.ctx(), |ui| {
                     egui::Frame::NONE
@@ -331,7 +342,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                         .corner_radius(design_tokens::BORDER_RADIUS_SMALL)
                         .inner_margin(egui::Margin::symmetric(10, 6))
                         .show(ui, |ui| {
-                            ui.set_min_width(160.0);
+                            ui.set_width(TOOLTIP_CONTENT_W);
                             let grid_id = ui.id().with("tt_grid");
 
                             // ── Frame / Timing ───────────────────────
@@ -344,6 +355,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                             egui::Grid::new(grid_id.with("timing"))
                                 .num_columns(2)
                                 .min_col_width(70.0)
+                                .max_col_width(TOOLTIP_COL_MAX_W)
                                 .spacing(egui::vec2(12.0, 1.0))
                                 .show(ui, |ui| {
                                     tooltip_row(
@@ -386,6 +398,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                             egui::Grid::new(grid_id.with("state"))
                                 .num_columns(2)
                                 .min_col_width(70.0)
+                                .max_col_width(TOOLTIP_COL_MAX_W)
                                 .spacing(egui::vec2(12.0, 1.0))
                                 .show(ui, |ui| {
                                     tooltip_row(
@@ -422,9 +435,14 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                 egui::Grid::new(grid_id.with("motion_channels"))
                                     .num_columns(2)
                                     .min_col_width(70.0)
+                                    .max_col_width(TOOLTIP_COL_MAX_W)
                                     .spacing(egui::vec2(12.0, 1.0))
                                     .show(ui, |ui| {
-                                        for channel in &frame.motion_channels {
+                                        for channel in frame
+                                            .motion_channels
+                                            .iter()
+                                            .take(TOOLTIP_MAX_DETAIL_ROWS)
+                                        {
                                             let mut detail = format!(
                                                 "{}  value={:?}  velocity={:?}",
                                                 channel.driver, channel.value, channel.velocity
@@ -449,6 +467,17 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                                 value_color,
                                             );
                                         }
+                                        tooltip_overflow_row(
+                                            ui,
+                                            frame
+                                                .motion_channels
+                                                .len()
+                                                .saturating_sub(TOOLTIP_MAX_DETAIL_ROWS),
+                                            &label_font,
+                                            &value_font,
+                                            label_color,
+                                            value_color,
+                                        );
                                     });
                             }
 
@@ -463,6 +492,7 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                 egui::Grid::new(grid_id.with("values"))
                                     .num_columns(2)
                                     .min_col_width(70.0)
+                                    .max_col_width(TOOLTIP_COL_MAX_W)
                                     .spacing(egui::vec2(12.0, 1.0))
                                     .show(ui, |ui| {
                                         let mut sorted: Vec<_> =
@@ -471,7 +501,11 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                             (&a.0.node_id, &a.0.param_name)
                                                 .cmp(&(&b.0.node_id, &b.0.param_name))
                                         });
-                                        for (k, v) in sorted {
+                                        let hidden_count =
+                                            sorted.len().saturating_sub(TOOLTIP_MAX_DETAIL_ROWS);
+                                        for (k, v) in
+                                            sorted.into_iter().take(TOOLTIP_MAX_DETAIL_ROWS)
+                                        {
                                             let key_label =
                                                 format!("{}.{}", k.node_id, k.param_name);
                                             let val_str =
@@ -488,17 +522,39 @@ pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInte
                                                 value_color,
                                             );
                                         }
+                                        tooltip_overflow_row(
+                                            ui,
+                                            hidden_count,
+                                            &label_font,
+                                            &value_font,
+                                            label_color,
+                                            value_color,
+                                        );
                                     });
                             }
 
                             // ── Diagnostics ──────────────────────────
                             if !frame.diagnostics.is_empty() {
                                 ui.add_space(4.0);
-                                for diag in &frame.diagnostics {
+                                for diag in frame.diagnostics.iter().take(TOOLTIP_MAX_DIAGNOSTICS) {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("⚠ {diag}"))
+                                                .font(label_font.clone())
+                                                .color(egui::Color32::from_rgb(255, 200, 80)),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                                let hidden_count = frame
+                                    .diagnostics
+                                    .len()
+                                    .saturating_sub(TOOLTIP_MAX_DIAGNOSTICS);
+                                if hidden_count > 0 {
                                     ui.label(
-                                        egui::RichText::new(format!("⚠ {diag}"))
+                                        egui::RichText::new(format!("+{hidden_count} more"))
                                             .font(label_font.clone())
-                                            .color(egui::Color32::from_rgb(255, 200, 80)),
+                                            .color(label_color),
                                     );
                                 }
                             }
@@ -522,19 +578,46 @@ fn tooltip_row(
     label_color: egui::Color32,
     value_color: egui::Color32,
 ) {
-    ui.label(
-        egui::RichText::new(label)
-            .font(label_font.clone())
-            .color(label_color),
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(label)
+                .font(label_font.clone())
+                .color(label_color),
+        )
+        .truncate(),
     );
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.label(
-            egui::RichText::new(value)
-                .font(value_font.clone())
-                .color(value_color),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(value)
+                    .font(value_font.clone())
+                    .color(value_color),
+            )
+            .truncate(),
         );
     });
     ui.end_row();
+}
+
+fn tooltip_overflow_row(
+    ui: &mut egui::Ui,
+    hidden_count: usize,
+    label_font: &egui::FontId,
+    value_font: &egui::FontId,
+    label_color: egui::Color32,
+    value_color: egui::Color32,
+) {
+    if hidden_count > 0 {
+        tooltip_row(
+            ui,
+            "",
+            &format!("+{hidden_count} more"),
+            label_font,
+            value_font,
+            label_color,
+            value_color,
+        );
+    }
 }
 
 /// Draw a diamond (rotated square) centred at `center`.

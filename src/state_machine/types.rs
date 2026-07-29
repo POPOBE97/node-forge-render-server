@@ -185,6 +185,7 @@ pub struct AnimationTransition {
 #[serde(deny_unknown_fields)]
 pub struct DerivationStateBinding {
     pub id: String,
+    /// A regular State for an explicit binding, or the Any State for the fallback binding.
     #[serde(rename = "stateId")]
     pub state_id: String,
     #[serde(rename = "derivationNodeId")]

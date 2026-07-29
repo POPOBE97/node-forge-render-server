@@ -1146,11 +1146,27 @@ impl StateMachineRuntime {
     }
 
     fn derivation_id_bound_to_state(&self, state_id: &str) -> Option<&str> {
+        if self.find_state(state_id)?.state_type != AnimationStateType::AnimationState {
+            return None;
+        }
         let binding = self
             .definition
             .derivation_bindings
             .iter()
-            .find(|binding| binding.state_id == state_id)?;
+            .find(|binding| binding.state_id == state_id)
+            .or_else(|| {
+                let any_state_id = self
+                    .definition
+                    .states
+                    .iter()
+                    .find(|state| state.state_type == AnimationStateType::AnyState)?
+                    .id
+                    .as_str();
+                self.definition
+                    .derivation_bindings
+                    .iter()
+                    .find(|binding| binding.state_id == any_state_id)
+            })?;
         self.definition
             .states
             .iter()
@@ -1285,6 +1301,22 @@ mod tests {
             state_id: state_id.into(),
             derivation_node_id,
         });
+    }
+
+    fn empty_derivation(id: &str) -> DerivationDefinition {
+        DerivationDefinition {
+            id: id.into(),
+            name: id.into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![],
+            layout: None,
+            viewport: None,
+        }
     }
 
     fn motion_ports() -> (Vec<GraphPort>, Vec<GraphPort>) {
@@ -1795,6 +1827,48 @@ mod tests {
 
         let completed = rt.tick(0.4, &HashMap::new(), &vec![]);
         assert_eq!(completed.current_state_id, "derived");
+    }
+
+    #[test]
+    fn any_state_derivation_is_fallback_and_explicit_binding_wins() {
+        let mut sm = minimal_sm();
+        sm.states.extend([
+            AnimationState {
+                id: "fallback_state".into(),
+                name: "Fallback".into(),
+                position: None,
+                state_param_overrides: Default::default(),
+                state_type: AnimationStateType::AnimationState,
+                mutation_graph: None,
+                derivation_id: None,
+            },
+            AnimationState {
+                id: "explicit_state".into(),
+                name: "Explicit".into(),
+                position: None,
+                state_param_overrides: Default::default(),
+                state_type: AnimationStateType::AnimationState,
+                mutation_graph: None,
+                derivation_id: None,
+            },
+        ]);
+        sm.derivations.extend([
+            empty_derivation("fallback_derivation"),
+            empty_derivation("explicit_derivation"),
+        ]);
+        bind_derivation(&mut sm, "any", "fallback_derivation");
+        bind_derivation(&mut sm, "explicit_state", "explicit_derivation");
+
+        let runtime = StateMachineRuntime::new(sm);
+        assert_eq!(
+            runtime.derivation_id_bound_to_state("fallback_state"),
+            Some("fallback_derivation")
+        );
+        assert_eq!(
+            runtime.derivation_id_bound_to_state("explicit_state"),
+            Some("explicit_derivation")
+        );
+        assert_eq!(runtime.derivation_id_bound_to_state("entry"), None);
     }
 
     #[test]

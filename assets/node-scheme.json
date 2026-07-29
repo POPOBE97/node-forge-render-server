@@ -123,7 +123,6 @@
     "packed<vector4>",
     "pass",
     "renderTexture",
-    "sampledTexture",
     "shader",
     "texture",
     "vector2",
@@ -251,7 +250,6 @@
       "vector3[]",
       "vector4[]",
       "texture",
-      "sampledTexture",
       "ImageFile",
       "renderTexture",
       "material",
@@ -353,10 +351,6 @@
     "texture": [
       "texture"
     ],
-    "sampledTexture": [
-      "texture",
-      "sampledTexture"
-    ],
     "ImageFile": [
       "ImageFile"
     ],
@@ -371,6 +365,7 @@
     ],
     "pass": [
       "pass",
+      "texture",
       "float",
       "int",
       "bool",
@@ -619,6 +614,72 @@
             "max": 1,
             "step": 0.01
           }
+        },
+        {
+          "id": "level1Strength",
+          "name": "Level 1 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "level2Strength",
+          "name": "Level 2 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "level3Strength",
+          "name": "Level 3 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "level4Strength",
+          "name": "Level 4 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "level5Strength",
+          "name": "Level 5 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "level6Strength",
+          "name": "Level 6 Strength",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 4,
+            "step": 0.01
+          }
         }
       ],
       "outputs": [
@@ -628,7 +689,14 @@
           "type": "pass"
         }
       ],
-      "defaultParams": {}
+      "defaultParams": {
+        "blend_preset": "add",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
+      }
     },
     {
       "type": "BoolInput",
@@ -4702,7 +4770,7 @@
       "type": "PassTexture",
       "label": "Pass Texture",
       "category": "Texture",
-      "description": "Sample the output texture of an upstream pass node for use in material expressions",
+      "description": "Alias an upstream pass with sampler settings, or explicitly sample it as a color",
       "inputs": [
         {
           "id": "pass",
@@ -4722,9 +4790,9 @@
           "type": "color"
         },
         {
-          "id": "texture",
-          "name": "Texture",
-          "type": "sampledTexture"
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
         }
       ],
       "defaultParams": {

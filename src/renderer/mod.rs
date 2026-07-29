@@ -22,6 +22,7 @@ pub mod glsl_snippet;
 pub mod graph_uniforms;
 pub mod node_compiler;
 pub mod pass_debug;
+pub(crate) mod pass_source;
 pub mod render_plan;
 pub mod scene_prep;
 pub mod shader_space;

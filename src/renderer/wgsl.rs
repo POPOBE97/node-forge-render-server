@@ -21,7 +21,8 @@ use crate::{
         },
         utils::{cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils, to_vec4_color},
         wgsl_bloom::{
-            BLOOM_MAX_MIPS, build_bloom_additive_combine_bundle, build_bloom_extract_bundle,
+            BLOOM_MAX_MIPS, bloom_extract_fragment_body, build_bloom_additive_combine_bundle,
+            build_bloom_output_bundle,
         },
     },
 };
@@ -620,71 +621,64 @@ fn shader_material_params_wgsl_decl(schema: &GraphSchema) -> String {
 //
 // Use: renderer::node_compiler::compile_material_expr instead.
 
-/// Build a WGSL shader bundle for the `pass` input of a GuassianBlurPass.
-///
-/// The node scheme models GuassianBlurPass's source as a `pass`-typed input.
-/// Source can be a pass node output or a non-pass expression (for example
-/// MathClosure that samples pass textures via samplePass).
-/// This shader bundle samples the resolved source into a fullscreen render target.
-pub fn build_blur_image_wgsl_bundle(
+pub fn build_bloom_extract_material_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
-    blur_pass_id: &str,
-) -> Result<WgslShaderBundle> {
-    build_blur_image_wgsl_bundle_with_graph_binding(scene, nodes_by_id, blur_pass_id, None)
-}
-
-pub fn build_blur_image_wgsl_bundle_with_graph_binding(
-    scene: &SceneDSL,
-    nodes_by_id: &HashMap<String, Node>,
-    blur_pass_id: &str,
+    bloom_node_id: &str,
+    threshold: f32,
+    smooth_width_px: f32,
+    strength: f32,
+    saturation: f32,
+    default_tint: [f32; 4],
     forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
-    // Source is provided on the `pass` input.
-    let Some(conn) = incoming_connection(scene, blur_pass_id, "pass") else {
-        // No input - return transparent.
-        return Ok(build_fullscreen_textured_bundle(
-            "return vec4f(0.0, 0.0, 0.0, 0.0);".to_string(),
-        ));
-    };
-
-    let source_is_pass = nodes_by_id.get(&conn.from.node_id).is_some_and(|node| {
-        matches!(
-            node.node_type.as_str(),
-            "RenderPass"
-                | "BloomNode"
-                | "GuassianBlurPass"
-                | "Downsample"
-                | "Upsample"
-                | "GradientBlur"
-                | "MeshGradient"
-                | "Composite"
-        )
-    });
-
-    if source_is_pass {
-        let mut bundle =
-            crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
-        bundle.pass_textures = vec![crate::renderer::types::PassTextureRef::direct(
-            &conn.from.node_id,
-            &conn.from.port_id,
-        )];
-        return Ok(bundle);
-    }
-
-    // Non-pass source: compile the connected material expression directly.
-    let mut material_ctx = MaterialCompileContext::default();
-    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-    let fragment_expr = compile_material_expr(
+    let source_connection = incoming_connection(scene, bloom_node_id, "pass")
+        .ok_or_else(|| anyhow!("BloomNode.pass missing for {bloom_node_id}"))?;
+    let source_ref = crate::renderer::pass_source::resolve_pass_source_ref(
         scene,
         nodes_by_id,
-        &conn.from.node_id,
-        Some(&conn.from.port_id),
-        &mut material_ctx,
-        &mut cache,
+        &source_connection.from,
     )?;
-    let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
+    let source_binding_id = source_ref.binding_id.clone();
+
+    let mut material_ctx = MaterialCompileContext::default();
+    material_ctx.register_pass_texture_ref(source_ref);
+
+    let tint_expr = if let Some(tint_connection) = incoming_connection(scene, bloom_node_id, "tint")
+    {
+        let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+        let tint = compile_material_expr(
+            scene,
+            nodes_by_id,
+            &tint_connection.from.node_id,
+            Some(&tint_connection.from.port_id),
+            &mut material_ctx,
+            &mut cache,
+        )?;
+        to_vec4_color(tint).expr
+    } else {
+        format!(
+            "vec4f({:.8}, {:.8}, {:.8}, {:.8})",
+            default_tint[0], default_tint[1], default_tint[2], default_tint[3]
+        )
+    };
+
+    let source_texture = MaterialCompileContext::pass_tex_var_name(&source_binding_id);
+    let source_sampler = MaterialCompileContext::pass_sampler_var_name(&source_binding_id);
+    let extract_body = bloom_extract_fragment_body(
+        threshold,
+        smooth_width_px,
+        strength,
+        saturation,
+        &tint_expr,
+        &source_texture,
+        &source_sampler,
+    );
+    let inline_statements = if material_ctx.inline_stmts.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", material_ctx.inline_stmts.join("\n"))
+    };
 
     let graph_schema = merge_graph_input_kinds(&material_ctx, &std::collections::BTreeMap::new());
     let graph_binding_kind = graph_schema
@@ -700,11 +694,9 @@ struct Params {
     geo_translate: vec2f,
     geo_scale: vec2f,
 
-    // Pack to 16-byte boundary.
     time: f32,
     _pad0: f32,
 
-    // 16-byte aligned.
     color: vec4f,
     camera: mat4x4f,
     camera_position: vec4f,
@@ -716,11 +708,8 @@ var<uniform> params: Params;
 struct VSOut {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
-    // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
-    // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
     @location(2) local_px: vec3f,
-    // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
 "#
@@ -730,7 +719,6 @@ struct VSOut {
         common.push_str(&graph_inputs_wgsl_decl(schema, kind));
     }
     common.push_str(&material_ctx.wgsl_decls());
-
     if material_ctx.needs_f16 {
         common = format!("enable f16;\n{common}");
     }
@@ -741,7 +729,6 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
     out.uv = uv;
     out.geo_size_px = params.geo_size;
-    // UV is top-left convention, so flip Y for GLSL-like local_px.
     out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
@@ -750,17 +737,14 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     return out;
 }
 "#;
-
     let fragment = format!(
         r#"
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {{
-{}
+{inline_statements}{extract_body}
 }}
-"#,
-        fragment_body
+"#
     );
-
     let vertex_src = format!("{common}{vertex}");
     let fragment_src = format!("{common}{fragment}");
     let module = format!("{common}{vertex}{fragment}");
@@ -777,6 +761,39 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
         graph_binding_kind,
         shader_parameter_schema: None,
     })
+}
+
+/// Build a WGSL shader bundle for the `pass` input of a GuassianBlurPass.
+///
+/// Scene preparation has already materialized color/texture inputs into real passes.
+/// This shader bundle samples the resolved pass source into a fullscreen render target.
+pub fn build_blur_image_wgsl_bundle(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    blur_pass_id: &str,
+) -> Result<WgslShaderBundle> {
+    build_blur_image_wgsl_bundle_with_graph_binding(scene, nodes_by_id, blur_pass_id, None)
+}
+
+pub fn build_blur_image_wgsl_bundle_with_graph_binding(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    blur_pass_id: &str,
+    _forced_graph_binding_kind: Option<GraphBindingKind>,
+) -> Result<WgslShaderBundle> {
+    // Source is provided on the `pass` input.
+    let Some(conn) = incoming_connection(scene, blur_pass_id, "pass") else {
+        // No input - return transparent.
+        return Ok(build_fullscreen_textured_bundle(
+            "return vec4f(0.0, 0.0, 0.0, 0.0);".to_string(),
+        ));
+    };
+
+    let texture_ref =
+        crate::renderer::pass_source::resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?;
+    let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
+    bundle.pass_textures = vec![texture_ref];
+    Ok(bundle)
 }
 
 pub fn build_pass_wgsl_bundle(
@@ -1531,13 +1548,17 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
 
                 out.push((
                     format!("sys.bloom.{layer_id}.extract.pass"),
-                    build_bloom_extract_bundle(
+                    build_bloom_extract_material_bundle(
+                        &prepared.scene,
+                        nodes_by_id,
+                        &layer_id,
                         threshold,
                         smooth_width_px,
                         strength,
                         saturation,
                         tint,
-                    ),
+                        None,
+                    )?,
                 ));
 
                 for level in 1..=BLOOM_MAX_MIPS {
@@ -1569,9 +1590,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 }
                 out.push((
                     format!("sys.bloom.{layer_id}.out.pass"),
-                    build_fullscreen_textured_bundle(
-                        "return textureSample(src_tex, src_samp, in.uv);".to_string(),
-                    ),
+                    build_bloom_output_bundle(),
                 ));
             }
             "IntelligentLight" => {
@@ -1940,12 +1959,88 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::{
-        ERROR_SHADER_WGSL, build_horizontal_blur_bundle,
+        ERROR_SHADER_WGSL, build_bloom_extract_material_bundle, build_horizontal_blur_bundle,
         build_horizontal_blur_bundle_with_tap_count, build_vertical_blur_bundle,
         build_vertical_blur_bundle_with_tap_count,
     };
+    use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
     use crate::renderer::validation::validate_wgsl;
+
+    #[test]
+    fn bloom_tint_compiles_pass_texture_color_expression() {
+        let node = |id: &str, node_type: &str| Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        };
+        let connection =
+            |id: &str, from_node: &str, from_port: &str, to_node: &str, to_port: &str| Connection {
+                id: id.to_string(),
+                from: Endpoint {
+                    node_id: from_node.to_string(),
+                    port_id: from_port.to_string(),
+                },
+                to: Endpoint {
+                    node_id: to_node.to_string(),
+                    port_id: to_port.to_string(),
+                },
+            };
+        let scene = SceneDSL {
+            version: "4.0".to_string(),
+            metadata: Metadata {
+                name: "bloom tint".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("source", "RenderPass"),
+                node("tint_source", "RenderPass"),
+                node("tint_sample", "PassTexture"),
+                node("bloom", "BloomNode"),
+            ],
+            connections: vec![
+                connection("source-bloom", "source", "pass", "bloom", "pass"),
+                connection("tint-sample", "tint_source", "pass", "tint_sample", "pass"),
+                connection("sample-bloom", "tint_sample", "color", "bloom", "tint"),
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let nodes_by_id = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|node| (node.id.clone(), node))
+            .collect();
+
+        let bundle = build_bloom_extract_material_bundle(
+            &scene,
+            &nodes_by_id,
+            "bloom",
+            0.5,
+            1.0,
+            1.0,
+            1.0,
+            [1.0; 4],
+            None,
+        )
+        .expect("Bloom tint expression should compile");
+
+        assert_eq!(bundle.pass_textures.len(), 2);
+        assert!(bundle.module.contains("pass_tex_tint_sample"));
+        assert!(bundle.module.contains("let tint = clamp("));
+        validate_wgsl(&bundle.module).expect("Bloom extract WGSL should validate");
+    }
 
     #[test]
     fn blur_bundle_with_tap_count_emits_bound_and_loop_symbol() {

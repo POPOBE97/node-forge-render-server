@@ -35,10 +35,6 @@ var<uniform> params: Params;
 struct GraphInputs {
     // Node: FloatInput_44
     float_input_44: vec4f,
-    // Node: GroupInstance_33/Vector2Input_BackgroundPosition
-    node_GroupInstance_33_Vector2Input_BackgroundPosition_086664a9: vec4f,
-    // Node: GroupInstance_33/Vector2Input_BackgroundSize
-    node_GroupInstance_33_Vector2Input_BackgroundSize_ea00ccb0: vec4f,
 };
 
 @group(0) @binding(2)

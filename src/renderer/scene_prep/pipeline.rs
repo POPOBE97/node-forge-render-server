@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    auto_wrap::auto_wrap_primitive_pass_inputs,
+    auto_wrap::materialize_pass_inputs,
     composite::composition_layers_by_id,
     data_parse::bake_data_parse_nodes,
     graph::{topo_sort, upstream_reachable},
@@ -93,7 +93,7 @@ pub(crate) fn prepare_scene_with_report(
 
     // Coerce primitive shader values into passes by synthesizing a fullscreen RenderPass.
     let mut scene = scene;
-    let auto_wrapped_pass_inputs = auto_wrap_primitive_pass_inputs(&mut scene, &scheme);
+    let auto_wrapped_pass_inputs = materialize_pass_inputs(&mut scene, &scheme);
 
     // Deduplicate identical pass subgraphs after auto-wrap so that synthesized
     // fullscreen bridge passes can also be merged.

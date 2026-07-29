@@ -15,6 +15,7 @@ use crate::{
     renderer::{
         camera::pass_node_uses_custom_camera,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
+        pass_source::resolve_pass_source_ref,
         types::{GraphBinding, PassOutputSpec},
         utils::{cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
@@ -32,11 +33,10 @@ use super::super::pass_spec::{
 };
 use super::super::resource_naming::{
     blur_downsample_steps_for_factor, gaussian_blur_extend_upsample_geo_size,
-    infer_uniform_resolution_from_pass_deps, resolve_chain_camera_for_first_pass,
-    should_skip_blur_downsample_pass, should_skip_blur_upsample_pass,
+    resolve_chain_camera_for_first_pass, should_skip_blur_downsample_pass,
+    should_skip_blur_upsample_pass,
 };
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
-use crate::renderer::shader_space::image_utils::image_node_dimensions;
 use crate::renderer::shader_space::sampler::{
     sampler_kind_for_pass_texture, sampler_kind_from_node_params,
 };
@@ -83,96 +83,52 @@ pub(crate) fn assemble_gaussian_blur(
     // Optimization: skip the intermediate `sys.blur.<id>.src` pass when we can
     // directly consume an existing texture resource as the blur source.
     let mut initial_blur_source_texture: Option<ResourceName> = None;
-    let mut initial_blur_source_image_node_id: Option<String> = None;
     let mut initial_blur_source_sampler_kind: Option<SamplerKind> = None;
     if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "pass") {
-        if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+        let src_texture_ref =
+            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
+        if let Some(src_node) = nodes_by_id.get(&src_texture_ref.source.node_id) {
             if src_node.node_type == "RenderPass" {
                 if let Some(geo_conn) =
-                    incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
+                    incoming_connection(&prepared.scene, &src_node.id, "geometry")
                 {
-                    if let Ok((
-                        _,
-                        src_geo_w,
-                        src_geo_h,
-                        src_geo_x,
-                        src_geo_y,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                    )) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                        &prepared.scene,
-                        nodes_by_id,
-                        ids,
-                        &geo_conn.from.node_id,
-                        [tgt_w, tgt_h],
-                        None,
-                        asset_store,
-                    ) {
-                        base_resolution = [
-                            src_geo_w.max(1.0).round() as u32,
-                            src_geo_h.max(1.0).round() as u32,
-                        ];
+                    if let Ok((_, _, _, src_geo_x, src_geo_y, _, _, _, _, _, _, _, _, _, _)) =
+                        crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                            &prepared.scene,
+                            nodes_by_id,
+                            ids,
+                            &geo_conn.from.node_id,
+                            [tgt_w, tgt_h],
+                            None,
+                            asset_store,
+                        )
+                    {
                         blur_output_center = Some([src_geo_x, src_geo_y]);
                     }
                 }
             }
         }
 
-        // (A) Upstream pass output bypass.
-        if let Some(src_spec) = bs
+        let src_spec = bs
             .pass_output_registry
-            .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
-        {
-            base_resolution = src_spec.resolution;
-            if can_direct_bypass && src_spec.format == sampled_pass_format {
-                initial_blur_source_texture = Some(src_spec.texture_name.clone());
-                initial_blur_source_sampler_kind = Some(sampler_kind_for_pass_texture(
-                    &prepared.scene,
-                    &crate::renderer::types::PassTextureRef::direct(
-                        &src_conn.from.node_id,
-                        &src_conn.from.port_id,
-                    ),
-                ));
-            }
-        } else {
-            // Non-pass source path (e.g. MathClosure with samplePass):
-            // infer blur source resolution from its transitive pass dependencies.
-            let src_bundle = build_blur_image_wgsl_bundle(&prepared.scene, nodes_by_id, layer_id)?;
-            if let Some(inferred_resolution) = infer_uniform_resolution_from_pass_deps(
-                layer_id,
-                &src_bundle.pass_textures,
-                &bs.pass_output_registry,
-            )? {
-                base_resolution = inferred_resolution;
-            }
-        }
-
-        // (B) ImageTexture direct bypass (only when UV is default).
-        if initial_blur_source_texture.is_none() {
-            if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
-                if src_node.node_type == "ImageTexture"
-                    && src_conn.from.port_id == "color"
-                    && incoming_connection(&prepared.scene, &src_conn.from.node_id, "uv").is_none()
-                {
-                    if let Some(dims) = image_node_dimensions(src_node, asset_store) {
-                        base_resolution = dims;
-                    }
-                    if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
-                        initial_blur_source_texture = Some(tex);
-                        initial_blur_source_image_node_id = Some(src_conn.from.node_id.clone());
-                        initial_blur_source_sampler_kind =
-                            Some(sampler_kind_from_node_params(&src_node.params));
-                    }
-                }
-            }
+            .get_for_port(
+                &src_texture_ref.source.node_id,
+                &src_texture_ref.source.port_id,
+            )
+            .ok_or_else(|| {
+                anyhow!(
+                    "GuassianBlurPass {layer_id} source {}.{} is not registered",
+                    src_texture_ref.source.node_id,
+                    src_texture_ref.source.port_id
+                )
+            })?;
+        base_resolution = src_spec.resolution;
+        if can_direct_bypass && src_spec.format == sampled_pass_format {
+            initial_blur_source_texture = Some(src_spec.texture_name.clone());
+            initial_blur_source_sampler_kind = Some(sampler_kind_for_pass_texture(
+                &prepared.scene,
+                &src_texture_ref,
+            ));
         }
     }
     let src_content_resolution = base_resolution;
@@ -194,7 +150,6 @@ pub(crate) fn assemble_gaussian_blur(
         pass_node_uses_custom_camera(&prepared.scene, nodes_by_id, layer_node, [src_w, src_h])?;
     if force_source_pass_for_custom_camera {
         initial_blur_source_texture = None;
-        initial_blur_source_image_node_id = None;
         initial_blur_source_sampler_kind = None;
     }
 
@@ -505,12 +460,9 @@ pub(crate) fn assemble_gaussian_blur(
             [0.0, 0.0, 0.0, 0.0],
         );
 
-        let (src_tex, src_image_node_id) = match &prev_tex {
-            None => (
-                initial_blur_source_texture.clone(),
-                initial_blur_source_image_node_id.clone(),
-            ),
-            Some(t) => (t.clone(), None),
+        let src_tex = match &prev_tex {
+            None => initial_blur_source_texture.clone(),
+            Some(t) => t.clone(),
         };
 
         let baked_buf: ResourceName = format!("sys.pass.{layer_id}.baked_data_parse").into();
@@ -536,7 +488,7 @@ pub(crate) fn assemble_gaussian_blur(
             shader_wgsl: bundle.module,
             texture_bindings: vec![PassTextureBinding {
                 texture: src_tex,
-                image_node_id: src_image_node_id,
+                image_node_id: None,
             }],
             sampler_kinds: vec![sampler_kind],
             blend_state: BlendState::REPLACE,
@@ -547,15 +499,7 @@ pub(crate) fn assemble_gaussian_blur(
         prev_tex = Some(tex.clone());
     }
 
-    let (ds_src_tex, ds_src_image_node_id): (ResourceName, Option<String>) =
-        if let Some(prev_tex) = prev_tex {
-            (prev_tex, None)
-        } else {
-            (
-                initial_blur_source_texture.clone(),
-                initial_blur_source_image_node_id.clone(),
-            )
-        };
+    let ds_src_tex = prev_tex.unwrap_or_else(|| initial_blur_source_texture.clone());
 
     // 2) Horizontal blur: ds_src_tex -> h_tex
     let params_h: ResourceName =
@@ -596,7 +540,7 @@ pub(crate) fn assemble_gaussian_blur(
         shader_wgsl: bundle_h.module,
         texture_bindings: vec![PassTextureBinding {
             texture: ds_src_tex.clone(),
-            image_node_id: ds_src_image_node_id,
+            image_node_id: None,
         }],
         sampler_kinds: vec![SamplerKind::LinearMirror],
         blend_state: BlendState::REPLACE,

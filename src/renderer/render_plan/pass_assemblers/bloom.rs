@@ -14,15 +14,19 @@ use crate::{
     dsl::{Node, incoming_connection},
     renderer::{
         camera::resolve_effective_camera_for_pass_node,
-        types::{Kernel2D, PassOutputSpec},
+        graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
+        pass_source::resolve_pass_source_ref,
+        types::{GraphBinding, Kernel2D, PassOutputSpec},
         utils::cpu_num_f32,
         wgsl::{
-            build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
+            build_bloom_extract_material_bundle, build_downsample_pass_wgsl_bundle,
             build_horizontal_blur_bundle_with_tap_count, build_upsample_bilinear_bundle,
             build_vertical_blur_bundle_with_tap_count, clamp_min_1, gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p,
         },
-        wgsl_bloom::{build_bloom_additive_combine_bundle, build_bloom_extract_bundle},
+        wgsl_bloom::{
+            BLOOM_MAX_MIPS, build_bloom_additive_combine_bundle, build_bloom_output_bundle,
+        },
     },
 };
 
@@ -31,10 +35,11 @@ use super::super::pass_spec::{
 };
 use super::super::resource_naming::resolve_chain_camera_for_first_pass;
 use super::super::resource_naming::{
-    bloom_downsample_level_count, parse_tint_from_node_or_default,
+    bloom_downsample_level_count, parse_tint_param_or_default, resolve_pass_texture_bindings,
 };
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
+use crate::renderer::shader_space::sampler::sampler_kind_from_node_params;
 
 /// Assemble a `"BloomNode"` layer.
 pub(crate) fn assemble_bloom(
@@ -45,18 +50,24 @@ pub(crate) fn assemble_bloom(
 ) -> Result<()> {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
+    let ids = sc.ids();
+    let device = sc.device;
     let tgt_w = bs.tgt_size[0];
     let tgt_h = bs.tgt_size[1];
 
     let src_conn = incoming_connection(scene, layer_id, "pass")
         .ok_or_else(|| anyhow!("BloomNode.pass missing for {layer_id}"))?;
+    let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
     let src_spec = bs
         .pass_output_registry
-        .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
+        .get_for_port(
+            &src_texture_ref.source.node_id,
+            &src_texture_ref.source.port_id,
+        )
         .ok_or_else(|| {
             anyhow!(
                 "BloomNode.pass references upstream pass {}, but its output is not registered yet",
-                src_conn.from.node_id
+                src_texture_ref.source.node_id
             )
         })?;
 
@@ -71,9 +82,20 @@ pub(crate) fn assemble_bloom(
     let saturation =
         cpu_num_f32(scene, &nodes_by_id, layer_node, "saturation", 1.0)?.clamp(0.0, 1.0);
     let size = cpu_num_f32(scene, &nodes_by_id, layer_node, "size", 0.5)?.clamp(0.0, 1.0);
+    let mut level_strengths = [1.0f32; BLOOM_MAX_MIPS as usize];
+    for (index, level_strength) in level_strengths.iter_mut().enumerate() {
+        *level_strength = cpu_num_f32(
+            scene,
+            &nodes_by_id,
+            layer_node,
+            &format!("level{}Strength", index + 1),
+            1.0,
+        )?
+        .clamp(0.0, 4.0);
+    }
     let smooth_width_px = (1.0 - smoothness) * 40.0;
     let radius_px = size * 6.0;
-    let tint = parse_tint_from_node_or_default(scene, &nodes_by_id, layer_node)?;
+    let tint = parse_tint_param_or_default(layer_node);
 
     let sigma = radius_px / 3.525_494;
     let (_mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
@@ -140,8 +162,79 @@ pub(crate) fn assemble_bloom(
         [0.0, 0.0, 0.0, 0.0],
     );
 
-    let extract_bundle =
-        build_bloom_extract_bundle(threshold, smooth_width_px, strength, saturation, tint);
+    let mut extract_bundle = build_bloom_extract_material_bundle(
+        scene,
+        nodes_by_id,
+        layer_id,
+        threshold,
+        smooth_width_px,
+        strength,
+        saturation,
+        tint,
+        None,
+    )?;
+    let mut extract_graph_binding: Option<GraphBinding> = None;
+    let mut extract_graph_values: Option<Vec<u8>> = None;
+    if let Some(schema) = extract_bundle.graph_schema.clone() {
+        let limits = device.limits();
+        let kind = choose_graph_binding_kind(
+            schema.size_bytes,
+            limits.max_uniform_buffer_binding_size as u64,
+            limits.max_storage_buffer_binding_size as u64,
+        )?;
+        if extract_bundle.graph_binding_kind != Some(kind) {
+            extract_bundle = build_bloom_extract_material_bundle(
+                scene,
+                nodes_by_id,
+                layer_id,
+                threshold,
+                smooth_width_px,
+                strength,
+                saturation,
+                tint,
+                Some(kind),
+            )?;
+        }
+        let schema = extract_bundle
+            .graph_schema
+            .clone()
+            .ok_or_else(|| anyhow!("missing Bloom tint graph schema for {layer_id}"))?;
+        extract_graph_values = Some(pack_graph_values(scene, &schema)?);
+        extract_graph_binding = Some(GraphBinding {
+            buffer_name: format!("params.sys.bloom.{layer_id}.extract.graph").into(),
+            kind,
+            schema,
+        });
+    }
+
+    let mut extract_texture_bindings = Vec::new();
+    let mut extract_sampler_kinds = Vec::new();
+    for image_node_id in &extract_bundle.image_textures {
+        let texture = ids
+            .get(image_node_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("missing Bloom tint image texture '{image_node_id}'"))?;
+        extract_texture_bindings.push(PassTextureBinding {
+            texture,
+            image_node_id: Some(image_node_id.clone()),
+        });
+        extract_sampler_kinds.push(
+            nodes_by_id
+                .get(image_node_id)
+                .map(|node| sampler_kind_from_node_params(&node.params))
+                .unwrap_or(SamplerKind::LinearClamp),
+        );
+    }
+    let extract_pass_bindings =
+        resolve_pass_texture_bindings(&bs.pass_output_registry, &extract_bundle.pass_textures)?;
+    for (texture_ref, binding) in extract_bundle
+        .pass_textures
+        .iter()
+        .zip(extract_pass_bindings)
+    {
+        extract_texture_bindings.push(binding);
+        extract_sampler_kinds.push(sampler_kind_for_pass_texture(scene, texture_ref));
+    }
     let extract_pass_name: ResourceName = format!("sys.bloom.{layer_id}.extract.pass").into();
     bs.render_pass_specs.push(RenderPassSpec {
         pass_id: extract_pass_name.as_str().to_string(),
@@ -155,20 +248,11 @@ pub(crate) fn assemble_bloom(
         params_buffer: mip0_params,
         baked_data_parse_buffer: None,
         params: mip0_params_val,
-        graph_binding: None,
-        graph_values: None,
+        graph_binding: extract_graph_binding,
+        graph_values: extract_graph_values,
         shader_wgsl: extract_bundle.module,
-        texture_bindings: vec![PassTextureBinding {
-            texture: src_spec.texture_name.clone(),
-            image_node_id: None,
-        }],
-        sampler_kinds: vec![sampler_kind_for_pass_texture(
-            scene,
-            &crate::renderer::types::PassTextureRef::direct(
-                &src_conn.from.node_id,
-                &src_conn.from.port_id,
-            ),
-        )],
+        texture_bindings: extract_texture_bindings,
+        sampler_kinds: extract_sampler_kinds,
         blend_state: BlendState::REPLACE,
         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
         sample_count: 1,
@@ -341,7 +425,6 @@ pub(crate) fn assemble_bloom(
         bs.composite_passes.push(v_pass_name);
         v_tex
     } else {
-        let add_bundle = build_bloom_additive_combine_bundle();
         let mut current_tex = mip_textures[mip_levels as usize].clone();
 
         for level in (1..=mip_levels).rev() {
@@ -527,7 +610,7 @@ pub(crate) fn assemble_bloom(
                     layer_node,
                     [dst_w, dst_h],
                 )?,
-                [0.0, 0.0, 0.0, 0.0],
+                bloom_combine_strengths(&level_strengths, mip_levels, level),
             );
             let add_pass_name: ResourceName =
                 format!("sys.bloom.{layer_id}.lvl{level}.add.pass").into();
@@ -545,7 +628,7 @@ pub(crate) fn assemble_bloom(
                 params: add_params,
                 graph_binding: None,
                 graph_values: None,
-                shader_wgsl: add_bundle.module.clone(),
+                shader_wgsl: build_bloom_additive_combine_bundle().module,
                 texture_bindings: vec![
                     PassTextureBinding {
                         texture: up_tex,
@@ -593,7 +676,12 @@ pub(crate) fn assemble_bloom(
                     [out_w, out_h]
                 },
             )?,
-            [0.0, 0.0, 0.0, 0.0],
+            [
+                bloom_output_strength(&level_strengths, mip_levels),
+                0.0,
+                0.0,
+                0.0,
+            ],
         );
         let copy_pass_name: ResourceName = format!("sys.bloom.{layer_id}.out.pass").into();
         bs.render_pass_specs.push(RenderPassSpec {
@@ -610,10 +698,7 @@ pub(crate) fn assemble_bloom(
             params: params_out_val,
             graph_binding: None,
             graph_values: None,
-            shader_wgsl: build_fullscreen_textured_bundle(
-                "return textureSample(src_tex, src_samp, in.uv);".to_string(),
-            )
-            .module,
+            shader_wgsl: build_bloom_output_bundle().module,
             texture_bindings: vec![PassTextureBinding {
                 texture: bloom_output_tex.clone(),
                 image_node_id: None,
@@ -638,4 +723,60 @@ pub(crate) fn assemble_bloom(
     });
 
     Ok(())
+}
+
+fn bloom_combine_strengths(
+    level_strengths: &[f32; BLOOM_MAX_MIPS as usize],
+    mip_levels: u32,
+    level: u32,
+) -> [f32; 4] {
+    debug_assert!(mip_levels > 1);
+    debug_assert!((2..=mip_levels).contains(&level));
+
+    let base_strength = if level == mip_levels {
+        level_strengths[(level - 1) as usize]
+    } else {
+        1.0
+    };
+    let add_strength = level_strengths[(level - 2) as usize];
+    [base_strength, add_strength, 0.0, 0.0]
+}
+
+fn bloom_output_strength(level_strengths: &[f32; BLOOM_MAX_MIPS as usize], mip_levels: u32) -> f32 {
+    if mip_levels <= 1 {
+        level_strengths[0]
+    } else {
+        1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bloom_combine_strengths, bloom_output_strength};
+
+    #[test]
+    fn maps_each_mip_strength_to_its_independent_contribution() {
+        let strengths = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6];
+
+        assert_eq!(
+            bloom_combine_strengths(&strengths, 6, 6),
+            [1.6, 1.5, 0.0, 0.0]
+        );
+        assert_eq!(
+            bloom_combine_strengths(&strengths, 6, 5),
+            [1.0, 1.4, 0.0, 0.0]
+        );
+        assert_eq!(
+            bloom_combine_strengths(&strengths, 6, 2),
+            [1.0, 1.1, 0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn uses_level_one_strength_when_no_add_pass_exists() {
+        let strengths = [0.25, 1.0, 1.0, 1.0, 1.0, 1.0];
+        assert_eq!(bloom_output_strength(&strengths, 0), 0.25);
+        assert_eq!(bloom_output_strength(&strengths, 1), 0.25);
+        assert_eq!(bloom_output_strength(&strengths, 2), 1.0);
+    }
 }

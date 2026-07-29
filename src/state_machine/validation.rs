@@ -508,9 +508,12 @@ fn validate_graph_ownership(sm: &StateMachine) -> Result<()> {
                 binding.state_id
             )
         })?;
-        if state.state_type != AnimationStateType::AnimationState {
+        if !matches!(
+            state.state_type,
+            AnimationStateType::AnimationState | AnimationStateType::AnyState
+        ) {
             bail!(
-                "state_machine validation: Derivation binding '{}' endpoint '{}' is not an animationState",
+                "state_machine validation: Derivation binding '{}' endpoint '{}' is neither an animationState nor the anyState fallback",
                 binding.id,
                 binding.state_id
             );
@@ -1681,6 +1684,39 @@ mod tests {
         ]);
 
         validate(&sm).expect("a Derivation node output may fan out to multiple States");
+    }
+
+    #[test]
+    fn any_state_can_provide_the_fallback_derivation() {
+        let mut sm = minimal_sm();
+        sm.states
+            .push(derivation_node("derivation_node", "derivation"));
+        sm.derivations.push(empty_derivation("derivation"));
+        sm.derivation_bindings.push(DerivationStateBinding {
+            id: "binding_fallback".into(),
+            state_id: "any".into(),
+            derivation_node_id: "derivation_node".into(),
+        });
+
+        validate(&sm).expect("the Any State may own the fallback Derivation binding");
+    }
+
+    #[test]
+    fn entry_and_exit_states_cannot_bind_derivations() {
+        for state_id in ["entry", "exit"] {
+            let mut sm = minimal_sm();
+            sm.states
+                .push(derivation_node("derivation_node", "derivation"));
+            sm.derivations.push(empty_derivation("derivation"));
+            sm.derivation_bindings.push(DerivationStateBinding {
+                id: format!("binding_{state_id}"),
+                state_id: state_id.into(),
+                derivation_node_id: "derivation_node".into(),
+            });
+
+            let error = validate(&sm).unwrap_err().to_string();
+            assert!(error.contains("anyState fallback"), "{error}");
+        }
     }
 
     #[test]

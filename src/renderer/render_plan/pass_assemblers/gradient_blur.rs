@@ -15,6 +15,7 @@ use crate::{
     renderer::{
         camera::pass_node_uses_custom_camera,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
+        pass_source::resolve_pass_source_ref,
         types::{GraphBinding, PassOutputSpec},
         wgsl::{build_fullscreen_textured_bundle, clamp_min_1},
         wgsl_gradient_blur::*,
@@ -28,7 +29,6 @@ use super::super::resource_naming::{
     resolve_chain_camera_for_first_pass, resolve_pass_texture_bindings,
 };
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
-use crate::renderer::shader_space::image_utils::image_node_dimensions;
 use crate::renderer::shader_space::sampler::{
     sampler_kind_for_pass_texture, sampler_kind_from_node_params,
 };
@@ -59,61 +59,44 @@ pub(crate) fn assemble_gradient_blur(
     let mut gb_output_center: Option<[f32; 2]> = None;
 
     if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
-        if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
+        let src_texture_ref =
+            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
+        if let Some(src_node) = nodes_by_id.get(&src_texture_ref.source.node_id) {
             if src_node.node_type == "RenderPass" {
                 if let Some(geo_conn) =
-                    incoming_connection(&prepared.scene, &src_conn.from.node_id, "geometry")
+                    incoming_connection(&prepared.scene, &src_node.id, "geometry")
                 {
-                    if let Ok((
-                        _,
-                        src_geo_w,
-                        src_geo_h,
-                        src_geo_x,
-                        src_geo_y,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                    )) = crate::renderer::render_plan::resolve_geometry_for_render_pass(
-                        &prepared.scene,
-                        nodes_by_id,
-                        ids,
-                        &geo_conn.from.node_id,
-                        [tgt_w, tgt_h],
-                        None,
-                        asset_store,
-                    ) {
-                        gb_src_resolution = [
-                            src_geo_w.max(1.0).round() as u32,
-                            src_geo_h.max(1.0).round() as u32,
-                        ];
+                    if let Ok((_, _, _, src_geo_x, src_geo_y, _, _, _, _, _, _, _, _, _, _)) =
+                        crate::renderer::render_plan::resolve_geometry_for_render_pass(
+                            &prepared.scene,
+                            nodes_by_id,
+                            ids,
+                            &geo_conn.from.node_id,
+                            [tgt_w, tgt_h],
+                            None,
+                            asset_store,
+                        )
+                    {
                         gb_output_center = Some([src_geo_x, src_geo_y]);
                     }
                 }
             }
         }
 
-        // (A) Upstream pass output.
-        if let Some(src_spec) = bs
+        let src_spec = bs
             .pass_output_registry
-            .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
-        {
-            gb_src_resolution = src_spec.resolution;
-        }
-        // (B) Direct ImageTexture.
-        if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
-            if src_node.node_type == "ImageTexture" {
-                if let Some(dims) = image_node_dimensions(src_node, asset_store) {
-                    gb_src_resolution = dims;
-                }
-            }
-        }
+            .get_for_port(
+                &src_texture_ref.source.node_id,
+                &src_texture_ref.source.port_id,
+            )
+            .ok_or_else(|| {
+                anyhow!(
+                    "GradientBlur {layer_id} source {}.{} is not registered",
+                    src_texture_ref.source.node_id,
+                    src_texture_ref.source.port_id
+                )
+            })?;
+        gb_src_resolution = src_spec.resolution;
     }
 
     let [padded_w, padded_h] =
@@ -130,31 +113,30 @@ pub(crate) fn assemble_gradient_blur(
 
     // ---------- source pass ----------
     let mut initial_source_texture: Option<ResourceName> = None;
-    let mut initial_source_image_node_id: Option<String> = None;
+    let mut initial_source_sampler_kind: Option<SamplerKind> = None;
 
     if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
-        // (A) upstream pass output bypass
-        if let Some(spec) = bs
+        let src_texture_ref =
+            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
+        let spec = bs
             .pass_output_registry
-            .get_for_port(&src_conn.from.node_id, &src_conn.from.port_id)
-        {
-            if spec.format == sampled_pass_format {
-                initial_source_texture = Some(spec.texture_name.clone());
-            }
-        }
-        // (B) direct ImageTexture bypass
-        if initial_source_texture.is_none() {
-            if let Some(src_node) = nodes_by_id.get(&src_conn.from.node_id) {
-                if src_node.node_type == "ImageTexture"
-                    && src_conn.from.port_id == "color"
-                    && incoming_connection(&prepared.scene, &src_conn.from.node_id, "uv").is_none()
-                {
-                    if let Some(tex) = ids.get(&src_conn.from.node_id).cloned() {
-                        initial_source_texture = Some(tex);
-                        initial_source_image_node_id = Some(src_conn.from.node_id.clone());
-                    }
-                }
-            }
+            .get_for_port(
+                &src_texture_ref.source.node_id,
+                &src_texture_ref.source.port_id,
+            )
+            .ok_or_else(|| {
+                anyhow!(
+                    "GradientBlur {layer_id} source {}.{} is not registered",
+                    src_texture_ref.source.node_id,
+                    src_texture_ref.source.port_id
+                )
+            })?;
+        if spec.format == sampled_pass_format {
+            initial_source_texture = Some(spec.texture_name.clone());
+            initial_source_sampler_kind = Some(sampler_kind_for_pass_texture(
+                &prepared.scene,
+                &src_texture_ref,
+            ));
         }
     }
 
@@ -163,7 +145,7 @@ pub(crate) fn assemble_gradient_blur(
         pass_node_uses_custom_camera(&prepared.scene, nodes_by_id, layer_node, [src_w, src_h])?;
     if force_source_pass_for_custom_camera {
         initial_source_texture = None;
-        initial_source_image_node_id = None;
+        initial_source_sampler_kind = None;
     }
 
     let source_texture: ResourceName = if let Some(existing_tex) = initial_source_texture {
@@ -330,9 +312,9 @@ pub(crate) fn assemble_gradient_blur(
         shader_wgsl: pad_bundle.module,
         texture_bindings: vec![PassTextureBinding {
             texture: source_texture.clone(),
-            image_node_id: initial_source_image_node_id.clone(),
+            image_node_id: None,
         }],
-        sampler_kinds: vec![SamplerKind::LinearMirror],
+        sampler_kinds: vec![initial_source_sampler_kind.unwrap_or(SamplerKind::LinearMirror)],
         blend_state: BlendState::REPLACE,
         color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
         sample_count: 1,

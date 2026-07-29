@@ -6,9 +6,13 @@ use crate::{
     dsl::{SceneDSL, incoming_connection},
     renderer::{
         geometry_resolver::is_pass_like_node_type,
+        pass_source::resolve_pass_source_ref,
         scene_prep::composite_layers_in_draw_order,
         types::{PassOutputRegistry, PassTextureRef},
-        wgsl::{build_blur_image_wgsl_bundle, build_pass_wgsl_bundle},
+        wgsl::{
+            build_bloom_extract_material_bundle, build_blur_image_wgsl_bundle,
+            build_pass_wgsl_bundle,
+        },
     },
 };
 
@@ -77,21 +81,44 @@ fn deps_for_pass_node(
                 .collect())
         }
         "BloomNode" => {
-            let source_conn = incoming_connection(scene, pass_node_id, "pass")
-                .ok_or_else(|| anyhow!("BloomNode.pass missing for {pass_node_id}"))?;
-            Ok(vec![source_conn.from.node_id.clone()])
+            let bundle = build_bloom_extract_material_bundle(
+                scene,
+                nodes_by_id,
+                pass_node_id,
+                0.5,
+                1.0,
+                1.0,
+                1.0,
+                [1.0, 1.0, 1.0, 1.0],
+                None,
+            )?;
+            Ok(bundle
+                .pass_textures
+                .into_iter()
+                .map(|texture_ref| texture_ref.source.node_id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect())
         }
         "Downsample" => {
             // Downsample depends on the upstream pass provided on its `source` input.
             let source_conn = incoming_connection(scene, pass_node_id, "source")
                 .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
-            Ok(vec![source_conn.from.node_id.clone()])
+            Ok(vec![
+                resolve_pass_source_ref(scene, nodes_by_id, &source_conn.from)?
+                    .source
+                    .node_id,
+            ])
         }
         "Upsample" => {
             // Upsample depends on the upstream pass provided on its `source` input.
             let source_conn = incoming_connection(scene, pass_node_id, "source")
                 .ok_or_else(|| anyhow!("Upsample.source missing for {pass_node_id}"))?;
-            Ok(vec![source_conn.from.node_id.clone()])
+            Ok(vec![
+                resolve_pass_source_ref(scene, nodes_by_id, &source_conn.from)?
+                    .source
+                    .node_id,
+            ])
         }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
         "IntelligentLight" | "MeshGradient" => Ok(Vec::new()),
@@ -100,29 +127,11 @@ fn deps_for_pass_node(
             let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
                 return Ok(Vec::new());
             };
-            let source_is_pass = nodes_by_id
-                .get(&conn.from.node_id)
-                .is_some_and(|n| is_pass_like_node_type(&n.node_type));
-            if source_is_pass {
-                Ok(vec![conn.from.node_id.clone()])
-            } else {
-                // Non-pass source: compile the material expression to find transitive pass deps.
-                let mut ctx = crate::renderer::types::MaterialCompileContext::default();
-                let mut cache = std::collections::HashMap::new();
-                crate::renderer::node_compiler::compile_material_expr(
-                    scene,
-                    nodes_by_id,
-                    &conn.from.node_id,
-                    Some(&conn.from.port_id),
-                    &mut ctx,
-                    &mut cache,
-                )?;
-                Ok(ctx
-                    .pass_textures
-                    .into_iter()
-                    .map(|texture_ref| texture_ref.source.node_id)
-                    .collect())
-            }
+            Ok(vec![
+                resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?
+                    .source
+                    .node_id,
+            ])
         }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
@@ -588,8 +597,8 @@ mod tests {
     }
 
     #[test]
-    fn sampled_pass_ids_from_roots_tracks_blur_non_pass_source_transitive_deps() -> Result<()> {
-        let scene = SceneDSL {
+    fn sampled_pass_ids_from_roots_tracks_materialized_blur_source_transitive_deps() -> Result<()> {
+        let mut scene = SceneDSL {
             version: "1".to_string(),
             metadata: Metadata {
                 name: "sampled-from-roots-blur-mathclosure".to_string(),
@@ -674,6 +683,11 @@ mod tests {
             state_machine: None,
             debug_artifacts: None,
         };
+
+        crate::renderer::scene_prep::materialize_pass_inputs(
+            &mut scene,
+            &crate::schema::load_default_scheme()?,
+        );
 
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes

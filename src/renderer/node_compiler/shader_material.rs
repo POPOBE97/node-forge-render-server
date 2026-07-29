@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use naga::{ArraySize, ImageClass, ImageDimension, ScalarKind, TypeInner, VectorSize};
 
-use super::super::types::{
-    GraphFieldKind, MaterialCompileContext, PassTextureRef, TypedExpr, ValueType,
-};
+use super::super::types::{GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
-use crate::renderer::geometry_resolver::is_pass_like_node_type;
+use crate::renderer::pass_source::resolve_pass_source_ref;
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 
 const SYSTEM_DECL_KEY: &str = "00.shader_material.system";
@@ -430,48 +428,14 @@ fn resolve_resource(
 ) -> Result<(String, String)> {
     let connection = incoming_connection(scene, &node.id, port_id)
         .ok_or_else(|| anyhow!("ShaderMaterial resource '{port_id}' is not connected"))?;
-    let upstream = nodes_by_id.get(&connection.from.node_id).ok_or_else(|| {
-        anyhow!(
-            "ShaderMaterial resource upstream node not found: {}",
-            connection.from.node_id
-        )
-    })?;
-
-    match upstream.node_type.as_str() {
-        "ImageTexture" if connection.from.port_id == "texture" => {
-            ctx.register_image_texture(&upstream.id);
-            Ok((
-                MaterialCompileContext::tex_var_name(&upstream.id),
-                MaterialCompileContext::sampler_var_name(&upstream.id),
-            ))
-        }
-        "PassTexture" if connection.from.port_id == "texture" => {
-            let pass_connection = incoming_connection(scene, &upstream.id, "pass")
-                .ok_or_else(|| anyhow!("PassTexture.pass input is not connected"))?;
-            let pass = nodes_by_id
-                .get(&pass_connection.from.node_id)
-                .ok_or_else(|| anyhow!("PassTexture upstream pass not found"))?;
-            if !is_pass_like_node_type(&pass.node_type) {
-                bail!(
-                    "PassTexture.pass must be connected to a pass node, got {}",
-                    pass.node_type
-                );
-            }
-            let texture_ref = PassTextureRef::through_pass_texture(
-                &upstream.id,
-                &pass.id,
-                &pass_connection.from.port_id,
-            );
-            ctx.register_pass_texture_ref(texture_ref);
-            Ok((
-                MaterialCompileContext::pass_tex_var_name(&upstream.id),
-                MaterialCompileContext::pass_sampler_var_name(&upstream.id),
-            ))
-        }
-        _ => bail!(
-            "ShaderMaterial resource '{port_id}' expects ImageTexture.texture or PassTexture.texture"
-        ),
-    }
+    let texture_ref = resolve_pass_source_ref(scene, nodes_by_id, &connection.from)
+        .with_context(|| format!("ShaderMaterial resource '{port_id}' expects a pass"))?;
+    let binding_id = texture_ref.binding_id.clone();
+    ctx.register_pass_texture_ref(texture_ref);
+    Ok((
+        MaterialCompileContext::pass_tex_var_name(&binding_id),
+        MaterialCompileContext::pass_sampler_var_name(&binding_id),
+    ))
 }
 
 fn renamed_source(source: &str, suffix: &str) -> Result<String> {
@@ -839,7 +803,7 @@ fn shader_material(in: ShaderMaterialInput) -> vec4f {
     }
 
     #[test]
-    fn values_matrices_arrays_and_sampled_resources_produce_valid_complete_wgsl() {
+    fn values_matrices_arrays_and_pass_resources_produce_valid_complete_wgsl() {
         let override_path = std::env::temp_dir().join(format!(
             "node-forge-shader-material-{}-{}.wgsl",
             std::process::id(),
@@ -881,9 +845,9 @@ fn shader_material(
             outputs: Vec::new(),
             wgsl_override: Some(override_path.to_string_lossy().to_string()),
         };
-        let image = Node {
-            id: "image_1".to_string(),
-            node_type: "ImageTexture".to_string(),
+        let source_pass = Node {
+            id: "source_pass".to_string(),
+            node_type: "RenderPass".to_string(),
             params: HashMap::new(),
             inputs: Vec::new(),
             input_bindings: Vec::new(),
@@ -906,13 +870,13 @@ fn shader_material(
                 created: None,
                 modified: None,
             },
-            nodes: vec![shader.clone(), image.clone(), pass.clone()],
+            nodes: vec![shader.clone(), source_pass.clone(), pass.clone()],
             connections: vec![
                 Connection {
                     id: "resource".to_string(),
                     from: Endpoint {
-                        node_id: image.id.clone(),
-                        port_id: "texture".to_string(),
+                        node_id: source_pass.id.clone(),
+                        port_id: "pass".to_string(),
                     },
                     to: Endpoint {
                         node_id: shader.id.clone(),
@@ -958,7 +922,9 @@ fn shader_material(
         .unwrap();
 
         crate::renderer::validation::validate_wgsl(&bundle.module).unwrap();
-        assert_eq!(bundle.image_textures, vec![image.id]);
+        assert!(bundle.image_textures.is_empty());
+        assert_eq!(bundle.pass_textures.len(), 1);
+        assert_eq!(bundle.pass_textures[0].source.node_id, source_pass.id);
         assert_eq!(
             bundle
                 .shader_parameter_schema

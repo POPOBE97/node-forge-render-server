@@ -17,6 +17,7 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
+        pass_source::resolve_pass_source_ref,
         types::{MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_f32},
         wgsl::{build_fullscreen_textured_bundle, build_upsample_bilinear_bundle},
@@ -27,6 +28,7 @@ use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
 use super::args::{BuilderState, SceneContext};
+use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
 
 /// Assemble an `"Upsample"` layer.
 pub(crate) fn assemble_upsample(
@@ -54,15 +56,16 @@ pub(crate) fn assemble_upsample(
 
     let src_conn = incoming_connection(scene, layer_id, "source")
         .ok_or_else(|| anyhow!("Upsample.source missing for {layer_id}"))?;
-    let src_pass_id = src_conn.from.node_id.clone();
+    let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
+    let src_pass_id = src_texture_ref.source.node_id.clone();
     let src_tex = bs
         .pass_output_registry
-        .get_texture_for_port(&src_pass_id, &src_conn.from.port_id)
+        .get_texture_for_port(&src_pass_id, &src_texture_ref.source.port_id)
         .cloned()
         .ok_or_else(|| {
             anyhow!(
                 "Upsample.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
-                src_conn.from.port_id
+                src_texture_ref.source.port_id
             )
         })?;
 
@@ -258,13 +261,18 @@ pub(crate) fn assemble_upsample(
         "linear" => false,
         other => bail!("Upsample: invalid filter: {other}"),
     };
-    let sampler_kind = match (nearest, address) {
+    let node_sampler_kind = match (nearest, address) {
         (true, "mirror") => SamplerKind::NearestMirror,
         (true, "repeat") => SamplerKind::NearestRepeat,
         (true, _) => SamplerKind::NearestClamp,
         (false, "mirror") => SamplerKind::LinearMirror,
         (false, "repeat") => SamplerKind::LinearRepeat,
         (false, _) => SamplerKind::LinearClamp,
+    };
+    let sampler_kind = if src_texture_ref.sampler_node_id.is_some() {
+        sampler_kind_for_pass_texture(scene, &src_texture_ref)
+    } else {
+        node_sampler_kind
     };
 
     let bundle = build_upsample_bilinear_bundle();

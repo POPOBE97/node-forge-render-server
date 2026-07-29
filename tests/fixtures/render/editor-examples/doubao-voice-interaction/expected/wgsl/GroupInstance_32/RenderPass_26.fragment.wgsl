@@ -53,8 +53,6 @@ struct GraphInputs {
     float_input_49: vec4f,
     // Node: FloatInput_50
     float_input_50: vec4f,
-    // Node: FloatInput_GlowMaskOpacity
-    float_input_glow_mask_opacity: vec4f,
     // Node: FloatInput_IntelligentLightParticleGain
     float_input_intelligent_light_particle_gain: vec4f,
     // Node: FloatInput_IntelligentLightParticleOpacity
@@ -65,8 +63,6 @@ struct GraphInputs {
     float_input_light_clip_bloom_progress: vec4f,
     // Node: FloatInput_TotalEnergy
     float_input_total_energy: vec4f,
-    // Node: GroupInstance_32/Vector2Input_39
-    node_GroupInstance_32_Vector2Input_39_f8d74346: vec4f,
     // Node: Vector2Input_35
     vector2_input_35: vec4f,
     // Node: Vector2Input_36
@@ -200,9 +196,10 @@ fn supercircle_sdf_GroupInstance_32_ShaderMaterial_32(
     let scaled_radius = 1.5286649465560913 * abs_radius;
     let blended_radius = mix(scaled_radius, radius, max(axis_mix.x, axis_mix.y));
     let offset = point - center;
-    let shifted_pos = vec2f(scaled_radius) + offset;
-    let normalized_pos = max(vec2f(0.0), shifted_pos / scaled_radius);
-    let abs_norm_pos = abs(normalized_pos);
+    let abs_norm_pos = max(
+        vec2f(0.0),
+        (vec2f(scaled_radius) + offset) / scaled_radius,
+    );
     let max_norm = max(abs_norm_pos.x, abs_norm_pos.y);
     var axis_ratio = 0.0;
     if (max_norm > 0.0001) {
@@ -547,7 +544,6 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     voice_opacity: f32,
     core_glow_opacity: f32,
     glow_mask_morph: f32,
-    glow_mask_core_opacity: f32,
     light_clip_bloom_progress: f32,
     voice_dot_opacity: f32,
     voice_dot_progress: f32,
@@ -561,7 +557,6 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     particle_gain: f32,
     particle_opacity: f32,
 ) -> vec4f {
-    let _unused_glow_mask_core_opacity = glow_mask_core_opacity;
     let canvas_size_px = max(in.geometry_size, vec2f(1.0));
     let size_px = clamp(frame_size_px, vec2f(0.0001), canvas_size_px);
     let canvas_center_px = canvas_size_px * 0.5;
@@ -582,21 +577,21 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
 
     // IntelligentLight is already linear HDR and premultiplied in Node Forge.
     let intelligent_light = textureSample(intelli_tex, intelli_sampler, in.uv);
-    var glow = exp(-pow(sdf / mix(-60.0, -2400.0, bloom_progress), 2.0))
-        * mix(1.4, 1.4, total_energy * voice_opacity);
-    glow += exp(-pow(sdf / mix(-20.0, -2400.0, bloom_progress), 2.0))
+    var glow = exp(-pow(sdf / mix(60.0, 2400.0, bloom_progress), 2.0))
+        * 1.4;
+    glow += exp(-pow(sdf / mix(20.0, 2400.0, bloom_progress), 2.0))
         * mix(1.0, 1.6, total_energy * voice_opacity);
-    glow += exp(-pow(sdf / mix(-5.0, -2400.0, bloom_progress), 2.0))
+    glow += exp(-pow(sdf / mix(5.0, 2400.0, bloom_progress), 2.0))
         * mix(0.0, 3.0, core_glow_opacity);
 
     let sound_bar_distance = length(
         vec2f(abs(point.x), point.y) - vec2f(size_px.x * 0.5 + 120.0, 0.0),
     );
     var sound_bar = exp(
-        -pow(max(abs(sound_bar_distance) - 80.0, 0.0) / -200.0, 2.0),
+        -pow(max(sound_bar_distance - 80.0, 0.0) / 200.0, 2.0),
     );
     sound_bar += 1.2 * exp(
-        -pow(max(abs(sound_bar_distance) - 80.0, 0.0) / -70.0, 2.0),
+        -pow(max(sound_bar_distance - 80.0, 0.0) / 70.0, 2.0),
     );
     glow = mix(
         sound_bar + glow * 0.35,
@@ -610,6 +605,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
         smoothstep(0.0, 0.05, bloom_progress),
     );
     let light_gain = max(light_envelope * glow, 0.0);
+
     var color = vec4f(
         intelligent_light.rgb * light_gain,
         clamp(intelligent_light.a * light_gain, 0.0, 1.0),
@@ -664,7 +660,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (graph_inputs.float_input_45).x,
         (graph_inputs.float_input_46).x,
         (graph_inputs.float_input_47).x,
-        (graph_inputs.float_input_glow_mask_opacity).x,
         (graph_inputs.float_input_light_clip_bloom_progress).x,
         (graph_inputs.float_input_48).x,
         (graph_inputs.float_input_49).x,

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 
 use crate::dsl::{Node, SceneDSL, find_node, incoming_connection};
+use crate::renderer::pass_source::resolve_pass_source_ref;
 
 /// Determine the draw order for composite layers.
 pub fn composite_layers_in_draw_order(
@@ -19,7 +20,11 @@ pub fn composite_layers_in_draw_order(
 
     // Static layer
     if let Some(conn) = incoming_connection(scene, composite_node_id, "pass") {
-        layers.push(conn.from.node_id.clone());
+        layers.push(
+            resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?
+                .source
+                .node_id,
+        );
     }
 
     // Dynamic layers (sorted by parameter index or port name)
@@ -33,7 +38,12 @@ pub fn composite_layers_in_draw_order(
     let mut dynamic: Vec<(String, String)> = Vec::new();
     for conn in &scene.connections {
         if conn.to.node_id == composite_node_id && conn.to.port_id.starts_with("dynamic_") {
-            dynamic.push((conn.to.port_id.clone(), conn.from.node_id.clone()));
+            dynamic.push((
+                conn.to.port_id.clone(),
+                resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?
+                    .source
+                    .node_id,
+            ));
         }
     }
     dynamic.sort_by(|a, b| {
