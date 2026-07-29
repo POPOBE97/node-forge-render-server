@@ -1055,6 +1055,11 @@ mod tests {
             "assets": {},
             "stateMachine": {
                 "id": "machine",
+                "stateParams": [],
+                "stateParamGraph": {
+                    "rootNodePosition": { "x": -320.0, "y": -120.0 },
+                    "declarationPositions": {}
+                },
                 "states": [
                     { "id": "entry", "name": "Entry", "type": "entryState" },
                     { "id": "any", "name": "Any", "type": "anyState" },

@@ -80,7 +80,7 @@ fn state_machine(id: &str) -> StateMachine {
         id: id.to_string(),
         name: String::new(),
         state_params: Vec::new(),
-        state_param_layout: Default::default(),
+        state_param_graph: Default::default(),
         states: Vec::new(),
         transitions: Vec::new(),
         derivation_bindings: Vec::new(),

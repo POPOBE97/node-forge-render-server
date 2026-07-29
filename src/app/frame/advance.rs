@@ -225,7 +225,7 @@ mod tests {
             id: "sm".into(),
             name: "State Machine".into(),
             state_params: Vec::new(),
-            state_param_layout: Default::default(),
+            state_param_graph: Default::default(),
             states: vec![
                 state("entry", AnimationStateType::EntryState),
                 state("any", AnimationStateType::AnyState),
@@ -256,7 +256,7 @@ mod tests {
             id: "sm".into(),
             name: "State Machine".into(),
             state_params: Vec::new(),
-            state_param_layout: Default::default(),
+            state_param_graph: Default::default(),
             states: vec![
                 state("entry", AnimationStateType::EntryState),
                 state("any", AnimationStateType::AnyState),

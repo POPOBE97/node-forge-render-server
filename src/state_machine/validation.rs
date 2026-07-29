@@ -75,10 +75,27 @@ pub fn validate_scene_declarations(scene: &SceneDSL, sm: &StateMachine) -> Resul
 
 fn validate_state_params(sm: &StateMachine) -> Result<()> {
     let mut ids = HashSet::new();
+    let mut names = HashSet::new();
     for declaration in &sm.state_params {
         if !ids.insert(declaration.id.as_str()) {
             bail!(
                 "state_machine validation: duplicate State Param id '{}'",
+                declaration.id
+            );
+        }
+        if !names.insert(declaration.name.as_str()) {
+            bail!(
+                "state_machine validation: duplicate State Param name '{}'",
+                declaration.name
+            );
+        }
+        if !sm
+            .state_param_graph
+            .declaration_positions
+            .contains_key(&declaration.id)
+        {
+            bail!(
+                "state_machine validation: State Param '{}' is missing its Declaration Graph position",
                 declaration.id
             );
         }
@@ -87,6 +104,14 @@ fn validate_state_params(sm: &StateMachine) -> Result<()> {
             bail!(
                 "state_machine validation: State Param '{}' must declare arrayLength exactly when packed",
                 declaration.id
+            );
+        }
+    }
+    for declaration_id in sm.state_param_graph.declaration_positions.keys() {
+        if !ids.contains(declaration_id.as_str()) {
+            bail!(
+                "state_machine validation: Declaration Graph position references missing State Param '{}'",
+                declaration_id
             );
         }
     }
@@ -1168,7 +1193,7 @@ mod tests {
             id: "sm1".into(),
             name: "Test".into(),
             state_params: vec![],
-            state_param_layout: Default::default(),
+            state_param_graph: Default::default(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),
@@ -1205,6 +1230,61 @@ mod tests {
             initial_state_id: Some("entry".into()),
             viewport: None,
         }
+    }
+
+    fn float_state_param(id: &str, name: &str) -> StateParamDeclaration {
+        StateParamDeclaration {
+            id: id.into(),
+            name: name.into(),
+            param_type: "float".into(),
+            default_value: serde_json::json!(0.0),
+            array_length: None,
+        }
+    }
+
+    #[test]
+    fn state_param_graph_requires_a_position_for_every_declaration() {
+        let mut sm = minimal_sm();
+        sm.state_params
+            .push(float_state_param("pointer_x", "Pointer X"));
+
+        let error = validate_state_params(&sm)
+            .expect_err("a declaration without graph position must fail")
+            .to_string();
+        assert!(error.contains("missing its Declaration Graph position"));
+    }
+
+    #[test]
+    fn state_param_graph_rejects_unknown_declaration_positions() {
+        let mut sm = minimal_sm();
+        sm.state_param_graph
+            .declaration_positions
+            .insert("removed".into(), Position::default());
+
+        let error = validate_state_params(&sm)
+            .expect_err("an unknown declaration graph position must fail")
+            .to_string();
+        assert!(error.contains("references missing State Param 'removed'"));
+    }
+
+    #[test]
+    fn state_param_graph_rejects_duplicate_paramkey_names() {
+        let mut sm = minimal_sm();
+        sm.state_params.extend([
+            float_state_param("pointer_x", "Pointer"),
+            float_state_param("pointer_y", "Pointer"),
+        ]);
+        sm.state_param_graph
+            .declaration_positions
+            .insert("pointer_x".into(), Position::default());
+        sm.state_param_graph
+            .declaration_positions
+            .insert("pointer_y".into(), Position { x: 280.0, y: 0.0 });
+
+        let error = validate_state_params(&sm)
+            .expect_err("duplicate ParamKey names must fail")
+            .to_string();
+        assert!(error.contains("duplicate State Param name 'Pointer'"));
     }
 
     fn instant_motion_graph() -> TransitionMotionGraph {
@@ -1423,6 +1503,12 @@ mod tests {
                 array_length: None,
             },
         ]);
+        sm.state_param_graph
+            .declaration_positions
+            .insert("Node:x".into(), Position::default());
+        sm.state_param_graph
+            .declaration_positions
+            .insert("Node:y".into(), Position { x: 280.0, y: 0.0 });
         let graph = &mut sm.motion_graphs[0];
         graph.input_bindings[0].source = StateValueSource::StateParam {
             state_param_id: "Node:x".into(),
@@ -1743,6 +1829,9 @@ mod tests {
             default_value: serde_json::json!(0.0),
             array_length: None,
         });
+        sm.state_param_graph
+            .declaration_positions
+            .insert("FloatInput:value".into(), Position::default());
         let mut state = regular_state("state");
         state.mutation_graph = Some(mutation);
         sm.states.push(state);
@@ -1841,6 +1930,9 @@ mod tests {
             default_value: serde_json::json!(0.0),
             array_length: None,
         });
+        sm.state_param_graph
+            .declaration_positions
+            .insert("FloatInput:value".into(), Position::default());
         let mut state = regular_state("state");
         state.mutation_graph = Some(mutation);
         sm.states.push(state);

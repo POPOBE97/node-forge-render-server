@@ -1211,7 +1211,7 @@ mod tests {
             id: "sm1".into(),
             name: "Test".into(),
             state_params: vec![],
-            state_param_layout: Default::default(),
+            state_param_graph: Default::default(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),

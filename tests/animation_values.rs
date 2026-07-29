@@ -6,8 +6,8 @@ use node_forge_render_server::state_machine::types::{
     AnimationState, AnimationStateType, AnimationTransition, DerivationDefinition,
     DerivationPassthroughBinding, DerivationStateBinding, EventModifiers, GpuUniformRef,
     GraphEndpoint, GraphPort, Position, StateMachine, StateMutationGraph, StateMutationGraphLayout,
-    StateParamDeclaration, StateValueSource, TransitionConditionBinding, TransitionMotionGraph,
-    TransitionMotionNode,
+    StateParamDeclaration, StateParamGraph, StateValueSource, TransitionConditionBinding,
+    TransitionMotionGraph, TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
@@ -468,7 +468,12 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                 default_value: serde_json::json!(0.0),
                 array_length: None,
             }],
-            state_param_layout: Default::default(),
+            state_param_graph: StateParamGraph {
+                declaration_positions: [("target_value".into(), Position::default())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
             states: vec![
                 AnimationState {
                     id: "entry".into(),

@@ -21,8 +21,8 @@ pub struct StateMachine {
     pub name: String,
     #[serde(default, rename = "stateParams")]
     pub state_params: Vec<StateParamDeclaration>,
-    #[serde(default, rename = "stateParamLayout")]
-    pub state_param_layout: StateParamLayout,
+    #[serde(rename = "stateParamGraph")]
+    pub state_param_graph: StateParamGraph,
     #[serde(default)]
     pub states: Vec<AnimationState>,
     #[serde(default)]
@@ -55,20 +55,24 @@ pub struct StateParamDeclaration {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct StateParamLayout {
-    pub position: Position,
+pub struct StateParamGraph {
+    #[serde(rename = "rootNodePosition")]
+    pub root_node_position: Position,
+    #[serde(rename = "declarationPositions")]
+    pub declaration_positions: HashMap<String, Position>,
     #[serde(default)]
-    pub collapsed: bool,
+    pub viewport: Option<Viewport>,
 }
 
-impl Default for StateParamLayout {
+impl Default for StateParamGraph {
     fn default() -> Self {
         Self {
-            position: Position {
+            root_node_position: Position {
                 x: -320.0,
                 y: -120.0,
             },
-            collapsed: false,
+            declaration_positions: HashMap::new(),
+            viewport: None,
         }
     }
 }

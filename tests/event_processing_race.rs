@@ -74,7 +74,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
         id: "sm_test".into(),
         name: "Test SM".into(),
         state_params: vec![],
-        state_param_layout: Default::default(),
+        state_param_graph: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),
@@ -148,7 +148,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
         id: "sm_press_release".into(),
         name: "Press Release SM".into(),
         state_params: vec![],
-        state_param_layout: Default::default(),
+        state_param_graph: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),
