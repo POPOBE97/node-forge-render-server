@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::ResourceName;
 
 use crate::{
@@ -197,10 +197,176 @@ fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
         .or_else(|| v.as_u64().map(|x| x as f32))
 }
 
-/// Read CPU values from a connected Vector2Input node.
-/// Returns the (x, y) values if the port is connected to a Vector2Input node.
-/// Returns Ok(None) for dangling connections (target node not found) or non-Vector2Input sources.
-fn get_vec2_from_connected_vector2input(
+#[derive(Clone, Copy, Debug)]
+enum CpuNumericValue {
+    Scalar(f32),
+    Vec2([f32; 2]),
+}
+
+impl CpuNumericValue {
+    fn as_vec2(self) -> [f32; 2] {
+        match self {
+            Self::Scalar(value) => [value, value],
+            Self::Vec2(value) => value,
+        }
+    }
+
+    fn combine(self, rhs: Self, op: &str) -> Option<Self> {
+        let apply = |lhs: f32, rhs: f32| match op {
+            "MathAdd" => lhs + rhs,
+            "MathSubtract" => lhs - rhs,
+            "MathMultiply" => lhs * rhs,
+            "MathDivide" => lhs / rhs,
+            _ => f32::NAN,
+        };
+
+        let value = match (self, rhs) {
+            (Self::Scalar(lhs), Self::Scalar(rhs)) => Self::Scalar(apply(lhs, rhs)),
+            (lhs, rhs) => {
+                let lhs = lhs.as_vec2();
+                let rhs = rhs.as_vec2();
+                Self::Vec2([apply(lhs[0], rhs[0]), apply(lhs[1], rhs[1])])
+            }
+        };
+
+        let finite = match value {
+            Self::Scalar(value) => value.is_finite(),
+            Self::Vec2(value) => value.into_iter().all(f32::is_finite),
+        };
+        finite.then_some(value)
+    }
+}
+
+fn resolve_cpu_numeric_input(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node: &crate::dsl::Node,
+    port_id: &str,
+    cache: &mut HashMap<(String, String), CpuNumericValue>,
+    visiting: &mut HashSet<(String, String)>,
+) -> Result<Option<CpuNumericValue>> {
+    if let Some(conn) = incoming_connection(scene, &node.id, port_id) {
+        return resolve_cpu_numeric_output(
+            scene,
+            nodes_by_id,
+            &conn.from.node_id,
+            &conn.from.port_id,
+            cache,
+            visiting,
+        );
+    }
+
+    let Some(value) = node.params.get(port_id) else {
+        return Ok(None);
+    };
+    if let Some(value) = parse_json_number_f32(value) {
+        return Ok(Some(CpuNumericValue::Scalar(value)));
+    }
+    if let Some(value) = parse_inline_vec2(node, port_id)? {
+        return Ok(Some(CpuNumericValue::Vec2(value)));
+    }
+    Ok(None)
+}
+
+fn resolve_cpu_numeric_output(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    node_id: &str,
+    output_port_id: &str,
+    cache: &mut HashMap<(String, String), CpuNumericValue>,
+    visiting: &mut HashSet<(String, String)>,
+) -> Result<Option<CpuNumericValue>> {
+    let key = (node_id.to_string(), output_port_id.to_string());
+    if let Some(value) = cache.get(&key) {
+        return Ok(Some(*value));
+    }
+    if !visiting.insert(key.clone()) {
+        bail!("cycle detected while resolving CPU geometry value at {node_id}.{output_port_id}");
+    }
+
+    let computed = (|| -> Result<Option<CpuNumericValue>> {
+        let Ok(node) = find_node(nodes_by_id, node_id) else {
+            return Ok(None);
+        };
+        match node.node_type.as_str() {
+            "Vector2Input" if output_port_id == "vector" => {
+                let x = cpu_num_f32(scene, nodes_by_id, node, "x", 0.0)?;
+                let y = cpu_num_f32(scene, nodes_by_id, node, "y", 0.0)?;
+                Ok(Some(CpuNumericValue::Vec2([x, y])))
+            }
+            "FloatInput" | "IntInput" if output_port_id == "value" => {
+                let value = cpu_num_f32(scene, nodes_by_id, node, "value", 0.0)?;
+                Ok(Some(CpuNumericValue::Scalar(value)))
+            }
+            "BoolInput" if output_port_id == "value" => Ok(Some(CpuNumericValue::Scalar(
+                node.params
+                    .get("value")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false) as u8 as f32,
+            ))),
+            "MathAdd" | "MathSubtract" | "MathMultiply" | "MathDivide"
+                if output_port_id == "result" =>
+            {
+                let input_port_ids: Vec<&str> = if node.inputs.is_empty() {
+                    vec!["a", "b"]
+                } else {
+                    node.inputs.iter().map(|port| port.id.as_str()).collect()
+                };
+                let mut values = Vec::new();
+                for port_id in input_port_ids {
+                    if incoming_connection(scene, node_id, port_id).is_none()
+                        && !node.params.contains_key(port_id)
+                    {
+                        continue;
+                    }
+                    let Some(value) = resolve_cpu_numeric_input(
+                        scene,
+                        nodes_by_id,
+                        node,
+                        port_id,
+                        cache,
+                        visiting,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    values.push(value);
+                }
+                if values.len() < 2 {
+                    return Ok(None);
+                }
+
+                let mut values = values.into_iter();
+                let first = values
+                    .next()
+                    .expect("checked at least two CPU geometry inputs");
+                let mut result = first;
+                for value in values {
+                    let Some(combined) = result.combine(value, node.node_type.as_str()) else {
+                        return Ok(None);
+                    };
+                    result = combined;
+                }
+                Ok(Some(result))
+            }
+            _ => Ok(None),
+        }
+    })();
+
+    visiting.remove(&key);
+    let computed = computed?;
+    if let Some(value) = computed {
+        cache.insert(key, value);
+    }
+    Ok(computed)
+}
+
+/// Resolve a connected, statically evaluable numeric graph into a CPU vec2.
+///
+/// Runtime-only expressions intentionally return `None`, preserving the fullscreen fallback used
+/// for texture allocation. Constant vector/scalar math must agree with the vertex-stage expression
+/// so processing passes do not allocate a full-frame surface for local geometry.
+fn get_vec2_from_connected_cpu_expression(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     node: &crate::dsl::Node,
@@ -210,20 +376,17 @@ fn get_vec2_from_connected_vector2input(
         return Ok(None);
     };
 
-    // Handle dangling connection: target node not found.
-    let Ok(from_node) = find_node(nodes_by_id, &conn.from.node_id) else {
-        return Ok(None);
-    };
-
-    if from_node.node_type != "Vector2Input" {
-        // Not a Vector2Input; caller should fallback to other resolution methods.
-        return Ok(None);
-    }
-
-    // Read the x/y values from the Vector2Input node's params.
-    let x = cpu_num_f32(scene, nodes_by_id, from_node, "x", 0.0)?;
-    let y = cpu_num_f32(scene, nodes_by_id, from_node, "y", 0.0)?;
-    Ok(Some([x, y]))
+    let mut cache = HashMap::new();
+    let mut visiting = HashSet::new();
+    Ok(resolve_cpu_numeric_output(
+        scene,
+        nodes_by_id,
+        &conn.from.node_id,
+        &conn.from.port_id,
+        &mut cache,
+        &mut visiting,
+    )?
+    .map(CpuNumericValue::as_vec2))
 }
 
 fn parse_inline_vec2(node: &crate::dsl::Node, key: &str) -> Result<Option<[f32; 2]>> {
@@ -255,7 +418,7 @@ fn resolve_rect2d_geometry_metrics(
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
     node: &crate::dsl::Node,
     render_target_size: [f32; 2],
-    _material_ctx: Option<&MaterialCompileContext>,
+    material_ctx: Option<&MaterialCompileContext>,
 ) -> Result<(
     f32,
     f32,
@@ -271,17 +434,16 @@ fn resolve_rect2d_geometry_metrics(
     let default_h = render_target_size[1].max(1.0);
     let default_position = [default_w * 0.5, default_h * 0.5];
 
-    let mut dyn_inputs: Option<Rect2DDynamicInputs> = None;
-    let vertex_inline_stmts: Vec<String> = Vec::new();
-    let vertex_wgsl_decls = String::new();
-    let mut vertex_graph_input_kinds: std::collections::BTreeMap<String, GraphFieldKind> =
-        std::collections::BTreeMap::new();
-    let vertex_uses_instance_index = false;
+    let mut vertex_ctx = MaterialCompileContext {
+        baked_data_parse: material_ctx.and_then(|ctx| ctx.baked_data_parse.clone()),
+        baked_data_parse_meta: material_ctx.and_then(|ctx| ctx.baked_data_parse_meta.clone()),
+        ..Default::default()
+    };
+    let mut vertex_cache = HashMap::new();
 
-    // If Rect2DGeometry.position/size are connected to Vector2Input nodes, route them via
-    // the GraphInputs buffer mechanism (graph_inputs.<field>.xy).
-    // If the connection is dangling (target node not found), fall back to fullscreen geometry.
-    // If connected to wrong node type, bail with an error.
+    // Compile the complete value graph feeding Rect2DGeometry.position/size in the vertex
+    // stage. This keeps derived values such as `frame_size / 2` live without turning them
+    // into CPU-side renderer special cases.
     let mut maybe_dyn_inputs = Rect2DDynamicInputs {
         position_expr: None,
         size_expr: None,
@@ -296,54 +458,43 @@ fn resolve_rect2d_geometry_metrics(
             continue;
         };
 
-        // Check if the target node exists; if not, treat as dangling and use fullscreen fallback.
-        let Ok(from_node) = find_node(nodes_by_id, &conn.from.node_id) else {
-            // Dangling connection: target node not found. Fall back to fullscreen geometry.
-            continue;
-        };
-
-        if from_node.node_type != "Vector2Input" {
-            bail!(
-                "{}.{} only supports Vector2Input connection; got {} ({})",
-                node.id,
-                port_id,
-                from_node.node_type,
-                conn.from.node_id
-            );
-        }
-        if conn.from.port_id != "vector" {
-            bail!(
-                "{}.{} must be connected from Vector2Input.vector; got {}.{}",
-                node.id,
-                port_id,
-                conn.from.node_id,
-                conn.from.port_id
-            );
-        }
-
-        // Valid Vector2Input connection.
+        let raw_expr = compile_vertex_expr(
+            scene,
+            nodes_by_id,
+            &conn.from.node_id,
+            Some(&conn.from.port_id),
+            &mut vertex_ctx,
+            &mut vertex_cache,
+        )
+        .with_context(|| {
+            format!(
+                "failed to compile {}.{} from {}.{}",
+                node.id, port_id, conn.from.node_id, conn.from.port_id
+            )
+        })?;
+        let expr = coerce_to_type(raw_expr, ValueType::Vec2).with_context(|| {
+            format!(
+                "{}.{} requires a vector2 expression from {}.{}",
+                node.id, port_id, conn.from.node_id, conn.from.port_id
+            )
+        })?;
         has_any_dyn = true;
-        vertex_graph_input_kinds
-            .entry(conn.from.node_id.clone())
-            .or_insert(GraphFieldKind::Vec2);
-        let field = graph_field_name(&conn.from.node_id);
-        *out_expr = Some(TypedExpr::new(
-            format!("(graph_inputs.{field}).xy"),
-            ValueType::Vec2,
-        ));
+        *out_expr = Some(expr);
     }
 
-    if has_any_dyn {
-        dyn_inputs = Some(maybe_dyn_inputs);
-    }
+    let dyn_inputs = has_any_dyn.then_some(maybe_dyn_inputs);
+    let vertex_wgsl_decls = vertex_ctx.wgsl_decls();
+    let vertex_inline_stmts = vertex_ctx.inline_stmts;
+    let vertex_graph_input_kinds = vertex_ctx.graph_input_kinds;
+    let vertex_uses_instance_index = vertex_ctx.uses_instance_index;
 
     // CPU metrics for texture allocation:
-    // - Connected Vector2Input wins.
+    // - Connected static numeric expressions win.
     // - If unconnected, inline params win.
     // - Otherwise, fall back to coord-domain fullscreen defaults.
-    let size_connected = get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "size")?;
+    let size_connected = get_vec2_from_connected_cpu_expression(scene, nodes_by_id, node, "size")?;
     let position_connected =
-        get_vec2_from_connected_vector2input(scene, nodes_by_id, node, "position")?;
+        get_vec2_from_connected_cpu_expression(scene, nodes_by_id, node, "position")?;
     let has_size_conn = incoming_connection(scene, &node.id, "size").is_some();
     let has_position_conn = incoming_connection(scene, &node.id, "position").is_some();
 
@@ -1681,6 +1832,122 @@ mod tests {
         assert!(graph_inputs.contains_key("size_in"));
         assert!(graph_inputs.contains_key("pos_in"));
         assert!(normals.is_none());
+    }
+
+    #[test]
+    fn rect2d_position_accepts_compiled_vector2_math_expression() {
+        let nodes = vec![
+            node(
+                "frame_size",
+                "Vector2Input",
+                json!({"x": 108.0, "y": 240.0}),
+            ),
+            node("two", "FloatInput", json!({"value": 2.0})),
+            node("center", "MathDivide", json!({})),
+            node("rect", "Rect2DGeometry", json!({})),
+        ];
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "frame_size", "vector", "center", "a"),
+                conn("c2", "two", "value", "center", "b"),
+                conn("c3", "center", "result", "rect", "position"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (
+            _buf,
+            _w,
+            _h,
+            x,
+            y,
+            _inst,
+            _m,
+            _mats,
+            _translate,
+            inline,
+            _decls,
+            graph_inputs,
+            _uses_ii,
+            rect_dyn,
+            _normals,
+        ) = resolve_geometry_for_render_pass(
+            &scene,
+            &nodes_by_id,
+            &ids,
+            "rect",
+            [400.0, 400.0],
+            None,
+            None,
+        )
+        .unwrap();
+
+        approx_eq(x, 54.0);
+        approx_eq(y, 120.0);
+        let position = rect_dyn
+            .and_then(|inputs| inputs.position_expr)
+            .expect("expected a compiled position expression");
+        let emitted = format!("{}\n{}", inline.join("\n"), position.expr);
+        let frame_size_field = crate::renderer::graph_uniforms::graph_field_name("frame_size");
+        let two_field = crate::renderer::graph_uniforms::graph_field_name("two");
+        assert_eq!(position.ty, crate::renderer::types::ValueType::Vec2);
+        assert!(emitted.contains(&format!("graph_inputs.{frame_size_field}")));
+        assert!(emitted.contains(&format!("graph_inputs.{two_field}")));
+        assert!(emitted.contains('/'));
+        assert_eq!(
+            graph_inputs.get("frame_size"),
+            Some(&crate::renderer::types::GraphFieldKind::Vec2)
+        );
+        assert_eq!(
+            graph_inputs.get("two"),
+            Some(&crate::renderer::types::GraphFieldKind::F32)
+        );
+    }
+
+    #[test]
+    fn rect2d_size_cpu_metrics_match_compiled_vector2_math_expression() {
+        let nodes = vec![
+            node(
+                "content_size",
+                "Vector2Input",
+                json!({"x": 1008.0, "y": 168.0}),
+            ),
+            node("padding", "Vector2Input", json!({"x": 80.0, "y": 80.0})),
+            node("position", "Vector2Input", json!({"x": 540.0, "y": 186.0})),
+            node("padded_size", "MathAdd", json!({})),
+            node("rect", "Rect2DGeometry", json!({})),
+        ];
+        let scene = scene(
+            nodes.clone(),
+            vec![
+                conn("c1", "content_size", "vector", "padded_size", "a"),
+                conn("c2", "padding", "vector", "padded_size", "b"),
+                conn("c3", "padded_size", "result", "rect", "size"),
+                conn("c4", "position", "vector", "rect", "position"),
+            ],
+        );
+        let nodes_by_id: HashMap<String, Node> =
+            nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+        let ids = ids_for(&nodes);
+
+        let (_buf, width, height, x, y, ..) = resolve_geometry_for_render_pass(
+            &scene,
+            &nodes_by_id,
+            &ids,
+            "rect",
+            [1080.0, 2400.0],
+            None,
+            None,
+        )
+        .unwrap();
+
+        approx_eq(width, 1088.0);
+        approx_eq(height, 248.0);
+        approx_eq(x, 540.0);
+        approx_eq(y, 186.0);
     }
 
     #[test]

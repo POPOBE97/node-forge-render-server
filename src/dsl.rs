@@ -1189,6 +1189,12 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn default_scene_asset_matches_current_schema() {
+        let scene = load_scene_from_default_asset().expect("default scene should load");
+        assert_eq!(scene.version, "4.0");
+    }
+
+    #[test]
     fn node_title_label_round_trips_as_top_level_metadata() {
         let node: Node = serde_json::from_value(json!({
             "id": "RenderPass_1",

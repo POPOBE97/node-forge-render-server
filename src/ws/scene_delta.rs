@@ -301,7 +301,7 @@ pub(crate) fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &Scen
         ) {
             return false;
         }
-        if uniform_delta_change_affects_geometry_allocation(cache, &updated.id) {
+        if uniform_delta_change_requires_render_plan_rebuild(cache, &updated.id) {
             return false;
         }
     }
@@ -309,10 +309,11 @@ pub(crate) fn delta_updates_only_uniform_values(cache: &SceneCache, delta: &Scen
     true
 }
 
-fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
+fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
     matches!(
         (node_type, port_id),
         ("Rect2DGeometry", "size")
+            | ("Rect2DGeometry", "position")
             | ("RenderPass", "camera")
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
@@ -331,7 +332,7 @@ fn is_geometry_allocation_sink(node_type: &str, port_id: &str) -> bool {
     )
 }
 
-fn uniform_delta_change_affects_geometry_allocation(
+fn uniform_delta_change_requires_render_plan_rebuild(
     cache: &SceneCache,
     updated_node_id: &str,
 ) -> bool {
@@ -349,7 +350,7 @@ fn uniform_delta_change_affects_geometry_allocation(
             }
 
             if let Some(dst_node) = cache.nodes_by_id.get(&conn.to.node_id) {
-                if is_geometry_allocation_sink(
+                if is_render_plan_rebuild_sink(
                     dst_node.node_type.as_str(),
                     conn.to.port_id.as_str(),
                 ) {
@@ -759,6 +760,8 @@ mod tests {
             },
             nodes: vec![
                 node("v2", "Vector2Input", json!({"x": 108.0, "y": 240.0})),
+                node("base", "Vector2Input", json!({"x": 1008.0, "y": 168.0})),
+                node("add", "MathAdd", json!({})),
                 node("rect", "Rect2DGeometry", json!({})),
                 node("pass", "RenderPass", json!({})),
                 node("comp", "Composite", json!({})),
@@ -772,12 +775,34 @@ mod tests {
                         port_id: "vector".to_string(),
                     },
                     to: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "a".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "base".to_string(),
+                        port_id: "vector".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "b".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c3".to_string(),
+                    from: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "result".to_string(),
+                    },
+                    to: Endpoint {
                         node_id: "rect".to_string(),
                         port_id: "size".to_string(),
                     },
                 },
                 Connection {
-                    id: "c2".to_string(),
+                    id: "c4".to_string(),
                     from: Endpoint {
                         node_id: "rect".to_string(),
                         port_id: "geometry".to_string(),
@@ -788,7 +813,7 @@ mod tests {
                     },
                 },
                 Connection {
-                    id: "c3".to_string(),
+                    id: "c5".to_string(),
                     from: Endpoint {
                         node_id: "pass".to_string(),
                         port_id: "pass".to_string(),
@@ -799,7 +824,7 @@ mod tests {
                     },
                 },
                 Connection {
-                    id: "c4".to_string(),
+                    id: "c6".to_string(),
                     from: Endpoint {
                         node_id: "rt".to_string(),
                         port_id: "texture".to_string(),
@@ -840,9 +865,92 @@ mod tests {
     }
 
     #[test]
+    fn delta_updates_only_uniform_values_rejects_rect_position_math_change() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("offset", "Vector2Input", json!({"x": 0.0, "y": -100.0})),
+                node("base", "Vector2Input", json!({"x": 540.0, "y": 186.0})),
+                node("add", "MathAdd", json!({})),
+                node("rect", "Rect2DGeometry", json!({})),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c1".to_string(),
+                    from: Endpoint {
+                        node_id: "offset".to_string(),
+                        port_id: "vector".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "a".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c2".to_string(),
+                    from: Endpoint {
+                        node_id: "base".to_string(),
+                        port_id: "vector".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "b".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c3".to_string(),
+                    from: Endpoint {
+                        node_id: "add".to_string(),
+                        port_id: "result".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "position".to_string(),
+                    },
+                },
+            ],
+            outputs: Some(std::collections::HashMap::new()),
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let cache = SceneCache::from_scene_update(&scene);
+        let delta = SceneDelta {
+            version: "1.0".to_string(),
+            nodes: SceneDeltaNodes {
+                added: Vec::new(),
+                updated: vec![node(
+                    "offset",
+                    "Vector2Input",
+                    json!({"x": 0.0, "y": -200.0}),
+                )],
+                removed: Vec::new(),
+            },
+            connections: SceneDeltaConnections {
+                added: Vec::new(),
+                updated: Vec::new(),
+                removed: Vec::new(),
+            },
+            outputs: None,
+            groups: None,
+            state_machine: None,
+            debug_artifacts: None,
+            assets_added: None,
+            assets_removed: None,
+        };
+        assert!(!delta_updates_only_uniform_values(&cache, &delta));
+    }
+
+    #[test]
     fn intelligent_light_dimensions_are_allocation_sensitive() {
-        assert!(is_geometry_allocation_sink("IntelligentLight", "width"));
-        assert!(is_geometry_allocation_sink("IntelligentLight", "height"));
+        assert!(is_render_plan_rebuild_sink("IntelligentLight", "width"));
+        assert!(is_render_plan_rebuild_sink("IntelligentLight", "height"));
     }
 
     #[test]

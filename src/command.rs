@@ -1145,6 +1145,8 @@ pub(crate) fn run() -> Result<()> {
                 passes,
                 pass_debug_sources,
                 last_good_initial,
+                uniform_scene,
+                matrix_source_scene,
                 last_pipeline_signature,
             ) = if let Some(scene) = scene.clone() {
                 match renderer::ShaderSpaceBuilder::new(
@@ -1171,6 +1173,8 @@ pub(crate) fn run() -> Result<()> {
                         result.pass_bindings,
                         result.pass_debug_sources,
                         Some(scene),
+                        result.prepared_scene,
+                        result.matrix_source_scene,
                         Some(result.pipeline_signature),
                     ),
                     Err(e) => {
@@ -1194,6 +1198,8 @@ pub(crate) fn run() -> Result<()> {
                             std::collections::HashMap::new(),
                             None,
                             None,
+                            None,
+                            None,
                         )
                     }
                 }
@@ -1213,6 +1219,8 @@ pub(crate) fn run() -> Result<()> {
                     result.export_encode_pass_name,
                     result.pass_bindings,
                     std::collections::HashMap::new(),
+                    None,
+                    None,
                     None,
                     None,
                 )
@@ -1271,7 +1279,8 @@ pub(crate) fn run() -> Result<()> {
                 capture_state_rx,
                 ws_hub: hub,
                 last_good,
-                uniform_scene: None,
+                uniform_scene,
+                matrix_source_scene,
                 last_pipeline_signature,
                 force_continuous_redraw: cli.continuous_redraw,
                 asset_store,

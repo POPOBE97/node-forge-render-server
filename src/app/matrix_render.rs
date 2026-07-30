@@ -573,10 +573,14 @@ fn build_matrix_cell(
     }
 
     let result = builder.build(&variant_scene)?;
+    let active_variant_scene = result
+        .prepared_scene
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("matrix cell build did not return an active scene"))?;
     result.shader_space.render();
     Ok(BuiltCell {
         coord,
-        variant_scene,
+        variant_scene: active_variant_scene,
         shader_space: result.shader_space,
         pass_bindings: result.pass_bindings,
         pipeline_signature: result.pipeline_signature,
@@ -875,7 +879,7 @@ pub fn refresh_matrix_cells_uniform_only(
 
     let started = Instant::now();
     for cell in &mut state.cells {
-        super::scene_runtime::apply_uniform_node_param_updates(
+        super::scene_runtime::apply_uniform_node_param_updates_if_present(
             &mut cell.variant_scene,
             updated_nodes,
             true,

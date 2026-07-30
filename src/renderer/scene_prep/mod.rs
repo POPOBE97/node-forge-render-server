@@ -7,6 +7,7 @@ mod group_expand;
 mod image_inline;
 mod pass_dedup;
 mod pipeline;
+mod resource_pool;
 mod types;
 
 #[cfg(test)]

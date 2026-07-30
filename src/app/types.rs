@@ -313,6 +313,7 @@ pub struct AppInit {
     pub ws_hub: ws::WsHub,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
+    pub matrix_source_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub follow_scene_resolution_for_window: bool,
     pub force_continuous_redraw: bool,
@@ -344,6 +345,9 @@ pub(super) struct AppRuntime {
     pub capture_state_rx: Option<Receiver<bool>>,
     pub last_good: Arc<Mutex<Option<crate::dsl::SceneDSL>>>,
     pub uniform_scene: Option<crate::dsl::SceneDSL>,
+    /// Fully expanded CPU scene retaining all ResourcePool alternatives.
+    /// Matrix cells clone this scene and project one selection per cell.
+    pub matrix_source_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
     pub pipeline_rebuild_count: u64,
     pub uniform_only_update_count: u64,
@@ -638,6 +642,11 @@ pub(super) fn scene_reference_desired_source(
 impl App {
     pub fn from_init(init: AppInit) -> Self {
         let initial_scene_uses_time = init.uniform_scene.as_ref().is_some_and(scene_uses_time);
+        let initial_resource_pools = init
+            .matrix_source_scene
+            .as_ref()
+            .map(extract_resource_pools)
+            .unwrap_or_default();
         let initial_scene_reference_desired = init
             .uniform_scene
             .as_ref()
@@ -671,6 +680,7 @@ impl App {
                 capture_state_rx: init.capture_state_rx,
                 last_good: init.last_good,
                 uniform_scene: init.uniform_scene,
+                matrix_source_scene: init.matrix_source_scene,
                 last_pipeline_signature: init.last_pipeline_signature,
                 pipeline_rebuild_count: 0,
                 uniform_only_update_count: 0,
@@ -713,7 +723,7 @@ impl App {
                 nforge_path: init.nforge_path,
                 test_mode: TestMode::default(),
                 matrix_config: MatrixConfig::default(),
-                resource_pools: Vec::new(),
+                resource_pools: initial_resource_pools,
                 matrix_state: super::matrix_render::MatrixRenderState::default(),
                 android_reference: crate::android_reference::AndroidReferenceState::default(),
             },

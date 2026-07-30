@@ -46,6 +46,10 @@ pub struct ShaderSpaceBuildOptions {
 
 pub struct ShaderSpaceBuildResult {
     pub shader_space: ShaderSpace,
+    /// Active prepared scene used by the live Single-mode ShaderSpace.
+    pub prepared_scene: Option<SceneDSL>,
+    /// Fully expanded CPU scene retaining every ResourcePool choice for Matrix.
+    pub matrix_source_scene: Option<SceneDSL>,
     pub resolution: [u32; 2],
     pub scene_output_texture: ResourceName,
     /// Texture for on-screen display (registered with egui).
@@ -121,6 +125,8 @@ impl ShaderSpaceBuilder {
 
         Ok(ShaderSpaceBuildResult {
             shader_space: finalized.shader_space,
+            prepared_scene: Some(plan.prepared.scene.clone()),
+            matrix_source_scene: Some(plan.prepared.matrix_source_scene.clone()),
             resolution: plan.resolution,
             scene_output_texture: plan.scene_output_texture,
             present_output_texture: plan.present_output_texture,
@@ -138,6 +144,8 @@ impl ShaderSpaceBuilder {
 
         Ok(ShaderSpaceBuildResult {
             shader_space,
+            prepared_scene: None,
+            matrix_source_scene: None,
             resolution,
             present_output_texture: scene_output_texture.clone(),
             export_output_texture: scene_output_texture.clone(),

@@ -34,11 +34,11 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_37
-    float_input_37: vec4f,
+    node_FloatInput_37_0eaa0821: vec4f,
     // Node: FloatInput_43
-    float_input_43: vec4f,
+    node_FloatInput_43_6111f420: vec4f,
     // Node: FloatInput_InputBarRefractionIndex
-    float_input_input_bar_refraction_index: vec4f,
+    node_FloatInput_InputBarRefractionIndex_ce5b6884: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
@@ -671,7 +671,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Shape SDF ---
      let edge = f32(30.0);
      let edge_pow = f32(2.0);
-     let radius_px = f32((graph_inputs.float_input_37).x);
+     let radius_px = f32((graph_inputs.node_FloatInput_37_0eaa0821).x);
      let safe_edge = max(edge, 1e-6);
      let box_sdf = glass_shape_sdf(pos_from_center, half_size_px, radius_px, edge, edge_pow);
      let normalized_sdf = -box_sdf / safe_edge;
@@ -693,7 +693,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      // --- Refraction ---
      let uv_display_px = (local_px - half_size_px) * f32(1.0) + half_size_px;
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
-     let refractive_index = f32((graph_inputs.float_input_input_bar_refraction_index).x);
+     let refractive_index = f32((graph_inputs.node_FloatInput_InputBarRefractionIndex_ce5b6884).x);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
      let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
@@ -757,7 +757,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      glass_mat = vec4f(mix(glass_mat.rgb, vec4f(1.0, 1.0, 1.0, 1.0).rgb, 0.0), glass_mat.a);
 
      // --- Apply overall alpha ---
-     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * (graph_inputs.float_input_43).x);
+     glass_mat = vec4f(glass_mat.rgb, glass_mat.a * final_alpha * (graph_inputs.node_FloatInput_43_6111f420).x);
 
      // --- Premultiply alpha ---
      glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);

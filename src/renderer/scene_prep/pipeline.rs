@@ -17,6 +17,7 @@ use super::{
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
     pass_dedup::dedup_identical_passes,
+    resource_pool::project_selected_pass_resource_pools,
     types::{PreparedScene, ScenePrepReport},
 };
 
@@ -30,6 +31,7 @@ pub(crate) fn prepare_scene_with_report(
     // Expand group instances before any filtering/validation.
     let mut expanded = input.clone();
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
+    let matrix_source_scene = expanded.clone();
 
     // 1) Locate the RenderTarget-category node. Without it, the graph has no "main" entry.
     let scheme = schema::load_default_scheme()?;
@@ -61,6 +63,7 @@ pub(crate) fn prepare_scene_with_report(
     }
 
     let render_target_id = render_targets[0].id.clone();
+    project_selected_pass_resource_pools(&mut expanded, &render_target_id)?;
 
     // 2) Keep only the upstream subgraph that contributes to the RenderTarget.
     // This avoids validation/compile failures caused by unrelated leftover subgraphs.
@@ -170,6 +173,7 @@ pub(crate) fn prepare_scene_with_report(
     let baked_data_parse = bake_data_parse_nodes(&nodes_by_id, "__global", 1)?;
 
     let prepared = PreparedScene {
+        matrix_source_scene,
         scene,
         nodes_by_id,
         ids,

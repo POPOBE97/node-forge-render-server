@@ -7,6 +7,9 @@ use crate::dsl::{Node, SceneDSL};
 /// Prepared scene with topologically sorted nodes and metadata.
 #[derive(Clone, Debug)]
 pub struct PreparedScene {
+    /// Fully expanded CPU scene retained for Matrix variant construction.
+    /// Pass ResourcePools have not yet been projected in this snapshot.
+    pub matrix_source_scene: SceneDSL,
     pub scene: SceneDSL,
     pub nodes_by_id: HashMap<String, Node>,
     pub ids: HashMap<String, ResourceName>,

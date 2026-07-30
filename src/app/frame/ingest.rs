@@ -171,7 +171,7 @@ pub(super) fn run(
             app.canvas.viewport.pending_view_reset = true;
         }
 
-        if let Some(ref scene) = app.runtime.uniform_scene {
+        if let Some(ref scene) = app.runtime.matrix_source_scene {
             app.shell.resource_pools = crate::app::types::extract_resource_pools(scene);
             app.shell
                 .matrix_config
@@ -182,7 +182,7 @@ pub(super) fn run(
         if app.shell.test_mode == crate::app::types::TestMode::Matrix
             && !app.shell.matrix_config.selected_pool_ids.is_empty()
         {
-            if let Some(ref scene) = app.runtime.uniform_scene {
+            if let Some(ref scene) = app.runtime.matrix_source_scene {
                 let params = crate::app::matrix_render::MatrixBuildParams {
                     scene,
                     config: &app.shell.matrix_config,

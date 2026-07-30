@@ -2,9 +2,8 @@ use crate::{
     animation::AnimationStep,
     app::{
         scene_runtime,
-        types::{App, StateControlSelection},
+        types::{App, StateControlSelection, TestMode, scene_uses_time},
     },
-    state_machine,
     state_machine::types::StateMachine,
 };
 
@@ -65,17 +64,7 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
 
         if step.needs_redraw || resuming_from_pause {
             animation_values_changed = true;
-            if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
-                state_machine::apply_overrides(uniform_scene, &step.active_overrides);
-            }
-            if let Some(ref uniform_scene) = app.runtime.uniform_scene {
-                let _ = scene_runtime::apply_graph_uniform_updates_parts(
-                    &mut app.core.passes,
-                    &mut app.core.shader_space,
-                    uniform_scene,
-                );
-            }
-            app.runtime.scene_redraw_pending = true;
+            scene_runtime::apply_state_machine_overrides(app, &step.active_overrides);
         }
         app.runtime.time_value_secs = step.scene_time_secs as f32;
         interaction_bridge::update_debug_state(app, &step);
@@ -145,7 +134,15 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         animation_active_transition_id.as_deref(),
     );
 
-    let time_driven_scene = app.runtime.scene_uses_time && app.runtime.time_updates_enabled;
+    let active_scene_uses_time = if app.shell.test_mode == TestMode::Matrix {
+        app.runtime
+            .matrix_source_scene
+            .as_ref()
+            .is_some_and(scene_uses_time)
+    } else {
+        app.runtime.scene_uses_time
+    };
+    let time_driven_scene = active_scene_uses_time && app.runtime.time_updates_enabled;
     let animation_session_active = app.runtime.state_control_selection.is_some()
         && app
             .runtime

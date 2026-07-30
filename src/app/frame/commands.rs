@@ -124,7 +124,7 @@ fn start_matrix_rebuild_if_needed(
     render_state: &egui_wgpu::RenderState,
     renderer: &mut egui_wgpu::Renderer,
 ) {
-    let Some(ref scene) = app.runtime.uniform_scene else {
+    let Some(ref scene) = app.runtime.matrix_source_scene else {
         return;
     };
     if app.shell.matrix_config.selected_pool_ids.is_empty() {

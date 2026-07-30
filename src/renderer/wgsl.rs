@@ -867,6 +867,11 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     let mut material_ctx = MaterialCompileContext {
         baked_data_parse,
         baked_data_parse_meta,
+        // Geometry compilation currently returns graph-input kinds without its
+        // field-name map. When vertex expressions are present, compile fragment
+        // inputs with the same stable node-id-based names so both shader stages
+        // address the merged GraphInputs schema consistently.
+        preserve_legacy_graph_input_names: !vertex_graph_input_kinds.is_empty(),
         ..Default::default()
     };
     let fragment_expr: TypedExpr =
@@ -1959,15 +1964,106 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use super::{
         ERROR_SHADER_WGSL, build_bloom_extract_material_bundle, build_horizontal_blur_bundle,
-        build_horizontal_blur_bundle_with_tap_count, build_vertical_blur_bundle,
-        build_vertical_blur_bundle_with_tap_count,
+        build_horizontal_blur_bundle_with_tap_count, build_pass_wgsl_bundle_with_graph_binding,
+        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count,
     };
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
+    use crate::renderer::render_plan::geometry::Rect2DDynamicInputs;
+    use crate::renderer::types::{GraphFieldKind, TypedExpr, ValueType};
     use crate::renderer::validation::validate_wgsl;
+    use serde_json::json;
+
+    #[test]
+    fn pass_wgsl_uses_one_graph_field_name_across_vertex_and_fragment_stages() {
+        let graph_node_id = "shared_position_color";
+        let graph_field = crate::renderer::graph_uniforms::graph_field_name(graph_node_id);
+        let scene = SceneDSL {
+            version: "4.0".to_string(),
+            metadata: Metadata {
+                name: "shared vertex and fragment graph input".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                Node {
+                    id: graph_node_id.to_string(),
+                    node_type: "Vector4Input".to_string(),
+                    params: HashMap::from([("label".to_string(), json!("Shared Position Color"))]),
+                    inputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                    wgsl_override: None,
+                },
+                Node {
+                    id: "pass".to_string(),
+                    node_type: "RenderPass".to_string(),
+                    params: HashMap::new(),
+                    inputs: Vec::new(),
+                    input_bindings: Vec::new(),
+                    outputs: Vec::new(),
+                    wgsl_override: None,
+                },
+            ],
+            connections: vec![Connection {
+                id: "material".to_string(),
+                from: Endpoint {
+                    node_id: graph_node_id.to_string(),
+                    port_id: "vector".to_string(),
+                },
+                to: Endpoint {
+                    node_id: "pass".to_string(),
+                    port_id: "material".to_string(),
+                },
+            }],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let nodes_by_id = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|node| (node.id.clone(), node))
+            .collect();
+        let vertex_graph_input_kinds =
+            BTreeMap::from([(graph_node_id.to_string(), GraphFieldKind::Vec4)]);
+        let rect_inputs = Rect2DDynamicInputs {
+            position_expr: Some(TypedExpr::new(
+                format!("(graph_inputs.{graph_field}).xy"),
+                ValueType::Vec2,
+            )),
+            size_expr: None,
+        };
+
+        let bundle = build_pass_wgsl_bundle_with_graph_binding(
+            &scene,
+            &nodes_by_id,
+            None,
+            None,
+            "pass",
+            false,
+            None,
+            Vec::new(),
+            String::new(),
+            false,
+            Some(rect_inputs),
+            vertex_graph_input_kinds,
+            None,
+            false,
+            false,
+        )
+        .expect("pass WGSL should build");
+
+        let schema = bundle.graph_schema.expect("expected graph schema");
+        assert_eq!(schema.fields[0].field_name, graph_field);
+        validate_wgsl(&bundle.module).expect("shared graph input WGSL should validate");
+    }
 
     #[test]
     fn bloom_tint_compiles_pass_texture_color_expression() {

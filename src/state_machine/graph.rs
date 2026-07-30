@@ -562,6 +562,26 @@ fn evaluate_inner_node<'a>(
                 .iter()
                 .map(|port| get_port_value(node, port.id.as_str(), port_values).unwrap_or_default())
                 .collect::<Vec<_>>();
+            if node.id == "function_ilight_thinking" {
+                let scalar_input = |port_id: &str| {
+                    node.inputs
+                        .iter()
+                        .position(|port| port.id == port_id)
+                        .and_then(|index| match input.get(index) {
+                            Some(GraphValue::Float(value)) => Some(*value),
+                            Some(GraphValue::Int(value)) => Some(*value as f64),
+                            _ => None,
+                        })
+                };
+                if let (Some(primary), Some(secondary)) = (
+                    scalar_input("snapTargetPrimary"),
+                    scalar_input("snapTargetSecondary"),
+                ) {
+                    eprintln!(
+                        "[SnapTargetCompare] side=node-forge targetPrimary={primary:.6} targetSecondary={secondary:.6}"
+                    );
+                }
+            }
             let result = super::graph_function::evaluate_function(
                 &format!(
                     "{}:{}",

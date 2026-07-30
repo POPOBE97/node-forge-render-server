@@ -34,7 +34,7 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_42
-    float_input_42: vec4f,
+    node_FloatInput_42_ae0ff420: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
@@ -85,7 +85,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let opacity_material = shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(
         ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         image_texture_sample,
-        (graph_inputs.float_input_42).x,
+        (graph_inputs.node_FloatInput_42_ae0ff420).x,
     );
     // Final composite
     let _frag_out = opacity_material;

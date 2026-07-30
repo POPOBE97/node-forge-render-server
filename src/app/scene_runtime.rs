@@ -31,12 +31,15 @@ pub struct SceneApplyResult {
     pub matrix_update: MatrixSceneUpdate,
 }
 
-fn apply_state_machine_overrides(
+pub(crate) fn apply_state_machine_overrides(
     app: &mut App,
     overrides: &std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>,
 ) {
     if let Some(uniform_scene) = app.runtime.uniform_scene.as_mut() {
         crate::state_machine::apply_overrides(uniform_scene, overrides);
+    }
+    if let Some(matrix_source_scene) = app.runtime.matrix_source_scene.as_mut() {
+        crate::state_machine::apply_overrides(matrix_source_scene, overrides);
     }
     if let Some(uniform_scene) = app.runtime.uniform_scene.as_ref() {
         let _ = apply_graph_uniform_updates_parts(
@@ -174,10 +177,13 @@ enum GraphBufferTarget {
 }
 
 fn choose_scene_update_mode(
+    source: &ws::ParsedSceneSource,
     last_pipeline_signature: Option<[u8; 32]>,
     next_pipeline_signature: [u8; 32],
 ) -> SceneUpdateMode {
-    if last_pipeline_signature == Some(next_pipeline_signature) {
+    if matches!(source, ws::ParsedSceneSource::SceneUpdate)
+        && last_pipeline_signature == Some(next_pipeline_signature)
+    {
         SceneUpdateMode::UniformOnly
     } else {
         SceneUpdateMode::Rebuild
@@ -410,17 +416,56 @@ fn commit_shader_space_rebuild(
         .pass_shader_overrides
         .retain(|pass_name, _| live_pass_names.contains(pass_name));
     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
-    app.runtime.uniform_scene = renderer::prepare_scene(scene).ok().map(|p| p.scene);
+    app.runtime.uniform_scene = result.prepared_scene;
+    app.runtime.matrix_source_scene = result.matrix_source_scene;
     app.runtime.scene_uses_time = app
         .runtime
         .uniform_scene
         .as_ref()
         .is_some_and(scene_uses_time);
+    reconcile_pass_capture_after_shader_space_rebuild(app);
     app.runtime.pipeline_rebuild_count = app.runtime.pipeline_rebuild_count.saturating_add(1);
     app.runtime.scene_redraw_pending = true;
     if let Ok(mut g) = app.runtime.last_good.lock() {
         *g = Some(scene.clone());
     }
+}
+
+fn reconcile_pass_capture_after_shader_space_rebuild(app: &mut App) {
+    let Some(capture) = app.canvas.display.pass_capture.as_ref() else {
+        return;
+    };
+    let capture_is_live = app
+        .core
+        .shader_space
+        .composition
+        .flatten()
+        .iter()
+        .any(|node| node.pass_name.as_str() == capture.pass_name);
+    if !clear_stale_pass_capture_display(&mut app.canvas.display, capture_is_live) {
+        return;
+    }
+
+    app.shell.file_tree_state.selected_id = None;
+    crate::app::canvas::pixel_overlay::clear_cache(app);
+    app.canvas.invalidation.preview_source_changed();
+}
+
+fn clear_stale_pass_capture_display(
+    display: &mut crate::app::canvas::state::CanvasDisplayState,
+    capture_is_live: bool,
+) -> bool {
+    if capture_is_live || display.pass_capture.is_none() {
+        return false;
+    }
+
+    display.pass_capture = None;
+    if display.preview_texture_name.as_ref().is_some_and(|name| {
+        name.as_str() == rust_wgpu_fiber::shader_space::PASS_CAPTURE_OUTPUT_TEXTURE_NAME
+    }) {
+        display.preview_texture_name = None;
+    }
+    true
 }
 
 fn update_pass_debug_sources(
@@ -555,6 +600,23 @@ pub(crate) fn apply_uniform_node_param_updates(
     updated_nodes: &[crate::dsl::Node],
     allow_suffix_match: bool,
 ) -> Result<()> {
+    apply_uniform_node_param_updates_inner(scene, updated_nodes, allow_suffix_match, false)
+}
+
+pub(crate) fn apply_uniform_node_param_updates_if_present(
+    scene: &mut crate::dsl::SceneDSL,
+    updated_nodes: &[crate::dsl::Node],
+    allow_suffix_match: bool,
+) -> Result<()> {
+    apply_uniform_node_param_updates_inner(scene, updated_nodes, allow_suffix_match, true)
+}
+
+fn apply_uniform_node_param_updates_inner(
+    scene: &mut crate::dsl::SceneDSL,
+    updated_nodes: &[crate::dsl::Node],
+    allow_suffix_match: bool,
+    ignore_missing: bool,
+) -> Result<()> {
     for updated in updated_nodes {
         if let Some(target) = scene.nodes.iter_mut().find(|n| n.id == updated.id) {
             if target.node_type != updated.node_type {
@@ -591,6 +653,9 @@ pub(crate) fn apply_uniform_node_param_updates(
             }
         }
 
+        if ignore_missing {
+            continue;
+        }
         return Err(anyhow!(
             "uniform delta references missing node '{}'",
             updated.id
@@ -663,20 +728,45 @@ pub fn apply_scene_update(
             };
 
             let mut cached_uniform_scene = app.runtime.uniform_scene.take();
-            let update_result = (|| -> Result<crate::dsl::SceneDSL> {
+            let mut cached_matrix_source_scene = app.runtime.matrix_source_scene.take();
+            let update_result = (|| -> Result<(crate::dsl::SceneDSL, crate::dsl::SceneDSL)> {
                 apply_uniform_node_param_updates(&mut scene, &updated_nodes, false)?;
 
-                let mut uniform_scene = if let Some(cached) = cached_uniform_scene.take() {
-                    cached
+                let prepared = if cached_uniform_scene.is_none()
+                    || cached_matrix_source_scene.is_none()
+                {
+                    Some(
+                        renderer::prepare_scene(&scene)
+                            .context("failed to prepare baseline scene for uniform-only update")?,
+                    )
                 } else {
-                    renderer::prepare_scene(&scene)
-                        .context("failed to prepare baseline scene for uniform-only update")?
-                        .scene
+                    None
                 };
+                let mut uniform_scene = cached_uniform_scene
+                    .take()
+                    .or_else(|| prepared.as_ref().map(|prepared| prepared.scene.clone()))
+                    .ok_or_else(|| {
+                        anyhow!("prepared active scene is unavailable for uniform-only update")
+                    })?;
+                let mut matrix_source_scene = cached_matrix_source_scene
+                    .take()
+                    .or_else(|| {
+                        prepared
+                            .as_ref()
+                            .map(|prepared| prepared.matrix_source_scene.clone())
+                    })
+                    .ok_or_else(|| {
+                        anyhow!("Matrix source scene is unavailable for uniform-only update")
+                    })?;
 
-                apply_uniform_node_param_updates(&mut uniform_scene, &updated_nodes, true)?;
+                apply_uniform_node_param_updates(&mut matrix_source_scene, &updated_nodes, true)?;
+                apply_uniform_node_param_updates_if_present(
+                    &mut uniform_scene,
+                    &updated_nodes,
+                    true,
+                )?;
                 let _ = apply_graph_uniform_updates(app, &uniform_scene)?;
-                Ok(uniform_scene)
+                Ok((uniform_scene, matrix_source_scene))
             })();
             let scene_ref_desired = scene_reference_desired_source(&scene);
             let scene_ref_alpha_mode = scene_reference_image_alpha_mode(&scene);
@@ -686,7 +776,7 @@ pub fn apply_scene_update(
             }
 
             match update_result {
-                Ok(uniform_scene) => {
+                Ok((uniform_scene, matrix_source_scene)) => {
                     app.canvas.reference.scene_desired = scene_ref_desired.clone();
                     app.canvas.reference.scene_alpha_mode = scene_ref_alpha_mode;
                     if let Some(alpha_mode) = scene_ref_alpha_mode {
@@ -694,6 +784,7 @@ pub fn apply_scene_update(
                     }
                     app.runtime.scene_uses_time = scene_uses_time(&uniform_scene);
                     app.runtime.uniform_scene = Some(uniform_scene);
+                    app.runtime.matrix_source_scene = Some(matrix_source_scene);
                     update_animation_base_values(app, &updated_nodes);
                     app.runtime.uniform_only_update_count =
                         app.runtime.uniform_only_update_count.saturating_add(1);
@@ -713,6 +804,7 @@ pub fn apply_scene_update(
                     }
                     app.runtime.scene_uses_time = false;
                     app.runtime.uniform_scene = None;
+                    app.runtime.matrix_source_scene = None;
                     app.runtime.state_control_selection = None;
                     app.runtime.last_live_overrides = None;
                     app.runtime.timeline_pre_hover_overrides = None;
@@ -767,16 +859,20 @@ pub fn apply_scene_update(
                 .ok()
                 .flatten();
             let mut prepared_scene_candidate: Option<crate::dsl::SceneDSL> = None;
+            let mut matrix_source_scene_candidate: Option<crate::dsl::SceneDSL> = None;
             if app.shell.pass_shader_overrides.is_empty()
                 && let Ok(prepared_for_fast_path) = renderer::prepare_scene(&scene)
             {
                 prepared_scene_candidate = Some(prepared_for_fast_path.scene.clone());
+                matrix_source_scene_candidate =
+                    Some(prepared_for_fast_path.matrix_source_scene.clone());
                 let next_pipeline_signature =
                     renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
                         &prepared_for_fast_path.scene,
                         &app.core.passes,
                     );
                 if choose_scene_update_mode(
+                    &source,
                     app.runtime.last_pipeline_signature,
                     next_pipeline_signature,
                 ) == SceneUpdateMode::UniformOnly
@@ -787,6 +883,7 @@ pub fn apply_scene_update(
                             app.runtime.scene_uses_time =
                                 scene_uses_time(&prepared_for_fast_path.scene);
                             app.runtime.uniform_scene = prepared_scene_candidate;
+                            app.runtime.matrix_source_scene = matrix_source_scene_candidate;
                             app.runtime.animation_session = next_animation_session.clone();
                             app.runtime.timeline_buffer = create_timeline_buffer_for_session(
                                 app.runtime.animation_session.as_ref(),
@@ -857,13 +954,15 @@ pub fn apply_scene_update(
                         .pass_shader_overrides
                         .retain(|pass_name, _| live_pass_names.contains(pass_name));
                     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
-                    app.runtime.uniform_scene = prepared_scene_candidate
-                        .or_else(|| renderer::prepare_scene(&scene).ok().map(|p| p.scene));
+                    app.runtime.uniform_scene = result.prepared_scene.or(prepared_scene_candidate);
+                    app.runtime.matrix_source_scene =
+                        result.matrix_source_scene.or(matrix_source_scene_candidate);
                     app.runtime.scene_uses_time = app
                         .runtime
                         .uniform_scene
                         .as_ref()
                         .is_some_and(scene_uses_time);
+                    reconcile_pass_capture_after_shader_space_rebuild(app);
                     app.runtime.pipeline_rebuild_count =
                         app.runtime.pipeline_rebuild_count.saturating_add(1);
 
@@ -896,6 +995,7 @@ pub fn apply_scene_update(
                     eprintln!("[error-plane] scene build failed: {message}");
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
+                    app.runtime.matrix_source_scene = None;
                     app.runtime.animation_session = None;
                     app.runtime.timeline_buffer = None;
                     app.runtime.last_live_overrides = None;
@@ -924,6 +1024,7 @@ pub fn apply_scene_update(
                     eprintln!("{message}");
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
+                    app.runtime.matrix_source_scene = None;
                     app.runtime.animation_session = None;
                     app.runtime.state_control_selection = None;
                     broadcast_error(app, request_id, "PANIC", message);
@@ -1087,11 +1188,20 @@ mod tests {
     fn scene_update_mode_selects_uniform_only_when_signature_matches() {
         let sig = [7_u8; 32];
         assert_eq!(
-            choose_scene_update_mode(Some(sig), sig),
+            choose_scene_update_mode(&ws::ParsedSceneSource::SceneUpdate, Some(sig), sig),
             SceneUpdateMode::UniformOnly
         );
         assert_eq!(
-            choose_scene_update_mode(None, sig),
+            choose_scene_update_mode(&ws::ParsedSceneSource::SceneUpdate, None, sig),
+            SceneUpdateMode::Rebuild
+        );
+    }
+
+    #[test]
+    fn scene_delta_mode_rebuilds_even_when_pipeline_signature_matches() {
+        let sig = [7_u8; 32];
+        assert_eq!(
+            choose_scene_update_mode(&ws::ParsedSceneSource::SceneDelta, Some(sig), sig),
             SceneUpdateMode::Rebuild
         );
     }
@@ -1456,5 +1566,57 @@ mod tests {
 
         let error = apply_uniform_node_param_updates(&mut scene, &[updated], false).unwrap_err();
         assert!(error.to_string().contains("missing node"));
+    }
+
+    #[test]
+    fn active_scene_uniform_updates_ignore_pruned_branch_nodes() {
+        let mut scene = crate::dsl::SceneDSL {
+            version: "1.0".to_string(),
+            metadata: crate::dsl::Metadata {
+                name: "active scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: Vec::new(),
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let pruned_update = crate::dsl::Node {
+            id: "inactive/pass_uniform".to_string(),
+            node_type: "FloatInput".to_string(),
+            params: HashMap::from([("value".to_string(), serde_json::json!(0.75))]),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            input_bindings: Vec::new(),
+            wgsl_override: None,
+        };
+
+        apply_uniform_node_param_updates_if_present(&mut scene, &[pruned_update], true).unwrap();
+        assert!(scene.nodes.is_empty());
+    }
+
+    #[test]
+    fn stale_pass_capture_and_preview_are_cleared_after_rebuild() {
+        use crate::app::canvas::state::{CanvasDisplayState, DrawCallCaptureState};
+        use rust_wgpu_fiber::{ResourceName, shader_space::PassCaptureMode};
+
+        let mut display = CanvasDisplayState {
+            pass_capture: Some(DrawCallCaptureState {
+                pass_name: "render.pass.old.pass".to_string(),
+                mode: PassCaptureMode::Solo,
+            }),
+            preview_texture_name: Some(ResourceName::from(
+                rust_wgpu_fiber::shader_space::PASS_CAPTURE_OUTPUT_TEXTURE_NAME,
+            )),
+            ..Default::default()
+        };
+
+        assert!(clear_stale_pass_capture_display(&mut display, false));
+        assert!(display.pass_capture.is_none());
+        assert!(display.preview_texture_name.is_none());
     }
 }

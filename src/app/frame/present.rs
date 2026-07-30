@@ -245,7 +245,12 @@ pub(super) fn run(
         // values for every override key the timeline tracks.
         if !app.runtime.timeline_preview_was_active {
             if let Some(ref buf) = app.runtime.timeline_buffer {
-                if let Some(ref uniform_scene) = app.runtime.uniform_scene {
+                if let Some(uniform_scene) = app
+                    .runtime
+                    .matrix_source_scene
+                    .as_ref()
+                    .or(app.runtime.uniform_scene.as_ref())
+                {
                     let mut snap = std::collections::HashMap::new();
                     for frame in buf.frames().iter().rev().take(1) {
                         for key in frame.active_overrides.keys() {
@@ -272,16 +277,7 @@ pub(super) fn run(
             .and_then(|buf| buf.frame_at(hover.frame_index))
         {
             let hovered_overrides = frame.active_overrides.clone();
-            if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
-                crate::state_machine::apply_overrides(uniform_scene, &hovered_overrides);
-            }
-            if let Some(ref uniform_scene) = app.runtime.uniform_scene {
-                let _ = scene_runtime::apply_graph_uniform_updates_parts(
-                    &mut app.core.passes,
-                    &mut app.core.shader_space,
-                    uniform_scene,
-                );
-            }
+            scene_runtime::apply_state_machine_overrides(app, &hovered_overrides);
             for pass in &mut app.core.passes {
                 let mut params = pass.base_params;
                 params.time = app.runtime.time_value_secs;
@@ -302,16 +298,7 @@ pub(super) fn run(
             .clone()
             .or_else(|| app.runtime.timeline_pre_hover_overrides.take());
         if let Some(ref overrides) = restore {
-            if let Some(ref mut uniform_scene) = app.runtime.uniform_scene {
-                crate::state_machine::apply_overrides(uniform_scene, overrides);
-            }
-            if let Some(ref uniform_scene) = app.runtime.uniform_scene {
-                let _ = scene_runtime::apply_graph_uniform_updates_parts(
-                    &mut app.core.passes,
-                    &mut app.core.shader_space,
-                    uniform_scene,
-                );
-            }
+            scene_runtime::apply_state_machine_overrides(app, overrides);
             for pass in &mut app.core.passes {
                 let mut params = pass.base_params;
                 params.time = app.runtime.time_value_secs;

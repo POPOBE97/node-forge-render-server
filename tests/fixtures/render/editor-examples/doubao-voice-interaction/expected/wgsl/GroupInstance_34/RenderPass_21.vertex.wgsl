@@ -34,11 +34,11 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_37
-    float_input_37: vec4f,
+    node_FloatInput_37_0eaa0821: vec4f,
     // Node: FloatInput_43
-    float_input_43: vec4f,
+    node_FloatInput_43_6111f420: vec4f,
     // Node: FloatInput_InputBarRefractionIndex
-    float_input_input_bar_refraction_index: vec4f,
+    node_FloatInput_InputBarRefractionIndex_ce5b6884: vec4f,
     // Node: Vector2Input_35
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
