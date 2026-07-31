@@ -738,10 +738,10 @@ fn validate_connection(
                     | "vector4"
                     | "color"
                     | "mat4"
-                    | "float[]"
-                    | "vector2[]"
-                    | "vector3[]"
-                    | "vector4[]"
+                    | "packed<float>"
+                    | "packed<vector2>"
+                    | "packed<vector3>"
+                    | "packed<vector4>"
             )
         } else {
             false
