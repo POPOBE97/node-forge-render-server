@@ -85,9 +85,13 @@ fn main() {
 
                     println!("cargo:rerun-if-changed={}", nforge.display());
                     let skip = path.join("SKIP_RENDER_CASE");
-                    println!("cargo:rerun-if-changed={}", skip.display());
+                    if skip.exists() {
+                        println!("cargo:rerun-if-changed={}", skip.display());
+                    }
                     let baseline = path.join("expected").join("baseline.png");
-                    println!("cargo:rerun-if-changed={}", baseline.display());
+                    if baseline.exists() {
+                        println!("cargo:rerun-if-changed={}", baseline.display());
+                    }
 
                     if skip.exists() {
                         continue;
