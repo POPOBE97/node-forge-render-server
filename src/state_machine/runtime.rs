@@ -41,8 +41,9 @@ pub struct StateMachineRuntime {
     /// Current active state id.
     current_state_id: String,
 
-    /// Debug-only forced state. While set, routing is disabled and the
-    /// selected state's logical targets are reasserted every frame.
+    /// Debug-only forced state. While set, condition routing is disabled and
+    /// the selected state's logical targets are reasserted every frame.
+    /// Explicit pin-to-pin changes may still activate an authored Transition.
     forced_state_id: Option<String>,
 
     /// Wall-clock time accumulated since scene start (seconds).
@@ -516,13 +517,29 @@ impl StateMachineRuntime {
     ///
     /// Entry, Any, Exit, and ordinary animation states are all valid debug
     /// targets. Derivation nodes are graph resources rather than selectable
-    /// States and are rejected.
+    /// States and are rejected. The first forced selection starts from a reset
+    /// snapshot. Changing an existing forced selection preserves physical
+    /// continuity through the first authored direct (or AnyState) Transition
+    /// to the requested target. Targets with no authored route retain the
+    /// immediate debug-inspection fallback.
     pub fn force_state(&mut self, state_id: &str) -> Result<()> {
         let state = self
             .find_state(state_id)
             .ok_or_else(|| anyhow::anyhow!("state '{state_id}' not found"))?;
         if state.resolved_type() == AnimationStateType::DerivationNode {
             bail!("derivation node '{state_id}' cannot be forced as a State");
+        }
+
+        if self.forced_state_id.is_some() && self.logical_state_initialized {
+            if self.current_state_id == state_id {
+                return Ok(());
+            }
+
+            if let Some(transition) = self.pick_forced_transition(state_id) {
+                self.activate_transition(&transition)?;
+                self.forced_state_id = Some(state_id.to_string());
+                return Ok(());
+            }
         }
 
         self.reset();
@@ -617,48 +634,16 @@ impl StateMachineRuntime {
             && !forced
             && let Some(transition) = self.pick_transition(params, events)
         {
-            let previous = self.motion_engine.clone();
-            let target_patch = self.state_parameter_patch(&transition.target);
-            // State overrides alone select the authored Transition route.
-            // Mutation Motion outputs establish Q before the residual is
-            // created, but plain derived outputs never join this key set.
-            let mut transition_keys = self
-                .state_parameter_patch(&transition.source)
-                .into_keys()
-                .collect::<HashSet<_>>();
-            transition_keys.extend(target_patch.keys().cloned());
-            let graph = self
-                .motion_graph_index
-                .get(&transition.motion_graph_id)
-                .and_then(|index| self.definition.motion_graphs.get(*index))
-                .cloned();
-            if let Some(graph) = graph {
-                let mut target_engine = self.motion_engine.clone();
-                target_engine.begin_mutation_frame();
-                target_engine.commit_logical_values(target_patch);
-                let writable_keys = self.state_mutation_writable_keys(&transition.target);
-                target_engine.seed_targets_from_state(writable_keys.iter());
-                match self.evaluate_state_mutation(&transition.target, 0.0, &mut target_engine) {
-                    Ok(_) => {
-                        target_engine.begin_transition_from(
-                            &transition.id,
-                            &graph,
-                            &previous,
-                            &transition_keys,
-                        );
-                        self.motion_engine = target_engine;
-                        self.state_local_times
-                            .insert(transition.target.clone(), 0.0);
-                        self.current_state_id = transition.target;
-                        // Advance the newly activated M once in the ordinary
-                        // frame after its dt=0 activation transaction.
-                        target_initialized_this_tick = false;
-                    }
-                    Err(error) => diagnostics.push(format!(
-                        "Mutation evaluation rejected State activation (state={}): {error}",
-                        transition.target
-                    )),
+            match self.activate_transition(&transition) {
+                Ok(()) => {
+                    // Advance the newly activated M once in the ordinary
+                    // frame after its dt=0 activation transaction.
+                    target_initialized_this_tick = false;
                 }
+                Err(error) => diagnostics.push(format!(
+                    "Mutation evaluation rejected State activation (state={}): {error}",
+                    transition.target
+                )),
             }
         }
 
@@ -790,6 +775,74 @@ impl StateMachineRuntime {
             patch.insert(StateParamKey::new(state_param_id), value.clone());
         }
         patch
+    }
+
+    /// Pick the authored visual route for an explicit pin-to-pin request.
+    /// The user's target selection replaces condition evaluation; scene order
+    /// and the normal direct-before-Any precedence remain deterministic.
+    fn pick_forced_transition(&self, target_state_id: &str) -> Option<AnimationTransition> {
+        self.definition
+            .transitions
+            .iter()
+            .find(|transition| {
+                transition.source == self.current_state_id && transition.target == target_state_id
+            })
+            .or_else(|| {
+                let any_state_id = self
+                    .definition
+                    .states
+                    .iter()
+                    .find(|state| state.resolved_type() == AnimationStateType::AnyState)?
+                    .id
+                    .as_str();
+                self.definition.transitions.iter().find(|transition| {
+                    transition.source == any_state_id && transition.target == target_state_id
+                })
+            })
+            .cloned()
+    }
+
+    /// Activate a Transition transaction after its route has been selected.
+    /// The target Mutation establishes Q/Qdot at dt=0 before residual E/Edot
+    /// is initialized from the engine-owned outgoing P/V snapshot.
+    fn activate_transition(&mut self, transition: &AnimationTransition) -> Result<()> {
+        let graph = self
+            .motion_graph_index
+            .get(&transition.motion_graph_id)
+            .and_then(|index| self.definition.motion_graphs.get(*index))
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Transition '{}' references missing Motion Graph '{}'",
+                    transition.id,
+                    transition.motion_graph_id
+                )
+            })?;
+        let previous = self.motion_engine.clone();
+        let target_patch = self.state_parameter_patch(&transition.target);
+        // State overrides alone select the authored Transition route.
+        // Mutation Motion outputs establish Q before the residual is
+        // created, but plain derived outputs never join this key set.
+        let mut transition_keys = self
+            .state_parameter_patch(&transition.source)
+            .into_keys()
+            .collect::<HashSet<_>>();
+        transition_keys.extend(target_patch.keys().cloned());
+
+        let mut target_engine = self.motion_engine.clone();
+        target_engine.begin_mutation_frame();
+        target_engine.commit_logical_values(target_patch);
+        let writable_keys = self.state_mutation_writable_keys(&transition.target);
+        target_engine.seed_targets_from_state(writable_keys.iter());
+
+        self.evaluate_state_mutation(&transition.target, 0.0, &mut target_engine)?;
+
+        target_engine.begin_transition_from(&transition.id, &graph, &previous, &transition_keys);
+        self.motion_engine = target_engine;
+        self.state_local_times
+            .insert(transition.target.clone(), 0.0);
+        self.current_state_id = transition.target.clone();
+        Ok(())
     }
 
     /// Pick the highest-priority satisfied transition from the current state

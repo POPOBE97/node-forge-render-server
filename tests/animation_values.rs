@@ -6,8 +6,8 @@ use node_forge_render_server::state_machine::types::{
     AnimationState, AnimationStateType, AnimationTransition, DerivationDefinition,
     DerivationPassthroughBinding, DerivationStateBinding, EventModifiers, GpuUniformRef,
     GraphEndpoint, GraphPort, Position, StateMachine, StateMutationGraph, StateMutationGraphLayout,
-    StateParamDeclaration, StateParamGraph, StateValueSource, TransitionConditionBinding,
-    TransitionMotionGraph, TransitionMotionNode,
+    StateParamDeclaration, StateParamGraph, StateValueSource, TimelineMotionNode,
+    TransitionConditionBinding, TransitionMotionGraph, TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
@@ -628,6 +628,81 @@ fn animation_session_keeps_values_when_next_state_omits_override() {
         )),
         Some(&serde_json::json!(0.0))
     );
+}
+
+#[test]
+fn pinned_state_change_uses_authored_transition_without_resetting_the_clock() {
+    let _function_registry = support::function_registry_lock();
+    let mut scene = sticky_override_test_scene();
+    let machine = scene
+        .state_machine
+        .as_mut()
+        .expect("test scene should have a state machine");
+    machine
+        .states
+        .iter_mut()
+        .find(|state| state.id == "b")
+        .expect("test scene should have State B")
+        .state_param_overrides
+        .insert("target_value".into(), serde_json::json!(10.0));
+    let graph = machine
+        .motion_graphs
+        .iter_mut()
+        .find(|graph| graph.id == "motion_a_to_b")
+        .expect("test scene should have the A-to-B Motion Graph");
+    assert!(
+        graph.condition_binding.is_some(),
+        "pin selection should explicitly choose the route without firing its event condition"
+    );
+    let motion_node = graph
+        .nodes
+        .iter_mut()
+        .find(|node| node.id() == "motion")
+        .expect("A-to-B Motion Graph should have a motion node");
+    *motion_node = TransitionMotionNode::Linear {
+        timeline: TimelineMotionNode {
+            id: "motion".into(),
+            position: Position::default(),
+            label: None,
+            duration: 1.0,
+            delay: 0.0,
+            blending: None,
+        },
+    };
+
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("animation session should compile")
+        .expect("scene should have a State Machine");
+    let pinned_a = session
+        .force_state("a")
+        .expect("State A should be pinnable");
+    assert_eq!(pinned_a.current_state_id, "a");
+    assert_eq!(pinned_a.active_transition_id, None);
+    session.step(0.25);
+
+    let started = session
+        .force_state("b")
+        .expect("State B should be pinnable");
+    assert_eq!(started.current_state_id, "b");
+    assert_eq!(started.active_transition_id.as_deref(), Some("a_to_b"));
+    assert_eq!(started.scene_time_secs, 0.25);
+    let started_channel = started
+        .motion_channels
+        .iter()
+        .find(|channel| channel.key == "target_value")
+        .expect("target_value should have a MotionEngine channel");
+    assert_eq!(started_channel.value, vec![5.0]);
+    assert_eq!(started_channel.target_value, vec![10.0]);
+    assert_eq!(started_channel.transition_driver, "timeline");
+
+    let midway = session.step(0.5);
+    let midway_channel = midway
+        .motion_channels
+        .iter()
+        .find(|channel| channel.key == "target_value")
+        .expect("target_value should remain visible during the Transition");
+    assert_eq!(midway.active_transition_id.as_deref(), Some("a_to_b"));
+    assert!(midway_channel.value[0] > 5.0 && midway_channel.value[0] < 10.0);
 }
 
 #[test]

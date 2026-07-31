@@ -244,11 +244,18 @@ impl AnimationSession {
         self.runtime.set_mouse_position(position);
     }
 
-    /// Reset and force the session to remain in one selectable State.
+    /// Force the session to remain in one selectable State. The first pin
+    /// starts from a reset snapshot; a subsequent pin preserves the session
+    /// clock and lets the runtime activate the authored Transition.
     /// Returns the initial frame for immediate application by the UI.
     pub fn force_state(&mut self, state_id: &str) -> Result<AnimationStep> {
+        let continuing_forced_selection = self.runtime.forced_state_id().is_some();
         self.runtime.force_state(state_id)?;
-        self.scene_time = 0.0;
+        let authored_transition_started =
+            continuing_forced_selection && self.runtime.active_transition_id().is_some();
+        if !authored_transition_started {
+            self.scene_time = 0.0;
+        }
         self.pending_events.clear();
         self.first_tick_fired = false;
         self.cached_state_local_times.clear();
