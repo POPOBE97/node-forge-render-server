@@ -1046,6 +1046,69 @@ mod tests {
     }
 
     #[test]
+    fn lanczos_downsample_plans_signed_separable_passes() -> Result<()> {
+        let (mut scene, assets) = load_case("kernel-downsample-crossbox")?;
+        let kernel = scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_type == "Kernel")
+            .expect("fixture should contain a Kernel node");
+        kernel.params.insert(
+            "source".to_string(),
+            serde_json::json!("return { kind: 'lanczos', lobes: 3 };\n"),
+        );
+
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+        let downsample = scene
+            .nodes
+            .iter()
+            .find(|node| node.node_type == "Downsample")
+            .expect("fixture should contain a Downsample node");
+        let horizontal_pass_name = format!("sys.downsample.{}.h.pass", downsample.id);
+        let vertical_pass_name = format!("sys.downsample.{}.pass", downsample.id);
+        let horizontal_texture_name = format!("sys.downsample.{}.h", downsample.id);
+
+        let horizontal = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .find(|spec| spec.name.as_str() == horizontal_pass_name)
+            .expect("Lanczos should emit a horizontal pass");
+        let vertical = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .find(|spec| spec.name.as_str() == vertical_pass_name)
+            .expect("Lanczos should emit a vertical pass");
+        let horizontal_texture = plan
+            .resources
+            .textures
+            .iter()
+            .find(|texture| texture.name.as_str() == horizontal_texture_name)
+            .expect("Lanczos should allocate a signed horizontal intermediate");
+
+        assert_eq!(horizontal_texture.size, [540, 1200]);
+        assert_eq!(horizontal_texture.format, wgpu::TextureFormat::Rgba16Float);
+        assert_eq!(horizontal.sampler_kinds, vec![SamplerKind::NearestMirror]);
+        assert_eq!(vertical.sampler_kinds, vec![SamplerKind::NearestMirror]);
+        assert!(
+            horizontal
+                .shader_wgsl
+                .contains("source_dims.x / target_dims.x")
+        );
+        assert!(
+            vertical
+                .shader_wgsl
+                .contains("source_dims.y / target_dims.y")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn doubao_bloom_uses_additive_combine_and_authored_level_strengths() -> Result<()> {
         let (scene, assets) = load_case("doubao-voice-interaction")?;
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(

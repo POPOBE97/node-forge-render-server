@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow, bail};
 
-use crate::renderer::types::Kernel2D;
+use crate::renderer::types::{Kernel2D, KernelSpec};
 
-pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
+pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<KernelSpec> {
     // Strip JS comments so we don't accidentally match docstrings like "width/height: number".
     fn strip_js_comments(src: &str) -> String {
         // Minimal, non-string-aware comment stripper:
@@ -108,6 +108,25 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
         Ok(num.parse::<u32>()?)
     }
 
+    fn parse_string_field(src: &str, key: &str) -> Result<String> {
+        let after_colon = find_field_after_colon(src, key)?;
+        let quote = after_colon
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("Kernel.source field {key} missing string value"))?;
+        if quote != '\'' && quote != '"' {
+            bail!("Kernel.source field {key} must be a quoted string");
+        }
+        let value = after_colon[quote.len_utf8()..]
+            .split(quote)
+            .next()
+            .unwrap_or("");
+        if value.is_empty() {
+            bail!("Kernel.source field {key} must not be empty");
+        }
+        Ok(value.to_string())
+    }
+
     fn parse_f32_array_field(src: &str, key: &str) -> Result<Vec<f32>> {
         let after_colon = find_field_after_colon(src, key)?;
         let lb = after_colon
@@ -138,6 +157,17 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
         Ok(values)
     }
 
+    if let Ok(kind) = parse_string_field(source.as_str(), "kind") {
+        if kind != "lanczos" {
+            bail!("Kernel.source unsupported procedural kind '{kind}'");
+        }
+        let lobes = parse_u32_field(source.as_str(), "lobes")?;
+        if !(1..=8).contains(&lobes) {
+            bail!("Kernel.source Lanczos lobes must be in 1..=8, got {lobes}");
+        }
+        return Ok(KernelSpec::Lanczos { lobes });
+    }
+
     let w = parse_u32_field(source.as_str(), "width")?;
     let h = parse_u32_field(source.as_str(), "height")?;
     // Prefer `values` when present; otherwise fallback to `value`.
@@ -157,9 +187,47 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<Kernel2D> {
         );
     }
 
-    Ok(Kernel2D {
+    Ok(KernelSpec::Fixed(Kernel2D {
         width: w,
         height: h,
         values,
-    })
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_kernel_source_js_like;
+    use crate::renderer::types::{Kernel2D, KernelSpec};
+
+    #[test]
+    fn parses_fixed_matrix_kernel() {
+        let parsed =
+            parse_kernel_source_js_like("return { width: 2, height: 1, value: [0.25, 0.75] };")
+                .expect("fixed kernel should parse");
+
+        assert_eq!(
+            parsed,
+            KernelSpec::Fixed(Kernel2D {
+                width: 2,
+                height: 1,
+                values: vec![0.25, 0.75],
+            })
+        );
+    }
+
+    #[test]
+    fn parses_scale_aware_lanczos_kernel() {
+        assert_eq!(
+            parse_kernel_source_js_like("return { kind: 'lanczos', lobes: 5 };")
+                .expect("Lanczos kernel should parse"),
+            KernelSpec::Lanczos { lobes: 5 }
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_lanczos_lobe_count() {
+        let error = parse_kernel_source_js_like("return { kind: 'lanczos', lobes: 0 };")
+            .expect_err("zero lobes must be rejected");
+        assert!(error.to_string().contains("lobes must be in 1..=8"));
+    }
 }

@@ -739,10 +739,17 @@ pub struct WgslShaderBundle {
     pub shader_parameter_schema: Option<GraphSchema>,
 }
 
-/// A CPU-side 2D convolution kernel.
-#[derive(Clone, Debug)]
+/// A CPU-side fixed 2D convolution kernel.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Kernel2D {
     pub width: u32,
     pub height: u32,
     pub values: Vec<f32>,
+}
+
+/// Canonical filter returned by a Kernel node.
+#[derive(Clone, Debug, PartialEq)]
+pub enum KernelSpec {
+    Fixed(Kernel2D),
+    Lanczos { lobes: u32 },
 }

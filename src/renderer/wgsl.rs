@@ -16,8 +16,8 @@ use crate::{
         render_plan::{parse_kernel_source_js_like, resolve_geometry_for_render_pass},
         scene_prep::prepare_scene,
         types::{
-            GraphBindingKind, GraphFieldKind, GraphSchema, Kernel2D, MaterialCompileContext,
-            TypedExpr, ValueType, WgslShaderBundle,
+            GraphBindingKind, GraphFieldKind, GraphSchema, Kernel2D, KernelSpec,
+            MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle,
         },
         utils::{cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils, to_vec4_color},
         wgsl_bloom::{
@@ -1374,11 +1374,29 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let kernel: Kernel2D = parse_kernel_source_js_like(kernel_src.as_str())?;
-
-                let pass_id = format!("sys.downsample.{layer_id}.pass");
-                let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
-                out.push((pass_id, bundle));
+                match parse_kernel_source_js_like(kernel_src.as_str())? {
+                    KernelSpec::Fixed(kernel) => {
+                        let pass_id = format!("sys.downsample.{layer_id}.pass");
+                        let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
+                        out.push((pass_id, bundle));
+                    }
+                    KernelSpec::Lanczos { lobes } => {
+                        out.push((
+                            format!("sys.downsample.{layer_id}.h.pass"),
+                            build_lanczos_downsample_pass_wgsl_bundle(
+                                lobes,
+                                LanczosAxis::Horizontal,
+                            )?,
+                        ));
+                        out.push((
+                            format!("sys.downsample.{layer_id}.pass"),
+                            build_lanczos_downsample_pass_wgsl_bundle(
+                                lobes,
+                                LanczosAxis::Vertical,
+                            )?,
+                        ));
+                    }
+                }
             }
             "Upsample" => {
                 let pass_id = format!("sys.upsample.{layer_id}.pass");
@@ -1766,6 +1784,83 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
     Ok(build_fullscreen_textured_bundle(body))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LanczosAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// Build one separable scale-aware Lanczos resampling pass.
+///
+/// Output pixel centers use the conventional half-pixel mapping
+/// `(dst + 0.5) * source_size / target_size - 0.5`. The support radius grows
+/// with the downsample ratio, and each output phase is normalized separately.
+pub fn build_lanczos_downsample_pass_wgsl_bundle(
+    lobes: u32,
+    axis: LanczosAxis,
+) -> Result<WgslShaderBundle> {
+    if !(1..=8).contains(&lobes) {
+        bail!("Downsample: Lanczos lobes must be in 1..=8, got {lobes}");
+    }
+
+    let (axis_component, sample_xy) = match axis {
+        LanczosAxis::Horizontal => ("x", "vec2f(f32(sample_index), source_center_2d.y)"),
+        LanczosAxis::Vertical => ("y", "vec2f(source_center_2d.x, f32(sample_index))"),
+    };
+    let lobes_f = fmt_f32_utils(lobes as f32);
+    let body = format!(
+        r#"
+    let source_dims = vec2f(textureDimensions(src_tex));
+    let target_dims = params.target_size;
+    let source_center_2d = in.uv * source_dims - vec2f(0.5);
+    let scale = max(source_dims.{axis_component} / target_dims.{axis_component}, 1.0);
+    let source_center = source_center_2d.{axis_component};
+    let lobes = {lobes_f};
+    let support = lobes * scale;
+    let first_sample = i32(ceil(source_center - support));
+    let last_sample = i32(floor(source_center + support));
+
+    var sum = vec4f(0.0);
+    var weight_sum = 0.0;
+    for (
+        var sample_index = first_sample;
+        sample_index <= last_sample;
+        sample_index = sample_index + 1
+    ) {{
+        let distance = f32(sample_index) - source_center;
+        let x = distance / scale;
+
+        var sinc_x = 1.0;
+        if abs(x) > 0.000001 {{
+            let pi_x = 3.141592653589793 * x;
+            sinc_x = sin(pi_x) / pi_x;
+        }}
+
+        let window_x = x / lobes;
+        var sinc_window = 1.0;
+        if abs(window_x) > 0.000001 {{
+            let pi_window_x = 3.141592653589793 * window_x;
+            sinc_window = sin(pi_window_x) / pi_window_x;
+        }}
+
+        let weight = sinc_x * sinc_window;
+        let sample_xy = {sample_xy};
+        let uv = (sample_xy + vec2f(0.5)) / source_dims;
+        sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0) * weight;
+        weight_sum = weight_sum + weight;
+    }}
+
+    if abs(weight_sum) <= 0.000001 {{
+        let fallback_uv = (source_center_2d + vec2f(0.5)) / source_dims;
+        return textureSampleLevel(src_tex, src_samp, fallback_uv, 0.0);
+    }}
+    return sum / weight_sum;
+  "#
+    );
+
+    Ok(build_fullscreen_textured_bundle(body))
+}
+
 /// Build a horizontal Gaussian blur shader bundle.
 pub fn build_horizontal_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
     build_horizontal_blur_bundle_with_tap_count(kernel, offset, 8)
@@ -1967,8 +2062,9 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use super::{
-        ERROR_SHADER_WGSL, build_bloom_extract_material_bundle, build_horizontal_blur_bundle,
-        build_horizontal_blur_bundle_with_tap_count, build_pass_wgsl_bundle_with_graph_binding,
+        ERROR_SHADER_WGSL, LanczosAxis, build_bloom_extract_material_bundle,
+        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
+        build_lanczos_downsample_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
         build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count,
     };
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
@@ -2178,6 +2274,29 @@ mod tests {
             v.module.contains("let tap_count: u32 = 8u;"),
             "vertical wrapper should keep legacy 8 taps"
         );
+    }
+
+    #[test]
+    fn lanczos_downsample_is_scale_aware_separable_and_valid_wgsl() {
+        let horizontal = build_lanczos_downsample_pass_wgsl_bundle(3, LanczosAxis::Horizontal)
+            .expect("horizontal Lanczos WGSL should build");
+        let vertical = build_lanczos_downsample_pass_wgsl_bundle(5, LanczosAxis::Vertical)
+            .expect("vertical Lanczos WGSL should build");
+
+        assert!(
+            horizontal.module.contains("source_dims.x / target_dims.x"),
+            "horizontal pass should derive its support from the X downsample ratio"
+        );
+        assert!(
+            vertical.module.contains("source_dims.y / target_dims.y"),
+            "vertical pass should derive its support from the Y downsample ratio"
+        );
+        for bundle in [&horizontal, &vertical] {
+            assert!(bundle.module.contains("in.uv * source_dims - vec2f(0.5)"));
+            assert!(bundle.module.contains("let support = lobes * scale;"));
+            assert!(bundle.module.contains("return sum / weight_sum;"));
+            validate_wgsl(&bundle.module).expect("scale-aware Lanczos WGSL should validate");
+        }
     }
 
     #[test]

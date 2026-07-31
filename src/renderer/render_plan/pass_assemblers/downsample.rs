@@ -18,11 +18,11 @@ use crate::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
         pass_source::resolve_pass_source_ref,
-        types::{MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
+        types::{KernelSpec, MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_u32_min_1},
         wgsl::{
-            build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
-            build_upsample_bilinear_bundle,
+            LanczosAxis, build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
+            build_lanczos_downsample_pass_wgsl_bundle, build_upsample_bilinear_bundle,
         },
     },
 };
@@ -62,9 +62,9 @@ pub(crate) fn assemble_downsample(
         .ok_or_else(|| anyhow!("Downsample.source missing for {layer_id}"))?;
     let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
     let src_pass_id = src_texture_ref.source.node_id.clone();
-    let src_tex = bs
+    let src_spec = bs
         .pass_output_registry
-        .get_texture_for_port(&src_pass_id, &src_texture_ref.source.port_id)
+        .get_for_port(&src_pass_id, &src_texture_ref.source.port_id)
         .cloned()
         .ok_or_else(|| {
             anyhow!(
@@ -72,6 +72,8 @@ pub(crate) fn assemble_downsample(
                 src_texture_ref.source.port_id
             )
         })?;
+    let src_tex = src_spec.texture_name;
+    let src_resolution = src_spec.resolution;
 
     let kernel_conn = incoming_connection(scene, layer_id, "kernel")
         .ok_or_else(|| anyhow!("Downsample.kernel missing for {layer_id}"))?;
@@ -81,7 +83,7 @@ pub(crate) fn assemble_downsample(
         .get("source")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let kernel = crate::renderer::render_plan::parse_kernel_source_js_like(kernel_src)?;
+    let kernel_spec = crate::renderer::render_plan::parse_kernel_source_js_like(kernel_src)?;
 
     fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
         v.as_f64()
@@ -191,25 +193,8 @@ pub(crate) fn assemble_downsample(
         bs.target_texture_name.clone()
     };
 
-    // Fullscreen geometry for Downsample output size.
-    let geo: ResourceName = format!("sys.downsample.{layer_id}.geo").into();
-    bs.push_fullscreen_geometry(geo.clone(), out_w as f32, out_h as f32);
-
-    let params_name: ResourceName = format!("params.sys.downsample.{layer_id}").into();
     let out_w_f = out_w as f32;
     let out_h_f = out_h as f32;
-    let params_val = make_params(
-        [out_w_f, out_h_f],
-        [out_w_f, out_h_f],
-        [out_w_f * 0.5, out_h_f * 0.5],
-        resolve_effective_camera_for_pass_node(
-            scene,
-            &nodes_by_id,
-            layer_node,
-            [out_w_f, out_h_f],
-        )?,
-        [0.0, 0.0, 0.0, 0.0],
-    );
 
     let sampling = parse_str(&layer_node.params, "sampling").unwrap_or("Mirror");
     let node_sampler_kind = match sampling {
@@ -224,38 +209,149 @@ pub(crate) fn assemble_downsample(
     } else {
         node_sampler_kind
     };
+    let final_blend_state = if downsample_out_tex == *bs.target_texture_name {
+        pass_blend_state
+    } else {
+        BlendState::REPLACE
+    };
 
-    let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
+    // Fullscreen geometry and params for the final Downsample output size.
+    let geo: ResourceName = format!("sys.downsample.{layer_id}.geo").into();
+    bs.push_fullscreen_geometry(geo.clone(), out_w_f, out_h_f);
+    let params_name: ResourceName = format!("params.sys.downsample.{layer_id}").into();
+    let params_val = make_params(
+        [out_w_f, out_h_f],
+        [out_w_f, out_h_f],
+        [out_w_f * 0.5, out_h_f * 0.5],
+        resolve_effective_camera_for_pass_node(
+            scene,
+            &nodes_by_id,
+            layer_node,
+            [out_w_f, out_h_f],
+        )?,
+        [0.0, 0.0, 0.0, 0.0],
+    );
 
-    bs.render_pass_specs.push(RenderPassSpec {
-        pass_id: pass_name.as_str().to_string(),
-        name: pass_name.clone(),
-        geometry_buffer: geo.clone(),
-        instance_buffer: None,
-        normals_buffer: None,
-        vertex_layout: Default::default(),
-        target_texture: downsample_out_tex.clone(),
-        resolve_target: None,
-        params_buffer: params_name,
-        baked_data_parse_buffer: None,
-        params: params_val,
-        graph_binding: None,
-        graph_values: None,
-        shader_wgsl: bundle.module,
-        texture_bindings: vec![PassTextureBinding {
-            texture: src_tex.clone(),
-            image_node_id: None,
-        }],
-        sampler_kinds: vec![sampler_kind],
-        blend_state: if downsample_out_tex == *bs.target_texture_name {
-            pass_blend_state
-        } else {
-            BlendState::REPLACE
-        },
-        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
-        sample_count: 1,
-    });
-    bs.composite_passes.push(pass_name);
+    match kernel_spec {
+        KernelSpec::Fixed(kernel) => {
+            let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
+            bs.render_pass_specs.push(RenderPassSpec {
+                pass_id: pass_name.as_str().to_string(),
+                name: pass_name.clone(),
+                geometry_buffer: geo,
+                instance_buffer: None,
+                normals_buffer: None,
+                vertex_layout: Default::default(),
+                target_texture: downsample_out_tex.clone(),
+                resolve_target: None,
+                params_buffer: params_name,
+                baked_data_parse_buffer: None,
+                params: params_val,
+                graph_binding: None,
+                graph_values: None,
+                shader_wgsl: bundle.module,
+                texture_bindings: vec![PassTextureBinding {
+                    texture: src_tex.clone(),
+                    image_node_id: None,
+                }],
+                sampler_kinds: vec![sampler_kind],
+                blend_state: final_blend_state,
+                color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                sample_count: 1,
+            });
+            bs.composite_passes.push(pass_name.clone());
+        }
+        KernelSpec::Lanczos { lobes } => {
+            let nearest_sampler_kind = match sampler_kind {
+                SamplerKind::NearestMirror | SamplerKind::LinearMirror => {
+                    SamplerKind::NearestMirror
+                }
+                SamplerKind::NearestRepeat | SamplerKind::LinearRepeat => {
+                    SamplerKind::NearestRepeat
+                }
+                SamplerKind::NearestClamp | SamplerKind::LinearClamp => SamplerKind::NearestClamp,
+            };
+
+            // Keep signed Lanczos lobes intact between the separable passes.
+            let h_tex: ResourceName = format!("sys.downsample.{layer_id}.h").into();
+            bs.textures.push(TextureDecl {
+                name: h_tex.clone(),
+                size: [out_w, src_resolution[1]],
+                format: wgpu::TextureFormat::Rgba16Float,
+                sample_count: 1,
+                needs_sampling: false,
+            });
+
+            let h_geo: ResourceName = format!("sys.downsample.{layer_id}.h.geo").into();
+            let h_w_f = out_w_f;
+            let h_h_f = src_resolution[1] as f32;
+            bs.push_fullscreen_geometry(h_geo.clone(), h_w_f, h_h_f);
+            let h_params_name: ResourceName = format!("params.sys.downsample.{layer_id}.h").into();
+            let h_params = make_params(
+                [h_w_f, h_h_f],
+                [h_w_f, h_h_f],
+                [h_w_f * 0.5, h_h_f * 0.5],
+                legacy_projection_camera_matrix([h_w_f, h_h_f]),
+                [0.0, 0.0, 0.0, 0.0],
+            );
+            let h_pass_name: ResourceName = format!("sys.downsample.{layer_id}.h.pass").into();
+            let h_bundle =
+                build_lanczos_downsample_pass_wgsl_bundle(lobes, LanczosAxis::Horizontal)?;
+
+            bs.render_pass_specs.push(RenderPassSpec {
+                pass_id: h_pass_name.as_str().to_string(),
+                name: h_pass_name.clone(),
+                geometry_buffer: h_geo,
+                instance_buffer: None,
+                normals_buffer: None,
+                vertex_layout: Default::default(),
+                target_texture: h_tex.clone(),
+                resolve_target: None,
+                params_buffer: h_params_name,
+                baked_data_parse_buffer: None,
+                params: h_params,
+                graph_binding: None,
+                graph_values: None,
+                shader_wgsl: h_bundle.module,
+                texture_bindings: vec![PassTextureBinding {
+                    texture: src_tex.clone(),
+                    image_node_id: None,
+                }],
+                sampler_kinds: vec![nearest_sampler_kind],
+                blend_state: BlendState::REPLACE,
+                color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                sample_count: 1,
+            });
+            bs.composite_passes.push(h_pass_name);
+
+            let v_bundle = build_lanczos_downsample_pass_wgsl_bundle(lobes, LanczosAxis::Vertical)?;
+            bs.render_pass_specs.push(RenderPassSpec {
+                pass_id: pass_name.as_str().to_string(),
+                name: pass_name.clone(),
+                geometry_buffer: geo,
+                instance_buffer: None,
+                normals_buffer: None,
+                vertex_layout: Default::default(),
+                target_texture: downsample_out_tex.clone(),
+                resolve_target: None,
+                params_buffer: params_name,
+                baked_data_parse_buffer: None,
+                params: params_val,
+                graph_binding: None,
+                graph_values: None,
+                shader_wgsl: v_bundle.module,
+                texture_bindings: vec![PassTextureBinding {
+                    texture: h_tex,
+                    image_node_id: None,
+                }],
+                sampler_kinds: vec![nearest_sampler_kind],
+                blend_state: final_blend_state,
+                color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+                sample_count: 1,
+            });
+            bs.composite_passes.push(pass_name.clone());
+        }
+    }
 
     // If Downsample is the final layer and targetSize != Composite target,
     // add an upsample bilinear pass to scale to Composite target size.
