@@ -1235,6 +1235,78 @@ fn leaving_a_derivation_state_restores_the_authored_gpu_uniform_once() {
 }
 
 #[test]
+fn doubao_push_to_talk_keeps_bottom_geometry_and_suppresses_white_layers() {
+    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    let machine = scene
+        .state_machine
+        .as_ref()
+        .expect("doubao fixture should have a state machine");
+    let state = |state_id: &str| {
+        machine
+            .states
+            .iter()
+            .find(|state| state.id == state_id)
+            .unwrap_or_else(|| panic!("missing state {state_id}"))
+    };
+    let value = |state_id: &str, param_name: &str| {
+        let param = machine
+            .state_params
+            .iter()
+            .find(|param| param.name == param_name)
+            .unwrap_or_else(|| panic!("missing State Param {param_name}"));
+        state(state_id)
+            .state_param_overrides
+            .get(&param.id)
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or_else(|| panic!("missing {param_name} override for {state_id}"))
+    };
+
+    assert_eq!(value("st_push_to_talk", "InputBarPositionPx.y"), 144.0);
+    assert_eq!(
+        value("st_push_to_talk_cancel", "InputBarPositionPx.y"),
+        180.0
+    );
+    for state_id in ["st_push_to_talk", "st_push_to_talk_cancel"] {
+        assert_eq!(value(state_id, "VoiceDotOpacity"), 0.0);
+        assert_eq!(value(state_id, "VoiceDotProgress"), 0.0);
+        assert_eq!(value(state_id, "VoiceDotResponse"), 0.0);
+    }
+    assert_eq!(
+        value("st_push_to_talk", "IntelligentLightParticleOpacity"),
+        0.35
+    );
+    for state_id in ["st_push_to_talk", "st_push_to_talk_cancel"] {
+        assert_eq!(value(state_id, "LightClipBloomProgress"), 1.0);
+    }
+    for state_id in [
+        "st_mrerw3qg_6",
+        "st_mrerxocx_8",
+        "st_listening",
+        "st_thinking",
+        "st_speaking",
+    ] {
+        assert_eq!(value(state_id, "LightClipBloomProgress"), 0.0);
+    }
+
+    let prompt_y = scene
+        .groups
+        .iter()
+        .find(|group| group.id == "PttPrompt")
+        .and_then(|group| {
+            group
+                .nodes
+                .iter()
+                .find(|node| node.id == "Rect2DGeometry_PttPrompt")
+        })
+        .and_then(|node| node.params.get("position"))
+        .and_then(serde_json::Value::as_array)
+        .and_then(|position| position.get(1))
+        .and_then(serde_json::Value::as_f64)
+        .expect("PTT prompt y position");
+    assert_eq!(prompt_y, 300.0);
+}
+
+#[test]
 fn doubao_blob_radius_uses_full_size_state_values_and_intermediate_output() {
     let _function_registry = support::function_registry_lock();
     for (energy, expected_radius) in [(0.0, 26.88), (1.0, 29.4)] {
