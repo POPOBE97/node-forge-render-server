@@ -34,9 +34,9 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_10
-    float_input_10: vec4f,
+    node_FloatInput_10_157c0221: vec4f,
     // Node: FloatInput_12
-    float_input_12: vec4f,
+    node_FloatInput_12_af780221: vec4f,
     // Node: Vector2Input_67
     node_Vector2Input_67_d6ac4dbd: vec4f,
     // Node: Vector2Input_68
@@ -260,24 +260,24 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Sdf2DBevel Sdf2DBevel_61.normal finite differences
     let _2d_sdf_bevel_normal_sdf_px = sdf2d_round_rect(
-        ((in.local_px.xy + vec2f(sdf2d_bevel_eps(), 0.0)) - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))),
+        ((in.local_px.xy + vec2f(sdf2d_bevel_eps(), 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))),
         (in.geo_size_px * 0.5),
-        vec4f((graph_inputs.float_input_12).x),
+        vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
     let _2d_sdf_bevel_normal_sdf_nx = sdf2d_round_rect(
-        ((in.local_px.xy + vec2f(-(sdf2d_bevel_eps()), 0.0)) - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))),
+        ((in.local_px.xy + vec2f(-(sdf2d_bevel_eps()), 0.0)) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))),
         (in.geo_size_px * 0.5),
-        vec4f((graph_inputs.float_input_12).x),
+        vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
     let _2d_sdf_bevel_normal_sdf_py = sdf2d_round_rect(
-        ((in.local_px.xy + vec2f(0.0, sdf2d_bevel_eps())) - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))),
+        ((in.local_px.xy + vec2f(0.0, sdf2d_bevel_eps())) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))),
         (in.geo_size_px * 0.5),
-        vec4f((graph_inputs.float_input_12).x),
+        vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
     let _2d_sdf_bevel_normal_sdf_ny = sdf2d_round_rect(
-        ((in.local_px.xy + vec2f(0.0, -(sdf2d_bevel_eps()))) - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))),
+        ((in.local_px.xy + vec2f(0.0, -(sdf2d_bevel_eps()))) - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))),
         (in.geo_size_px * 0.5),
-        vec4f((graph_inputs.float_input_12).x),
+        vec4f((graph_inputs.node_FloatInput_12_af780221).x),
     );
     let _2d_sdf_bevel_normal_depth_px = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_px, 22, 0.46);
     let _2d_sdf_bevel_normal_depth_nx = sdf2d_bevel_smooth7(_2d_sdf_bevel_normal_sdf_nx, 22, 0.46);
@@ -301,7 +301,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let remap = smoothstep(
         0.0,
         -2.0,
-        sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.float_input_10).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.float_input_12).x)),
+        sdf2d_round_rect((in.local_px.xy - (in.geo_size_px * vec2f((graph_inputs.node_FloatInput_10_157c0221).x))), (in.geo_size_px * 0.5), vec4f((graph_inputs.node_FloatInput_12_af780221).x)),
     );
     // Final composite
     let _frag_out = vec4f((math_closure_out * remap));

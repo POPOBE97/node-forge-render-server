@@ -38,7 +38,7 @@ struct GraphInputs {
     // Node: FloatInput_53
     node_FloatInput_53_b820f720: vec4f,
     // Node: GroupInstance_62/ColorInput_68
-    group_instance_62_color_input_68: vec4f,
+    node_GroupInstance_62_ColorInput_68_0f64f50a: vec4f,
 };
 
 @group(0) @binding(2)

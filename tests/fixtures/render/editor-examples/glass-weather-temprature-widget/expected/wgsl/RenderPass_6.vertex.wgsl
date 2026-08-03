@@ -34,23 +34,23 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_10
-    float_input_10: vec4f,
+    node_FloatInput_10_157c0221: vec4f,
     // Node: FloatInput_107
-    float_input_107: vec4f,
+    node_FloatInput_107_c6ed3817: vec4f,
     // Node: FloatInput_12
-    float_input_12: vec4f,
+    node_FloatInput_12_af780221: vec4f,
     // Node: FloatInput_84
-    float_input_84: vec4f,
+    node_FloatInput_84_38afe820: vec4f,
     // Node: FloatInput_89
-    float_input_89: vec4f,
+    node_FloatInput_89_1faae820: vec4f,
     // Node: Vector2Input_119
     node_Vector2Input_119_4e6d6989: vec4f,
     // Node: Vector2Input_120
     node_Vector2Input_120_72a16b89: vec4f,
     // Node: Vector3Input_105
-    vector3_input_105: vec4f,
+    node_Vector3Input_105_12e9923b: vec4f,
     // Node: Vector3Input_80
-    vector3_input_80: vec4f,
+    node_Vector3Input_80_82af6f66: vec4f,
 };
 
 @group(0) @binding(2)

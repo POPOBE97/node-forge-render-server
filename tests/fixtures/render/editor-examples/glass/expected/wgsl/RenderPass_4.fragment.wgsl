@@ -37,7 +37,7 @@ struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
     // Node: Vector4Input_82
-    vector4_input_82: vec4f,
+    node_Vector4Input_82_911287d3: vec4f,
 };
 
 @group(0) @binding(2)
@@ -674,7 +674,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Mix refraction + reflection ---
      var glass_mat = mix(refraction, reflection, clamp(1.0 + dot(normal, incident_ray) * 1.0, 0.0, 1.0));
-    glass_mat = glass_luminance_curve_lab(glass_mat, (graph_inputs.vector4_input_82), 1.0);
+    glass_mat = glass_luminance_curve_lab(glass_mat, (graph_inputs.node_Vector4Input_82_911287d3), 1.0);
     //  glass_mat = vec4f(glass_add_light(glass_mat.rgb, reflection.rgb, (1.0 - light_normalized_sdf) * 0.0), glass_mat.a);
 
      // --- Background color tinting ---

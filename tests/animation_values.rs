@@ -106,11 +106,25 @@ fn passthrough_state_param_for_uniform<'a>(
     node_id: &str,
     param_name: &str,
 ) -> &'a str {
+    let any_state_id = machine
+        .states
+        .iter()
+        .find(|state| state.state_type == AnimationStateType::AnyState)
+        .map(|state| state.id.as_str())
+        .expect("State Machine should have an Any State");
     let binding = machine
         .derivation_bindings
         .iter()
         .find(|binding| binding.state_id == state_id)
-        .unwrap_or_else(|| panic!("State '{state_id}' has no Derivation binding"));
+        .or_else(|| {
+            machine
+                .derivation_bindings
+                .iter()
+                .find(|binding| binding.state_id == any_state_id)
+        })
+        .unwrap_or_else(|| {
+            panic!("State '{state_id}' has no direct or Any State fallback Derivation binding")
+        });
     let derivation_id = machine
         .states
         .iter()
@@ -827,7 +841,7 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
             "GroupInstance_51",
             "out_0",
             "node_default_composite",
-            "dynamic_input_bar_ui",
+            "dynamic_1784530828769_2",
         ),
     ] {
         assert!(
@@ -865,8 +879,10 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
             "dynamic_input_bar_ui",
             "dynamic_1784530828769_2",
             "dynamic_ptt_prompt",
+            "dynamic_voice_dots",
+            "dynamic_1785383865833_5",
         ],
-        "Composite dynamic inputs must remain Glass -> UI -> Light -> PTT Prompt"
+        "Composite dynamic inputs must remain Caustic -> Glass -> UI -> Light -> Voice Dots -> PTT Prompt"
     );
 
     let settle = |session: &mut AnimationSession| {
@@ -1016,20 +1032,18 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
             (binding.state_id.as_str(), *derivation_id)
         })
         .collect();
+    let any_state_id = machine
+        .states
+        .iter()
+        .find(|state| state.state_type == AnimationStateType::AnyState)
+        .map(|state| state.id.as_str())
+        .expect("doubao fixture should have an Any State");
     assert_eq!(
         derivation_by_state.keys().copied().collect::<BTreeSet<_>>(),
-        BTreeSet::from([
-            "st_listening",
-            "st_mrerw3qg_6",
-            "st_mrerxocx_8",
-            "st_push_to_talk",
-            "st_push_to_talk_cancel",
-            "st_speaking",
-            "st_thinking",
-        ]),
-        "unexpected set of logical States with Derivation bindings"
+        BTreeSet::from([any_state_id, "st_thinking"]),
+        "doubao should use one Any State fallback plus the Thinking override"
     );
-    let shared_derivation = derivation_by_state["st_mrerxocx_8"];
+    let shared_derivation = derivation_by_state[any_state_id];
     for state_id in [
         "st_mrerw3qg_6",
         "st_mrerxocx_8",
@@ -1039,8 +1053,15 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
         "st_push_to_talk_cancel",
     ] {
         assert_eq!(
-            derivation_by_state[state_id], shared_derivation,
-            "State '{state_id}' must use the shared Intelligent Light Derivation"
+            machine
+                .derivation_bindings
+                .iter()
+                .find(|binding| binding.state_id == state_id)
+                .and_then(|binding| derivation_by_node.get(binding.derivation_node_id.as_str()))
+                .copied()
+                .unwrap_or(shared_derivation),
+            shared_derivation,
+            "State '{state_id}' must inherit the shared Intelligent Light Derivation"
         );
     }
     assert_ne!(

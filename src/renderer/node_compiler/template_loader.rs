@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -7,7 +7,7 @@ use std::sync::{OnceLock, RwLock};
 static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 static OVERRIDE_CACHE: OnceLock<RwLock<HashMap<PathBuf, String>>> = OnceLock::new();
 static MATERIALS_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
-static GENERATION: AtomicU64 = AtomicU64::new(0);
+static CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     /// Archive-local material sources belong to the document currently loaded
@@ -15,6 +15,10 @@ thread_local! {
     /// archive compilation (notably the test runner) from replacing another
     /// document's shader sources midway through planning.
     static DOCUMENT_OVERRIDES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    /// Document overrides are thread-local, so their invalidation generation
+    /// must be thread-local as well. A process-global counter lets one render
+    /// thread spuriously invalidate another thread's otherwise identical plan.
+    static DOCUMENT_OVERRIDE_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Returns the root directory for per-node WGSL material override files,
@@ -48,7 +52,9 @@ pub fn install_document_overrides(overrides: impl IntoIterator<Item = (String, S
         current.clear();
         current.extend(overrides);
     });
-    GENERATION.fetch_add(1, Ordering::Relaxed);
+    DOCUMENT_OVERRIDE_GENERATION.with(|generation| {
+        generation.set(generation.get().wrapping_add(1));
+    });
 }
 
 fn cache() -> &'static RwLock<HashMap<String, String>> {
@@ -133,11 +139,14 @@ pub fn invalidate_cache() {
     if let Some(c) = OVERRIDE_CACHE.get() {
         c.write().unwrap().clear();
     }
-    GENERATION.fetch_add(1, Ordering::Relaxed);
+    CACHE_GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn generation() -> u64 {
-    GENERATION.load(Ordering::Relaxed)
+pub fn generation() -> [u64; 2] {
+    [
+        CACHE_GENERATION.load(Ordering::Relaxed),
+        DOCUMENT_OVERRIDE_GENERATION.with(Cell::get),
+    ]
 }
 
 #[cfg(test)]
@@ -163,5 +172,20 @@ mod tests {
 
         let values = handles.map(|handle| handle.join().expect("render thread should finish"));
         assert_eq!(values, ["thread-a", "thread-b"]);
+    }
+
+    #[test]
+    fn document_override_generation_is_isolated_between_render_threads() {
+        let main_thread_generation = generation()[1];
+        let child_generation = std::thread::spawn(|| {
+            let before = generation()[1];
+            install_document_overrides([("SharedNode".to_string(), "child".to_string())]);
+            (before, generation()[1])
+        })
+        .join()
+        .expect("render thread should finish");
+
+        assert_eq!(child_generation.1, child_generation.0.wrapping_add(1));
+        assert_eq!(generation()[1], main_thread_generation);
     }
 }

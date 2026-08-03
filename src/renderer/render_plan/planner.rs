@@ -986,6 +986,20 @@ mod tests {
         Ok((scene, assets))
     }
 
+    fn select_doubao_glow_variant(scene: &mut SceneDSL, selected_index: u64) {
+        scene
+            .groups
+            .iter_mut()
+            .flat_map(|group| group.nodes.iter_mut())
+            .find(|node| node.id == "ResourcePool_ca27a95e_57")
+            .expect("doubao Glow Render Scheme pool")
+            .params
+            .insert(
+                "selectedIndex".to_string(),
+                serde_json::json!(selected_index),
+            );
+    }
+
     fn intelligent_light_node_id(plan: &RenderPlan) -> String {
         plan.prepared
             .scene
@@ -1110,7 +1124,8 @@ mod tests {
 
     #[test]
     fn doubao_bloom_uses_additive_combine_and_authored_level_strengths() -> Result<()> {
-        let (scene, assets) = load_case("doubao-voice-interaction")?;
+        let (mut scene, assets) = load_case("doubao-voice-interaction")?;
+        select_doubao_glow_variant(&mut scene, 0);
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
             assets.as_ref(),
@@ -1176,7 +1191,8 @@ mod tests {
 
     #[test]
     fn doubao_pass_resource_pool_isolates_single_and_matrix_variants() -> Result<()> {
-        let (scene, assets) = load_case("doubao-voice-interaction")?;
+        let (mut scene, assets) = load_case("doubao-voice-interaction")?;
+        select_doubao_glow_variant(&mut scene, 0);
         let bloom_plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
             assets.as_ref(),

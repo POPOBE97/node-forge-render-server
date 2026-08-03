@@ -2908,7 +2908,7 @@
       "type": "Kernel",
       "label": "Kernel",
       "category": "Input",
-      "description": "Define a numeric kernel (width/height + row-major values)",
+      "description": "Define a fixed numeric kernel or a scale-aware procedural filter",
       "inputs": [],
       "outputs": [
         {

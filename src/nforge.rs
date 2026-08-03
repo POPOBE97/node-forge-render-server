@@ -1,12 +1,13 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{
     asset_store::{AssetData, AssetStore, LoadedNforge},
@@ -16,9 +17,27 @@ use crate::{
 };
 
 const APPLICATION_ID: i64 = 1_313_232_455;
-const FORMAT_VERSION: i64 = 4;
+const FORMAT_VERSION: i64 = 5;
 const SCENE_DSL_VERSION: &str = "4.0";
-const CHANGE_LOG_RETENTION: i64 = 10_000;
+const SYNC_LOG_RETENTION: i64 = 10_000;
+const CONTENT_HISTORY_RETENTION: i64 = 256;
+const HISTORY_ENTITY_KIND: &str = "document_history";
+
+fn sha256_hex(content: &[u8]) -> String {
+    let digest = Sha256::digest(content);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn verify_blob(blob_hash: &str, byte_length: i64, content: &[u8], label: &str) -> Result<()> {
+    if byte_length < 0 || content.len() != byte_length as usize {
+        bail!("invalid blob byte length for {label} ('{blob_hash}')");
+    }
+    let actual = sha256_hex(content);
+    if actual != blob_hash {
+        bail!("blob hash mismatch for {label}: expected '{blob_hash}', got '{actual}'");
+    }
+    Ok(())
+}
 
 fn now_millis() -> u128 {
     SystemTime::now()
@@ -79,7 +98,7 @@ fn open_writable(path: &Path) -> Result<Connection> {
     Ok(connection)
 }
 
-fn immutable_sqlite_uri(path: &Path) -> Result<String> {
+fn readonly_sqlite_uri(path: &Path) -> Result<String> {
     let absolute = path
         .canonicalize()
         .with_context(|| format!("failed to resolve .nforge at {}", path.display()))?;
@@ -95,12 +114,16 @@ fn immutable_sqlite_uri(path: &Path) -> Result<String> {
             write!(&mut encoded, "%{byte:02X}").expect("writing to String cannot fail");
         }
     }
-    Ok(format!("file:{encoded}?mode=ro&immutable=1"))
+    if std::path::PathBuf::from(format!("{}-wal", path.display())).exists() {
+        Ok(format!("file:{encoded}?mode=ro"))
+    } else {
+        Ok(format!("file:{encoded}?mode=ro&immutable=1"))
+    }
 }
 
 fn open_readonly(path: &Path) -> Result<Connection> {
     validate_header(path)?;
-    let uri = immutable_sqlite_uri(path)?;
+    let uri = readonly_sqlite_uri(path)?;
     let connection = Connection::open_with_flags(
         uri,
         OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -123,6 +146,122 @@ fn open_readonly(path: &Path) -> Result<Connection> {
 
 fn parse_json(text: String, label: &str) -> Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("invalid {label} JSON in .nforge"))
+}
+
+fn validate_container(connection: &Connection) -> Result<()> {
+    let quick_check: String = connection
+        .query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .context("failed to run SQLite quick_check")?;
+    if quick_check != "ok" {
+        bail!("SQLite quick_check failed: {quick_check}");
+    }
+    let foreign_key_violations: i64 = connection
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .context("failed to run SQLite foreign_key_check")?;
+    if foreign_key_violations != 0 {
+        bail!("SQLite foreign_key_check found {foreign_key_violations} violation(s)");
+    }
+
+    let mut statement = connection
+        .prepare("SELECT blob_hash, byte_length, content FROM document_blobs ORDER BY blob_hash")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (blob_hash, byte_length, content) = row?;
+        verify_blob(
+            &blob_hash,
+            byte_length,
+            &content,
+            &format!("document blob '{blob_hash}'"),
+        )?;
+    }
+    let orphan: Option<String> = connection
+        .query_row(
+            "SELECT b.blob_hash
+               FROM document_blobs b
+              WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.blob_hash = b.blob_hash)
+                AND NOT EXISTS (
+                  SELECT 1 FROM debug_artifacts d WHERE d.blob_hash = b.blob_hash
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM history_blob_refs h WHERE h.blob_hash = b.blob_hash
+                )
+              LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(orphan) = orphan {
+        bail!("orphan document blob '{orphan}'");
+    }
+
+    let mut history = connection.prepare(
+        "SELECT sequence, patch_json FROM change_log
+          WHERE entity_kind = ? ORDER BY sequence",
+    )?;
+    let rows = history.query_map([HISTORY_ENTITY_KIND], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (sequence, patch) = row?;
+        let entry: Value = serde_json::from_str(&patch)
+            .with_context(|| format!("invalid history JSON at change {sequence}"))?;
+        if entry.get("version").and_then(Value::as_i64) != Some(2) {
+            bail!("unsupported history entry version at change {sequence}");
+        }
+        let record_kind = entry.get("recordKind").and_then(Value::as_str);
+        let before_value = entry
+            .get("before")
+            .filter(|before| !before.is_null())
+            .and_then(|before| before.get("value"));
+        if matches!(record_kind, Some("asset" | "debug_artifact")) && before_value.is_some() {
+            let before_value = before_value.expect("checked above");
+            if before_value.get("content").is_some() {
+                bail!("history change {sequence} contains inline binary content");
+            }
+            let blob_hash = before_value
+                .get("blobHash")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("history change {sequence} is missing blobHash"))?;
+            let byte_length = before_value
+                .get("byteLength")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("history change {sequence} is missing byteLength")
+                })?;
+            let referenced_length: Option<i64> = connection
+                .query_row(
+                    "SELECT b.byte_length
+                       FROM history_blob_refs h
+                       JOIN document_blobs b ON b.blob_hash = h.blob_hash
+                      WHERE h.change_sequence = ? AND h.slot = 'content'
+                        AND h.blob_hash = ?",
+                    params![sequence, blob_hash],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if referenced_length != Some(byte_length) {
+                bail!("history change {sequence} has an invalid blob reference");
+            }
+        } else {
+            let unexpected_refs: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM history_blob_refs WHERE change_sequence = ?",
+                [sequence],
+                |row| row.get(0),
+            )?;
+            if unexpected_refs != 0 {
+                bail!("history change {sequence} has an unexpected blob reference");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn json_rows(connection: &Connection, sql: &str, parameter: &str) -> Result<Vec<Value>> {
@@ -209,7 +348,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
                     derivations.insert(owner_id, definition);
                 }
                 (unsupported, _) => {
-                    bail!("unsupported graph scope kind '{unsupported}' in v3 .nforge");
+                    bail!("unsupported graph scope kind '{unsupported}' in v5 .nforge");
                 }
             }
         }
@@ -218,17 +357,28 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
     let asset_store = AssetStore::new();
     let mut asset_manifest = Map::<String, Value>::new();
     {
-        let mut statement = connection
-            .prepare("SELECT asset_id, metadata_json, content FROM assets ORDER BY asset_id")?;
+        let mut statement = connection.prepare(
+            "SELECT a.asset_id, a.metadata_json, a.blob_hash, b.byte_length, b.content
+               FROM assets a JOIN document_blobs b ON b.blob_hash = a.blob_hash
+              ORDER BY a.asset_id",
+        )?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Vec<u8>>(4)?,
             ))
         })?;
         for row in rows {
-            let (asset_id, metadata_text, bytes) = row?;
+            let (asset_id, metadata_text, blob_hash, byte_length, bytes) = row?;
+            verify_blob(
+                &blob_hash,
+                byte_length,
+                &bytes,
+                &format!("asset '{asset_id}'"),
+            )?;
             let metadata = parse_json(metadata_text, "asset metadata")?;
             let mime_type = metadata
                 .get("mimeType")
@@ -285,18 +435,27 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
     let mut debug_contents = Vec::<(DebugArtifactItem, Vec<u8>)>::new();
     {
         let mut statement = connection.prepare(
-            "SELECT artifact_id, item_json, content
-               FROM debug_artifacts ORDER BY artifact_id",
+            "SELECT d.artifact_id, d.item_json, d.blob_hash, b.byte_length, b.content
+               FROM debug_artifacts d JOIN document_blobs b ON b.blob_hash = d.blob_hash
+              ORDER BY d.artifact_id",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Vec<u8>>(4)?,
             ))
         })?;
         for row in rows {
-            let (artifact_id, item_text, content) = row?;
+            let (artifact_id, item_text, blob_hash, byte_length, content) = row?;
+            verify_blob(
+                &blob_hash,
+                byte_length,
+                &content,
+                &format!("debug artifact '{artifact_id}'"),
+            )?;
             let item: DebugArtifactItem = serde_json::from_str(&item_text)
                 .context("invalid debug artifact JSON in .nforge")?;
             debug_items.insert(artifact_id, item.clone());
@@ -324,10 +483,10 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         let states = header
             .get_mut("states")
             .and_then(Value::as_array_mut)
-            .ok_or_else(|| anyhow::anyhow!("stateMachine.states is missing in v3 .nforge"))?;
+            .ok_or_else(|| anyhow::anyhow!("stateMachine.states is missing in v5 .nforge"))?;
         for state in states {
             let Some(object) = state.as_object_mut() else {
-                bail!("invalid State definition in v3 .nforge");
+                bail!("invalid State definition in v5 .nforge");
             };
             if object.get("type").and_then(Value::as_str) != Some("animationState") {
                 continue;
@@ -403,6 +562,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
 
 pub fn load(path: &Path) -> Result<LoadedNforge> {
     let connection = open_readonly(path)?;
+    validate_container(&connection)?;
     let (scene, asset_store, debug_artifacts) = read_scene(&connection)?;
     Ok(LoadedNforge {
         scene,
@@ -416,13 +576,79 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .context("failed to begin .nforge debug artifact transaction")?;
-    let (document_id, current_revision): (String, i64) = transaction
+    let current_revision: i64 = transaction
         .query_row(
-            "SELECT document_id, revision FROM document WHERE singleton = 1",
+            "SELECT revision FROM document WHERE singleton = 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .context("invalid .nforge document row")?;
+    let mut existing = BTreeMap::<String, (Value, String, i64)>::new();
+    {
+        let mut statement = transaction.prepare(
+            "SELECT d.artifact_id, d.item_json, d.blob_hash, b.byte_length
+               FROM debug_artifacts d JOIN document_blobs b ON b.blob_hash = d.blob_hash",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, item_json, blob_hash, byte_length) = row?;
+            existing.insert(
+                id,
+                (
+                    parse_json(item_json, "debug artifact")?,
+                    blob_hash,
+                    byte_length,
+                ),
+            );
+        }
+    }
+
+    let mut desired = BTreeMap::<String, (Value, Vec<u8>, String, i64)>::new();
+    if let Some(manifest) = debug_artifacts.export_manifest() {
+        for item in manifest.items.values() {
+            let content = debug_artifacts.bytes(item.id.as_str()).unwrap_or_default();
+            let blob_hash = sha256_hex(&content);
+            let byte_length = i64::try_from(content.len())
+                .map_err(|_| anyhow::anyhow!("debug artifact is too large"))?;
+            desired.insert(
+                item.id.clone(),
+                (
+                    serde_json::to_value(item)?,
+                    content.to_vec(),
+                    blob_hash,
+                    byte_length,
+                ),
+            );
+        }
+    }
+
+    let changed_ids = existing
+        .keys()
+        .chain(desired.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|id| {
+            existing
+                .get(id)
+                .map(|(item, hash, length)| (item, hash, length))
+                != desired
+                    .get(id)
+                    .map(|(item, _, hash, length)| (item, hash, length))
+        })
+        .collect::<Vec<_>>();
+    if changed_ids.is_empty() {
+        transaction.rollback()?;
+        return Ok(());
+    }
+
     let revision = current_revision + 1;
     let timestamp = now_millis().to_string();
     let transaction_id = format!("render-{}-{}", std::process::id(), now_millis());
@@ -430,36 +656,141 @@ pub fn save_debug_artifacts(path: &Path, debug_artifacts: &DebugArtifactStore) -
         "UPDATE document SET revision = ?, updated_at = ? WHERE singleton = 1",
         params![revision, timestamp],
     )?;
-    transaction.execute("DELETE FROM debug_artifacts", [])?;
-    if let Some(manifest) = debug_artifacts.export_manifest() {
-        for item in manifest.items.values() {
-            let content = debug_artifacts.bytes(item.id.as_str()).unwrap_or_default();
+
+    for artifact_id in changed_ids {
+        let before = existing.get(&artifact_id);
+        let after = desired.get(&artifact_id);
+        if let Some((item, content, blob_hash, byte_length)) = after {
+            transaction.execute(
+                "INSERT INTO document_blobs(blob_hash, byte_length, content)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(blob_hash) DO NOTHING",
+                params![blob_hash, byte_length, content],
+            )?;
+            let (stored_length, stored_content): (i64, Vec<u8>) = transaction.query_row(
+                "SELECT byte_length, content FROM document_blobs WHERE blob_hash = ?",
+                [blob_hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            verify_blob(
+                blob_hash,
+                stored_length,
+                &stored_content,
+                "debug artifact write",
+            )?;
+            if stored_length != *byte_length {
+                bail!("debug artifact blob '{blob_hash}' has inconsistent byte length");
+            }
             transaction.execute(
                 "INSERT INTO debug_artifacts(
-                   artifact_id, item_json, content, updated_revision
-                 ) VALUES (?, ?, ?, ?)",
-                params![item.id, serde_json::to_string(item)?, content, revision],
+                   artifact_id, item_json, blob_hash, updated_revision
+                 ) VALUES (?, ?, ?, ?)
+                 ON CONFLICT(artifact_id) DO UPDATE SET
+                   item_json = excluded.item_json,
+                   blob_hash = excluded.blob_hash,
+                   updated_revision = excluded.updated_revision",
+                params![artifact_id, item.to_string(), blob_hash, revision],
+            )?;
+        } else {
+            transaction.execute(
+                "DELETE FROM debug_artifacts WHERE artifact_id = ?",
+                [&artifact_id],
+            )?;
+        }
+
+        let descriptor = |value: Option<&(Value, String, i64)>| {
+            value.map(|(item, blob_hash, byte_length)| {
+                json!({"item": item, "blobHash": blob_hash, "byteLength": byte_length})
+            })
+        };
+        let before_descriptor = descriptor(before);
+        let after_descriptor = after.map(|(item, _, blob_hash, byte_length)| {
+            json!({"item": item, "blobHash": blob_hash, "byteLength": byte_length})
+        });
+        let operation = match (before, after) {
+            (None, Some(_)) => "add",
+            (Some(_), None) => "delete",
+            (Some(_), Some(_)) => "patch",
+            (None, None) => unreachable!("changed artifact must exist before or after"),
+        };
+        transaction.execute(
+            "INSERT INTO change_log(
+               revision, transaction_id, actor_id, entity_kind, scope_id,
+               entity_id, operation, patch_json, committed_at
+             ) VALUES (?, ?, 'render-server', 'debug_artifact', NULL, ?, ?, ?, ?)",
+            params![
+                revision,
+                transaction_id,
+                artifact_id,
+                operation,
+                json!({"before": before_descriptor.clone(), "after": after_descriptor}).to_string(),
+                timestamp
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO change_log(
+               revision, transaction_id, actor_id, entity_kind, scope_id,
+               entity_id, operation, patch_json, committed_at
+             ) VALUES (?, ?, 'render-server', ?, NULL, ?, 'before', ?, ?)",
+            params![
+                revision,
+                transaction_id,
+                HISTORY_ENTITY_KIND,
+                artifact_id,
+                json!({
+                    "version": 2,
+                    "recordKind": "debug_artifact",
+                    "key": {"artifactId": artifact_id},
+                    "before": before_descriptor.map(|value| json!({"value": value}))
+                })
+                .to_string(),
+                timestamp
+            ],
+        )?;
+        if let Some((_, blob_hash, _)) = before {
+            transaction.execute(
+                "INSERT INTO history_blob_refs(change_sequence, slot, blob_hash)
+                 VALUES (?, 'content', ?)",
+                params![transaction.last_insert_rowid(), blob_hash],
             )?;
         }
     }
+
     transaction.execute(
-        "INSERT INTO change_log(
-           revision, transaction_id, actor_id, entity_kind, scope_id,
-           entity_id, operation, patch_json, committed_at
-         ) VALUES (?, ?, 'render-server', 'debug_artifacts', NULL, ?, 'replace', ?, ?)",
+        "DELETE FROM change_log WHERE revision < ? AND entity_kind <> ?",
         params![
-            revision,
-            transaction_id,
-            document_id,
-            json!({"count": debug_artifacts.export_manifest().map_or(0, |m| m.items.len())})
-                .to_string(),
-            timestamp
+            std::cmp::max(1, revision - SYNC_LOG_RETENTION + 1),
+            HISTORY_ENTITY_KIND
         ],
     )?;
+    let history_floor = transaction
+        .query_row(
+            "SELECT revision FROM change_log
+              WHERE entity_kind = ?
+              GROUP BY revision ORDER BY revision DESC
+              LIMIT 1 OFFSET ?",
+            params![HISTORY_ENTITY_KIND, CONTENT_HISTORY_RETENTION - 1],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if let Some(history_floor) = history_floor {
+        transaction.execute(
+            "DELETE FROM change_log WHERE entity_kind = ? AND revision < ?",
+            params![HISTORY_ENTITY_KIND, history_floor],
+        )?;
+    }
     transaction.execute(
-        "DELETE FROM change_log WHERE revision < ?",
-        [std::cmp::max(0, revision - CHANGE_LOG_RETENTION)],
+        "DELETE FROM document_blobs
+          WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.blob_hash = document_blobs.blob_hash)
+            AND NOT EXISTS (
+              SELECT 1 FROM debug_artifacts d WHERE d.blob_hash = document_blobs.blob_hash
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM history_blob_refs h WHERE h.blob_hash = document_blobs.blob_hash
+            )",
+        [],
     )?;
+    validate_container(&transaction)?;
     transaction
         .commit()
         .context("failed to commit debug artifacts")?;

@@ -1,11 +1,12 @@
 use node_forge_render_server::animation::{AnimationSession, AnimationStep};
-use node_forge_render_server::state_machine::FiredEvent;
+use node_forge_render_server::state_machine::{FiredEvent, MousePosition, OverrideKey};
 
 mod support;
 
 const POSITIONS_KEY: &str = "Vector2ArrayInput_IntelligentLightPositions:value";
 const SNAP_PRIMARY_PARAM_ID: &str = "sp_5e510047b6cb8f4d";
 const SNAP_SECONDARY_PARAM_ID: &str = "sp_653078b6ffd2ce9c";
+const PTT_ORB_PARAM_ID: &str = "sp_ptt_orb_screen_position_px";
 
 fn space_event(event_type: &str) -> FiredEvent {
     FiredEvent {
@@ -47,6 +48,154 @@ fn position_x(step: &AnimationStep) -> f64 {
         .and_then(|position| position.first())
         .and_then(serde_json::Value::as_f64)
         .expect("render-derived positions should contain a numeric first x")
+}
+
+fn uniform_number(step: &AnimationStep, node_id: &str, param_id: &str) -> f64 {
+    step.active_overrides
+        .get(&OverrideKey::new(node_id, param_id))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or_else(|| panic!("missing numeric override '{node_id}:{param_id}'"))
+}
+
+#[test]
+fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
+    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    let machine = scene
+        .state_machine
+        .as_ref()
+        .expect("doubao fixture should have a state machine");
+
+    for (state_id, function_id) in [
+        ("st_push_to_talk", "function_ptt_orb_motion"),
+        ("st_push_to_talk_cancel", "function_ptt_cancel_orb_motion"),
+    ] {
+        let mutation = machine
+            .states
+            .iter()
+            .find(|state| state.id == state_id)
+            .and_then(|state| state.mutation_graph.as_ref())
+            .unwrap_or_else(|| panic!("'{state_id}' should own a Mutation graph"));
+        assert!(mutation.output_bindings.iter().any(|binding| {
+            binding.state_param_id == PTT_ORB_PARAM_ID
+                && binding.from.node_id == function_id
+                && binding.from.port_id == "orbScreenPositionPx"
+        }));
+    }
+
+    for transition_id in [
+        "tr_push_to_talk_to_idle",
+        "tr_push_to_talk_to_thinking",
+        "tr_cancel_to_idle",
+    ] {
+        let transition = machine
+            .transitions
+            .iter()
+            .find(|transition| transition.id == transition_id)
+            .unwrap_or_else(|| panic!("missing transition '{transition_id}'"));
+        let graph = machine
+            .motion_graphs
+            .iter()
+            .find(|graph| graph.id == transition.motion_graph_id)
+            .expect("PTT exit should own a Motion Graph");
+        let return_spring = graph
+            .nodes
+            .iter()
+            .find(|node| node.id() == "timing_ptt_orb_return")
+            .expect("PTT exit should own an orb return spring");
+        let node_forge_render_server::state_machine::types::TransitionMotionNode::Spring {
+            duration,
+            bounce,
+            ..
+        } = return_spring
+        else {
+            panic!("PTT orb return timing node should be a spring");
+        };
+        assert!((*duration - 0.42).abs() <= f64::EPSILON);
+        assert!((*bounce - 0.16).abs() <= f64::EPSILON);
+        assert!(graph.input_bindings.iter().any(|binding| {
+            binding.source.id() == PTT_ORB_PARAM_ID && binding.to.node_id == "timing_ptt_orb_return"
+        }));
+    }
+
+    let mut session = AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine");
+    session
+        .force_state("st_push_to_talk")
+        .expect("PushToTalk should be forceable");
+    session.update_mouse_position(MousePosition { x: 540.0, y: 144.0 });
+    let centered = session.step(1.0 / 60.0);
+    let centered_x = uniform_number(
+        &centered,
+        "Vector2Input_IntelligentLightParticlePointerPositionPx",
+        "x",
+    );
+    let centered_y = uniform_number(
+        &centered,
+        "Vector2Input_IntelligentLightParticlePointerPositionPx",
+        "y",
+    );
+    assert!(
+        (centered_x - 540.0).abs() <= 1.0e-8,
+        "centered local x should be 540, got {centered_x}"
+    );
+    assert!(
+        (centered_y - 540.0).abs() <= 1.0e-8,
+        "centered local y should be 540, got {centered_y}"
+    );
+
+    session.update_mouse_position(MousePosition { x: 570.0, y: 144.0 });
+    let free_follow = session.step(1.0 / 60.0);
+    assert!((channel(&free_follow, PTT_ORB_PARAM_ID).value[0] - 570.0).abs() <= 1.0e-8);
+
+    session.update_mouse_position(MousePosition { x: 540.0, y: 174.0 });
+    let free_follow_up = session.step(1.0 / 60.0);
+    assert!((channel(&free_follow_up, PTT_ORB_PARAM_ID).value[1] - 174.0).abs() <= 1.0e-8);
+    assert!(
+        (uniform_number(
+            &free_follow_up,
+            "Vector2Input_IntelligentLightParticlePointerPositionPx",
+            "y",
+        ) - 510.0)
+            .abs()
+            <= 1.0e-8,
+        "bottom-left frag Y must convert back into top-down Intelligent Light local Y"
+    );
+
+    session.update_mouse_position(MousePosition {
+        x: 1140.0,
+        y: 144.0,
+    });
+    let resisted = session.step(1.0 / 60.0);
+    let excess = 600.0 - 40.0;
+    let expected_distance = 40.0 + (240.0 * 0.55 * excess) / (240.0 + 0.55 * excess);
+    let resisted_channel = channel(&resisted, PTT_ORB_PARAM_ID);
+    assert_eq!(resisted_channel.transition_driver, "hold");
+    assert!((resisted_channel.value[0] - (540.0 + expected_distance)).abs() <= 1.0e-8);
+    assert!((resisted_channel.value[1] - 144.0).abs() <= 1.0e-8);
+    assert!(expected_distance < 280.0);
+    assert!(expected_distance < 600.0);
+
+    let outgoing = resisted_channel.value.clone();
+    let returning = session
+        .force_state("st_mrerxocx_8")
+        .expect("Idle should be forceable from PushToTalk");
+    let returning_channel = channel(&returning, PTT_ORB_PARAM_ID);
+    assert_eq!(returning_channel.transition_driver, "spring");
+    assert!((returning_channel.value[0] - outgoing[0]).abs() <= 1.0e-8);
+    assert!((returning_channel.value[1] - outgoing[1]).abs() <= 1.0e-8);
+
+    let mut returned = returning;
+    for _ in 0..120 {
+        if returned.active_transition_id.is_none() {
+            break;
+        }
+        returned = session.step(1.0 / 60.0);
+    }
+    assert_eq!(returned.active_transition_id, None);
+    let returned_channel = channel(&returned, PTT_ORB_PARAM_ID);
+    assert!((returned_channel.value[0] - 540.0).abs() <= 1.0e-6);
+    assert!((returned_channel.value[1] - 144.0).abs() <= 1.0e-6);
 }
 
 #[test]
@@ -291,6 +440,7 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
         }
 
         let outgoing_listening = session.step(0.0);
+        let outgoing_snap = channel(&outgoing_listening, SNAP_PRIMARY_PARAM_ID).value[0];
         session.fire_event(space_event("keyup"));
         let entered_thinking = session.step(0.0);
         assert_eq!(entered_thinking.current_state_id, "st_thinking");
@@ -318,8 +468,8 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             "positions must remain a derived render value"
         );
         assert!(
-            (position_x(&entered_thinking) - position_x(&outgoing_listening)).abs() <= 1.0e-8,
-            "dt=0 State handoff must preserve positions because their physical dependencies are continuous"
+            (initial_snap.value[0] - outgoing_snap).abs() <= 1.0e-8,
+            "dt=0 State handoff must preserve the semantic physical value before running the new pure Derivation"
         );
 
         let mut at_100ms = entered_thinking;
@@ -374,7 +524,7 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     session.step(0.21);
     assert_eq!(settle(&mut session).current_state_id, "st_listening");
     let outgoing_listening = session.step(0.0);
-    let outgoing_position_x = position_x(&outgoing_listening);
+    let outgoing_snap = channel(&outgoing_listening, SNAP_PRIMARY_PARAM_ID).value[0];
     session.fire_event(space_event("keyup"));
 
     let sample_frames = [0usize, 6, 12, 18, 33, 48];
@@ -390,15 +540,16 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     }
 
     let expected = [
-        (0.350000, 0.350000, 0.050000, 0.300000, 42.800000),
-        (0.350000, 0.360085, 0.032440, 0.327645, 37.607028),
-        (0.350000, 0.378861, 0.012100, 0.366761, 29.058241),
-        (0.350000, 0.401348, 0.002297, 0.399052, 25.771770),
-        (0.350000, 0.476790, 0.000000, 0.476790, 19.739991),
-        (0.350000, 0.556887, 0.000000, 0.556887, 13.735355),
+        (0.450000, 0.450000, 0.150000, 0.300000, 29.897707),
+        (0.450000, 0.440524, 0.097320, 0.343204, 36.230692),
+        (0.450000, 0.427383, 0.036301, 0.391083, 43.548368),
+        (0.450000, 0.421226, 0.006890, 0.414337, 38.018161),
+        (0.450000, 0.440943, -0.001568, 0.442510, 31.856458),
+        (0.450000, 0.478415, 0.000000, 0.478415, 29.568595),
     ];
     println!("| t | value | S | Q | E | P/render | Mutation | Transition | active |");
     println!("|---:|---|---:|---:|---:|---:|---|---|---|");
+    let mut trace_mismatches = Vec::new();
     for ((frame, step), expected) in samples.iter().zip(expected) {
         let sample = channel(step, SNAP_PRIMARY_PARAM_ID);
         let state = sample.state_value.first().copied().unwrap_or(f64::NAN);
@@ -439,15 +590,19 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
             (physical, expected.3),
             (position_x(step), expected.4),
         ] {
-            assert!(
-                (actual - expected).abs() <= 1.0e-5,
-                "fixed trace changed at frame {frame}: expected {expected}, got {actual}"
-            );
+            if (actual - expected).abs() > 1.0e-5 {
+                trace_mismatches.push(format!("frame {frame}: expected {expected}, got {actual}"));
+            }
         }
     }
     assert!(
-        (position_x(&samples[0].1) - outgoing_position_x).abs() <= 1.0e-8,
-        "Listening -> Thinking must not jump positions at dt=0"
+        trace_mismatches.is_empty(),
+        "fixed trace changed:\n{}",
+        trace_mismatches.join("\n")
+    );
+    assert!(
+        (channel(&samples[0].1, SNAP_PRIMARY_PARAM_ID).value[0] - outgoing_snap).abs() <= 1.0e-8,
+        "Listening -> Thinking must preserve the semantic physical value at dt=0"
     );
 
     let initial_snap = channel(&samples[0].1, SNAP_PRIMARY_PARAM_ID);

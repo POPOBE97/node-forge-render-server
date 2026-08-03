@@ -84,17 +84,20 @@ impl ILightUpdateConfig {
 
         let layer_node = nodes_by_id.get(self.layer_id.as_str()).copied();
 
-        let power = layer_node
-            .and_then(|n| n.params.get("power"))
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32)
-            .unwrap_or(self.power_fallback);
-
-        let lightness = layer_node
-            .and_then(|n| n.params.get("lightness"))
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32)
-            .unwrap_or(self.lightness_fallback);
+        let power = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "power",
+            self.power_fallback,
+        );
+        let lightness = resolve_f32_runtime(
+            scene,
+            &nodes_by_id,
+            &self.layer_id,
+            "lightness",
+            self.lightness_fallback,
+        );
         let blob_radius = resolve_f32_runtime(
             scene,
             &nodes_by_id,
@@ -1213,6 +1216,103 @@ mod tests {
         let [expected_x1, expected_y1] = default_light_position(1, [60.0, 37.0]);
         assert_near(x1 as f64, expected_x1 as f64, 1e-6, "default light[1].x");
         assert_near(y1 as f64, expected_y1 as f64, 1e-6, "default light[1].y");
+    }
+
+    #[test]
+    fn pack_buffer_re_resolves_connected_power_and_lightness() {
+        let power_node = test_node(
+            "power",
+            "FloatInput",
+            serde_json::json!({ "value": 0.0 })
+                .as_object()
+                .unwrap()
+                .clone()
+                .into_iter()
+                .collect(),
+        );
+        let lightness_node = test_node(
+            "lightness",
+            "FloatInput",
+            serde_json::json!({ "value": 0.25 })
+                .as_object()
+                .unwrap()
+                .clone()
+                .into_iter()
+                .collect(),
+        );
+        let mut scene = make_test_scene(
+            serde_json::json!({
+                "power": 0.5,
+                "lightness": 0.5,
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            vec![power_node, lightness_node],
+            vec![
+                Connection {
+                    id: "power-to-ilight".to_string(),
+                    from: Endpoint {
+                        node_id: "power".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ilight".to_string(),
+                        port_id: "power".to_string(),
+                    },
+                },
+                Connection {
+                    id: "lightness-to-ilight".to_string(),
+                    from: Endpoint {
+                        node_id: "lightness".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "ilight".to_string(),
+                        port_id: "lightness".to_string(),
+                    },
+                },
+            ],
+        );
+        let cfg = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            power_fallback: 0.75,
+            lightness_fallback: 0.75,
+            ..Default::default()
+        };
+
+        let initial = cfg.pack_buffer(&scene);
+        assert_near(read_f32(&initial, 176) as f64, 0.0, 1e-6, "initial power");
+        assert_near(
+            read_f32(&initial, 180) as f64,
+            0.25,
+            1e-6,
+            "initial lightness",
+        );
+
+        scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "power")
+            .unwrap()
+            .params
+            .insert("value".to_string(), serde_json::json!(1.0));
+        scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "lightness")
+            .unwrap()
+            .params
+            .insert("value".to_string(), serde_json::json!(0.8));
+
+        let updated = cfg.pack_buffer(&scene);
+        assert_near(read_f32(&updated, 176) as f64, 1.0, 1e-6, "updated power");
+        assert_near(
+            read_f32(&updated, 180) as f64,
+            0.8,
+            1e-6,
+            "updated lightness",
+        );
     }
 
     #[test]

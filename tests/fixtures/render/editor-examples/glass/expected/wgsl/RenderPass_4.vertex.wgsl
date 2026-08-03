@@ -37,7 +37,7 @@ struct GraphInputs {
     // Node: Vector3Input_67
     node_Vector3Input_67_698d8c66: vec4f,
     // Node: Vector4Input_82
-    vector4_input_82: vec4f,
+    node_Vector4Input_82_911287d3: vec4f,
 };
 
 @group(0) @binding(2)

@@ -204,13 +204,17 @@ fn aligned_voice_interaction_shaders_compile_without_a_gpu() {
             {
                 assert!(bundle.module.contains("apply_particles"));
                 assert!(!bundle.module.contains("pow(intelligent_light"));
-                assert!(bundle.module.contains("glow * hard_clip_alpha"));
+                assert!(bundle.module.contains("let light_envelope = mix("));
                 assert!(
                     bundle
                         .module
-                        .contains("let light_gain = max(light_envelope, 0.0)")
+                        .contains("let light_gain = max(light_envelope * glow, 0.0)")
                 );
-                assert!(!bundle.module.contains("light_envelope * glow"));
+                assert!(
+                    bundle
+                        .module
+                        .contains("clamp(intelligent_light.a * light_gain, 0.0, 1.0)")
+                );
             }
         }
     }

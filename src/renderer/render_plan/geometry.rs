@@ -104,7 +104,7 @@ fn mat4_mul(a: [f32; 16], b: [f32; 16]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for c in 0..4 {
         for r in 0..4 {
-            out[c * 4 + r] = a[0 * 4 + r] * b[c * 4 + 0]
+            out[c * 4 + r] = a[r] * b[c * 4]
                 + a[1 * 4 + r] * b[c * 4 + 1]
                 + a[2 * 4 + r] * b[c * 4 + 2]
                 + a[3 * 4 + r] * b[c * 4 + 3];

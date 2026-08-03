@@ -312,12 +312,49 @@ mod tests {
             .upsert(item, Some(updated_patch_text.to_string()));
         super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &loaded.debug_artifacts)
             .unwrap();
+        super::save_debug_artifacts_to_nforge(&path, &loaded.scene, &loaded.debug_artifacts)
+            .unwrap();
 
         let reloaded = super::load_from_nforge_with_debug_artifacts(&path).unwrap();
         assert_eq!(
             reloaded.debug_artifacts.pass_patches_text("Main"),
             Some(updated_patch_text)
         );
+
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let revision: i64 = connection
+            .query_row(
+                "SELECT revision FROM document WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(revision, 3, "an identical debug save must be a no-op");
+        let public_changes: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM change_log
+                  WHERE revision = 3 AND entity_kind = 'debug_artifact'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(public_changes, 1, "only the changed artifact is patched");
+        let (history_patch, history_refs): (String, i64) = connection
+            .query_row(
+                "SELECT c.patch_json,
+                        (SELECT COUNT(*) FROM history_blob_refs h
+                          WHERE h.change_sequence = c.sequence)
+                   FROM change_log c
+                  WHERE c.revision = 3 AND c.entity_kind = 'document_history'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let history: serde_json::Value = serde_json::from_str(&history_patch).unwrap();
+        assert_eq!(history["version"], 2);
+        assert!(!history_patch.contains("\"content\":["));
+        assert_eq!(history_refs, 1);
+        drop(connection);
 
         let _ = std::fs::remove_file(path);
     }

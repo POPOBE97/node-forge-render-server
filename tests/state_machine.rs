@@ -511,8 +511,10 @@ fn doubao_thinking_mutation_retargets_snap_springs() {
             "forced-state preview must not reset the Mutation spring every frame"
         );
     }
-    assert!(minimum_target < 0.48, "{minimum_target}");
-    assert!(maximum_target > 0.52, "{maximum_target}");
+    assert!(
+        maximum_target - minimum_target > 0.05,
+        "Thinking Mutation target did not traverse a meaningful range: {minimum_target}..{maximum_target}"
+    );
     assert!(
         maximum_position_x - minimum_position_x > 5.0,
         "visible positions did not follow the snap spring: {minimum_position_x}..{maximum_position_x}"

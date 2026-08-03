@@ -461,7 +461,7 @@ impl DiffRenderer {
     }
 
     fn decode_histogram_bin_center(bin: usize) -> f32 {
-        if bin <= HIST_UNDERFLOW_BIN {
+        if bin == HIST_UNDERFLOW_BIN {
             return 2.0_f32.powf(HIST_LOG2_MIN);
         }
         if bin == HIST_ZERO_BIN {

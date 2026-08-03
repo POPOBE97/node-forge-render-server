@@ -38,7 +38,7 @@ struct GraphInputs {
     // Node: FloatInput_53
     node_FloatInput_53_b820f720: vec4f,
     // Node: GroupInstance_62/ColorInput_68
-    group_instance_62_color_input_68: vec4f,
+    node_GroupInstance_62_ColorInput_68_0f64f50a: vec4f,
 };
 
 @group(0) @binding(2)
@@ -143,7 +143,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     {
         let uv = vec2f(in.uv.x, 1.0 - in.uv.y);
         let front_color = matcap;
-        let input3 = vec4f((graph_inputs.group_instance_62_color_input_68).rgb * (graph_inputs.group_instance_62_color_input_68).a, (graph_inputs.group_instance_62_color_input_68).a);
+        let input3 = vec4f((graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).rgb * (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a, (graph_inputs.node_GroupInstance_62_ColorInput_68_0f64f50a).a);
         var output: vec4f;
         output = mc_color(in.uv, uv, front_color, input3);
         color_out = output;
