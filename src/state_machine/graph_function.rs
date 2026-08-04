@@ -20,7 +20,7 @@ use super::{
 };
 use crate::dsl::SceneDSL;
 
-const GRAPH_FUNCTION_ABI_VERSION: u32 = 8;
+const GRAPH_FUNCTION_ABI_VERSION: u32 = 9;
 const WATCHDOG_IDLE: u8 = 0;
 const WATCHDOG_ARMED: u8 = 1;
 const WATCHDOG_FIRING: u8 = 2;
@@ -531,19 +531,19 @@ impl GraphJsRuntime {
                 .ok_or_else(|| javascript_error!(scope, "installation failed"))?;
             let installed = installed
                 .to_object(scope)
-                .ok_or_else(|| anyhow!("Graph Function ABI v8 installer returned no object"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v9 installer returned no object"))?;
             let entry_key = v8::String::new(scope, "entry").unwrap();
             let bindings_key = v8::String::new(scope, "bindings").unwrap();
             let motion_kind_key = v8::String::new(scope, "motionKind").unwrap();
             let entry = installed
                 .get(scope, entry_key.into())
                 .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
-                .ok_or_else(|| anyhow!("Graph Function ABI v8 installer returned no entry"))?;
+                .ok_or_else(|| anyhow!("Graph Function ABI v9 installer returned no entry"))?;
             let bindings = installed
                 .get(scope, bindings_key.into())
                 .and_then(|value| v8::Local::<v8::Array>::try_from(value).ok())
                 .ok_or_else(|| {
-                    anyhow!("Graph Function ABI v8 installer returned no bindings array")
+                    anyhow!("Graph Function ABI v9 installer returned no bindings array")
                 })?;
             let motion_kind = installed
                 .get(scope, motion_kind_key.into())
@@ -555,7 +555,7 @@ impl GraphJsRuntime {
                 .any(|output| output.motion == Some(true))
                 && motion_kind.is_none()
             {
-                bail!("Graph Function ABI v8 installer returned no motion symbol");
+                bail!("Graph Function ABI v9 installer returned no motion symbol");
             }
             for index in 0..bindings.length() {
                 let binding = bindings
@@ -865,6 +865,17 @@ fn graph_value_to_v8<'s>(
         GraphValue::Vec4(values) | GraphValue::Color(values) => {
             numeric_array(scope, values)?.into()
         }
+        GraphValue::NormalizedBezierCurve(values) => numeric_array(scope, values)?.into(),
+        GraphValue::BezierCurve(points) => {
+            let array = v8::Array::new(scope, points.len() as i32);
+            for (index, point) in points.iter().enumerate() {
+                let point = numeric_array(scope, point)?;
+                if array.set_index(scope, index as u32, point.into()) != Some(true) {
+                    bail!("failed to construct Bezier curve Graph Function input");
+                }
+            }
+            array.into()
+        }
         GraphValue::Packed(values) => {
             let array = v8::Array::new(scope, values.len() as i32);
             for (index, value) in values.iter().enumerate() {
@@ -946,6 +957,24 @@ fn graph_value_from_type(
         "vector3" => Ok(GraphValue::Vec3(numeric_tuple(scope, value)?)),
         "vector4" => Ok(GraphValue::Vec4(numeric_tuple(scope, value)?)),
         "color" => Ok(GraphValue::Color(numeric_tuple(scope, value)?)),
+        "normalizedBezierCurve" => Ok(GraphValue::NormalizedBezierCurve(numeric_tuple(
+            scope, value,
+        )?)),
+        "bezierCurve" => {
+            let array = v8::Local::<v8::Array>::try_from(value)
+                .map_err(|_| anyhow!("expected Bezier curve array"))?;
+            if array.length() != 4 {
+                bail!("expected exactly 4 Bezier control points");
+            }
+            let mut points = [[0.0; 2]; 4];
+            for (index, point) in points.iter_mut().enumerate() {
+                let value = array
+                    .get_index(scope, index as u32)
+                    .ok_or_else(|| anyhow!("missing Bezier control point {index}"))?;
+                *point = numeric_tuple(scope, value)?;
+            }
+            Ok(GraphValue::BezierCurve(points))
+        }
         other => bail!("unsupported Graph Function port type '{other}'"),
     }
 }

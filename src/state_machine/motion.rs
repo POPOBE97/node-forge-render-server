@@ -53,6 +53,7 @@ pub struct MotionEngine {
     initial_values: HashMap<StateParamKey, serde_json::Value>,
     state_values: HashMap<StateParamKey, serde_json::Value>,
     current_values: HashMap<StateParamKey, serde_json::Value>,
+    publication_types: HashMap<StateParamKey, String>,
     mutation_frame_calls: HashSet<StateParamKey>,
 }
 
@@ -62,12 +63,20 @@ impl MotionEngine {
     }
 
     pub fn with_initial_values(initial_values: HashMap<StateParamKey, serde_json::Value>) -> Self {
+        Self::with_initial_values_and_types(initial_values, HashMap::new())
+    }
+
+    pub fn with_initial_values_and_types(
+        initial_values: HashMap<StateParamKey, serde_json::Value>,
+        publication_types: HashMap<StateParamKey, String>,
+    ) -> Self {
         Self {
             channels: HashMap::new(),
             active_transition_id: None,
             state_values: initial_values.clone(),
             current_values: initial_values.clone(),
             initial_values,
+            publication_types,
             mutation_frame_calls: HashSet::new(),
         }
     }
@@ -147,8 +156,11 @@ impl MotionEngine {
                 .cloned()
                 .unwrap_or(MotionPlan::Instant);
             channel.start_error(previous_sample, plan);
-            self.current_values
-                .insert(key, channel.sample().value.to_json());
+            let value = publish_numeric_value(
+                self.publication_types.get(&key).map(String::as_str),
+                &channel.sample().value,
+            );
+            self.current_values.insert(key, value);
         }
 
         // Motion channels outside the authored State route do not participate
@@ -156,8 +168,11 @@ impl MotionEngine {
         for (key, channel) in &mut self.channels {
             if !transition_keys.contains(key) {
                 channel.finish_transition();
-                self.current_values
-                    .insert(key.clone(), channel.sample().value.to_json());
+                let value = publish_numeric_value(
+                    self.publication_types.get(key).map(String::as_str),
+                    &channel.sample().value,
+                );
+                self.current_values.insert(key.clone(), value);
             }
         }
         self.active_transition_id = Some(transition_id.to_string());
@@ -191,8 +206,11 @@ impl MotionEngine {
                 .entry(key.clone())
                 .or_insert_with(|| Channel::hold(value.clone()));
             channel.set_static_target(value);
-            self.current_values
-                .insert(key, channel.sample().value.to_json());
+            let value = publish_numeric_value(
+                self.publication_types.get(&key).map(String::as_str),
+                &channel.sample().value,
+            );
+            self.current_values.insert(key, value);
         }
     }
 
@@ -212,8 +230,11 @@ impl MotionEngine {
                 .entry(key.clone())
                 .or_insert_with(|| Channel::hold(value.clone()));
             channel.set_static_target(value);
-            self.current_values
-                .insert(key.clone(), channel.sample().value.to_json());
+            let value = publish_numeric_value(
+                self.publication_types.get(key).map(String::as_str),
+                &channel.sample().value,
+            );
+            self.current_values.insert(key.clone(), value);
         }
     }
 
@@ -250,9 +271,15 @@ impl MotionEngine {
             .or_insert_with(|| Channel::hold(fallback));
         channel.set_to(target, velocity, kotlin_frame_seconds(dt))?;
         let sample = channel.sample();
-        self.current_values
-            .insert(key.clone(), sample.value.to_json());
-        Ok(channel.target_sample().value.to_json())
+        let published = publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &sample.value,
+        );
+        self.current_values.insert(key.clone(), published);
+        Ok(publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &channel.target_sample().value,
+        ))
     }
 
     /// Retarget a Mutation-owned spring without replacing its current
@@ -282,9 +309,15 @@ impl MotionEngine {
             .or_insert_with(|| Channel::hold(fallback));
         channel.to(target, duration, bounce, kotlin_frame_seconds(dt))?;
         let sample = channel.sample();
-        self.current_values
-            .insert(key.clone(), sample.value.to_json());
-        Ok(channel.target_sample().value.to_json())
+        let published = publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &sample.value,
+        );
+        self.current_values.insert(key.clone(), published);
+        Ok(publish_numeric_value(
+            self.publication_types.get(key).map(String::as_str),
+            &channel.target_sample().value,
+        ))
     }
 
     /// Update global uniform values from outside the state machine. An active
@@ -303,8 +336,11 @@ impl MotionEngine {
                     .entry(key.clone())
                     .or_insert_with(|| Channel::hold(value.clone()));
                 channel.set_static_target(value.clone());
-                self.current_values
-                    .insert(key.clone(), channel.sample().value.to_json());
+                let value = publish_numeric_value(
+                    self.publication_types.get(key).map(String::as_str),
+                    &channel.sample().value,
+                );
+                self.current_values.insert(key.clone(), value);
             }
         }
     }
@@ -323,7 +359,12 @@ impl MotionEngine {
     pub fn target_value(&self, key: &StateParamKey) -> Option<serde_json::Value> {
         self.channels
             .get(key)
-            .map(|channel| channel.target_sample().value.to_json())
+            .map(|channel| {
+                publish_numeric_value(
+                    self.publication_types.get(key).map(String::as_str),
+                    &channel.target_sample().value,
+                )
+            })
             .or_else(|| self.current_values.get(key).cloned())
     }
 
@@ -359,7 +400,10 @@ impl MotionEngine {
                 .and_then(NumericValue::from_json)
                 .map(|value| value.components().to_vec())
                 .unwrap_or_default();
-            let value = sample.value.to_json();
+            let value = publish_numeric_value(
+                self.publication_types.get(key).map(String::as_str),
+                &sample.value,
+            );
             self.current_values.insert(key.clone(), value.clone());
             result.overrides.insert(key.clone(), value);
             result.channels.push(MotionChannelDebug {
@@ -407,6 +451,28 @@ fn kotlin_frame_seconds(dt: f64) -> f64 {
 
 fn key_string(key: &StateParamKey) -> String {
     key.as_str().to_string()
+}
+
+fn publish_numeric_value(port_type: Option<&str>, value: &NumericValue) -> serde_json::Value {
+    let value = value.to_json();
+    if !matches!(port_type, Some("int" | "packed<int>")) {
+        return value;
+    }
+    round_json_numbers(value)
+}
+
+fn round_json_numbers(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .map(|value| serde_json::json!(value.round() as i64))
+            .unwrap_or(serde_json::Value::Number(number)),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(round_json_numbers).collect())
+        }
+        value => value,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2298,6 +2364,34 @@ mod tests {
         assert!(
             (channel.value[0] - (channel.target_value[0] - channel.transition_error[0])).abs()
                 <= 1.0e-9
+        );
+    }
+
+    #[test]
+    fn integer_channels_remain_continuous_internally_and_round_when_published() {
+        let key = StateParamKey::new("Count:value");
+        let mut engine = MotionEngine::with_initial_values_and_types(
+            HashMap::from([(key.clone(), serde_json::json!(0))]),
+            HashMap::from([(key.clone(), "int".to_string())]),
+        );
+        engine.begin_mutation_frame();
+        engine
+            .to(&key, serde_json::json!(10), 1.0, 0.0, 0.1)
+            .unwrap();
+
+        let internal = engine
+            .channels
+            .get(&key)
+            .expect("integer channel")
+            .sample()
+            .value
+            .components()[0];
+        assert!(internal.fract().abs() > f64::EPSILON);
+        assert!(
+            engine
+                .physical_value(&key)
+                .and_then(|value| value.as_i64())
+                .is_some()
         );
     }
 }

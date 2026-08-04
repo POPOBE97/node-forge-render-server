@@ -12,6 +12,22 @@ const DEFAULT_NODE_SCHEME_REL_PATH: &str = "assets/node-scheme.json";
 pub struct NodeScheme {
     pub nodes: HashMap<String, NodeTypeScheme>,
     pub port_type_compatibility: HashMap<String, Vec<String>>,
+    pub port_type_definitions: HashMap<String, PortTypeDefinition>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortTypeDefinition {
+    pub kind: String,
+    pub literal: bool,
+    pub state_param: bool,
+    pub motion: String,
+    #[serde(default)]
+    pub element_type: Option<String>,
+    #[serde(default)]
+    pub requires_array_length: bool,
+    #[serde(default)]
+    pub default_value: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -38,6 +54,8 @@ struct GeneratedNodeScheme {
     pub generated_at: Option<String>,
     #[serde(rename = "portTypeCompatibility", default)]
     pub port_type_compatibility: HashMap<String, Vec<String>>,
+    #[serde(rename = "portTypeDefinitions", default)]
+    pub port_type_definitions: HashMap<String, PortTypeDefinition>,
     #[serde(default)]
     pub nodes: Vec<GeneratedNodeDef>,
 }
@@ -230,6 +248,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
         RawNodeScheme::Legacy(s) => NodeScheme {
             nodes: s.nodes,
             port_type_compatibility: HashMap::new(),
+            port_type_definitions: HashMap::new(),
         },
         RawNodeScheme::Generated(s) => {
             let mut nodes: HashMap<String, NodeTypeScheme> = HashMap::new();
@@ -260,6 +279,7 @@ pub fn load_default_scheme() -> Result<NodeScheme> {
             NodeScheme {
                 nodes,
                 port_type_compatibility: s.port_type_compatibility,
+                port_type_definitions: s.port_type_definitions,
             }
         }
     })

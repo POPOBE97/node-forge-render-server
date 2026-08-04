@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -10,6 +10,7 @@
     "Atan",
     "Atan2",
     "Attribute",
+    "BezierCurveInput",
     "BloomNode",
     "BoolInput",
     "CheckerTexture",
@@ -69,6 +70,7 @@
     "MixShader",
     "NoiseTexture",
     "Normalize",
+    "NormalizedBezierCurveInput",
     "OrthographicCamera",
     "PBRMaterial",
     "PackedInput",
@@ -132,6 +134,537 @@
     "vector4",
     "vector4[]"
   ],
+  "portTypeDefinitions": {
+    "float": {
+      "kind": "scalar",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "number",
+      "defaultValue": 0,
+      "acceptedOutputs": [
+        "float",
+        "int",
+        "bool"
+      ]
+    },
+    "int": {
+      "kind": "scalar",
+      "literal": true,
+      "stateParam": true,
+      "motion": "roundedNumeric",
+      "editor": "integer",
+      "defaultValue": 0,
+      "acceptedOutputs": [
+        "int",
+        "float",
+        "bool"
+      ]
+    },
+    "bool": {
+      "kind": "scalar",
+      "literal": true,
+      "stateParam": true,
+      "motion": "discrete",
+      "editor": "checkbox",
+      "defaultValue": false,
+      "acceptedOutputs": [
+        "bool"
+      ]
+    },
+    "vector2": {
+      "kind": "vector",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "vector",
+      "components": [
+        {
+          "id": "x",
+          "label": "X"
+        },
+        {
+          "id": "y",
+          "label": "Y"
+        }
+      ],
+      "defaultValue": [
+        0,
+        0
+      ],
+      "acceptedOutputs": [
+        "vector2",
+        "float",
+        "int",
+        "bool",
+        "vector3",
+        "vector4",
+        "color"
+      ]
+    },
+    "vector3": {
+      "kind": "vector",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "vector",
+      "components": [
+        {
+          "id": "x",
+          "label": "X"
+        },
+        {
+          "id": "y",
+          "label": "Y"
+        },
+        {
+          "id": "z",
+          "label": "Z"
+        }
+      ],
+      "defaultValue": [
+        0,
+        0,
+        0
+      ],
+      "acceptedOutputs": [
+        "vector3",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector4",
+        "color"
+      ]
+    },
+    "vector4": {
+      "kind": "vector",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "vector",
+      "components": [
+        {
+          "id": "x",
+          "label": "X"
+        },
+        {
+          "id": "y",
+          "label": "Y"
+        },
+        {
+          "id": "z",
+          "label": "Z"
+        },
+        {
+          "id": "w",
+          "label": "W"
+        }
+      ],
+      "defaultValue": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acceptedOutputs": [
+        "vector4",
+        "color",
+        "normalizedBezierCurve",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3"
+      ]
+    },
+    "color": {
+      "kind": "color",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "color",
+      "components": [
+        {
+          "id": "r",
+          "label": "R"
+        },
+        {
+          "id": "g",
+          "label": "G"
+        },
+        {
+          "id": "b",
+          "label": "B"
+        },
+        {
+          "id": "a",
+          "label": "A"
+        }
+      ],
+      "defaultValue": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "acceptedOutputs": [
+        "color",
+        "vector4",
+        "normalizedBezierCurve",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3"
+      ]
+    },
+    "mat4": {
+      "kind": "matrix",
+      "literal": true,
+      "stateParam": false,
+      "motion": "none",
+      "editor": "matrix4",
+      "defaultValue": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "acceptedOutputs": [
+        "mat4"
+      ]
+    },
+    "packed<float>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "collection",
+      "elementType": "float",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<float>"
+      ]
+    },
+    "packed<int>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "roundedNumeric",
+      "editor": "collection",
+      "elementType": "int",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<int>"
+      ]
+    },
+    "packed<bool>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "discrete",
+      "editor": "collection",
+      "elementType": "bool",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<bool>"
+      ]
+    },
+    "packed<vector2>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "collection",
+      "elementType": "vector2",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<vector2>"
+      ]
+    },
+    "packed<vector3>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "collection",
+      "elementType": "vector3",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<vector3>"
+      ]
+    },
+    "packed<vector4>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "collection",
+      "elementType": "vector4",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<vector4>"
+      ]
+    },
+    "packed<color>": {
+      "kind": "packed",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "collection",
+      "elementType": "color",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "packed<color>"
+      ]
+    },
+    "float[]": {
+      "kind": "fixedArray",
+      "literal": true,
+      "stateParam": false,
+      "motion": "none",
+      "editor": "collection",
+      "elementType": "float",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "float[]"
+      ]
+    },
+    "vector2[]": {
+      "kind": "fixedArray",
+      "literal": true,
+      "stateParam": false,
+      "motion": "none",
+      "editor": "collection",
+      "elementType": "vector2",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "vector2[]"
+      ]
+    },
+    "vector3[]": {
+      "kind": "fixedArray",
+      "literal": true,
+      "stateParam": false,
+      "motion": "none",
+      "editor": "collection",
+      "elementType": "vector3",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "vector3[]"
+      ]
+    },
+    "vector4[]": {
+      "kind": "fixedArray",
+      "literal": true,
+      "stateParam": false,
+      "motion": "none",
+      "editor": "collection",
+      "elementType": "vector4",
+      "requiresArrayLength": true,
+      "acceptedOutputs": [
+        "vector4[]"
+      ]
+    },
+    "texture": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "texture"
+      ]
+    },
+    "ImageFile": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "ImageFile"
+      ]
+    },
+    "renderTexture": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "renderTexture"
+      ]
+    },
+    "material": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "material",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3",
+        "vector4",
+        "color"
+      ]
+    },
+    "shader": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "shader"
+      ]
+    },
+    "geometry": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "geometry"
+      ]
+    },
+    "pass": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "pass",
+        "texture",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3",
+        "vector4",
+        "color"
+      ]
+    },
+    "kernel": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "kernel"
+      ]
+    },
+    "bezierCurve": {
+      "kind": "curve",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "bezier",
+      "defaultValue": [
+        [
+          0,
+          0
+        ],
+        [
+          0.3333333333333333,
+          0
+        ],
+        [
+          0.6666666666666666,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ],
+      "acceptedOutputs": [
+        "bezierCurve"
+      ]
+    },
+    "normalizedBezierCurve": {
+      "kind": "curve",
+      "literal": true,
+      "stateParam": true,
+      "motion": "numeric",
+      "editor": "normalizedBezier",
+      "defaultValue": [
+        0,
+        0.3333333333333333,
+        0.6666666666666666,
+        1
+      ],
+      "acceptedOutputs": [
+        "normalizedBezierCurve",
+        "vector4",
+        "color",
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3"
+      ]
+    },
+    "any": {
+      "kind": "wildcard",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "float",
+        "int",
+        "bool",
+        "vector2",
+        "vector3",
+        "vector4",
+        "color",
+        "mat4",
+        "packed<float>",
+        "packed<int>",
+        "packed<bool>",
+        "packed<vector2>",
+        "packed<vector3>",
+        "packed<vector4>",
+        "packed<color>",
+        "float[]",
+        "vector2[]",
+        "vector3[]",
+        "vector4[]",
+        "texture",
+        "ImageFile",
+        "renderTexture",
+        "material",
+        "shader",
+        "geometry",
+        "pass",
+        "kernel",
+        "bezierCurve",
+        "normalizedBezierCurve",
+        "any"
+      ]
+    }
+  },
   "gpuTextureFormats": [
     "r8unorm",
     "r8snorm",
@@ -229,38 +762,6 @@
     "astc-12x12-unorm-srgb"
   ],
   "portTypeCompatibility": {
-    "any": [
-      "float",
-      "int",
-      "bool",
-      "vector2",
-      "vector3",
-      "vector4",
-      "mat4",
-      "color",
-      "packed<float>",
-      "packed<int>",
-      "packed<bool>",
-      "packed<vector2>",
-      "packed<vector3>",
-      "packed<vector4>",
-      "packed<color>",
-      "float[]",
-      "vector2[]",
-      "vector3[]",
-      "vector4[]",
-      "texture",
-      "ImageFile",
-      "renderTexture",
-      "material",
-      "shader",
-      "geometry",
-      "pass",
-      "kernel",
-      "bezierCurve",
-      "normalizedBezierCurve",
-      "any"
-    ],
     "float": [
       "float",
       "int",
@@ -357,6 +858,16 @@
     "renderTexture": [
       "renderTexture"
     ],
+    "material": [
+      "material",
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector3",
+      "vector4",
+      "color"
+    ],
     "shader": [
       "shader"
     ],
@@ -366,16 +877,6 @@
     "pass": [
       "pass",
       "texture",
-      "float",
-      "int",
-      "bool",
-      "vector2",
-      "vector3",
-      "vector4",
-      "color"
-    ],
-    "material": [
-      "material",
       "float",
       "int",
       "bool",
@@ -399,6 +900,38 @@
       "bool",
       "vector2",
       "vector3"
+    ],
+    "any": [
+      "float",
+      "int",
+      "bool",
+      "vector2",
+      "vector3",
+      "vector4",
+      "color",
+      "mat4",
+      "packed<float>",
+      "packed<int>",
+      "packed<bool>",
+      "packed<vector2>",
+      "packed<vector3>",
+      "packed<vector4>",
+      "packed<color>",
+      "float[]",
+      "vector2[]",
+      "vector3[]",
+      "vector4[]",
+      "texture",
+      "ImageFile",
+      "renderTexture",
+      "material",
+      "shader",
+      "geometry",
+      "pass",
+      "kernel",
+      "bezierCurve",
+      "normalizedBezierCurve",
+      "any"
     ]
   },
   "nodes": [
@@ -513,6 +1046,68 @@
       "defaultParams": {
         "name": "attribute",
         "glslType": "float"
+      }
+    },
+    {
+      "type": "BezierCurveInput",
+      "label": "Bezier Curve Input",
+      "category": "Input",
+      "description": "Define a cubic Bezier curve as four 2D control points",
+      "inputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "bezierCurve",
+          "default": [
+            [
+              0,
+              0
+            ],
+            [
+              0.3333333333333333,
+              0
+            ],
+            [
+              0.6666666666666666,
+              0
+            ],
+            [
+              1,
+              0
+            ]
+          ],
+          "range": {
+            "min": 0,
+            "max": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "curve",
+          "name": "Curve",
+          "type": "bezierCurve"
+        }
+      ],
+      "defaultParams": {
+        "value": [
+          [
+            0,
+            0
+          ],
+          [
+            0.3333333333333333,
+            0
+          ],
+          [
+            0.6666666666666666,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ]
       }
     },
     {
@@ -4634,6 +5229,44 @@
         }
       ],
       "defaultParams": {}
+    },
+    {
+      "type": "NormalizedBezierCurveInput",
+      "label": "Normalized Bezier Curve Input",
+      "category": "Input",
+      "description": "Define a cubic Bezier curve with fixed normalized X coordinates",
+      "inputs": [
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "normalizedBezierCurve",
+          "default": [
+            0,
+            0.3333333333333333,
+            0.6666666666666666,
+            1
+          ],
+          "range": {
+            "min": 0,
+            "max": 1
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "curve",
+          "name": "Curve",
+          "type": "normalizedBezierCurve"
+        }
+      ],
+      "defaultParams": {
+        "value": [
+          0,
+          0.3333333333333333,
+          0.6666666666666666,
+          1
+        ]
+      }
     },
     {
       "type": "OrthographicCamera",

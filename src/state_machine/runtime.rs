@@ -427,6 +427,16 @@ impl StateMachineRuntime {
         initial_values: HashMap<StateParamKey, serde_json::Value>,
     ) -> Self {
         let motion_initial_values = initial_values;
+        let publication_types = definition
+            .state_params
+            .iter()
+            .map(|declaration| {
+                (
+                    StateParamKey::new(&declaration.id),
+                    declaration.param_type.clone(),
+                )
+            })
+            .collect();
         let function_prepare_error = super::graph_function::prepare_state_machine(&definition)
             .err()
             .map(|error| format!("{error:#}"));
@@ -472,7 +482,10 @@ impl StateMachineRuntime {
             scene_time: 0.0,
             state_local_times,
             logical_state_initialized: false,
-            motion_engine: MotionEngine::with_initial_values(motion_initial_values),
+            motion_engine: MotionEngine::with_initial_values_and_types(
+                motion_initial_values,
+                publication_types,
+            ),
             derived_values: HashMap::new(),
             derivation_snapshots: HashMap::new(),
             runtime_input: RuntimeInputSnapshot::default(),

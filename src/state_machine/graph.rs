@@ -39,6 +39,8 @@ pub enum AnimValue {
     Vec3([f64; 3]),
     Vec4([f64; 4]),
     Color([f64; 4]),
+    BezierCurve([[f64; 2]; 4]),
+    NormalizedBezierCurve([f64; 4]),
     Packed(Vec<AnimValue>),
 }
 
@@ -87,11 +89,33 @@ impl AnimValue {
                 values.get(3)?.as_f64()?,
             ])),
             Some("color") => Some(Self::Color([
-                values[0].as_f64()?,
-                values[1].as_f64()?,
-                values[2].as_f64()?,
-                values[3].as_f64()?,
+                values.first()?.as_f64()?,
+                values.get(1)?.as_f64()?,
+                values.get(2)?.as_f64()?,
+                values.get(3)?.as_f64()?,
             ])),
+            Some("normalizedBezierCurve") => Some(Self::NormalizedBezierCurve([
+                values.first()?.as_f64()?,
+                values.get(1)?.as_f64()?,
+                values.get(2)?.as_f64()?,
+                values.get(3)?.as_f64()?,
+            ])),
+            Some("bezierCurve") => {
+                if values.len() != 4 {
+                    return None;
+                }
+                let points = values
+                    .iter()
+                    .map(|point| {
+                        let point = point.as_array()?;
+                        if point.len() != 2 {
+                            return None;
+                        }
+                        Some([point.first()?.as_f64()?, point.get(1)?.as_f64()?])
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(Self::BezierCurve(points.try_into().ok()?))
+            }
             _ if values.len() == 2 => Some(Self::Vec2([values[0].as_f64()?, values[1].as_f64()?])),
             _ if values.len() == 3 => Some(Self::Vec3([
                 values[0].as_f64()?,
@@ -123,6 +147,8 @@ impl AnimValue {
             | AnimValue::Vec3(_)
             | AnimValue::Vec4(_)
             | AnimValue::Color(_)
+            | AnimValue::BezierCurve(_)
+            | AnimValue::NormalizedBezierCurve(_)
             | AnimValue::Packed(_) => None,
         }
     }
@@ -137,6 +163,15 @@ impl AnimValue {
             AnimValue::Vec3(v) => serde_json::json!([v[0], v[1], v[2]]),
             AnimValue::Vec4(v) => serde_json::json!([v[0], v[1], v[2], v[3]]),
             AnimValue::Color(v) => serde_json::json!([v[0], v[1], v[2], v[3]]),
+            AnimValue::BezierCurve(v) => serde_json::json!([
+                [v[0][0], v[0][1]],
+                [v[1][0], v[1][1]],
+                [v[2][0], v[2][1]],
+                [v[3][0], v[3][1]],
+            ]),
+            AnimValue::NormalizedBezierCurve(v) => {
+                serde_json::json!([v[0], v[1], v[2], v[3]])
+            }
             AnimValue::Packed(values) => {
                 serde_json::Value::Array(values.iter().map(AnimValue::to_json).collect())
             }
@@ -152,6 +187,8 @@ impl AnimValue {
             Self::Vec3(_) => Self::Vec3([0.0; 3]),
             Self::Vec4(_) => Self::Vec4([0.0; 4]),
             Self::Color(_) => Self::Color([0.0; 4]),
+            Self::BezierCurve(_) => Self::BezierCurve([[0.0; 2]; 4]),
+            Self::NormalizedBezierCurve(_) => Self::NormalizedBezierCurve([0.0; 4]),
             Self::Packed(values) => Self::Packed(values.iter().map(Self::zero_like).collect()),
         }
     }
@@ -896,4 +933,24 @@ fn topological_sort(
     }
 
     Ok(order)
+}
+
+#[cfg(test)]
+mod value_contract_tests {
+    use super::AnimValue;
+
+    #[test]
+    fn parses_curve_types_without_collapsing_their_identity() {
+        let bezier = serde_json::json!([[0, 0], [0.25, 0.1], [0.75, 0.9], [1, 1]]);
+        assert!(matches!(
+            AnimValue::from_json_typed(&bezier, Some("bezierCurve")),
+            Some(AnimValue::BezierCurve(_))
+        ));
+
+        let normalized = serde_json::json!([0, 0.2, 0.8, 1]);
+        assert!(matches!(
+            AnimValue::from_json_typed(&normalized, Some("normalizedBezierCurve")),
+            Some(AnimValue::NormalizedBezierCurve(_))
+        ));
+    }
 }

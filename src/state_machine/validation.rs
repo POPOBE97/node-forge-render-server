@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{Result, bail};
 
 use crate::dsl::SceneDSL;
+use crate::schema;
 
 use super::types::*;
 
@@ -74,6 +75,7 @@ pub fn validate_scene_declarations(scene: &SceneDSL, sm: &StateMachine) -> Resul
 }
 
 fn validate_state_params(sm: &StateMachine) -> Result<()> {
+    let scheme = schema::load_default_scheme()?;
     let mut ids = HashSet::new();
     let mut names = HashSet::new();
     for declaration in &sm.state_params {
@@ -106,6 +108,30 @@ fn validate_state_params(sm: &StateMachine) -> Result<()> {
                 declaration.id
             );
         }
+        let contract = scheme
+            .port_type_definitions
+            .get(&declaration.param_type)
+            .filter(|contract| contract.state_param)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "state_machine validation: State Param '{}' has unsupported type '{}'",
+                    declaration.id,
+                    declaration.param_type
+                )
+            })?;
+        if contract.requires_array_length != declaration.array_length.is_some() {
+            bail!(
+                "state_machine validation: State Param '{}' arrayLength does not match the '{}' value contract",
+                declaration.id,
+                declaration.param_type
+            );
+        }
+        validate_canonical_state_value(
+            &declaration.param_type,
+            &declaration.default_value,
+            declaration.array_length,
+            &format!("State Param '{}' defaultValue", declaration.id),
+        )?;
     }
     for declaration_id in sm.state_param_graph.declaration_positions.keys() {
         if !ids.contains(declaration_id.as_str()) {
@@ -116,7 +142,7 @@ fn validate_state_params(sm: &StateMachine) -> Result<()> {
         }
     }
     for state in &sm.states {
-        for id in state.state_param_overrides.keys() {
+        for (id, value) in &state.state_param_overrides {
             if !ids.contains(id.as_str()) {
                 bail!(
                     "state_machine validation: State '{}' overrides missing State Param '{}'",
@@ -124,7 +150,72 @@ fn validate_state_params(sm: &StateMachine) -> Result<()> {
                     id
                 );
             }
+            let declaration = sm
+                .state_params
+                .iter()
+                .find(|declaration| declaration.id == *id)
+                .expect("override declaration checked above");
+            validate_canonical_state_value(
+                &declaration.param_type,
+                value,
+                declaration.array_length,
+                &format!("State '{}' override '{}'", state.id, id),
+            )?;
         }
+    }
+    Ok(())
+}
+
+fn validate_canonical_state_value(
+    port_type: &str,
+    value: &serde_json::Value,
+    array_length: Option<usize>,
+    label: &str,
+) -> Result<()> {
+    if let Some(element_type) = port_type
+        .strip_prefix("packed<")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let values = value
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("{label} must be an array"))?;
+        let expected =
+            array_length.ok_or_else(|| anyhow::anyhow!("{label} requires arrayLength"))?;
+        if values.len() != expected {
+            bail!("{label} must contain exactly {expected} values");
+        }
+        for item in values {
+            validate_canonical_state_value(element_type, item, None, label)?;
+        }
+        return Ok(());
+    }
+
+    let numeric_tuple = |length: usize| -> bool {
+        value.as_array().is_some_and(|values| {
+            values.len() == length && values.iter().all(|value| value.as_f64().is_some())
+        })
+    };
+    let valid = match port_type {
+        "float" => value.as_f64().is_some(),
+        "int" => {
+            value.as_i64().is_some() || value.as_u64().is_some_and(|value| value <= i64::MAX as u64)
+        }
+        "bool" => value.is_boolean(),
+        "vector2" => numeric_tuple(2),
+        "vector3" => numeric_tuple(3),
+        "vector4" | "color" | "normalizedBezierCurve" => numeric_tuple(4),
+        "bezierCurve" => value.as_array().is_some_and(|points| {
+            points.len() == 4
+                && points.iter().all(|point| {
+                    point.as_array().is_some_and(|values| {
+                        values.len() == 2 && values.iter().all(|value| value.as_f64().is_some())
+                    })
+                })
+        }),
+        _ => false,
+    };
+    if !valid {
+        bail!("{label} is not a canonical '{port_type}' value");
     }
     Ok(())
 }
@@ -334,6 +425,8 @@ fn referenceable_params(node_type: &str) -> &'static [(&'static str, &'static st
             ("z", "float"),
             ("w", "float"),
         ],
+        "BezierCurveInput" => &[("value", "bezierCurve")],
+        "NormalizedBezierCurveInput" => &[("value", "normalizedBezierCurve")],
         "ColorArrayInput" => &[("value", "packed<color>")],
         "Vector2ArrayInput" => &[("value", "packed<vector2>")],
         _ => &[],
@@ -1129,20 +1222,12 @@ fn validate_graph_core(
 fn validate_port_compatibility(label: &str, source: &GraphPort, target: &GraphPort) -> Result<()> {
     let source_type = source.port_type.as_deref().unwrap_or("any");
     let target_type = target.port_type.as_deref().unwrap_or("any");
-    let compatible = target_type == "any"
-        || source_type == target_type
-        || matches!(
-            (source_type, target_type),
-            ("float" | "int" | "bool", "float" | "int")
-                | (
-                    "float" | "int" | "bool",
-                    "vector2" | "vector3" | "vector4" | "color"
-                )
-                | (
-                    "vector2" | "vector3" | "vector4" | "color",
-                    "vector2" | "vector3" | "vector4" | "color"
-                )
-        );
+    let scheme = schema::load_default_scheme()?;
+    let compatible = schema::port_types_compatible(
+        &scheme,
+        &schema::PortTypeSpec::One(source_type.to_string()),
+        &schema::PortTypeSpec::One(target_type.to_string()),
+    );
     if !compatible || (source.array_length.is_some() && source.array_length != target.array_length)
     {
         bail!(
