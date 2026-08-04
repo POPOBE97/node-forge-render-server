@@ -23,8 +23,16 @@ fn graph_input_preferred_name(node: &Node) -> String {
         .unwrap_or(node.id.as_str());
     let name = readable_wgsl_ident(raw);
     match name.as_str() {
-        "float_input" | "int_input" | "bool_input" | "vector2_input" | "vector3_input"
-        | "vector4_input" | "color_input" | "input" => readable_wgsl_ident(&node.id),
+        "float_input"
+        | "int_input"
+        | "bool_input"
+        | "vector2_input"
+        | "vector3_input"
+        | "vector4_input"
+        | "color_input"
+        | "bezier_curve_input"
+        | "normalized_bezier_curve_input"
+        | "input" => readable_wgsl_ident(&node.id),
         _ => name,
     }
 }
@@ -184,6 +192,42 @@ pub fn compile_vector4_input(
     Ok(TypedExpr::new(
         format!("(graph_inputs.{field})"),
         ValueType::Vec4,
+    ))
+}
+
+/// Compile a normalized cubic Bezier declaration as its four Y components.
+pub fn compile_normalized_bezier_curve_input(
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    if out_port.unwrap_or("curve") != "curve" {
+        bail!("{}: unsupported output port", node.node_type);
+    }
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec4);
+    Ok(TypedExpr::new(
+        format!("(graph_inputs.{field})"),
+        ValueType::Vec4,
+    ))
+}
+
+/// Compile a cubic Bezier declaration as four vec2 control points.
+pub fn compile_bezier_curve_input(
+    node: &Node,
+    out_port: Option<&str>,
+    ctx: &mut MaterialCompileContext,
+) -> Result<TypedExpr> {
+    if out_port.unwrap_or("curve") != "curve" {
+        bail!("{}: unsupported output port", node.node_type);
+    }
+    let field = register_graph_field(ctx, node, GraphFieldKind::Vec2Array(4));
+    let elements = (0..4)
+        .map(|index| format!("(graph_inputs.{field}[{index}]).xy"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(TypedExpr::new(
+        format!("array<vec2f, 4>({elements})"),
+        ValueType::Vec2Array(4),
     ))
 }
 

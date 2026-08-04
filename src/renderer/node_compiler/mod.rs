@@ -175,6 +175,8 @@ fn is_input_like_node(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "BezierCurveInput"
+            | "NormalizedBezierCurveInput"
             | "PackedInput"
             | "ColorArrayInput"
             | "Vector2ArrayInput"
@@ -260,6 +262,8 @@ fn is_pure_group_node_type(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "BezierCurveInput"
+            | "NormalizedBezierCurveInput"
             | "PackedInput"
             | "ColorArrayInput"
             | "Vector2ArrayInput"
@@ -858,6 +862,10 @@ fn compile_expr(
         "Vector2Input" => input_nodes::compile_vector2_input(node, out_port, ctx)?,
         "Vector3Input" => input_nodes::compile_vector3_input(node, out_port, ctx)?,
         "Vector4Input" => input_nodes::compile_vector4_input(node, out_port, ctx)?,
+        "BezierCurveInput" => input_nodes::compile_bezier_curve_input(node, out_port, ctx)?,
+        "NormalizedBezierCurveInput" => {
+            input_nodes::compile_normalized_bezier_curve_input(node, out_port, ctx)?
+        }
         "PackedInput" | "ColorArrayInput" | "Vector2ArrayInput" => {
             input_nodes::compile_packed_input(node, out_port, ctx)?
         }

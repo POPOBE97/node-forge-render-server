@@ -192,6 +192,8 @@ fn is_value_driven_input_node_type(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "BezierCurveInput"
+            | "NormalizedBezierCurveInput"
             | "Mat4Input"
             | "ColorInput"
             | "PackedInput"

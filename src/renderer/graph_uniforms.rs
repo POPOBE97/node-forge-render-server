@@ -18,6 +18,8 @@ pub fn graph_field_kind_for_node_type(node_type: &str) -> Option<GraphFieldKind>
         "Vector2Input" => Some(GraphFieldKind::Vec2),
         "Vector3Input" => Some(GraphFieldKind::Vec3),
         "Vector4Input" => Some(GraphFieldKind::Vec4),
+        "NormalizedBezierCurveInput" => Some(GraphFieldKind::Vec4),
+        "BezierCurveInput" => Some(GraphFieldKind::Vec2Array(4)),
         "Mat4Input" => Some(GraphFieldKind::Mat4),
         "ColorInput" => Some(GraphFieldKind::Vec4Color),
         _ => None,
@@ -411,7 +413,9 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
             shader_parameter.and_then(|(_, parameter_id)| node.params.get(parameter_id));
         let packed_input_value = match node.node_type.as_str() {
             "PackedInput" => Some(connected_packed_input_value(scene, node)),
-            "ColorArrayInput" | "Vector2ArrayInput" => node.params.get("value").cloned(),
+            "ColorArrayInput" | "Vector2ArrayInput" | "BezierCurveInput" => {
+                node.params.get("value").cloned()
+            }
             _ => None,
         };
         let array_value = shader_value.or(packed_input_value.as_ref());
@@ -487,6 +491,13 @@ pub fn pack_graph_values(scene: &SceneDSL, schema: &GraphSchema) -> Result<Vec<u
             GraphFieldKind::Vec4 => {
                 let fallback = if shader_parameter.is_some() {
                     parse_json_vec4(shader_value, 0.0)
+                } else if node.node_type == "NormalizedBezierCurveInput" {
+                    parse_vec4_value_array(node, "value").unwrap_or([
+                        0.0,
+                        1.0 / 3.0,
+                        2.0 / 3.0,
+                        1.0,
+                    ])
                 } else {
                     parse_vec4_xyzw(node).unwrap_or([0.0, 0.0, 0.0, 0.0])
                 };
@@ -579,6 +590,8 @@ fn is_value_driven_input_node(node_type: &str) -> bool {
             | "Vector2Input"
             | "Vector3Input"
             | "Vector4Input"
+            | "BezierCurveInput"
+            | "NormalizedBezierCurveInput"
             | "Mat4Input"
             | "ColorInput"
             | "PackedInput"
