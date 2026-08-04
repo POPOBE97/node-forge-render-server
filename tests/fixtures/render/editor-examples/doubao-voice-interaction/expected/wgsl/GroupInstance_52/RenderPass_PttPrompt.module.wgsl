@@ -62,13 +62,26 @@ var img_samp_GroupInstance_52_ImageTexture_PttPromptCancel: sampler;
 // --- Extra WGSL declarations (generated) ---
 
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 
 fn shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
     in: ShaderMaterialInput,
@@ -109,11 +122,11 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  out.geo_size_px = params.geo_size;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  var p_local = position;
 
@@ -156,7 +169,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     // Shader Material GroupInstance_52/ShaderMaterial_PttPrompt.material
     let prompt_opacity_material = shader_material_GroupInstance_52_ShaderMaterial_PttPrompt(
-        ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
+        ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         image_texture_sample,
         image_texture_sample_bf885b77,
         vec4f((graph_inputs.color_input_ptt_prompt_color).rgb * (graph_inputs.color_input_ptt_prompt_color).a, (graph_inputs.color_input_ptt_prompt_color).a),

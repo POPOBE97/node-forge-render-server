@@ -47,6 +47,8 @@ struct GraphInputs {
     node_Vector2Input_35_093d3fbd: vec4f,
     // Node: Vector2Input_36
     node_Vector2Input_36_f0373fbd: vec4f,
+    // Node: Vector2Input_LightEffectCanvasSizePx
+    node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c: vec4f,
 };
 
 @group(0) @binding(2)
@@ -65,13 +67,26 @@ var<storage, read> baked_data_parse: array<vec4f>;
 // --- Extra WGSL declarations (generated) ---
 
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 
 // Independent voice-dot layer ported from audio_bars.agsl.
 // It intentionally has no texture or shader dependency on the light layer.
@@ -295,8 +310,8 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_voice_dots.material
-    let voice_dot_color_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
-        ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
+    let voice_dot_response_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
+        ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         (graph_inputs.node_Vector2Input_35_093d3fbd).xy,
         (graph_inputs.node_FloatInput_37_0eaa0821).x,
         (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_density).x,
@@ -308,6 +323,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         vec4f((graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).rgb * (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a, (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a),
     );
     // Final composite
-    let _frag_out = voice_dot_color_material;
+    let _frag_out = voice_dot_response_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

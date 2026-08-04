@@ -12,12 +12,9 @@ use anyhow::{Context, Result, bail};
 /// Creates 6 vertices (2 triangles) for a rectangle centered at origin.
 /// The vertices are in counter-clockwise order for front-facing triangles.
 ///
-/// UV convention: **top-left origin** — `(0,0)` at the top-left corner of the rect,
-/// `(1,1)` at the bottom-right. This matches wgpu's texture coordinate convention
-/// so that pass-to-pass texture sampling chains do not introduce Y-flips.
-///
-/// User-facing GLSL-like coordinates (`local_px`, `frag_coord_gl`) are derived
-/// from the UV in the vertex shader with a Y-flip: `local_px = vec2(uv.x, 1-uv.y) * geo_size`.
+/// Public UV convention: **bottom-left origin** — BL=`[0,0]`, BR=`[1,0]`,
+/// TR=`[1,1]`, TL=`[0,1]`. Vertex infrastructure derives private RasterUV for
+/// texture sampling; effect nodes never observe that storage convention.
 ///
 /// # Arguments
 /// * `width` - Width of the rectangle (clamped to minimum 1.0)
@@ -32,14 +29,14 @@ pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
     let hh = h * 0.5;
     [
         // Triangle 1: bottom-left, bottom-right, top-right
-        // UV uses top-left origin: BL=(0,1), BR=(1,1), TR=(1,0)
-        [-hw, -hh, 0.0, 0.0, 1.0],
-        [hw, -hh, 0.0, 1.0, 1.0],
-        [hw, hh, 0.0, 1.0, 0.0],
+        // LocalUV: BL=(0,0), BR=(1,0), TR=(1,1)
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, -hh, 0.0, 1.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
         // Triangle 2: bottom-left, top-right, top-left
-        [-hw, -hh, 0.0, 0.0, 1.0],
-        [hw, hh, 0.0, 1.0, 0.0],
-        [-hw, hh, 0.0, 0.0, 0.0],
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        [-hw, hh, 0.0, 0.0, 1.0],
     ]
 }
 
@@ -49,7 +46,7 @@ pub fn rect2d_geometry_vertices(width: f32, height: f32) -> [[f32; 5]; 6] {
 ///
 /// The quad is centered at origin with corners at (-0.5,-0.5) .. (0.5,0.5).
 ///
-/// UV convention: **top-left origin** — matches `rect2d_geometry_vertices`.
+/// UV convention: **bottom-left origin** — matches `rect2d_geometry_vertices`.
 ///
 /// This is used when Rect2DGeometry size/position are dynamic and applied in the vertex shader.
 pub fn rect2d_unit_geometry_vertices() -> [[f32; 5]; 6] {
@@ -57,13 +54,13 @@ pub fn rect2d_unit_geometry_vertices() -> [[f32; 5]; 6] {
     let hh = 0.5;
     [
         // Triangle 1: bottom-left, bottom-right, top-right
-        [-hw, -hh, 0.0, 0.0, 1.0],
-        [hw, -hh, 0.0, 1.0, 1.0],
-        [hw, hh, 0.0, 1.0, 0.0],
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, -hh, 0.0, 1.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
         // Triangle 2: bottom-left, top-right, top-left
-        [-hw, -hh, 0.0, 0.0, 1.0],
-        [hw, hh, 0.0, 1.0, 0.0],
-        [-hw, hh, 0.0, 0.0, 0.0],
+        [-hw, -hh, 0.0, 0.0, 0.0],
+        [hw, hh, 0.0, 1.0, 1.0],
+        [-hw, hh, 0.0, 0.0, 1.0],
     ]
 }
 
@@ -150,7 +147,7 @@ fn load_gltf_geometry(bytes: &[u8]) -> Result<(Vec<[f32; 5]>, Option<Vec<[f32; 3
                 let p = positions.get(i).copied().unwrap_or([0.0, 0.0, 0.0]);
                 let wp = mat4_transform_point(world_mat, p);
                 let t = tex_coords.get(i).copied().unwrap_or([0.0, 0.0]);
-                verts.push([wp[0], wp[1], wp[2], t[0], t[1]]);
+                verts.push([wp[0], wp[1], wp[2], t[0], 1.0 - t[1]]);
             }
 
             // Emit normals (or zero-fill if this primitive lacks them but others have them).
@@ -323,7 +320,7 @@ fn load_obj_geometry(bytes: &[u8]) -> Result<(Vec<[f32; 5]>, Option<Vec<[f32; 3]
                 0.0
             };
 
-            verts.push([px, py, pz, u, v]);
+            verts.push([px, py, pz, u, 1.0 - v]);
 
             if has_normals {
                 let nx = mesh.normals.get(i * 3).copied().unwrap_or(0.0);
@@ -386,15 +383,15 @@ mod tests {
         let hh = 25.0;
 
         // First triangle: bottom-left, bottom-right, top-right
-        // UV top-left origin: BL=(0,1), BR=(1,1), TR=(1,0)
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 1.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 0.0]);
+        // LocalUV bottom-left origin: BL=(0,0), BR=(1,0), TR=(1,1)
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
 
         // Second triangle: bottom-left, top-right, top-left
-        assert_eq!(verts[3], [-hw, -hh, 0.0, 0.0, 1.0]);
-        assert_eq!(verts[4], [hw, hh, 0.0, 1.0, 0.0]);
-        assert_eq!(verts[5], [-hw, hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[3], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[4], [hw, hh, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[5], [-hw, hh, 0.0, 0.0, 1.0]);
     }
 
     #[test]
@@ -406,8 +403,8 @@ mod tests {
         let hw = 0.5;
         let hh = 0.5;
 
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
-        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[1], [hw, -hh, 0.0, 1.0, 0.0]);
     }
 
     #[test]
@@ -418,16 +415,16 @@ mod tests {
         let hh = 100.0;
 
         // All corners should be equidistant from center
-        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 1.0]);
-        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 0.0]);
+        assert_eq!(verts[0], [-hw, -hh, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[2], [hw, hh, 0.0, 1.0, 1.0]);
     }
 
     #[test]
     fn test_rect2d_unit_geometry_vertices() {
         let verts = rect2d_unit_geometry_vertices();
         assert_eq!(verts.len(), 6);
-        assert_eq!(verts[0], [-0.5, -0.5, 0.0, 0.0, 1.0]);
-        assert_eq!(verts[2], [0.5, 0.5, 0.0, 1.0, 0.0]);
-        assert_eq!(verts[5], [-0.5, 0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[0], [-0.5, -0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(verts[2], [0.5, 0.5, 0.0, 1.0, 1.0]);
+        assert_eq!(verts[5], [-0.5, 0.5, 0.0, 0.0, 1.0]);
     }
 }

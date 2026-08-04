@@ -40,9 +40,8 @@ struct VSOut {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     let resolution = max(params.target_size, vec2f(1.0));
-    let aspect = resolution.x / resolution.y;
-    let normalized_coord = clamp(in.local_px.xy / resolution, vec2f(0.0), vec2f(1.0));
-    let light_radius = max(ilight_data.params.z / resolution.y, 0.0001);
+    let local_position_px = clamp(in.local_px.xy, vec2f(0.0), resolution);
+    let light_radius_px = max(ilight_data.params.z, 0.0001);
     let power = clamp(ilight_data.params.x, 0.0, 1.0);
     let opacity = clamp(ilight_data.params.w, 0.0, 1.0);
 
@@ -53,14 +52,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
 
     for (var i = 0u; i < NUM_LIGHTS; i = i + 1u) {
-        let light_position = vec2f(
-            ilight_data.lights[i].x / resolution.x,
-            1.0 - ilight_data.lights[i].y / resolution.y,
-        );
-        let scaled_coord = vec2f(normalized_coord.x * aspect, normalized_coord.y);
-        let scaled_light_position = vec2f(light_position.x * aspect, light_position.y);
-        let distance_ratio =
-            distance(scaled_coord, scaled_light_position) / light_radius;
+        // CPU Render Derivation supplies target-local pixels with a bottom-left origin.
+        let light_position_px = ilight_data.lights[i].xy;
+        let distance_ratio = distance(local_position_px, light_position_px) / light_radius_px;
         let blend_amount = smoothstep(
             0.0,
             1.0,
@@ -70,7 +64,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         let direct_color =
             srgb_to_linear(max(light_color.rgb, vec3f(0.0))) * LIGHT_COLOR_GAIN;
         let presentation =
-            presentation_color(light_position.x) * LIGHT_COLOR_GAIN;
+            presentation_color(light_position_px.x / resolution.x) * LIGHT_COLOR_GAIN;
         let resolved_rgb = mix(direct_color, presentation, power);
         let resolved_color = vec4f(
             resolved_rgb * light_color.a,

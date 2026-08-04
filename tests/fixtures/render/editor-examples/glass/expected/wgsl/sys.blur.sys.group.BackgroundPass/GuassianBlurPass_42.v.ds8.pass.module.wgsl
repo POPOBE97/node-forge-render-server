@@ -48,13 +48,13 @@ var src_samp: sampler;
      let _unused_geo_scale = params.geo_scale;
  
         // UV passed as vertex attribute.
-        out.uv = uv;
+        out.uv = vec2f(uv.x, 1.0 - uv.y);
 
         out.geo_size_px = params.geo_size;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+         out.local_px = vec3f(uv * out.geo_size_px, position.z);
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.

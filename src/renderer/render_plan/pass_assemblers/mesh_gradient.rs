@@ -669,7 +669,7 @@ fn push_vertex(out: &mut Vec<f32>, sample: MeshSample, target_size: [f32; 2], ce
     let local_x = sample.position[0] - center[0];
     let local_y = sample.position[1] - center[1];
     let uv_x = sample.position[0] / target_w;
-    let uv_y = 1.0 - sample.position[1] / target_h;
+    let uv_y = sample.position[1] / target_h;
     out.extend_from_slice(&[
         local_x,
         local_y,

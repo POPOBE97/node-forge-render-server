@@ -99,13 +99,13 @@ fn sys_apply_trs_xyz(p: vec3f, t: vec3f, r_deg: vec3f, s: vec3f) -> vec3f {
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  out.normal = normal;
 
  out.geo_size_px = params.geo_size;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  var p_local = position;
  let delta_t = (sys_apply_trs_xyz(position, ((vec3f(540.0, 1200.0, 0.0)) + (vec3f(0.0, 0.0, 0.0))), ((vec3f(0.0, 0.0, 0.0)) + (math_closure_out)), ((vec3f(0.800000012, 0.800000012, 0.800000012)) * (vec3f(1.0, 1.0, 1.0)))) - p_local);

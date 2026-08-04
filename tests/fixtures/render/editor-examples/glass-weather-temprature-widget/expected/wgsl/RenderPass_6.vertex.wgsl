@@ -580,14 +580,14 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  let rect_size_px_base = (graph_inputs.node_Vector2Input_119_4e6d6989).xy;
  let rect_center_px = (graph_inputs.node_Vector2Input_120_72a16b89).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  var p_local = p_rect_local_px;

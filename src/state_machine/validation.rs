@@ -240,7 +240,11 @@ fn validate_source(sm: &StateMachine, source: &StateValueSource) -> Result<()> {
         StateValueSource::FrameInput { frame_input_id } => {
             if matches!(
                 frame_input_id.as_str(),
-                "sceneElapsedTime" | "localElapsedTime" | "mouse.position.x" | "mouse.position.y"
+                "sceneElapsedTime"
+                    | "localElapsedTime"
+                    | "mouse.position"
+                    | "mouse.position.x"
+                    | "mouse.position.y"
             ) {
                 Ok(())
             } else {

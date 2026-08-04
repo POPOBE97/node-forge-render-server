@@ -9,15 +9,29 @@ use crate::renderer::pass_source::resolve_pass_source_ref;
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 
 const SYSTEM_DECL_KEY: &str = "00.shader_material.system";
+const LOCAL_UV_SAMPLE_HELPER: &str = "sample_texture_local_uv";
 const SYSTEM_DECL: &str = r#"
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 "#;
 
 #[derive(Clone, Debug)]
@@ -185,6 +199,15 @@ fn is_vec4f(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
 }
 
 fn reflect_parameters(source: &str) -> Result<Vec<ReflectedParameter>> {
+    for forbidden in ["textureSample(", "textureSampleLevel(", "textureLoad("] {
+        if source.contains(forbidden) {
+            bail!(
+                "ShaderMaterial source must sample texture resources through \
+                 {LOCAL_UV_SAMPLE_HELPER}(texture, sampler, local_uv); raw {forbidden} is not \
+                 part of the public bottom-left coordinate ABI"
+            );
+        }
+    }
     let combined = format!("{SYSTEM_DECL}\n{source}");
     let module = naga::front::wgsl::parse_str(&combined).map_err(|error| {
         anyhow!(
@@ -450,6 +473,7 @@ fn renamed_source(source: &str, suffix: &str) -> Result<String> {
         .functions
         .iter()
         .filter_map(|(_, function)| function.name.as_deref())
+        .filter(|name| *name != LOCAL_UV_SAMPLE_HELPER)
         .map(|name| (name, format!("{name}_{suffix}")))
         .collect::<HashMap<_, _>>();
     if !function_names.contains_key("shader_material") {
@@ -527,7 +551,7 @@ where
         .or_insert(renamed_source(&source, &suffix)?);
 
     let mut arguments = vec![
-        "ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time)"
+        "ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time)"
             .to_string(),
     ];
     let mut uses_time = source_uses_system_time(&source)?;
@@ -600,7 +624,7 @@ fn shader_material(
     background: texture_2d<f32>,
     background_sampler: sampler,
 ) -> vec4f {
-    return textureSample(background, background_sampler, in.uv) * gain * weights[0];
+    return sample_texture_local_uv(background, background_sampler, in.uv) * gain * weights[0];
 }
 "#,
         )
@@ -628,6 +652,23 @@ fn shader_material(in: ShaderMaterialInput, lighting: Lighting) -> vec4f {
         )
         .unwrap_err();
         assert!(error.to_string().contains("struct"));
+    }
+
+    #[test]
+    fn rejects_raw_texture_sampling_outside_the_renderer_uv_boundary() {
+        let error = reflect_parameters(
+            r#"
+fn shader_material(
+    in: ShaderMaterialInput,
+    background: texture_2d<f32>,
+    background_sampler: sampler,
+) -> vec4f {
+    return textureSample(background, background_sampler, in.uv);
+}
+"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(LOCAL_UV_SAMPLE_HELPER));
     }
 
     #[test]
@@ -723,6 +764,7 @@ fn shader_material(in: ShaderMaterialInput) -> vec4f {
 
         assert_eq!(expression.ty, ValueType::Vec4);
         assert!(expression.expr.starts_with("shader_material_shader_1("));
+        assert!(expression.expr.contains("vec2f(in.uv.x, 1.0 - in.uv.y)"));
         let declarations = ctx
             .extra_wgsl_decls
             .values()
@@ -822,7 +864,7 @@ fn shader_material(
     image_sampler: sampler,
 ) -> vec4f {
     let transformed = transform * vec4f(in.local_position, 1.0);
-    return textureSample(image, image_sampler, in.uv) * tint * gain * weights[0]
+    return sample_texture_local_uv(image, image_sampler, in.uv) * tint * gain * weights[0]
         + transformed * 0.0;
 }
 "#,

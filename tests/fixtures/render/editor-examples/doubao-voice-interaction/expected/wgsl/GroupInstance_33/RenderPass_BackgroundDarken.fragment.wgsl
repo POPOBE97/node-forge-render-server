@@ -52,13 +52,26 @@ var pass_samp_GroupInstance_33_PassTexture_BackgroundBlur: sampler;
 // --- Extra WGSL declarations (generated) ---
 
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 
 fn shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
     in: ShaderMaterialInput,
@@ -66,7 +79,7 @@ fn shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
     content_sampler: sampler,
     darken_alpha: f32,
 ) -> vec4f {
-    let content = textureSample(content_tex, content_sampler, in.uv);
+    let content = sample_texture_local_uv(content_tex, content_sampler, in.uv);
     let a = clamp(darken_alpha, 0.0, 1.0);
     return vec4f(content.rgb * (1.0 - a), a + content.a * (1.0 - a));
 }
@@ -76,7 +89,7 @@ fn shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_33/ShaderMaterial_BackgroundDarken.material
     let background_darken_alpha_material = shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
-        ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
+        ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_33_PassTexture_BackgroundBlur,
         pass_samp_GroupInstance_33_PassTexture_BackgroundBlur,
         (graph_inputs.float_input_44).x,

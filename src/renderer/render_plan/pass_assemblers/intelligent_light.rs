@@ -14,7 +14,7 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension, PassOutputSpec},
-        utils::{cpu_num_f32, cpu_num_u32_min_1},
+        utils::cpu_num_f32,
         wgsl::build_fullscreen_textured_bundle,
     },
 };
@@ -31,6 +31,8 @@ use super::args::{BuilderState, SceneContext};
 #[derive(Clone, Debug, Default)]
 pub struct ILightUpdateConfig {
     pub layer_id: String,
+    /// Public IntelligentLight coordinates are already localized to this target.
+    pub target_size: [f32; 2],
     pub power_fallback: f32,
     pub lightness_fallback: f32,
     pub blob_radius_fallback: f32,
@@ -48,20 +50,21 @@ pub(crate) const INTELLIGENT_LIGHT_ZONE_COUNT: usize = 11;
 const INTELLIGENT_LIGHT_TEMPLATE_NAME: &str = "intelligent_light.wgsl";
 
 pub(crate) const DEFAULT_INTELLIGENT_LIGHT_LAYOUT: [[f32; 2]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
-    [0.217379, 0.225445],
-    [0.999951, 0.506354],
-    [0.999348, 0.494061],
+    [0.217379, 0.774555],
+    [0.999951, 0.493646],
+    [0.999348, 0.505939],
     [0.997807, 0.5],
-    [0.692605, 0.503775],
-    [0.445673, 0.989289],
-    [0.238211, 0.881737],
-    [0.052889, 0.467308],
-    [0.462529, 0.05155],
-    [0.428177, 0.015989],
-    [0.272295, 0.061244],
+    [0.692605, 0.496225],
+    [0.445673, 0.010711],
+    [0.238211, 0.118263],
+    [0.052889, 0.532692],
+    [0.462529, 0.94845],
+    [0.428177, 0.984011],
+    [0.272295, 0.938756],
 ];
 
-const DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE: [f32; 2] = [60.0, 37.0];
+const DEFAULT_INTELLIGENT_LIGHT_CANVAS_SIZE: [f32; 2] = [60.0, 37.0];
+const DEFAULT_INTELLIGENT_LIGHT_DOWNSAMPLE_FACTOR: f32 = 1.0;
 
 pub(crate) const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 4]; INTELLIGENT_LIGHT_ZONE_COUNT] = [
     [0.5019608, 0.5254902, 1.0, 1.0],
@@ -79,6 +82,18 @@ pub(crate) const DEFAULT_INTELLIGENT_LIGHT_COLORS: [[f32; 4]; INTELLIGENT_LIGHT_
 
 impl ILightUpdateConfig {
     pub fn pack_buffer(&self, scene: &crate::dsl::SceneDSL) -> Vec<u8> {
+        let target_size = [
+            if self.target_size[0].is_finite() && self.target_size[0] > 0.0 {
+                self.target_size[0]
+            } else {
+                DEFAULT_INTELLIGENT_LIGHT_CANVAS_SIZE[0]
+            },
+            if self.target_size[1].is_finite() && self.target_size[1] > 0.0 {
+                self.target_size[1]
+            } else {
+                DEFAULT_INTELLIGENT_LIGHT_CANVAS_SIZE[1]
+            },
+        ];
         let nodes_by_id: std::collections::HashMap<&str, &crate::dsl::Node> =
             scene.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
@@ -142,12 +157,15 @@ impl ILightUpdateConfig {
                 self.presentation_colors_fallback[2],
             ),
         ];
-        let pointer_position = resolve_vec2_runtime(
-            scene,
-            &nodes_by_id,
-            &self.layer_id,
-            "pointerTintPosition",
-            self.pointer_position_fallback,
+        let pointer_position = clamp_pixel_position(
+            resolve_vec2_runtime(
+                scene,
+                &nodes_by_id,
+                &self.layer_id,
+                "pointerTintPosition",
+                self.pointer_position_fallback,
+            ),
+            target_size,
         );
         let pointer_color = resolve_color4_runtime(
             scene,
@@ -188,8 +206,14 @@ impl ILightUpdateConfig {
                 None
             }
         });
-        let (positions, colors) = if let Some(packed) = packed {
-            packed
+        let (positions, colors) = if let Some((positions, colors)) = packed {
+            (
+                positions.map(|(x, y)| {
+                    let [x, y] = clamp_pixel_position([x, y], target_size);
+                    (x, y)
+                }),
+                colors,
+            )
         } else {
             let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
             for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
@@ -199,18 +223,6 @@ impl ILightUpdateConfig {
             }
             let positions = layer_node
                 .map(|node| {
-                    let target_size = [
-                        node.params
-                            .get("width")
-                            .and_then(json_f32)
-                            .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE[0])
-                            .max(1.0),
-                        node.params
-                            .get("height")
-                            .and_then(json_f32)
-                            .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE[1])
-                            .max(1.0),
-                    ];
                     resolve_light_positions(node, target_size, |port_id| {
                         incoming_connection(scene, &self.layer_id, port_id).and_then(|conn| {
                             nodes_by_id
@@ -223,8 +235,7 @@ impl ILightUpdateConfig {
                 })
                 .unwrap_or_else(|| {
                     std::array::from_fn(|index| {
-                        let [x, y] =
-                            default_light_position(index, DEFAULT_INTELLIGENT_LIGHT_TARGET_SIZE);
+                        let [x, y] = default_light_position(index, target_size);
                         (x, y)
                     })
                 });
@@ -333,24 +344,30 @@ fn clamp_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
     ]
 }
 
-fn is_legacy_normalized_position(position: [f32; 2]) -> bool {
-    (0.0..=1.0).contains(&position[0]) && (0.0..=1.0).contains(&position[1])
-}
-
-fn normalized_position_to_pixel_space(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
+fn local_uv_to_pixel_space(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
     [
         position[0].clamp(0.0, 1.0) * target_size[0].max(1.0),
-        (1.0 - position[1].clamp(0.0, 1.0)) * target_size[1].max(1.0),
+        position[1].clamp(0.0, 1.0) * target_size[1].max(1.0),
+    ]
+}
+
+pub(crate) fn intelligent_light_target_size(
+    canvas_size: [f32; 2],
+    downsample_factor: f32,
+) -> [u32; 2] {
+    let factor = if downsample_factor.is_finite() {
+        downsample_factor.max(1.0)
+    } else {
+        DEFAULT_INTELLIGENT_LIGHT_DOWNSAMPLE_FACTOR
+    };
+    [
+        (canvas_size[0].max(1.0) / factor).ceil().max(1.0) as u32,
+        (canvas_size[1].max(1.0) / factor).ceil().max(1.0) as u32,
     ]
 }
 
 fn resolve_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
-    let pixel = if is_legacy_normalized_position(position) {
-        normalized_position_to_pixel_space(position, target_size)
-    } else {
-        position
-    };
-    clamp_pixel_position(pixel, target_size)
+    clamp_pixel_position(position, target_size)
 }
 
 fn parse_packed_positions(
@@ -534,7 +551,7 @@ pub(crate) fn default_light_position(index: usize, target_size: [f32; 2]) -> [f3
         .get(index)
         .copied()
         .unwrap_or([0.5, 0.5]);
-    normalized_position_to_pixel_space(source, target_size)
+    local_uv_to_pixel_space(source, target_size)
 }
 
 fn resolve_connected_vec2_source(node: &Node, output_port_id: &str) -> Option<[f32; 2]> {
@@ -661,15 +678,37 @@ pub(crate) fn assemble_intelligent_light(
     let pointer_gain = cpu_num_f32(scene, &nodes_by_id, layer_node, "pointerTintGain", 1.0)?;
     let pointer_opacity = cpu_num_f32(scene, &nodes_by_id, layer_node, "pointerTintOpacity", 0.0)?;
 
-    let inter_w = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "width", 60)?;
-    let inter_h = cpu_num_u32_min_1(scene, &nodes_by_id, layer_node, "height", 37)?;
+    let canvas_size = incoming_connection(scene, layer_id, "canvasSizePx")
+        .and_then(|connection| {
+            nodes_by_id
+                .get(&connection.from.node_id)
+                .and_then(|node| resolve_connected_vec2_source(node, &connection.from.port_id))
+        })
+        .or_else(|| parse_vec2_from_params(&layer_node.params, "canvasSizePx"))
+        .unwrap_or(DEFAULT_INTELLIGENT_LIGHT_CANVAS_SIZE);
+    let downsample_factor = cpu_num_f32(
+        scene,
+        &nodes_by_id,
+        layer_node,
+        "downsampleFactor",
+        DEFAULT_INTELLIGENT_LIGHT_DOWNSAMPLE_FACTOR,
+    )?;
+    let [inter_w, inter_h] = intelligent_light_target_size(canvas_size, downsample_factor);
     let inter_w_f = inter_w as f32;
     let inter_h_f = inter_h as f32;
+    let pointer_position = clamp_pixel_position(pointer_position, [inter_w_f, inter_h_f]);
 
-    let (positions, colors) = if let Some(packed) = resolve_packed_pair(scene, layer_node)
-        .with_context(|| format!("invalid packed inputs for IntelligentLight {layer_id}"))?
+    let (positions, colors) = if let Some((positions, colors)) =
+        resolve_packed_pair(scene, layer_node)
+            .with_context(|| format!("invalid packed inputs for IntelligentLight {layer_id}"))?
     {
-        packed
+        (
+            positions.map(|(x, y)| {
+                let [x, y] = clamp_pixel_position([x, y], [inter_w_f, inter_h_f]);
+                (x, y)
+            }),
+            colors,
+        )
     } else {
         let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
         for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
@@ -741,6 +780,7 @@ pub(crate) fn assemble_intelligent_light(
     );
     let ilight_config = ILightUpdateConfig {
         layer_id: layer_id.to_string(),
+        target_size: [inter_w_f, inter_h_f],
         power_fallback: power,
         lightness_fallback: lightness,
         blob_radius_fallback: blob_radius,
@@ -1126,6 +1166,28 @@ mod tests {
         assert_eq!(shader, template);
     }
 
+    #[test]
+    fn target_size_is_derived_from_canvas_size_and_downsample_factor() {
+        assert_eq!(
+            intelligent_light_target_size([1080.0, 1080.0], 30.0),
+            [36, 36]
+        );
+        assert_eq!(
+            intelligent_light_target_size([1440.0, 900.0], 30.0),
+            [48, 30]
+        );
+        assert_eq!(intelligent_light_target_size([100.0, 50.0], 30.0), [4, 2]);
+    }
+
+    #[test]
+    fn target_size_clamps_invalid_inputs_without_a_fixed_device_extent() {
+        assert_eq!(intelligent_light_target_size([0.0, -5.0], 0.0), [1, 1]);
+        assert_eq!(
+            intelligent_light_target_size([60.0, 37.0], f32::NAN),
+            [60, 37]
+        );
+    }
+
     fn assert_near(actual: f64, expected: f64, tol: f64, label: &str) {
         let diff = (actual - expected).abs();
         assert!(
@@ -1210,8 +1272,8 @@ mod tests {
         let (x0, y0) = read_light_xy(&bytes, 0);
         let (x1, y1) = read_light_xy(&bytes, 1);
 
-        assert_near(x0 as f64, 15.0, 1e-6, "manual light[0].x");
-        assert_near(y0 as f64, 9.25, 1e-6, "manual light[0].y");
+        assert_near(x0 as f64, 0.25, 1e-6, "manual light[0].x");
+        assert_near(y0 as f64, 0.75, 1e-6, "manual light[0].y");
 
         let [expected_x1, expected_y1] = default_light_position(1, [60.0, 37.0]);
         assert_near(x1 as f64, expected_x1 as f64, 1e-6, "default light[1].x");
@@ -1365,8 +1427,8 @@ mod tests {
         let bytes = cfg.pack_buffer(&scene);
         let (x0, y0) = read_light_xy(&bytes, 0);
 
-        assert_near(x0 as f64, 6.0, 1e-6, "connected manual light[0].x");
-        assert_near(y0 as f64, 3.7, 1e-6, "connected manual light[0].y");
+        assert_near(x0 as f64, 0.1, 1e-6, "connected manual light[0].x");
+        assert_near(y0 as f64, 0.9, 1e-6, "connected manual light[0].y");
     }
 
     #[test]

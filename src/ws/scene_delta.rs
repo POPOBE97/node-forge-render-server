@@ -320,8 +320,8 @@ fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
             | ("GuassianBlurPass", "camera")
             | ("GradientBlur", "camera")
             | ("MeshGradient", "camera")
-            | ("IntelligentLight", "width")
-            | ("IntelligentLight", "height")
+            | ("IntelligentLight", "canvasSizePx")
+            | ("IntelligentLight", "downsampleFactor")
             | ("Downsample", "targetSize")
             | ("Downsample", "camera")
             | ("Upsample", "camera")
@@ -951,8 +951,14 @@ mod tests {
 
     #[test]
     fn intelligent_light_dimensions_are_allocation_sensitive() {
-        assert!(is_render_plan_rebuild_sink("IntelligentLight", "width"));
-        assert!(is_render_plan_rebuild_sink("IntelligentLight", "height"));
+        assert!(is_render_plan_rebuild_sink(
+            "IntelligentLight",
+            "canvasSizePx"
+        ));
+        assert!(is_render_plan_rebuild_sink(
+            "IntelligentLight",
+            "downsampleFactor"
+        ));
     }
 
     #[test]

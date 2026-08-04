@@ -254,8 +254,8 @@ var src_samp: sampler;
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
     var out: VSOut;
 
-    // UV passed as vertex attribute.
-    out.uv = uv;
+    // Vertex attributes are public LocalUV. Only VSOut.uv is private RasterUV.
+    out.uv = vec2f(uv.x, 1.0 - uv.y);
 
     // Dynamic rect position and size from graph inputs.
     let rect_center_px = {position_expr};
@@ -263,8 +263,7 @@ fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {{
 
     out.geo_size_px = rect_size_px;
     // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
-    // UV is top-left convention, so flip Y for GLSL-like local_px.
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+    out.local_px = vec3f(uv * out.geo_size_px, position.z);
 
     // Unit vertices [-0.5, 0.5] scaled by dynamic size.
     let p_local = vec3f(position.xy * rect_size_px, position.z);
@@ -383,13 +382,13 @@ var src_samp: sampler;
       let _unused_geo_scale = params.geo_scale;
   
          // UV passed as vertex attribute.
-         out.uv = uv;
+         out.uv = vec2f(uv.x, 1.0 - uv.y);
 
          out.geo_size_px = params.geo_size;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+         out.local_px = vec3f(uv * out.geo_size_px, position.z);
   
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -415,13 +414,13 @@ var src_samp: sampler;
      let _unused_geo_scale = params.geo_scale;
  
         // UV passed as vertex attribute.
-        out.uv = uv;
+        out.uv = vec2f(uv.x, 1.0 - uv.y);
 
         out.geo_size_px = params.geo_size;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+         out.local_px = vec3f(uv * out.geo_size_px, position.z);
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -727,9 +726,9 @@ struct VSOut {
 @vertex
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
-    out.uv = uv;
+    out.uv = vec2f(uv.x, 1.0 - uv.y);
     out.geo_size_px = params.geo_size;
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+    out.local_px = vec3f(uv * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
     out.position = params.camera * vec4f(p_px, position.z, 1.0);
@@ -1041,7 +1040,7 @@ var<uniform> params: Params;
     vertex_entry.push_str(" let _unused_geo_scale = params.geo_scale;\n\n");
 
     vertex_entry.push_str(" // UV passed as vertex attribute.\n");
-    vertex_entry.push_str(" out.uv = uv;\n\n");
+    vertex_entry.push_str(" out.uv = vec2f(uv.x, 1.0 - uv.y);\n\n");
 
     if has_normals {
         vertex_entry.push_str(" out.normal = normal;\n\n");
@@ -1068,8 +1067,7 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" let geo_size_px = rect_dyn.zw * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry
-                .push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(uv * geo_size_px, 0.0);\n\n");
 
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
@@ -1077,8 +1075,7 @@ var<uniform> params: Params;
         } else {
             vertex_entry.push_str(" let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);\n");
             vertex_entry.push_str(" out.geo_size_px = geo_size_px;\n");
-            vertex_entry
-                .push_str(" out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);\n\n");
+            vertex_entry.push_str(" out.local_px = vec3f(uv * geo_size_px, 0.0);\n\n");
 
             vertex_entry.push_str(" var p_local = (inst_m * vec4f(position, 1.0)).xyz;\n\n");
         }
@@ -1101,9 +1098,7 @@ var<uniform> params: Params;
 
             vertex_entry.push_str(" out.geo_size_px = rect_dyn.zw;\n");
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(
-                " out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n",
-            );
+            vertex_entry.push_str(" out.local_px = vec3f(uv * out.geo_size_px, 0.0);\n\n");
             vertex_entry
                 .push_str(" let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);\n");
             vertex_entry.push_str(" var p_local = p_rect_local_px;\n");
@@ -1127,9 +1122,7 @@ var<uniform> params: Params;
                 vertex_entry.push_str(" out.geo_size_px = params.geo_size;\n");
             }
             vertex_entry.push_str(" // Geometry-local pixel coordinate (GeoFragcoord).\n");
-            vertex_entry.push_str(
-                " out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);\n\n",
-            );
+            vertex_entry.push_str(" out.local_px = vec3f(uv * out.geo_size_px, 0.0);\n\n");
             vertex_entry.push_str(" var p_local = position;\n");
 
             if let Some(expr) = vertex_translate_expr.as_deref() {

@@ -46,9 +46,9 @@ fn vs_main(\n\
     let _unused_geo_translate = params.geo_translate;\n\
     let _unused_geo_scale = params.geo_scale;\n\
 \n\
-    out.uv = uv;\n\
+    out.uv = vec2f(uv.x, 1.0 - uv.y);\n\
     out.geo_size_px = params.geo_size;\n\
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);\n\
+    out.local_px = vec3f(uv * out.geo_size_px, position.z);\n\
 \n\
     let p_local = position;\n\
     let p_px = params.center + p_local.xy;\n\

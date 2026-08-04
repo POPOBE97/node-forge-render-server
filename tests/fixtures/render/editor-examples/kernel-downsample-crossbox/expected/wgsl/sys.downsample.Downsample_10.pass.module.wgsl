@@ -48,13 +48,13 @@ var src_samp: sampler;
      let _unused_geo_scale = params.geo_scale;
  
         // UV passed as vertex attribute.
-        out.uv = uv;
+        out.uv = vec2f(uv.x, 1.0 - uv.y);
 
         out.geo_size_px = params.geo_size;
 
          // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
          // UV is top-left convention, so flip Y for GLSL-like local_px.
-         out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+         out.local_px = vec3f(uv * out.geo_size_px, position.z);
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -82,7 +82,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
   let kh: i32 = 3;
   let half_w: i32 = kw / 2;
   let half_h: i32 = kh / 2;
-  let k = array<f32, 9>(0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0, 0.25, 0.0);
+  let k = array<f32, 9>(0.0625, 0.125, 0.0625, 0.125, 0.25, 0.125, 0.0625, 0.125, 0.0625);
 
     var sum = vec4f(0.0);
     for (var y: i32 = 0; y < kh; y = y + 1) {

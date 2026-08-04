@@ -38,9 +38,9 @@ var add_samp: sampler;
 @vertex
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
-    out.uv = uv;
+    out.uv = vec2f(uv.x, 1.0 - uv.y);
     out.geo_size_px = params.geo_size;
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+    out.local_px = vec3f(uv * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
     out.position = params.camera * vec4f(p_px, position.z, 1.0);

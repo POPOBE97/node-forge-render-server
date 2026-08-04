@@ -13,6 +13,8 @@ struct Params {
 
     // 16-byte aligned.
     color: vec4f,
+    camera: mat4x4f,
+    camera_position: vec4f,
 };
 
 
@@ -25,7 +27,7 @@ struct VSOut {
     // GLSL-like gl_FragCoord.xy: bottom-left origin, pixel-centered.
     @location(1) frag_coord_gl: vec2f,
     // Geometry-local pixel coordinate (GeoFragcoord): origin at bottom-left.
-    @location(2) local_px: vec2f,
+    @location(2) local_px: vec3f,
     // Geometry size in pixels after applying geometry/instance transforms.
     @location(3) geo_size_px: vec2f,
 };
@@ -46,12 +48,13 @@ var src_samp: sampler;
      let _unused_geo_scale = params.geo_scale;
  
         // UV passed as vertex attribute.
-        out.uv = uv;
+        out.uv = vec2f(uv.x, 1.0 - uv.y);
 
         out.geo_size_px = params.geo_size;
 
-         // Geometry-local pixel coordinate (GeoFragcoord).
-         out.local_px = uv * out.geo_size_px;
+         // Geometry-local pixel coordinate (GeoFragcoord): bottom-left origin.
+         // UV is top-left convention, so flip Y for GLSL-like local_px.
+         out.local_px = vec3f(uv * out.geo_size_px, position.z);
  
        // Geometry vertices are in local pixel units centered at (0,0).
        // Convert to target pixel coordinates with bottom-left origin.
@@ -59,10 +62,7 @@ var src_samp: sampler;
 
 
 
-     // Convert pixels to clip space assuming bottom-left origin.
-     // (0,0) => (-1,-1), (target_size) => (1,1)
-     let ndc = (p_px / params.target_size) * 2.0 - vec2f(1.0, 1.0);
-     out.position = vec4f(ndc, position.z, 1.0);
+     out.position = params.camera * vec4f(p_px, position.z, 1.0);
 
       // Pixel-centered like GLSL gl_FragCoord.xy.
       out.frag_coord_gl = p_px + vec2f(0.5, 0.5);
@@ -71,13 +71,14 @@ var src_samp: sampler;
   
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    
+
  let original = vec2f(textureDimensions(src_tex));
- let xy = vec2f(in.position.xy);
- let k = array<f32, 8>(0.160921663, 0.172244444, 0.10264872, 0.045504373, 0.015002778, 0.003678028, 0, 0);
- let o = array<f32, 8>(0.658242106, 2.453042507, 4.41602993, 6.37994051, 8.345131874, 10.311907768, 0, 0);
+ let xy = in.uv * original;
+ let k = array<f32, 8>(0.169885725, 0.177430525, 0.099170417, 0.039744463, 0.011418187, 0.002350696, 0, 0);
+ let o = array<f32, 8>(0.657168329, 2.447139978, 4.405640125, 6.365445614, 8.32704258, 10.290825844, 0, 0);
+ let tap_count: u32 = 6u;
  var color = vec4f(0.0);
- for (var i: u32 = 0u; i < 8u; i = i + 1u) {
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
      let uv_pos = (xy + vec2f(0.0, o[i])) / original;
      let uv_neg = (xy - vec2f(0.0, o[i])) / original;
      color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];

@@ -71,5 +71,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         }
     }
     return sum;
-
+  
 }

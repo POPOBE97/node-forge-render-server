@@ -61,8 +61,10 @@ struct GraphInputs {
     node_Vector2Input_36_f0373fbd: vec4f,
     // Node: Vector2Input_38
     node_Vector2Input_38_ba4f3fbd: vec4f,
-    // Node: Vector2Input_IntelligentLightParticlePointerPositionPx
-    node_Vector2Input_IntelligentLightParticlePointerPositionPx_e2f3e873: vec4f,
+    // Node: Vector2Input_LightEffectCanvasSizePx
+    node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c: vec4f,
+    // Node: Vector2Input_PointerLightEffectLocalPx
+    node_Vector2Input_PointerLightEffectLocalPx_a618ee3f: vec4f,
 };
 
 @group(0) @binding(2)
@@ -86,13 +88,26 @@ var pass_samp_GroupInstance_32_IntelligentLight_30: sampler;
 // --- Extra WGSL declarations (generated) ---
 
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 
 // Port of intelligent_light_upsample.agsl's processed IntelligentLight layer.
 // Node Forge supplies ShaderMaterialInput in linear extended-sRGB coordinates.
@@ -383,7 +398,7 @@ fn apply_particles_GroupInstance_32_ShaderMaterial_32(
     if (particle_opacity <= 0.0001) {
         return current_color;
     }
-    let origin = vec2f(canvas_size.x * 0.5, canvas_size.y + 8.0 * density);
+    let origin = vec2f(canvas_size.x * 0.5, 8.0 * density);
     let point = coord - origin;
     let pointer_point = pointer_position - origin;
     let mask = particle_mask_GroupInstance_32_ShaderMaterial_32(
@@ -443,7 +458,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     );
 
     // IntelligentLight is already linear HDR and premultiplied in Node Forge.
-    let intelligent_light = textureSample(intelli_tex, intelli_sampler, in.uv);
+    let intelligent_light = sample_texture_local_uv(intelli_tex, intelli_sampler, in.uv);
     var glow = exp(-pow(sdf / mix(-60.0, -2400.0, bloom_progress), 2.0))
         * mix(1.4, 1.4, total_energy * voice_opacity);
     glow += exp(-pow(sdf / mix(-20.0, -2400.0, bloom_progress), 2.0))
@@ -490,31 +505,8 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
         particle_opacity,
     );
 
-    let pointer_unflipped = particle_pointer_position_px;
-    let pointer_flipped = vec2f(
-        pointer_unflipped.x,
-        canvas_size_px.y - pointer_unflipped.y,
-    );
-    let unflipped_marker = 1.0 - smoothstep(24.0, 32.0, distance(
-        in.local_position.xy,
-        pointer_unflipped,
-    ));
-    let flipped_marker = 1.0 - smoothstep(24.0, 32.0, distance(
-        in.local_position.xy,
-        pointer_flipped,
-    ));
-    var debug_color = vec4f(in.uv.x, in.uv.y, 0.08, 1.0);
-    debug_color = mix(
-        debug_color,
-        vec4f(0.0, 1.0, 1.0, 1.0),
-        unflipped_marker,
-    );
-    debug_color = mix(
-        debug_color,
-        vec4f(1.0, 0.0, 1.0, 1.0),
-        flipped_marker,
-    );
-    return debug_color;
+    color.a = clamp(color.a, 0.0, 1.0);
+    return color;
 }
 
 
@@ -530,14 +522,14 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- let rect_size_px_base = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c).xy;
  let rect_center_px = (graph_inputs.node_Vector2Input_36_f0373fbd).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  var p_local = p_rect_local_px;
@@ -557,7 +549,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_32.material
     let voice_time_material = shader_material_GroupInstance_32_ShaderMaterial_32(
-        ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
+        ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_32_IntelligentLight_30,
         pass_samp_GroupInstance_32_IntelligentLight_30,
         (graph_inputs.node_Vector2Input_35_093d3fbd).xy,
@@ -570,7 +562,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         (graph_inputs.node_FloatInput_47_2d18f420).x,
         (graph_inputs.node_FloatInput_LightClipBloomProgress_3a773115).x,
         params.time,
-        (graph_inputs.node_Vector2Input_IntelligentLightParticlePointerPositionPx_e2f3e873).xy,
+        (graph_inputs.node_Vector2Input_PointerLightEffectLocalPx_a618ee3f).xy,
         (graph_inputs.node_FloatInput_IntelligentLightParticlePointerWarpProgress_73a49be9).x,
         vec4f((graph_inputs.node_ColorInput_IntelligentLightParticleColor_4b6e0648).rgb * (graph_inputs.node_ColorInput_IntelligentLightParticleColor_4b6e0648).a, (graph_inputs.node_ColorInput_IntelligentLightParticleColor_4b6e0648).a),
         vec4f((graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).rgb * (graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).a, (graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).a),

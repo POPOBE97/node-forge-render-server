@@ -1812,8 +1812,9 @@
       "outputs": [
         {
           "id": "xy",
-          "name": "XY",
-          "type": "vector2"
+          "name": "XY · ScenePx",
+          "type": "vector2",
+          "coordinateSpace": "scene-px"
         }
       ],
       "defaultParams": {}
@@ -1827,8 +1828,9 @@
       "outputs": [
         {
           "id": "xy",
-          "name": "XY",
-          "type": "vector2"
+          "name": "XY · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         }
       ],
       "defaultParams": {}
@@ -3076,8 +3078,9 @@
         },
         {
           "id": "uv",
-          "name": "UV",
-          "type": "vector2"
+          "name": "UV · LocalUV",
+          "type": "vector2",
+          "coordinateSpace": "local-uv"
         }
       ],
       "outputs": [
@@ -3181,16 +3184,24 @@
       "description": "Renders an intelligent lighting fixture from 11 packed or manually authored zones",
       "inputs": [
         {
-          "id": "width",
-          "name": "Width",
-          "type": "int",
-          "default": 60
+          "id": "canvasSizePx",
+          "name": "Canvas Size Px",
+          "type": "vector2",
+          "default": [
+            60,
+            37
+          ]
         },
         {
-          "id": "height",
-          "name": "Height",
-          "type": "int",
-          "default": 37
+          "id": "downsampleFactor",
+          "name": "Downsample Factor",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 1,
+            "max": 4096,
+            "step": 1
+          }
         },
         {
           "id": "camera",
@@ -3290,12 +3301,13 @@
         },
         {
           "id": "pointerTintPosition",
-          "name": "Pointer Tint Position",
+          "name": "Pointer Tint Position · LocalPx",
           "type": "vector2",
           "default": [
             18,
             18
-          ]
+          ],
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pointerTintColor",
@@ -3343,8 +3355,9 @@
         },
         {
           "id": "positions",
-          "name": "Positions",
-          "type": "packed<vector2>"
+          "name": "Positions · LocalPx",
+          "type": "packed<vector2>",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "colors",
@@ -3353,58 +3366,69 @@
         },
         {
           "id": "pos0",
-          "name": "Pos 0",
-          "type": "vector2"
+          "name": "Pos 0 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos1",
-          "name": "Pos 1",
-          "type": "vector2"
+          "name": "Pos 1 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos2",
-          "name": "Pos 2",
-          "type": "vector2"
+          "name": "Pos 2 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos3",
-          "name": "Pos 3",
-          "type": "vector2"
+          "name": "Pos 3 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos4",
-          "name": "Pos 4",
-          "type": "vector2"
+          "name": "Pos 4 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos5",
-          "name": "Pos 5",
-          "type": "vector2"
+          "name": "Pos 5 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos6",
-          "name": "Pos 6",
-          "type": "vector2"
+          "name": "Pos 6 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos7",
-          "name": "Pos 7",
-          "type": "vector2"
+          "name": "Pos 7 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos8",
-          "name": "Pos 8",
-          "type": "vector2"
+          "name": "Pos 8 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos9",
-          "name": "Pos 9",
-          "type": "vector2"
+          "name": "Pos 9 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos10",
-          "name": "Pos 10",
-          "type": "vector2"
+          "name": "Pos 10 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "color0",
@@ -3997,503 +4021,603 @@
         },
         {
           "id": "pos0",
-          "name": "Pos 0",
-          "type": "vector2"
+          "name": "Pos 0 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos1",
-          "name": "Pos 1",
-          "type": "vector2"
+          "name": "Pos 1 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos2",
-          "name": "Pos 2",
-          "type": "vector2"
+          "name": "Pos 2 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos3",
-          "name": "Pos 3",
-          "type": "vector2"
+          "name": "Pos 3 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos4",
-          "name": "Pos 4",
-          "type": "vector2"
+          "name": "Pos 4 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos5",
-          "name": "Pos 5",
-          "type": "vector2"
+          "name": "Pos 5 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos6",
-          "name": "Pos 6",
-          "type": "vector2"
+          "name": "Pos 6 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos7",
-          "name": "Pos 7",
-          "type": "vector2"
+          "name": "Pos 7 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos8",
-          "name": "Pos 8",
-          "type": "vector2"
+          "name": "Pos 8 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos9",
-          "name": "Pos 9",
-          "type": "vector2"
+          "name": "Pos 9 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos10",
-          "name": "Pos 10",
-          "type": "vector2"
+          "name": "Pos 10 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos11",
-          "name": "Pos 11",
-          "type": "vector2"
+          "name": "Pos 11 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos12",
-          "name": "Pos 12",
-          "type": "vector2"
+          "name": "Pos 12 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos13",
-          "name": "Pos 13",
-          "type": "vector2"
+          "name": "Pos 13 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos14",
-          "name": "Pos 14",
-          "type": "vector2"
+          "name": "Pos 14 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos15",
-          "name": "Pos 15",
-          "type": "vector2"
+          "name": "Pos 15 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos16",
-          "name": "Pos 16",
-          "type": "vector2"
+          "name": "Pos 16 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos17",
-          "name": "Pos 17",
-          "type": "vector2"
+          "name": "Pos 17 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos18",
-          "name": "Pos 18",
-          "type": "vector2"
+          "name": "Pos 18 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos19",
-          "name": "Pos 19",
-          "type": "vector2"
+          "name": "Pos 19 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos20",
-          "name": "Pos 20",
-          "type": "vector2"
+          "name": "Pos 20 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos21",
-          "name": "Pos 21",
-          "type": "vector2"
+          "name": "Pos 21 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos22",
-          "name": "Pos 22",
-          "type": "vector2"
+          "name": "Pos 22 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos23",
-          "name": "Pos 23",
-          "type": "vector2"
+          "name": "Pos 23 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos24",
-          "name": "Pos 24",
-          "type": "vector2"
+          "name": "Pos 24 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos25",
-          "name": "Pos 25",
-          "type": "vector2"
+          "name": "Pos 25 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos26",
-          "name": "Pos 26",
-          "type": "vector2"
+          "name": "Pos 26 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos27",
-          "name": "Pos 27",
-          "type": "vector2"
+          "name": "Pos 27 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos28",
-          "name": "Pos 28",
-          "type": "vector2"
+          "name": "Pos 28 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos29",
-          "name": "Pos 29",
-          "type": "vector2"
+          "name": "Pos 29 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos30",
-          "name": "Pos 30",
-          "type": "vector2"
+          "name": "Pos 30 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos31",
-          "name": "Pos 31",
-          "type": "vector2"
+          "name": "Pos 31 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos32",
-          "name": "Pos 32",
-          "type": "vector2"
+          "name": "Pos 32 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos33",
-          "name": "Pos 33",
-          "type": "vector2"
+          "name": "Pos 33 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos34",
-          "name": "Pos 34",
-          "type": "vector2"
+          "name": "Pos 34 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos35",
-          "name": "Pos 35",
-          "type": "vector2"
+          "name": "Pos 35 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos36",
-          "name": "Pos 36",
-          "type": "vector2"
+          "name": "Pos 36 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos37",
-          "name": "Pos 37",
-          "type": "vector2"
+          "name": "Pos 37 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos38",
-          "name": "Pos 38",
-          "type": "vector2"
+          "name": "Pos 38 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos39",
-          "name": "Pos 39",
-          "type": "vector2"
+          "name": "Pos 39 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos40",
-          "name": "Pos 40",
-          "type": "vector2"
+          "name": "Pos 40 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos41",
-          "name": "Pos 41",
-          "type": "vector2"
+          "name": "Pos 41 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos42",
-          "name": "Pos 42",
-          "type": "vector2"
+          "name": "Pos 42 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos43",
-          "name": "Pos 43",
-          "type": "vector2"
+          "name": "Pos 43 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos44",
-          "name": "Pos 44",
-          "type": "vector2"
+          "name": "Pos 44 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos45",
-          "name": "Pos 45",
-          "type": "vector2"
+          "name": "Pos 45 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos46",
-          "name": "Pos 46",
-          "type": "vector2"
+          "name": "Pos 46 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos47",
-          "name": "Pos 47",
-          "type": "vector2"
+          "name": "Pos 47 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos48",
-          "name": "Pos 48",
-          "type": "vector2"
+          "name": "Pos 48 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos49",
-          "name": "Pos 49",
-          "type": "vector2"
+          "name": "Pos 49 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos50",
-          "name": "Pos 50",
-          "type": "vector2"
+          "name": "Pos 50 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos51",
-          "name": "Pos 51",
-          "type": "vector2"
+          "name": "Pos 51 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos52",
-          "name": "Pos 52",
-          "type": "vector2"
+          "name": "Pos 52 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos53",
-          "name": "Pos 53",
-          "type": "vector2"
+          "name": "Pos 53 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos54",
-          "name": "Pos 54",
-          "type": "vector2"
+          "name": "Pos 54 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos55",
-          "name": "Pos 55",
-          "type": "vector2"
+          "name": "Pos 55 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos56",
-          "name": "Pos 56",
-          "type": "vector2"
+          "name": "Pos 56 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos57",
-          "name": "Pos 57",
-          "type": "vector2"
+          "name": "Pos 57 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos58",
-          "name": "Pos 58",
-          "type": "vector2"
+          "name": "Pos 58 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos59",
-          "name": "Pos 59",
-          "type": "vector2"
+          "name": "Pos 59 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos60",
-          "name": "Pos 60",
-          "type": "vector2"
+          "name": "Pos 60 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos61",
-          "name": "Pos 61",
-          "type": "vector2"
+          "name": "Pos 61 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos62",
-          "name": "Pos 62",
-          "type": "vector2"
+          "name": "Pos 62 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos63",
-          "name": "Pos 63",
-          "type": "vector2"
+          "name": "Pos 63 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos64",
-          "name": "Pos 64",
-          "type": "vector2"
+          "name": "Pos 64 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos65",
-          "name": "Pos 65",
-          "type": "vector2"
+          "name": "Pos 65 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos66",
-          "name": "Pos 66",
-          "type": "vector2"
+          "name": "Pos 66 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos67",
-          "name": "Pos 67",
-          "type": "vector2"
+          "name": "Pos 67 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos68",
-          "name": "Pos 68",
-          "type": "vector2"
+          "name": "Pos 68 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos69",
-          "name": "Pos 69",
-          "type": "vector2"
+          "name": "Pos 69 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos70",
-          "name": "Pos 70",
-          "type": "vector2"
+          "name": "Pos 70 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos71",
-          "name": "Pos 71",
-          "type": "vector2"
+          "name": "Pos 71 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos72",
-          "name": "Pos 72",
-          "type": "vector2"
+          "name": "Pos 72 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos73",
-          "name": "Pos 73",
-          "type": "vector2"
+          "name": "Pos 73 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos74",
-          "name": "Pos 74",
-          "type": "vector2"
+          "name": "Pos 74 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos75",
-          "name": "Pos 75",
-          "type": "vector2"
+          "name": "Pos 75 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos76",
-          "name": "Pos 76",
-          "type": "vector2"
+          "name": "Pos 76 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos77",
-          "name": "Pos 77",
-          "type": "vector2"
+          "name": "Pos 77 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos78",
-          "name": "Pos 78",
-          "type": "vector2"
+          "name": "Pos 78 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos79",
-          "name": "Pos 79",
-          "type": "vector2"
+          "name": "Pos 79 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos80",
-          "name": "Pos 80",
-          "type": "vector2"
+          "name": "Pos 80 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos81",
-          "name": "Pos 81",
-          "type": "vector2"
+          "name": "Pos 81 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos82",
-          "name": "Pos 82",
-          "type": "vector2"
+          "name": "Pos 82 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos83",
-          "name": "Pos 83",
-          "type": "vector2"
+          "name": "Pos 83 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos84",
-          "name": "Pos 84",
-          "type": "vector2"
+          "name": "Pos 84 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos85",
-          "name": "Pos 85",
-          "type": "vector2"
+          "name": "Pos 85 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos86",
-          "name": "Pos 86",
-          "type": "vector2"
+          "name": "Pos 86 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos87",
-          "name": "Pos 87",
-          "type": "vector2"
+          "name": "Pos 87 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos88",
-          "name": "Pos 88",
-          "type": "vector2"
+          "name": "Pos 88 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos89",
-          "name": "Pos 89",
-          "type": "vector2"
+          "name": "Pos 89 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos90",
-          "name": "Pos 90",
-          "type": "vector2"
+          "name": "Pos 90 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos91",
-          "name": "Pos 91",
-          "type": "vector2"
+          "name": "Pos 91 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos92",
-          "name": "Pos 92",
-          "type": "vector2"
+          "name": "Pos 92 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos93",
-          "name": "Pos 93",
-          "type": "vector2"
+          "name": "Pos 93 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos94",
-          "name": "Pos 94",
-          "type": "vector2"
+          "name": "Pos 94 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos95",
-          "name": "Pos 95",
-          "type": "vector2"
+          "name": "Pos 95 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos96",
-          "name": "Pos 96",
-          "type": "vector2"
+          "name": "Pos 96 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos97",
-          "name": "Pos 97",
-          "type": "vector2"
+          "name": "Pos 97 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos98",
-          "name": "Pos 98",
-          "type": "vector2"
+          "name": "Pos 98 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "pos99",
-          "name": "Pos 99",
-          "type": "vector2"
+          "name": "Pos 99 · LocalPx",
+          "type": "vector2",
+          "coordinateSpace": "local-px"
         },
         {
           "id": "color0",
@@ -5412,8 +5536,9 @@
         },
         {
           "id": "uv",
-          "name": "UV",
-          "type": "vector2"
+          "name": "UV · LocalUV",
+          "type": "vector2",
+          "coordinateSpace": "local-uv"
         }
       ],
       "outputs": [

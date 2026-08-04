@@ -552,6 +552,12 @@ fn resolve_builtin_value(name: &str, ctx: &GraphInputContext) -> Option<GraphVal
     match name {
         "sceneElapsedTime" => Some(ctx.scene_elapsed_time.into()),
         "localElapsedTime" => Some(ctx.local_elapsed_time.into()),
+        "mouse.position" => Some(
+            ctx.mouse_position
+                .map(|p| [p.x, p.y])
+                .unwrap_or([0.0, 0.0])
+                .into(),
+        ),
         "mouse.position.x" => Some(ctx.mouse_position.map(|p| p.x).unwrap_or(0.0).into()),
         "mouse.position.y" => Some(ctx.mouse_position.map(|p| p.y).unwrap_or(0.0).into()),
         _ => None,
@@ -937,7 +943,10 @@ fn topological_sort(
 
 #[cfg(test)]
 mod value_contract_tests {
-    use super::AnimValue;
+    use std::collections::HashMap;
+
+    use super::{AnimValue, GraphInputContext, resolve_builtin_value};
+    use crate::state_machine::types::MousePosition;
 
     #[test]
     fn parses_curve_types_without_collapsing_their_identity() {
@@ -952,5 +961,25 @@ mod value_contract_tests {
             AnimValue::from_json_typed(&normalized, Some("normalizedBezierCurve")),
             Some(AnimValue::NormalizedBezierCurve(_))
         ));
+    }
+
+    #[test]
+    fn mouse_position_vector_is_bottom_left_scene_px() {
+        let ctx = GraphInputContext {
+            values: HashMap::new(),
+            scene_elapsed_time: 0.0,
+            local_elapsed_time: 0.0,
+            mouse_position: Some(MousePosition { x: 321.0, y: 654.0 }),
+            dt: 0.0,
+        };
+
+        assert_eq!(
+            resolve_builtin_value("mouse.position", &ctx),
+            Some(AnimValue::Vec2([321.0, 654.0]))
+        );
+        assert_eq!(
+            resolve_builtin_value("mouse.position.y", &ctx),
+            Some(AnimValue::Float(654.0))
+        );
     }
 }

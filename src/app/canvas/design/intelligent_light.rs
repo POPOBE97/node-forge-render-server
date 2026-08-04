@@ -7,7 +7,8 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         render_plan::pass_assemblers::intelligent_light::{
-            INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position, resolve_packed_pair,
+            INTELLIGENT_LIGHT_ZONE_COUNT, default_light_position, intelligent_light_target_size,
+            resolve_packed_pair,
         },
     },
     ui::{
@@ -572,18 +573,18 @@ fn read_intelligent_light_values(
         .target_size
         .map(|(width, height)| [width.max(1) as f32, height.max(1) as f32])
         .unwrap_or_else(|| {
-            [
-                node.params
-                    .get("width")
-                    .and_then(json_f32)
-                    .unwrap_or(DEFAULT_TARGET_SIZE.0 as f32)
-                    .max(1.0),
-                node.params
-                    .get("height")
-                    .and_then(json_f32)
-                    .unwrap_or(DEFAULT_TARGET_SIZE.1 as f32)
-                    .max(1.0),
-            ]
+            let canvas_size = node
+                .params
+                .get("canvasSizePx")
+                .and_then(parse_vec2_value)
+                .unwrap_or([DEFAULT_TARGET_SIZE.0 as f32, DEFAULT_TARGET_SIZE.1 as f32]);
+            let downsample_factor = node
+                .params
+                .get("downsampleFactor")
+                .and_then(json_f32)
+                .unwrap_or(1.0);
+            let [width, height] = intelligent_light_target_size(canvas_size, downsample_factor);
+            [width as f32, height as f32]
         });
     let mut positions = [[0.0; 2]; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut colors = [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT];
@@ -756,28 +757,16 @@ fn point_to_screen(
     position_space: [f32; 2],
     camera: [f32; 16],
 ) -> Pos2 {
-    project_local_point(
-        intelligent_light_position_to_local(position, position_space),
-        rect,
-        position_space,
-        camera,
-    )
+    project_local_point(position, rect, position_space, camera)
 }
 
 fn screen_to_point(pos: Pos2, rect: Rect, position_space: [f32; 2], camera: [f32; 16]) -> [f32; 2] {
-    let point = intelligent_light_position_to_local(
-        unproject_screen_point(pos, rect, position_space, camera),
-        position_space,
-    );
+    let point = unproject_screen_point(pos, rect, position_space, camera);
     let point = clamp_pixel_position(point, position_space);
     [
         round_position_value(point[0]),
         round_position_value(point[1]),
     ]
-}
-
-fn intelligent_light_position_to_local(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
-    [position[0], position_space[1].max(1.0) - position[1]]
 }
 
 fn round_position_value(value: f32) -> f32 {
@@ -799,42 +788,27 @@ fn clamp_pixel_position(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2
     ]
 }
 
-fn is_legacy_normalized_position(position: [f32; 2]) -> bool {
-    (0.0..=1.0).contains(&position[0]) && (0.0..=1.0).contains(&position[1])
+fn resolve_pixel_position(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
+    clamp_pixel_position(position, position_space)
 }
 
-fn resolve_pixel_position(position: [f32; 2], position_space: [f32; 2]) -> [f32; 2] {
-    let pixel = if is_legacy_normalized_position(position) {
+fn parse_vec2_value(value: &Value) -> Option<[f32; 2]> {
+    if let Some(arr) = value.as_array() {
+        return Some([
+            arr.first().and_then(json_f32).unwrap_or(0.0),
+            arr.get(1).and_then(json_f32).unwrap_or(0.0),
+        ]);
+    }
+    value.as_object().map(|obj| {
         [
-            position[0].clamp(0.0, 1.0) * position_space[0].max(1.0),
-            (1.0 - position[1].clamp(0.0, 1.0)) * position_space[1].max(1.0),
+            obj.get("x").and_then(json_f32).unwrap_or(0.0),
+            obj.get("y").and_then(json_f32).unwrap_or(0.0),
         ]
-    } else {
-        position
-    };
-    clamp_pixel_position(pixel, position_space)
+    })
 }
 
 fn parse_pixel_vec2_value(value: &Value, position_space: [f32; 2]) -> Option<[f32; 2]> {
-    if let Some(arr) = value.as_array() {
-        return Some(resolve_pixel_position(
-            [
-                arr.first().and_then(json_f32).unwrap_or(0.0),
-                arr.get(1).and_then(json_f32).unwrap_or(0.0),
-            ],
-            position_space,
-        ));
-    }
-    if let Some(obj) = value.as_object() {
-        return Some(resolve_pixel_position(
-            [
-                obj.get("x").and_then(json_f32).unwrap_or(0.0),
-                obj.get("y").and_then(json_f32).unwrap_or(0.0),
-            ],
-            position_space,
-        ));
-    }
-    None
+    parse_vec2_value(value).map(|position| resolve_pixel_position(position, position_space))
 }
 
 fn parse_color_value(value: &Value) -> Option<Color32> {
@@ -946,25 +920,25 @@ mod tests {
     }
 
     #[test]
-    fn pixel_mapping_matches_shader_y_flip() {
+    fn editor_mapping_preserves_bottom_left_local_coordinates() {
         let rect = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(400.0, 200.0));
         let position_space = [400.0, 200.0];
         let camera = legacy_projection_camera_matrix(position_space);
 
         assert_eq!(
             point_to_screen([0.0, 0.0], rect, position_space, camera),
-            Pos2::new(10.0, 20.0)
+            Pos2::new(10.0, 220.0)
         );
         assert_eq!(
             point_to_screen([400.0, 200.0], rect, position_space, camera),
-            Pos2::new(410.0, 220.0)
+            Pos2::new(410.0, 20.0)
         );
         assert_eq!(
-            screen_to_point(Pos2::new(10.0, 20.0), rect, position_space, camera),
+            screen_to_point(Pos2::new(10.0, 220.0), rect, position_space, camera),
             [0.0, 0.0]
         );
         assert_eq!(
-            screen_to_point(Pos2::new(410.0, 220.0), rect, position_space, camera),
+            screen_to_point(Pos2::new(410.0, 20.0), rect, position_space, camera),
             [400.0, 200.0]
         );
     }
@@ -1211,7 +1185,7 @@ mod tests {
             false,
         );
 
-        assert_eq!(values.positions[0], [45.0, 27.75]);
+        assert_eq!(values.positions[0], [0.75, 0.25]);
         assert_eq!(
             values.colors[0],
             parse_hex_color("#abcdef").expect("hex color")

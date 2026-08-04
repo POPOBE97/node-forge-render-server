@@ -56,13 +56,26 @@ var img_samp_GroupInstance_51_ImageTexture_InputBarUI: sampler;
 // --- Extra WGSL declarations (generated) ---
 
 struct ShaderMaterialInput {
+    // Public material UV: bottom-left origin, Y increasing upward.
     uv: vec2f,
+    // Public scene/target pixel coordinate: bottom-left origin, Y increasing upward.
     frag_coord: vec2f,
+    // Public geometry-local pixel coordinate: bottom-left origin, Y increasing upward.
     local_position: vec3f,
     geometry_size: vec2f,
     target_size: vec2f,
     time: f32,
 };
+
+// Renderer-owned texture boundary. ShaderMaterial authors provide LocalUV and never
+// convert to WebGPU's private raster-texture convention themselves.
+fn sample_texture_local_uv(
+    source: texture_2d<f32>,
+    source_sampler: sampler,
+    local_uv: vec2f,
+) -> vec4f {
+    return textureSample(source, source_sampler, vec2f(local_uv.x, 1.0 - local_uv.y));
+}
 
 fn shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(
     in: ShaderMaterialInput,
@@ -83,7 +96,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     // Shader Material GroupInstance_51/ShaderMaterial_InputBarUI.material
     let opacity_material = shader_material_GroupInstance_51_ShaderMaterial_InputBarUI(
-        ShaderMaterialInput(in.uv, in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
+        ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         image_texture_sample,
         (graph_inputs.node_FloatInput_42_ae0ff420).x,
     );

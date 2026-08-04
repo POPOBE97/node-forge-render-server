@@ -6,7 +6,7 @@ mod support;
 const POSITIONS_KEY: &str = "Vector2ArrayInput_IntelligentLightPositions:value";
 const SNAP_PRIMARY_PARAM_ID: &str = "sp_5e510047b6cb8f4d";
 const SNAP_SECONDARY_PARAM_ID: &str = "sp_653078b6ffd2ce9c";
-const PTT_ORB_PARAM_ID: &str = "sp_ptt_orb_screen_position_px";
+const PTT_ORB_PARAM_ID: &str = "sp_ptt_object_scene_px";
 
 fn space_event(event_type: &str) -> FiredEvent {
     FiredEvent {
@@ -78,7 +78,7 @@ fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
         assert!(mutation.output_bindings.iter().any(|binding| {
             binding.state_param_id == PTT_ORB_PARAM_ID
                 && binding.from.node_id == function_id
-                && binding.from.port_id == "orbScreenPositionPx"
+                && binding.from.port_id == "objectScenePx"
         }));
     }
 
@@ -123,48 +123,49 @@ fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
     session
         .force_state("st_push_to_talk")
         .expect("PushToTalk should be forceable");
-    session.update_mouse_position(MousePosition { x: 540.0, y: 144.0 });
+    settle(&mut session);
+    // PushToTalk's authored semantic anchor is ScenePx [540, 270].
+    session.update_mouse_position(MousePosition { x: 540.0, y: 270.0 });
     let centered = session.step(1.0 / 60.0);
-    let centered_x = uniform_number(
-        &centered,
-        "Vector2Input_IntelligentLightParticlePointerPositionPx",
-        "x",
-    );
-    let centered_y = uniform_number(
-        &centered,
-        "Vector2Input_IntelligentLightParticlePointerPositionPx",
-        "y",
-    );
+    let centered_x = uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "x");
+    let centered_y = uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "y");
     assert!(
         (centered_x - 540.0).abs() <= 1.0e-8,
         "centered local x should be 540, got {centered_x}"
     );
+    assert!(centered_y.is_finite(), "centered local y must be finite");
+
+    session.update_mouse_position(MousePosition { x: 570.0, y: 270.0 });
+    let free_follow = session.step(1.0 / 60.0);
+    let free_follow_channel = channel(&free_follow, PTT_ORB_PARAM_ID);
     assert!(
-        (centered_y - 540.0).abs() <= 1.0e-8,
-        "centered local y should be 540, got {centered_y}"
+        (free_follow_channel.value[0] - 570.0).abs() <= 1.0e-8,
+        "ScenePx x should follow the pointer inside the free radius, got {}",
+        free_follow_channel.value[0]
     );
 
-    session.update_mouse_position(MousePosition { x: 570.0, y: 144.0 });
-    let free_follow = session.step(1.0 / 60.0);
-    assert!((channel(&free_follow, PTT_ORB_PARAM_ID).value[0] - 570.0).abs() <= 1.0e-8);
-
-    session.update_mouse_position(MousePosition { x: 540.0, y: 174.0 });
+    session.update_mouse_position(MousePosition { x: 540.0, y: 300.0 });
     let free_follow_up = session.step(1.0 / 60.0);
-    assert!((channel(&free_follow_up, PTT_ORB_PARAM_ID).value[1] - 174.0).abs() <= 1.0e-8);
+    let free_follow_up_channel = channel(&free_follow_up, PTT_ORB_PARAM_ID);
+    assert!(
+        (free_follow_up_channel.value[1] - 300.0).abs() <= 1.0e-8,
+        "ScenePx y should follow an upward pointer inside the free radius, got {}",
+        free_follow_up_channel.value[1]
+    );
     assert!(
         (uniform_number(
             &free_follow_up,
-            "Vector2Input_IntelligentLightParticlePointerPositionPx",
+            "Vector2Input_PointerLightEffectLocalPx",
             "y",
-        ) - 510.0)
+        ) - (centered_y + 30.0))
             .abs()
             <= 1.0e-8,
-        "bottom-left frag Y must convert back into top-down Intelligent Light local Y"
+        "moving the ScenePx pointer upward must increase LightEffect LocalPx Y"
     );
 
     session.update_mouse_position(MousePosition {
         x: 1140.0,
-        y: 144.0,
+        y: 270.0,
     });
     let resisted = session.step(1.0 / 60.0);
     let excess = 600.0 - 40.0;
@@ -172,7 +173,7 @@ fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
     let resisted_channel = channel(&resisted, PTT_ORB_PARAM_ID);
     assert_eq!(resisted_channel.transition_driver, "hold");
     assert!((resisted_channel.value[0] - (540.0 + expected_distance)).abs() <= 1.0e-8);
-    assert!((resisted_channel.value[1] - 144.0).abs() <= 1.0e-8);
+    assert!((resisted_channel.value[1] - 270.0).abs() <= 1.0e-8);
     assert!(expected_distance < 280.0);
     assert!(expected_distance < 600.0);
 
@@ -540,12 +541,12 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     }
 
     let expected = [
-        (0.450000, 0.450000, 0.150000, 0.300000, 29.897707),
-        (0.450000, 0.440524, 0.097320, 0.343204, 36.230692),
-        (0.450000, 0.427383, 0.036301, 0.391083, 43.548368),
-        (0.450000, 0.421226, 0.006890, 0.414337, 38.018161),
-        (0.450000, 0.440943, -0.001568, 0.442510, 31.856458),
-        (0.450000, 0.478415, 0.000000, 0.478415, 29.568595),
+        (0.450000, 0.450000, 0.150000, 0.300000, -6.800000),
+        (0.450000, 0.440524, 0.097320, 0.343204, -1.711705),
+        (0.450000, 0.427383, 0.036301, 0.391083, 6.252066),
+        (0.450000, 0.421226, 0.006890, 0.414337, 8.195413),
+        (0.450000, 0.440943, -0.001568, 0.442510, 10.242329),
+        (0.450000, 0.478415, 0.000000, 0.478415, 12.723778),
     ];
     println!("| t | value | S | Q | E | P/render | Mutation | Transition | active |");
     println!("|---:|---|---:|---:|---:|---:|---|---|---|");

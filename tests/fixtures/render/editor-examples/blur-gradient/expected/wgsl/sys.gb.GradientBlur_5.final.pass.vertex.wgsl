@@ -136,10 +136,10 @@ fn gb_sample_from_mipmap(xy: vec2f, resolution: vec2f, level: i32) -> vec4f {
 @vertex
 fn vs_main(@location(0) position: vec3f, @location(1) uv: vec2f) -> VSOut {
     var out: VSOut;
-    out.uv = uv;
+    out.uv = vec2f(uv.x, 1.0 - uv.y);
     out.geo_size_px = params.geo_size;
     // UV is top-left convention, so flip Y for GLSL-like local_px.
-    out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, position.z);
+    out.local_px = vec3f(uv * out.geo_size_px, position.z);
 
     let p_px = params.center + position.xy;
     out.position = params.camera * vec4f(p_px, position.z, 1.0);

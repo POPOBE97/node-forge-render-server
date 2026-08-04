@@ -45,7 +45,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
  let src_resolution = params.target_size * 8.0;
  let src_center = in.uv * src_resolution;
  let base = src_center - vec2f(3.5);
-
+ 
  var sum = vec4f(0.0);
  for (var y: i32 = 0; y < 8; y = y + 1) {
      for (var x: i32 = 0; x < 8; x = x + 1) {
@@ -53,7 +53,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
          sum = sum + textureSampleLevel(src_tex, src_samp, uv, 0.0);
      }
  }
-
+ 
  return sum * (1.0 / 64.0);
-
+ 
 }

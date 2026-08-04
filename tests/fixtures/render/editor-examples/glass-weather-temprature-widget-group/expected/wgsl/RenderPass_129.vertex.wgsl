@@ -34,19 +34,19 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: BoolInput_140
-    bool_input_140: vec4i,
+    node_BoolInput_140_13a147c1: vec4i,
     // Node: FloatInput_137
-    float_input_137: vec4f,
+    node_FloatInput_137_f1da2f17: vec4f,
     // Node: GroupInstance_132/FloatInput_10
-    group_instance_132_float_input_10: vec4f,
+    node_GroupInstance_132_FloatInput_10_d7a4e6d9: vec4f,
     // Node: GroupInstance_132/FloatInput_12
-    group_instance_132_float_input_12: vec4f,
+    node_GroupInstance_132_FloatInput_12_3da8e6d9: vec4f,
     // Node: GroupInstance_132/FloatInput_89
-    group_instance_132_float_input_89: vec4f,
+    node_GroupInstance_132_FloatInput_89_b1b7ccd9: vec4f,
     // Node: GroupInstance_132/Vector3Input_105
-    group_instance_132_vector3_input_105: vec4f,
+    node_GroupInstance_132_Vector3Input_105_b41cb78d: vec4f,
     // Node: GroupInstance_132/Vector3Input_80
-    group_instance_132_vector3_input_80: vec4f,
+    node_GroupInstance_132_Vector3Input_80_2831bc4b: vec4f,
     // Node: Vector2Input_143
     node_Vector2Input_143_9dd97189: vec4f,
     // Node: Vector2Input_146
@@ -704,14 +704,14 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  let rect_size_px_base = (graph_inputs.node_Vector2Input_143_9dd97189).xy;
  let rect_center_px = (graph_inputs.node_Vector2Input_146_1ed17189).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * out.geo_size_px, 0.0);
+ out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
  let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
  var p_local = p_rect_local_px;

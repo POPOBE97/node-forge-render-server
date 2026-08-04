@@ -190,10 +190,21 @@ Type coercion (`src/renderer/utils.rs`):
 - Vector demote: `vec4 -> vec3/vec2`, `vec3 -> vec2`
 - Vertex strictness example: `TransformGeometry.translate` must be `vec3`; coerce `vec2` inputs with `coerce_to_type(..., ValueType::Vec3)`.
 
-UV convention:
-- Internal `in.uv` is top-left origin.
-- GLSL-like local pixel coord: `local_px = vec2(uv.x, 1.0 - uv.y) * geo_size`.
-- User-facing `Attribute.uv`: `vec2(in.uv.x, 1.0 - in.uv.y)`.
+Coordinate ABI:
+- All public coordinates are bottom-left/Y-up. `ScenePx` is render-target space;
+  `LocalPx<Consumer>` and `LocalUV` belong to one explicit consumer.
+- `mouse.position` and its scalar components are `ScenePx` and are converted from egui's
+  top-left coordinates exactly once in the interaction bridge.
+- Mutation produces semantic `ScenePx`. CPU Derivation localizes/scales separately for each render
+  target before uniform upload. Effect shaders never flip position uniforms, subtract layer
+  origins, or derive local coordinates from device dimensions.
+- Internal `in.uv` is private `RasterUV` for wgpu texture sampling. Generated Attribute,
+  ShaderMaterial, and texture-node boundaries expose bottom-left `LocalUV`; raw ShaderMaterial
+  sampling of public UVs is forbidden in favor of `sample_texture_local_uv`.
+- `local_px`, `frag_coord_gl`, GeoFragcoord, FragCoord, SDF inputs, MeshGradient positions, and
+  IntelligentLight positions/radii are bottom-left/Y-up.
+- Never expose `RasterUV`, a top-left option, or an unqualified consumer `PositionPx` through DSL
+  nodes or uniforms.
 
 Resource naming:
 - ASCII, deterministic, readable.

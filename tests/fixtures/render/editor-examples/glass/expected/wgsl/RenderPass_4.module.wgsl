@@ -639,14 +639,14 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
  let _unused_geo_scale = params.geo_scale;
 
  // UV passed as vertex attribute.
- out.uv = uv;
+ out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  let inst_m = mat4x4f(i0, i1, i2, i3);
  let geo_sx = length(inst_m[0].xy);
  let geo_sy = length(inst_m[1].xy);
  let geo_size_px = params.geo_size * vec2f(geo_sx, geo_sy);
  out.geo_size_px = geo_size_px;
- out.local_px = vec3f(vec2f(uv.x, 1.0 - uv.y) * geo_size_px, 0.0);
+ out.local_px = vec3f(uv * geo_size_px, 0.0);
 
  var p_local = (inst_m * vec4f(position, 1.0)).xyz;
 
