@@ -7,6 +7,7 @@ const POSITIONS_KEY: &str = "Vector2ArrayInput_IntelligentLightPositions:value";
 const SNAP_PRIMARY_PARAM_ID: &str = "sp_5e510047b6cb8f4d";
 const SNAP_SECONDARY_PARAM_ID: &str = "sp_653078b6ffd2ce9c";
 const PTT_ORB_PARAM_ID: &str = "sp_ptt_object_scene_px";
+const PTT_ORB_ANCHOR_PARAM_ID: &str = "sp_ptt_orb_anchor_position_px";
 
 fn space_event(event_type: &str) -> FiredEvent {
     FiredEvent {
@@ -14,6 +15,46 @@ fn space_event(event_type: &str) -> FiredEvent {
         key: Some(" ".into()),
         ..Default::default()
     }
+}
+
+fn pointer_event(event_type: &str) -> FiredEvent {
+    FiredEvent {
+        event_type: event_type.into(),
+        ..Default::default()
+    }
+}
+
+fn assert_vec2_close(actual: &[f64], expected: [f64; 2], message: &str) {
+    assert_eq!(
+        actual.len(),
+        2,
+        "{message}: expected a vec2, got {actual:?}"
+    );
+    assert!(
+        (actual[0] - expected[0]).abs() <= 1.0e-8 && (actual[1] - expected[1]).abs() <= 1.0e-8,
+        "{message}: expected {expected:?}, got {actual:?}"
+    );
+}
+
+fn rubber_band_distance(distance: f64) -> f64 {
+    const MAX_DISTANCE: f64 = 400.0;
+    const COEFFICIENT: f64 = 0.1;
+    (MAX_DISTANCE * COEFFICIENT * distance) / (MAX_DISTANCE + COEFFICIENT * distance)
+}
+
+fn session_starting_in(
+    scene: &node_forge_render_server::dsl::SceneDSL,
+    state_id: &str,
+) -> AnimationSession {
+    let mut scene = scene.clone();
+    scene
+        .state_machine
+        .as_mut()
+        .expect("doubao fixture should have a state machine")
+        .initial_state_id = Some(state_id.into());
+    AnimationSession::from_scene(&scene)
+        .expect("doubao state machine should compile")
+        .expect("doubao fixture should have a state machine")
 }
 
 fn settle(session: &mut AnimationSession) -> AnimationStep {
@@ -58,12 +99,38 @@ fn uniform_number(step: &AnimationStep, node_id: &str, param_id: &str) -> f64 {
 }
 
 #[test]
-fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
+fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
     let scene = support::load_render_case_scene("doubao-voice-interaction");
     let machine = scene
         .state_machine
         .as_ref()
         .expect("doubao fixture should have a state machine");
+
+    let push_to_talk = machine
+        .states
+        .iter()
+        .find(|state| state.id == "st_push_to_talk")
+        .expect("PushToTalk State");
+    let cancel = machine
+        .states
+        .iter()
+        .find(|state| state.id == "st_push_to_talk_cancel")
+        .expect("PushToTalkCancel State");
+    for (param_id, expected) in [
+        (PTT_ORB_PARAM_ID, serde_json::json!([540, 144])),
+        (PTT_ORB_ANCHOR_PARAM_ID, serde_json::json!([540, 100])),
+    ] {
+        let push_to_talk_value = push_to_talk
+            .state_param_overrides
+            .get(param_id)
+            .unwrap_or_else(|| panic!("PushToTalk should override '{param_id}'"));
+        let cancel_value = cancel
+            .state_param_overrides
+            .get(param_id)
+            .unwrap_or_else(|| panic!("PushToTalkCancel should override '{param_id}'"));
+        assert_eq!(push_to_talk_value, &expected);
+        assert_eq!(cancel_value, push_to_talk_value);
+    }
 
     for (state_id, function_id) in [
         ("st_push_to_talk", "function_ptt_orb_motion"),
@@ -117,86 +184,184 @@ fn doubao_ptt_orb_uses_radial_rubber_band_and_springs_back_to_its_anchor() {
         }));
     }
 
-    let mut session = AnimationSession::from_scene(&scene)
-        .expect("doubao state machine should compile")
-        .expect("doubao fixture should have a state machine");
-    session
-        .force_state("st_push_to_talk")
-        .expect("PushToTalk should be forceable");
-    settle(&mut session);
-    // PushToTalk's authored semantic anchor is ScenePx [540, 270].
-    session.update_mouse_position(MousePosition { x: 540.0, y: 270.0 });
-    let centered = session.step(1.0 / 60.0);
-    let centered_x = uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "x");
-    let centered_y = uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "y");
-    assert!(
-        (centered_x - 540.0).abs() <= 1.0e-8,
-        "centered local x should be 540, got {centered_x}"
-    );
-    assert!(centered_y.is_finite(), "centered local y must be finite");
+    let mut sampled_targets = Vec::new();
+    for state_id in ["st_push_to_talk", "st_push_to_talk_cancel"] {
+        let mut session = AnimationSession::from_scene(&scene)
+            .expect("doubao state machine should compile")
+            .expect("doubao fixture should have a state machine");
+        session
+            .force_state(state_id)
+            .unwrap_or_else(|error| panic!("'{state_id}' should be forceable: {error}"));
+        settle(&mut session);
 
-    session.update_mouse_position(MousePosition { x: 570.0, y: 270.0 });
-    let free_follow = session.step(1.0 / 60.0);
-    let free_follow_channel = channel(&free_follow, PTT_ORB_PARAM_ID);
-    assert!(
-        (free_follow_channel.value[0] - 570.0).abs() <= 1.0e-8,
-        "ScenePx x should follow the pointer inside the free radius, got {}",
-        free_follow_channel.value[0]
-    );
+        session.update_mouse_position(MousePosition { x: 540.0, y: 100.0 });
+        let centered = session.step(1.0 / 60.0);
+        let centered_channel = channel(&centered, PTT_ORB_PARAM_ID);
+        assert_vec2_close(
+            &centered_channel.target_value,
+            [540.0, 100.0],
+            "pointer at anchor",
+        );
+        let centered_local_y =
+            uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "y");
 
-    session.update_mouse_position(MousePosition { x: 540.0, y: 300.0 });
-    let free_follow_up = session.step(1.0 / 60.0);
-    let free_follow_up_channel = channel(&free_follow_up, PTT_ORB_PARAM_ID);
-    assert!(
-        (free_follow_up_channel.value[1] - 300.0).abs() <= 1.0e-8,
-        "ScenePx y should follow an upward pointer inside the free radius, got {}",
-        free_follow_up_channel.value[1]
-    );
-    assert!(
-        (uniform_number(
-            &free_follow_up,
-            "Vector2Input_PointerLightEffectLocalPx",
-            "y",
-        ) - (centered_y + 30.0))
-            .abs()
-            <= 1.0e-8,
-        "moving the ScenePx pointer upward must increase LightEffect LocalPx Y"
-    );
+        session.update_mouse_position(MousePosition { x: 570.0, y: 100.0 });
+        let near = session.step(1.0 / 60.0);
+        let near_channel = channel(&near, PTT_ORB_PARAM_ID);
+        let expected_near_x = 540.0 + rubber_band_distance(30.0);
+        assert_vec2_close(
+            &near_channel.target_value,
+            [expected_near_x, 100.0],
+            "near pointer uses the zero-free-radius rubber band",
+        );
 
-    session.update_mouse_position(MousePosition {
-        x: 1140.0,
-        y: 270.0,
-    });
-    let resisted = session.step(1.0 / 60.0);
-    let excess = 600.0 - 40.0;
-    let expected_distance = 40.0 + (240.0 * 0.55 * excess) / (240.0 + 0.55 * excess);
-    let resisted_channel = channel(&resisted, PTT_ORB_PARAM_ID);
-    assert_eq!(resisted_channel.transition_driver, "hold");
-    assert!((resisted_channel.value[0] - (540.0 + expected_distance)).abs() <= 1.0e-8);
-    assert!((resisted_channel.value[1] - 270.0).abs() <= 1.0e-8);
-    assert!(expected_distance < 280.0);
-    assert!(expected_distance < 600.0);
+        session.update_mouse_position(MousePosition { x: 540.0, y: 130.0 });
+        let near_up = session.step(1.0 / 60.0);
+        let near_up_channel = channel(&near_up, PTT_ORB_PARAM_ID);
+        let expected_near_y = 100.0 + rubber_band_distance(30.0);
+        assert_vec2_close(
+            &near_up_channel.target_value,
+            [540.0, expected_near_y],
+            "upward pointer uses the same radial rubber band",
+        );
+        assert!(
+            uniform_number(&near_up, "Vector2Input_PointerLightEffectLocalPx", "y")
+                > centered_local_y,
+            "moving the ScenePx pointer upward must increase LightEffect LocalPx Y"
+        );
 
-    let outgoing = resisted_channel.value.clone();
-    let returning = session
-        .force_state("st_mrerxocx_8")
-        .expect("Idle should be forceable from PushToTalk");
-    let returning_channel = channel(&returning, PTT_ORB_PARAM_ID);
-    assert_eq!(returning_channel.transition_driver, "spring");
-    assert!((returning_channel.value[0] - outgoing[0]).abs() <= 1.0e-8);
-    assert!((returning_channel.value[1] - outgoing[1]).abs() <= 1.0e-8);
+        session.update_mouse_position(MousePosition {
+            x: 1140.0,
+            y: 100.0,
+        });
+        let resisted = session.step(1.0 / 60.0);
+        let expected_far_x = 540.0 + rubber_band_distance(600.0);
+        let resisted_channel = channel(&resisted, PTT_ORB_PARAM_ID);
+        assert_eq!(resisted_channel.transition_driver, "hold");
+        assert_vec2_close(
+            &resisted_channel.target_value,
+            [expected_far_x, 100.0],
+            "far pointer uses the shared rubber band",
+        );
+        assert!(expected_far_x - 540.0 < 400.0);
+        assert!(expected_far_x - 540.0 < 600.0);
 
-    let mut returned = returning;
-    for _ in 0..120 {
-        if returned.active_transition_id.is_none() {
-            break;
-        }
-        returned = session.step(1.0 / 60.0);
+        sampled_targets.push((
+            near_channel.target_value.clone(),
+            near_up_channel.target_value.clone(),
+            resisted_channel.target_value.clone(),
+        ));
+
+        let outgoing = resisted_channel.value.clone();
+        let returning = session
+            .force_state("st_mrerxocx_8")
+            .unwrap_or_else(|error| panic!("Idle should be forceable from '{state_id}': {error}"));
+        let returning_channel = channel(&returning, PTT_ORB_PARAM_ID);
+        assert_eq!(returning_channel.transition_driver, "spring");
+        assert_vec2_close(
+            &returning_channel.value,
+            [outgoing[0], outgoing[1]],
+            "return spring preserves the outgoing physical value at dt=0",
+        );
+
+        let returned = settle(&mut session);
+        let returned_channel = channel(&returned, PTT_ORB_PARAM_ID);
+        assert_vec2_close(
+            &returned_channel.value,
+            [540.0, 144.0],
+            "return spring settles at the authored resting object position",
+        );
     }
-    assert_eq!(returned.active_transition_id, None);
-    let returned_channel = channel(&returned, PTT_ORB_PARAM_ID);
-    assert!((returned_channel.value[0] - 540.0).abs() <= 1.0e-6);
-    assert!((returned_channel.value[1] - 144.0).abs() <= 1.0e-6);
+    assert_eq!(sampled_targets[0], sampled_targets[1]);
+}
+
+#[test]
+fn doubao_ptt_cancel_round_trip_is_continuous_at_dt_zero() {
+    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    for event_type in ["mousemove", "touchmove"] {
+        let mut session = session_starting_in(&scene, "st_push_to_talk");
+        settle(&mut session);
+
+        session.update_mouse_position(MousePosition { x: 780.0, y: 481.0 });
+        let push_to_talk_outgoing = session.step(1.0 / 60.0);
+        let push_to_talk_channel = channel(&push_to_talk_outgoing, PTT_ORB_PARAM_ID).clone();
+        session.fire_event(pointer_event(event_type));
+        let entered_cancel = session.step(0.0);
+        assert_eq!(entered_cancel.current_state_id, "st_push_to_talk_cancel");
+        assert_eq!(
+            entered_cancel.active_transition_id.as_deref(),
+            Some("tr_push_to_talk_to_cancel")
+        );
+        assert!(entered_cancel.diagnostics.is_empty());
+        let cancel_channel = channel(&entered_cancel, PTT_ORB_PARAM_ID);
+        assert_vec2_close(
+            &cancel_channel.value,
+            [push_to_talk_channel.value[0], push_to_talk_channel.value[1]],
+            &format!("{event_type}: PushToTalk -> Cancel keeps the physical value continuous"),
+        );
+        assert_vec2_close(
+            &cancel_channel.target_value,
+            [
+                push_to_talk_channel.target_value[0],
+                push_to_talk_channel.target_value[1],
+            ],
+            &format!("{event_type}: PushToTalk -> Cancel keeps the Mutation target identical"),
+        );
+
+        settle(&mut session);
+        session.update_mouse_position(MousePosition { x: 780.0, y: 480.0 });
+        let cancel_outgoing = session.step(1.0 / 60.0);
+        let cancel_channel = channel(&cancel_outgoing, PTT_ORB_PARAM_ID).clone();
+        session.fire_event(pointer_event(event_type));
+        let returned_to_push_to_talk = session.step(0.0);
+        assert_eq!(returned_to_push_to_talk.current_state_id, "st_push_to_talk");
+        assert_eq!(
+            returned_to_push_to_talk.active_transition_id.as_deref(),
+            Some("tr_cancel_to_push_to_talk")
+        );
+        assert!(returned_to_push_to_talk.diagnostics.is_empty());
+        let push_to_talk_channel = channel(&returned_to_push_to_talk, PTT_ORB_PARAM_ID);
+        assert_vec2_close(
+            &push_to_talk_channel.value,
+            [cancel_channel.value[0], cancel_channel.value[1]],
+            &format!("{event_type}: Cancel -> PushToTalk keeps the physical value continuous"),
+        );
+        assert_vec2_close(
+            &push_to_talk_channel.target_value,
+            [
+                cancel_channel.target_value[0],
+                cancel_channel.target_value[1],
+            ],
+            &format!("{event_type}: Cancel -> PushToTalk keeps the Mutation target identical"),
+        );
+    }
+}
+
+#[test]
+fn doubao_ptt_release_and_cancel_events_route_to_the_expected_states() {
+    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    for (state_id, event_type, expected_state_id) in [
+        ("st_push_to_talk", "mouseup", "st_thinking"),
+        ("st_push_to_talk", "touchend", "st_thinking"),
+        ("st_push_to_talk", "touchcancel", "st_mrerxocx_8"),
+        ("st_push_to_talk_cancel", "mouseup", "st_mrerxocx_8"),
+        ("st_push_to_talk_cancel", "touchend", "st_mrerxocx_8"),
+        ("st_push_to_talk_cancel", "touchcancel", "st_mrerxocx_8"),
+    ] {
+        let mut session = session_starting_in(&scene, state_id);
+        settle(&mut session);
+        session.fire_event(pointer_event(event_type));
+        let released = session.step(0.0);
+        assert_eq!(
+            released.current_state_id, expected_state_id,
+            "'{event_type}' from '{state_id}'"
+        );
+        assert!(
+            released.diagnostics.is_empty(),
+            "'{event_type}' from '{state_id}': {:?}",
+            released.diagnostics
+        );
+    }
 }
 
 #[test]
