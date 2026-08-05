@@ -81,6 +81,7 @@ fn state_machine(id: &str) -> StateMachine {
         name: String::new(),
         state_params: Vec::new(),
         state_param_graph: Default::default(),
+        node_widths: Default::default(),
         states: Vec::new(),
         transitions: Vec::new(),
         derivation_bindings: Vec::new(),

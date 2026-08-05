@@ -54,6 +54,7 @@ fn empty_state_mutation() -> StateMutationGraph {
         output_bindings: vec![],
         layout: StateMutationGraphLayout {
             parameter_positions: HashMap::new(),
+            node_widths: HashMap::new(),
             runtime_input_position: Position::default(),
             output_position: Position::default(),
             runtime_input_collapsed: false,
@@ -488,6 +489,7 @@ fn sticky_override_test_scene() -> dsl::SceneDSL {
                     .collect(),
                 ..Default::default()
             },
+            node_widths: HashMap::new(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),

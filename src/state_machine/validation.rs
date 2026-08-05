@@ -1286,6 +1286,7 @@ mod tests {
             name: "Test".into(),
             state_params: vec![],
             state_param_graph: Default::default(),
+            node_widths: Default::default(),
             states: vec![
                 AnimationState {
                     id: "entry".into(),
@@ -1471,6 +1472,7 @@ mod tests {
             output_bindings: vec![],
             layout: StateMutationGraphLayout {
                 parameter_positions: HashMap::new(),
+                node_widths: HashMap::new(),
                 runtime_input_position: Position::default(),
                 output_position: Position::default(),
                 runtime_input_collapsed: false,

@@ -38,6 +38,7 @@ fn empty_state_mutation() -> StateMutationGraph {
         output_bindings: vec![],
         layout: StateMutationGraphLayout {
             parameter_positions: HashMap::new(),
+            node_widths: HashMap::new(),
             runtime_input_position: Position::default(),
             output_position: Position::default(),
             runtime_input_collapsed: false,
@@ -75,6 +76,7 @@ fn scene_with_event_transition(event_name: &str) -> SceneDSL {
         name: "Test SM".into(),
         state_params: vec![],
         state_param_graph: Default::default(),
+        node_widths: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),
@@ -149,6 +151,7 @@ fn scene_with_press_release_transitions() -> SceneDSL {
         name: "Press Release SM".into(),
         state_params: vec![],
         state_param_graph: Default::default(),
+        node_widths: Default::default(),
         states: vec![
             AnimationState {
                 id: "entry".into(),

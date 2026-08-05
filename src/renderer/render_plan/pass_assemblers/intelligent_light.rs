@@ -1167,6 +1167,17 @@ mod tests {
     }
 
     #[test]
+    fn intelligent_light_premultiplies_presentation_colors() {
+        let shader =
+            build_intelligent_light_wgsl(&test_node("ilight", "IntelligentLight", HashMap::new()));
+
+        assert!(shader.contains("srgb_to_linear(max(color.rgb, vec3f(0.0))) * color.a"));
+        for index in 0..3 {
+            assert!(shader.contains(&format!("presentation_color_linear({index}u)")));
+        }
+    }
+
+    #[test]
     fn target_size_is_derived_from_canvas_size_and_downsample_factor() {
         assert_eq!(
             intelligent_light_target_size([1080.0, 1080.0], 30.0),

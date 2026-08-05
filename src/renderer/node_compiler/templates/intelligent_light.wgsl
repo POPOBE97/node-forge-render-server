@@ -67,17 +67,22 @@ fn blend_normal(src: vec4f, dst: vec4f) -> vec4f {
     );
 }
 
+fn presentation_color_linear(index: u32) -> vec3f {
+    let color = ilight_data.presentation_colors[index];
+    return srgb_to_linear(max(color.rgb, vec3f(0.0))) * color.a;
+}
+
 fn presentation_color(x: f32) -> vec3f {
     if (x < 0.5) {
         return mix(
-            srgb_to_linear(max(ilight_data.presentation_colors[0].rgb, vec3f(0.0))),
-            srgb_to_linear(max(ilight_data.presentation_colors[1].rgb, vec3f(0.0))),
+            presentation_color_linear(0u),
+            presentation_color_linear(1u),
             smoothstep(0.0, 0.5, x),
         );
     }
     return mix(
-        srgb_to_linear(max(ilight_data.presentation_colors[1].rgb, vec3f(0.0))),
-        srgb_to_linear(max(ilight_data.presentation_colors[2].rgb, vec3f(0.0))),
+        presentation_color_linear(1u),
+        presentation_color_linear(2u),
         smoothstep(0.5, 1.0, x),
     );
 }

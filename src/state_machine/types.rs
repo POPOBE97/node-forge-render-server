@@ -23,6 +23,13 @@ pub struct StateMachine {
     pub state_params: Vec<StateParamDeclaration>,
     #[serde(rename = "stateParamGraph")]
     pub state_param_graph: StateParamGraph,
+    /// Editor-only State Graph node widths — ignored at runtime.
+    #[serde(
+        default,
+        rename = "nodeWidths",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub node_widths: HashMap<String, f64>,
     #[serde(default)]
     pub states: Vec<AnimationState>,
     #[serde(default)]
@@ -60,6 +67,18 @@ pub struct StateParamGraph {
     pub root_node_position: Position,
     #[serde(rename = "declarationPositions")]
     pub declaration_positions: HashMap<String, Position>,
+    #[serde(
+        default,
+        rename = "rootNodeWidth",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub root_node_width: Option<f64>,
+    #[serde(
+        default,
+        rename = "declarationWidths",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub declaration_widths: HashMap<String, f64>,
     #[serde(default)]
     pub viewport: Option<Viewport>,
 }
@@ -72,6 +91,8 @@ impl Default for StateParamGraph {
                 y: -120.0,
             },
             declaration_positions: HashMap::new(),
+            root_node_width: None,
+            declaration_widths: HashMap::new(),
             viewport: None,
         }
     }
@@ -636,6 +657,8 @@ pub struct TransitionMotionGraphLayout {
     pub input_position: Position,
     pub output_position: Position,
     pub condition_output_position: Position,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub node_widths: HashMap<String, f64>,
     #[serde(default)]
     pub input_collapsed: bool,
     #[serde(default)]
@@ -752,6 +775,8 @@ pub struct StateMutationOutputBinding {
 pub struct StateMutationGraphLayout {
     #[serde(default)]
     pub parameter_positions: HashMap<String, Position>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub node_widths: HashMap<String, f64>,
     pub runtime_input_position: Position,
     pub output_position: Position,
     #[serde(default)]
@@ -765,6 +790,8 @@ pub struct StateMutationGraphLayout {
 pub struct DerivationGraphLayout {
     pub input_position: Position,
     pub output_position: Position,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub node_widths: HashMap<String, f64>,
     #[serde(default)]
     pub input_collapsed: bool,
     #[serde(default)]
@@ -948,7 +975,7 @@ impl OverrideKey {
 mod tests {
     use super::{
         DerivationInputBinding, DerivationOutputBinding, DerivationPassthroughBinding,
-        GraphInnerNodeType, GraphPort, TimelinePreset, TransitionMotionNode,
+        GraphInnerNodeType, GraphPort, StateMachine, TimelinePreset, TransitionMotionNode,
     };
 
     #[test]
@@ -1025,6 +1052,31 @@ mod tests {
         .expect("packed graph port should deserialize");
 
         assert_eq!(parsed.port_type.as_deref(), Some("packed<float>"));
+    }
+
+    #[test]
+    fn editor_node_width_layout_deserializes_without_runtime_semantics() {
+        let parsed: StateMachine = serde_json::from_value(serde_json::json!({
+            "id": "machine",
+            "name": "Machine",
+            "stateParams": [],
+            "stateParamGraph": {
+                "rootNodePosition": { "x": 0.0, "y": 0.0 },
+                "rootNodeWidth": 180.0,
+                "declarationPositions": {},
+                "declarationWidths": {}
+            },
+            "nodeWidths": { "entry": 220.0 },
+            "states": [],
+            "transitions": [],
+            "derivationBindings": [],
+            "derivations": [],
+            "motionGraphs": []
+        }))
+        .expect("editor width layout should deserialize");
+
+        assert_eq!(parsed.node_widths.get("entry"), Some(&220.0));
+        assert_eq!(parsed.state_param_graph.root_node_width, Some(180.0));
     }
 
     #[test]
