@@ -207,13 +207,7 @@ impl ILightUpdateConfig {
             }
         });
         let (positions, colors) = if let Some((positions, colors)) = packed {
-            (
-                positions.map(|(x, y)| {
-                    let [x, y] = clamp_pixel_position([x, y], target_size);
-                    (x, y)
-                }),
-                colors,
-            )
+            (positions, colors)
         } else {
             let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
             for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
@@ -364,10 +358,6 @@ pub(crate) fn intelligent_light_target_size(
         (canvas_size[0].max(1.0) / factor).ceil().max(1.0) as u32,
         (canvas_size[1].max(1.0) / factor).ceil().max(1.0) as u32,
     ]
-}
-
-fn resolve_pixel_position(position: [f32; 2], target_size: [f32; 2]) -> [f32; 2] {
-    clamp_pixel_position(position, target_size)
 }
 
 fn parse_packed_positions(
@@ -579,7 +569,6 @@ where
         let port_id = format!("pos{index}");
         let pixel = resolve_connected_position(port_id.as_str())
             .or_else(|| parse_vec2_from_params(&layer_node.params, port_id.as_str()))
-            .map(|position| resolve_pixel_position(position, target_size))
             .unwrap_or_else(|| default_light_position(index, target_size));
         positions[index] = (pixel[0], pixel[1]);
     }
@@ -702,13 +691,7 @@ pub(crate) fn assemble_intelligent_light(
         resolve_packed_pair(scene, layer_node)
             .with_context(|| format!("invalid packed inputs for IntelligentLight {layer_id}"))?
     {
-        (
-            positions.map(|(x, y)| {
-                let [x, y] = clamp_pixel_position([x, y], [inter_w_f, inter_h_f]);
-                (x, y)
-            }),
-            colors,
-        )
+        (positions, colors)
     } else {
         let mut colors = DEFAULT_INTELLIGENT_LIGHT_COLORS;
         for i in 0..INTELLIGENT_LIGHT_ZONE_COUNT {
@@ -1263,7 +1246,7 @@ mod tests {
     fn pack_buffer_uses_manual_layout_positions() {
         let scene = make_test_scene(
             serde_json::json!({
-                "pos0": [0.25, 0.75],
+                "pos0": [-100.0, 100.0],
             })
             .as_object()
             .unwrap()
@@ -1283,8 +1266,8 @@ mod tests {
         let (x0, y0) = read_light_xy(&bytes, 0);
         let (x1, y1) = read_light_xy(&bytes, 1);
 
-        assert_near(x0 as f64, 0.25, 1e-6, "manual light[0].x");
-        assert_near(y0 as f64, 0.75, 1e-6, "manual light[0].y");
+        assert_near(x0 as f64, -100.0, 1e-6, "manual light[0].x");
+        assert_near(y0 as f64, 100.0, 1e-6, "manual light[0].y");
 
         let [expected_x1, expected_y1] = default_light_position(1, [60.0, 37.0]);
         assert_near(x1 as f64, expected_x1 as f64, 1e-6, "default light[1].x");
@@ -1566,6 +1549,33 @@ mod tests {
     }
 
     #[test]
+    fn pack_buffer_only_clamps_pointer_position() {
+        let scene = make_test_scene(
+            serde_json::json!({
+                "pos0": [-100.0, 100.0],
+                "pointerTintPosition": [-100.0, 100.0],
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let bytes = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            target_size: [60.0, 37.0],
+            ..Default::default()
+        }
+        .pack_buffer(&scene);
+
+        let (light_x, light_y) = read_light_xy(&bytes, 0);
+        assert_near(light_x as f64, -100.0, 1e-6, "offscreen light x");
+        assert_near(light_y as f64, 100.0, 1e-6, "offscreen light y");
+        assert_near(read_f32(&bytes, 432) as f64, 0.0, 1e-6, "pointer x");
+        assert_near(read_f32(&bytes, 436) as f64, 37.0, 1e-6, "pointer y");
+    }
+
+    #[test]
     fn packed_mode_requires_complete_exact_sized_position_and_color_arrays() {
         let mut positions = test_node(
             "positions",
@@ -1575,7 +1585,7 @@ mod tests {
                 (
                     "value".to_string(),
                     serde_json::json!(vec![
-                        serde_json::json!([1.0, 2.0]);
+                        serde_json::json!([-10.0, 200.0]);
                         INTELLIGENT_LIGHT_ZONE_COUNT
                     ]),
                 ),
@@ -1639,6 +1649,15 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        let packed_bytes = ILightUpdateConfig {
+            layer_id: "ilight".to_string(),
+            target_size: [60.0, 37.0],
+            ..Default::default()
+        }
+        .pack_buffer(&complete);
+        let (packed_x, packed_y) = read_light_xy(&packed_bytes, 0);
+        assert_near(packed_x as f64, -10.0, 1e-6, "packed light x");
+        assert_near(packed_y as f64, 200.0, 1e-6, "packed light y");
 
         let positions_only = make_test_scene(
             serde_json::Map::new(),
@@ -1651,7 +1670,7 @@ mod tests {
         wrong_positions.params.insert(
             "value".to_string(),
             serde_json::json!(vec![
-                serde_json::json!([1.0, 2.0]);
+                serde_json::json!([-10.0, 200.0]);
                 INTELLIGENT_LIGHT_ZONE_COUNT - 1
             ]),
         );

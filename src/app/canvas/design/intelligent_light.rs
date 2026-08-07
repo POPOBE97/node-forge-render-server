@@ -12,7 +12,7 @@ use crate::{
         },
     },
     ui::{
-        color_popover::{ColorPopoverConfig, show_color_popover},
+        color_popover::{ColorPopoverConfig, HdrRgba, hdr_to_color32, show_color_popover},
         design_tokens,
         resource_tree::PassDesignTarget,
     },
@@ -36,7 +36,7 @@ const DEFAULT_COLOR_HEXES: [&str; INTELLIGENT_LIGHT_ZONE_COUNT] = [
 #[derive(Clone, Debug)]
 struct IntelligentLightValues {
     positions: [[f32; 2]; INTELLIGENT_LIGHT_ZONE_COUNT],
-    colors: [Color32; INTELLIGENT_LIGHT_ZONE_COUNT],
+    colors: [HdrRgba; INTELLIGENT_LIGHT_ZONE_COUNT],
     position_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
     color_locks: [bool; INTELLIGENT_LIGHT_ZONE_COUNT],
     position_space: [f32; 2],
@@ -150,16 +150,14 @@ pub fn cancel_color_edit(
     state: &mut IntelligentLightDesignState,
 ) -> Option<DesignParamPatchPayload> {
     let index = state.color_popover_zone?;
-    let original_hex = state.color_edit_original_hex.clone()?;
+    let original = state.color_edit_original?;
     let key = color_key(index);
     state.color_popover_zone = None;
-    state.color_edit_original_hex = None;
-    state
-        .optimistic_params
-        .insert(key.clone(), Value::String(original_hex.clone()));
+    state.color_edit_original = None;
+    state.optimistic_params.insert(key.clone(), json!(original));
 
     let mut params = Map::new();
-    params.insert(key, Value::String(original_hex));
+    params.insert(key, json!(original));
     Some(DesignParamPatchPayload {
         session_id: session_id.to_string(),
         node_id: target.node_id.clone(),
@@ -318,7 +316,7 @@ fn handle_interaction(
                     actions.push(patch);
                 } else {
                     state.color_popover_zone = None;
-                    state.color_edit_original_hex = None;
+                    state.color_edit_original = None;
                 }
             } else {
                 open_color_popover(target, session_id, state, values, index, actions);
@@ -327,7 +325,7 @@ fn handle_interaction(
             actions.push(patch);
         } else {
             state.color_popover_zone = None;
-            state.color_edit_original_hex = None;
+            state.color_edit_original = None;
         }
     }
 }
@@ -402,15 +400,13 @@ fn open_color_popover(
     if let Some(patch) = end_active_color_edit(target, session_id, state, values) {
         actions.push(patch);
     }
-    let color_hex = color_to_opaque_hex(values.colors[index]);
+    let color = opaque_color(values.colors[index]);
     state.color_popover_zone = Some(index);
-    state.color_edit_original_hex = Some(color_hex.clone());
-    state
-        .color_popover_state
-        .sync_from_color(values.colors[index]);
+    state.color_edit_original = Some(color);
+    state.color_popover_state.begin_edit(color);
 
     let mut params = Map::new();
-    params.insert(color_key(index), Value::String(color_hex));
+    params.insert(color_key(index), json!(color));
     actions.push(DesignParamPatchPayload {
         session_id: session_id.to_string(),
         node_id: target.node_id.clone(),
@@ -428,13 +424,10 @@ fn end_active_color_edit(
 ) -> Option<DesignParamPatchPayload> {
     let index = state.color_popover_zone?;
     state.color_popover_zone = None;
-    state.color_edit_original_hex = None;
+    state.color_edit_original = None;
 
     let mut params = Map::new();
-    params.insert(
-        color_key(index),
-        Value::String(color_to_opaque_hex(values.colors[index])),
-    );
+    params.insert(color_key(index), json!(opaque_color(values.colors[index])));
     Some(DesignParamPatchPayload {
         session_id: session_id.to_string(),
         node_id: target.node_id.clone(),
@@ -461,7 +454,7 @@ fn show_selected_color_popover(
     }
     if values.color_locks[index] {
         state.color_popover_zone = None;
-        state.color_edit_original_hex = None;
+        state.color_edit_original = None;
         return;
     }
 
@@ -486,14 +479,14 @@ fn show_selected_color_popover(
     );
     if response.changed {
         let mut params = Map::new();
-        params.insert(color_key(index), Value::String(color_to_opaque_hex(color)));
+        params.insert(color_key(index), json!(opaque_color(color)));
         emit_patch("change", target, session_id, state, params, actions);
     }
     if response.close_requested {
         state.color_popover_zone = None;
-        state.color_edit_original_hex = None;
+        state.color_edit_original = None;
         let mut params = Map::new();
-        params.insert(color_key(index), Value::String(color_to_opaque_hex(color)));
+        params.insert(color_key(index), json!(opaque_color(color)));
         actions.push(DesignParamPatchPayload {
             session_id: session_id.to_string(),
             node_id: target.node_id.clone(),
@@ -521,7 +514,7 @@ fn draw_preview_handles(
             values.position_space,
             values.camera,
         );
-        let fill = values.colors[index];
+        let fill = hdr_to_color32(values.colors[index]);
         let stroke = if index == selected_zone {
             Stroke::new(2.0_f32, design_tokens::white(100))
         } else {
@@ -587,7 +580,7 @@ fn read_intelligent_light_values(
             [width as f32, height as f32]
         });
     let mut positions = [[0.0; 2]; INTELLIGENT_LIGHT_ZONE_COUNT];
-    let mut colors = [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT];
+    let mut colors = [[1.0; 4]; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut position_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
     let mut color_locks = [false; INTELLIGENT_LIGHT_ZONE_COUNT];
     let nodes_by_id = scene
@@ -603,13 +596,7 @@ fn read_intelligent_light_values(
     // contain the MotionEngine-owned physical values applied to `uniform_scene`.
     if let Ok(Some((packed_positions, packed_colors))) = resolve_packed_pair(scene, node) {
         positions = packed_positions.map(|(x, y)| [x, y]);
-        colors = packed_colors.map(|color| {
-            Color32::from_rgb(
-                color_component_to_u8(color[0]),
-                color_component_to_u8(color[1]),
-                color_component_to_u8(color[2]),
-            )
-        });
+        colors = packed_colors.map(|color| [color[0], color[1], color[2], 1.0]);
         position_locks.fill(true);
         color_locks.fill(true);
 
@@ -653,9 +640,7 @@ fn read_intelligent_light_values(
                 param_value(node, state, color_key.as_str(), animation_playing)
                     .and_then(parse_color_value)
             })
-            .unwrap_or_else(|| {
-                parse_hex_color(DEFAULT_COLOR_HEXES[index]).unwrap_or(Color32::WHITE)
-            });
+            .unwrap_or_else(|| parse_hex_color(DEFAULT_COLOR_HEXES[index]).unwrap_or([1.0; 4]));
     }
 
     IntelligentLightValues {
@@ -701,7 +686,7 @@ fn resolve_connected_color_value(
     scene: &SceneDSL,
     node_id: &str,
     port_id: &str,
-) -> Option<Color32> {
+) -> Option<HdrRgba> {
     let upstream = scene
         .nodes
         .iter()
@@ -811,54 +796,54 @@ fn parse_pixel_vec2_value(value: &Value, position_space: [f32; 2]) -> Option<[f3
     parse_vec2_value(value).map(|position| resolve_pixel_position(position, position_space))
 }
 
-fn parse_color_value(value: &Value) -> Option<Color32> {
+fn parse_color_value(value: &Value) -> Option<HdrRgba> {
     if let Some(hex) = value.as_str() {
         return parse_hex_color(hex);
     }
     if let Some(arr) = value.as_array() {
-        return Some(Color32::from_rgba_unmultiplied(
-            color_component_to_u8(arr.first().and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(1).and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(2).and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(3).and_then(json_f32).unwrap_or(1.0)),
-        ));
+        return parse_color_components([
+            arr.first().and_then(json_f32).unwrap_or(0.0),
+            arr.get(1).and_then(json_f32).unwrap_or(0.0),
+            arr.get(2).and_then(json_f32).unwrap_or(0.0),
+            arr.get(3).and_then(json_f32).unwrap_or(1.0),
+        ]);
     }
     if let Some(obj) = value.as_object() {
-        return Some(Color32::from_rgba_unmultiplied(
-            color_component_to_u8(obj.get("r").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("g").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("b").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("a").and_then(json_f32).unwrap_or(1.0)),
-        ));
+        return parse_color_components([
+            obj.get("r").and_then(json_f32).unwrap_or(0.0),
+            obj.get("g").and_then(json_f32).unwrap_or(0.0),
+            obj.get("b").and_then(json_f32).unwrap_or(0.0),
+            obj.get("a").and_then(json_f32).unwrap_or(1.0),
+        ]);
     }
     None
 }
 
-fn parse_hex_color(value: &str) -> Option<Color32> {
+fn parse_hex_color(value: &str) -> Option<HdrRgba> {
     let raw = value.trim().strip_prefix('#')?;
     match raw.len() {
-        3 => Some(Color32::from_rgb(
+        3 => Some(color32_to_hdr(Color32::from_rgb(
             u8::from_str_radix(&raw[0..1], 16).ok()? * 17,
             u8::from_str_radix(&raw[1..2], 16).ok()? * 17,
             u8::from_str_radix(&raw[2..3], 16).ok()? * 17,
-        )),
-        4 => Some(Color32::from_rgba_unmultiplied(
+        ))),
+        4 => Some(color32_to_hdr(Color32::from_rgba_unmultiplied(
             u8::from_str_radix(&raw[0..1], 16).ok()? * 17,
             u8::from_str_radix(&raw[1..2], 16).ok()? * 17,
             u8::from_str_radix(&raw[2..3], 16).ok()? * 17,
             u8::from_str_radix(&raw[3..4], 16).ok()? * 17,
-        )),
-        6 => Some(Color32::from_rgb(
+        ))),
+        6 => Some(color32_to_hdr(Color32::from_rgb(
             u8::from_str_radix(&raw[0..2], 16).ok()?,
             u8::from_str_radix(&raw[2..4], 16).ok()?,
             u8::from_str_radix(&raw[4..6], 16).ok()?,
-        )),
-        8 => Some(Color32::from_rgba_unmultiplied(
+        ))),
+        8 => Some(color32_to_hdr(Color32::from_rgba_unmultiplied(
             u8::from_str_radix(&raw[0..2], 16).ok()?,
             u8::from_str_radix(&raw[2..4], 16).ok()?,
             u8::from_str_radix(&raw[4..6], 16).ok()?,
             u8::from_str_radix(&raw[6..8], 16).ok()?,
-        )),
+        ))),
         _ => None,
     }
 }
@@ -868,16 +853,29 @@ fn json_f32(value: &Value) -> Option<f32> {
         .as_f64()
         .or_else(|| value.as_i64().map(|value| value as f64))
         .or_else(|| value.as_u64().map(|value| value as f64))?;
-    value.is_finite().then_some(value as f32)
+    let value = value as f32;
+    value.is_finite().then_some(value)
 }
 
-fn color_component_to_u8(value: f32) -> u8 {
-    (value.clamp(0.0, 1.0) * 255.0).round() as u8
+fn parse_color_components(mut color: HdrRgba) -> Option<HdrRgba> {
+    if !color.iter().all(|component| component.is_finite()) {
+        return None;
+    }
+    color[0] = color[0].max(0.0);
+    color[1] = color[1].max(0.0);
+    color[2] = color[2].max(0.0);
+    color[3] = 1.0;
+    Some(color)
 }
 
-fn color_to_opaque_hex(color: Color32) -> String {
+fn color32_to_hdr(color: Color32) -> HdrRgba {
     let [r, g, b, _] = color.to_srgba_unmultiplied();
-    format!("#{:02x}{:02x}{:02x}", r, g, b)
+    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+}
+
+fn opaque_color(mut color: HdrRgba) -> HdrRgba {
+    color[3] = 1.0;
+    color
 }
 
 #[cfg(test)]
@@ -899,7 +897,7 @@ mod tests {
     fn test_values() -> IntelligentLightValues {
         IntelligentLightValues {
             positions: std::array::from_fn(|index| default_light_position(index, [60.0, 37.0])),
-            colors: [Color32::WHITE; INTELLIGENT_LIGHT_ZONE_COUNT],
+            colors: [[1.0; 4]; INTELLIGENT_LIGHT_ZONE_COUNT],
             position_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
             color_locks: [false; INTELLIGENT_LIGHT_ZONE_COUNT],
             position_space: [60.0, 37.0],
@@ -972,46 +970,44 @@ mod tests {
     }
 
     #[test]
-    fn cancel_color_edit_restores_original_hex() {
+    fn cancel_color_edit_restores_original_hdr_color() {
         let target = test_target();
         let mut state = IntelligentLightDesignState::default();
         state.color_popover_zone = Some(2);
-        state.color_edit_original_hex = Some("#abcdef".to_string());
+        let original = [4.0, 1.5, 0.25, 1.0];
+        state.color_edit_original = Some(original);
         state
             .optimistic_params
-            .insert("color2".to_string(), Value::String("#112233".to_string()));
+            .insert("color2".to_string(), json!([0.1, 0.2, 0.3, 1.0]));
 
         let patch = cancel_color_edit(&target, "session", &mut state).expect("cancel patch");
 
         assert_eq!(patch.phase, "cancel");
-        assert_eq!(
-            patch.params.get("color2"),
-            Some(&Value::String("#abcdef".to_string()))
-        );
+        assert_eq!(patch.params.get("color2"), Some(&json!(original)));
         assert_eq!(
             state.optimistic_params.get("color2"),
-            Some(&Value::String("#abcdef".to_string()))
+            Some(&json!(original))
         );
         assert!(state.color_popover_zone.is_none());
     }
 
     #[test]
-    fn opening_color_popover_emits_begin_and_tracks_original_hex() {
+    fn opening_color_popover_emits_begin_and_tracks_original_hdr_color() {
         let target = test_target();
         let mut state = IntelligentLightDesignState::default();
         let mut values = test_values();
-        values.colors[3] = parse_hex_color("#abcdef").expect("hex color");
+        values.colors[3] = [4.0, 1.5, 0.25, 1.0];
         let mut actions = Vec::new();
 
         open_color_popover(&target, "session", &mut state, &values, 3, &mut actions);
 
         assert_eq!(state.color_popover_zone, Some(3));
-        assert_eq!(state.color_edit_original_hex.as_deref(), Some("#abcdef"));
+        assert_eq!(state.color_edit_original, Some([4.0, 1.5, 0.25, 1.0]));
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].phase, "begin");
         assert_eq!(
             actions[0].params.get("color3"),
-            Some(&Value::String("#abcdef".to_string()))
+            Some(&json!([4.0, 1.5, 0.25, 1.0]))
         );
     }
 
@@ -1020,26 +1016,26 @@ mod tests {
         let target = test_target();
         let mut state = IntelligentLightDesignState::default();
         state.color_popover_zone = Some(1);
-        state.color_edit_original_hex = Some("#112233".to_string());
+        state.color_edit_original = Some([0.1, 0.2, 0.3, 1.0]);
         let mut values = test_values();
-        values.colors[1] = parse_hex_color("#334455").expect("hex color");
-        values.colors[2] = parse_hex_color("#abcdef").expect("hex color");
+        values.colors[1] = [2.0, 0.5, 0.25, 1.0];
+        values.colors[2] = [4.0, 1.5, 0.25, 1.0];
         let mut actions = Vec::new();
 
         open_color_popover(&target, "session", &mut state, &values, 2, &mut actions);
 
         assert_eq!(state.color_popover_zone, Some(2));
-        assert_eq!(state.color_edit_original_hex.as_deref(), Some("#abcdef"));
+        assert_eq!(state.color_edit_original, Some([4.0, 1.5, 0.25, 1.0]));
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0].phase, "end");
         assert_eq!(
             actions[0].params.get("color1"),
-            Some(&Value::String("#334455".to_string()))
+            Some(&json!([2.0, 0.5, 0.25, 1.0]))
         );
         assert_eq!(actions[1].phase, "begin");
         assert_eq!(
             actions[1].params.get("color2"),
-            Some(&Value::String("#abcdef".to_string()))
+            Some(&json!([4.0, 1.5, 0.25, 1.0]))
         );
     }
 
@@ -1332,7 +1328,7 @@ mod tests {
         );
 
         assert_eq!(values.positions[0], [10.0, 20.0]);
-        assert_eq!(values.colors[0], Color32::from_rgb(64, 128, 191));
+        assert_eq!(values.colors[0], [0.25, 0.5, 0.75, 1.0]);
         assert!(values.position_locks.iter().all(|locked| *locked));
         assert!(values.color_locks.iter().all(|locked| *locked));
     }

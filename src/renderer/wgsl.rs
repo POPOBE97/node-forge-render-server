@@ -2223,7 +2223,7 @@ mod tests {
 
         assert_eq!(bundle.pass_textures.len(), 2);
         assert!(bundle.module.contains("pass_tex_tint_sample"));
-        assert!(bundle.module.contains("let tint = clamp("));
+        assert!(bundle.module.contains("let tint_value ="));
         validate_wgsl(&bundle.module).expect("Bloom extract WGSL should validate");
     }
 

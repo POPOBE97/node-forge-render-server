@@ -194,12 +194,15 @@ impl AndroidReferenceState {
             "adb forward scrcpy socket",
         )?;
 
-        let version =
-            env::var("NODE_FORGE_SCRCPY_SERVER_VERSION").unwrap_or_else(|_| "4.0".to_string());
+        let version = resolve_scrcpy_server_version(&server_jar);
         let video_options = AndroidReferenceVideoOptions::from_env()?;
         eprintln!(
-            "[android-reference] starting scrcpy encoder codec={} bit_rate={} max_fps={}",
-            video_options.codec, video_options.bit_rate, video_options.max_fps
+            "[android-reference] starting scrcpy server={} version={} encoder codec={} bit_rate={} max_fps={}",
+            server_jar.display(),
+            version,
+            video_options.codec,
+            video_options.bit_rate,
+            video_options.max_fps
         );
 
         let mut server_command = Command::new(&adb_path);
@@ -441,6 +444,43 @@ fn resolve_scrcpy_server_jar() -> anyhow::Result<PathBuf> {
                 "scrcpy-server jar not found; set NODE_FORGE_SCRCPY_SERVER_JAR or SCRCPY_SERVER_PATH"
             )
         })
+}
+
+fn resolve_scrcpy_server_version(server_jar: &Path) -> String {
+    env::var("NODE_FORGE_SCRCPY_SERVER_VERSION")
+        .ok()
+        .filter(|version| !version.trim().is_empty())
+        .or_else(|| infer_scrcpy_server_version(server_jar))
+        .unwrap_or_else(|| "4.0".to_string())
+}
+
+fn infer_scrcpy_server_version(server_jar: &Path) -> Option<String> {
+    if let Some(version) = server_jar
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("scrcpy-server-v"))
+        .filter(|version| !version.is_empty())
+    {
+        return Some(version.to_string());
+    }
+
+    let components: Vec<&str> = server_jar
+        .iter()
+        .filter_map(|component| component.to_str())
+        .collect();
+    components.windows(2).find_map(|components| {
+        if components[0] != "scrcpy" {
+            return None;
+        }
+        let version = components[1]
+            .split_once('_')
+            .map_or(components[1], |(version, _)| version);
+        version
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_digit())
+            .then(|| version.to_string())
+    })
 }
 
 fn homebrew_scrcpy_server_candidates(root: &str) -> Vec<PathBuf> {
@@ -816,9 +856,10 @@ fn read_pam_header_line(reader: &mut impl BufRead) -> io::Result<Option<String>>
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_adb_devices, parse_number_with_suffix, read_pam_frame, select_single_ready_usb_device,
+        infer_scrcpy_server_version, parse_adb_devices, parse_number_with_suffix, read_pam_frame,
+        select_single_ready_usb_device,
     };
-    use std::io::BufReader;
+    use std::{io::BufReader, path::Path};
 
     #[test]
     fn adb_device_selection_prefers_single_ready_usb() {
@@ -861,5 +902,23 @@ mod tests {
             128_000_000
         );
         assert_eq!(parse_number_with_suffix("60", "fps").unwrap(), 60);
+    }
+
+    #[test]
+    fn scrcpy_server_version_is_inferred_from_versioned_file_name() {
+        assert_eq!(
+            infer_scrcpy_server_version(Path::new("assets/scrcpy-server-v4.1")),
+            Some("4.1".to_string())
+        );
+    }
+
+    #[test]
+    fn scrcpy_server_version_is_inferred_from_homebrew_keg() {
+        assert_eq!(
+            infer_scrcpy_server_version(Path::new(
+                "/opt/homebrew/Cellar/scrcpy/4.1_1/share/scrcpy/scrcpy-server"
+            )),
+            Some("4.1".to_string())
+        );
     }
 }

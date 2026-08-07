@@ -36,7 +36,8 @@ var pass_samp_RenderPass_4: sampler;
 fn fs_main(in: VSOut) -> @location(0) vec4f {
 
 let src = textureSample(pass_tex_RenderPass_4, pass_samp_RenderPass_4, in.uv);
-let tint = clamp(vec4f(1.00000000, 0.00000000, 0.00000000, 1.00000000), vec4f(0.0), vec4f(1.0));
+let tint_value = vec4f(1.00000000, 0.00000000, 0.00000000, 1.00000000);
+let tint = vec4f(tint_value.rgb, clamp(tint_value.a, 0.0, 1.0));
 let lum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
 let mask = smoothstep(0.00000000, 0.15686275, lum);
 let extracted = src.rgb * mask * 1.00000000;

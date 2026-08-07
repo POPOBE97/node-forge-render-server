@@ -1449,6 +1449,20 @@ mod tests {
         graph
     }
 
+    fn spring_motion_graph(id: &str, duration: f64, bounce: f64) -> TransitionMotionGraph {
+        let mut graph = instant_motion_graph(id);
+        graph.name = "Spring".into();
+        graph.nodes = vec![TransitionMotionNode::Spring {
+            id: "motion".into(),
+            position: Position::default(),
+            label: None,
+            duration,
+            bounce,
+            delay: 0.0,
+        }];
+        graph
+    }
+
     fn with_event_condition(
         mut graph: TransitionMotionGraph,
         event_type: &str,
@@ -1566,9 +1580,12 @@ mod tests {
             id: "s1".into(),
             name: "S1".into(),
             position: None,
-            state_param_overrides: [("Node1:color".into(), serde_json::json!([1, 0, 0, 1]))]
-                .into_iter()
-                .collect(),
+            state_param_overrides: [(
+                "Node1:color".into(),
+                serde_json::json!([4.0, 1.5, 0.25, 0.6]),
+            )]
+            .into_iter()
+            .collect(),
             state_type: AnimationStateType::AnimationState,
             mutation_graph: None,
             derivation_id: None,
@@ -1586,12 +1603,70 @@ mod tests {
         assert_eq!(
             rt.motion_engine
                 .physical_value(&StateParamKey::new("Node1:color")),
-            Some(serde_json::json!([1.0, 0.0, 0.0, 1.0]))
+            Some(serde_json::json!([4.0, 1.5, 0.25, 0.6]))
         );
         assert!(
             result.overrides.is_empty(),
             "no Derivation means no GPU writes"
         );
+    }
+
+    #[test]
+    fn hdr_color_routes_through_timeline_and_spring_without_clamping() {
+        for (graph, first_dt) in [
+            (timeline_motion_graph("hdr-motion", 1.0), 0.5),
+            (spring_motion_graph("hdr-motion", 0.4, 0.15), 0.1),
+        ] {
+            let mut sm = minimal_sm();
+            sm.motion_graphs.push(graph);
+            declare_state_param(
+                &mut sm,
+                "Node:tint",
+                "color",
+                serde_json::json!([1.25, 0.5, 0.1, 1.0]),
+            );
+            sm.states.push(AnimationState {
+                id: "hdr".into(),
+                name: "HDR".into(),
+                position: None,
+                state_param_overrides: [(
+                    "Node:tint".into(),
+                    serde_json::json!([4.0, 1.5, 0.25, 0.6]),
+                )]
+                .into_iter()
+                .collect(),
+                state_type: AnimationStateType::AnimationState,
+                mutation_graph: None,
+                derivation_id: None,
+            });
+            sm.transitions.push(AnimationTransition {
+                id: "to_hdr".into(),
+                source: "entry".into(),
+                target: "hdr".into(),
+                motion_graph_id: "hdr-motion".into(),
+            });
+
+            let mut runtime = StateMachineRuntime::new(sm);
+            runtime.tick(first_dt, &HashMap::new(), &vec![]);
+            let first = runtime
+                .motion_engine
+                .physical_value(&StateParamKey::new("Node:tint"))
+                .expect("HDR physical color");
+            let first = first.as_array().expect("color array");
+            assert!(first[0].as_f64().unwrap() > 1.0, "{first:?}");
+
+            for _ in 0..100 {
+                runtime.tick(0.05, &HashMap::new(), &vec![]);
+            }
+            let final_color = runtime
+                .motion_engine
+                .physical_value(&StateParamKey::new("Node:tint"))
+                .expect("settled HDR physical color");
+            let final_color = final_color.as_array().expect("color array");
+            assert!((final_color[0].as_f64().unwrap() - 4.0).abs() < 1.0e-4);
+            assert!((final_color[1].as_f64().unwrap() - 1.5).abs() < 1.0e-4);
+            assert!((final_color[3].as_f64().unwrap() - 0.6).abs() < 1.0e-4);
+        }
     }
 
     #[test]
@@ -2018,6 +2093,79 @@ mod tests {
                 .motion_channels
                 .iter()
                 .all(|channel| channel.key != "Node:derived")
+        );
+    }
+
+    #[test]
+    fn hdr_color_derivation_passthrough_writes_the_physical_value_unchanged() {
+        let mut sm = minimal_sm();
+        declare_state_param(
+            &mut sm,
+            "Light:tint",
+            "color",
+            serde_json::json!([4.0, 1.5, 0.25, 0.6]),
+        );
+        sm.states.push(AnimationState {
+            id: "derived".into(),
+            name: "Derived".into(),
+            position: None,
+            state_param_overrides: Default::default(),
+            state_type: AnimationStateType::AnimationState,
+            mutation_graph: None,
+            derivation_id: None,
+        });
+        sm.derivations.push(DerivationDefinition {
+            id: "hdr_derivation".into(),
+            name: "HDR Derivation".into(),
+            inputs: vec![GraphPort {
+                id: "Light:tint".into(),
+                name: Some("Tint".into()),
+                port_type: Some("color".into()),
+                array_length: None,
+                motion: None,
+            }],
+            outputs: vec![GraphPort {
+                id: "Gpu:tint".into(),
+                name: Some("GPU Tint".into()),
+                port_type: Some("color".into()),
+                array_length: None,
+                motion: None,
+            }],
+            nodes: vec![],
+            connections: vec![],
+            input_bindings: vec![],
+            output_bindings: vec![],
+            passthrough_bindings: vec![DerivationPassthroughBinding {
+                source: StateValueSource::StateParam {
+                    state_param_id: "Light:tint".into(),
+                },
+                uniform: GpuUniformRef {
+                    node_id: "Gpu".into(),
+                    param_id: "tint".into(),
+                },
+            }],
+            layout: None,
+            viewport: None,
+        });
+        bind_derivation(&mut sm, "derived", "hdr_derivation");
+        sm.transitions.push(AnimationTransition {
+            id: "entry_to_derived".into(),
+            source: "entry".into(),
+            target: "derived".into(),
+            motion_graph_id: "instant".into(),
+        });
+
+        let mut runtime = StateMachineRuntime::new(sm);
+        let frame = runtime.tick(0.016, &HashMap::new(), &vec![]);
+        assert_eq!(
+            frame.overrides.get(&OverrideKey::new("Gpu", "tint")),
+            Some(&serde_json::json!([4.0, 1.5, 0.25, 0.6]))
+        );
+        assert!(
+            frame
+                .motion_channels
+                .iter()
+                .all(|channel| channel.key != "Gpu:tint")
         );
     }
 

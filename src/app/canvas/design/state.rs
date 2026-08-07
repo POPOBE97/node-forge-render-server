@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use rust_wgpu_fiber::{ResourceName, eframe::wgpu};
 use serde_json::Value;
 
-use crate::ui::{color_popover::ColorPopoverState, resource_tree::PassDesignTarget};
+use crate::ui::{
+    color_popover::{ColorPopoverState, HdrRgba},
+    resource_tree::PassDesignTarget,
+};
 
 #[derive(Default)]
 pub struct CanvasDesignState {
@@ -54,7 +57,7 @@ pub struct IntelligentLightDesignState {
     pub color_popover_zone: Option<usize>,
     pub color_popover_state: ColorPopoverState,
     pub optimistic_params: HashMap<String, Value>,
-    pub color_edit_original_hex: Option<String>,
+    pub color_edit_original: Option<HdrRgba>,
 }
 
 impl Default for IntelligentLightDesignState {
@@ -65,7 +68,7 @@ impl Default for IntelligentLightDesignState {
             color_popover_zone: None,
             color_popover_state: ColorPopoverState::default(),
             optimistic_params: HashMap::new(),
-            color_edit_original_hex: None,
+            color_edit_original: None,
         }
     }
 }

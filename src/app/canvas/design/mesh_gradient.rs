@@ -8,7 +8,7 @@ use crate::{
     protocol::DesignParamPatchPayload,
     renderer::camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
     ui::{
-        color_popover::{ColorPopoverConfig, show_color_popover},
+        color_popover::{ColorPopoverConfig, HdrRgba, hdr_to_color32, show_color_popover},
         design_tokens,
         resource_tree::PassDesignTarget,
     },
@@ -41,7 +41,7 @@ struct MeshGradientValues {
     grid_cols: usize,
     grid_rows: usize,
     positions: [[f32; 2]; MAX_POINT_COUNT],
-    colors: [Color32; MAX_POINT_COUNT],
+    colors: [HdrRgba; MAX_POINT_COUNT],
     locked_ports: HashSet<String>,
     target_size: [f32; 2],
     camera: [f32; 16],
@@ -298,9 +298,7 @@ fn handle_interaction(
                 state.color_popover_point = None;
             } else {
                 state.color_popover_point = Some(index);
-                state
-                    .color_popover_state
-                    .sync_from_color(values.colors[index]);
+                state.color_popover_state.begin_edit(values.colors[index]);
             }
         } else {
             state.color_popover_point = None;
@@ -402,7 +400,7 @@ fn show_selected_color_popover(
     );
     if response.changed {
         let mut params = Map::new();
-        params.insert(key, Value::String(color_to_hex(color)));
+        params.insert(key, json!(color));
         emit_patch("change", target, session_id, state, params, actions);
     }
     if response.close_requested {
@@ -432,7 +430,7 @@ fn draw_preview_handles(
         let fill = if locked {
             design_tokens::white(30)
         } else {
-            values.colors[index]
+            hdr_to_color32(values.colors[index])
         };
         let stroke = if index == selected_point {
             Stroke::new(2.0_f32, design_tokens::white(100))
@@ -472,7 +470,7 @@ fn read_mesh_gradient_values(
     let grid_rows = read_grid_size(node, state, "height", DEFAULT_GRID_ROWS);
     let point_count = grid_cols * grid_rows;
     let mut positions = [[0.0; 2]; MAX_POINT_COUNT];
-    let mut colors = [Color32::WHITE; MAX_POINT_COUNT];
+    let mut colors = [[1.0; 4]; MAX_POINT_COUNT];
     let nodes_by_id = scene
         .nodes
         .iter()
@@ -490,7 +488,7 @@ fn read_mesh_gradient_values(
         let color_key = color_key(index);
         colors[index] = param_value(node, state, &color_key)
             .and_then(parse_color_value)
-            .unwrap_or_else(|| parse_hex_color(default_color_hex(index)).unwrap_or(Color32::WHITE));
+            .unwrap_or_else(|| parse_hex_color(default_color_hex(index)).unwrap_or([1.0; 4]));
     }
 
     MeshGradientValues {
@@ -623,56 +621,56 @@ fn parse_vec2_value(value: &Value) -> Option<[f32; 2]> {
     None
 }
 
-fn parse_color_value(value: &Value) -> Option<Color32> {
+fn parse_color_value(value: &Value) -> Option<HdrRgba> {
     if let Some(hex) = value.as_str() {
         return parse_hex_color(hex);
     }
     if let Some(arr) = value.as_array() {
-        return Some(Color32::from_rgba_unmultiplied(
-            color_component_to_u8(arr.first().and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(1).and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(2).and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(arr.get(3).and_then(json_f32).unwrap_or(1.0)),
-        ));
+        return parse_color_components([
+            arr.first().and_then(json_f32).unwrap_or(0.0),
+            arr.get(1).and_then(json_f32).unwrap_or(0.0),
+            arr.get(2).and_then(json_f32).unwrap_or(0.0),
+            arr.get(3).and_then(json_f32).unwrap_or(1.0),
+        ]);
     }
     if let Some(obj) = value.as_object() {
-        return Some(Color32::from_rgba_unmultiplied(
-            color_component_to_u8(obj.get("r").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("g").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("b").and_then(json_f32).unwrap_or(0.0)),
-            color_component_to_u8(obj.get("a").and_then(json_f32).unwrap_or(1.0)),
-        ));
+        return parse_color_components([
+            obj.get("r").and_then(json_f32).unwrap_or(0.0),
+            obj.get("g").and_then(json_f32).unwrap_or(0.0),
+            obj.get("b").and_then(json_f32).unwrap_or(0.0),
+            obj.get("a").and_then(json_f32).unwrap_or(1.0),
+        ]);
     }
     None
 }
 
-fn parse_hex_color(value: &str) -> Option<Color32> {
+fn parse_hex_color(value: &str) -> Option<HdrRgba> {
     let raw = value.trim().strip_prefix('#')?;
     match raw.len() {
         3 => {
             let r = u8::from_str_radix(&raw[0..1], 16).ok()? * 17;
             let g = u8::from_str_radix(&raw[1..2], 16).ok()? * 17;
             let b = u8::from_str_radix(&raw[2..3], 16).ok()? * 17;
-            Some(Color32::from_rgb(r, g, b))
+            Some(color32_to_hdr(Color32::from_rgb(r, g, b)))
         }
         4 => {
             let r = u8::from_str_radix(&raw[0..1], 16).ok()? * 17;
             let g = u8::from_str_radix(&raw[1..2], 16).ok()? * 17;
             let b = u8::from_str_radix(&raw[2..3], 16).ok()? * 17;
             let a = u8::from_str_radix(&raw[3..4], 16).ok()? * 17;
-            Some(Color32::from_rgba_unmultiplied(r, g, b, a))
+            Some(color32_to_hdr(Color32::from_rgba_unmultiplied(r, g, b, a)))
         }
-        6 => Some(Color32::from_rgb(
+        6 => Some(color32_to_hdr(Color32::from_rgb(
             u8::from_str_radix(&raw[0..2], 16).ok()?,
             u8::from_str_radix(&raw[2..4], 16).ok()?,
             u8::from_str_radix(&raw[4..6], 16).ok()?,
-        )),
-        8 => Some(Color32::from_rgba_unmultiplied(
+        ))),
+        8 => Some(color32_to_hdr(Color32::from_rgba_unmultiplied(
             u8::from_str_radix(&raw[0..2], 16).ok()?,
             u8::from_str_radix(&raw[2..4], 16).ok()?,
             u8::from_str_radix(&raw[4..6], 16).ok()?,
             u8::from_str_radix(&raw[6..8], 16).ok()?,
-        )),
+        ))),
         _ => None,
     }
 }
@@ -682,20 +680,29 @@ fn json_f32(value: &Value) -> Option<f32> {
         .as_f64()
         .or_else(|| value.as_i64().map(|value| value as f64))
         .or_else(|| value.as_u64().map(|value| value as f64))?;
-    value.is_finite().then_some(value as f32)
+    let value = value as f32;
+    value.is_finite().then_some(value)
 }
 
-fn color_component_to_u8(value: f32) -> u8 {
-    (value.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
-fn color_to_hex(color: Color32) -> String {
-    let [r, g, b, a] = color.to_srgba_unmultiplied();
-    if a == u8::MAX {
-        format!("#{:02x}{:02x}{:02x}", r, g, b)
-    } else {
-        format!("#{:02x}{:02x}{:02x}{:02x}", r, g, b, a)
+fn parse_color_components(mut color: HdrRgba) -> Option<HdrRgba> {
+    if !color.iter().all(|component| component.is_finite()) {
+        return None;
     }
+    color[0] = color[0].max(0.0);
+    color[1] = color[1].max(0.0);
+    color[2] = color[2].max(0.0);
+    color[3] = color[3].clamp(0.0, 1.0);
+    Some(color)
+}
+
+fn color32_to_hdr(color: Color32) -> HdrRgba {
+    let [r, g, b, a] = color.to_srgba_unmultiplied();
+    [
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ]
 }
 
 #[cfg(test)]
@@ -705,12 +712,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn color_hex_round_trips_to_patch_string() {
-        assert_eq!(color_to_hex(parse_hex_color("#fc0").unwrap()), "#ffcc00");
-        let translucent = color_to_hex(parse_hex_color("#11223344").unwrap());
-        assert!(translucent.starts_with('#'));
-        assert_eq!(translucent.len(), 9);
-        assert!(translucent.ends_with("44"));
+    fn color_values_preserve_hdr_components() {
+        assert_eq!(
+            parse_color_value(&json!([4.0, 1.5, 0.25, 0.6])),
+            Some([4.0, 1.5, 0.25, 0.6])
+        );
+        assert_eq!(parse_hex_color("#fc0"), Some([1.0, 0.8, 0.0, 1.0]));
     }
 
     #[test]

@@ -90,10 +90,12 @@ pub fn choose_graph_binding_kind(
 }
 
 fn parse_json_number_f32(v: &Value) -> Option<f32> {
-    v.as_f64()
+    let value = v
+        .as_f64()
         .map(|x| x as f32)
         .or_else(|| v.as_i64().map(|x| x as f32))
-        .or_else(|| v.as_u64().map(|x| x as f32))
+        .or_else(|| v.as_u64().map(|x| x as f32))?;
+    value.is_finite().then_some(value)
 }
 
 fn parse_const_f32(node: &Node) -> Option<f32> {
@@ -1249,6 +1251,64 @@ mod tests {
         assert_eq!(f0, 3.0);
         let b0 = i32::from_ne_bytes(bytes[16..20].try_into().unwrap());
         assert_eq!(b0, 1);
+    }
+
+    #[test]
+    fn pack_graph_values_writes_hdr_color_components_without_clamping() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "hdr-colors".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                make_node(
+                    "ColorInput_1",
+                    "ColorInput",
+                    json!({"value": [4.0, 1.5, 0.25, 0.6]}),
+                ),
+                make_node(
+                    "ColorArrayInput_1",
+                    "ColorArrayInput",
+                    json!({"value": [[4.0, 1.5, 0.25, 0.6], [8.0, 3.0, 0.5, 1.0]]}),
+                ),
+            ],
+            connections: Vec::new(),
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let schema = GraphSchema {
+            fields: vec![
+                GraphField {
+                    node_id: "ColorInput_1".to_string(),
+                    field_name: "color".to_string(),
+                    kind: GraphFieldKind::Vec4Color,
+                },
+                GraphField {
+                    node_id: "ColorArrayInput_1".to_string(),
+                    field_name: "colors".to_string(),
+                    kind: GraphFieldKind::Vec4Array(2),
+                },
+            ],
+            size_bytes: 48,
+        };
+
+        let bytes = pack_graph_values(&scene, &schema).unwrap();
+        let read =
+            |offset: usize| f32::from_ne_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        assert_eq!([read(0), read(4), read(8), read(12)], [4.0, 1.5, 0.25, 0.6]);
+        assert_eq!(
+            [read(16), read(20), read(24), read(28)],
+            [4.0, 1.5, 0.25, 0.6]
+        );
+        assert_eq!(
+            [read(32), read(36), read(40), read(44)],
+            [8.0, 3.0, 0.5, 1.0]
+        );
     }
 
     #[test]

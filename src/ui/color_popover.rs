@@ -29,7 +29,10 @@ pub enum ColorSpace {
 pub enum ColorInputFormat {
     Hex,
     Int,
+    Float,
 }
+
+pub type HdrRgba = [f32; 4];
 
 #[derive(Clone, Debug)]
 pub struct ColorPopoverState {
@@ -37,7 +40,7 @@ pub struct ColorPopoverState {
     pub input_format: ColorInputFormat,
     cached_hue: f32,
     hex_buffer: String,
-    last_color: Option<[u8; 4]>,
+    last_color: Option<HdrRgba>,
 }
 
 impl Default for ColorPopoverState {
@@ -53,22 +56,33 @@ impl Default for ColorPopoverState {
 }
 
 impl ColorPopoverState {
-    pub fn sync_from_color(&mut self, color: Color32) {
-        let key = color.to_srgba_unmultiplied();
-        if self.last_color == Some(key) {
+    pub fn sync_from_color(&mut self, color: HdrRgba) {
+        if self.last_color == Some(color) {
             return;
+        }
+        let was_hdr = self.last_color.is_some_and(is_hdr_color);
+        if is_hdr_color(color) && !was_hdr {
+            self.input_format = ColorInputFormat::Float;
         }
         self.set_color_cache(color);
     }
 
-    fn set_color_cache(&mut self, color: Color32) {
-        let [r, g, b] = color_to_rgb01(color);
+    pub fn begin_edit(&mut self, color: HdrRgba) {
+        if is_hdr_color(color) {
+            self.input_format = ColorInputFormat::Float;
+        }
+        self.set_color_cache(color);
+    }
+
+    fn set_color_cache(&mut self, color: HdrRgba) {
+        let preview = hdr_to_color32(color);
+        let [r, g, b] = color_to_rgb01(preview);
         let (h, s, _) = rgb_to_hsv(r, g, b);
         if s > 0.01 {
             self.cached_hue = h;
         }
-        self.hex_buffer = color_to_hex(color);
-        self.last_color = Some(color.to_srgba_unmultiplied());
+        self.hex_buffer = color_to_hex(preview);
+        self.last_color = Some(color);
     }
 }
 
@@ -98,7 +112,7 @@ pub fn show_color_popover(
     id: egui::Id,
     anchor_rect: Rect,
     state: &mut ColorPopoverState,
-    color: &mut Color32,
+    color: &mut HdrRgba,
     config: ColorPopoverConfig<'_>,
 ) -> ColorPopoverResponse {
     state.sync_from_color(*color);
@@ -129,24 +143,27 @@ pub fn show_color_popover(
                     }
 
                     show_space_tabs(ui, id, state);
-                    match state.space {
+                    let mut sdr_color = hdr_to_color32(*color);
+                    let sdr_changed = match state.space {
                         ColorSpace::Hsv | ColorSpace::Hsl => {
-                            changed |= show_area_picker(ui, id, state, color);
-                            changed |= show_hue_strip(ui, id, state, color);
+                            show_area_picker(ui, id, state, &mut sdr_color)
+                                | show_hue_strip(ui, id, state, &mut sdr_color)
                         }
-                        ColorSpace::Rgb => {
-                            changed |= show_rgb_sliders(ui, id, state, color);
-                        }
-                        ColorSpace::Lab => {
-                            changed |= show_lab_sliders(ui, id, state, color);
-                        }
-                        ColorSpace::Oklch => {
-                            changed |= show_oklch_sliders(ui, id, state, color);
+                        ColorSpace::Rgb => show_hdr_rgb_sliders(ui, id, color),
+                        ColorSpace::Lab => show_lab_sliders(ui, id, state, &mut sdr_color),
+                        ColorSpace::Oklch => show_oklch_sliders(ui, id, state, &mut sdr_color),
+                    };
+                    if sdr_changed {
+                        if state.space == ColorSpace::Rgb {
+                            state.sync_from_color(*color);
+                            changed = true;
+                        } else {
+                            changed |= apply_sdr_preview(state, color, sdr_color, true);
                         }
                     }
 
                     if config.allow_alpha {
-                        changed |= show_alpha_strip(ui, id, state, color);
+                        changed |= show_hdr_alpha_strip(ui, state, color);
                     }
                     changed |= show_input_row(ui, id, state, color, config.allow_alpha);
                 });
@@ -313,11 +330,10 @@ fn show_hue_strip(
     false
 }
 
-fn show_alpha_strip(
+fn show_hdr_alpha_strip(
     ui: &mut egui::Ui,
-    id: egui::Id,
     state: &mut ColorPopoverState,
-    color: &mut Color32,
+    color: &mut HdrRgba,
 ) -> bool {
     let show_label = matches!(
         state.space,
@@ -328,8 +344,27 @@ fn show_alpha_strip(
     } else {
         CONTENT_WIDTH
     };
+    let mut changed = false;
+    let mut show_body = |ui: &mut egui::Ui| {
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(strip_width, STRIP_HEIGHT),
+            Sense::click_and_drag(),
+        );
+        let response = response.on_hover_cursor(egui::CursorIcon::Crosshair);
+        let painter = ui.painter_at(rect);
+        draw_checkerboard(&painter, rect);
+        draw_alpha_overlay(&painter, rect, hdr_to_color32(*color));
+        draw_strip_indicator(&painter, rect, color[3]);
+        if (response.clicked() || response.dragged())
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let mut next = *color;
+            next[3] = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+            changed |= apply_hdr_color(state, color, next);
+        }
+    };
+
     if show_label {
-        let mut changed = false;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let label_font = design_tokens::font_id(design_tokens::FONT_SIZE_9, FontWeight::Medium);
@@ -343,56 +378,47 @@ fn show_alpha_strip(
                 label_font,
                 design_tokens::white(60),
             );
-            changed = show_alpha_strip_body(ui, id, state, color, strip_width);
+            show_body(ui);
         });
-        return changed;
+    } else {
+        show_body(ui);
     }
-    show_alpha_strip_body(ui, id, state, color, strip_width)
+    changed
 }
 
-fn show_alpha_strip_body(
-    ui: &mut egui::Ui,
-    id: egui::Id,
-    state: &mut ColorPopoverState,
-    color: &mut Color32,
-    strip_width: f32,
-) -> bool {
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(strip_width, STRIP_HEIGHT),
-        Sense::click_and_drag(),
-    );
-    let response = response.on_hover_cursor(egui::CursorIcon::Crosshair);
-    let painter = ui.painter_at(rect);
-    draw_checkerboard(&painter, rect);
-    draw_alpha_overlay(&painter, rect, *color);
-    draw_strip_indicator(&painter, rect, color.a() as f32 / 255.0);
-
-    if (response.clicked() || response.dragged())
-        && let Some(pointer) = response.interact_pointer_pos()
-    {
-        let alpha = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-        let next =
-            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), float_to_u8(alpha));
-        return apply_color(id, state, color, next);
-    }
-    false
-}
-
-fn show_rgb_sliders(
-    ui: &mut egui::Ui,
-    id: egui::Id,
-    state: &mut ColorPopoverState,
-    color: &mut Color32,
-) -> bool {
-    let mut rgb = color_to_rgb01(*color);
+fn show_hdr_rgb_sliders(ui: &mut egui::Ui, id: egui::Id, color: &mut HdrRgba) -> bool {
     let mut changed = false;
-    changed |= slider_row(ui, id.with("rgb-r"), "R", &mut rgb[0], 0.0, 1.0, 0.001, 3);
-    changed |= slider_row(ui, id.with("rgb-g"), "G", &mut rgb[1], 0.0, 1.0, 0.001, 3);
-    changed |= slider_row(ui, id.with("rgb-b"), "B", &mut rgb[2], 0.0, 1.0, 0.001, 3);
-    if changed {
-        return apply_color(id, state, color, rgb_to_color(rgb, color.a()));
-    }
-    false
+    changed |= hdr_component_row(ui, id.with("rgb-r"), "R", &mut color[0]);
+    changed |= hdr_component_row(ui, id.with("rgb-g"), "G", &mut color[1]);
+    changed |= hdr_component_row(ui, id.with("rgb-b"), "B", &mut color[2]);
+    changed
+}
+
+fn hdr_component_row(ui: &mut egui::Ui, id: egui::Id, label: &str, value: &mut f32) -> bool {
+    let label_font = design_tokens::font_id(design_tokens::FONT_SIZE_9, FontWeight::Medium);
+    let mut changed = false;
+    ui.allocate_ui_with_layout(
+        egui::vec2(CONTENT_WIDTH, design_tokens::CONTROL_ROW_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let label_rect = ui
+                .allocate_exact_size(
+                    egui::vec2(ROW_LABEL_WIDTH, design_tokens::CONTROL_ROW_HEIGHT),
+                    Sense::hover(),
+                )
+                .0;
+            ui.painter().text(
+                label_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                label_font,
+                design_tokens::white(60),
+            );
+            changed = float_component(ui, id, value, CONTENT_WIDTH - ROW_LABEL_WIDTH, false);
+        },
+    );
+    changed
 }
 
 fn show_lab_sliders(
@@ -546,10 +572,10 @@ fn show_input_row(
     ui: &mut egui::Ui,
     id: egui::Id,
     state: &mut ColorPopoverState,
-    color: &mut Color32,
+    color: &mut HdrRgba,
     allow_alpha: bool,
 ) -> bool {
-    const OPTIONS: [RadioButtonOption<'static, ColorInputFormat>; 2] = [
+    const OPTIONS: [RadioButtonOption<'static, ColorInputFormat>; 3] = [
         RadioButtonOption {
             value: ColorInputFormat::Hex,
             label: "HEX",
@@ -557,6 +583,10 @@ fn show_input_row(
         RadioButtonOption {
             value: ColorInputFormat::Int,
             label: "INT",
+        },
+        RadioButtonOption {
+            value: ColorInputFormat::Float,
+            label: "FLOAT",
         },
     ];
 
@@ -572,14 +602,98 @@ fn show_input_row(
         );
         match state.input_format {
             ColorInputFormat::Hex => {
-                changed |= show_hex_input(ui, id, state, color);
+                let mut preview = hdr_to_color32(*color);
+                if show_hex_input(ui, id, state, &mut preview) {
+                    changed |= apply_sdr_preview(state, color, preview, false);
+                }
             }
             ColorInputFormat::Int => {
-                changed |= show_int_inputs(ui, id, state, color, allow_alpha);
+                let mut preview = hdr_to_color32(*color);
+                if show_int_inputs(ui, id, state, &mut preview, allow_alpha) {
+                    changed |= apply_sdr_preview(state, color, preview, !allow_alpha);
+                }
+            }
+            ColorInputFormat::Float => {
+                changed |= show_float_inputs(ui, id, state, color, allow_alpha);
             }
         }
     });
     changed
+}
+
+fn show_float_inputs(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    state: &mut ColorPopoverState,
+    color: &mut HdrRgba,
+    allow_alpha: bool,
+) -> bool {
+    let mut next = *color;
+    let component_count = if allow_alpha { 4.0 } else { 3.0 };
+    let cell_w = ((CONTENT_WIDTH - 68.0) - (component_count - 1.0) * 2.0) / component_count;
+    ui.spacing_mut().item_spacing.x = 2.0;
+    let mut changed = false;
+    changed |= float_component(ui, id.with("r-float"), &mut next[0], cell_w, false);
+    changed |= float_component(ui, id.with("g-float"), &mut next[1], cell_w, false);
+    changed |= float_component(ui, id.with("b-float"), &mut next[2], cell_w, false);
+    if allow_alpha {
+        changed |= float_component(ui, id.with("a-float"), &mut next[3], cell_w, true);
+    } else {
+        next[3] = 1.0;
+    }
+    changed && apply_hdr_color(state, color, next)
+}
+
+fn float_component(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    value: &mut f32,
+    width: f32,
+    alpha: bool,
+) -> bool {
+    let previous = *value;
+    let speed = if alpha {
+        0.001
+    } else {
+        hdr_drag_step(previous)
+    };
+    let response = egui::Frame::new()
+        .fill(design_tokens::RESOURCE_ACTIVE_BG)
+        .corner_radius(design_tokens::radius(
+            design_tokens::BORDER_RADIUS_SMALL as u8,
+        ))
+        .inner_margin(egui::Margin::symmetric(2, 0))
+        .show(ui, |ui| {
+            ui.push_id(id, |ui| {
+                let range = if alpha { 0.0..=1.0 } else { 0.0..=f32::MAX };
+                ui.add_sized(
+                    egui::vec2(width, design_tokens::CONTROL_ROW_HEIGHT),
+                    egui::DragValue::new(value)
+                        .range(range)
+                        .speed(speed)
+                        .custom_formatter(|value, _| value.to_string())
+                        .custom_parser(parse_float_component_text),
+                )
+            })
+            .inner
+        })
+        .inner;
+    if !value.is_finite() {
+        *value = previous;
+        return false;
+    }
+    if alpha {
+        *value = value.clamp(0.0, 1.0);
+    } else {
+        *value = value.max(0.0);
+    }
+    response.changed() && *value != previous
+}
+
+fn parse_float_component_text(text: &str) -> Option<f64> {
+    text.parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite() && value.abs() <= f32::MAX as f64)
 }
 
 fn show_hex_input(
@@ -806,8 +920,37 @@ fn apply_color(
         return false;
     }
     *color = next;
-    state.set_color_cache(next);
+    state.set_color_cache(color32_to_hdr(next));
     true
+}
+
+fn apply_hdr_color(state: &mut ColorPopoverState, color: &mut HdrRgba, mut next: HdrRgba) -> bool {
+    if !next.iter().all(|component| component.is_finite()) {
+        return false;
+    }
+    next[0] = next[0].max(0.0);
+    next[1] = next[1].max(0.0);
+    next[2] = next[2].max(0.0);
+    next[3] = next[3].clamp(0.0, 1.0);
+    if *color == next {
+        return false;
+    }
+    *color = next;
+    state.sync_from_color(next);
+    true
+}
+
+fn apply_sdr_preview(
+    state: &mut ColorPopoverState,
+    color: &mut HdrRgba,
+    preview: Color32,
+    preserve_alpha: bool,
+) -> bool {
+    let mut next = color32_to_hdr(preview);
+    if preserve_alpha {
+        next[3] = color[3];
+    }
+    apply_hdr_color(state, color, next)
 }
 
 fn popover_bg() -> Color32 {
@@ -820,6 +963,34 @@ fn color_to_rgb01(color: Color32) -> [f32; 3] {
         color.g() as f32 / 255.0,
         color.b() as f32 / 255.0,
     ]
+}
+
+pub fn hdr_to_color32(color: HdrRgba) -> Color32 {
+    Color32::from_rgba_unmultiplied(
+        float_to_u8(color[0]),
+        float_to_u8(color[1]),
+        float_to_u8(color[2]),
+        float_to_u8(color[3]),
+    )
+}
+
+fn color32_to_hdr(color: Color32) -> HdrRgba {
+    let [r, g, b, a] = color.to_srgba_unmultiplied();
+    [
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ]
+}
+
+fn is_hdr_color(color: HdrRgba) -> bool {
+    color[0] > 1.0 || color[1] > 1.0 || color[2] > 1.0
+}
+
+fn hdr_drag_step(value: f32) -> f32 {
+    let magnitude = value.abs().max(1.0);
+    10.0_f32.powf(magnitude.log10().floor() - 3.0)
 }
 
 fn rgb_to_color(rgb: [f32; 3], alpha: u8) -> Color32 {
@@ -1162,5 +1333,52 @@ mod tests {
         assert!((r - 0.2).abs() < 0.02);
         assert!((g - 0.5).abs() < 0.02);
         assert!((b - 0.9).abs() < 0.02);
+    }
+
+    #[test]
+    fn hdr_edit_state_selects_float_and_preview_only_clamps_for_display() {
+        let hdr = [4.0, 1.5, 0.25, 0.6];
+        let mut state = ColorPopoverState::default();
+        state.begin_edit(hdr);
+        assert_eq!(state.input_format, ColorInputFormat::Float);
+        assert_eq!(state.last_color, Some(hdr));
+
+        state.input_format = ColorInputFormat::Hex;
+        state.sync_from_color(hdr);
+        assert_eq!(state.input_format, ColorInputFormat::Hex);
+        state.begin_edit(hdr);
+        assert_eq!(state.input_format, ColorInputFormat::Float);
+
+        assert_eq!(
+            hdr_to_color32(hdr),
+            Color32::from_rgba_unmultiplied(255, 255, 64, 153)
+        );
+    }
+
+    #[test]
+    fn hdr_apply_clamps_negative_rgb_and_rejects_non_finite_values() {
+        let mut state = ColorPopoverState::default();
+        let mut color = [4.0, 1.5, 0.25, 0.6];
+        assert!(apply_hdr_color(
+            &mut state,
+            &mut color,
+            [-2.0, 3.0, 0.5, 2.0]
+        ));
+        assert_eq!(color, [0.0, 3.0, 0.5, 1.0]);
+        assert!(!apply_hdr_color(
+            &mut state,
+            &mut color,
+            [f32::INFINITY, 0.0, 0.0, 1.0]
+        ));
+        assert_eq!(color, [0.0, 3.0, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn float_text_rejects_non_finite_and_f32_overflow() {
+        assert_eq!(parse_float_component_text("4.25"), Some(4.25));
+        assert_eq!(parse_float_component_text("-2"), Some(-2.0));
+        assert_eq!(parse_float_component_text("Infinity"), None);
+        assert_eq!(parse_float_component_text("NaN"), None);
+        assert_eq!(parse_float_component_text("1e100"), None);
     }
 }

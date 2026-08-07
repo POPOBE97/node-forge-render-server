@@ -23,7 +23,8 @@ pub(crate) fn bloom_extract_fragment_body(
     format!(
         r#"
 let src = textureSample({source_texture}, {source_sampler}, in.uv);
-let tint = clamp({tint_expr}, vec4f(0.0), vec4f(1.0));
+let tint_value = {tint_expr};
+let tint = vec4f(tint_value.rgb, clamp(tint_value.a, 0.0, 1.0));
 let lum = dot(src.rgb, vec3f(0.2126, 0.7152, 0.0722));
 let mask = smoothstep({edge0:.8}, {edge1:.8}, lum);
 let extracted = src.rgb * mask * {strength:.8};
@@ -43,12 +44,7 @@ pub fn build_bloom_extract_bundle(
     saturation: f32,
     tint: [f32; 4],
 ) -> WgslShaderBundle {
-    let tint = [
-        tint[0].clamp(0.0, 1.0),
-        tint[1].clamp(0.0, 1.0),
-        tint[2].clamp(0.0, 1.0),
-        tint[3].clamp(0.0, 1.0),
-    ];
+    let tint = [tint[0], tint[1], tint[2], tint[3].clamp(0.0, 1.0)];
 
     let tint_expr = format!(
         "vec4f({:.8}, {:.8}, {:.8}, {:.8})",
@@ -170,7 +166,9 @@ return vec4f(src.rgb * strength, clamp(src.a * strength, 0.0, 1.0));
 
 #[cfg(test)]
 mod tests {
-    use super::{build_bloom_additive_combine_bundle, build_bloom_output_bundle};
+    use super::{
+        build_bloom_additive_combine_bundle, build_bloom_extract_bundle, build_bloom_output_bundle,
+    };
 
     #[test]
     fn additive_combine_uses_per_input_strengths() {
@@ -197,5 +195,17 @@ mod tests {
         let bundle = build_bloom_output_bundle();
         assert!(bundle.fragment.contains("let strength = params.color.x;"));
         assert!(bundle.fragment.contains("src.rgb * strength"));
+    }
+
+    #[test]
+    fn bloom_extract_preserves_hdr_tint_rgb() {
+        let bundle = build_bloom_extract_bundle(0.5, 1.0, 1.0, 1.0, [4.0, 1.5, 0.25, 0.6]);
+        assert!(
+            bundle
+                .fragment
+                .contains("vec4f(4.00000000, 1.50000000, 0.25000000, 0.60000002)")
+        );
+        assert!(bundle.fragment.contains("let tint_value ="));
+        assert!(!bundle.fragment.contains("clamp(tint_value.rgb"));
     }
 }

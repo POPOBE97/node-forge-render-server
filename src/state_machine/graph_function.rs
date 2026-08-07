@@ -1191,4 +1191,89 @@ mod tests {
             .to_string();
         assert!(error.contains("no matching graph node"), "{error}");
     }
+
+    #[test]
+    fn hdr_color_round_trips_through_derivation_and_mutation_motion_functions() {
+        let color_port = |id: &str, motion: Option<bool>| ReflectedPort {
+            id: id.into(),
+            name: id.into(),
+            port_type: "color".into(),
+            array_length: None,
+            motion,
+        };
+        let resource = |scope: &str,
+                        node_id: &str,
+                        kind: &str,
+                        compiled_java_script: &str,
+                        outputs: Vec<ReflectedPort>| {
+            let source = format!("export default function {node_id}() {{}}");
+            FunctionResource {
+                scope: scope.into(),
+                node_id: node_id.into(),
+                kind: kind.into(),
+                language: "typescript".into(),
+                source_hash: format!("{:x}", Sha256::digest(source.as_bytes())),
+                source,
+                compiled_java_script: compiled_java_script.into(),
+                abi_version: GRAPH_FUNCTION_ABI_VERSION,
+                inputs: vec![color_port("color", None)],
+                outputs,
+            }
+        };
+        let derivation = resource(
+            "derivation:hdr",
+            "derive",
+            "derivation",
+            "(() => ({ bindings: [], entry(input) { return { color: input.color }; } }))()",
+            vec![color_port("color", None)],
+        );
+        let mutation = resource(
+            "state:hdr",
+            "mutate",
+            "mutation",
+            "(() => { const motionKind = Symbol('motion'); return { motionKind, bindings: [], entry(input) { return { setColor: { [motionKind]: 'setTo', target: input.color }, springColor: { [motionKind]: 'to', target: input.color, duration: 0.4, bounce: 0.1 } }; } }; })()",
+            vec![
+                color_port("setColor", Some(true)),
+                color_port("springColor", Some(true)),
+            ],
+        );
+
+        let hdr = GraphValue::Color([4.0, 1.5, 0.25, 0.6]);
+        let mut runtime = GraphJsRuntime::new(0);
+        runtime.prepare(&derivation).unwrap();
+        runtime.prepare(&mutation).unwrap();
+
+        assert_eq!(
+            runtime
+                .evaluate(
+                    "derivation:hdr",
+                    "derive",
+                    std::slice::from_ref(&hdr),
+                    Duration::from_millis(100),
+                )
+                .unwrap(),
+            vec![FunctionOutput::Value(hdr.clone())]
+        );
+        assert_eq!(
+            runtime
+                .evaluate(
+                    "state:hdr",
+                    "mutate",
+                    std::slice::from_ref(&hdr),
+                    Duration::from_millis(100),
+                )
+                .unwrap(),
+            vec![
+                FunctionOutput::SetTo {
+                    target: hdr.clone(),
+                    velocity: None,
+                },
+                FunctionOutput::To {
+                    target: hdr,
+                    duration: 0.4,
+                    bounce: 0.1,
+                },
+            ]
+        );
+    }
 }

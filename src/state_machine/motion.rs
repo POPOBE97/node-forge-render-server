@@ -1670,6 +1670,81 @@ mod tests {
     }
 
     #[test]
+    fn hdr_color_mutation_and_interrupted_transition_preserve_components() {
+        let key = StateParamKey::new("Light:tint");
+        let mut engine = MotionEngine::with_initial_values(HashMap::from([(
+            key.clone(),
+            serde_json::json!([1.25, 0.5, 0.1, 1.0]),
+        )]));
+        engine.begin_mutation_frame();
+        engine
+            .set_to(&key, serde_json::json!([4.0, 1.5, 0.25, 0.6]), None, 0.0)
+            .unwrap();
+        assert_eq!(
+            engine.physical_value(&key),
+            Some(serde_json::json!([4.0, 1.5, 0.25, 0.6]))
+        );
+
+        for _ in 0..60 {
+            engine.begin_mutation_frame();
+            engine
+                .to(
+                    &key,
+                    serde_json::json!([8.0, 3.0, 0.5, 0.8]),
+                    0.4,
+                    0.1,
+                    1.0 / 60.0,
+                )
+                .unwrap();
+        }
+        let mutated = engine.physical_value(&key).expect("mutated HDR color");
+        assert!(mutated[0].as_f64().unwrap() > 1.0, "{mutated}");
+        assert!(mutated[1].as_f64().unwrap() > 1.0, "{mutated}");
+
+        let mut channel = Channel::hold(serde_json::json!([4.0, 1.5, 0.25, 0.6]));
+        let outgoing = Channel::hold(serde_json::json!([1.25, 0.5, 0.1, 1.0])).sample();
+        channel.start_error(
+            outgoing,
+            MotionPlan::Timeline {
+                duration: 1.0,
+                delay: 0.0,
+                curve: TimelinePreset::Linear,
+                blending: None,
+            },
+        );
+        channel.step(0.35);
+        let before_interrupt = channel.sample();
+        channel.set_static_target(serde_json::json!([6.0, 2.0, 0.4, 0.7]));
+        channel.start_error(
+            before_interrupt.clone(),
+            MotionPlan::Spring {
+                duration: 0.4,
+                bounce: 0.1,
+                delay: 0.0,
+            },
+        );
+        let interrupted = channel.sample();
+        assert!(
+            interrupted
+                .value
+                .components()
+                .iter()
+                .zip(before_interrupt.value.components())
+                .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12)
+        );
+        channel.step(1.0);
+        let resumed = channel.sample().value.to_json();
+        assert!(resumed[0].as_f64().unwrap() > 1.0, "{resumed}");
+        assert!(
+            resumed
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|value| value.as_f64().unwrap().is_finite())
+        );
+    }
+
+    #[test]
     fn differently_shaped_nested_arrays_transition_instantly() {
         let previous = Channel::hold(serde_json::json!([[0.0, 2.0], [4.0, 6.0]])).sample();
         let mut channel = Channel::hold(serde_json::json!([[2.0, 4.0, 6.0], [8.0]]));

@@ -189,10 +189,12 @@ pub(crate) fn bloom_downsample_level_count(mut size: [u32; 2]) -> u32 {
 
 pub(crate) fn parse_tint_param_or_default(bloom_node: &crate::dsl::Node) -> [f32; 4] {
     fn json_num(v: &serde_json::Value) -> Option<f32> {
-        v.as_f64()
+        let value = v
+            .as_f64()
             .map(|x| x as f32)
             .or_else(|| v.as_i64().map(|x| x as f32))
-            .or_else(|| v.as_u64().map(|x| x as f32))
+            .or_else(|| v.as_u64().map(|x| x as f32))?;
+        value.is_finite().then_some(value)
     }
 
     fn parse_color(v: &serde_json::Value) -> Option<[f32; 4]> {
@@ -227,7 +229,7 @@ pub(crate) fn parse_tint_param_or_default(bloom_node: &crate::dsl::Node) -> [f32
     }
 
     if let Some(v) = bloom_node.params.get("tint").and_then(parse_color) {
-        return v.map(|c| c.clamp(0.0, 1.0));
+        return [v[0], v[1], v[2], v[3].clamp(0.0, 1.0)];
     }
 
     [1.0, 1.0, 1.0, 1.0]
@@ -421,6 +423,27 @@ mod tests {
     use super::*;
     use crate::renderer::types::{OutputEndpoint, PassOutputSpec, PassTextureRef};
     use rust_wgpu_fiber::eframe::wgpu::{self, TextureFormat};
+
+    fn bloom_node_with_tint(tint: serde_json::Value) -> crate::dsl::Node {
+        crate::dsl::Node {
+            id: "bloom".into(),
+            node_type: "BloomNode".into(),
+            params: HashMap::from([("tint".into(), tint)]),
+            inputs: vec![],
+            outputs: vec![],
+            input_bindings: vec![],
+            wgsl_override: None,
+        }
+    }
+
+    #[test]
+    fn bloom_tint_preserves_hdr_rgb_and_clamps_alpha_only() {
+        let node = bloom_node_with_tint(serde_json::json!([4.0, 1.5, 0.25, 2.0]));
+        assert_eq!(parse_tint_param_or_default(&node), [4.0, 1.5, 0.25, 1.0]);
+
+        let overflow = bloom_node_with_tint(serde_json::json!([1e100, 1.0, 1.0, 1.0]));
+        assert_eq!(parse_tint_param_or_default(&overflow), [1.0; 4]);
+    }
 
     #[test]
     fn pass_textures_are_included_in_texture_bindings() {
