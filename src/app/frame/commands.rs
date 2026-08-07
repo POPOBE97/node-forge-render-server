@@ -47,6 +47,7 @@ pub enum AppCommand {
     SetMatrixMaxRowCols(usize),
     SetMatrixLabelsVisible(bool),
     SetDisplayPpi(f32),
+    SetPlaybackRate(crate::app::PlaybackRate),
 }
 
 pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppCommand {
@@ -116,6 +117,9 @@ pub fn from_sidebar_action(action: ui::debug_sidebar::SidebarAction) -> AppComma
             AppCommand::SetMatrixLabelsVisible(visible)
         }
         ui::debug_sidebar::SidebarAction::SetDisplayPpi(ppi) => AppCommand::SetDisplayPpi(ppi),
+        ui::debug_sidebar::SidebarAction::SetPlaybackRate(rate) => {
+            AppCommand::SetPlaybackRate(rate)
+        }
     }
 }
 
@@ -399,6 +403,13 @@ pub fn dispatch(
                 },
             )?;
         }
+        AppCommand::SetPlaybackRate(rate) => {
+            if app.runtime.playback_rate != rate {
+                app.runtime.playback_rate = rate;
+                eprintln!("[animation] playback rate {}", rate.label());
+                ctx.request_repaint();
+            }
+        }
     }
 
     Ok(())
@@ -463,7 +474,7 @@ fn render_current_shader_space(app: &mut App, now: f64) {
 mod tests {
     use super::{AppCommand, from_sidebar_action};
     use crate::{
-        app::{AnalysisTab, DiffMetricMode, canvas::actions::CanvasAction},
+        app::{AnalysisTab, DiffMetricMode, PlaybackRate, canvas::actions::CanvasAction},
         ui::debug_sidebar::SidebarAction,
     };
     use rust_wgpu_fiber::shader_space::PassCaptureMode;
@@ -476,6 +487,15 @@ mod tests {
         assert!(matches!(play, AppCommand::PlayStateMachine));
         assert!(matches!(state, AppCommand::ForceState(state_id) if state_id == "entry"));
         assert!(matches!(clear, AppCommand::ClearStateControl));
+    }
+
+    #[test]
+    fn sidebar_playback_rate_maps_to_app_command() {
+        let command = from_sidebar_action(SidebarAction::SetPlaybackRate(PlaybackRate::Rate05));
+        assert!(matches!(
+            command,
+            AppCommand::SetPlaybackRate(PlaybackRate::Rate05)
+        ));
     }
 
     #[test]

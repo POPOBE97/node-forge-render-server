@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "back-pin-pin-basic",
+  "fps": 60,
+  "track": {
+    "channels": ["*"],
+    "overrides": ["*"]
+  },
+  "analyze": {
+    "jumpThresholdChannel": 1.0,
+    "jumpThresholdOverride": 1.0,
+    "checkPhysicIdentity": true
+  },
+  "actions": [
+    { "type": "step", "frames": 0 },
+    { "type": "step", "seconds": 1.0 },
+    { "type": "event", "eventType": "mousedown" },
+    { "type": "step", "seconds": 0.5 }
+  ]
+}

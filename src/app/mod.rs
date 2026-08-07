@@ -11,9 +11,10 @@ mod types;
 mod window_mode;
 
 pub use types::{
-    AnalysisTab, App, AppInit, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel,
-    QualifierSettings, RefImageAlphaMode, RefImageMode, ResourcePoolInfo, SampledPixel,
-    ShortwirePastedReferenceImage, ShortwireReferenceImage, StateControlSelection, TestMode,
+    AnalysisTab, App, AppInit, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate,
+    QualifierChannel, QualifierSettings, RefImageAlphaMode, RefImageMode, ResourcePoolInfo,
+    SampledPixel, ShortwirePastedReferenceImage, ShortwireReferenceImage, StateControlSelection,
+    TestMode,
 };
 
 use rust_wgpu_fiber::eframe::{self, egui};

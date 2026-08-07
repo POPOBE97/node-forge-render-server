@@ -22,7 +22,35 @@ cargo run -q -- \
   --outputdir ./tmp/out
 ```
 
-Headless flags (`src/main.rs`): `--headless`, `--dsl-json`, `--outputdir` or `--output`, `--render-to-file` (requires `--output`).
+Headless flags (`src/command.rs`): `--headless`, `--dsl-json`, `--outputdir` or `--output`, `--render-to-file` (requires `--output`).
+
+### Animation trace (CPU-only, no GPU)
+
+Diagnose MotionEngine / state-machine jumps with the same `AnimationSession`
+path as the app:
+
+```bash
+cargo run -q -- \
+  --nforge ./tests/fixtures/render/editor-examples/doubao-voice-interaction/scene.nforge \
+  --trace-animation \
+  --trace-scenario ./scenarios/doubao-listening-to-thinking.json \
+  --trace-format json,summary,table \
+  --trace-output ./out/thinking-trace.json
+```
+
+Free-run without a scenario:
+
+```bash
+cargo run -q -- \
+  --nforge ./tests/fixtures/render/editor-examples/back-pin-pin/scene.nforge \
+  --trace-animation \
+  --trace-seconds 2 \
+  --trace-fps 60 \
+  --trace-output ./out/trace.json
+```
+
+Full reference: [`docs/trace-animation.md`](docs/trace-animation.md).
+Example scenarios: `scenarios/*.json`.
 
 ## Test commands
 ```bash

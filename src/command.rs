@@ -5,7 +5,12 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
+use node_forge_render_server::animation::{
+    KeyFilter, TraceAnalyzeConfig, TraceRunConfig, TraceScenario, format_summary, format_table,
+    load_event_schedule, run_schedule_trace, run_trace, write_report_json,
+};
+use node_forge_render_server::state_machine::TickSchedule;
 use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
@@ -26,6 +31,24 @@ struct Cli {
     profile_format: Option<String>,
     profile_frames: u32,
     profile_warmup_frames: u32,
+    // --trace-animation
+    trace_animation: bool,
+    trace_scenario: Option<PathBuf>,
+    trace_seconds: Option<f64>,
+    trace_fps: Option<u32>,
+    trace_include_end: Option<bool>,
+    trace_initial_state: Option<String>,
+    trace_events: Option<PathBuf>,
+    trace_channels: Option<String>,
+    trace_overrides: Option<String>,
+    trace_values: Option<String>,
+    trace_output: Option<PathBuf>,
+    trace_format: Option<String>,
+    trace_jump_threshold_channel: Option<f64>,
+    trace_jump_threshold_override: Option<f64>,
+    trace_check_identity: Option<bool>,
+    trace_fail_on_jump: bool,
+    trace_pretty: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -289,9 +312,137 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                     .map_err(|_| anyhow!("--profile-warmup-frames must be an integer"))?;
                 i += 2;
             }
+            "--trace-animation" => {
+                cli.trace_animation = true;
+                i += 1;
+            }
+            "--trace-scenario" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-scenario"));
+                };
+                cli.trace_scenario = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--trace-seconds" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-seconds"));
+                };
+                cli.trace_seconds = Some(
+                    v.parse::<f64>()
+                        .map_err(|_| anyhow!("--trace-seconds must be a number"))?,
+                );
+                i += 2;
+            }
+            "--trace-fps" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-fps"));
+                };
+                cli.trace_fps = Some(
+                    v.parse::<u32>()
+                        .map_err(|_| anyhow!("--trace-fps must be a positive integer"))?,
+                );
+                i += 2;
+            }
+            "--trace-include-end" => {
+                cli.trace_include_end = Some(true);
+                i += 1;
+            }
+            "--trace-no-include-end" => {
+                cli.trace_include_end = Some(false);
+                i += 1;
+            }
+            "--trace-initial-state" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-initial-state"));
+                };
+                cli.trace_initial_state = Some(v.clone());
+                i += 2;
+            }
+            "--trace-events" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-events"));
+                };
+                cli.trace_events = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--trace-channels" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-channels"));
+                };
+                cli.trace_channels = Some(v.clone());
+                i += 2;
+            }
+            "--trace-overrides" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-overrides"));
+                };
+                cli.trace_overrides = Some(v.clone());
+                i += 2;
+            }
+            "--trace-values" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-values"));
+                };
+                cli.trace_values = Some(v.clone());
+                i += 2;
+            }
+            "--trace-output" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-output"));
+                };
+                cli.trace_output = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--trace-format" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-format"));
+                };
+                cli.trace_format = Some(v.clone());
+                i += 2;
+            }
+            "--trace-jump-threshold-channel" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-jump-threshold-channel"));
+                };
+                cli.trace_jump_threshold_channel = Some(
+                    v.parse::<f64>()
+                        .map_err(|_| anyhow!("--trace-jump-threshold-channel must be a number"))?,
+                );
+                i += 2;
+            }
+            "--trace-jump-threshold-override" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --trace-jump-threshold-override"));
+                };
+                cli.trace_jump_threshold_override = Some(
+                    v.parse::<f64>()
+                        .map_err(|_| anyhow!("--trace-jump-threshold-override must be a number"))?,
+                );
+                i += 2;
+            }
+            "--trace-check-identity" => {
+                cli.trace_check_identity = Some(true);
+                i += 1;
+            }
+            "--trace-no-check-identity" => {
+                cli.trace_check_identity = Some(false);
+                i += 1;
+            }
+            "--trace-fail-on-jump" => {
+                cli.trace_fail_on_jump = true;
+                i += 1;
+            }
+            "--trace-pretty" => {
+                cli.trace_pretty = Some(true);
+                i += 1;
+            }
+            "--trace-compact" => {
+                cli.trace_pretty = Some(false);
+                i += 1;
+            }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
                 ));
             }
         }
@@ -335,7 +486,231 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
         return Err(anyhow!("--profile-format requires --profile"));
     }
 
+    if cli.trace_animation {
+        if cli.nforge.is_none() && cli.dsl_json.is_none() {
+            return Err(anyhow!(
+                "--trace-animation requires --nforge <file.nforge> or --dsl-json <scene.json>"
+            ));
+        }
+        if cli.profile
+            || cli.render_to_file
+            || cli.dump_wgsl_dir.is_some()
+            || cli.continuous_redraw
+            || cli.headless
+        {
+            return Err(anyhow!(
+                "--trace-animation is CPU-only and cannot be combined with --headless, --profile, --render-to-file, --dump-wgsl-dir, or --continuous-redraw"
+            ));
+        }
+        if cli.trace_scenario.is_some() && cli.trace_events.is_some() {
+            return Err(anyhow!(
+                "--trace-events is ignored when --trace-scenario is set; remove one of them"
+            ));
+        }
+        if let Some(fps) = cli.trace_fps
+            && fps == 0
+        {
+            return Err(anyhow!("--trace-fps must be > 0"));
+        }
+        if let Some(seconds) = cli.trace_seconds
+            && (!seconds.is_finite() || seconds < 0.0)
+        {
+            return Err(anyhow!("--trace-seconds must be finite and >= 0"));
+        }
+        if cli.trace_scenario.is_none() && cli.trace_seconds.is_none() {
+            // Default free-run duration when no scenario is provided.
+            cli.trace_seconds = Some(2.0);
+        }
+    } else {
+        let has_trace_opt = cli.trace_scenario.is_some()
+            || cli.trace_seconds.is_some()
+            || cli.trace_fps.is_some()
+            || cli.trace_events.is_some()
+            || cli.trace_output.is_some()
+            || cli.trace_format.is_some()
+            || cli.trace_channels.is_some()
+            || cli.trace_overrides.is_some()
+            || cli.trace_initial_state.is_some()
+            || cli.trace_fail_on_jump;
+        if has_trace_opt {
+            return Err(anyhow!("trace options require --trace-animation"));
+        }
+    }
+
     Ok(cli)
+}
+
+fn run_trace_animation(cli: &Cli) -> Result<()> {
+    let (scene, source) = if let Some(path) = cli.nforge.as_ref() {
+        let (scene, _) = asset_store::load_from_nforge(path)
+            .map_err(|e| anyhow!("failed to load {}: {e:#}", path.display()))?;
+        (scene, Some(path.display().to_string()))
+    } else if let Some(path) = cli.dsl_json.as_ref() {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| anyhow!("failed to read {}: {e}", path.display()))?;
+        let scene: dsl::SceneDSL = serde_json::from_str(&text)
+            .map_err(|e| anyhow!("failed to parse {}: {e}", path.display()))?;
+        (scene, Some(path.display().to_string()))
+    } else {
+        bail!("--trace-animation requires --nforge or --dsl-json");
+    };
+
+    let mut formats = parse_trace_formats(cli.trace_format.as_deref().unwrap_or("json,summary"))?;
+    let pretty = cli.trace_pretty.unwrap_or(true);
+    let output = cli
+        .trace_output
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("-"));
+    // A concrete --trace-output path always implies a JSON write so the file
+    // is never silently skipped when the user only asked for summary/table.
+    if output != PathBuf::from("-") && !formats.contains(&TraceFormat::Json) {
+        formats.insert(0, TraceFormat::Json);
+    }
+
+    let mut analyze = TraceAnalyzeConfig::default();
+    if let Some(v) = cli.trace_jump_threshold_channel {
+        analyze.jump_threshold_channel = v;
+    }
+    if let Some(v) = cli.trace_jump_threshold_override {
+        analyze.jump_threshold_override = v;
+    }
+    if let Some(v) = cli.trace_check_identity {
+        analyze.check_physic_identity = v;
+    }
+    analyze.fail_on_jump = cli.trace_fail_on_jump;
+
+    let channel_filter = KeyFilter::from_cli_csv(cli.trace_channels.as_deref())?;
+    let override_filter = KeyFilter::from_cli_csv(cli.trace_overrides.as_deref())?;
+    let include_values = match cli.trace_values.as_deref() {
+        None | Some("all") | Some("filter") => true,
+        Some("none") => false,
+        Some(other) => bail!("unsupported --trace-values {other:?}; use all|none|filter"),
+    };
+
+    let result = if let Some(scenario_path) = cli.trace_scenario.as_ref() {
+        let scenario = TraceScenario::from_path(scenario_path)?;
+        if let Some(cli_fps) = cli.trace_fps
+            && cli_fps != scenario.fps
+        {
+            bail!(
+                "--trace-fps ({cli_fps}) conflicts with scenario fps ({})",
+                scenario.fps
+            );
+        }
+        let mut config = scenario.into_run_config(source);
+        config.initial_state = cli.trace_initial_state.clone();
+        if cli.trace_channels.is_some() {
+            config.channel_filter = channel_filter;
+        }
+        if cli.trace_overrides.is_some() {
+            config.override_filter = override_filter;
+        }
+        config.include_values = include_values;
+        // CLI analyze overrides scenario defaults when explicitly set.
+        if cli.trace_jump_threshold_channel.is_some()
+            || cli.trace_jump_threshold_override.is_some()
+            || cli.trace_check_identity.is_some()
+            || cli.trace_fail_on_jump
+        {
+            config.analyze = analyze;
+        } else {
+            config.analyze.fail_on_jump = cli.trace_fail_on_jump;
+        }
+        if cli.trace_initial_state.is_some() {
+            config.routing_forced = true;
+        }
+        run_trace(&scene, &config)?
+    } else {
+        let fps = cli.trace_fps.unwrap_or(60);
+        let seconds = cli.trace_seconds.unwrap_or(2.0);
+        let include_end = cli.trace_include_end.unwrap_or(true);
+        let schedule = TickSchedule::new(0.0, seconds, fps, include_end)?;
+        let events = if let Some(path) = cli.trace_events.as_ref() {
+            load_event_schedule(path)?
+        } else {
+            Vec::new()
+        };
+        let mut config = TraceRunConfig::free_run_meta(
+            fps,
+            source,
+            channel_filter,
+            override_filter,
+            include_values,
+            analyze,
+            cli.trace_initial_state.clone(),
+        );
+        if cli.trace_initial_state.is_some() {
+            config.routing_forced = true;
+        }
+        run_schedule_trace(&scene, &schedule, &events, &config)?
+    };
+
+    if formats.contains(&TraceFormat::Json) {
+        write_report_json(&result.report, &output, pretty)?;
+        if output != PathBuf::from("-") {
+            eprintln!(
+                "[trace-animation] wrote {} frames to {}",
+                result.report.summary.frame_count,
+                output.display()
+            );
+        }
+    }
+    if formats.contains(&TraceFormat::Summary) {
+        let text = format_summary(&result.report);
+        if formats.contains(&TraceFormat::Json) && output == PathBuf::from("-") {
+            eprintln!("{text}");
+        } else {
+            println!("{text}");
+        }
+    }
+    if formats.contains(&TraceFormat::Table) {
+        let text = format_table(&result.report, 200);
+        if formats.contains(&TraceFormat::Json) && output == PathBuf::from("-") {
+            eprintln!("{text}");
+        } else {
+            println!("{text}");
+        }
+    }
+
+    if let Some(error) = result.assert_error {
+        eprintln!("[trace-animation] {error}");
+        std::process::exit(result.exit_code);
+    }
+    if result.exit_code != 0 {
+        eprintln!(
+            "[trace-animation] exiting with code {} (fail-on-jump or assert)",
+            result.exit_code
+        );
+        std::process::exit(result.exit_code);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TraceFormat {
+    Json,
+    Summary,
+    Table,
+}
+
+fn parse_trace_formats(raw: &str) -> Result<Vec<TraceFormat>> {
+    let mut out = Vec::new();
+    for part in raw.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        match part {
+            "json" => out.push(TraceFormat::Json),
+            "summary" => out.push(TraceFormat::Summary),
+            "table" => out.push(TraceFormat::Table),
+            other => bail!("unsupported --trace-format token {other:?}; use json,summary,table"),
+        }
+    }
+    if out.is_empty() {
+        bail!("--trace-format must list at least one of json,summary,table");
+    }
+    Ok(out)
 }
 
 fn headless_profile_options(cli: &Cli) -> Option<HeadlessProfileOptions> {
@@ -971,6 +1346,10 @@ pub(crate) fn run() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let cli = parse_cli(&argv)?;
 
+    if cli.trace_animation {
+        return run_trace_animation(&cli);
+    }
+
     if cli.dump_shader_deps.is_some() {
         return run_shader_dependency_dump(&cli);
     }
@@ -1469,6 +1848,58 @@ mod tests {
         let args = vec!["--profile-frames".to_string(), "2".to_string()];
         let err = parse_cli(&args).unwrap_err().to_string();
         assert!(err.contains("--profile-frames requires --profile"));
+    }
+
+    #[test]
+    fn parse_cli_trace_animation_defaults() {
+        let args = vec![
+            "--trace-animation".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.trace_animation);
+        assert_eq!(cli.trace_seconds, Some(2.0));
+        assert_eq!(cli.nforge.as_ref(), Some(&PathBuf::from("scene.nforge")));
+    }
+
+    #[test]
+    fn parse_cli_trace_rejects_gpu_flags() {
+        let args = vec![
+            "--trace-animation".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--headless".to_string(),
+        ];
+        let err = parse_cli(&args).unwrap_err().to_string();
+        assert!(err.contains("CPU-only"));
+    }
+
+    #[test]
+    fn parse_cli_trace_options_require_mode() {
+        let args = vec!["--trace-seconds".to_string(), "1".to_string()];
+        let err = parse_cli(&args).unwrap_err().to_string();
+        assert!(err.contains("require --trace-animation"));
+    }
+
+    #[test]
+    fn parse_cli_trace_scenario_and_format() {
+        let args = vec![
+            "--trace-animation".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--trace-scenario".to_string(),
+            "scenarios/demo.json".to_string(),
+            "--trace-format".to_string(),
+            "json,summary,table".to_string(),
+            "--trace-fail-on-jump".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert!(cli.trace_scenario.is_some());
+        assert_eq!(cli.trace_format.as_deref(), Some("json,summary,table"));
+        assert!(cli.trace_fail_on_jump);
+        // Scenario present → no default free-run seconds.
+        assert_eq!(cli.trace_seconds, None);
     }
 
     fn collect_target_nodes<'a>(

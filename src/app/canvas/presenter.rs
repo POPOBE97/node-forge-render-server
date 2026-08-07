@@ -446,6 +446,10 @@ fn draw_operation_indicators(
             )
         });
 
+    let pause_tooltip = format!(
+        "Time 更新已暂停（Space 恢复）· {}",
+        app.runtime.playback_rate.label()
+    );
     app.canvas
         .viewport_indicator_manager
         .register(ViewportIndicatorEntry {
@@ -457,7 +461,7 @@ fn draw_operation_indicators(
                 !app.runtime.time_updates_enabled,
                 ViewportIndicator {
                     icon: "PAUSE",
-                    tooltip: "Time 更新已暂停（Space 恢复）",
+                    tooltip: &pause_tooltip,
                     kind: ViewportIndicatorKind::Failure,
                     strikethrough: false,
                 },
@@ -612,6 +616,10 @@ fn draw_matrix_indicators(
             )
         });
 
+    let pause_tooltip = format!(
+        "Time 更新已暂停（Space 恢复）· {}",
+        app.runtime.playback_rate.label()
+    );
     app.canvas
         .viewport_indicator_manager
         .register(ViewportIndicatorEntry {
@@ -623,7 +631,7 @@ fn draw_matrix_indicators(
                 !app.runtime.time_updates_enabled,
                 ViewportIndicator {
                     icon: "PAUSE",
-                    tooltip: "Time 更新已暂停（Space 恢复）",
+                    tooltip: &pause_tooltip,
                     kind: ViewportIndicatorKind::Failure,
                     strikethrough: false,
                 },

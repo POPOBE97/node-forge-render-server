@@ -10,8 +10,7 @@ use node_forge_render_server::state_machine::types::{
     TransitionConditionBinding, TransitionMotionGraph, TransitionMotionNode,
 };
 use node_forge_render_server::state_machine::{
-    AnimationTraceFrame, AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent,
-    TickSchedule, build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
+    AnimationTraceLog, EventSchedule, FiredEvent, ScheduledEvent, TickSchedule,
 };
 use node_forge_render_server::{asset_store, dsl};
 
@@ -375,79 +374,18 @@ fn first_trace_mismatch(
     None
 }
 
-/// Generate a trace using `AnimationSession` (fixed-step clock) instead of
-/// the raw `generate_trace_for_scene_with_events` path.
+/// Session-path trace used by goldens — shared with `--trace-animation`.
 fn generate_trace_via_session(
     scene: &dsl::SceneDSL,
     schedule: &TickSchedule,
     event_schedule: &[ScheduledEvent],
 ) -> AnimationTraceLog {
-    let mut session = AnimationSession::from_scene(scene)
-        .expect("failed to build AnimationSession")
-        .expect("scene has no stateMachine");
-
-    let tracked_key_set = tracked_override_keys(session.runtime().definition());
-    let tracked_keys: Vec<String> = tracked_key_set.iter().cloned().collect();
-
-    let mut current_values = build_initial_values(scene, &tracked_keys);
-    let mut frames: Vec<AnimationTraceFrame> = Vec::with_capacity(schedule.frame_count());
-
-    for sample in schedule.samples() {
-        // Fire events scheduled for this frame.
-        for ev in event_schedule {
-            if ev.frame_index == sample.frame_index {
-                session.fire_event(&ev.event_name);
-            }
-        }
-
-        let step = session.step(sample.dt_secs);
-
-        // Apply overrides to current values.
-        for (key, value) in &step.active_overrides {
-            let trace_key = format!("{}:{}", key.node_id, key.param_name);
-            current_values.insert(trace_key, canonicalize_json_value(value));
-        }
-
-        let mut frame_values: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        for key in &tracked_keys {
-            let value = current_values
-                .get(key)
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            frame_values.insert(key.clone(), canonicalize_json_value(&value));
-        }
-
-        let state_local_times: BTreeMap<String, f64> = step
-            .state_local_times
-            .iter()
-            .map(|(k, v)| (k.clone(), round_f64(*v)))
-            .collect();
-
-        frames.push(AnimationTraceFrame {
-            frame_index: sample.frame_index,
-            time_secs: round_f64(sample.time_secs),
-            dt_secs: round_f64(sample.dt_secs),
-            current_state_id: step.current_state_id.clone(),
-            state_local_times,
-            scene_time_secs: round_f64(step.scene_time_secs),
-            active_transition_id: step.active_transition_id.clone(),
-            motion_channels: step.motion_channels.clone(),
-            finished: step.finished,
-            diagnostics: step.diagnostics.clone(),
-            values: frame_values,
-        });
-    }
-
-    AnimationTraceLog {
-        schema_version: 1,
-        start_secs: round_f64(schedule.start_secs),
-        end_secs: round_f64(schedule.end_secs),
-        fps: schedule.fps,
-        include_end: schedule.include_end,
-        frame_count: frames.len(),
-        tracked_keys,
-        frames,
-    }
+    node_forge_render_server::animation::generate_animation_trace_log(
+        scene,
+        schedule,
+        event_schedule,
+    )
+    .expect("session animation trace should succeed")
 }
 
 fn sticky_override_test_scene() -> dsl::SceneDSL {

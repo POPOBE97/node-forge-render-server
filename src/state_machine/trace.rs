@@ -49,12 +49,40 @@ pub fn generate_trace_for_scene(
 }
 
 /// A scheduled event to fire at a specific frame index.
+///
+/// Compatible with fixture `events.json` files that only set `event_name`.
+/// Optional fields map into [`super::runtime::FiredEvent`] for key/button routes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScheduledEvent {
     /// Frame index at which to fire the event.
     pub frame_index: usize,
-    /// Event name (e.g. "mousedown").
+    /// Event type (e.g. "mousedown", "keyup"). Historical field name `event_name`.
+    #[serde(alias = "eventType")]
     pub event_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifiers: Option<super::types::EventModifiers>,
+}
+
+impl ScheduledEvent {
+    pub fn event_type(&self) -> &str {
+        self.event_name.as_str()
+    }
+
+    pub fn to_fired_event(&self) -> super::runtime::FiredEvent {
+        super::runtime::FiredEvent {
+            event_type: self.event_name.clone(),
+            key: self.key.clone(),
+            button: self.button.clone(),
+            repeat: self.repeat.unwrap_or(false),
+            modifiers: self.modifiers.clone().unwrap_or_default(),
+        }
+    }
 }
 
 /// Event schedule: a list of events to fire at specific frames during trace
@@ -64,6 +92,11 @@ pub struct EventSchedule {
     pub events: Vec<ScheduledEvent>,
 }
 
+/// Raw `StateMachineRuntime` schedule trace.
+///
+/// Prefer [`crate::animation::trace_run::generate_animation_trace_log`] for product
+/// diagnostics and goldens (app `AnimationSession` path). This helper remains for
+/// low-level runtime unit tests that intentionally bypass the session layer.
 pub fn generate_trace_for_scene_with_events(
     scene: &SceneDSL,
     schedule: &TickSchedule,
@@ -79,11 +112,10 @@ pub fn generate_trace_for_scene_with_events(
     let mut frames: Vec<AnimationTraceFrame> = Vec::with_capacity(schedule.frame_count());
 
     for sample in schedule.samples() {
-        // Collect events scheduled for this frame.
         let events: Vec<super::runtime::FiredEvent> = event_schedule
             .iter()
             .filter(|e| e.frame_index == sample.frame_index)
-            .map(|e| super::runtime::FiredEvent::from(e.event_name.as_str()))
+            .map(ScheduledEvent::to_fired_event)
             .collect();
 
         let result = runtime.tick(sample.dt_secs, &HashMap::new(), &events);

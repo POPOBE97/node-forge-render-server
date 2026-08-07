@@ -26,9 +26,10 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     let state_control_selection = app.runtime.state_control_selection.clone();
     let state_control_active = state_control_selection.is_some();
     let playing = matches!(state_control_selection, Some(StateControlSelection::Play));
+    let rate = app.runtime.playback_rate.as_f32();
 
     let effective_dt = if app.runtime.time_updates_enabled && state_control_active {
-        delta_t
+        delta_t * rate
     } else {
         0.0
     };
@@ -125,7 +126,7 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
             animation_values_changed = true;
         }
     } else if app.runtime.time_updates_enabled {
-        app.runtime.time_value_secs += delta_t;
+        app.runtime.time_value_secs += delta_t * rate;
     }
 
     interaction_bridge::sync_animation_state(

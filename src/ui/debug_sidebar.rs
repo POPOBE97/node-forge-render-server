@@ -4,8 +4,9 @@ use std::hash::Hash;
 
 use crate::android_reference::AndroidReferenceStatus;
 use crate::app::{
-    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, QualifierChannel, QualifierSettings,
-    RefImageMode, ResourcePoolInfo, StateControlSelection, TestMode, display_metrics,
+    AnalysisTab, ClippingSettings, DiffMetricMode, DiffStats, PlaybackRate, QualifierChannel,
+    QualifierSettings, RefImageMode, ResourcePoolInfo, StateControlSelection, TestMode,
+    display_metrics,
 };
 
 use super::button::{
@@ -276,6 +277,8 @@ pub enum SidebarAction {
     ForceState(String),
     /// Exit State Machine playback/preview and restore scene base values.
     ClearStateControl,
+    /// Set local animation playback speed (0.1x … 2x).
+    SetPlaybackRate(PlaybackRate),
     /// User clicked a readable texture — preview it in the canvas.
     PreviewTexture(String),
     /// Capture and preview one render pass independently of later target writers.
@@ -399,6 +402,7 @@ pub struct StateSidebarState<'a> {
     pub items: &'a [StateSidebarItem],
     pub selection: Option<&'a StateControlSelection>,
     pub playback_enabled: bool,
+    pub playback_rate: PlaybackRate,
 }
 
 pub fn show_in_rect(
@@ -540,6 +544,31 @@ pub fn show_in_rect(
     }
 }
 
+fn playback_rate_options() -> [RadioButtonOption<'static, PlaybackRate>; 5] {
+    [
+        RadioButtonOption {
+            value: PlaybackRate::Rate01,
+            label: PlaybackRate::Rate01.label(),
+        },
+        RadioButtonOption {
+            value: PlaybackRate::Rate025,
+            label: PlaybackRate::Rate025.label(),
+        },
+        RadioButtonOption {
+            value: PlaybackRate::Rate05,
+            label: PlaybackRate::Rate05.label(),
+        },
+        RadioButtonOption {
+            value: PlaybackRate::Rate1,
+            label: PlaybackRate::Rate1.label(),
+        },
+        RadioButtonOption {
+            value: PlaybackRate::Rate2,
+            label: PlaybackRate::Rate2.label(),
+        },
+    ]
+}
+
 fn show_state_section(
     ui: &mut egui::Ui,
     state: &StateSidebarState<'_>,
@@ -573,6 +602,17 @@ fn show_state_section(
             } else {
                 SidebarAction::PlayStateMachine
             });
+        }
+
+        ui.add_space(SIDEBAR_GRID_ROW_GAP);
+        let mut rate = state.playback_rate;
+        if radio_button_group::radio_button_group(
+            ui,
+            "state_playback_rate",
+            &mut rate,
+            &playback_rate_options(),
+        ) {
+            *sidebar_action = Some(SidebarAction::SetPlaybackRate(rate));
         }
 
         ui.add_space(SIDEBAR_GRID_ROW_GAP);

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-listening-to-thinking",
+  "fps": 60,
+  "track": {
+    "channels": ["sp_5e510047b6cb8f4d", "sp_653078b6ffd2ce9c"],
+    "overrides": ["Vector2ArrayInput_IntelligentLightPositions:value"]
+  },
+  "analyze": {
+    "jumpThresholdChannel": 0.05,
+    "jumpThresholdOverride": 5.0,
+    "checkPhysicIdentity": true,
+    "failOnJump": false
+  },
+  "actions": [
+    { "type": "label", "name": "boot" },
+    { "type": "step", "frames": 0 },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "label", "name": "enter-listening" },
+    { "type": "event", "eventType": "keydown", "key": " " },
+    { "type": "step", "seconds": 0.21 },
+    { "type": "settle", "maxFrames": 360 },
+    { "type": "assertState", "stateId": "st_listening" },
+    { "type": "label", "name": "enter-thinking" },
+    { "type": "event", "eventType": "keyup", "key": " " },
+    { "type": "assertState", "stateId": "st_thinking" },
+    { "type": "assertTransition", "id": "tr_listening_to_thinking" },
+    { "type": "label", "name": "thinking-motion" },
+    { "type": "step", "seconds": 1.4 }
+  ]
+}

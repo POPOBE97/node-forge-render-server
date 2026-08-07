@@ -207,6 +207,7 @@ pub(super) fn run(
                         items: &state_sidebar_items,
                         selection: app.runtime.state_control_selection.as_ref(),
                         playback_enabled: app.runtime.animation_session.is_some(),
+                        playback_rate: app.runtime.playback_rate,
                     },
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,

@@ -375,6 +375,8 @@ pub(super) struct AppRuntime {
     /// Whether the timeline hover preview was active last frame.
     /// Used to detect hover-exit transitions (egui has no hover events).
     pub timeline_preview_was_active: bool,
+    /// Local debug playback speed. Persists across Play/Stop/scene changes.
+    pub playback_rate: PlaybackRate,
     pub time_updates_enabled: bool,
     /// Previous frame's `time_updates_enabled`, used to detect pause→play
     /// transitions so the advance phase can force-resync uniform_scene.
@@ -388,6 +390,58 @@ pub(super) struct AppRuntime {
 pub enum StateControlSelection {
     Play,
     State(String),
+}
+
+/// Discrete animation playback speed for local debug controls.
+///
+/// Scales the wall-clock frame delta before it enters the animation session
+/// or the free-running `time_value_secs` clock. Does not affect egui UI
+/// animations or the timeline presentation wall clock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PlaybackRate {
+    Rate01,
+    Rate025,
+    Rate05,
+    #[default]
+    Rate1,
+    Rate2,
+}
+
+impl PlaybackRate {
+    pub fn as_f32(self) -> f32 {
+        match self {
+            Self::Rate01 => 0.1,
+            Self::Rate025 => 0.25,
+            Self::Rate05 => 0.5,
+            Self::Rate1 => 1.0,
+            Self::Rate2 => 2.0,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Rate01 => "0.1x",
+            Self::Rate025 => "0.25x",
+            Self::Rate05 => "0.5x",
+            Self::Rate1 => "1x",
+            Self::Rate2 => "2x",
+        }
+    }
+}
+
+#[cfg(test)]
+mod playback_rate_tests {
+    use super::PlaybackRate;
+
+    #[test]
+    fn playback_rate_scales() {
+        assert!((PlaybackRate::Rate01.as_f32() - 0.1).abs() < f32::EPSILON);
+        assert!((PlaybackRate::Rate025.as_f32() - 0.25).abs() < f32::EPSILON);
+        assert!((PlaybackRate::Rate05.as_f32() - 0.5).abs() < f32::EPSILON);
+        assert!((PlaybackRate::Rate1.as_f32() - 1.0).abs() < f32::EPSILON);
+        assert!((PlaybackRate::Rate2.as_f32() - 2.0).abs() < f32::EPSILON);
+        assert_eq!(PlaybackRate::default(), PlaybackRate::Rate1);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -696,6 +750,7 @@ impl App {
                 last_live_overrides: None,
                 timeline_pre_hover_overrides: None,
                 timeline_preview_was_active: false,
+                playback_rate: PlaybackRate::default(),
                 time_updates_enabled: true,
                 time_updates_enabled_prev_frame: true,
                 time_value_secs: 0.0,

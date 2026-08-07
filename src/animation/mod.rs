@@ -17,6 +17,13 @@
 
 pub mod session;
 pub mod timeline;
+pub mod trace_run;
 
 pub use session::{AnimationSession, AnimationStep};
 pub use timeline::{TimelineBuffer, TimelineFrame};
+pub use trace_run::{
+    KeyFilter, ScenarioAction, TraceAnalyzeConfig, TraceReport, TraceReportFrame, TraceRunConfig,
+    TraceRunResult, TraceScenario, TraceTrack, format_summary, format_table,
+    generate_animation_trace_log, load_event_schedule, run_schedule_trace, run_trace,
+    write_report_json,
+};

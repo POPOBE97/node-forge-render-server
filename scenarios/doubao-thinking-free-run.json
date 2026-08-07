@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "doubao-thinking-free-run",
+  "fps": 60,
+  "track": {
+    "channels": ["sp_5e510047b6cb8f4d", "sp_653078b6ffd2ce9c"],
+    "overrides": ["Vector2ArrayInput_IntelligentLightPositions:value"]
+  },
+  "analyze": {
+    "jumpThresholdChannel": 0.05,
+    "jumpThresholdOverride": 5.0,
+    "checkPhysicIdentity": true
+  },
+  "actions": [
+    { "type": "label", "name": "force-thinking" },
+    { "type": "forceState", "stateId": "st_thinking" },
+    { "type": "assertState", "stateId": "st_thinking" },
+    { "type": "label", "name": "thinking-motion" },
+    { "type": "step", "seconds": 2.0 }
+  ]
+}
