@@ -1488,7 +1488,7 @@ mod tests {
 
     fn simple_scene() -> dsl::SceneDSL {
         dsl::SceneDSL {
-            version: "4.0".into(),
+            version: "5.0".into(),
             metadata: dsl::Metadata {
                 name: "trace-run".into(),
                 created: None,

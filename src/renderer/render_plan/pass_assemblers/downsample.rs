@@ -1,8 +1,8 @@
-//! Downsample pass assembler.
+//! Kernel pass assemblers for Downsample and Convolution.
 //!
-//! Handles the `"Downsample"` node type. Downsamples source pass output into a
-//! `targetSize`-sized texture using a convolution kernel. Optionally synthesises
-//! an upsample pass to scale back to the Composite target size.
+//! Downsample renders into an explicit `targetSize`; Convolution preserves the
+//! source pass resolution. Both share kernel, sampling, camera, blend, and final
+//! composition behavior.
 
 use std::collections::HashMap;
 
@@ -33,6 +33,35 @@ use super::super::pass_spec::{
 use super::args::{BuilderState, SceneContext};
 use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
 
+#[derive(Clone, Copy)]
+enum KernelPassKind {
+    Downsample,
+    Convolution,
+}
+
+impl KernelPassKind {
+    fn node_type(self) -> &'static str {
+        match self {
+            Self::Downsample => "Downsample",
+            Self::Convolution => "Convolution",
+        }
+    }
+
+    fn resource_prefix(self) -> &'static str {
+        match self {
+            Self::Downsample => "sys.downsample",
+            Self::Convolution => "sys.convolution",
+        }
+    }
+
+    fn target_blit_role(self) -> &'static str {
+        match self {
+            Self::Downsample => "upsample",
+            Self::Convolution => "blit",
+        }
+    }
+}
+
 /// Assemble a `"Downsample"` layer.
 pub(crate) fn assemble_downsample(
     sc: &SceneContext<'_>,
@@ -40,14 +69,36 @@ pub(crate) fn assemble_downsample(
     layer_id: &str,
     layer_node: &Node,
 ) -> Result<()> {
+    assemble_kernel_pass(sc, bs, layer_id, layer_node, KernelPassKind::Downsample)
+}
+
+/// Assemble a `"Convolution"` layer.
+pub(crate) fn assemble_convolution(
+    sc: &SceneContext<'_>,
+    bs: &mut BuilderState<'_>,
+    layer_id: &str,
+    layer_node: &Node,
+) -> Result<()> {
+    assemble_kernel_pass(sc, bs, layer_id, layer_node, KernelPassKind::Convolution)
+}
+
+fn assemble_kernel_pass(
+    sc: &SceneContext<'_>,
+    bs: &mut BuilderState<'_>,
+    layer_id: &str,
+    layer_node: &Node,
+    kind: KernelPassKind,
+) -> Result<()> {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
+    let node_type = kind.node_type();
+    let resource_prefix = kind.resource_prefix();
     let tgt_w = bs.tgt_size[0];
     let tgt_h = bs.tgt_size[1];
     let tgt_w_u = bs.tgt_size_u[0];
     let tgt_h_u = bs.tgt_size_u[1];
 
-    let pass_name: ResourceName = format!("sys.downsample.{layer_id}.pass").into();
+    let pass_name: ResourceName = format!("{resource_prefix}.{layer_id}.pass").into();
     let pass_blend_state =
         crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
             .with_context(|| {
@@ -59,7 +110,7 @@ pub(crate) fn assemble_downsample(
 
     // Resolve inputs.
     let src_conn = incoming_connection(scene, layer_id, "source")
-        .ok_or_else(|| anyhow!("Downsample.source missing for {layer_id}"))?;
+        .ok_or_else(|| anyhow!("{node_type}.source missing for {layer_id}"))?;
     let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
     let src_pass_id = src_texture_ref.source.node_id.clone();
     let src_spec = bs
@@ -68,7 +119,7 @@ pub(crate) fn assemble_downsample(
         .cloned()
         .ok_or_else(|| {
             anyhow!(
-                "Downsample.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
+                "{node_type}.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
                 src_texture_ref.source.port_id
             )
         })?;
@@ -76,8 +127,16 @@ pub(crate) fn assemble_downsample(
     let src_resolution = src_spec.resolution;
 
     let kernel_conn = incoming_connection(scene, layer_id, "kernel")
-        .ok_or_else(|| anyhow!("Downsample.kernel missing for {layer_id}"))?;
+        .ok_or_else(|| anyhow!("{node_type}.kernel missing for {layer_id}"))?;
     let kernel_node = find_node(&nodes_by_id, &kernel_conn.from.node_id)?;
+    if kernel_node.node_type != "Kernel" || kernel_conn.from.port_id != "kernel" {
+        bail!(
+            "{node_type}.kernel for {layer_id} must resolve to Kernel.kernel, got {}.{} ({})",
+            kernel_conn.from.node_id,
+            kernel_conn.from.port_id,
+            kernel_node.node_type
+        );
+    }
     let kernel_src = kernel_node
         .params
         .get("source")
@@ -92,91 +151,93 @@ pub(crate) fn assemble_downsample(
             .or_else(|| v.as_u64().map(|x| x as f32))
     }
 
-    // Resolve targetSize.
-    let target_size_expr = if let Some(target_size_conn) =
-        incoming_connection(scene, layer_id, "targetSize")
-    {
-        let target_size_expr = {
-            let mut ctx = MaterialCompileContext::default();
-            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
-            crate::renderer::node_compiler::compile_material_expr(
-                scene,
-                &nodes_by_id,
-                &target_size_conn.from.node_id,
-                Some(&target_size_conn.from.port_id),
-                &mut ctx,
-                &mut cache,
-            )?
-        };
-        coerce_to_type(target_size_expr, ValueType::Vec2)?
-    } else if let Some(v) = layer_node.params.get("targetSize") {
-        let (x, y) = if let Some(arr) = v.as_array() {
-            (
-                arr.get(0).and_then(parse_json_number_f32).unwrap_or(0.0),
-                arr.get(1).and_then(parse_json_number_f32).unwrap_or(0.0),
-            )
-        } else if let Some(obj) = v.as_object() {
-            (
-                obj.get("x").and_then(parse_json_number_f32).unwrap_or(0.0),
-                obj.get("y").and_then(parse_json_number_f32).unwrap_or(0.0),
-            )
-        } else {
-            bail!(
-                "Downsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
-            );
-        };
-        TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2)
-    } else {
-        bail!("missing input '{layer_id}.targetSize' (no connection and no param)");
-    };
-
-    // Require CPU-known size for texture allocation.
-    let (out_w, out_h) = {
-        let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
-        if let Some(inner) = s
-            .strip_prefix("(graph_inputs.")
-            .and_then(|x| x.strip_suffix(").xy"))
-        {
-            if let Some((_node_id, node)) = nodes_by_id
-                .iter()
-                .find(|(_, n)| n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner)
+    let (out_w, out_h) = match kind {
+        KernelPassKind::Convolution => (src_resolution[0], src_resolution[1]),
+        KernelPassKind::Downsample => {
+            // Resolve targetSize.
+            let target_size_expr = if let Some(target_size_conn) =
+                incoming_connection(scene, layer_id, "targetSize")
             {
-                let w = cpu_num_u32_min_1(scene, &nodes_by_id, node, "x", 1)?;
-                let h = cpu_num_u32_min_1(scene, &nodes_by_id, node, "y", 1)?;
-                (w, h)
+                let target_size_expr = {
+                    let mut ctx = MaterialCompileContext::default();
+                    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
+                    crate::renderer::node_compiler::compile_material_expr(
+                        scene,
+                        &nodes_by_id,
+                        &target_size_conn.from.node_id,
+                        Some(&target_size_conn.from.port_id),
+                        &mut ctx,
+                        &mut cache,
+                    )?
+                };
+                coerce_to_type(target_size_expr, ValueType::Vec2)?
+            } else if let Some(v) = layer_node.params.get("targetSize") {
+                let (x, y) = if let Some(arr) = v.as_array() {
+                    (
+                        arr.get(0).and_then(parse_json_number_f32).unwrap_or(0.0),
+                        arr.get(1).and_then(parse_json_number_f32).unwrap_or(0.0),
+                    )
+                } else if let Some(obj) = v.as_object() {
+                    (
+                        obj.get("x").and_then(parse_json_number_f32).unwrap_or(0.0),
+                        obj.get("y").and_then(parse_json_number_f32).unwrap_or(0.0),
+                    )
+                } else {
+                    bail!(
+                        "Downsample.targetSize must be an object {{x,y}} or array [x,y] in params for {layer_id}"
+                    );
+                };
+                TypedExpr::new(format!("vec2f({x}, {y})"), ValueType::Vec2)
+            } else {
+                bail!("missing input '{layer_id}.targetSize' (no connection and no param)");
+            };
+
+            // Require CPU-known size for texture allocation.
+            let s = target_size_expr.expr.replace([' ', '\n', '\t', '\r'], "");
+            if let Some(inner) = s
+                .strip_prefix("(graph_inputs.")
+                .and_then(|x| x.strip_suffix(").xy"))
+            {
+                if let Some((_node_id, node)) = nodes_by_id.iter().find(|(_, n)| {
+                    n.node_type == "Vector2Input" && graph_field_name(&n.id) == inner
+                }) {
+                    let w = cpu_num_u32_min_1(scene, &nodes_by_id, node, "x", 1)?;
+                    let h = cpu_num_u32_min_1(scene, &nodes_by_id, node, "y", 1)?;
+                    (w, h)
+                } else {
+                    bail!(
+                        "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
+                        target_size_expr.expr
+                    );
+                }
+            } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() == 2 {
+                    let w = parts[0].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
+                    let h = parts[1].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
+                    (w, h)
+                } else {
+                    bail!(
+                        "Downsample.targetSize must be vec2f(w,h), got {}",
+                        target_size_expr.expr
+                    );
+                }
             } else {
                 bail!(
                     "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
                     target_size_expr.expr
                 );
             }
-        } else if let Some(inner) = s.strip_prefix("vec2f(").and_then(|x| x.strip_suffix(')')) {
-            let parts: Vec<&str> = inner.split(',').collect();
-            if parts.len() == 2 {
-                let w = parts[0].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
-                let h = parts[1].parse::<f32>().unwrap_or(0.0).max(1.0).floor() as u32;
-                (w, h)
-            } else {
-                bail!(
-                    "Downsample.targetSize must be vec2f(w,h), got {}",
-                    target_size_expr.expr
-                );
-            }
-        } else {
-            bail!(
-                "Downsample.targetSize must be a CPU-constant vec2f(w,h) for now, got {}",
-                target_size_expr.expr
-            );
         }
     };
 
     let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
-    let needs_upsample = !is_sampled_output && (out_w != tgt_w_u || out_h != tgt_h_u);
+    let needs_target_blit = !is_sampled_output && (out_w != tgt_w_u || out_h != tgt_h_u);
     let writes_scene_output_target = !is_sampled_output;
-    let needs_intermediate = is_sampled_output || needs_upsample;
+    let needs_intermediate = is_sampled_output || needs_target_blit;
 
     let downsample_out_tex: ResourceName = if needs_intermediate {
-        let tex: ResourceName = format!("sys.downsample.{layer_id}.out").into();
+        let tex: ResourceName = format!("{resource_prefix}.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: tex.clone(),
             size: [out_w, out_h],
@@ -202,7 +263,7 @@ pub(crate) fn assemble_downsample(
         "Repeat" => SamplerKind::LinearRepeat,
         "Clamp" => SamplerKind::LinearClamp,
         "ClampToBorder" => SamplerKind::LinearClamp,
-        other => bail!("Downsample.sampling unsupported: {other}"),
+        other => bail!("{node_type}.sampling unsupported: {other}"),
     };
     let sampler_kind = if src_texture_ref.sampler_node_id.is_some() {
         sampler_kind_for_pass_texture(scene, &src_texture_ref)
@@ -215,10 +276,10 @@ pub(crate) fn assemble_downsample(
         BlendState::REPLACE
     };
 
-    // Fullscreen geometry and params for the final Downsample output size.
-    let geo: ResourceName = format!("sys.downsample.{layer_id}.geo").into();
+    // Fullscreen geometry and params for the final kernel-pass output size.
+    let geo: ResourceName = format!("{resource_prefix}.{layer_id}.geo").into();
     bs.push_fullscreen_geometry(geo.clone(), out_w_f, out_h_f);
-    let params_name: ResourceName = format!("params.sys.downsample.{layer_id}").into();
+    let params_name: ResourceName = format!("params.{resource_prefix}.{layer_id}").into();
     let params_val = make_params(
         [out_w_f, out_h_f],
         [out_w_f, out_h_f],
@@ -273,7 +334,7 @@ pub(crate) fn assemble_downsample(
             };
 
             // Keep signed Lanczos lobes intact between the separable passes.
-            let h_tex: ResourceName = format!("sys.downsample.{layer_id}.h").into();
+            let h_tex: ResourceName = format!("{resource_prefix}.{layer_id}.h").into();
             bs.textures.push(TextureDecl {
                 name: h_tex.clone(),
                 size: [out_w, src_resolution[1]],
@@ -282,11 +343,12 @@ pub(crate) fn assemble_downsample(
                 needs_sampling: false,
             });
 
-            let h_geo: ResourceName = format!("sys.downsample.{layer_id}.h.geo").into();
+            let h_geo: ResourceName = format!("{resource_prefix}.{layer_id}.h.geo").into();
             let h_w_f = out_w_f;
             let h_h_f = src_resolution[1] as f32;
             bs.push_fullscreen_geometry(h_geo.clone(), h_w_f, h_h_f);
-            let h_params_name: ResourceName = format!("params.sys.downsample.{layer_id}.h").into();
+            let h_params_name: ResourceName =
+                format!("params.{resource_prefix}.{layer_id}.h").into();
             let h_params = make_params(
                 [h_w_f, h_h_f],
                 [h_w_f, h_h_f],
@@ -294,7 +356,7 @@ pub(crate) fn assemble_downsample(
                 legacy_projection_camera_matrix([h_w_f, h_h_f]),
                 [0.0, 0.0, 0.0, 0.0],
             );
-            let h_pass_name: ResourceName = format!("sys.downsample.{layer_id}.h.pass").into();
+            let h_pass_name: ResourceName = format!("{resource_prefix}.{layer_id}.h.pass").into();
             let h_bundle =
                 build_lanczos_downsample_pass_wgsl_bundle(lobes, LanczosAxis::Horizontal)?;
 
@@ -353,17 +415,19 @@ pub(crate) fn assemble_downsample(
         }
     }
 
-    // If Downsample is the final layer and targetSize != Composite target,
-    // add an upsample bilinear pass to scale to Composite target size.
-    if needs_upsample {
-        let upsample_pass_name: ResourceName =
-            format!("sys.downsample.{layer_id}.upsample.pass").into();
-        let upsample_geo: ResourceName = format!("sys.downsample.{layer_id}.upsample.geo").into();
-        bs.push_fullscreen_geometry(upsample_geo.clone(), tgt_w, tgt_h);
+    // If the logical output size differs from the Composite target, keep the
+    // kernel result at its own resolution and add a bilinear target blit.
+    if needs_target_blit {
+        let target_blit_role = kind.target_blit_role();
+        let target_blit_pass_name: ResourceName =
+            format!("{resource_prefix}.{layer_id}.{target_blit_role}.pass").into();
+        let target_blit_geo: ResourceName =
+            format!("{resource_prefix}.{layer_id}.{target_blit_role}.geo").into();
+        bs.push_fullscreen_geometry(target_blit_geo.clone(), tgt_w, tgt_h);
 
-        let upsample_params_name: ResourceName =
-            format!("params.sys.downsample.{layer_id}.upsample").into();
-        let upsample_params_val = make_params(
+        let target_blit_params_name: ResourceName =
+            format!("params.{resource_prefix}.{layer_id}.{target_blit_role}").into();
+        let target_blit_params_val = make_params(
             [tgt_w, tgt_h],
             [tgt_w, tgt_h],
             [tgt_w * 0.5, tgt_h * 0.5],
@@ -379,17 +443,17 @@ pub(crate) fn assemble_downsample(
         let upsample_bundle = build_upsample_bilinear_bundle();
 
         bs.render_pass_specs.push(RenderPassSpec {
-            pass_id: upsample_pass_name.as_str().to_string(),
-            name: upsample_pass_name.clone(),
-            geometry_buffer: upsample_geo,
+            pass_id: target_blit_pass_name.as_str().to_string(),
+            name: target_blit_pass_name.clone(),
+            geometry_buffer: target_blit_geo,
             instance_buffer: None,
             normals_buffer: None,
             vertex_layout: Default::default(),
             target_texture: bs.target_texture_name.clone(),
             resolve_target: None,
-            params_buffer: upsample_params_name,
+            params_buffer: target_blit_params_name,
             baked_data_parse_buffer: None,
-            params: upsample_params_val,
+            params: target_blit_params_val,
             graph_binding: None,
             graph_values: None,
             shader_wgsl: upsample_bundle.module,
@@ -402,10 +466,10 @@ pub(crate) fn assemble_downsample(
             color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
             sample_count: 1,
         });
-        bs.composite_passes.push(upsample_pass_name);
+        bs.composite_passes.push(target_blit_pass_name);
     }
 
-    // Register Downsample output for chaining.
+    // Register the logical output for chaining.
     let downsample_output_tex = downsample_out_tex.clone();
     if is_sampled_output {
         bs.pass_output_registry.register(PassOutputSpec {
@@ -441,13 +505,13 @@ pub(crate) fn assemble_downsample(
             let comp_h = comp_ctx.target_size_px[1];
 
             let compose_geo: ResourceName =
-                format!("sys.downsample.{layer_id}.to.{composition_id}.compose.geo").into();
+                format!("{resource_prefix}.{layer_id}.to.{composition_id}.compose.geo").into();
             bs.push_fullscreen_geometry(compose_geo.clone(), comp_w, comp_h);
 
             let compose_pass_name: ResourceName =
-                format!("sys.downsample.{layer_id}.to.{composition_id}.compose.pass").into();
+                format!("{resource_prefix}.{layer_id}.to.{composition_id}.compose.pass").into();
             let compose_params_name: ResourceName =
-                format!("params.sys.downsample.{layer_id}.to.{composition_id}.compose").into();
+                format!("params.{resource_prefix}.{layer_id}.to.{composition_id}.compose").into();
             let compose_params = make_params(
                 [comp_w, comp_h],
                 [comp_w, comp_h],

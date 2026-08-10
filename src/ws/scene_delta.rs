@@ -324,6 +324,7 @@ fn is_render_plan_rebuild_sink(node_type: &str, port_id: &str) -> bool {
             | ("IntelligentLight", "downsampleFactor")
             | ("Downsample", "targetSize")
             | ("Downsample", "camera")
+            | ("Convolution", "camera")
             | ("Upsample", "camera")
             | ("Upsample", "targetSize")
             | ("Composite", "camera")

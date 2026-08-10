@@ -17,7 +17,7 @@ use super::{
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
     pass_dedup::dedup_identical_passes,
-    resource_pool::project_selected_pass_resource_pools,
+    resource_pool::project_selected_resource_pools,
     types::{PreparedScene, ScenePrepReport},
 };
 
@@ -63,7 +63,7 @@ pub(crate) fn prepare_scene_with_report(
     }
 
     let render_target_id = render_targets[0].id.clone();
-    project_selected_pass_resource_pools(&mut expanded, &render_target_id)?;
+    project_selected_resource_pools(&mut expanded, &render_target_id)?;
 
     // 2) Keep only the upstream subgraph that contributes to the RenderTarget.
     // This avoids validation/compile failures caused by unrelated leftover subgraphs.

@@ -180,6 +180,7 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
             | "BloomNode"
             | "GuassianBlurPass"
             | "Downsample"
+            | "Convolution"
             | "Upsample"
             | "GradientBlur"
             | "MeshGradient"

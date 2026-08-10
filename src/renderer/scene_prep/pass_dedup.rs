@@ -20,6 +20,7 @@ const PASS_NODE_TYPES: &[&str] = &[
     "RenderPass",
     "BloomNode",
     "Downsample",
+    "Convolution",
     "Upsample",
     "GuassianBlurPass",
     "Composite",

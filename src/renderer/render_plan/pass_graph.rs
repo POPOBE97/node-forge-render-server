@@ -100,10 +100,10 @@ fn deps_for_pass_node(
                 .into_iter()
                 .collect())
         }
-        "Downsample" => {
-            // Downsample depends on the upstream pass provided on its `source` input.
+        "Downsample" | "Convolution" => {
+            // Kernel passes depend on the upstream pass provided on their `source` input.
             let source_conn = incoming_connection(scene, pass_node_id, "source")
-                .ok_or_else(|| anyhow!("Downsample.source missing for {pass_node_id}"))?;
+                .ok_or_else(|| anyhow!("{}.source missing for {pass_node_id}", node.node_type))?;
             Ok(vec![
                 resolve_pass_source_ref(scene, nodes_by_id, &source_conn.from)?
                     .source
@@ -445,6 +445,67 @@ mod tests {
 
         let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
         assert_eq!(order, vec!["source_comp", "upsample", "out_comp"]);
+        Ok(())
+    }
+
+    #[test]
+    fn convolution_depends_on_and_samples_source_pass() -> Result<()> {
+        let scene = SceneDSL {
+            version: "1".to_string(),
+            metadata: Metadata {
+                name: "convolution-pass-order".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("source_comp", "Composite"),
+                node("convolution", "Convolution"),
+                node("out_comp", "Composite"),
+            ],
+            connections: vec![
+                Connection {
+                    id: "c_source".to_string(),
+                    from: Endpoint {
+                        node_id: "source_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "convolution".to_string(),
+                        port_id: "source".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_out".to_string(),
+                    from: Endpoint {
+                        node_id: "convolution".to_string(),
+                        port_id: "output".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "out_comp".to_string(),
+                        port_id: "pass".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: HashMap::new(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+
+        let nodes_by_id: HashMap<String, Node> = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|n| (n.id.clone(), n))
+            .collect();
+
+        let order = compute_pass_render_order(&scene, &nodes_by_id, &[String::from("out_comp")])?;
+        assert_eq!(order, vec!["source_comp", "convolution", "out_comp"]);
+
+        let sampled =
+            sampled_pass_node_ids_from_roots(&scene, &nodes_by_id, &[String::from("convolution")])?;
+        assert!(sampled.contains("source_comp"), "sampled={sampled:?}");
         Ok(())
     }
 

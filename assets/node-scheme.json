@@ -20,6 +20,7 @@
     "ColorRamp",
     "Composite",
     "ComputePass",
+    "Convolution",
     "Cos",
     "CrossProduct",
     "DataNode",
@@ -1563,6 +1564,68 @@
       "outputs": [],
       "defaultParams": {
         "name": "Compute Pass"
+      }
+    },
+    {
+      "type": "Convolution",
+      "label": "Convolution",
+      "category": "Filter",
+      "description": "Convolve a source pass with a kernel while preserving its resolution",
+      "inputs": [
+        {
+          "id": "sampling",
+          "name": "Sampling",
+          "type": "any",
+          "default": "Mirror"
+        },
+        {
+          "id": "kernel",
+          "name": "Kernel",
+          "type": "kernel"
+        },
+        {
+          "id": "source",
+          "name": "Source",
+          "type": "pass"
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output",
+          "name": "Output",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha"
       }
     },
     {

@@ -390,7 +390,7 @@ fn generate_trace_via_session(
 
 fn sticky_override_test_scene() -> dsl::SceneDSL {
     dsl::SceneDSL {
-        version: "4.0".into(),
+        version: "5.0".into(),
         metadata: dsl::Metadata {
             name: "Sticky Override Test".into(),
             created: None,

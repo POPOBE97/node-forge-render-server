@@ -1076,7 +1076,7 @@ mod tests {
 
     fn scene_with_mutation_function() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
-            "version": "4.0",
+            "version": "5.0",
             "metadata": { "name": "function validation" },
             "nodes": [],
             "connections": [],

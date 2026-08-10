@@ -44,26 +44,20 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
-    let dst_dims = params.target_size;
-    // Use in.uv (top-left convention) to map directly to source pixel space.
+    // `in.uv` is private RasterUV. Multiplying by the source dimensions preserves the
+    // conventional output-pixel-center to source-pixel-center phase.
     let center_xy = in.uv * src_dims;
 
   let kw: i32 = 2;
   let kh: i32 = 2;
-  let half_w: i32 = kw / 2;
-  let half_h: i32 = kh / 2;
+  let kernel_center = vec2f(0.5, 0.5);
   let k = array<f32, 4>(0.25, 0.25, 0.25, 0.25);
 
     var sum = vec4f(0.0);
     for (var y: i32 = 0; y < kh; y = y + 1) {
         for (var x: i32 = 0; x < kw; x = x + 1) {
-            let ix = x - half_w;
-            let iy = y - half_h;
-            // Offset from integer center.
-            let sample_xy = center_xy + vec2f(f32(ix), f32(iy));
-            // Sample at integer-coord / src_dims (texel boundary).
-            // With a linear sampler this gives a proper 2x2 bilinear average,
-            // matching Godot's manual bilinear() at integer coordinates.
+            let tap_offset = vec2f(f32(x), f32(y)) - kernel_center;
+            let sample_xy = center_xy + tap_offset;
             let uv = sample_xy / src_dims;
 
             let idx: i32 = y * kw + x;

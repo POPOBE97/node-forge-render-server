@@ -22,6 +22,7 @@ use crate::{
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
         render_plan::types::ShaderParameterBufferPlan,
         scene_prep::bake_data_parse_nodes,
+        shader_space::image_utils::image_node_dimensions,
         types::{
             BakedDataParseMeta, BakedValue, GraphBinding, GraphBindingKind, MaterialCompileContext,
             PassOutputSpec,
@@ -47,6 +48,44 @@ use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
 use crate::renderer::shader_space::sampler::{
     sampler_kind_for_pass_texture, sampler_kind_from_node_params,
 };
+
+fn infer_image_materialization_resolution(
+    materialization_pass_id: &str,
+    image_texture_ids: &[String],
+    nodes_by_id: &HashMap<String, Node>,
+    asset_store: Option<&crate::asset_store::AssetStore>,
+) -> Result<Option<[u32; 2]>> {
+    if image_texture_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut resolved = Vec::with_capacity(image_texture_ids.len());
+    for image_texture_id in image_texture_ids {
+        let node = find_node(nodes_by_id, image_texture_id)?;
+        let Some(resolution) = image_node_dimensions(node, asset_store) else {
+            return Ok(None);
+        };
+        resolved.push((image_texture_id.as_str(), resolution));
+    }
+
+    let first_resolution = resolved[0].1;
+    if resolved
+        .iter()
+        .all(|(_, resolution)| *resolution == first_resolution)
+    {
+        return Ok(Some(first_resolution));
+    }
+
+    let details = resolved
+        .iter()
+        .map(|(node_id, [width, height])| format!("{node_id}={width}x{height}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(anyhow!(
+        "materialization pass {materialization_pass_id} samples images with mismatched \
+resolutions: {details}"
+    ))
+}
 
 /// Assemble a `"RenderPass"` layer.
 pub(crate) fn assemble_render_pass(
@@ -122,6 +161,15 @@ pub(crate) fn assemble_render_pass(
         || bs.bloom_source_pass_ids.contains(layer_id)
         || bs.gradient_source_pass_ids.contains(layer_id);
     let is_auto_materialization_pass = layer_id.starts_with("sys.auto.fullscreen.pass.");
+    let feeds_downsample = is_auto_materialization_pass && is_downsample_source;
+    // Downsample kernels operate in the source image's pixel domain. Preserve decoded image values
+    // until the kernel has sampled them: pre-scaling this synthesized surface to the final target
+    // aliases before scale-aware filters run, while 8-bit quantization adds avoidable residuals.
+    let sampled_color_format = if feeds_downsample {
+        TextureFormat::Rgba16Float
+    } else {
+        sampled_pass_format
+    };
     let preserve_geometry_extent_for_processing = !is_auto_materialization_pass
         && (is_downsample_source || is_upsample_source || is_blur_source);
     let mut pass_coord_size = sc
@@ -142,11 +190,22 @@ pub(crate) fn assemble_render_pass(
             String::new(),
             false,
         )?;
-        if let Some([width, height]) = infer_materialization_resolution(
+        let dependency_resolution = infer_materialization_resolution(
             layer_id,
             &dependency_bundle.pass_textures,
             &bs.pass_output_registry,
-        )? {
+        )?;
+        let image_resolution = if dependency_resolution.is_none() && feeds_downsample {
+            infer_image_materialization_resolution(
+                layer_id,
+                &dependency_bundle.image_textures,
+                nodes_by_id,
+                asset_store,
+            )?
+        } else {
+            None
+        };
+        if let Some([width, height]) = dependency_resolution.or(image_resolution) {
             pass_coord_size = [width as f32, height as f32];
         }
     }
@@ -232,7 +291,7 @@ pub(crate) fn assemble_render_pass(
             bs.textures.push(TextureDecl {
                 name: out_tex.clone(),
                 size: [w_u, h_u],
-                format: sampled_pass_format,
+                format: sampled_color_format,
                 sample_count: 1,
                 needs_sampling: false,
             });
@@ -242,7 +301,7 @@ pub(crate) fn assemble_render_pass(
             bs.textures.push(TextureDecl {
                 name: out_tex.clone(),
                 size: [tgt_w_u, tgt_h_u],
-                format: sampled_pass_format,
+                format: sampled_color_format,
                 sample_count: 1,
                 needs_sampling: false,
             });
@@ -251,7 +310,7 @@ pub(crate) fn assemble_render_pass(
             (tgt_w_u, tgt_h_u, target_texture_name.clone())
         };
     let pass_output_format = if is_sampled_output || needs_resolve_intermediate {
-        sampled_pass_format
+        sampled_color_format
     } else {
         target_format
     };
@@ -984,7 +1043,7 @@ pub(crate) fn assemble_render_pass(
         texture_name: pass_output_texture,
         resolution: [pass_target_w_u, pass_target_h_u],
         format: if is_sampled_output || needs_resolve_intermediate {
-            sampled_pass_format
+            sampled_color_format
         } else {
             target_format
         },

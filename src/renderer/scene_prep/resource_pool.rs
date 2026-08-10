@@ -7,12 +7,28 @@ use crate::{
     renderer::pass_source::resolve_pass_source_ref,
 };
 
-/// Project pass-typed ResourcePool outputs to the currently selected input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProjectedResourceKind {
+    Pass,
+    Kernel,
+}
+
+impl ProjectedResourceKind {
+    fn port_type(self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Kernel => "kernel",
+        }
+    }
+}
+
+/// Project CPU-resolved ResourcePool outputs to the currently selected input.
 ///
 /// This runs before reachability pruning so inactive pass branches never enter
-/// the active render plan. The unprojected expanded scene is retained
-/// separately by scene preparation for Matrix variants.
-pub(super) fn project_selected_pass_resource_pools(
+/// the active render plan and special resources such as kernels reach their
+/// consumers as concrete producer nodes. The unprojected expanded scene is
+/// retained separately by scene preparation for Matrix variants.
+pub(super) fn project_selected_resource_pools(
     scene: &mut SceneDSL,
     render_target_id: &str,
 ) -> Result<usize> {
@@ -74,28 +90,22 @@ fn project_upstream_from_node(
         .collect();
     for connection_index in incoming {
         let source = scene.connections[connection_index].from.clone();
-        let source_is_pass_pool = source.port_id == "output"
-            && nodes_by_id
-                .get(&source.node_id)
-                .is_some_and(is_pass_resource_pool);
-        let active_source = if source_is_pass_pool {
+        let source_pool_kind = (source.port_id == "output")
+            .then(|| {
+                nodes_by_id
+                    .get(&source.node_id)
+                    .and_then(projected_resource_pool_kind)
+            })
+            .flatten();
+        let active_source = if source_pool_kind.is_some() {
             let mut visiting = HashSet::new();
-            let endpoint = resolve_selected_pass_endpoint(
+            let endpoint = resolve_selected_resource_endpoint(
                 scene,
                 nodes_by_id,
                 &source.node_id,
                 &mut visiting,
                 resolved_by_pool,
             )?;
-            // Validate the final endpoint against the canonical pass-source rules.
-            resolve_pass_source_ref(scene, nodes_by_id, &endpoint).map_err(|error| {
-                anyhow!(
-                    "pass ResourcePool '{}' selected invalid source '{}.{}': {error}",
-                    source.node_id,
-                    endpoint.node_id,
-                    endpoint.port_id
-                )
-            })?;
             scene.connections[connection_index].from = endpoint.clone();
             *rewired += 1;
             endpoint
@@ -116,15 +126,24 @@ fn project_upstream_from_node(
     Ok(())
 }
 
-fn is_pass_resource_pool(node: &Node) -> bool {
-    node.node_type == "ResourcePool"
-        && node
-            .outputs
-            .iter()
-            .any(|output| output.id == "output" && output.port_type.as_deref() == Some("pass"))
+fn projected_resource_pool_kind(node: &Node) -> Option<ProjectedResourceKind> {
+    if node.node_type != "ResourcePool" {
+        return None;
+    }
+
+    match node
+        .outputs
+        .iter()
+        .find(|output| output.id == "output")
+        .and_then(|output| output.port_type.as_deref())
+    {
+        Some("pass") => Some(ProjectedResourceKind::Pass),
+        Some("kernel") => Some(ProjectedResourceKind::Kernel),
+        _ => None,
+    }
 }
 
-fn resolve_selected_pass_endpoint(
+fn resolve_selected_resource_endpoint(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
     pool_id: &str,
@@ -134,15 +153,17 @@ fn resolve_selected_pass_endpoint(
     if let Some(endpoint) = cache.get(pool_id) {
         return Ok(endpoint.clone());
     }
-    if !visiting.insert(pool_id.to_string()) {
-        bail!("cycle detected while resolving pass ResourcePool '{pool_id}'");
-    }
 
     let pool = nodes_by_id
         .get(pool_id)
-        .ok_or_else(|| anyhow!("pass ResourcePool node '{pool_id}' does not exist"))?;
-    if !is_pass_resource_pool(pool) {
-        bail!("node '{pool_id}' is not a pass-typed ResourcePool");
+        .ok_or_else(|| anyhow!("ResourcePool node '{pool_id}' does not exist"))?;
+    let pool_kind = projected_resource_pool_kind(pool)
+        .ok_or_else(|| anyhow!("node '{pool_id}' is not a pass- or kernel-typed ResourcePool"))?;
+    if !visiting.insert(pool_id.to_string()) {
+        bail!(
+            "cycle detected while resolving {} ResourcePool '{pool_id}'",
+            pool_kind.port_type()
+        );
     }
 
     let dynamic_inputs: Vec<&str> = pool
@@ -152,7 +173,10 @@ fn resolve_selected_pass_endpoint(
         .map(|port| port.id.as_str())
         .collect();
     if dynamic_inputs.is_empty() {
-        bail!("pass ResourcePool '{pool_id}' has no selectable inputs");
+        bail!(
+            "{} ResourcePool '{pool_id}' has no selectable inputs",
+            pool_kind.port_type()
+        );
     }
 
     let selected_index =
@@ -164,17 +188,19 @@ fn resolve_selected_pass_endpoint(
     let selected_connection =
         incoming_connection(scene, pool_id, selected_port).ok_or_else(|| {
             anyhow!(
-                "pass ResourcePool '{pool_id}' selected input '{selected_port}' at index \
-{selected_index}, but that input is not connected"
+                "{} ResourcePool '{pool_id}' selected input '{selected_port}' at index \
+{selected_index}, but that input is not connected",
+                pool_kind.port_type()
             )
         })?;
 
     let endpoint = if nodes_by_id
         .get(&selected_connection.from.node_id)
-        .is_some_and(is_pass_resource_pool)
+        .and_then(projected_resource_pool_kind)
+        .is_some()
         && selected_connection.from.port_id == "output"
     {
-        resolve_selected_pass_endpoint(
+        resolve_selected_resource_endpoint(
             scene,
             nodes_by_id,
             &selected_connection.from.node_id,
@@ -185,9 +211,48 @@ fn resolve_selected_pass_endpoint(
         selected_connection.from.clone()
     };
 
+    validate_selected_endpoint(scene, nodes_by_id, pool_kind, pool_id, &endpoint)?;
     visiting.remove(pool_id);
     cache.insert(pool_id.to_string(), endpoint.clone());
     Ok(endpoint)
+}
+
+fn validate_selected_endpoint(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    pool_kind: ProjectedResourceKind,
+    pool_id: &str,
+    endpoint: &Endpoint,
+) -> Result<()> {
+    match pool_kind {
+        ProjectedResourceKind::Pass => {
+            resolve_pass_source_ref(scene, nodes_by_id, endpoint).map_err(|error| {
+                anyhow!(
+                    "pass ResourcePool '{pool_id}' selected invalid source '{}.{}': {error}",
+                    endpoint.node_id,
+                    endpoint.port_id
+                )
+            })?;
+        }
+        ProjectedResourceKind::Kernel => {
+            let selected = nodes_by_id.get(&endpoint.node_id).ok_or_else(|| {
+                anyhow!(
+                    "kernel ResourcePool '{pool_id}' selected missing source node '{}'",
+                    endpoint.node_id
+                )
+            })?;
+            if selected.node_type != "Kernel" || endpoint.port_id != "kernel" {
+                bail!(
+                    "kernel ResourcePool '{pool_id}' must resolve to Kernel.kernel, got {}.{} ({})",
+                    endpoint.node_id,
+                    endpoint.port_id,
+                    selected.node_type
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -198,7 +263,7 @@ mod tests {
 
     use crate::dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL};
 
-    use super::project_selected_pass_resource_pools;
+    use super::project_selected_resource_pools;
 
     fn node(id: &str, node_type: &str) -> Node {
         Node {
@@ -213,6 +278,10 @@ mod tests {
     }
 
     fn pass_pool(id: &str, selected_index: i64, input_count: usize) -> Node {
+        resource_pool(id, "pass", selected_index, input_count)
+    }
+
+    fn resource_pool(id: &str, port_type: &str, selected_index: i64, input_count: usize) -> Node {
         let mut pool = node(id, "ResourcePool");
         pool.params
             .insert("selectedIndex".to_string(), json!(selected_index));
@@ -220,14 +289,14 @@ mod tests {
             .map(|index| NodePort {
                 id: format!("input_{index}"),
                 name: Some(format!("Input {index}")),
-                port_type: Some("pass".to_string()),
+                port_type: Some(port_type.to_string()),
                 array_length: None,
             })
             .collect();
         pool.outputs.push(NodePort {
             id: "output".to_string(),
             name: Some("Output".to_string()),
-            port_type: Some("pass".to_string()),
+            port_type: Some(port_type.to_string()),
             array_length: None,
         });
         pool
@@ -255,7 +324,7 @@ mod tests {
 
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
-            version: "4.0".to_string(),
+            version: "5.0".to_string(),
             metadata: Metadata {
                 name: "pass pool projection".to_string(),
                 created: None,
@@ -291,7 +360,7 @@ mod tests {
             );
 
             assert_eq!(
-                project_selected_pass_resource_pools(&mut scene, "composite").unwrap(),
+                project_selected_resource_pools(&mut scene, "composite").unwrap(),
                 1
             );
             let output = scene
@@ -322,7 +391,7 @@ mod tests {
             ],
         );
 
-        project_selected_pass_resource_pools(&mut scene, "composite").unwrap();
+        project_selected_resource_pools(&mut scene, "composite").unwrap();
 
         let output = scene
             .connections
@@ -339,7 +408,7 @@ mod tests {
             vec![edge("empty-out", "empty", "output", "composite", "pass")],
         );
         assert!(
-            project_selected_pass_resource_pools(&mut empty, "composite")
+            project_selected_resource_pools(&mut empty, "composite")
                 .unwrap_err()
                 .to_string()
                 .contains("no selectable inputs")
@@ -350,7 +419,7 @@ mod tests {
             vec![edge("pool-out", "pool", "output", "composite", "pass")],
         );
         assert!(
-            project_selected_pass_resource_pools(&mut unconnected, "composite")
+            project_selected_resource_pools(&mut unconnected, "composite")
                 .unwrap_err()
                 .to_string()
                 .contains("not connected")
@@ -369,7 +438,7 @@ mod tests {
             ],
         );
         assert!(
-            project_selected_pass_resource_pools(&mut cyclic, "composite")
+            project_selected_resource_pools(&mut cyclic, "composite")
                 .unwrap_err()
                 .to_string()
                 .contains("cycle detected")
@@ -387,7 +456,7 @@ mod tests {
             ],
         );
         assert!(
-            project_selected_pass_resource_pools(&mut non_pass, "composite")
+            project_selected_resource_pools(&mut non_pass, "composite")
                 .unwrap_err()
                 .to_string()
                 .contains("must resolve to a pass producer")
@@ -429,8 +498,56 @@ mod tests {
         );
 
         assert_eq!(
-            project_selected_pass_resource_pools(&mut scene, "composite").unwrap(),
+            project_selected_resource_pools(&mut scene, "composite").unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn projects_the_selected_kernel_to_downsample() {
+        let mut scene = scene(
+            vec![
+                node("kernel_a", "Kernel"),
+                node("kernel_b", "Kernel"),
+                resource_pool("pool", "kernel", 1, 2),
+                node("downsample_a", "Downsample"),
+                node("downsample_b", "Downsample"),
+                node("composite", "Composite"),
+            ],
+            vec![
+                edge("a-pool", "kernel_a", "kernel", "pool", "input_0"),
+                edge("b-pool", "kernel_b", "kernel", "pool", "input_1"),
+                edge("pool-out-a", "pool", "output", "downsample_a", "kernel"),
+                edge("pool-out-b", "pool", "output", "downsample_b", "kernel"),
+                edge(
+                    "downsample-a-out",
+                    "downsample_a",
+                    "output",
+                    "composite",
+                    "pass_a",
+                ),
+                edge(
+                    "downsample-b-out",
+                    "downsample_b",
+                    "output",
+                    "composite",
+                    "pass_b",
+                ),
+            ],
+        );
+
+        assert_eq!(
+            project_selected_resource_pools(&mut scene, "composite").unwrap(),
+            2
+        );
+        for edge_id in ["pool-out-a", "pool-out-b"] {
+            let output = scene
+                .connections
+                .iter()
+                .find(|connection| connection.id == edge_id)
+                .unwrap();
+            assert_eq!(output.from.node_id, "kernel_b");
+            assert_eq!(output.from.port_id, "kernel");
+        }
     }
 }

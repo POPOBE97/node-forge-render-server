@@ -665,7 +665,7 @@ fn collect_processing_source_pass_ids(
     let mut gradient_source_pass_ids: HashSet<String> = HashSet::new();
 
     for (node_id, node) in &prepared.nodes_by_id {
-        if node.node_type == "Downsample" {
+        if node.node_type == "Downsample" || node.node_type == "Convolution" {
             if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
                 downsample_source_pass_ids.insert(
                     crate::renderer::pass_source::resolve_pass_source_ref(
@@ -1071,6 +1071,12 @@ mod tests {
         let horizontal_pass_name = format!("sys.downsample.{}.h.pass", downsample.id);
         let vertical_pass_name = format!("sys.downsample.{}.pass", downsample.id);
         let horizontal_texture_name = format!("sys.downsample.{}.h", downsample.id);
+        let source_connection = incoming_connection(&scene, &downsample.id, "source")
+            .expect("fixture should connect an image to Downsample.source");
+        let source_materialization_name = format!(
+            "sys.pass.sys.auto.fullscreen.pass.{}.out",
+            source_connection.id
+        );
 
         let horizontal = plan
             .resources
@@ -1090,8 +1096,19 @@ mod tests {
             .iter()
             .find(|texture| texture.name.as_str() == horizontal_texture_name)
             .expect("Lanczos should allocate a signed horizontal intermediate");
+        let source_materialization = plan
+            .resources
+            .textures
+            .iter()
+            .find(|texture| texture.name.as_str() == source_materialization_name)
+            .expect("Lanczos should materialize the image at its native resolution");
 
-        assert_eq!(horizontal_texture.size, [540, 1200]);
+        assert_eq!(source_materialization.size, [1080, 2400]);
+        assert_eq!(
+            source_materialization.format,
+            wgpu::TextureFormat::Rgba16Float
+        );
+        assert_eq!(horizontal_texture.size, [540, 2400]);
         assert_eq!(horizontal_texture.format, wgpu::TextureFormat::Rgba16Float);
         assert_eq!(horizontal.sampler_kinds, vec![SamplerKind::NearestMirror]);
         assert_eq!(vertical.sampler_kinds, vec![SamplerKind::NearestMirror]);
@@ -1104,6 +1121,163 @@ mod tests {
             vertical
                 .shader_wgsl
                 .contains("source_dims.y / target_dims.y")
+        );
+        Ok(())
+    }
+
+    fn convolution_chain_case() -> Result<(SceneDSL, Option<AssetStore>, String, String)> {
+        let (mut scene, assets) = load_case("kernel-downsample-crossbox")?;
+        let first_index = scene
+            .nodes
+            .iter()
+            .position(|node| node.node_type == "Downsample")
+            .expect("fixture should contain a Downsample node");
+        scene.nodes[first_index].node_type = "Convolution".to_string();
+        scene.nodes[first_index].params.remove("targetSize");
+
+        let first_id = scene.nodes[first_index].id.clone();
+        let final_id = "Convolution_final".to_string();
+        let mut final_node = scene.nodes[first_index].clone();
+        final_node.id = final_id.clone();
+        scene.nodes.push(final_node);
+
+        let kernel_connection = scene
+            .connections
+            .iter()
+            .find(|connection| {
+                connection.to.node_id == first_id && connection.to.port_id == "kernel"
+            })
+            .expect("fixture should connect Kernel.kernel")
+            .clone();
+        let composite_connection = scene
+            .connections
+            .iter_mut()
+            .find(|connection| {
+                connection.from.node_id == first_id && connection.to.port_id == "pass"
+            })
+            .expect("fixture should connect Downsample to Composite");
+        composite_connection.from.node_id = final_id.clone();
+
+        scene.connections.push(crate::dsl::Connection {
+            id: "convolution-chain".to_string(),
+            from: crate::dsl::Endpoint {
+                node_id: first_id.clone(),
+                port_id: "output".to_string(),
+            },
+            to: crate::dsl::Endpoint {
+                node_id: final_id.clone(),
+                port_id: "source".to_string(),
+            },
+        });
+        scene.connections.push(crate::dsl::Connection {
+            id: "convolution-final-kernel".to_string(),
+            from: kernel_connection.from,
+            to: crate::dsl::Endpoint {
+                node_id: final_id.clone(),
+                port_id: "kernel".to_string(),
+            },
+        });
+
+        Ok((scene, assets, first_id, final_id))
+    }
+
+    #[test]
+    fn convolution_preserves_source_resolution_and_blits_to_composition() -> Result<()> {
+        let (scene, assets, first_id, final_id) = convolution_chain_case()?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+
+        let first_output = plan
+            .resources
+            .pass_output_registry
+            .get_for_port(&first_id, "output")
+            .expect("sampled Convolution should register its output");
+        assert_eq!(first_output.resolution, [1080, 2400]);
+        assert_eq!(
+            first_output.texture_name.as_str(),
+            format!("sys.convolution.{first_id}.out")
+        );
+
+        let final_texture_name = format!("sys.convolution.{final_id}.out");
+        let final_texture = plan
+            .resources
+            .textures
+            .iter()
+            .find(|texture| texture.name.as_str() == final_texture_name)
+            .expect("final Convolution should keep a source-sized intermediate");
+        assert_eq!(final_texture.size, [1080, 2400]);
+
+        let pass_names: HashSet<&str> = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .map(|spec| spec.name.as_str())
+            .collect();
+        assert!(pass_names.contains(format!("sys.convolution.{first_id}.pass").as_str()));
+        assert!(pass_names.contains(format!("sys.convolution.{final_id}.pass").as_str()));
+        assert!(pass_names.contains(format!("sys.convolution.{final_id}.blit.pass").as_str()));
+        for spec in plan.resources.render_pass_specs.iter().filter(|spec| {
+            spec.name.as_str() == format!("sys.convolution.{first_id}.pass")
+                || spec.name.as_str() == format!("sys.convolution.{final_id}.pass")
+        }) {
+            crate::renderer::validation::validate_wgsl_with_context(
+                &spec.shader_wgsl,
+                spec.name.as_str(),
+            )?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn lanczos_convolution_uses_source_sized_separable_passes() -> Result<()> {
+        let (mut scene, assets, first_id, _) = convolution_chain_case()?;
+        let kernel = scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_type == "Kernel")
+            .expect("fixture should contain a Kernel node");
+        kernel.params.insert(
+            "source".to_string(),
+            serde_json::json!("return { kind: 'lanczos', lobes: 3 };\n"),
+        );
+
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+        let horizontal_name = format!("sys.convolution.{first_id}.h");
+        let horizontal = plan
+            .resources
+            .textures
+            .iter()
+            .find(|texture| texture.name.as_str() == horizontal_name)
+            .expect("Lanczos Convolution should allocate a horizontal intermediate");
+        assert_eq!(horizontal.size, [1080, 2400]);
+        assert_eq!(horizontal.format, wgpu::TextureFormat::Rgba16Float);
+        assert!(plan.resources.render_pass_specs.iter().any(|spec| {
+            spec.name.as_str() == format!("sys.convolution.{first_id}.h.pass")
+                && spec.shader_wgsl.contains("source_dims.x / target_dims.x")
+        }));
+        for spec in plan.resources.render_pass_specs.iter().filter(|spec| {
+            spec.name.as_str() == format!("sys.convolution.{first_id}.h.pass")
+                || spec.name.as_str() == format!("sys.convolution.{first_id}.pass")
+        }) {
+            crate::renderer::validation::validate_wgsl_with_context(
+                &spec.shader_wgsl,
+                spec.name.as_str(),
+            )?;
+        }
+        assert_eq!(
+            plan.resources
+                .pass_output_registry
+                .get_for_port(&first_id, "output")
+                .expect("sampled Lanczos Convolution output")
+                .resolution,
+            [1080, 2400]
         );
         Ok(())
     }

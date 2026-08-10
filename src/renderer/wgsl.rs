@@ -1348,17 +1348,23 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
 
                 out.push((layer_id, bundle));
             }
-            "Downsample" => {
-                // Downsample pass WGSL uses a 2D kernel authored in a connected Kernel node.
-                let kernel_node_id = incoming_connection(&prepared.scene, &layer_id, "kernel")
-                    .map(|c| c.from.node_id.clone())
-                    .ok_or_else(|| anyhow!("Downsample.kernel missing for {layer_id}"))?;
-                let kernel_node = find_node(nodes_by_id, &kernel_node_id)?;
-                if kernel_node.node_type != "Kernel" {
+            "Downsample" | "Convolution" => {
+                // Kernel pass WGSL uses a 2D kernel authored in a connected Kernel node.
+                let node_type = node.node_type.as_str();
+                let resource_prefix = if node_type == "Convolution" {
+                    "sys.convolution"
+                } else {
+                    "sys.downsample"
+                };
+                let kernel_conn = incoming_connection(&prepared.scene, &layer_id, "kernel")
+                    .ok_or_else(|| anyhow!("{node_type}.kernel missing for {layer_id}"))?;
+                let kernel_node = find_node(nodes_by_id, &kernel_conn.from.node_id)?;
+                if kernel_node.node_type != "Kernel" || kernel_conn.from.port_id != "kernel" {
                     bail!(
-                        "Downsample.kernel must come from Kernel node, got {} for {}",
+                        "{node_type}.kernel must come from Kernel.kernel, got {}.{} ({})",
+                        kernel_conn.from.node_id,
+                        kernel_conn.from.port_id,
                         kernel_node.node_type,
-                        kernel_node_id
                     );
                 }
                 let kernel_src = kernel_node
@@ -1369,20 +1375,20 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                     .to_string();
                 match parse_kernel_source_js_like(kernel_src.as_str())? {
                     KernelSpec::Fixed(kernel) => {
-                        let pass_id = format!("sys.downsample.{layer_id}.pass");
+                        let pass_id = format!("{resource_prefix}.{layer_id}.pass");
                         let bundle = build_downsample_pass_wgsl_bundle(&kernel)?;
                         out.push((pass_id, bundle));
                     }
                     KernelSpec::Lanczos { lobes } => {
                         out.push((
-                            format!("sys.downsample.{layer_id}.h.pass"),
+                            format!("{resource_prefix}.{layer_id}.h.pass"),
                             build_lanczos_downsample_pass_wgsl_bundle(
                                 lobes,
                                 LanczosAxis::Horizontal,
                             )?,
                         ));
                         out.push((
-                            format!("sys.downsample.{layer_id}.pass"),
+                            format!("{resource_prefix}.{layer_id}.pass"),
                             build_lanczos_downsample_pass_wgsl_bundle(
                                 lobes,
                                 LanczosAxis::Vertical,
@@ -1620,7 +1626,7 @@ pub fn build_all_pass_wgsl_bundles_from_scene_with_assets(
                 out.push((format!("sys.mesh_gradient.{layer_id}.pass"), bundle));
             }
             other => bail!(
-                "Composite layer must be RenderPass, BloomNode, Downsample, Upsample, GuassianBlurPass, GradientBlur, IntelligentLight, or MeshGradient, got {other} for {layer_id}"
+                "Composite layer must be RenderPass, BloomNode, Downsample, Convolution, Upsample, GuassianBlurPass, GradientBlur, IntelligentLight, or MeshGradient, got {other} for {layer_id}"
             ),
         }
     }
@@ -1730,40 +1736,31 @@ pub fn build_downsample_pass_wgsl_bundle(kernel: &Kernel2D) -> Result<WgslShader
         kernel.values.len(),
         kernel_elems.join(", ")
     );
+    let kernel_center_x = fmt_f32_utils((kernel.width as f32 - 1.0) * 0.5);
+    let kernel_center_y = fmt_f32_utils((kernel.height as f32 - 1.0) * 0.5);
 
-    // Convolve in source pixel space.
-    //
-    // NOTE: Use `in.local_px` (UV-derived local pixel coordinate) as destination pixel-space.
-    //
-    // This algorithm matches Godot's downsample shader:
-    // 1. Compute center_xy = ceil(normalized_uv * src_dims)
-    // 2. Sample at U/D/L/R offsets with manual bilinear (4-point average at integer coords)
-    //
-    // Sampling behavior (Mirror/Repeat/Clamp) is handled via the runtime sampler.
+    // Convolve around the source position corresponding to each destination pixel center.
+    // Fixed kernels are centered at `(size - 1) / 2`, so odd kernels retain an integer center
+    // while even kernels sit symmetrically between their two middle taps. Sampling behavior
+    // (Mirror/Repeat/Clamp) is handled by the runtime sampler.
     let body = format!(
         r#"
     let src_dims_u = textureDimensions(src_tex);
     let src_dims = vec2f(src_dims_u);
-    let dst_dims = params.target_size;
-    // Use in.uv (top-left convention) to map directly to source pixel space.
+    // `in.uv` is private RasterUV. Multiplying by the source dimensions preserves the
+    // conventional output-pixel-center to source-pixel-center phase.
     let center_xy = in.uv * src_dims;
 
   let kw: i32 = {w};
   let kh: i32 = {h};
-  let half_w: i32 = kw / 2;
-  let half_h: i32 = kh / 2;
+  let kernel_center = vec2f({kernel_center_x}, {kernel_center_y});
   let k = {kernel_arr};
 
     var sum = vec4f(0.0);
     for (var y: i32 = 0; y < kh; y = y + 1) {{
         for (var x: i32 = 0; x < kw; x = x + 1) {{
-            let ix = x - half_w;
-            let iy = y - half_h;
-            // Offset from integer center.
-            let sample_xy = center_xy + vec2f(f32(ix), f32(iy));
-            // Sample at integer-coord / src_dims (texel boundary).
-            // With a linear sampler this gives a proper 2x2 bilinear average,
-            // matching Godot's manual bilinear() at integer coordinates.
+            let tap_offset = vec2f(f32(x), f32(y)) - kernel_center;
+            let sample_xy = center_xy + tap_offset;
             let uv = sample_xy / src_dims;
 
             let idx: i32 = y * kw + x;
@@ -2056,13 +2053,14 @@ mod tests {
 
     use super::{
         ERROR_SHADER_WGSL, LanczosAxis, build_bloom_extract_material_bundle,
-        build_horizontal_blur_bundle, build_horizontal_blur_bundle_with_tap_count,
-        build_lanczos_downsample_pass_wgsl_bundle, build_pass_wgsl_bundle_with_graph_binding,
-        build_vertical_blur_bundle, build_vertical_blur_bundle_with_tap_count,
+        build_downsample_pass_wgsl_bundle, build_horizontal_blur_bundle,
+        build_horizontal_blur_bundle_with_tap_count, build_lanczos_downsample_pass_wgsl_bundle,
+        build_pass_wgsl_bundle_with_graph_binding, build_vertical_blur_bundle,
+        build_vertical_blur_bundle_with_tap_count,
     };
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
     use crate::renderer::render_plan::geometry::Rect2DDynamicInputs;
-    use crate::renderer::types::{GraphFieldKind, TypedExpr, ValueType};
+    use crate::renderer::types::{GraphFieldKind, Kernel2D, TypedExpr, ValueType};
     use crate::renderer::validation::validate_wgsl;
     use serde_json::json;
 
@@ -2071,7 +2069,7 @@ mod tests {
         let graph_node_id = "shared_position_color";
         let graph_field = crate::renderer::graph_uniforms::graph_field_name(graph_node_id);
         let scene = SceneDSL {
-            version: "4.0".to_string(),
+            version: "5.0".to_string(),
             metadata: Metadata {
                 name: "shared vertex and fragment graph input".to_string(),
                 created: None,
@@ -2178,7 +2176,7 @@ mod tests {
                 },
             };
         let scene = SceneDSL {
-            version: "4.0".to_string(),
+            version: "5.0".to_string(),
             metadata: Metadata {
                 name: "bloom tint".to_string(),
                 created: None,
@@ -2289,6 +2287,45 @@ mod tests {
             assert!(bundle.module.contains("let support = lobes * scale;"));
             assert!(bundle.module.contains("return sum / weight_sum;"));
             validate_wgsl(&bundle.module).expect("scale-aware Lanczos WGSL should validate");
+        }
+    }
+
+    #[test]
+    fn fixed_downsample_kernels_use_phase_centered_tap_offsets() {
+        let cases = [
+            (2_u32, 0.5_f32, "vec2f(0.5, 0.5)"),
+            (3_u32, 1.0_f32, "vec2f(1.0, 1.0)"),
+            (4_u32, 1.5_f32, "vec2f(1.5, 1.5)"),
+        ];
+
+        for (size, expected_center, expected_wgsl) in cases {
+            let tap_offsets: Vec<f32> = (0..size)
+                .map(|index| index as f32 - expected_center)
+                .collect();
+            let reflected_offsets: Vec<f32> =
+                tap_offsets.iter().rev().map(|value| -*value).collect();
+            assert_eq!(
+                tap_offsets, reflected_offsets,
+                "{size}-tap kernel must be symmetric"
+            );
+
+            let kernel = Kernel2D {
+                width: size,
+                height: size,
+                values: vec![1.0 / (size * size) as f32; (size * size) as usize],
+            };
+            let bundle = build_downsample_pass_wgsl_bundle(&kernel)
+                .expect("fixed downsample WGSL should build");
+            assert!(
+                bundle.module.contains(expected_wgsl),
+                "{size}-tap kernel should use center {expected_center}"
+            );
+            assert!(
+                bundle
+                    .module
+                    .contains("let tap_offset = vec2f(f32(x), f32(y)) - kernel_center;")
+            );
+            validate_wgsl(&bundle.module).expect("fixed downsample WGSL should validate");
         }
     }
 

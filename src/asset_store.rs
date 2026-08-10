@@ -261,7 +261,7 @@ mod tests {
         let artifact_path = "debug-artifacts/pass__Main__patch__default/Main.patches.json";
         let initial_patch_text = r#"{"version":1,"patches":{"old":{}}}"#;
         let scene_json = serde_json::json!({
-            "version": "4.0",
+            "version": "5.0",
             "metadata": {
                 "name": "debug artifact scene",
                 "created": null,

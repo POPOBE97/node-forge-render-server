@@ -46,6 +46,9 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<KernelSpec> {
     }
 
     let source = strip_js_comments(source);
+    if source.trim().is_empty() {
+        bail!("Kernel.source must not be empty");
+    }
 
     // Minimal parser for the editor-authored Kernel node `params.source`.
     // Expected form (JavaScript-like):
@@ -57,7 +60,10 @@ pub(crate) fn parse_kernel_source_js_like(source: &str) -> Result<KernelSpec> {
         // substring after its ':' (trimmed).
         let bytes = src.as_bytes();
         let key_bytes = key.as_bytes();
-        'outer: for i in 0..=bytes.len().saturating_sub(key_bytes.len()) {
+        let Some(last_start) = bytes.len().checked_sub(key_bytes.len()) else {
+            bail!("Kernel.source missing {key}");
+        };
+        'outer: for i in 0..=last_start {
             if &bytes[i..i + key_bytes.len()] != key_bytes {
                 continue;
             }
@@ -229,5 +235,12 @@ mod tests {
         let error = parse_kernel_source_js_like("return { kind: 'lanczos', lobes: 0 };")
             .expect_err("zero lobes must be rejected");
         assert!(error.to_string().contains("lobes must be in 1..=8"));
+    }
+
+    #[test]
+    fn rejects_empty_source_without_panicking() {
+        let error = parse_kernel_source_js_like("")
+            .expect_err("an empty Kernel source must return a diagnostic");
+        assert_eq!(error.to_string(), "Kernel.source must not be empty");
     }
 }

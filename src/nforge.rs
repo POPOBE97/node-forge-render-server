@@ -18,7 +18,7 @@ use crate::{
 
 const APPLICATION_ID: i64 = 1_313_232_455;
 const FORMAT_VERSION: i64 = 5;
-const SCENE_DSL_VERSION: &str = "4.0";
+const SCENE_DSL_VERSION: &str = "5.0";
 const SYNC_LOG_RETENTION: i64 = 10_000;
 const CONTENT_HISTORY_RETENTION: i64 = 256;
 const HISTORY_ENTITY_KIND: &str = "document_history";
@@ -44,6 +44,45 @@ fn now_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+fn strip_graph_routing(value: &mut Value) {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("routing");
+    }
+}
+
+/// Gate routing is persisted editor layout metadata and is not part of the renderer DSL.
+fn strip_editor_only_routing(scene: &mut Map<String, Value>) {
+    scene.remove("routing");
+    if let Some(groups) = scene.get_mut("groups").and_then(Value::as_array_mut) {
+        groups.iter_mut().for_each(strip_graph_routing);
+    }
+    let Some(state_machine) = scene.get_mut("stateMachine").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if let Some(states) = state_machine
+        .get_mut("states")
+        .and_then(Value::as_array_mut)
+    {
+        for state in states {
+            if let Some(graph) = state.get_mut("mutationGraph") {
+                strip_graph_routing(graph);
+            }
+        }
+    }
+    if let Some(derivations) = state_machine
+        .get_mut("derivations")
+        .and_then(Value::as_array_mut)
+    {
+        derivations.iter_mut().for_each(strip_graph_routing);
+    }
+    if let Some(motion_graphs) = state_machine
+        .get_mut("motionGraphs")
+        .and_then(Value::as_array_mut)
+    {
+        motion_graphs.iter_mut().for_each(strip_graph_routing);
+    }
 }
 
 fn configure_writable(connection: &Connection) -> Result<()> {
@@ -544,6 +583,7 @@ fn read_scene(connection: &Connection) -> Result<(SceneDSL, AssetStore, DebugArt
         scene.insert("passTargetSizes".to_string(), pass_sizes);
     }
 
+    strip_editor_only_routing(&mut scene);
     let mut parsed: SceneDSL = serde_json::from_value(Value::Object(scene))
         .context("failed to parse SceneDSL from .nforge")?;
     crate::dsl::normalize_scene_defaults(&mut parsed)?;

@@ -1252,7 +1252,7 @@ mod tests {
 
     fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
         SceneDSL {
-            version: "4.0".into(),
+            version: "5.0".into(),
             metadata: crate::dsl::Metadata {
                 name: "Validation test".into(),
                 created: None,

@@ -462,7 +462,7 @@ mod tests {
         }
 
         serde_json::from_value(json!({
-            "version": "4.0",
+            "version": "5.0",
             "metadata": { "name": "group expansion regression" },
             "nodes": [
                 {
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn expanded_nodes_inherit_the_group_instance_title_label() {
         let mut scene: SceneDSL = serde_json::from_value(json!({
-            "version": "4.0",
+            "version": "5.0",
             "metadata": { "name": "group label regression" },
             "nodes": [
                 {

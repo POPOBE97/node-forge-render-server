@@ -137,9 +137,9 @@ where
     D: serde::Deserializer<'de>,
 {
     let version = String::deserialize(deserializer)?;
-    if version != "4.0" {
+    if version != "5.0" {
         return Err(serde::de::Error::custom(format!(
-            "unsupported SceneDSL version '{version}' (expected 4.0)"
+            "unsupported SceneDSL version '{version}' (expected 5.0)"
         )));
     }
     Ok(version)
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn default_scene_asset_matches_current_schema() {
         let scene = load_scene_from_default_asset().expect("default scene should load");
-        assert_eq!(scene.version, "4.0");
+        assert_eq!(scene.version, "5.0");
     }
 
     #[test]

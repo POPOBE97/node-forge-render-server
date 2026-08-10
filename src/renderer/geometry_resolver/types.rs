@@ -7,6 +7,7 @@ pub const DRAW_PASS_NODE_TYPES: &[&str] = &[
     "BloomNode",
     "GuassianBlurPass",
     "Downsample",
+    "Convolution",
     "Upsample",
     "GradientBlur",
     "IntelligentLight",

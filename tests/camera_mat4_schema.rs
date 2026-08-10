@@ -77,6 +77,7 @@ fn scheme_exposes_camera_nodes_and_camera_inputs() {
         "GuassianBlurPass",
         "GradientBlur",
         "Downsample",
+        "Convolution",
         "Upsample",
         "Composite",
     ] {

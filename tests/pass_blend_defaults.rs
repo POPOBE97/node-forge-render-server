@@ -37,6 +37,7 @@ fn pass_nodes_expose_premul_blend_defaults_in_scheme() {
         "GuassianBlurPass",
         "GradientBlur",
         "Downsample",
+        "Convolution",
         "Upsample",
         "Composite",
     ] {
@@ -68,6 +69,7 @@ fn normalization_merges_premul_blend_defaults_for_pass_nodes() {
             node("gb", "GuassianBlurPass"),
             node("grb", "GradientBlur"),
             node("ds", "Downsample"),
+            node("conv", "Convolution"),
             node("us", "Upsample"),
             node("comp", "Composite"),
         ],
@@ -157,11 +159,46 @@ fn scheme_exposes_input_port_defaults() {
         Some(&json!("Mirror"))
     );
 
+    let convolution = scheme
+        .nodes
+        .get("Convolution")
+        .expect("missing Convolution in scheme");
+    assert_eq!(
+        convolution.input_defaults.get("sampling"),
+        Some(&json!("Mirror"))
+    );
+    assert!(!convolution.inputs.contains_key("targetSize"));
+
     let gaussian = scheme
         .nodes
         .get("GuassianBlurPass")
         .expect("missing GuassianBlurPass in scheme");
     assert_eq!(gaussian.input_defaults.get("radius"), Some(&json!(5)));
+}
+
+#[test]
+fn convolution_schema_ports_preserve_source_resolution_contract() {
+    let scheme = load_default_scheme().expect("load default scheme");
+    let node_scheme = scheme
+        .nodes
+        .get("Convolution")
+        .expect("missing Convolution in scheme");
+
+    let input_type = |port_id: &str| match node_scheme.inputs.get(port_id) {
+        Some(PortTypeSpec::One(actual)) => actual.as_str(),
+        _ => panic!("Convolution input {port_id} missing or not a singular type"),
+    };
+    let output_type = |port_id: &str| match node_scheme.outputs.get(port_id) {
+        Some(PortTypeSpec::One(actual)) => actual.as_str(),
+        _ => panic!("Convolution output {port_id} missing or not a singular type"),
+    };
+
+    assert_eq!(input_type("sampling"), "any");
+    assert_eq!(input_type("kernel"), "kernel");
+    assert_eq!(input_type("source"), "pass");
+    assert_eq!(input_type("camera"), "mat4");
+    assert_eq!(output_type("output"), "pass");
+    assert!(!node_scheme.inputs.contains_key("targetSize"));
 }
 
 #[test]

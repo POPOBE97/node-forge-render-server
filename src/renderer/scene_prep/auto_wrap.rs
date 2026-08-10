@@ -267,7 +267,7 @@ mod tests {
 
     fn scene(nodes: Vec<Node>, from: Endpoint, to: Endpoint) -> SceneDSL {
         SceneDSL {
-            version: "4.0".to_string(),
+            version: "5.0".to_string(),
             metadata: Metadata {
                 name: "materialize pass".to_string(),
                 created: None,
