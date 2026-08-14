@@ -368,18 +368,10 @@ pub(super) struct AppRuntime {
     /// Rolling timeline buffer recording per-frame state-machine snapshots.
     /// `None` when the current scene has no state machine.
     pub timeline_buffer: Option<crate::animation::TimelineBuffer>,
-    /// Snapshot of the most recent live `AnimationStep.active_overrides`.
-    /// Used to restore the canvas when leaving timeline hover preview.
-    pub last_live_overrides:
-        Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
-    /// Snapshot of uniform_scene param values captured when timeline hover
-    /// begins.  Used to restore the scene when the cursor leaves the
-    /// timeline, regardless of whether the animation is playing or stopped.
-    pub timeline_pre_hover_overrides:
-        Option<std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>>,
-    /// Whether the timeline hover preview was active last frame.
-    /// Used to detect hover-exit transitions (egui has no hover events).
-    pub timeline_preview_was_active: bool,
+    /// Most recent complete live presentation state, independent of timeline review.
+    pub last_live_snapshot: Option<crate::animation::TimelineRenderSnapshot>,
+    /// Transient hover/anchor review state. Never enters the scene document.
+    pub timeline_review: TimelineReviewState,
     /// Local debug playback speed. Persists across Play/Stop/scene changes.
     pub playback_rate: PlaybackRate,
     pub time_updates_enabled: bool,
@@ -395,6 +387,34 @@ pub(super) struct AppRuntime {
 pub enum StateControlSelection {
     Play,
     State(String),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TimelineReviewState {
+    pub anchor_frame_id: Option<crate::animation::TimelineFrameId>,
+    pub hovered_frame_id: Option<crate::animation::TimelineFrameId>,
+    /// Latest frame retained after deleting an anchor while staying paused.
+    pub held_frame_id: Option<crate::animation::TimelineFrameId>,
+    /// Prevent the frame under the delete key's stationary pointer from
+    /// immediately replacing the required latest-frame hold.
+    pub suppressed_hover_frame_id: Option<crate::animation::TimelineFrameId>,
+    /// Whether a historical frame was applied on the previous presentation pass.
+    pub preview_applied_last_frame: bool,
+}
+
+impl TimelineReviewState {
+    pub fn display_frame_id(&self) -> Option<crate::animation::TimelineFrameId> {
+        self.hovered_frame_id
+            .or(self.anchor_frame_id)
+            .or(self.held_frame_id)
+    }
+
+    pub fn clear_targets_for_play(&mut self) {
+        self.anchor_frame_id = None;
+        self.hovered_frame_id = None;
+        self.held_frame_id = None;
+        self.suppressed_hover_frame_id = None;
+    }
 }
 
 /// Discrete animation playback speed for local debug controls.
@@ -754,9 +774,8 @@ impl App {
                 animation_session: init.animation_session,
                 state_control_selection: None,
                 timeline_buffer: None,
-                last_live_overrides: None,
-                timeline_pre_hover_overrides: None,
-                timeline_preview_was_active: false,
+                last_live_snapshot: None,
+                timeline_review: TimelineReviewState::default(),
                 playback_rate: PlaybackRate::default(),
                 time_updates_enabled: true,
                 time_updates_enabled_prev_frame: true,

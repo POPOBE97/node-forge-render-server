@@ -18,6 +18,14 @@ pub(super) struct AdvancePhase {
         std::collections::HashMap<crate::state_machine::OverrideKey, serde_json::Value>,
 }
 
+fn should_record_timeline_frame(
+    selection: Option<&StateControlSelection>,
+    effective_dt: f32,
+    needs_redraw: bool,
+) -> bool {
+    selection.is_some() && effective_dt > 0.0 && needs_redraw
+}
+
 pub(super) fn run(app: &mut App) -> AdvancePhase {
     let raw_t = app.runtime.start.elapsed().as_secs_f32();
     let delta_t = (raw_t - app.runtime.time_last_raw_secs).max(0.0);
@@ -33,6 +41,11 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
     } else {
         0.0
     };
+    if effective_dt > 0.0
+        && let Some(buffer) = app.runtime.timeline_buffer.as_mut()
+    {
+        buffer.advance_time(effective_dt as f64);
+    }
     let anim_step = if state_control_active {
         app.runtime
             .animation_session
@@ -70,55 +83,14 @@ pub(super) fn run(app: &mut App) -> AdvancePhase {
         app.runtime.time_value_secs = step.scene_time_secs as f32;
         interaction_bridge::update_debug_state(app, &step);
 
-        // Record timeline frame for the debug sidebar timeline tab.
-        // Skip recording when paused (effective_dt == 0) to avoid
-        // duplicate frames at the same scene_time.
-        if playing
-            && effective_dt > 0.0
-            && step.needs_redraw
-            && let Some(ref mut buf) = app.runtime.timeline_buffer
-        {
-            let presentation_time = buf.elapsed_secs();
-            // Resolve transition source/target names from the session definition.
-            let (tsrc, ttgt) = app
-                .runtime
-                .animation_session
-                .as_ref()
-                .and_then(|sess| {
-                    let def = sess.runtime().definition();
-                    step.active_transition_id.as_ref().and_then(|tid| {
-                        def.transitions.iter().find(|t| t.id == *tid).map(|t| {
-                            let src = def
-                                .states
-                                .iter()
-                                .find(|s| s.id == t.source)
-                                .map(|s| s.name.clone())
-                                .unwrap_or_else(|| t.source.clone());
-                            let tgt = def
-                                .states
-                                .iter()
-                                .find(|s| s.id == t.target)
-                                .map(|s| s.name.clone())
-                                .unwrap_or_else(|| t.target.clone());
-                            (Some(src), Some(tgt))
-                        })
-                    })
-                })
-                .unwrap_or((None, None));
-            buf.push(crate::animation::TimelineFrame {
-                presentation_time_secs: presentation_time,
-                scene_time_secs: step.scene_time_secs,
-                current_state_id: step.current_state_id.clone(),
-                active_transition_id: step.active_transition_id.clone(),
-                motion_channels: step.motion_channels.clone(),
-                transition_source_name: tsrc,
-                transition_target_name: ttgt,
-                state_local_times: step.state_local_times.clone(),
-                diagnostics: step.diagnostics.clone(),
-                active_overrides: step.active_overrides.clone(),
-            });
+        if should_record_timeline_frame(
+            state_control_selection.as_ref(),
+            effective_dt,
+            step.needs_redraw,
+        ) {
+            scene_runtime::record_timeline_step(app, &step);
         }
-        app.runtime.last_live_overrides = Some(step.active_overrides.clone());
+        scene_runtime::update_live_timeline_snapshot(app, &step);
         if playing && step.finished {
             scene_runtime::clear_state_control(app);
             animation_current_state_id = None;
@@ -215,6 +187,25 @@ mod tests {
             motion_channels: Vec::new(),
             finished: false,
         }
+    }
+
+    #[test]
+    fn timeline_records_changed_frames_for_play_and_manual_state_control() {
+        let play = StateControlSelection::Play;
+        let forced = StateControlSelection::State("visible".into());
+        assert!(should_record_timeline_frame(Some(&play), 1.0 / 60.0, true));
+        assert!(should_record_timeline_frame(
+            Some(&forced),
+            1.0 / 60.0,
+            true
+        ));
+        assert!(!should_record_timeline_frame(None, 1.0 / 60.0, true));
+        assert!(!should_record_timeline_frame(Some(&forced), 0.0, true));
+        assert!(!should_record_timeline_frame(
+            Some(&forced),
+            1.0 / 60.0,
+            false
+        ));
     }
 
     #[test]

@@ -1,36 +1,64 @@
 //! Timeline recorder for state-machine animation frames.
 //!
-//! Captures a rolling window of per-frame state-machine snapshots during
-//! playback. The buffer is trimmed by wall-clock duration (not tick count)
-//! so that variable frame rates produce a consistent 10-second window.
+//! The recorder owns a monotonic logical clock that advances only while the
+//! state-machine control is active. This keeps the timeline independent from
+//! State-local scene time resets and from wall-clock time spent paused.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::time::Instant;
 
 use crate::state_machine::{MotionChannelDebug, OverrideKey};
+
+/// Stable identity for one frame while it remains in a timeline buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TimelineFrameId(pub(crate) u64);
+
+/// Full render-side values needed to display a recorded or live frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimelineRenderSnapshot {
+    pub scene_time_secs: f64,
+    pub active_overrides: HashMap<OverrideKey, serde_json::Value>,
+}
 
 /// A single recorded frame of state-machine data.
 #[derive(Debug, Clone)]
 pub struct TimelineFrame {
-    /// Wall-clock seconds since the recording started (latest Play).
+    pub id: TimelineFrameId,
+    /// Monotonic logical seconds since the current recording began.
     pub presentation_time_secs: f64,
-    /// Scene time reported by the animation clock after this step.
+    /// State-machine scene time after this step. This may reset on State changes.
     pub scene_time_secs: f64,
-    /// Active state id after this step.
     pub current_state_id: String,
-    /// Active transition id, if transitioning.
     pub active_transition_id: Option<String>,
-    /// Per-property driver diagnostics for the transition motion graph.
     pub motion_channels: Vec<MotionChannelDebug>,
-    /// Transition source state name (resolved at record time).
     pub transition_source_name: Option<String>,
-    /// Transition target state name (resolved at record time).
     pub transition_target_name: Option<String>,
-    /// Per-state local elapsed times.
     pub state_local_times: BTreeMap<String, f64>,
-    /// Runtime diagnostics for this frame.
     pub diagnostics: Vec<String>,
-    /// Full set of active parameter overrides (state-machine tracked keys).
+    /// Complete presentation snapshot for every tracked override key.
+    pub active_overrides: HashMap<OverrideKey, serde_json::Value>,
+}
+
+impl TimelineFrame {
+    pub fn render_snapshot(&self) -> TimelineRenderSnapshot {
+        TimelineRenderSnapshot {
+            scene_time_secs: self.scene_time_secs,
+            active_overrides: self.active_overrides.clone(),
+        }
+    }
+}
+
+/// Frame data supplied by the recorder. `TimelineBuffer` assigns the stable id
+/// and current presentation time when this value is pushed.
+#[derive(Debug, Clone)]
+pub struct TimelineFrameRecord {
+    pub scene_time_secs: f64,
+    pub current_state_id: String,
+    pub active_transition_id: Option<String>,
+    pub motion_channels: Vec<MotionChannelDebug>,
+    pub transition_source_name: Option<String>,
+    pub transition_target_name: Option<String>,
+    pub state_local_times: BTreeMap<String, f64>,
+    pub diagnostics: Vec<String>,
     pub active_overrides: HashMap<OverrideKey, serde_json::Value>,
 }
 
@@ -38,138 +66,125 @@ pub struct TimelineFrame {
 #[derive(Debug, Clone)]
 pub struct TimelineBuffer {
     frames: VecDeque<TimelineFrame>,
-    /// Wall-clock anchor for computing presentation_time_secs.
-    recording_start: Instant,
-    /// Cumulative wall-clock seconds spent paused since recording started.
-    /// Subtracted from `recording_start.elapsed()` to produce a pausable
-    /// presentation clock that doesn't jump after a pause.
-    pause_accumulated_secs: f64,
-    /// `Some(instant)` while the recording clock is paused.
-    pause_start: Option<Instant>,
-    /// Maximum duration (in seconds) to retain. Older frames are trimmed.
+    presentation_time_secs: f64,
     max_duration_secs: f64,
+    next_frame_id: u64,
     /// Sorted list of tracked override key strings (discovered at creation).
     pub tracked_keys: Vec<String>,
 }
 
 impl TimelineBuffer {
-    /// Create a new empty buffer with the given duration limit.
     pub fn new(max_duration_secs: f64, tracked_keys: Vec<String>) -> Self {
         Self {
             frames: VecDeque::new(),
-            recording_start: Instant::now(),
-            pause_accumulated_secs: 0.0,
-            pause_start: None,
+            presentation_time_secs: 0.0,
             max_duration_secs,
+            next_frame_id: 0,
             tracked_keys,
         }
     }
 
-    /// Seconds elapsed since recording started, excluding paused time.
+    /// Advance the logical recording clock by accepted animation time.
+    pub fn advance_time(&mut self, dt: f64) {
+        if dt.is_finite() && dt > 0.0 {
+            self.presentation_time_secs += dt;
+        }
+    }
+
     pub fn elapsed_secs(&self) -> f64 {
-        let raw = self.recording_start.elapsed().as_secs_f64();
-        let current_pause = self
-            .pause_start
-            .map(|s| s.elapsed().as_secs_f64())
-            .unwrap_or(0.0);
-        raw - self.pause_accumulated_secs - current_pause
+        self.presentation_time_secs
     }
 
-    /// Pause the presentation clock.  While paused, `elapsed_secs` freezes.
-    pub fn pause(&mut self) {
-        if self.pause_start.is_none() {
-            self.pause_start = Some(Instant::now());
-        }
-    }
-
-    /// Resume the presentation clock after a pause.
-    pub fn resume(&mut self) {
-        if let Some(start) = self.pause_start.take() {
-            self.pause_accumulated_secs += start.elapsed().as_secs_f64();
-        }
-    }
-
-    /// Append a frame and trim anything older than `max_duration_secs`.
-    pub fn push(&mut self, frame: TimelineFrame) {
+    /// Append a frame at the current logical time and trim the rolling window.
+    pub fn push(&mut self, record: TimelineFrameRecord) -> TimelineFrameId {
+        let id = TimelineFrameId(self.next_frame_id);
+        self.next_frame_id = self.next_frame_id.saturating_add(1);
+        let frame = TimelineFrame {
+            id,
+            presentation_time_secs: self.presentation_time_secs,
+            scene_time_secs: record.scene_time_secs,
+            current_state_id: record.current_state_id,
+            active_transition_id: record.active_transition_id,
+            motion_channels: record.motion_channels,
+            transition_source_name: record.transition_source_name,
+            transition_target_name: record.transition_target_name,
+            state_local_times: record.state_local_times,
+            diagnostics: record.diagnostics,
+            active_overrides: record.active_overrides,
+        };
         let cutoff = frame.presentation_time_secs - self.max_duration_secs;
         self.frames.push_back(frame);
-        while let Some(front) = self.frames.front() {
-            if front.presentation_time_secs < cutoff {
-                self.frames.pop_front();
-            } else {
-                break;
-            }
+        while self
+            .frames
+            .front()
+            .is_some_and(|front| front.presentation_time_secs < cutoff)
+        {
+            self.frames.pop_front();
         }
+        id
     }
 
-    /// Drop all frames and reset the wall-clock anchor.
+    /// Drop all frames and rewind logical time. Frame ids are not reused.
     pub fn clear(&mut self) {
         self.frames.clear();
-        self.recording_start = Instant::now();
-        self.pause_accumulated_secs = 0.0;
-        self.pause_start = None;
+        self.presentation_time_secs = 0.0;
     }
 
-    /// Number of recorded frames currently in the buffer.
     pub fn len(&self) -> usize {
         self.frames.len()
     }
 
-    /// Whether the buffer contains no frames.
     pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
     }
 
-    /// Access all recorded frames as a slice.
     pub fn frames(&self) -> &VecDeque<TimelineFrame> {
         &self.frames
     }
 
-    /// First and last presentation times, or `None` if empty.
     pub fn time_range(&self) -> Option<(f64, f64)> {
-        let first = self.frames.front()?.presentation_time_secs;
-        let last = self.frames.back()?.presentation_time_secs;
-        Some((first, last))
+        Some((
+            self.frames.front()?.presentation_time_secs,
+            self.frames.back()?.presentation_time_secs,
+        ))
     }
 
-    /// Find the frame nearest to the given presentation time.
-    /// Returns the index into the internal deque.
-    pub fn nearest_frame_index(&self, t: f64) -> Option<usize> {
+    /// Find the nearest frame by presentation time. Exact duplicate timestamps
+    /// and distance ties resolve to the newest frame.
+    pub fn nearest_frame_id(&self, time_secs: f64) -> Option<TimelineFrameId> {
         if self.frames.is_empty() {
             return None;
         }
-        // Binary search for the insertion point, then compare neighbours.
-        let idx = self
+        let after_equal = self
             .frames
-            .partition_point(|f| f.presentation_time_secs < t);
-        if idx == 0 {
-            return Some(0);
+            .partition_point(|frame| frame.presentation_time_secs <= time_secs);
+        if after_equal == 0 {
+            return self.frames.front().map(|frame| frame.id);
         }
-        if idx >= self.frames.len() {
-            return Some(self.frames.len() - 1);
+        if after_equal >= self.frames.len() {
+            return self.frames.back().map(|frame| frame.id);
         }
-        let before = (self.frames[idx - 1].presentation_time_secs - t).abs();
-        let after = (self.frames[idx].presentation_time_secs - t).abs();
-        if before <= after {
-            Some(idx - 1)
+        let before = &self.frames[after_equal - 1];
+        let after = &self.frames[after_equal];
+        let before_distance = (before.presentation_time_secs - time_secs).abs();
+        let after_distance = (after.presentation_time_secs - time_secs).abs();
+        Some(if before_distance < after_distance {
+            before.id
         } else {
-            Some(idx)
-        }
+            after.id
+        })
     }
 
-    /// Get a frame by index.
-    pub fn frame_at(&self, index: usize) -> Option<&TimelineFrame> {
-        self.frames.get(index)
+    pub fn frame_by_id(&self, id: TimelineFrameId) -> Option<&TimelineFrame> {
+        self.frames.iter().find(|frame| frame.id == id)
     }
 
-    /// Find the frame nearest to `t` and return a reference, or `None`.
-    pub fn frame_at_time(&self, t: f64) -> Option<&TimelineFrame> {
-        self.nearest_frame_index(t).and_then(|i| self.frames.get(i))
+    pub fn latest_frame_id(&self) -> Option<TimelineFrameId> {
+        self.frames.back().map(|frame| frame.id)
     }
 
-    /// The wall-clock `Instant` when this recording started.
-    pub fn recording_start(&self) -> Instant {
-        self.recording_start
+    pub fn latest_frame(&self) -> Option<&TimelineFrame> {
+        self.frames.back()
     }
 }
 
@@ -177,10 +192,9 @@ impl TimelineBuffer {
 mod tests {
     use super::*;
 
-    fn make_frame(t: f64) -> TimelineFrame {
-        TimelineFrame {
-            presentation_time_secs: t,
-            scene_time_secs: t,
+    fn record(scene_time_secs: f64) -> TimelineFrameRecord {
+        TimelineFrameRecord {
+            scene_time_secs,
             current_state_id: "idle".into(),
             active_transition_id: None,
             motion_channels: Vec::new(),
@@ -192,95 +206,76 @@ mod tests {
         }
     }
 
+    fn push_at(buffer: &mut TimelineBuffer, time_secs: f64) -> TimelineFrameId {
+        let dt = time_secs - buffer.elapsed_secs();
+        buffer.advance_time(dt);
+        buffer.push(record(time_secs))
+    }
+
     #[test]
-    fn trim_by_wall_clock_duration() {
-        let mut buf = TimelineBuffer::new(1.0, vec![]);
-        // Push frames spanning 2 seconds.
-        for i in 0..=20 {
-            buf.push(make_frame(i as f64 * 0.1));
+    fn logical_time_advances_only_for_positive_finite_deltas() {
+        let mut buffer = TimelineBuffer::new(10.0, vec![]);
+        buffer.advance_time(0.25);
+        buffer.advance_time(0.0);
+        buffer.advance_time(-1.0);
+        buffer.advance_time(f64::NAN);
+        assert_eq!(buffer.elapsed_secs(), 0.25);
+    }
+
+    #[test]
+    fn trims_by_logical_duration() {
+        let mut buffer = TimelineBuffer::new(1.0, vec![]);
+        for index in 0..=20 {
+            push_at(&mut buffer, index as f64 * 0.1);
         }
-        // Last frame is at t=2.0, so cutoff = 2.0 - 1.0 = 1.0.
-        // Frames with t < 1.0 should be trimmed.
-        assert!(buf.frames.front().unwrap().presentation_time_secs >= 1.0);
-        assert_eq!(buf.frames.back().unwrap().presentation_time_secs, 2.0);
+        assert!(buffer.frames.front().unwrap().presentation_time_secs >= 1.0);
+        assert_eq!(buffer.frames.back().unwrap().presentation_time_secs, 2.0);
     }
 
     #[test]
-    fn trim_at_varying_intervals() {
-        let mut buf = TimelineBuffer::new(0.1, vec![]);
-        // Varying intervals: 16ms, 16ms, 32ms, 16ms, 16ms, 32ms …
-        let times = [0.0, 0.016, 0.032, 0.064, 0.080, 0.096, 0.128, 0.144, 0.160];
-        for &t in &times {
-            buf.push(make_frame(t));
-        }
-        // Last = 0.160, cutoff = 0.160 - 0.1 = 0.060
-        let front_t = buf.frames.front().unwrap().presentation_time_secs;
-        assert!(front_t >= 0.060, "front {front_t} should be >= 0.060");
+    fn clear_rewinds_time_without_reusing_frame_ids() {
+        let mut buffer = TimelineBuffer::new(10.0, vec!["key".into()]);
+        let first = push_at(&mut buffer, 1.0);
+        buffer.clear();
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.elapsed_secs(), 0.0);
+        let second = buffer.push(record(0.0));
+        assert!(second > first);
     }
 
     #[test]
-    fn clear_resets_buffer() {
-        let mut buf = TimelineBuffer::new(10.0, vec!["key".into()]);
-        buf.push(make_frame(1.0));
-        buf.push(make_frame(2.0));
-        assert_eq!(buf.len(), 2);
-        buf.clear();
-        assert!(buf.is_empty());
-        assert!(buf.time_range().is_none());
+    fn nearest_frame_prefers_newest_duplicate_and_distance_tie() {
+        let mut buffer = TimelineBuffer::new(10.0, vec![]);
+        let first = push_at(&mut buffer, 1.0);
+        let duplicate = buffer.push(record(0.0));
+        let later = push_at(&mut buffer, 3.0);
+
+        assert_eq!(buffer.nearest_frame_id(1.0), Some(duplicate));
+        assert_eq!(buffer.nearest_frame_id(2.0), Some(later));
+        assert_ne!(first, duplicate);
     }
 
     #[test]
-    fn lifecycle_clear_on_play_preserve_on_stop() {
-        let mut buf = TimelineBuffer::new(10.0, vec![]);
-        // Simulate Play session: push some frames.
-        buf.push(make_frame(0.0));
-        buf.push(make_frame(0.5));
-        buf.push(make_frame(1.0));
-        assert_eq!(buf.len(), 3);
+    fn scene_time_can_reset_without_affecting_presentation_time() {
+        let mut buffer = TimelineBuffer::new(10.0, vec![]);
+        buffer.advance_time(1.0);
+        buffer.push(record(5.0));
+        buffer.advance_time(0.5);
+        buffer.push(record(0.0));
 
-        // Stop: buffer preserved.
-        let preserved_len = buf.len();
-        assert_eq!(preserved_len, 3);
-
-        // New Play: clear and start fresh.
-        buf.clear();
-        assert!(buf.is_empty());
-        buf.push(make_frame(0.0));
-        assert_eq!(buf.len(), 1);
+        let frames = buffer.frames();
+        assert_eq!(frames[0].presentation_time_secs, 1.0);
+        assert_eq!(frames[1].presentation_time_secs, 1.5);
+        assert_eq!(frames[1].scene_time_secs, 0.0);
     }
 
     #[test]
-    fn nearest_frame_lookup() {
-        let mut buf = TimelineBuffer::new(10.0, vec![]);
-        buf.push(make_frame(1.0));
-        buf.push(make_frame(2.0));
-        buf.push(make_frame(3.0));
-
-        // Exact match
-        assert_eq!(buf.nearest_frame_index(2.0), Some(1));
-        // Closer to 2.0 than 3.0
-        assert_eq!(buf.nearest_frame_index(2.3), Some(1));
-        // Closer to 3.0
-        assert_eq!(buf.nearest_frame_index(2.7), Some(2));
-        // Before all frames
-        assert_eq!(buf.nearest_frame_index(0.0), Some(0));
-        // After all frames
-        assert_eq!(buf.nearest_frame_index(99.0), Some(2));
-    }
-
-    #[test]
-    fn nearest_frame_empty() {
-        let buf = TimelineBuffer::new(10.0, vec![]);
-        assert_eq!(buf.nearest_frame_index(1.0), None);
-        assert!(buf.frame_at_time(1.0).is_none());
-    }
-
-    #[test]
-    fn time_range() {
-        let mut buf = TimelineBuffer::new(10.0, vec![]);
-        assert!(buf.time_range().is_none());
-        buf.push(make_frame(0.5));
-        buf.push(make_frame(1.5));
-        assert_eq!(buf.time_range(), Some((0.5, 1.5)));
+    fn time_range_and_id_lookup_follow_retained_frames() {
+        let mut buffer = TimelineBuffer::new(10.0, vec![]);
+        let first = push_at(&mut buffer, 0.5);
+        let second = push_at(&mut buffer, 1.5);
+        assert_eq!(buffer.time_range(), Some((0.5, 1.5)));
+        assert_eq!(buffer.frame_by_id(first).map(|frame| frame.id), Some(first));
+        assert_eq!(buffer.latest_frame_id(), Some(second));
     }
 }

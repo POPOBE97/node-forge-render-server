@@ -2,7 +2,7 @@ use rust_wgpu_fiber::eframe::{egui, egui_wgpu};
 
 use crate::{
     app::{canvas, display_metrics, input_scope, scene_runtime, types::App, window_mode},
-    ui,
+    ui::{self, timeline_panel::TimelineInteraction},
 };
 
 use super::{
@@ -10,7 +10,9 @@ use super::{
     ingest::IngestPhase,
 };
 
-const TIMELINE_PANEL_MAX_HEIGHT: f32 = 240.0;
+const TIMELINE_PANEL_MIN_HEIGHT: f32 = 72.0;
+const TIMELINE_PANEL_INITIAL_MAX_HEIGHT: f32 = 240.0;
+const TIMELINE_PANEL_WINDOW_FRACTION: f32 = 0.6;
 
 pub(super) struct PresentPhase {
     pub sidebar_animating: bool,
@@ -31,6 +33,112 @@ fn timeline_toggle_shortcut_pressed(ctx: &egui::Context) -> bool {
     let (command_pressed, j_pressed) =
         ctx.input(|input| (input.modifiers.command, input.key_pressed(egui::Key::J)));
     timeline_toggle_shortcut_requested(text_edit_focused, command_pressed, j_pressed)
+}
+
+fn update_timeline_review_state(
+    review: &mut crate::app::types::TimelineReviewState,
+    interaction: TimelineInteraction,
+    latest_frame_id: Option<crate::animation::TimelineFrameId>,
+    is_retained: impl Fn(crate::animation::TimelineFrameId) -> bool,
+) -> bool {
+    review.anchor_frame_id = review.anchor_frame_id.filter(|id| is_retained(*id));
+    review.held_frame_id = review.held_frame_id.filter(|id| is_retained(*id));
+    review.suppressed_hover_frame_id = review
+        .suppressed_hover_frame_id
+        .filter(|id| is_retained(*id));
+    let hovered_frame_id = interaction.hovered_frame_id.filter(|id| is_retained(*id));
+
+    if interaction.delete_anchor && review.anchor_frame_id.is_some() {
+        review.anchor_frame_id = None;
+        review.hovered_frame_id = None;
+        review.held_frame_id = latest_frame_id;
+        review.suppressed_hover_frame_id = hovered_frame_id;
+        return false;
+    }
+
+    if let Some(anchor_frame_id) = interaction
+        .set_anchor_frame_id
+        .filter(|id| is_retained(*id))
+    {
+        review.anchor_frame_id = Some(anchor_frame_id);
+        review.held_frame_id = None;
+        review.suppressed_hover_frame_id = None;
+        review.hovered_frame_id = hovered_frame_id;
+        return true;
+    }
+
+    if hovered_frame_id.is_none() {
+        review.hovered_frame_id = None;
+        review.suppressed_hover_frame_id = None;
+    } else if hovered_frame_id == review.suppressed_hover_frame_id {
+        review.hovered_frame_id = None;
+    } else {
+        review.suppressed_hover_frame_id = None;
+        review.hovered_frame_id = hovered_frame_id;
+    }
+    false
+}
+
+fn apply_timeline_interaction(app: &mut App, interaction: TimelineInteraction) {
+    let retained_ids = app
+        .runtime
+        .timeline_buffer
+        .as_ref()
+        .map(|buffer| {
+            buffer
+                .frames()
+                .iter()
+                .map(|frame| frame.id)
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .unwrap_or_default();
+    let latest_frame_id = app
+        .runtime
+        .timeline_buffer
+        .as_ref()
+        .and_then(crate::animation::TimelineBuffer::latest_frame_id);
+    let pause_requested = update_timeline_review_state(
+        &mut app.runtime.timeline_review,
+        interaction,
+        latest_frame_id,
+        |id| retained_ids.contains(&id),
+    );
+    if pause_requested {
+        app.runtime.time_updates_enabled = false;
+    }
+}
+
+fn render_timeline_snapshot(app: &mut App, snapshot: &crate::animation::TimelineRenderSnapshot) {
+    scene_runtime::apply_state_machine_overrides(app, &snapshot.active_overrides);
+    for pass in &mut app.core.passes {
+        let mut params = pass.base_params;
+        params.time = snapshot.scene_time_secs as f32;
+        let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
+    }
+    let profile = canvas::draw_capture::render_profiled(app, false);
+    app.runtime.latest_render_profile = Some(profile);
+    app.runtime.scene_redraw_pending = false;
+}
+
+fn apply_timeline_review_frame(app: &mut App) {
+    let display_frame_id = app.runtime.timeline_review.display_frame_id();
+    let recorded_snapshot = display_frame_id.and_then(|frame_id| {
+        app.runtime
+            .timeline_buffer
+            .as_ref()
+            .and_then(|buffer| buffer.frame_by_id(frame_id))
+            .map(crate::animation::TimelineFrame::render_snapshot)
+    });
+
+    if let Some(snapshot) = recorded_snapshot {
+        render_timeline_snapshot(app, &snapshot);
+        app.runtime.timeline_review.preview_applied_last_frame = true;
+    } else if app.runtime.timeline_review.preview_applied_last_frame {
+        if let Some(snapshot) = app.runtime.last_live_snapshot.clone() {
+            render_timeline_snapshot(app, &snapshot);
+        }
+        app.runtime.timeline_review.preview_applied_last_frame = false;
+    }
 }
 
 pub(super) fn run(
@@ -148,13 +256,20 @@ pub(super) fn run(
     // Rendered before sidebar and central panel so egui reserves space at
     // the bottom first. The hover result feeds into the canvas render for
     // live preview.
-    let mut timeline_hover: Option<ui::debug_sidebar::TimelineHover> = None;
+    let mut timeline_interaction = TimelineInteraction::default();
     if app.shell.timeline_visible
         && let Some(ref buf) = app.runtime.timeline_buffer
     {
+        let anchor_frame_id = app.runtime.timeline_review.anchor_frame_id;
+        let natural_height = (18.0 + buf.tracked_keys.len().max(1) as f32 * 20.0 + 16.0)
+            .clamp(TIMELINE_PANEL_MIN_HEIGHT, TIMELINE_PANEL_INITIAL_MAX_HEIGHT);
+        let maximum_height =
+            (ui.available_height() * TIMELINE_PANEL_WINDOW_FRACTION).max(TIMELINE_PANEL_MIN_HEIGHT);
         egui::Panel::bottom("timeline_panel")
-            .resizable(false)
-            .max_size(TIMELINE_PANEL_MAX_HEIGHT)
+            .resizable(true)
+            .default_size(natural_height)
+            .min_size(TIMELINE_PANEL_MIN_HEIGHT)
+            .max_size(maximum_height)
             .frame(
                 egui::Frame::NONE
                     .fill(crate::color::lab(7.78201, -0.000_014_901_2, 0.0))
@@ -163,13 +278,10 @@ pub(super) fn run(
             )
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical()
-                    .auto_shrink([false, true])
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        let interaction = ui::timeline_panel::show_timeline(ui, buf);
-                        if let Some(idx) = interaction.hovered_frame_index {
-                            timeline_hover =
-                                Some(ui::debug_sidebar::TimelineHover { frame_index: idx });
-                        }
+                        timeline_interaction =
+                            ui::timeline_panel::show_timeline(ui, buf, anchor_frame_id);
                     });
             });
     }
@@ -208,6 +320,12 @@ pub(super) fn run(
                         selection: app.runtime.state_control_selection.as_ref(),
                         playback_enabled: app.runtime.animation_session.is_some(),
                         playback_rate: app.runtime.playback_rate,
+                        timeline_review_paused: app
+                            .runtime
+                            .timeline_review
+                            .anchor_frame_id
+                            .is_some()
+                            || app.runtime.timeline_review.held_frame_id.is_some(),
                     },
                     ui::debug_sidebar::TestModeSidebarState {
                         mode: app.shell.test_mode,
@@ -227,91 +345,8 @@ pub(super) fn run(
         }
     }
 
-    // ── Timeline hover preview ─────────────────────────────────────────
-    //
-    // When the user hovers a frame in the timeline panel we want the canvas
-    // to show that frame's parameter state immediately.  The animation
-    // session keeps advancing under the hood (advance phase already ran),
-    // but we override the GPU texture here so the canvas displays the
-    // hovered frame.
-    //
-    // On hover-exit we snap back to the pre-hover snapshot.  During
-    // playback `last_live_overrides` is continuously updated by advance,
-    // so we prefer that (it represents the latest head).  When stopped we
-    // fall back to the snapshot we captured when hover started.
-    let hovering_now = timeline_hover.is_some();
-
-    if let Some(ref hover) = timeline_hover {
-        // On the first hover frame, snapshot the current uniform_scene
-        // values for every override key the timeline tracks.
-        if !app.runtime.timeline_preview_was_active {
-            if let Some(ref buf) = app.runtime.timeline_buffer {
-                if let Some(uniform_scene) = app
-                    .runtime
-                    .matrix_source_scene
-                    .as_ref()
-                    .or(app.runtime.uniform_scene.as_ref())
-                {
-                    let mut snap = std::collections::HashMap::new();
-                    for frame in buf.frames().iter().rev().take(1) {
-                        for key in frame.active_overrides.keys() {
-                            if snap.contains_key(key) {
-                                continue;
-                            }
-                            if let Some(node) =
-                                uniform_scene.nodes.iter().find(|n| n.id == key.node_id)
-                                && let Some(val) = node.params.get(&key.param_name)
-                            {
-                                snap.insert(key.clone(), val.clone());
-                            }
-                        }
-                    }
-                    app.runtime.timeline_pre_hover_overrides = Some(snap);
-                }
-            }
-        }
-
-        if let Some(frame) = app
-            .runtime
-            .timeline_buffer
-            .as_ref()
-            .and_then(|buf| buf.frame_at(hover.frame_index))
-        {
-            let hovered_overrides = frame.active_overrides.clone();
-            scene_runtime::apply_state_machine_overrides(app, &hovered_overrides);
-            for pass in &mut app.core.passes {
-                let mut params = pass.base_params;
-                params.time = app.runtime.time_value_secs;
-                let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
-            }
-            let profile = canvas::draw_capture::render_profiled(app, false);
-            app.runtime.latest_render_profile = Some(profile);
-            app.runtime.scene_redraw_pending = false;
-        }
-    } else if app.runtime.timeline_preview_was_active {
-        // Hover just exited — snap back.
-        // Prefer last_live_overrides (updated every advance tick while
-        // playing) so we land on the true head.  Fall back to the
-        // pre-hover snapshot for the stopped case.
-        let restore = app
-            .runtime
-            .last_live_overrides
-            .clone()
-            .or_else(|| app.runtime.timeline_pre_hover_overrides.take());
-        if let Some(ref overrides) = restore {
-            scene_runtime::apply_state_machine_overrides(app, overrides);
-            for pass in &mut app.core.passes {
-                let mut params = pass.base_params;
-                params.time = app.runtime.time_value_secs;
-                let _ = crate::renderer::update_pass_params(&app.core.shader_space, pass, &params);
-            }
-            let profile = canvas::draw_capture::render_profiled(app, false);
-            app.runtime.latest_render_profile = Some(profile);
-            app.runtime.scene_redraw_pending = false;
-        }
-        app.runtime.timeline_pre_hover_overrides = None;
-    }
-    app.runtime.timeline_preview_was_active = hovering_now;
+    apply_timeline_interaction(app, timeline_interaction);
+    apply_timeline_review_frame(app);
 
     let panel_frame = egui::Frame::default()
         .fill(egui::Color32::BLACK)
@@ -384,7 +419,11 @@ pub(super) fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::timeline_toggle_shortcut_requested;
+    use super::{timeline_toggle_shortcut_requested, update_timeline_review_state};
+    use crate::{
+        animation::TimelineFrameId, app::types::TimelineReviewState,
+        ui::timeline_panel::TimelineInteraction,
+    };
 
     #[test]
     fn timeline_toggle_shortcut_requires_command_and_no_text_focus() {
@@ -392,5 +431,91 @@ mod tests {
         assert!(!timeline_toggle_shortcut_requested(true, true, true));
         assert!(!timeline_toggle_shortcut_requested(false, false, true));
         assert!(!timeline_toggle_shortcut_requested(false, true, false));
+    }
+
+    #[test]
+    fn timeline_review_prioritizes_hover_then_returns_to_anchor() {
+        let anchor = TimelineFrameId(1);
+        let hover = TimelineFrameId(2);
+        let mut review = TimelineReviewState::default();
+
+        let pause_requested = update_timeline_review_state(
+            &mut review,
+            TimelineInteraction {
+                hovered_frame_id: Some(anchor),
+                set_anchor_frame_id: Some(anchor),
+                delete_anchor: false,
+            },
+            Some(hover),
+            |_| true,
+        );
+        assert!(pause_requested);
+        assert_eq!(review.display_frame_id(), Some(anchor));
+
+        update_timeline_review_state(
+            &mut review,
+            TimelineInteraction {
+                hovered_frame_id: Some(hover),
+                ..Default::default()
+            },
+            Some(hover),
+            |_| true,
+        );
+        assert_eq!(review.display_frame_id(), Some(hover));
+
+        update_timeline_review_state(
+            &mut review,
+            TimelineInteraction::default(),
+            Some(hover),
+            |_| true,
+        );
+        assert_eq!(review.display_frame_id(), Some(anchor));
+    }
+
+    #[test]
+    fn deleting_anchor_holds_latest_and_suppresses_stationary_hover() {
+        let anchor = TimelineFrameId(1);
+        let latest = TimelineFrameId(3);
+        let mut review = TimelineReviewState {
+            anchor_frame_id: Some(anchor),
+            ..Default::default()
+        };
+
+        let pause_requested = update_timeline_review_state(
+            &mut review,
+            TimelineInteraction {
+                hovered_frame_id: Some(anchor),
+                delete_anchor: true,
+                ..Default::default()
+            },
+            Some(latest),
+            |_| true,
+        );
+        assert!(!pause_requested);
+        assert_eq!(review.anchor_frame_id, None);
+        assert_eq!(review.display_frame_id(), Some(latest));
+
+        update_timeline_review_state(
+            &mut review,
+            TimelineInteraction {
+                hovered_frame_id: Some(anchor),
+                ..Default::default()
+            },
+            Some(latest),
+            |_| true,
+        );
+        assert_eq!(review.display_frame_id(), Some(latest));
+    }
+
+    #[test]
+    fn play_clear_keeps_live_restore_edge() {
+        let mut review = TimelineReviewState {
+            anchor_frame_id: Some(TimelineFrameId(1)),
+            preview_applied_last_frame: true,
+            ..Default::default()
+        };
+        review.clear_targets_for_play();
+        assert_eq!(review.display_frame_id(), None);
+        assert!(review.preview_applied_last_frame);
     }
 }

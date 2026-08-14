@@ -20,7 +20,9 @@ pub mod timeline;
 pub mod trace_run;
 
 pub use session::{AnimationSession, AnimationStep};
-pub use timeline::{TimelineBuffer, TimelineFrame};
+pub use timeline::{
+    TimelineBuffer, TimelineFrame, TimelineFrameId, TimelineFrameRecord, TimelineRenderSnapshot,
+};
 pub use trace_run::{
     KeyFilter, ScenarioAction, TraceAnalyzeConfig, TraceReport, TraceReportFrame, TraceRunConfig,
     TraceRunResult, TraceScenario, TraceTrack, format_summary, format_table,

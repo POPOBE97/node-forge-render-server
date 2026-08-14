@@ -150,6 +150,14 @@ fn start_matrix_rebuild_if_needed(
     }
 }
 
+fn should_resume_timeline_review(
+    selection: Option<&crate::app::StateControlSelection>,
+    review: &crate::app::types::TimelineReviewState,
+) -> bool {
+    matches!(selection, Some(crate::app::StateControlSelection::Play))
+        && (review.anchor_frame_id.is_some() || review.held_frame_id.is_some())
+}
+
 pub fn dispatch(
     app: &mut App,
     ctx: &egui::Context,
@@ -160,7 +168,17 @@ pub fn dispatch(
 ) -> anyhow::Result<()> {
     match command {
         AppCommand::PlayStateMachine => {
-            scene_runtime::select_state_control(app, crate::app::StateControlSelection::Play)?;
+            let resume_timeline_review = should_resume_timeline_review(
+                app.runtime.state_control_selection.as_ref(),
+                &app.runtime.timeline_review,
+            );
+            if resume_timeline_review {
+                app.runtime.timeline_review.clear_targets_for_play();
+                app.runtime.time_updates_enabled = true;
+                eprintln!("[animation] resume from timeline review");
+            } else {
+                scene_runtime::select_state_control(app, crate::app::StateControlSelection::Play)?;
+            }
             ctx.request_repaint();
         }
         AppCommand::ForceState(state_id) => {
@@ -472,9 +490,13 @@ fn render_current_shader_space(app: &mut App, now: f64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppCommand, from_sidebar_action};
+    use super::{AppCommand, from_sidebar_action, should_resume_timeline_review};
     use crate::{
-        app::{AnalysisTab, DiffMetricMode, PlaybackRate, canvas::actions::CanvasAction},
+        animation::TimelineFrameId,
+        app::{
+            AnalysisTab, DiffMetricMode, PlaybackRate, StateControlSelection,
+            canvas::actions::CanvasAction, types::TimelineReviewState,
+        },
         ui::debug_sidebar::SidebarAction,
     };
     use rust_wgpu_fiber::shader_space::PassCaptureMode;
@@ -487,6 +509,19 @@ mod tests {
         assert!(matches!(play, AppCommand::PlayStateMachine));
         assert!(matches!(state, AppCommand::ForceState(state_id) if state_id == "entry"));
         assert!(matches!(clear, AppCommand::ClearStateControl));
+    }
+
+    #[test]
+    fn play_resumes_timeline_review_only_for_an_existing_play_session() {
+        let review = TimelineReviewState {
+            anchor_frame_id: Some(TimelineFrameId(1)),
+            ..Default::default()
+        };
+        let play = StateControlSelection::Play;
+        let forced = StateControlSelection::State("visible".into());
+        assert!(should_resume_timeline_review(Some(&play), &review));
+        assert!(!should_resume_timeline_review(Some(&forced), &review));
+        assert!(!should_resume_timeline_review(None, &review));
     }
 
     #[test]

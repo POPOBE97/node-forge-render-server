@@ -333,13 +333,6 @@ pub enum SidebarAction {
     SetDisplayPpi(f32),
 }
 
-/// Hover state from the timeline panel.
-#[derive(Clone, Debug)]
-pub struct TimelineHover {
-    /// Index of the hovered frame in the timeline buffer.
-    pub frame_index: usize,
-}
-
 /// Structured result returned from the sidebar each frame.
 #[derive(Clone, Debug, Default)]
 pub struct SidebarResult {
@@ -403,6 +396,7 @@ pub struct StateSidebarState<'a> {
     pub selection: Option<&'a StateControlSelection>,
     pub playback_enabled: bool,
     pub playback_rate: PlaybackRate,
+    pub timeline_review_paused: bool,
 }
 
 pub fn show_in_rect(
@@ -582,7 +576,7 @@ fn show_state_section(
             ButtonOptions {
                 label: "Play",
                 tooltip: None,
-                variant: if playing {
+                variant: if playing && !state.timeline_review_paused {
                     ButtonVariant::Default
                 } else {
                     ButtonVariant::Secondary
@@ -591,13 +585,14 @@ fn show_state_section(
                 enabled: state.playback_enabled,
                 icon: None,
                 icon_kind: None,
-                visual_override: playing.then_some(active_state_button_visual()),
+                visual_override: (playing && !state.timeline_review_paused)
+                    .then_some(active_state_button_visual()),
                 group_position: ButtonGroupPosition::Single,
             },
             full_width,
         );
         if response.clicked() {
-            *sidebar_action = Some(if playing {
+            *sidebar_action = Some(if playing && !state.timeline_review_paused {
                 SidebarAction::ClearStateControl
             } else {
                 SidebarAction::PlayStateMachine

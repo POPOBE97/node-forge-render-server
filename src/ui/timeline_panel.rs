@@ -1,656 +1,525 @@
-//! Bottom timeline panel for state-machine animation playback.
+//! Bottom timeline panel for state-machine animation review.
 //!
-//! Renders a tile-grid timeline where each cell is exactly `CELL_W` pixels
-//! wide.  The grid grows as frames are recorded and scrolls horizontally
-//! when it overflows the container.  Each tracked value gets its own row
-//! with a label pinned to the left.  A diamond ◆ keyframe marker is drawn
-//! whenever a cell's value differs from the previous cell.
+//! Frames are positioned on a real logical-time axis. The view supports
+//! horizontal scrolling, command/control-wheel zoom, a transient hover cursor,
+//! and one draggable persistent anchor.
 
 use rust_wgpu_fiber::eframe::egui;
 
-use crate::animation::TimelineBuffer;
+use crate::animation::{TimelineBuffer, TimelineFrame, TimelineFrameId};
 use crate::state_machine::OverrideKey;
 
 use super::design_tokens::{self, TextRole};
 
-// ── Constants ────────────────────────────────────────────────────────────
-
-const CELL_W: f32 = 10.0;
-const HEADER_ROW_H: f32 = 16.0;
+const DEFAULT_PIXELS_PER_SECOND: f32 = 600.0;
+const MIN_PIXELS_PER_SECOND: f32 = 60.0;
+const MAX_PIXELS_PER_SECOND: f32 = 2_400.0;
+const ZOOM_SENSITIVITY: f32 = 0.01;
+const HEADER_ROW_H: f32 = 18.0;
 const VALUE_ROW_H: f32 = 20.0;
 const LABEL_COL_W: f32 = 120.0;
+const CONTENT_EDGE_PAD: f32 = 8.0;
 const DIAMOND_HALF: f32 = 3.5;
-const TOOLTIP_CONTENT_W: f32 = 320.0;
-const TOOLTIP_COL_MAX_W: f32 = 150.0;
-const TOOLTIP_MAX_DETAIL_ROWS: usize = 6;
-const TOOLTIP_MAX_DIAGNOSTICS: usize = 3;
+const ANCHOR_HIT_RADIUS: f32 = 6.0;
+const MIN_TICK_SPACING_PX: f32 = 64.0;
 
-/// Result of a single frame of timeline widget interaction.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TimelineInteraction {
-    /// Index of the frame the cursor is hovering over, if any.
-    pub hovered_frame_index: Option<usize>,
+    pub hovered_frame_id: Option<TimelineFrameId>,
+    pub set_anchor_frame_id: Option<TimelineFrameId>,
+    pub delete_anchor: bool,
 }
 
-/// Draw the timeline panel.  Returns interaction state.
-pub fn show_timeline(ui: &mut egui::Ui, buffer: &TimelineBuffer) -> TimelineInteraction {
+pub fn show_timeline(
+    ui: &mut egui::Ui,
+    buffer: &TimelineBuffer,
+    anchor_frame_id: Option<TimelineFrameId>,
+) -> TimelineInteraction {
     let mut interaction = TimelineInteraction::default();
 
     if buffer.is_empty() {
         ui.label(design_tokens::rich_text(
-            "Press Play to record",
+            "Press Play or select a State to record",
             TextRole::InactiveItemTitle,
         ));
         return interaction;
     }
 
-    let frame_count = buffer.len();
     let tracked_keys = &buffer.tracked_keys;
     let value_row_count = tracked_keys.len();
-
-    // Total grid width = one cell per recorded frame.
-    let grid_w = frame_count as f32 * CELL_W;
-    // Total height = header + value rows.
     let grid_h = HEADER_ROW_H + value_row_count.max(1) as f32 * VALUE_ROW_H;
-
     let available_w = ui.available_width();
     let has_labels = !tracked_keys.is_empty();
     let label_w = if has_labels { LABEL_COL_W } else { 0.0 };
+    let grid_viewport_w = (available_w - label_w).max(1.0);
 
-    // ── Layout: [label column | scrollable grid] ─────────────────────────
-    // We use a horizontal layout so the label column stays pinned.
-    let grid_viewport_w = (available_w - label_w).max(0.0);
-
-    // Allocate the full height so egui knows our size.
-    let (total_rect, _) =
-        ui.allocate_exact_size(egui::vec2(available_w, grid_h), egui::Sense::hover());
-
+    let (total_rect, response) = ui.allocate_exact_size(
+        egui::vec2(available_w, grid_h),
+        egui::Sense::click_and_drag(),
+    );
     let label_rect = egui::Rect::from_min_size(total_rect.min, egui::vec2(label_w, grid_h));
     let grid_clip_rect = egui::Rect::from_min_size(
         egui::pos2(total_rect.min.x + label_w, total_rect.min.y),
         egui::vec2(grid_viewport_w, grid_h),
     );
 
-    // ── Scroll state (stored in egui temp memory) ────────────────────────
-    let scroll_id = ui.id().with("tl_scroll");
-    let max_scroll = (grid_w - grid_viewport_w).max(0.0);
-    let mut scroll_x: f32 = ui
+    let (start_time, end_time) = buffer.time_range().unwrap_or((0.0, 0.0));
+    let scale_id = ui.id().with("timeline_pixels_per_second");
+    let scroll_id = ui.id().with("timeline_scroll_x");
+    let mut pixels_per_second = ui
         .ctx()
-        .data_mut(|d| d.get_temp(scroll_id).unwrap_or(max_scroll));
+        .data_mut(|data| data.get_temp(scale_id).unwrap_or(DEFAULT_PIXELS_PER_SECOND));
+    pixels_per_second = pixels_per_second.clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
 
-    // Auto-follow: pin to the right edge unless the user has scrolled
-    // away.  Re-engage when they scroll back near the end.
-    let was_pinned = scroll_x >= max_scroll - CELL_W;
+    let initial_content_w =
+        timeline_content_width(start_time, end_time, pixels_per_second, grid_viewport_w);
+    let initial_max_scroll = (initial_content_w - grid_viewport_w).max(0.0);
+    let mut scroll_x = ui
+        .ctx()
+        .data_mut(|data| data.get_temp(scroll_id).unwrap_or(initial_max_scroll));
+    scroll_x = scroll_x.clamp(0.0, initial_max_scroll);
+    let was_pinned = scroll_x >= initial_max_scroll - ANCHOR_HIT_RADIUS;
 
-    // Handle horizontal trackpad scrolling inside the grid viewport. Shift +
-    // mouse wheel also scrolls horizontally; an unmodified vertical wheel is
-    // left to the panel's vertical scroll area.
-    let mut user_scrolled = false;
-    if ui.rect_contains_pointer(grid_clip_rect) {
-        let (delta, shift_pressed) = ui
-            .ctx()
-            .input(|i| (i.smooth_scroll_delta, i.modifiers.shift));
-        let dx = if delta.x.abs() > 0.5 {
-            delta.x
-        } else if shift_pressed {
-            delta.y
-        } else {
-            0.0
-        };
-        if dx.abs() > 0.5 {
-            scroll_x = (scroll_x - dx).clamp(0.0, max_scroll);
-            user_scrolled = true;
-        }
-    }
-
-    // Only auto-follow if the user didn't just scroll and was already
-    // pinned to the right edge.
-    if was_pinned && !user_scrolled {
-        scroll_x = max_scroll;
-    }
-    scroll_x = scroll_x.clamp(0.0, max_scroll);
-    ui.ctx().data_mut(|d| d.insert_temp(scroll_id, scroll_x));
-
-    // The grid origin in screen space (may be negative / off-screen left).
-    let grid_origin = egui::pos2(grid_clip_rect.min.x - scroll_x, grid_clip_rect.min.y);
-
-    // ── Hover detection ──────────────────────────────────────────────────
-    let pointer_in_grid = ui.ctx().input(|i| i.pointer.hover_pos()).and_then(|p| {
-        if grid_clip_rect.contains(p) {
-            Some(p)
-        } else {
-            None
-        }
-    });
-
-    let hovered_cell: Option<usize> = pointer_in_grid.and_then(|p| {
-        let local_x = p.x - grid_origin.x;
-        if local_x < 0.0 {
-            return None;
-        }
-        let col = (local_x / CELL_W) as usize;
-        if col < frame_count { Some(col) } else { None }
-    });
-    interaction.hovered_frame_index = hovered_cell;
-
-    // ── Paint: clipped grid area ─────────────────────────────────────────
-    let grid_painter = ui.painter_at(grid_clip_rect);
-    let frames = buffer.frames();
-
-    // Visible cell range (avoid drawing thousands of off-screen cells).
-    let vis_first = (scroll_x / CELL_W).floor() as usize;
-    let vis_last = ((scroll_x + grid_viewport_w) / CELL_W).ceil() as usize;
-    let vis_last = vis_last.min(frame_count);
-
-    // ── Header row (scene-time anchored second marks) ──────────────────
-    //
-    // Labels are anchored to absolute scene_time (whole seconds) so they
-    // stay rock-steady even when the rolling buffer trims old frames.
-    {
-        let header_y = grid_origin.y;
-        // Subtle separator line below the header.
-        grid_painter.line_segment(
-            [
-                egui::pos2(
-                    grid_origin.x + vis_first as f32 * CELL_W,
-                    header_y + HEADER_ROW_H,
-                ),
-                egui::pos2(
-                    grid_origin.x + vis_last as f32 * CELL_W,
-                    header_y + HEADER_ROW_H,
-                ),
-            ],
-            egui::Stroke::new(0.5_f32, design_tokens::white(20)),
-        );
-
-        // Walk visible cells and place a tick at each whole-second boundary.
-        // We scan from vis_first to vis_last, checking where
-        // floor(scene_time) changes between adjacent frames.
-        let first_scene_t = frames
-            .get(vis_first)
-            .map(|f| f.scene_time_secs)
-            .unwrap_or(0.0);
-        let mut next_whole_sec = first_scene_t.ceil(); // first whole second >= first visible frame
-
-        for col in vis_first..vis_last {
-            let t = frames[col].scene_time_secs;
-            if t >= next_whole_sec {
-                let secs = next_whole_sec as u64;
-                let x = grid_origin.x + col as f32 * CELL_W;
-                // Tick mark.
-                grid_painter.line_segment(
-                    [
-                        egui::pos2(x, header_y + HEADER_ROW_H - 4.0),
-                        egui::pos2(x, header_y + HEADER_ROW_H),
-                    ],
-                    egui::Stroke::new(0.5_f32, design_tokens::white(40)),
-                );
-                let label = format!("{secs}s");
-                grid_painter.text(
-                    egui::pos2(x + 2.0, header_y + 1.0),
-                    egui::Align2::LEFT_TOP,
-                    &label,
-                    egui::FontId::proportional(8.0),
-                    design_tokens::white(50),
-                );
-                next_whole_sec += 1.0;
+    let pointer_in_grid = ui
+        .ctx()
+        .input(|input| input.pointer.hover_pos())
+        .filter(|pointer| grid_clip_rect.contains(*pointer));
+    let mut user_changed_view = false;
+    if let Some(pointer) = pointer_in_grid {
+        let (scroll_delta, command_pressed, shift_pressed) = ui.ctx().input(|input| {
+            (
+                input.smooth_scroll_delta,
+                input.modifiers.command,
+                input.modifiers.shift,
+            )
+        });
+        if command_pressed && scroll_delta.y.abs() > 0.5 {
+            let old_scale = pixels_per_second;
+            pixels_per_second = (old_scale * (scroll_delta.y * ZOOM_SENSITIVITY).exp())
+                .clamp(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND);
+            let pointer_x = pointer.x - grid_clip_rect.min.x;
+            scroll_x =
+                zoom_scroll_around_pointer(scroll_x, pointer_x, old_scale, pixels_per_second);
+            user_changed_view = (pixels_per_second - old_scale).abs() > f32::EPSILON;
+        } else if !command_pressed {
+            let horizontal_delta = if scroll_delta.x.abs() > 0.5 {
+                scroll_delta.x
+            } else if shift_pressed {
+                scroll_delta.y
+            } else {
+                0.0
+            };
+            if horizontal_delta.abs() > 0.5 {
+                scroll_x -= horizontal_delta;
+                user_changed_view = true;
             }
         }
     }
 
-    // ── Value rows ───────────────────────────────────────────────────────
-    let parsed_keys: Vec<Option<OverrideKey>> =
-        tracked_keys.iter().map(|k| OverrideKey::parse(k)).collect();
+    let content_w =
+        timeline_content_width(start_time, end_time, pixels_per_second, grid_viewport_w);
+    let max_scroll = (content_w - grid_viewport_w).max(0.0);
+    if was_pinned && !user_changed_view {
+        scroll_x = max_scroll;
+    }
+    scroll_x = scroll_x.clamp(0.0, max_scroll);
+    ui.ctx().data_mut(|data| {
+        data.insert_temp(scale_id, pixels_per_second);
+        data.insert_temp(scroll_id, scroll_x);
+    });
 
-    for (row_idx, parsed) in parsed_keys.iter().enumerate() {
-        let row_y = grid_origin.y + HEADER_ROW_H + row_idx as f32 * VALUE_ROW_H;
-
-        // Row background (alternating subtle shade).
-        let bg = if row_idx % 2 == 0 {
-            design_tokens::white(10)
-        } else {
-            egui::Color32::TRANSPARENT
-        };
-        let row_rect = egui::Rect::from_min_size(
-            egui::pos2(grid_origin.x + vis_first as f32 * CELL_W, row_y),
-            egui::vec2((vis_last - vis_first) as f32 * CELL_W, VALUE_ROW_H),
+    let grid_origin_x = grid_clip_rect.min.x - scroll_x;
+    let hovered_frame_id = pointer_in_grid.and_then(|pointer| {
+        let time = pointer_time(
+            pointer.x,
+            grid_origin_x,
+            start_time,
+            end_time,
+            pixels_per_second,
         );
-        grid_painter.rect_filled(row_rect, egui::CornerRadius::ZERO, bg);
+        buffer.nearest_frame_id(time)
+    });
+    interaction.hovered_frame_id = hovered_frame_id;
 
-        // Vertical grid lines.
-        for col in vis_first..=vis_last {
-            let x = grid_origin.x + col as f32 * CELL_W;
-            grid_painter.line_segment(
-                [egui::pos2(x, row_y), egui::pos2(x, row_y + VALUE_ROW_H)],
-                egui::Stroke::new(0.5_f32, design_tokens::white(10)),
-            );
+    let pointer_pressed_or_dragged =
+        response.clicked() || response.drag_started() || response.dragged();
+    if pointer_pressed_or_dragged && pointer_in_grid.is_some() {
+        response.request_focus();
+        interaction.set_anchor_frame_id = hovered_frame_id;
+    }
+    if response.has_focus()
+        && anchor_frame_id.is_some()
+        && ui.ctx().input(|input| {
+            input.key_pressed(egui::Key::Delete) || input.key_pressed(egui::Key::Backspace)
+        })
+    {
+        interaction.delete_anchor = true;
+    }
+
+    if let (Some(pointer), Some(anchor_id)) = (pointer_in_grid, anchor_frame_id)
+        && let Some(anchor) = buffer.frame_by_id(anchor_id)
+    {
+        let anchor_x = frame_x(anchor, grid_origin_x, start_time, pixels_per_second);
+        if (pointer.x - anchor_x).abs() <= ANCHOR_HIT_RADIUS {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        } else {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
+    } else if pointer_in_grid.is_some() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
 
-        let Some(key) = parsed else { continue };
+    let grid_painter = ui.painter_at(grid_clip_rect);
+    paint_time_grid(
+        &grid_painter,
+        grid_clip_rect,
+        grid_origin_x,
+        start_time,
+        end_time,
+        pixels_per_second,
+    );
+    paint_value_rows(
+        &grid_painter,
+        buffer,
+        tracked_keys,
+        grid_clip_rect,
+        grid_origin_x,
+        start_time,
+        pixels_per_second,
+    );
 
-        // Draw keyframe diamonds where value changes.
-        for col in vis_first..vis_last {
-            let cur = frames[col].active_overrides.get(key);
-            let prev = if col > 0 {
-                frames[col - 1].active_overrides.get(key)
-            } else {
-                None
-            };
-            let is_keyframe = match (cur, prev) {
-                (Some(c), Some(p)) => !json_values_equal(c, p),
-                (Some(_), None) => true, // value appeared
-                (None, Some(_)) => true, // value disappeared
+    if let Some(hover_id) = hovered_frame_id
+        && let Some(frame) = buffer.frame_by_id(hover_id)
+    {
+        paint_cursor(
+            &grid_painter,
+            frame_x(frame, grid_origin_x, start_time, pixels_per_second),
+            grid_clip_rect,
+            egui::Color32::WHITE,
+            false,
+        );
+    }
+    if let Some(anchor_id) = anchor_frame_id
+        && let Some(frame) = buffer.frame_by_id(anchor_id)
+    {
+        paint_cursor(
+            &grid_painter,
+            frame_x(frame, grid_origin_x, start_time, pixels_per_second),
+            grid_clip_rect,
+            egui::Color32::from_rgb(235, 67, 67),
+            true,
+        );
+    }
+
+    if has_labels {
+        paint_labels(ui, label_rect, tracked_keys);
+    }
+
+    interaction
+}
+
+fn timeline_content_width(
+    start_time: f64,
+    end_time: f64,
+    pixels_per_second: f32,
+    viewport_width: f32,
+) -> f32 {
+    let duration = (end_time - start_time).max(0.0) as f32;
+    (duration * pixels_per_second + CONTENT_EDGE_PAD * 2.0).max(viewport_width)
+}
+
+fn zoom_scroll_around_pointer(
+    scroll_x: f32,
+    pointer_x: f32,
+    old_scale: f32,
+    new_scale: f32,
+) -> f32 {
+    if old_scale <= 0.0 || !old_scale.is_finite() || !new_scale.is_finite() {
+        return scroll_x;
+    }
+    let focus_time_offset = (scroll_x + pointer_x - CONTENT_EDGE_PAD) / old_scale;
+    CONTENT_EDGE_PAD + focus_time_offset * new_scale - pointer_x
+}
+
+fn pointer_time(
+    pointer_x: f32,
+    grid_origin_x: f32,
+    start_time: f64,
+    end_time: f64,
+    pixels_per_second: f32,
+) -> f64 {
+    let local_x = pointer_x - grid_origin_x - CONTENT_EDGE_PAD;
+    (start_time + f64::from(local_x / pixels_per_second)).clamp(start_time, end_time)
+}
+
+fn frame_x(
+    frame: &TimelineFrame,
+    grid_origin_x: f32,
+    start_time: f64,
+    pixels_per_second: f32,
+) -> f32 {
+    grid_origin_x
+        + CONTENT_EDGE_PAD
+        + ((frame.presentation_time_secs - start_time) as f32 * pixels_per_second)
+}
+
+fn tick_step(pixels_per_second: f32) -> f64 {
+    let minimum_seconds = f64::from(MIN_TICK_SPACING_PX / pixels_per_second.max(1.0));
+    let exponent = minimum_seconds.log10().floor();
+    let base = 10_f64.powf(exponent);
+    for multiplier in [1.0, 2.0, 5.0, 10.0] {
+        let candidate = base * multiplier;
+        if candidate >= minimum_seconds * (1.0 - 1e-6) {
+            return candidate;
+        }
+    }
+    base * 10.0
+}
+
+fn paint_time_grid(
+    painter: &egui::Painter,
+    clip_rect: egui::Rect,
+    grid_origin_x: f32,
+    start_time: f64,
+    end_time: f64,
+    pixels_per_second: f32,
+) {
+    painter.line_segment(
+        [
+            egui::pos2(clip_rect.min.x, clip_rect.min.y + HEADER_ROW_H),
+            egui::pos2(clip_rect.max.x, clip_rect.min.y + HEADER_ROW_H),
+        ],
+        egui::Stroke::new(0.5_f32, design_tokens::white(20)),
+    );
+
+    if (end_time - start_time).abs() < f64::EPSILON {
+        let x = grid_origin_x + CONTENT_EDGE_PAD;
+        painter.text(
+            egui::pos2(x + 3.0, clip_rect.min.y + 2.0),
+            egui::Align2::LEFT_TOP,
+            format_tick(start_time),
+            egui::FontId::proportional(8.0),
+            design_tokens::white(55),
+        );
+        return;
+    }
+
+    let visible_start = pointer_time(
+        clip_rect.min.x,
+        grid_origin_x,
+        start_time,
+        end_time,
+        pixels_per_second,
+    );
+    let visible_end = pointer_time(
+        clip_rect.max.x,
+        grid_origin_x,
+        start_time,
+        end_time,
+        pixels_per_second,
+    );
+    let step = tick_step(pixels_per_second);
+    let mut tick = (visible_start / step).ceil() * step;
+    while tick <= visible_end + step * 0.001 {
+        let x = grid_origin_x + CONTENT_EDGE_PAD + ((tick - start_time) as f32 * pixels_per_second);
+        painter.line_segment(
+            [
+                egui::pos2(x, clip_rect.min.y + HEADER_ROW_H - 4.0),
+                egui::pos2(x, clip_rect.max.y),
+            ],
+            egui::Stroke::new(0.5_f32, design_tokens::white(18)),
+        );
+        painter.text(
+            egui::pos2(x + 3.0, clip_rect.min.y + 2.0),
+            egui::Align2::LEFT_TOP,
+            format_tick(tick),
+            egui::FontId::proportional(8.0),
+            design_tokens::white(55),
+        );
+        tick += step;
+    }
+}
+
+fn format_tick(time_secs: f64) -> String {
+    if time_secs.abs() >= 1.0 {
+        if (time_secs - time_secs.round()).abs() < 0.001 {
+            format!("{time_secs:.0}s")
+        } else {
+            format!("{time_secs:.1}s")
+        }
+    } else {
+        format!("{time_secs:.2}s")
+    }
+}
+
+fn paint_value_rows(
+    painter: &egui::Painter,
+    buffer: &TimelineBuffer,
+    tracked_keys: &[String],
+    clip_rect: egui::Rect,
+    grid_origin_x: f32,
+    start_time: f64,
+    pixels_per_second: f32,
+) {
+    let parsed_keys: Vec<Option<OverrideKey>> = tracked_keys
+        .iter()
+        .map(|key| OverrideKey::parse(key))
+        .collect();
+    for (row_index, parsed_key) in parsed_keys.iter().enumerate() {
+        let row_y = clip_rect.min.y + HEADER_ROW_H + row_index as f32 * VALUE_ROW_H;
+        let row_rect = egui::Rect::from_min_size(
+            egui::pos2(clip_rect.min.x, row_y),
+            egui::vec2(clip_rect.width(), VALUE_ROW_H),
+        );
+        if row_index % 2 == 0 {
+            painter.rect_filled(row_rect, egui::CornerRadius::ZERO, design_tokens::white(10));
+        }
+        let Some(key) = parsed_key else { continue };
+        for (frame_index, frame) in buffer.frames().iter().enumerate() {
+            let current = frame.active_overrides.get(key);
+            let previous = frame_index
+                .checked_sub(1)
+                .and_then(|index| buffer.frames().get(index))
+                .and_then(|previous_frame| previous_frame.active_overrides.get(key));
+            let is_keyframe = match (current, previous) {
+                (Some(current), Some(previous)) => !json_values_equal(current, previous),
+                (Some(_), None) | (None, Some(_)) => true,
                 (None, None) => false,
             };
-            if is_keyframe {
-                let cx = grid_origin.x + col as f32 * CELL_W + CELL_W * 0.5;
-                let cy = row_y + VALUE_ROW_H * 0.5;
+            if !is_keyframe {
+                continue;
+            }
+            let x = frame_x(frame, grid_origin_x, start_time, pixels_per_second);
+            if x >= clip_rect.min.x - DIAMOND_HALF && x <= clip_rect.max.x + DIAMOND_HALF {
                 draw_diamond(
-                    &grid_painter,
-                    egui::pos2(cx, cy),
+                    painter,
+                    egui::pos2(x, row_y + VALUE_ROW_H * 0.5),
                     DIAMOND_HALF,
                     egui::Color32::from_rgb(255, 200, 60),
                 );
             }
         }
     }
-
-    // ── Hover highlight column ───────────────────────────────────────────
-    if let Some(col) = hovered_cell {
-        let x = grid_origin.x + col as f32 * CELL_W;
-        let value_area_y = grid_origin.y + HEADER_ROW_H;
-        let value_area_h = grid_h - HEADER_ROW_H;
-        let highlight_rect = egui::Rect::from_min_size(
-            egui::pos2(x, value_area_y),
-            egui::vec2(CELL_W, value_area_h),
-        );
-        grid_painter.rect_filled(
-            highlight_rect,
-            egui::CornerRadius::ZERO,
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-        );
-        // Vertical cursor line.
-        let cx = x + CELL_W * 0.5;
-        grid_painter.line_segment(
-            [
-                egui::pos2(cx, value_area_y),
-                egui::pos2(cx, value_area_y + value_area_h),
-            ],
-            egui::Stroke::new(1.0_f32, egui::Color32::WHITE),
-        );
-    }
-
-    // ── Label column (pinned, not scrolled) ──────────────────────────────
-    if has_labels {
-        let label_painter = ui.painter_at(label_rect);
-        // Background to occlude grid content that scrolls behind.
-        label_painter.rect_filled(
-            label_rect,
-            egui::CornerRadius::ZERO,
-            crate::color::lab(7.78201, -0.000_014_901_2, 0.0),
-        );
-
-        for (row_idx, key) in tracked_keys.iter().enumerate() {
-            let row_y = label_rect.min.y + HEADER_ROW_H + row_idx as f32 * VALUE_ROW_H;
-            label_painter.text(
-                egui::pos2(label_rect.min.x + 4.0, row_y + 3.0),
-                egui::Align2::LEFT_TOP,
-                key,
-                design_tokens::font_id(
-                    design_tokens::FONT_SIZE_11,
-                    design_tokens::FontWeight::Normal,
-                ),
-                design_tokens::white(60),
-            );
-        }
-    }
-
-    // ── Hover tooltip ────────────────────────────────────────────────────
-    if let Some(idx) = interaction.hovered_frame_index
-        && let Some(frame) = buffer.frame_at(idx)
-    {
-        if let Some(pointer) = ui.ctx().input(|i| i.pointer.hover_pos()) {
-            let label_font = design_tokens::font_id(
-                design_tokens::FONT_SIZE_9,
-                design_tokens::FontWeight::Normal,
-            );
-            let value_font = design_tokens::font_id(
-                design_tokens::FONT_SIZE_9,
-                design_tokens::FontWeight::Medium,
-            );
-            let label_color = design_tokens::white(50);
-            let value_color = design_tokens::white(90);
-            let section_font =
-                design_tokens::font_id(design_tokens::FONT_SIZE_9, design_tokens::FontWeight::Bold);
-            let section_color = design_tokens::white(40);
-            let screen_right = ui.ctx().input(|i| i.content_rect().max.x);
-            let tooltip_outer_w = TOOLTIP_CONTENT_W + 20.0;
-            let (tooltip_x, tooltip_pivot) = if pointer.x + 12.0 + tooltip_outer_w <= screen_right {
-                (pointer.x + 12.0, egui::Align2::LEFT_BOTTOM)
-            } else {
-                (pointer.x - 12.0, egui::Align2::RIGHT_BOTTOM)
-            };
-
-            egui::Area::new(ui.id().with("timeline_tooltip"))
-                .fixed_pos(egui::pos2(tooltip_x, total_rect.min.y))
-                .pivot(tooltip_pivot)
-                .order(egui::Order::Tooltip)
-                .show(ui.ctx(), |ui| {
-                    egui::Frame::NONE
-                        .fill(crate::color::lab(10.0, 0.0, 0.0))
-                        .stroke(egui::Stroke::new(1.0_f32, design_tokens::white(10)))
-                        .corner_radius(design_tokens::BORDER_RADIUS_SMALL)
-                        .inner_margin(egui::Margin::symmetric(10, 6))
-                        .show(ui, |ui| {
-                            ui.set_width(TOOLTIP_CONTENT_W);
-                            let grid_id = ui.id().with("tt_grid");
-
-                            // ── Frame / Timing ───────────────────────
-                            ui.label(
-                                egui::RichText::new("TIMING")
-                                    .font(section_font.clone())
-                                    .color(section_color),
-                            );
-                            ui.add_space(2.0);
-                            egui::Grid::new(grid_id.with("timing"))
-                                .num_columns(2)
-                                .min_col_width(70.0)
-                                .max_col_width(TOOLTIP_COL_MAX_W)
-                                .spacing(egui::vec2(12.0, 1.0))
-                                .show(ui, |ui| {
-                                    tooltip_row(
-                                        ui,
-                                        "Frame",
-                                        &format!("#{idx}"),
-                                        &label_font,
-                                        &value_font,
-                                        label_color,
-                                        value_color,
-                                    );
-                                    tooltip_row(
-                                        ui,
-                                        "Scene",
-                                        &format!("{:.3}s", frame.scene_time_secs),
-                                        &label_font,
-                                        &value_font,
-                                        label_color,
-                                        value_color,
-                                    );
-                                    tooltip_row(
-                                        ui,
-                                        "Wall",
-                                        &format!("{:.3}s", frame.presentation_time_secs),
-                                        &label_font,
-                                        &value_font,
-                                        label_color,
-                                        value_color,
-                                    );
-                                });
-
-                            // ── State ────────────────────────────────
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new("STATE")
-                                    .font(section_font.clone())
-                                    .color(section_color),
-                            );
-                            ui.add_space(2.0);
-                            egui::Grid::new(grid_id.with("state"))
-                                .num_columns(2)
-                                .min_col_width(70.0)
-                                .max_col_width(TOOLTIP_COL_MAX_W)
-                                .spacing(egui::vec2(12.0, 1.0))
-                                .show(ui, |ui| {
-                                    tooltip_row(
-                                        ui,
-                                        "Active",
-                                        &frame.current_state_id,
-                                        &label_font,
-                                        &value_font,
-                                        label_color,
-                                        value_color,
-                                    );
-                                    if let Some(ref tid) = frame.active_transition_id {
-                                        tooltip_row(
-                                            ui,
-                                            "Transition",
-                                            tid,
-                                            &label_font,
-                                            &value_font,
-                                            label_color,
-                                            value_color,
-                                        );
-                                    }
-                                });
-
-                            // ── Overrides ────────────────────────────
-                            if !frame.motion_channels.is_empty() {
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("MOTION CHANNELS")
-                                        .font(section_font.clone())
-                                        .color(section_color),
-                                );
-                                ui.add_space(2.0);
-                                egui::Grid::new(grid_id.with("motion_channels"))
-                                    .num_columns(2)
-                                    .min_col_width(70.0)
-                                    .max_col_width(TOOLTIP_COL_MAX_W)
-                                    .spacing(egui::vec2(12.0, 1.0))
-                                    .show(ui, |ui| {
-                                        for channel in frame
-                                            .motion_channels
-                                            .iter()
-                                            .take(TOOLTIP_MAX_DETAIL_ROWS)
-                                        {
-                                            let mut detail = format!(
-                                                "{}  value={:?}  velocity={:?}",
-                                                channel.driver, channel.value, channel.velocity
-                                            );
-                                            if let Some(progress) = channel.timeline_progress {
-                                                detail
-                                                    .push_str(&format!("  timeline={progress:.2}"));
-                                            }
-                                            if let Some(progress) = channel.blending_progress {
-                                                detail.push_str(&format!("  blend={progress:.2}"));
-                                            }
-                                            if channel.completed {
-                                                detail.push_str("  completed");
-                                            }
-                                            tooltip_row(
-                                                ui,
-                                                &channel.key,
-                                                &detail,
-                                                &label_font,
-                                                &value_font,
-                                                label_color,
-                                                value_color,
-                                            );
-                                        }
-                                        tooltip_overflow_row(
-                                            ui,
-                                            frame
-                                                .motion_channels
-                                                .len()
-                                                .saturating_sub(TOOLTIP_MAX_DETAIL_ROWS),
-                                            &label_font,
-                                            &value_font,
-                                            label_color,
-                                            value_color,
-                                        );
-                                    });
-                            }
-
-                            if !frame.active_overrides.is_empty() {
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("VALUES")
-                                        .font(section_font.clone())
-                                        .color(section_color),
-                                );
-                                ui.add_space(2.0);
-                                egui::Grid::new(grid_id.with("values"))
-                                    .num_columns(2)
-                                    .min_col_width(70.0)
-                                    .max_col_width(TOOLTIP_COL_MAX_W)
-                                    .spacing(egui::vec2(12.0, 1.0))
-                                    .show(ui, |ui| {
-                                        let mut sorted: Vec<_> =
-                                            frame.active_overrides.iter().collect();
-                                        sorted.sort_by(|a, b| {
-                                            (&a.0.node_id, &a.0.param_name)
-                                                .cmp(&(&b.0.node_id, &b.0.param_name))
-                                        });
-                                        let hidden_count =
-                                            sorted.len().saturating_sub(TOOLTIP_MAX_DETAIL_ROWS);
-                                        for (k, v) in
-                                            sorted.into_iter().take(TOOLTIP_MAX_DETAIL_ROWS)
-                                        {
-                                            let key_label =
-                                                format!("{}.{}", k.node_id, k.param_name);
-                                            let val_str =
-                                                super::state_machine_panel::format_json_value_2dp(
-                                                    v,
-                                                );
-                                            tooltip_row(
-                                                ui,
-                                                &key_label,
-                                                &val_str,
-                                                &label_font,
-                                                &value_font,
-                                                label_color,
-                                                value_color,
-                                            );
-                                        }
-                                        tooltip_overflow_row(
-                                            ui,
-                                            hidden_count,
-                                            &label_font,
-                                            &value_font,
-                                            label_color,
-                                            value_color,
-                                        );
-                                    });
-                            }
-
-                            // ── Diagnostics ──────────────────────────
-                            if !frame.diagnostics.is_empty() {
-                                ui.add_space(4.0);
-                                for diag in frame.diagnostics.iter().take(TOOLTIP_MAX_DIAGNOSTICS) {
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(format!("⚠ {diag}"))
-                                                .font(label_font.clone())
-                                                .color(egui::Color32::from_rgb(255, 200, 80)),
-                                        )
-                                        .truncate(),
-                                    );
-                                }
-                                let hidden_count = frame
-                                    .diagnostics
-                                    .len()
-                                    .saturating_sub(TOOLTIP_MAX_DIAGNOSTICS);
-                                if hidden_count > 0 {
-                                    ui.label(
-                                        egui::RichText::new(format!("+{hidden_count} more"))
-                                            .font(label_font.clone())
-                                            .color(label_color),
-                                    );
-                                }
-                            }
-                        });
-                });
-        }
-    }
-
-    interaction
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-/// Single row inside a tooltip grid: dim label left, bright value right.
-fn tooltip_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    value: &str,
-    label_font: &egui::FontId,
-    value_font: &egui::FontId,
-    label_color: egui::Color32,
-    value_color: egui::Color32,
+fn paint_cursor(
+    painter: &egui::Painter,
+    x: f32,
+    clip_rect: egui::Rect,
+    color: egui::Color32,
+    anchor: bool,
 ) {
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(label)
-                .font(label_font.clone())
-                .color(label_color),
-        )
-        .truncate(),
+    painter.line_segment(
+        [
+            egui::pos2(x, clip_rect.min.y),
+            egui::pos2(x, clip_rect.max.y),
+        ],
+        egui::Stroke::new(if anchor { 1.5_f32 } else { 1.0_f32 }, color),
     );
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(value)
-                    .font(value_font.clone())
-                    .color(value_color),
-            )
-            .truncate(),
-        );
-    });
-    ui.end_row();
+    if anchor {
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                egui::pos2(x - 5.0, clip_rect.min.y + 2.0),
+                egui::pos2(x + 5.0, clip_rect.min.y + 2.0),
+                egui::pos2(x, clip_rect.min.y + 9.0),
+            ],
+            color,
+            egui::Stroke::NONE,
+        ));
+    }
 }
 
-fn tooltip_overflow_row(
-    ui: &mut egui::Ui,
-    hidden_count: usize,
-    label_font: &egui::FontId,
-    value_font: &egui::FontId,
-    label_color: egui::Color32,
-    value_color: egui::Color32,
-) {
-    if hidden_count > 0 {
-        tooltip_row(
-            ui,
-            "",
-            &format!("+{hidden_count} more"),
-            label_font,
-            value_font,
-            label_color,
-            value_color,
+fn paint_labels(ui: &egui::Ui, label_rect: egui::Rect, tracked_keys: &[String]) {
+    let painter = ui.painter_at(label_rect);
+    painter.rect_filled(
+        label_rect,
+        egui::CornerRadius::ZERO,
+        crate::color::lab(7.78201, -0.000_014_901_2, 0.0),
+    );
+    painter.text(
+        egui::pos2(label_rect.min.x + 4.0, label_rect.min.y + 2.0),
+        egui::Align2::LEFT_TOP,
+        "Time",
+        design_tokens::font_id(
+            design_tokens::FONT_SIZE_9,
+            design_tokens::FontWeight::Medium,
+        ),
+        design_tokens::white(50),
+    );
+    for (row_index, key) in tracked_keys.iter().enumerate() {
+        let row_y = label_rect.min.y + HEADER_ROW_H + row_index as f32 * VALUE_ROW_H;
+        painter.text(
+            egui::pos2(label_rect.min.x + 4.0, row_y + 3.0),
+            egui::Align2::LEFT_TOP,
+            key,
+            design_tokens::font_id(
+                design_tokens::FONT_SIZE_11,
+                design_tokens::FontWeight::Normal,
+            ),
+            design_tokens::white(60),
         );
     }
 }
 
-/// Draw a diamond (rotated square) centred at `center`.
 fn draw_diamond(painter: &egui::Painter, center: egui::Pos2, half: f32, color: egui::Color32) {
-    let points = vec![
-        egui::pos2(center.x, center.y - half),
-        egui::pos2(center.x + half, center.y),
-        egui::pos2(center.x, center.y + half),
-        egui::pos2(center.x - half, center.y),
-    ];
     painter.add(egui::Shape::convex_polygon(
-        points,
+        vec![
+            egui::pos2(center.x, center.y - half),
+            egui::pos2(center.x + half, center.y),
+            egui::pos2(center.x, center.y + half),
+            egui::pos2(center.x - half, center.y),
+        ],
         color,
         egui::Stroke::NONE,
     ));
 }
 
-/// Compare two JSON values for approximate equality (numeric tolerance).
 fn json_values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     match (a, b) {
-        (serde_json::Value::Number(na), serde_json::Value::Number(nb)) => {
-            let fa = na.as_f64().unwrap_or(0.0);
-            let fb = nb.as_f64().unwrap_or(0.0);
-            (fa - fb).abs() < 1e-6
+        (serde_json::Value::Number(left), serde_json::Value::Number(right)) => {
+            let left = left.as_f64().unwrap_or(0.0);
+            let right = right.as_f64().unwrap_or(0.0);
+            (left - right).abs() < 1e-6
         }
-        (serde_json::Value::Array(aa), serde_json::Value::Array(ab)) => {
-            aa.len() == ab.len()
-                && aa
+        (serde_json::Value::Array(left), serde_json::Value::Array(right)) => {
+            left.len() == right.len()
+                && left
                     .iter()
-                    .zip(ab.iter())
-                    .all(|(x, y)| json_values_equal(x, y))
+                    .zip(right.iter())
+                    .all(|(left, right)| json_values_equal(left, right))
         }
-        (serde_json::Value::Bool(ba), serde_json::Value::Bool(bb)) => ba == bb,
+        (serde_json::Value::Bool(left), serde_json::Value::Bool(right)) => left == right,
         _ => a == b,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tick_step_uses_one_two_five_progression() {
+        assert_eq!(tick_step(640.0), 0.1);
+        assert_eq!(tick_step(320.0), 0.2);
+        assert_eq!(tick_step(100.0), 1.0);
+        assert_eq!(tick_step(60.0), 2.0);
+    }
+
+    #[test]
+    fn zoom_keeps_time_under_pointer_stationary() {
+        let old_scroll = 200.0;
+        let pointer_x = 150.0;
+        let old_scale = 600.0;
+        let new_scale = 1_200.0;
+        let old_time = (old_scroll + pointer_x - CONTENT_EDGE_PAD) / old_scale;
+        let new_scroll = zoom_scroll_around_pointer(old_scroll, pointer_x, old_scale, new_scale);
+        let new_time = (new_scroll + pointer_x - CONTENT_EDGE_PAD) / new_scale;
+        assert!((old_time - new_time).abs() < 1e-6);
+    }
+
+    #[test]
+    fn content_width_preserves_real_time_span() {
+        assert_eq!(timeline_content_width(2.0, 3.0, 600.0, 400.0), 616.0);
+        assert_eq!(timeline_content_width(2.0, 2.0, 600.0, 400.0), 400.0);
     }
 }

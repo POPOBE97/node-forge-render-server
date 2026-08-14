@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use rust_wgpu_fiber::eframe::{egui, egui_wgpu, wgpu};
 
-use crate::{protocol, renderer, ws};
+use crate::{animation::AnimationStep, protocol, renderer, ws};
 
 use super::types::{
     App, StateControlSelection, scene_reference_desired_source, scene_reference_image_alpha_mode,
@@ -50,6 +50,73 @@ pub(crate) fn apply_state_machine_overrides(
         );
     }
     app.runtime.scene_redraw_pending = true;
+}
+
+pub(super) fn update_live_timeline_snapshot(app: &mut App, step: &AnimationStep) {
+    let active_overrides = app
+        .runtime
+        .animation_session
+        .as_ref()
+        .map(crate::animation::AnimationSession::presentation_snapshot)
+        .unwrap_or_else(|| step.active_overrides.clone());
+    app.runtime.last_live_snapshot = Some(crate::animation::TimelineRenderSnapshot {
+        scene_time_secs: step.scene_time_secs,
+        active_overrides,
+    });
+}
+
+/// Record a complete state-machine presentation frame at the buffer's current
+/// logical time. Both Play ticks and manual State activations use this path.
+pub(super) fn record_timeline_step(
+    app: &mut App,
+    step: &AnimationStep,
+) -> Option<crate::animation::TimelineFrameId> {
+    let session = app.runtime.animation_session.as_ref()?;
+    let definition = session.runtime().definition();
+    let active_overrides = session.presentation_snapshot();
+    let (transition_source_name, transition_target_name) = step
+        .active_transition_id
+        .as_ref()
+        .and_then(|transition_id| {
+            definition
+                .transitions
+                .iter()
+                .find(|transition| transition.id == *transition_id)
+                .map(|transition| {
+                    let state_name = |state_id: &str| {
+                        definition
+                            .states
+                            .iter()
+                            .find(|state| state.id == state_id)
+                            .map(|state| state.name.clone())
+                            .filter(|name| !name.trim().is_empty())
+                            .unwrap_or_else(|| state_id.to_string())
+                    };
+                    (
+                        Some(state_name(&transition.source)),
+                        Some(state_name(&transition.target)),
+                    )
+                })
+        })
+        .unwrap_or((None, None));
+    let record = crate::animation::TimelineFrameRecord {
+        scene_time_secs: step.scene_time_secs,
+        current_state_id: step.current_state_id.clone(),
+        active_transition_id: step.active_transition_id.clone(),
+        motion_channels: step.motion_channels.clone(),
+        transition_source_name,
+        transition_target_name,
+        state_local_times: step.state_local_times.clone(),
+        diagnostics: step.diagnostics.clone(),
+        active_overrides,
+    };
+    let id = app.runtime.timeline_buffer.as_mut()?.push(record);
+    if app.runtime.timeline_review.anchor_frame_id.is_none()
+        && app.runtime.timeline_review.held_frame_id.is_some()
+    {
+        app.runtime.timeline_review.held_frame_id = Some(id);
+    }
+    Some(id)
 }
 
 pub(crate) fn update_dynamic_gaussian_blur_bundles(app: &mut App) -> Result<usize> {
@@ -100,9 +167,9 @@ pub(super) fn select_state_control(app: &mut App, selection: StateControlSelecti
             if let Some(buffer) = app.runtime.timeline_buffer.as_mut() {
                 buffer.clear();
             }
-            app.runtime.last_live_overrides = None;
-            app.runtime.timeline_pre_hover_overrides = None;
-            app.runtime.timeline_preview_was_active = false;
+            app.runtime.last_live_snapshot = None;
+            app.runtime.timeline_review.clear_targets_for_play();
+            app.runtime.time_updates_enabled = true;
             eprintln!("[animation] play");
         }
         StateControlSelection::State(state_id) => {
@@ -113,15 +180,20 @@ pub(super) fn select_state_control(app: &mut App, selection: StateControlSelecti
                 .ok_or_else(|| anyhow!("scene has no valid State Machine"))?
                 .force_state(state_id)?;
             apply_state_machine_overrides(app, &step.active_overrides);
-            app.runtime.last_live_overrides = Some(step.active_overrides);
-            app.runtime.timeline_pre_hover_overrides = None;
-            app.runtime.timeline_preview_was_active = false;
+            app.runtime.time_value_secs = step.scene_time_secs as f32;
+            update_live_timeline_snapshot(app, &step);
+            record_timeline_step(app, &step);
             eprintln!("[animation] force state {state_id}");
         }
     }
 
     app.runtime.state_control_selection = Some(selection);
-    app.runtime.time_value_secs = 0.0;
+    if matches!(
+        app.runtime.state_control_selection,
+        Some(StateControlSelection::Play)
+    ) {
+        app.runtime.time_value_secs = 0.0;
+    }
     Ok(())
 }
 
@@ -134,9 +206,12 @@ pub(super) fn clear_state_control(app: &mut App) {
         .unwrap_or_default();
     apply_state_machine_overrides(app, &restores);
     app.runtime.state_control_selection = None;
-    app.runtime.last_live_overrides = None;
-    app.runtime.timeline_pre_hover_overrides = None;
-    app.runtime.timeline_preview_was_active = false;
+    app.runtime.last_live_snapshot = app.runtime.animation_session.as_ref().map(|session| {
+        crate::animation::TimelineRenderSnapshot {
+            scene_time_secs: session.scene_time(),
+            active_overrides: session.presentation_snapshot(),
+        }
+    });
     app.runtime.time_value_secs = 0.0;
 }
 
@@ -183,7 +258,7 @@ fn update_animation_base_values(app: &mut App, updated_nodes: &[crate::dsl::Node
         .map(|session| session.step(0.0))
     {
         apply_state_machine_overrides(app, &step.active_overrides);
-        app.runtime.last_live_overrides = Some(step.active_overrides);
+        update_live_timeline_snapshot(app, &step);
     }
 }
 
@@ -840,9 +915,8 @@ pub fn apply_scene_update(
                     app.runtime.uniform_scene = None;
                     app.runtime.matrix_source_scene = None;
                     app.runtime.state_control_selection = None;
-                    app.runtime.last_live_overrides = None;
-                    app.runtime.timeline_pre_hover_overrides = None;
-                    app.runtime.timeline_preview_was_active = false;
+                    app.runtime.last_live_snapshot = None;
+                    app.runtime.timeline_review = Default::default();
                     let message = format!("uniform-only update failed: {e:#}");
                     eprintln!("[scene-runtime] {message}");
                     broadcast_error(app, request_id, "UNIFORM_UPDATE_FAILED", message);
@@ -924,9 +998,8 @@ pub fn apply_scene_update(
                             app.runtime.timeline_buffer = create_timeline_buffer_for_session(
                                 app.runtime.animation_session.as_ref(),
                             );
-                            app.runtime.last_live_overrides = None;
-                            app.runtime.timeline_pre_hover_overrides = None;
-                            app.runtime.timeline_preview_was_active = false;
+                            app.runtime.last_live_snapshot = None;
+                            app.runtime.timeline_review = Default::default();
                             restore_state_control_after_scene_change(
                                 app,
                                 previous_state_control_selection,
@@ -1007,9 +1080,8 @@ pub fn apply_scene_update(
                     app.runtime.animation_session = next_animation_session;
                     app.runtime.timeline_buffer =
                         create_timeline_buffer_for_session(app.runtime.animation_session.as_ref());
-                    app.runtime.last_live_overrides = None;
-                    app.runtime.timeline_pre_hover_overrides = None;
-                    app.runtime.timeline_preview_was_active = false;
+                    app.runtime.last_live_snapshot = None;
+                    app.runtime.timeline_review = Default::default();
                     restore_state_control_after_scene_change(app, previous_state_control_selection);
 
                     if let Ok(mut g) = app.runtime.last_good.lock() {
@@ -1038,9 +1110,8 @@ pub fn apply_scene_update(
                     app.core.gaussian_blur_bundles.clear();
                     app.runtime.animation_session = None;
                     app.runtime.timeline_buffer = None;
-                    app.runtime.last_live_overrides = None;
-                    app.runtime.timeline_pre_hover_overrides = None;
-                    app.runtime.timeline_preview_was_active = false;
+                    app.runtime.last_live_snapshot = None;
+                    app.runtime.timeline_review = Default::default();
                     app.runtime.state_control_selection = None;
                     broadcast_error(app, request_id, "VALIDATION_ERROR", message);
                     apply_error_plane(app, render_state);
@@ -1123,9 +1194,8 @@ pub fn apply_scene_update(
             app.canvas.reference.scene_alpha_mode = None;
             app.runtime.scene_uses_time = false;
             app.runtime.state_control_selection = None;
-            app.runtime.last_live_overrides = None;
-            app.runtime.timeline_pre_hover_overrides = None;
-            app.runtime.timeline_preview_was_active = false;
+            app.runtime.last_live_snapshot = None;
+            app.runtime.timeline_review = Default::default();
             broadcast_error(app, request_id, "PARSE_ERROR", message);
             apply_error_plane(app, render_state);
             SceneApplyResult {
