@@ -186,6 +186,10 @@ pub fn apply_action(
                 );
             }
         }
+        CanvasAction::TogglePixelValueDisplay => {
+            app.canvas.display.pixel_value_display_mode =
+                app.canvas.display.pixel_value_display_mode.toggled();
+        }
         CanvasAction::TogglePause => {
             app.runtime.time_updates_enabled = !app.runtime.time_updates_enabled;
             // Pause / resume the timeline presentation clock so that

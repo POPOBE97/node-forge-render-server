@@ -2,6 +2,7 @@ use rust_wgpu_fiber::eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::{Map, Value, json};
 
 use crate::{
+    color::srgb_to_linear_channel,
     dsl::{Node, SceneDSL, incoming_connection},
     protocol::DesignParamPatchPayload,
     renderer::{
@@ -870,7 +871,12 @@ fn parse_color_components(mut color: HdrRgba) -> Option<HdrRgba> {
 
 fn color32_to_hdr(color: Color32) -> HdrRgba {
     let [r, g, b, _] = color.to_srgba_unmultiplied();
-    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+    [
+        srgb_to_linear_channel(r as f32 / 255.0),
+        srgb_to_linear_channel(g as f32 / 255.0),
+        srgb_to_linear_channel(b as f32 / 255.0),
+        1.0,
+    ]
 }
 
 fn opaque_color(mut color: HdrRgba) -> HdrRgba {

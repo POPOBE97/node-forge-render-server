@@ -17,7 +17,11 @@ use crate::{
     ui::{self, viewport_indicators::ViewportIndicatorManager},
 };
 
-use super::{design::CanvasDesignState, ops::ClipboardCopyState, pixel_overlay::PixelOverlayCache};
+use super::{
+    design::CanvasDesignState,
+    ops::ClipboardCopyState,
+    pixel_overlay::{PixelOverlayCache, PixelValueDisplayMode},
+};
 
 pub struct CanvasState {
     pub viewport: CanvasViewportState,
@@ -122,6 +126,7 @@ pub struct CanvasDisplayState {
     pub deferred_texture_frees: Vec<egui::TextureId>,
     pub pixel_overlay_cache: Option<Arc<PixelOverlayCache>>,
     pub pixel_overlay_last_request_key: Option<u64>,
+    pub pixel_value_display_mode: PixelValueDisplayMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,6 +151,7 @@ impl Default for CanvasDisplayState {
             deferred_texture_frees: Vec::new(),
             pixel_overlay_cache: None,
             pixel_overlay_last_request_key: None,
+            pixel_value_display_mode: PixelValueDisplayMode::default(),
         }
     }
 }

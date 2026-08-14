@@ -918,8 +918,15 @@ pub struct MousePosition {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SceneSize {
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RuntimeInputSnapshot {
     pub mouse_position: Option<MousePosition>,
+    pub scene_size: Option<SceneSize>,
 }
 
 // ---------------------------------------------------------------------------

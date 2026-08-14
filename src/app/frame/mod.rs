@@ -15,7 +15,7 @@ use std::{
 use rust_wgpu_fiber::eframe::{self, egui};
 
 use crate::app::{
-    matrix_render,
+    matrix_render, scene_runtime,
     types::{App, TestMode},
 };
 use crate::metric_log;
@@ -60,6 +60,12 @@ pub(super) fn run(app: &mut App, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         matrix_render::MatrixPollResult::default()
     };
     let advance = advance::run(app);
+    match scene_runtime::update_dynamic_gaussian_blur_bundles(app) {
+        Ok(_) => {}
+        Err(error) => {
+            eprintln!("[animation] dynamic Gaussian blur update failed: {error:#}");
+        }
+    }
     let advance_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
     let t2 = Instant::now();

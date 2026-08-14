@@ -37,6 +37,12 @@ struct GraphInputs {
     node_FloatInput_37_0eaa0821: vec4f,
     // Node: FloatInput_43
     node_FloatInput_43_6111f420: vec4f,
+    // Node: FloatInput_GlassShapeEdgePx
+    node_FloatInput_GlassShapeEdgePx_648e4831: vec4f,
+    // Node: FloatInput_GlassShapeReflectOffsetPx
+    node_FloatInput_GlassShapeReflectOffsetPx_ada769d3: vec4f,
+    // Node: FloatInput_GlassShapeThicknessPx
+    node_FloatInput_GlassShapeThicknessPx_554d6e7a: vec4f,
     // Node: FloatInput_InputBarRefractionIndex
     node_FloatInput_InputBarRefractionIndex_ce5b6884: vec4f,
     // Node: Vector2Input_35

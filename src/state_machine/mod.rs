@@ -53,7 +53,8 @@ pub use trace::{
     round_f64, tracked_override_keys,
 };
 pub use types::{
-    EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, StateMachine, StateParamKey,
+    EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, SceneSize, StateMachine,
+    StateParamKey,
 };
 pub use validation::{validate, validate_scene_declarations};
 

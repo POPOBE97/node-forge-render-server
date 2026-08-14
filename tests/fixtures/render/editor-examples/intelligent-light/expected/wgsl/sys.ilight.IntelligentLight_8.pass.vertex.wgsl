@@ -69,7 +69,7 @@ fn blend_normal(src: vec4f, dst: vec4f) -> vec4f {
 
 fn presentation_color_linear(index: u32) -> vec3f {
     let color = ilight_data.presentation_colors[index];
-    return srgb_to_linear(max(color.rgb, vec3f(0.0))) * color.a;
+    return max(color.rgb, vec3f(0.0)) * color.a;
 }
 
 fn presentation_color(x: f32) -> vec3f {
@@ -85,12 +85,6 @@ fn presentation_color(x: f32) -> vec3f {
         presentation_color_linear(2u),
         smoothstep(0.5, 1.0, x),
     );
-}
-
-fn srgb_to_linear(value: vec3f) -> vec3f {
-    let low = value / 12.92;
-    let high = pow((value + vec3f(0.055)) / 1.055, vec3f(2.4));
-    return select(high, low, value <= vec3f(0.04045));
 }
 
 // ── Fragment shader ──────────────────────────────────────────────────

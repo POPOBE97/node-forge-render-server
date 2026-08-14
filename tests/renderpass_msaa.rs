@@ -118,6 +118,11 @@ fn render_pass_msaa_default_is_applied_by_normalization() {
         Some(&json!(1)),
         "RenderPass.msaaSampleCount default must be merged from schema"
     );
+    assert_eq!(scene.nodes[0].params.get("loadOp"), Some(&json!("clear")));
+    assert_eq!(
+        scene.nodes[0].params.get("clearColor"),
+        Some(&json!([0, 0, 0, 0]))
+    );
 }
 
 #[test]
@@ -164,6 +169,46 @@ fn render_pass_culling_validation_rejects_invalid_values() {
     let msg = format!("{err:#}");
     assert!(msg.contains("RenderPass.culling"));
     assert!(msg.contains("none,front,back"));
+}
+
+#[test]
+fn render_pass_load_op_and_clear_color_validation_accepts_supported_values() {
+    let scheme = load_default_scheme().expect("load default scheme");
+    for params in [
+        json!({"loadOp": "none"}),
+        json!({"loadOp": "load"}),
+        json!({"loadOp": "dont-care"}),
+        json!({"loadOp": "clear", "clearColor": [0.0, 0.0, 0.0, 1.0]}),
+        json!({"loadOp": "clear", "clearColor": "#000000ff"}),
+    ] {
+        let scene = scene(vec![node("rp", "RenderPass", params.clone())], vec![]);
+        validate_scene_against(&scene, &scheme)
+            .unwrap_or_else(|error| panic!("params {params} should validate: {error:#}"));
+    }
+}
+
+#[test]
+fn render_pass_load_op_and_clear_color_validation_rejects_invalid_values() {
+    let scheme = load_default_scheme().expect("load default scheme");
+    for (params, expected) in [
+        (json!({"loadOp": "discard"}), "RenderPass.loadOp"),
+        (json!({"loadOp": 1}), "RenderPass.loadOp"),
+        (
+            json!({"loadOp": "clear", "clearColor": [0.0, 0.0]}),
+            "RenderPass.clearColor",
+        ),
+        (
+            json!({"loadOp": "clear", "clearColor": "#xyzxyz"}),
+            "RenderPass.clearColor",
+        ),
+    ] {
+        let scene = scene(vec![node("rp", "RenderPass", params)], vec![]);
+        let error = validate_scene_against(&scene, &scheme).expect_err("params should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "error should mention {expected}: {error:#}"
+        );
+    }
 }
 
 #[test]

@@ -674,6 +674,32 @@ mod tests {
         let result = compile_color_input(&node, None, &mut ctx).unwrap();
         assert_eq!(result.ty, ValueType::Vec4);
         assert!(result.expr.contains("graph_inputs."));
+        assert_eq!(result.expr.matches(".rgb *").count(), 1);
+        assert!(!result.expr.contains("srgb"));
+    }
+
+    #[test]
+    fn color_array_input_premultiplies_each_linear_color_once() {
+        let mut ctx = MaterialCompileContext::default();
+        let node = Node {
+            id: "colors".to_string(),
+            node_type: "ColorArrayInput".to_string(),
+            params: HashMap::new(),
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: vec![crate::dsl::NodePort {
+                id: "value".to_string(),
+                name: Some("Value".to_string()),
+                port_type: Some("packed<color>".to_string()),
+                array_length: Some(2),
+            }],
+            wgsl_override: None,
+        };
+
+        let result = compile_packed_input(&node, Some("value"), &mut ctx).unwrap();
+        assert_eq!(result.ty, ValueType::Vec4Array(2));
+        assert_eq!(result.expr.matches(".rgb *").count(), 2);
+        assert!(!result.expr.contains("srgb"));
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::{
 
 const APPLICATION_ID: i64 = 1_313_232_455;
 const FORMAT_VERSION: i64 = 5;
-const SCENE_DSL_VERSION: &str = "5.0";
+const SCENE_DSL_VERSION: &str = "6.0";
 const SYNC_LOG_RETENTION: i64 = 10_000;
 const CONTENT_HISTORY_RETENTION: i64 = 256;
 const HISTORY_ENTITY_KIND: &str = "document_history";

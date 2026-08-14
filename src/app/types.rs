@@ -320,6 +320,8 @@ pub struct AppInit {
     pub asset_store: crate::asset_store::AssetStore,
     pub animation_session: Option<crate::animation::AnimationSession>,
     pub pass_debug_sources: std::collections::HashMap<String, renderer::PassDebugSource>,
+    pub gaussian_blur_bundles:
+        std::collections::HashMap<String, crate::renderer::GaussianBlurBundleRuntime>,
     pub debug_artifacts: crate::debug_artifacts::DebugArtifactStore,
     pub nforge_path: Option<PathBuf>,
 }
@@ -337,6 +339,8 @@ pub(super) struct AppCore {
     pub passes: Vec<renderer::PassBindings>,
     pub ws_hub: ws::WsHub,
     pub asset_store: crate::asset_store::AssetStore,
+    pub gaussian_blur_bundles:
+        std::collections::HashMap<String, crate::renderer::GaussianBlurBundleRuntime>,
 }
 
 pub(super) struct AppRuntime {
@@ -349,6 +353,7 @@ pub(super) struct AppRuntime {
     /// Matrix cells clone this scene and project one selection per cell.
     pub matrix_source_scene: Option<crate::dsl::SceneDSL>,
     pub last_pipeline_signature: Option<[u8; 32]>,
+    pub dynamic_gaussian_blur_dirty: bool,
     pub pipeline_rebuild_count: u64,
     pub uniform_only_update_count: u64,
     pub render_texture_fps_tracker: RenderTextureFpsTracker,
@@ -727,6 +732,7 @@ impl App {
                 passes: init.passes,
                 ws_hub: init.ws_hub,
                 asset_store: init.asset_store,
+                gaussian_blur_bundles: init.gaussian_blur_bundles,
             },
             runtime: AppRuntime {
                 start: init.start,
@@ -736,6 +742,7 @@ impl App {
                 uniform_scene: init.uniform_scene,
                 matrix_source_scene: init.matrix_source_scene,
                 last_pipeline_signature: init.last_pipeline_signature,
+                dynamic_gaussian_blur_dirty: false,
                 pipeline_rebuild_count: 0,
                 uniform_only_update_count: 0,
                 render_texture_fps_tracker: RenderTextureFpsTracker::default(),

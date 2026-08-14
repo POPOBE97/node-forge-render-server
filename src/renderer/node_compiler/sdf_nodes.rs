@@ -66,22 +66,22 @@ fn ensure_sdf2d_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) -> Sdf2D
         };
     }
 
-    ensure_default_sdf2d_wgsl_lib(ctx);
+    let smooth_round_rect_fn = ensure_default_sdf2d_wgsl_lib(ctx);
     Sdf2DLib {
         round_rect_fn: SDF2D_ROUND_RECT_FN.to_string(),
-        smooth_round_rect_fn: SDF2D_SMOOTH_ROUND_RECT_FN.to_string(),
+        smooth_round_rect_fn: smooth_round_rect_fn.to_string(),
     }
 }
 
-pub(crate) fn ensure_default_sdf2d_wgsl_lib(ctx: &mut MaterialCompileContext) {
-    if ctx.extra_wgsl_decls.contains_key(SDF2D_WGSL_LIB_KEY) {
-        return;
+pub(crate) fn ensure_default_sdf2d_wgsl_lib(ctx: &mut MaterialCompileContext) -> &'static str {
+    if !ctx.extra_wgsl_decls.contains_key(SDF2D_WGSL_LIB_KEY) {
+        let template = super::template_loader::load_template("sdf2d.wgsl");
+        let block = format!("\n// ---- 2D SDF helpers (generated) ----\n{}", template);
+        ctx.extra_wgsl_decls
+            .insert(SDF2D_WGSL_LIB_KEY.to_string(), block);
     }
 
-    let template = super::template_loader::load_template("sdf2d.wgsl");
-    let block = format!("\n// ---- 2D SDF helpers (generated) ----\n{}", template);
-    ctx.extra_wgsl_decls
-        .insert(SDF2D_WGSL_LIB_KEY.to_string(), block);
+    SDF2D_SMOOTH_ROUND_RECT_FN
 }
 
 fn ensure_sdf2d_bevel_wgsl_lib(ctx: &mut MaterialCompileContext, node: &Node) -> Sdf2DBevelLib {

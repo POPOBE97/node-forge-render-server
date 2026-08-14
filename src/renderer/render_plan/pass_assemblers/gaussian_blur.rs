@@ -21,7 +21,8 @@ use crate::{
         wgsl::{
             build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
             build_downsample_bundle, build_fullscreen_textured_bundle,
-            build_horizontal_blur_bundle_with_tap_count, build_upsample_bilinear_bundle,
+            build_horizontal_blur_bundle_runtime, build_horizontal_blur_bundle_with_tap_count,
+            build_upsample_bilinear_bundle, build_vertical_blur_bundle_runtime,
             build_vertical_blur_bundle_with_tap_count, clamp_min_1, gaussian_kernel_8,
             gaussian_mip_level_and_sigma_p,
         },
@@ -48,6 +49,31 @@ pub(crate) fn assemble_gaussian_blur(
     layer_id: &str,
     layer_node: &Node,
 ) -> Result<()> {
+    assemble_gaussian_blur_impl(sc, bs, layer_id, layer_node, None, false)
+}
+
+/// Assemble the unchanged Gaussian algorithm for a preselected scheduling route.
+///
+/// The override affects only route planning (downsample topology). Runtime coefficients are still
+/// supplied through uniforms and use the authored radius.
+pub(crate) fn assemble_gaussian_blur_with_radius(
+    sc: &SceneContext<'_>,
+    bs: &mut BuilderState<'_>,
+    layer_id: &str,
+    layer_node: &Node,
+    radius_override: Option<f32>,
+) -> Result<()> {
+    assemble_gaussian_blur_impl(sc, bs, layer_id, layer_node, radius_override, true)
+}
+
+fn assemble_gaussian_blur_impl(
+    sc: &SceneContext<'_>,
+    bs: &mut BuilderState<'_>,
+    layer_id: &str,
+    layer_node: &Node,
+    radius_override: Option<f32>,
+    runtime_gaussian_uniform: bool,
+) -> Result<()> {
     let prepared = sc.prepared;
     let nodes_by_id = sc.nodes_by_id();
     let ids = sc.ids();
@@ -66,7 +92,10 @@ pub(crate) fn assemble_gaussian_blur(
     let mut base_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
     let mut blur_output_center: Option<[f32; 2]> = None;
 
-    let radius_px = cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?;
+    let radius_px = match radius_override {
+        Some(radius) => radius.max(0.0),
+        None => cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?,
+    };
     let extend_enabled = layer_node
         .params
         .get("extend")
@@ -304,9 +333,9 @@ pub(crate) fn assemble_gaussian_blur(
     // sigma from radius
     let sigma = radius_px / 3.525_494;
     let (mip_level, sigma_p) = gaussian_mip_level_and_sigma_p(sigma);
+    let (kernel, offset, tap_count) = gaussian_kernel_8(sigma_p.max(1e-6));
+    let tap_count = tap_count.clamp(1, 8);
     let downsample_factor: u32 = 1 << mip_level;
-    let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
-    let tap_count = num.clamp(1, 8);
     let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
     let skip_factor1_downsample = should_skip_blur_downsample_pass(downsample_factor);
     let skip_factor1_upsample =
@@ -504,7 +533,11 @@ pub(crate) fn assemble_gaussian_blur(
     // 2) Horizontal blur: ds_src_tex -> h_tex
     let params_h: ResourceName =
         format!("params.sys.blur.{layer_id}.h.ds{downsample_factor}").into();
-    let bundle_h = build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count);
+    let bundle_h = if runtime_gaussian_uniform {
+        build_horizontal_blur_bundle_runtime()
+    } else {
+        build_horizontal_blur_bundle_with_tap_count(kernel, offset, tap_count)
+    };
     let ds_w_f = ds_w as f32;
     let ds_h_f = ds_h as f32;
     let params_h_val = make_params(
@@ -552,7 +585,11 @@ pub(crate) fn assemble_gaussian_blur(
     // 3) Vertical blur: h_tex -> v_tex
     let params_v: ResourceName =
         format!("params.sys.blur.{layer_id}.v.ds{downsample_factor}").into();
-    let bundle_v = build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count);
+    let bundle_v = if runtime_gaussian_uniform {
+        build_vertical_blur_bundle_runtime()
+    } else {
+        build_vertical_blur_bundle_with_tap_count(kernel, offset, tap_count)
+    };
     let pass_name_v: ResourceName =
         format!("sys.blur.{layer_id}.v.ds{downsample_factor}.pass").into();
     let params_v_val = make_params(

@@ -48,6 +48,7 @@ const ORDER_QUALIFIER: i32 = 31;
 const ORDER_STATS: i32 = 40;
 const KEY_TOGGLE_SAMPLING: egui::Key = egui::Key::N;
 const KEY_TOGGLE_REFERENCE_ALPHA: egui::Key = egui::Key::P;
+const KEY_TOGGLE_PIXEL_VALUE_DISPLAY: egui::Key = egui::Key::H;
 
 fn with_alpha(color: Color32, alpha: f32) -> Color32 {
     let a = ((color.a() as f32) * alpha.clamp(0.0, 1.0)).round() as u8;
@@ -1590,6 +1591,24 @@ pub fn show_canvas(
     }
 
     viewport_frame.image_rect = viewport::image_rect(app, canvas_rect, image_size);
+    if debug_shortcuts_enabled
+        && ctx.input(|i| i.key_pressed(KEY_TOGGLE_PIXEL_VALUE_DISPLAY))
+        && rgba8_pixel_overlay_visible(
+            app,
+            canvas_rect,
+            viewport_frame.image_rect,
+            matrix_active,
+            display_frame.as_ref(),
+        )
+    {
+        apply_action(
+            &mut frame_result,
+            app,
+            render_state,
+            renderer,
+            CanvasAction::TogglePixelValueDisplay,
+        );
+    }
     draw_checkerboard(ui, ctx, canvas_rect);
 
     if matrix_active {
@@ -1676,6 +1695,8 @@ pub fn show_canvas(
                 app.canvas.viewport.zoom,
                 display_frame.effective_resolution,
                 value_sample_cache.as_deref(),
+                display_frame.display_texture_format,
+                app.canvas.display.pixel_value_display_mode,
                 app.canvas
                     .reference
                     .ref_image
@@ -1780,6 +1801,60 @@ fn matrix_display_cell_screen_rect(
         ),
         egui::vec2(cell_w * zoom, cell_h * zoom),
     )
+}
+
+fn matrix_cell_pixel_overlay_format(
+    cell: &matrix_render::MatrixCell,
+    in_diff_mode: bool,
+) -> Option<wgpu::TextureFormat> {
+    if in_diff_mode
+        && cell.diff_texture_id.is_some()
+        && let Some(diff_renderer) = cell.diff_renderer.as_ref()
+    {
+        return Some(diff_renderer.output_format());
+    }
+
+    cell.shader_space
+        .texture_info(cell.output_texture_name.as_str())
+        .map(|info| info.format)
+}
+
+fn rgba8_pixel_overlay_visible(
+    app: &App,
+    canvas_rect: Rect,
+    image_rect: Rect,
+    matrix_active: bool,
+    display_frame: Option<&DisplayFrame>,
+) -> bool {
+    if !pixel_overlay::is_pixel_overlay_visible_at_zoom(app.canvas.viewport.zoom)
+        || app.canvas.design.active.is_some()
+        || !image_rect.intersect(canvas_rect).is_positive()
+    {
+        return false;
+    }
+
+    if !matrix_active {
+        return display_frame
+            .and_then(|frame| frame.display_texture_format)
+            .is_some_and(pixel_overlay::supports_u8_fraction);
+    }
+
+    let state = &app.shell.matrix_state;
+    let in_diff_mode = matches!(
+        app.canvas.reference.ref_image.as_ref().map(|r| r.mode),
+        Some(RefImageMode::Diff)
+    );
+    state.cells.iter().any(|cell| {
+        matrix_display_cell_screen_rect(
+            state,
+            cell.display_coord,
+            image_rect,
+            app.canvas.viewport.zoom,
+        )
+        .intersects(canvas_rect)
+            && matrix_cell_pixel_overlay_format(cell, in_diff_mode)
+                .is_some_and(pixel_overlay::supports_u8_fraction)
+    })
 }
 
 fn matrix_hit_test_coords<I>(
@@ -2076,10 +2151,15 @@ fn draw_matrix_grid_viewport(ui: &egui::Ui, app: &App, canvas_rect: Rect, image_
 
 fn draw_matrix_pixel_overlays(ui: &egui::Ui, app: &mut App, canvas_rect: Rect, image_rect: Rect) {
     let zoom = app.canvas.viewport.zoom;
-    if zoom < 48.0 {
+    if !pixel_overlay::is_pixel_overlay_visible_at_zoom(zoom) {
         return;
     }
 
+    let value_display_mode = app.canvas.display.pixel_value_display_mode;
+    let in_diff_mode = matches!(
+        app.canvas.reference.ref_image.as_ref().map(|r| r.mode),
+        Some(RefImageMode::Diff)
+    );
     let state = &mut app.shell.matrix_state;
     if state.cells.is_empty() {
         return;
@@ -2106,6 +2186,7 @@ fn draw_matrix_pixel_overlays(ui: &egui::Ui, app: &mut App, canvas_rect: Rect, i
 
         matrix_render::ensure_cell_pixel_cache(cell);
         let cache = cell.pixel_cache.as_ref();
+        let display_format = matrix_cell_pixel_overlay_format(cell, in_diff_mode);
         draw_pixel_overlay(
             ui,
             cell_image_rect,
@@ -2113,6 +2194,8 @@ fn draw_matrix_pixel_overlays(ui: &egui::Ui, app: &mut App, canvas_rect: Rect, i
             zoom,
             resolution,
             cache,
+            display_format,
+            value_display_mode,
             None,
             crate::app::types::DiffMetricMode::AE,
             false,

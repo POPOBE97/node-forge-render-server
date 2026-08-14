@@ -72,6 +72,13 @@ pub(crate) struct TextureDecl {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct TextureViewDecl {
+    pub name: ResourceName,
+    pub texture: ResourceName,
+    pub base_mip_level: u32,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ImageTextureSpec {
     pub name: ResourceName,
     pub image: Arc<DynamicImage>,
@@ -157,6 +164,8 @@ pub(crate) struct ResourcePlans {
     pub geometry_buffers: Vec<(ResourceName, Arc<[u8]>)>,
     pub instance_buffers: Vec<(ResourceName, Arc<[u8]>)>,
     pub textures: Vec<TextureDecl>,
+    pub texture_mip_level_counts: HashMap<ResourceName, u32>,
+    pub texture_views: Vec<TextureViewDecl>,
     pub image_textures: Vec<ImageTextureSpec>,
     pub render_pass_specs: Vec<RenderPassSpec>,
     pub composite_passes: Vec<ResourceName>,
@@ -173,6 +182,10 @@ pub(crate) struct ResourcePlans {
     pub baked_data_parse_buffer_to_pass_id: HashMap<ResourceName, String>,
     pub pass_extensions: HashMap<String, PassExtension>,
     pub shader_parameter_buffers_by_pass: HashMap<String, ShaderParameterBufferPlan>,
+    pub gaussian_blur_bundles: HashMap<
+        String,
+        crate::renderer::render_plan::pass_assemblers::dynamic_gaussian_blur::GaussianBlurBundleRuntime,
+    >,
 }
 
 #[derive(Clone, Debug)]

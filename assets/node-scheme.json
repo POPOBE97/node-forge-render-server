@@ -44,6 +44,7 @@
     "HSVAdjust",
     "HyperOSGlassMaterial",
     "ImageFile",
+    "ImagePass",
     "ImageTexture",
     "Index",
     "InstancedGeometryEnd",
@@ -1364,7 +1365,7 @@
       "type": "ColorArrayInput",
       "label": "Color Array Input",
       "category": "Input",
-      "description": "Declare a packed color uniform with inline editable values",
+      "description": "Declare packed unpremultiplied scene-linear RGBA values",
       "inputs": [],
       "outputs": [
         {
@@ -1388,7 +1389,7 @@
       "type": "ColorInput",
       "label": "Color Input",
       "category": "Input",
-      "description": "Define a constant color value",
+      "description": "Define an unpremultiplied scene-linear RGBA color value",
       "inputs": [],
       "outputs": [
         {
@@ -3126,6 +3127,109 @@
       ],
       "defaultParams": {
         "assetId": ""
+      }
+    },
+    {
+      "type": "ImagePass",
+      "label": "Image Pass",
+      "category": "PipelineControl",
+      "description": "Render an image directly into a positioned, optionally rounded rectangle",
+      "inputs": [
+        {
+          "id": "image",
+          "name": "Image",
+          "type": "ImageFile"
+        },
+        {
+          "id": "size",
+          "name": "Size · ScenePx",
+          "type": "vector2",
+          "coordinateSpace": "scene-px"
+        },
+        {
+          "id": "position",
+          "name": "Position · ScenePx",
+          "type": "vector2",
+          "coordinateSpace": "scene-px"
+        },
+        {
+          "id": "alpha",
+          "name": "Alpha",
+          "type": "float",
+          "default": 1,
+          "range": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "camera",
+          "name": "Camera",
+          "type": "mat4",
+          "default": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "pass",
+          "name": "Pass",
+          "type": "pass"
+        },
+        {
+          "id": "depth",
+          "name": "Depth",
+          "type": "pass"
+        }
+      ],
+      "defaultParams": {
+        "name": "Image Pass",
+        "radius": 0,
+        "smooth": 1,
+        "assetId": "",
+        "interpolation": "linear",
+        "extension": "clamp-to-edge",
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "linear",
+        "minFilter": "linear",
+        "mipmapFilter": "linear",
+        "encoderSpace": "srgb",
+        "alphaMode": "straight",
+        "aspectCorrection": "fill",
+        "blend_preset": "premul_alpha",
+        "blendfunc": "add",
+        "src_factor": "one",
+        "dst_factor": "one-minus-src-alpha",
+        "src_alpha_factor": "one",
+        "dst_alpha_factor": "one-minus-src-alpha",
+        "msaaSampleCount": 1,
+        "culling": "none",
+        "depthTest": false,
+        "loadOp": "clear",
+        "clearColor": [
+          0,
+          0,
+          0,
+          0
+        ]
       }
     },
     {
@@ -6147,7 +6251,14 @@
         "dst_alpha_factor": "one-minus-src-alpha",
         "msaaSampleCount": 1,
         "culling": "none",
-        "depthTest": false
+        "depthTest": false,
+        "loadOp": "clear",
+        "clearColor": [
+          0,
+          0,
+          0,
+          0
+        ]
       }
     },
     {

@@ -7,10 +7,11 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use node_forge_render_server::animation::{
-    KeyFilter, TraceAnalyzeConfig, TraceRunConfig, TraceScenario, format_summary, format_table,
-    load_event_schedule, run_schedule_trace, run_trace, write_report_json,
+    AnimationSession, KeyFilter, TraceAnalyzeConfig, TraceRunConfig, TraceScenario, format_summary,
+    format_table, load_event_schedule, run_schedule_trace, run_trace, write_report_json,
 };
 use node_forge_render_server::state_machine::TickSchedule;
+use node_forge_render_server::state_machine::types::AnimationStateType;
 use node_forge_render_server::{app, asset_store, dsl, profile, renderer, ws};
 use rust_wgpu_fiber::eframe::{self, egui, egui_wgpu, wgpu};
 
@@ -24,6 +25,10 @@ struct Cli {
     dump_wgsl_dir: Option<PathBuf>,
     dump_shader_deps: Option<String>,
     dump_shader_deps_output: Option<PathBuf>,
+    headless_state: Option<String>,
+    headless_overrides_output: Option<PathBuf>,
+    export_texture: Option<String>,
+    capture_pass: Option<String>,
     render_to_file: bool,
     continuous_redraw: bool,
     profile: bool,
@@ -266,6 +271,34 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 cli.dump_shader_deps_output = Some(PathBuf::from(v));
                 i += 2;
             }
+            "--headless-state" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --headless-state"));
+                };
+                cli.headless_state = Some(value.clone());
+                i += 2;
+            }
+            "--headless-overrides-output" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --headless-overrides-output"));
+                };
+                cli.headless_overrides_output = Some(PathBuf::from(value));
+                i += 2;
+            }
+            "--export-texture" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --export-texture"));
+                };
+                cli.export_texture = Some(value.clone());
+                i += 2;
+            }
+            "--capture-pass" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(anyhow!("missing value for --capture-pass"));
+                };
+                cli.capture_pass = Some(value.clone());
+                i += 2;
+            }
             "--render-to-file" => {
                 cli.render_to_file = true;
                 i += 1;
@@ -414,10 +447,10 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
                 let Some(v) = args.get(i + 1) else {
                     return Err(anyhow!("missing value for --trace-jump-threshold-override"));
                 };
-                cli.trace_jump_threshold_override = Some(
-                    v.parse::<f64>()
-                        .map_err(|_| anyhow!("--trace-jump-threshold-override must be a number"))?,
-                );
+                cli.trace_jump_threshold_override =
+                    Some(v.parse::<f64>().map_err(|_| {
+                        anyhow!("--trace-jump-threshold-override must be a number")
+                    })?);
                 i += 2;
             }
             "--trace-check-identity" => {
@@ -442,7 +475,7 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
             }
             other => {
                 return Err(anyhow!(
-                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
+                    "unknown argument: {other} (supported: --headless, --dsl-json <scene.json>, --nforge <file.nforge>, --headless-state <id|name>, --headless-overrides-output <path>, --export-texture <resource-name>, --capture-pass <pass-id>, --render-to-file, --continuous-redraw, --output <abs/path/to/output>, --outputdir <dir>, --dump-wgsl-dir <dir>, --dump-shader-deps <pass-name>, --dump-shader-deps-output <path>, --profile, --profile-output <path|->, --profile-format ndjson, --profile-frames <n>, --profile-warmup-frames <n>, --trace-animation, --trace-scenario <path>, --trace-seconds <n>, --trace-fps <n>, --trace-output <path|->, --trace-format json,summary,table, ...)"
                 ));
             }
         }
@@ -462,6 +495,53 @@ fn parse_cli(args: &[String]) -> Result<Cli> {
         return Err(anyhow!(
             "--dump-shader-deps-output requires --dump-shader-deps <pass-name>"
         ));
+    }
+    if cli.headless_state.is_some()
+        && (!cli.headless || (cli.nforge.is_none() && cli.dsl_json.is_none()))
+    {
+        return Err(anyhow!(
+            "--headless-state requires --headless and --nforge/--dsl-json"
+        ));
+    }
+    if cli.headless_overrides_output.is_some() && cli.headless_state.is_none() {
+        return Err(anyhow!(
+            "--headless-overrides-output requires --headless-state"
+        ));
+    }
+    if cli.export_texture.is_some() && cli.capture_pass.is_some() {
+        return Err(anyhow!(
+            "--export-texture and --capture-pass are mutually exclusive"
+        ));
+    }
+    if cli.export_texture.is_some() {
+        if !cli.headless || (cli.nforge.is_none() && cli.dsl_json.is_none()) {
+            return Err(anyhow!(
+                "--export-texture requires --headless and --nforge/--dsl-json"
+            ));
+        }
+        if cli.output.is_none() {
+            return Err(anyhow!(
+                "--export-texture requires --output <absolute path>"
+            ));
+        }
+        if cli.profile {
+            return Err(anyhow!(
+                "--export-texture cannot be combined with --profile"
+            ));
+        }
+    }
+    if cli.capture_pass.is_some() {
+        if !cli.headless || (cli.nforge.is_none() && cli.dsl_json.is_none()) {
+            return Err(anyhow!(
+                "--capture-pass requires --headless and --nforge/--dsl-json"
+            ));
+        }
+        if cli.output.is_none() {
+            return Err(anyhow!("--capture-pass requires --output <absolute path>"));
+        }
+        if cli.profile {
+            return Err(anyhow!("--capture-pass cannot be combined with --profile"));
+        }
     }
     if let Some(format) = cli.profile_format.as_deref()
         && format != "ndjson"
@@ -765,6 +845,80 @@ fn write_text_file(path: PathBuf, contents: &str) -> Result<()> {
     std::fs::write(&path, contents).map_err(|e| anyhow!("failed to write {}: {e}", path.display()))
 }
 
+fn apply_headless_state_at_zero(
+    scene: &mut dsl::SceneDSL,
+    selector: Option<&str>,
+    overrides_output: Option<&PathBuf>,
+) -> Result<()> {
+    let Some(selector) = selector else {
+        return Ok(());
+    };
+    let state_machine = scene
+        .state_machine
+        .as_ref()
+        .ok_or_else(|| anyhow!("--headless-state requires a scene state machine"))?;
+    let id_match = state_machine.states.iter().find(|state| {
+        state.state_type == AnimationStateType::AnimationState && state.id == selector
+    });
+    let state_id = if let Some(state) = id_match {
+        state.id.clone()
+    } else {
+        let name_matches = state_machine
+            .states
+            .iter()
+            .filter(|state| {
+                state.state_type == AnimationStateType::AnimationState && state.name == selector
+            })
+            .collect::<Vec<_>>();
+        match name_matches.as_slice() {
+            [state] => state.id.clone(),
+            [] => bail!("selectable animation state not found: {selector:?}"),
+            _ => bail!("animation state name is ambiguous: {selector:?}"),
+        }
+    };
+
+    let mut session = AnimationSession::from_scene(scene)?
+        .ok_or_else(|| anyhow!("--headless-state requires a scene state machine"))?;
+    let step = session.force_state(&state_id)?;
+    if step.scene_time_secs != 0.0 {
+        bail!(
+            "headless state evaluation must remain at t=0, got {}",
+            step.scene_time_secs
+        );
+    }
+    if let Some(transition_id) = step.active_transition_id.as_deref() {
+        bail!("headless state evaluation unexpectedly entered transition {transition_id:?}");
+    }
+    if !step.diagnostics.is_empty() {
+        bail!(
+            "headless state derivation diagnostics for {state_id}: {}",
+            step.diagnostics.join("; ")
+        );
+    }
+
+    if let Some(output_path) = overrides_output {
+        let ordered_overrides = step
+            .active_overrides
+            .iter()
+            .map(|(key, value)| (format!("{}:{}", key.node_id, key.param_name), value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let payload = serde_json::json!({
+            "stateId": step.current_state_id,
+            "sceneTimeSeconds": step.scene_time_secs,
+            "activeTransitionId": step.active_transition_id,
+            "overrides": ordered_overrides,
+        });
+        write_text_file(
+            output_path.clone(),
+            &serde_json::to_string_pretty(&payload)?,
+        )?;
+    }
+
+    node_forge_render_server::state_machine::apply_overrides(scene, &step.active_overrides);
+    eprintln!("[headless] forced state at t=0: {selector} ({state_id})");
+    Ok(())
+}
+
 fn dump_scene_wgsl(
     scene: &dsl::SceneDSL,
     store: Option<&asset_store::AssetStore>,
@@ -953,6 +1107,10 @@ fn run_headless_json_render_once(
     dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
     profile: Option<HeadlessProfileOptions>,
+    headless_state: Option<String>,
+    headless_overrides_output: Option<PathBuf>,
+    export_texture: Option<String>,
+    capture_pass: Option<String>,
 ) -> Result<()> {
     let text = std::fs::read_to_string(dsl_json_path).map_err(|e| {
         anyhow!(
@@ -966,6 +1124,11 @@ fn run_headless_json_render_once(
 
     dsl::normalize_scene_defaults(&mut scene)
         .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
+    apply_headless_state_at_zero(
+        &mut scene,
+        headless_state.as_deref(),
+        headless_overrides_output.as_ref(),
+    )?;
 
     // Load assets from the scene directory if the scene has an assets manifest.
     let base_dir = dsl_json_path
@@ -974,7 +1137,7 @@ fn run_headless_json_render_once(
     let store = asset_store::load_from_scene_dir(&scene, base_dir)?;
     dump_scene_wgsl(&scene, Some(&store), dump_wgsl_dir.as_ref())?;
 
-    let out_path = if render_to_file {
+    let out_path = if render_to_file || export_texture.is_some() || capture_pass.is_some() {
         let out =
             output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
         validate_absolute_output_path(&out)?;
@@ -999,7 +1162,24 @@ fn run_headless_json_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    if let Some(profile) = profile {
+    if let Some(pass_name) = capture_pass.as_deref() {
+        renderer::render_scene_pass_to_file_headless(&scene, pass_name, &out_path, Some(&store))?;
+        println!(
+            "[headless] captured pass {pass_name}: {}",
+            out_path.display()
+        );
+    } else if let Some(texture_name) = export_texture.as_deref() {
+        renderer::render_scene_texture_to_file_headless(
+            &scene,
+            texture_name,
+            &out_path,
+            Some(&store),
+        )?;
+        println!(
+            "[headless] saved texture {texture_name}: {}",
+            out_path.display()
+        );
+    } else if let Some(profile) = profile {
         let stdout_profile = profile.output.is_stdout();
         let mut writer = profile::ProfileWriter::new(&profile.output)?;
         renderer::render_scene_to_file_headless_profiled(
@@ -1027,11 +1207,20 @@ fn run_headless_nforge_render_once(
     dump_wgsl_dir: Option<PathBuf>,
     render_to_file: bool,
     profile: Option<HeadlessProfileOptions>,
+    headless_state: Option<String>,
+    headless_overrides_output: Option<PathBuf>,
+    export_texture: Option<String>,
+    capture_pass: Option<String>,
 ) -> Result<()> {
-    let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
+    let (mut scene, store) = asset_store::load_from_nforge(nforge_path)?;
+    apply_headless_state_at_zero(
+        &mut scene,
+        headless_state.as_deref(),
+        headless_overrides_output.as_ref(),
+    )?;
     dump_scene_wgsl(&scene, Some(&store), dump_wgsl_dir.as_ref())?;
 
-    let out_path = if render_to_file {
+    let out_path = if render_to_file || export_texture.is_some() || capture_pass.is_some() {
         let out =
             output.ok_or_else(|| anyhow!("--render-to-file requires --output <absolute path>"))?;
         validate_absolute_output_path(&out)?;
@@ -1056,7 +1245,24 @@ fn run_headless_nforge_render_once(
 
     ensure_parent_dir_exists(&out_path)?;
 
-    if let Some(profile) = profile {
+    if let Some(pass_name) = capture_pass.as_deref() {
+        renderer::render_scene_pass_to_file_headless(&scene, pass_name, &out_path, Some(&store))?;
+        println!(
+            "[headless] captured pass {pass_name}: {}",
+            out_path.display()
+        );
+    } else if let Some(texture_name) = export_texture.as_deref() {
+        renderer::render_scene_texture_to_file_headless(
+            &scene,
+            texture_name,
+            &out_path,
+            Some(&store),
+        )?;
+        println!(
+            "[headless] saved texture {texture_name}: {}",
+            out_path.display()
+        );
+    } else if let Some(profile) = profile {
         let stdout_profile = profile.output.is_stdout();
         let mut writer = profile::ProfileWriter::new(&profile.output)?;
         renderer::render_scene_to_file_headless_profiled(
@@ -1365,6 +1571,10 @@ pub(crate) fn run() -> Result<()> {
                 cli.dump_wgsl_dir,
                 cli.render_to_file,
                 profile_options.clone(),
+                cli.headless_state.clone(),
+                cli.headless_overrides_output.clone(),
+                cli.export_texture.clone(),
+                cli.capture_pass.clone(),
             );
         }
         if let Some(dsl_json_path) = cli.dsl_json.as_deref() {
@@ -1375,6 +1585,10 @@ pub(crate) fn run() -> Result<()> {
                 cli.dump_wgsl_dir,
                 cli.render_to_file,
                 profile_options.clone(),
+                cli.headless_state.clone(),
+                cli.headless_overrides_output.clone(),
+                cli.export_texture.clone(),
+                cli.capture_pass.clone(),
             );
         }
 
@@ -1527,6 +1741,7 @@ pub(crate) fn run() -> Result<()> {
                 uniform_scene,
                 matrix_source_scene,
                 last_pipeline_signature,
+                gaussian_blur_bundles,
             ) = if let Some(scene) = scene.clone() {
                 match renderer::ShaderSpaceBuilder::new(
                     Arc::new(render_state.device.clone()),
@@ -1555,6 +1770,7 @@ pub(crate) fn run() -> Result<()> {
                         result.prepared_scene,
                         result.matrix_source_scene,
                         Some(result.pipeline_signature),
+                        result.gaussian_blur_bundles,
                     ),
                     Err(e) => {
                         eprintln!(
@@ -1579,6 +1795,7 @@ pub(crate) fn run() -> Result<()> {
                             None,
                             None,
                             None,
+                            std::collections::HashMap::new(),
                         )
                     }
                 }
@@ -1602,6 +1819,7 @@ pub(crate) fn run() -> Result<()> {
                     None,
                     None,
                     None,
+                    std::collections::HashMap::new(),
                 )
             };
 
@@ -1665,6 +1883,7 @@ pub(crate) fn run() -> Result<()> {
                 asset_store,
                 animation_session,
                 pass_debug_sources,
+                gaussian_blur_bundles,
                 debug_artifacts: startup_debug_artifacts.clone(),
                 nforge_path: startup_nforge_path.clone(),
             })))
@@ -1731,6 +1950,79 @@ mod tests {
         let cli = parse_cli(&args).unwrap();
         assert!(cli.headless);
         assert!(cli.render_to_file);
+    }
+
+    #[test]
+    fn parse_cli_headless_state_and_texture_export() {
+        let args = vec![
+            "--headless".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--headless-state".to_string(),
+            "Listening".to_string(),
+            "--headless-overrides-output".to_string(),
+            "/tmp/listening.json".to_string(),
+            "--export-texture".to_string(),
+            "sys.ilight.IntelligentLight_30.inter".to_string(),
+            "--output".to_string(),
+            "/tmp/listening.rgba16f".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(cli.headless_state.as_deref(), Some("Listening"));
+        assert_eq!(
+            cli.headless_overrides_output.as_ref(),
+            Some(&PathBuf::from("/tmp/listening.json"))
+        );
+        assert_eq!(
+            cli.export_texture.as_deref(),
+            Some("sys.ilight.IntelligentLight_30.inter")
+        );
+    }
+
+    #[test]
+    fn parse_cli_headless_solo_pass_capture() {
+        let args = vec![
+            "--headless".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--capture-pass".to_string(),
+            "render.pass.pass26.pass".to_string(),
+            "--output".to_string(),
+            "/tmp/glow.rgba16f".to_string(),
+        ];
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(cli.capture_pass.as_deref(), Some("render.pass.pass26.pass"));
+        assert!(cli.export_texture.is_none());
+    }
+
+    #[test]
+    fn parse_cli_rejects_texture_export_with_pass_capture() {
+        let args = vec![
+            "--headless".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--export-texture".to_string(),
+            "texture".to_string(),
+            "--capture-pass".to_string(),
+            "pass".to_string(),
+            "--output".to_string(),
+            "/tmp/out.rgba16f".to_string(),
+        ];
+        let error = parse_cli(&args).unwrap_err().to_string();
+        assert!(error.contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn parse_cli_texture_export_requires_an_output_path() {
+        let args = vec![
+            "--headless".to_string(),
+            "--nforge".to_string(),
+            "scene.nforge".to_string(),
+            "--export-texture".to_string(),
+            "sys.ilight.IntelligentLight_30.inter".to_string(),
+        ];
+        let error = parse_cli(&args).unwrap_err().to_string();
+        assert!(error.contains("--export-texture requires --output"));
     }
 
     #[test]

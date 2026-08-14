@@ -65,6 +65,7 @@ pub struct ShaderSpaceBuildResult {
     pub pass_bindings: Vec<PassBindings>,
     pub pipeline_signature: [u8; 32],
     pub pass_debug_sources: HashMap<String, PassDebugSource>,
+    pub gaussian_blur_bundles: HashMap<String, crate::renderer::GaussianBlurBundleRuntime>,
 }
 
 pub struct ShaderSpaceBuilder {
@@ -135,6 +136,7 @@ impl ShaderSpaceBuilder {
             pass_bindings: finalized.pass_bindings,
             pipeline_signature: finalized.pipeline_signature,
             pass_debug_sources: plan.pass_debug_sources,
+            gaussian_blur_bundles: plan.resources.gaussian_blur_bundles,
         })
     }
 
@@ -154,6 +156,7 @@ impl ShaderSpaceBuilder {
             pass_bindings,
             pipeline_signature,
             pass_debug_sources: HashMap::new(),
+            gaussian_blur_bundles: HashMap::new(),
         })
     }
 }

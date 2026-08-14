@@ -45,36 +45,64 @@ struct GraphInputs {
     node_FloatInput_46_7a16f420: vec4f,
     // Node: FloatInput_47
     node_FloatInput_47_2d18f420: vec4f,
+    // Node: FloatInput_GlowBloomSigmaPx
+    node_FloatInput_GlowBloomSigmaPx_274fe8f8: vec4f,
+    // Node: FloatInput_GlowCoreSigmaPx
+    node_FloatInput_GlowCoreSigmaPx_9500a558: vec4f,
+    // Node: FloatInput_GlowMidSigmaPx
+    node_FloatInput_GlowMidSigmaPx_c42032aa: vec4f,
+    // Node: FloatInput_GlowWideSigmaPx
+    node_FloatInput_GlowWideSigmaPx_59b0574d: vec4f,
     // Node: FloatInput_IntelligentLightParticleGain
     node_FloatInput_IntelligentLightParticleGain_de7846b4: vec4f,
     // Node: FloatInput_IntelligentLightParticleOpacity
     node_FloatInput_IntelligentLightParticleOpacity_c60851cb: vec4f,
     // Node: FloatInput_IntelligentLightParticlePointerWarpProgress
     node_FloatInput_IntelligentLightParticlePointerWarpProgress_73a49be9: vec4f,
+    // Node: FloatInput_LightBloomMinSigmaPx
+    node_FloatInput_LightBloomMinSigmaPx_2483ee02: vec4f,
     // Node: FloatInput_LightClipBloomProgress
     node_FloatInput_LightClipBloomProgress_3a773115: vec4f,
+    // Node: FloatInput_LightHardClipFeatherPx
+    node_FloatInput_LightHardClipFeatherPx_fa3b19bf: vec4f,
+    // Node: FloatInput_ParticleEdgeSigmaPx
+    node_FloatInput_ParticleEdgeSigmaPx_72957d4d: vec4f,
+    // Node: FloatInput_ParticleInnerSizePx
+    node_FloatInput_ParticleInnerSizePx_6f57ef00: vec4f,
+    // Node: FloatInput_ParticleMinSizePx
+    node_FloatInput_ParticleMinSizePx_d3ca865c: vec4f,
+    // Node: FloatInput_ParticleOriginYPx
+    node_FloatInput_ParticleOriginYPx_c355d815: vec4f,
+    // Node: FloatInput_ParticleOuterSizePx
+    node_FloatInput_ParticleOuterSizePx_04da7239: vec4f,
+    // Node: FloatInput_ParticleWarpPx
+    node_FloatInput_ParticleWarpPx_14892f46: vec4f,
+    // Node: FloatInput_ParticleWarpRadiusPx
+    node_FloatInput_ParticleWarpRadiusPx_aa7919d1: vec4f,
+    // Node: FloatInput_SoundBarInnerFalloffPx
+    node_FloatInput_SoundBarInnerFalloffPx_4a41e9e1: vec4f,
+    // Node: FloatInput_SoundBarOffsetPx
+    node_FloatInput_SoundBarOffsetPx_b77fb052: vec4f,
+    // Node: FloatInput_SoundBarOuterFalloffPx
+    node_FloatInput_SoundBarOuterFalloffPx_735b9fa8: vec4f,
+    // Node: FloatInput_SoundBarRadiusPx
+    node_FloatInput_SoundBarRadiusPx_0a5bf97c: vec4f,
     // Node: FloatInput_TotalEnergy
     node_FloatInput_TotalEnergy_56fa9c42: vec4f,
-    // Node: Vector2Input_35
-    node_Vector2Input_35_093d3fbd: vec4f,
-    // Node: Vector2Input_36
-    node_Vector2Input_36_f0373fbd: vec4f,
     // Node: Vector2Input_38
     node_Vector2Input_38_ba4f3fbd: vec4f,
     // Node: Vector2Input_LightEffectCanvasSizePx
     node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c: vec4f,
+    // Node: Vector2Input_LightEffectFrameSizePx
+    node_Vector2Input_LightEffectFrameSizePx_0e8bf3b1: vec4f,
+    // Node: Vector2Input_LightEffectPositionPx
+    node_Vector2Input_LightEffectPositionPx_a9a5e69f: vec4f,
     // Node: Vector2Input_PointerLightEffectLocalPx
     node_Vector2Input_PointerLightEffectLocalPx_a618ee3f: vec4f,
 };
 
 @group(0) @binding(2)
 var<uniform> graph_inputs: GraphInputs;
-
-struct ShaderMaterialParams {
-    shader_GroupInstance_32_ShaderMaterial_32_density: vec4f,
-};
-@group(0) @binding(3)
-var<storage, read> shader_material_params: ShaderMaterialParams;
 
 @group(0) @binding(1)
 var<storage, read> baked_data_parse: array<vec4f>;
@@ -111,12 +139,6 @@ fn sample_texture_local_uv(
 
 // Port of intelligent_light_upsample.agsl's processed IntelligentLight layer.
 // Node Forge supplies ShaderMaterialInput in linear extended-sRGB coordinates.
-
-fn srgb_to_linear_GroupInstance_32_ShaderMaterial_32(value: vec3f) -> vec3f {
-    let low = value / 12.92;
-    let high = pow((value + vec3f(0.055)) / 1.055, vec3f(2.4));
-    return select(high, low, value <= vec3f(0.04045));
-}
 
 fn sd_rounded_box_GroupInstance_32_ShaderMaterial_32(point: vec2f, half_size: vec2f, radius: f32) -> f32 {
     let q = abs(point) - half_size + vec2f(radius);
@@ -218,8 +240,8 @@ fn analytic_box_bloom_alpha_GroupInstance_32_ShaderMaterial_32(point: vec2f, hal
     return clamp(bloom_x * bloom_y * target_peak / center_alpha, 0.0, 1.0);
 }
 
-fn light_hard_clip_alpha_GroupInstance_32_ShaderMaterial_32(sdf: f32) -> f32 {
-    return 1.0 - smoothstep(-2.5, 0.0, sdf);
+fn light_hard_clip_alpha_GroupInstance_32_ShaderMaterial_32(sdf: f32, feather_px: f32) -> f32 {
+    return 1.0 - smoothstep(-max(feather_px, 0.0001), 0.0, sdf);
 }
 
 fn light_bloom_alpha_GroupInstance_32_ShaderMaterial_32(
@@ -228,11 +250,13 @@ fn light_bloom_alpha_GroupInstance_32_ShaderMaterial_32(
     half_size: vec2f,
     bloom_half_size: vec2f,
     progress: f32,
+    min_sigma_px: f32,
 ) -> f32 {
     let t = clamp(progress, 0.0, 1.0);
-    let sigma = mix(2.5, max(2.5, min(bloom_half_size.x, bloom_half_size.y)), t);
+    let min_sigma = max(min_sigma_px, 0.0001);
+    let sigma = mix(min_sigma, max(min_sigma, min(bloom_half_size.x, bloom_half_size.y)), t);
     let min_half_extent = min(half_size.x, half_size.y);
-    let switch_start = max(2.5, min_half_extent * 0.35);
+    let switch_start = max(min_sigma, min_half_extent * 0.35);
     let switch_end = max(switch_start + 0.0001, min_half_extent);
     if (sigma <= switch_start) {
         return clamp(1.6 * gaussian_edge_GroupInstance_32_ShaderMaterial_32(sdf, sigma), 0.0, 1.0);
@@ -252,11 +276,6 @@ const PARTICLE_EMIT_SPEED: f32 = 0.012;
 const PARTICLE_JITTER_SPEED: f32 = 2.0;
 const PARTICLE_JITTER_AMOUNT: f32 = 0.15;
 const PARTICLE_TWINKLE_SPEED: f32 = 2.0;
-const PARTICLE_INNER_SIZE_DP: f32 = 1.2;
-const PARTICLE_OUTER_SIZE_DP: f32 = 0.6;
-const PARTICLE_WARP_DP: f32 = 120.0;
-const PARTICLE_WARP_RADIUS_DP: f32 = 240.0;
-
 fn particle_hash2_GroupInstance_32_ShaderMaterial_32(point: vec2f) -> vec2f {
     let hashed = vec2f(
         dot(point, vec2f(127.1, 311.7)),
@@ -308,6 +327,7 @@ fn particle_point_GroupInstance_32_ShaderMaterial_32(
     grid: vec2f,
     sqrt_radius: f32,
     size_px: f32,
+    min_size_px: f32,
     radius: f32,
     time: f32,
 ) -> f32 {
@@ -322,7 +342,7 @@ fn particle_point_GroupInstance_32_ShaderMaterial_32(
             2.0 * sqrt_radius / PARTICLE_DENSITY,
         ),
     ) * radius;
-    var alpha = step(distance_px, max(size_px, 0.5) * 0.6);
+    var alpha = step(distance_px, max(size_px, min_size_px) * 0.6);
     alpha *= sin(
         time * PARTICLE_TWINKLE_SPEED + particle_hash2_GroupInstance_32_ShaderMaterial_32(id).x * PARTICLE_TAU,
     ) * 0.5 + 0.5;
@@ -333,16 +353,21 @@ fn particle_mask_GroupInstance_32_ShaderMaterial_32(
     point: vec2f,
     pointer_point: vec2f,
     canvas_size: vec2f,
-    density: f32,
     time: f32,
     pointer_warp_progress: f32,
+    particle_inner_size_px: f32,
+    particle_outer_size_px: f32,
+    particle_min_size_px: f32,
+    particle_warp_px: f32,
+    particle_warp_radius_px: f32,
+    particle_edge_sigma_px: f32,
 ) -> f32 {
     let radius = canvas_size.x * 0.8;
     let pointer_direction = point - pointer_point;
     let pointer_distance_squared = dot(pointer_direction, pointer_direction);
-    let warp_radius = PARTICLE_WARP_RADIUS_DP * max(density, 0.0001);
+    let warp_radius = max(particle_warp_radius_px, 0.0001);
     let warped_point = point
-        - pointer_direction * (PARTICLE_WARP_DP * density)
+        - pointer_direction * particle_warp_px
             * clamp(pointer_warp_progress, 0.0, 1.0)
             * exp(-2.0 * pointer_distance_squared / (warp_radius * warp_radius))
             / warp_radius;
@@ -352,10 +377,10 @@ fn particle_mask_GroupInstance_32_ShaderMaterial_32(
     let sqrt_radius = sqrt(max(radial_distance, 0.0));
     let polar_grid = vec2f(angle, sqrt_radius) * PARTICLE_DENSITY;
     let size_px = mix(
-        PARTICLE_INNER_SIZE_DP,
-        PARTICLE_OUTER_SIZE_DP,
+        particle_inner_size_px,
+        particle_outer_size_px,
         clamp(radial_distance, 0.0, 1.0),
-    ) * density;
+    );
     var total = 0.0;
     var layer_alpha = 1.0;
     for (var index = 0; index < 4; index += 1) {
@@ -371,12 +396,13 @@ fn particle_mask_GroupInstance_32_ShaderMaterial_32(
                 + offset,
             sqrt_radius,
             size_px,
+            particle_min_size_px,
             radius,
             time,
         ) * layer_alpha;
         layer_alpha *= 0.9;
     }
-    let sigma = 30.0 * max(density, 0.0001);
+    let sigma = max(particle_edge_sigma_px, 0.0001);
     let edge_distance = length(point) - radius;
     let shape = 0.5 - 0.5 * erf_approx_GroupInstance_32_ShaderMaterial_32(edge_distance / (sigma * 1.4142135));
     return min(total, 1.0) * shape;
@@ -386,7 +412,6 @@ fn apply_particles_GroupInstance_32_ShaderMaterial_32(
     current_color: vec4f,
     coord: vec2f,
     canvas_size: vec2f,
-    density: f32,
     time: f32,
     pointer_position: vec2f,
     pointer_warp_progress: f32,
@@ -394,27 +419,37 @@ fn apply_particles_GroupInstance_32_ShaderMaterial_32(
     particle_noise_color: vec4f,
     particle_gain: f32,
     particle_opacity: f32,
+    particle_inner_size_px: f32,
+    particle_outer_size_px: f32,
+    particle_min_size_px: f32,
+    particle_warp_px: f32,
+    particle_warp_radius_px: f32,
+    particle_edge_sigma_px: f32,
+    particle_origin_y_px: f32,
 ) -> vec4f {
     if (particle_opacity <= 0.0001) {
         return current_color;
     }
-    let origin = vec2f(canvas_size.x * 0.5, 8.0 * density);
+    let origin = vec2f(canvas_size.x * 0.5, particle_origin_y_px);
     let point = coord - origin;
     let pointer_point = pointer_position - origin;
     let mask = particle_mask_GroupInstance_32_ShaderMaterial_32(
         point,
         pointer_point,
         canvas_size,
-        density,
         time,
         pointer_warp_progress,
+        particle_inner_size_px,
+        particle_outer_size_px,
+        particle_min_size_px,
+        particle_warp_px,
+        particle_warp_radius_px,
+        particle_edge_sigma_px,
     ) * clamp(particle_opacity, 0.0, 1.0);
     let noise = particle_noise_mask_GroupInstance_32_ShaderMaterial_32(point, canvas_size, time);
     let working = mix(particle_noise_color, particle_color, noise);
     let alpha = clamp(working.a, 0.0, 1.0);
-    let linear = srgb_to_linear_GroupInstance_32_ShaderMaterial_32(
-        max(working.rgb * max(particle_gain, 0.0), vec3f(0.0)),
-    ) * alpha;
+    let linear = max(working.rgb * max(particle_gain, 0.0), vec3f(0.0)) * alpha;
     return mix(current_color, vec4f(linear, alpha), mask);
 }
 
@@ -425,7 +460,12 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     frame_size_px: vec2f,
     light_bloom_size_px: vec2f,
     corner_radius_px: f32,
-    density: f32,
+    light_hard_clip_feather_px: f32,
+    light_bloom_min_sigma_px: f32,
+    glow_wide_sigma_px: f32,
+    glow_mid_sigma_px: f32,
+    glow_core_sigma_px: f32,
+    glow_bloom_sigma_px: f32,
     total_energy: f32,
     voice_opacity: f32,
     core_glow_opacity: f32,
@@ -438,6 +478,17 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     particle_noise_color: vec4f,
     particle_gain: f32,
     particle_opacity: f32,
+    particle_inner_size_px: f32,
+    particle_outer_size_px: f32,
+    particle_min_size_px: f32,
+    particle_warp_px: f32,
+    particle_warp_radius_px: f32,
+    particle_edge_sigma_px: f32,
+    particle_origin_y_px: f32,
+    sound_bar_offset_px: f32,
+    sound_bar_radius_px: f32,
+    sound_bar_outer_falloff_px: f32,
+    sound_bar_inner_falloff_px: f32,
 ) -> vec4f {
     let canvas_size_px = max(in.geometry_size, vec2f(1.0));
     let size_px = clamp(frame_size_px, vec2f(0.0001), canvas_size_px);
@@ -448,32 +499,37 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
     let radius_px = clamp(corner_radius_px, 0.0, min(half_size_px.x, half_size_px.y));
     let sdf = glass_frame_sdf_GroupInstance_32_ShaderMaterial_32(point, half_size_px, radius_px);
     let bloom_progress = clamp(light_clip_bloom_progress, 0.0, 1.0);
-    let hard_clip_alpha = light_hard_clip_alpha_GroupInstance_32_ShaderMaterial_32(sdf);
+    let hard_clip_alpha = light_hard_clip_alpha_GroupInstance_32_ShaderMaterial_32(sdf, light_hard_clip_feather_px);
     let bloom_alpha = light_bloom_alpha_GroupInstance_32_ShaderMaterial_32(
         sdf,
         point,
         half_size_px,
         bloom_size_px * 0.5,
         bloom_progress,
+        light_bloom_min_sigma_px,
     );
 
     // IntelligentLight is already linear HDR and premultiplied in Node Forge.
     let intelligent_light = sample_texture_local_uv(intelli_tex, intelli_sampler, in.uv);
-    var glow = exp(-pow(sdf / mix(-60.0, -2400.0, bloom_progress), 2.0))
+    var glow = exp(-pow(sdf / -mix(glow_wide_sigma_px, glow_bloom_sigma_px, bloom_progress), 2.0))
         * mix(1.4, 1.4, total_energy * voice_opacity);
-    glow += exp(-pow(sdf / mix(-20.0, -2400.0, bloom_progress), 2.0))
+    glow += exp(-pow(sdf / -mix(glow_mid_sigma_px, glow_bloom_sigma_px, bloom_progress), 2.0))
         * mix(1.0, 1.6, total_energy * voice_opacity);
-    glow += exp(-pow(sdf / mix(-5.0, -2400.0, bloom_progress), 2.0))
+    glow += exp(-pow(sdf / -mix(glow_core_sigma_px, glow_bloom_sigma_px, bloom_progress), 2.0))
         * mix(0.0, 3.0, core_glow_opacity);
 
+    let sound_bar_offset = max(sound_bar_offset_px, 0.0);
+    let sound_bar_radius = max(sound_bar_radius_px, 0.0);
+    let sound_bar_outer = max(sound_bar_outer_falloff_px, 0.0001);
+    let sound_bar_inner = max(sound_bar_inner_falloff_px, 0.0001);
     let sound_bar_distance = length(
-        vec2f(abs(point.x), point.y) - vec2f(size_px.x * 0.5 + 120.0, 0.0),
+        vec2f(abs(point.x), point.y) - vec2f(size_px.x * 0.5 + sound_bar_offset, 0.0),
     );
     var sound_bar = exp(
-        -pow(max(abs(sound_bar_distance) - 80.0, 0.0) / -200.0, 2.0),
+        -pow(max(abs(sound_bar_distance) - sound_bar_radius, 0.0) / -sound_bar_outer, 2.0),
     );
     sound_bar += 1.2 * exp(
-        -pow(max(abs(sound_bar_distance) - 80.0, 0.0) / -70.0, 2.0),
+        -pow(max(abs(sound_bar_distance) - sound_bar_radius, 0.0) / -sound_bar_inner, 2.0),
     );
     glow = mix(
         sound_bar + glow * 0.35,
@@ -495,7 +551,6 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
         color,
         in.local_position.xy,
         canvas_size_px,
-        density,
         time,
         particle_pointer_position_px,
         particle_pointer_warp_progress,
@@ -503,6 +558,13 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
         particle_noise_color,
         particle_gain,
         particle_opacity,
+        particle_inner_size_px,
+        particle_outer_size_px,
+        particle_min_size_px,
+        particle_warp_px,
+        particle_warp_radius_px,
+        particle_edge_sigma_px,
+        particle_origin_y_px,
     );
 
     color.a = clamp(color.a, 0.0, 1.0);
@@ -525,7 +587,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  let rect_size_px_base = (graph_inputs.node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c).xy;
- let rect_center_px = (graph_inputs.node_Vector2Input_36_f0373fbd).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_LightEffectPositionPx_a9a5e69f).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
@@ -548,14 +610,19 @@ fn shader_material_GroupInstance_32_ShaderMaterial_32(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_32.material
-    let voice_time_material = shader_material_GroupInstance_32_ShaderMaterial_32(
+    let particle_origin_y_px_material = shader_material_GroupInstance_32_ShaderMaterial_32(
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_32_IntelligentLight_30,
         pass_samp_GroupInstance_32_IntelligentLight_30,
-        (graph_inputs.node_Vector2Input_35_093d3fbd).xy,
+        (graph_inputs.node_Vector2Input_LightEffectFrameSizePx_0e8bf3b1).xy,
         (graph_inputs.node_Vector2Input_38_ba4f3fbd).xy,
         (graph_inputs.node_FloatInput_37_0eaa0821).x,
-        (shader_material_params.shader_GroupInstance_32_ShaderMaterial_32_density).x,
+        (graph_inputs.node_FloatInput_LightHardClipFeatherPx_fa3b19bf).x,
+        (graph_inputs.node_FloatInput_LightBloomMinSigmaPx_2483ee02).x,
+        (graph_inputs.node_FloatInput_GlowWideSigmaPx_59b0574d).x,
+        (graph_inputs.node_FloatInput_GlowMidSigmaPx_c42032aa).x,
+        (graph_inputs.node_FloatInput_GlowCoreSigmaPx_9500a558).x,
+        (graph_inputs.node_FloatInput_GlowBloomSigmaPx_274fe8f8).x,
         (graph_inputs.node_FloatInput_TotalEnergy_56fa9c42).x,
         (graph_inputs.node_FloatInput_45_c714f420).x,
         (graph_inputs.node_FloatInput_46_7a16f420).x,
@@ -568,8 +635,19 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         vec4f((graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).rgb * (graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).a, (graph_inputs.node_ColorInput_IntelligentLightParticleNoiseColor_799010c1).a),
         (graph_inputs.node_FloatInput_IntelligentLightParticleGain_de7846b4).x,
         (graph_inputs.node_FloatInput_IntelligentLightParticleOpacity_c60851cb).x,
+        (graph_inputs.node_FloatInput_ParticleInnerSizePx_6f57ef00).x,
+        (graph_inputs.node_FloatInput_ParticleOuterSizePx_04da7239).x,
+        (graph_inputs.node_FloatInput_ParticleMinSizePx_d3ca865c).x,
+        (graph_inputs.node_FloatInput_ParticleWarpPx_14892f46).x,
+        (graph_inputs.node_FloatInput_ParticleWarpRadiusPx_aa7919d1).x,
+        (graph_inputs.node_FloatInput_ParticleEdgeSigmaPx_72957d4d).x,
+        (graph_inputs.node_FloatInput_ParticleOriginYPx_c355d815).x,
+        (graph_inputs.node_FloatInput_SoundBarOffsetPx_b77fb052).x,
+        (graph_inputs.node_FloatInput_SoundBarRadiusPx_0a5bf97c).x,
+        (graph_inputs.node_FloatInput_SoundBarOuterFalloffPx_735b9fa8).x,
+        (graph_inputs.node_FloatInput_SoundBarInnerFalloffPx_4a41e9e1).x,
     );
     // Final composite
-    let _frag_out = voice_time_material;
+    let _frag_out = particle_origin_y_px_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

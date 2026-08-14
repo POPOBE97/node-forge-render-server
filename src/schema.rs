@@ -413,6 +413,40 @@ fn validate_render_pass_params(node: &Node) -> std::result::Result<(), String> {
         }
     }
 
+    if let Some(value) = node.params.get("loadOp") {
+        let Some(load_op) = value.as_str() else {
+            return Err(format!(
+                "invalid RenderPass.loadOp for '{}': expected string, got {}",
+                node.id, value
+            ));
+        };
+        if !matches!(load_op, "none" | "clear" | "load" | "dont-care") {
+            return Err(format!(
+                "invalid RenderPass.loadOp for '{}': must be one of none,clear,load,dont-care, got {}",
+                node.id, load_op
+            ));
+        }
+    }
+
+    if let Some(value) = node.params.get("clearColor") {
+        let valid_array = value.as_array().is_some_and(|values| {
+            matches!(values.len(), 3 | 4)
+                && values
+                    .iter()
+                    .all(|value| value.as_f64().is_some_and(f64::is_finite))
+        });
+        let valid_hex = value.as_str().is_some_and(|value| {
+            let hex = value.strip_prefix('#').unwrap_or(value);
+            matches!(hex.len(), 6 | 8) && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        });
+        if !valid_array && !valid_hex {
+            return Err(format!(
+                "invalid RenderPass.clearColor for '{}': expected 3/4 finite numbers or #RRGGBB/#RRGGBBAA, got {}",
+                node.id, value
+            ));
+        }
+    }
+
     Ok(())
 }
 

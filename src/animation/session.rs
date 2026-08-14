@@ -8,7 +8,7 @@ use crate::dsl::SceneDSL;
 use crate::protocol::InteractionEventPayload;
 use crate::state_machine::{
     self, EventModifiers, FiredEvent, FiredEvents, MotionChannelDebug, MousePosition, OverrideKey,
-    StateMachineRuntime, TickResult,
+    SceneSize, StateMachineRuntime, TickResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -100,10 +100,16 @@ impl AnimationSession {
     /// Returns `None` if the scene has no state machine, or an error if
     /// validation fails.
     pub fn from_scene(scene: &SceneDSL) -> Result<Option<Self>> {
-        let runtime = match state_machine::compile_from_scene(scene)? {
+        let mut runtime = match state_machine::compile_from_scene(scene)? {
             Some(rt) => rt,
             None => return Ok(None),
         };
+        if let Some(size) = crate::dsl::screen_resolution(scene) {
+            runtime.set_scene_size(SceneSize {
+                width: f64::from(size[0]),
+                height: f64::from(size[1]),
+            });
+        }
 
         let base_values = state_machine::collect_scene_current_values(scene);
 

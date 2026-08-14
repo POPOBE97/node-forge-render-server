@@ -1,11 +1,17 @@
 use rust_wgpu_fiber::eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
-use crate::ui::{
-    components::{
-        number_slider,
-        radio_button_group::{RadioButtonOption, radio_button_group},
+use crate::{
+    color::{
+        linear_to_srgb_channel as linear_to_srgb,
+        srgb_to_linear_channel as srgb_to_linear,
     },
-    design_tokens::{self, FontWeight, TextRole},
+    ui::{
+        components::{
+            number_slider,
+            radio_button_group::{RadioButtonOption, radio_button_group},
+        },
+        design_tokens::{self, FontWeight, TextRole},
+    },
 };
 
 const POPUP_WIDTH: f32 = 216.0;
@@ -967,9 +973,9 @@ fn color_to_rgb01(color: Color32) -> [f32; 3] {
 
 pub fn hdr_to_color32(color: HdrRgba) -> Color32 {
     Color32::from_rgba_unmultiplied(
-        float_to_u8(color[0]),
-        float_to_u8(color[1]),
-        float_to_u8(color[2]),
+        float_to_u8(linear_to_srgb(color[0])),
+        float_to_u8(linear_to_srgb(color[1])),
+        float_to_u8(linear_to_srgb(color[2])),
         float_to_u8(color[3]),
     )
 }
@@ -977,9 +983,9 @@ pub fn hdr_to_color32(color: HdrRgba) -> Color32 {
 fn color32_to_hdr(color: Color32) -> HdrRgba {
     let [r, g, b, a] = color.to_srgba_unmultiplied();
     [
-        r as f32 / 255.0,
-        g as f32 / 255.0,
-        b as f32 / 255.0,
+        srgb_to_linear(r as f32 / 255.0),
+        srgb_to_linear(g as f32 / 255.0),
+        srgb_to_linear(b as f32 / 255.0),
         a as f32 / 255.0,
     ]
 }
@@ -1256,22 +1262,6 @@ fn lab_to_xyz_fn(value: f32) -> f32 {
     }
 }
 
-fn srgb_to_linear(value: f32) -> f32 {
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-fn linear_to_srgb(value: f32) -> f32 {
-    if value <= 0.0031308 {
-        value * 12.92
-    } else {
-        1.055 * value.powf(1.0 / 2.4) - 0.055
-    }
-}
-
 fn cbrt(value: f32) -> f32 {
     if value < 0.0 {
         -(-value).powf(1.0 / 3.0)
@@ -1351,7 +1341,7 @@ mod tests {
 
         assert_eq!(
             hdr_to_color32(hdr),
-            Color32::from_rgba_unmultiplied(255, 255, 64, 153)
+            Color32::from_rgba_unmultiplied(255, 255, 137, 153)
         );
     }
 

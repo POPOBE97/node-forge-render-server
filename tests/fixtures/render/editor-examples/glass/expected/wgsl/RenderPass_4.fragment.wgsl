@@ -732,5 +732,29 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
     // Final composite
     let _frag_out = glass_material_material_out;
-    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
+    let _frag_color = vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
+    // Rect2DGeometry smooth corner coverage in transformed local pixel space.
+    let _rect_half_size_px = in.geo_size_px * 0.5;
+    let _rect_point_px = abs(in.local_px.xy - _rect_half_size_px);
+    let _rect_radius_limit_px = max(min(_rect_half_size_px.x, _rect_half_size_px.y), 0.0);
+    let _rect_radius_px = clamp(1.0, 0.0, _rect_radius_limit_px);
+    let _rect_smooth = clamp(1.0, 0.0, 1.0);
+    let _rect_distance = sdf2d_smooth_round_rect(
+        _rect_point_px,
+        _rect_half_size_px,
+        _rect_radius_px,
+        vec2f(_rect_smooth),
+    ).x;
+    let _rect_pixel_distance = max(fwidth(_rect_distance), 1e-4);
+    let _rect_aa_width = 2.0 * _rect_pixel_distance;
+    let _rect_mask_coverage = select(
+        smoothstep(0.0, _rect_aa_width, -_rect_distance),
+        1.0,
+        _rect_radius_px <= 0.0,
+    );
+    let _frag_coverage = clamp(_rect_mask_coverage, 0.0, 1.0);
+    if (_frag_coverage <= 0.0) {
+        discard;
+    }
+    return _frag_color * _frag_coverage;
 }

@@ -34,7 +34,11 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_44
-    float_input_44: vec4f,
+    node_FloatInput_44_1413f420: vec4f,
+    // Node: Vector2Input_BackgroundPositionPx
+    node_Vector2Input_BackgroundPositionPx_5e1cdc88: vec4f,
+    // Node: Vector2Input_BackgroundSizePx
+    node_Vector2Input_BackgroundSizePx_187f703e: vec4f,
 };
 
 @group(0) @binding(2)
@@ -92,7 +96,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_33_PassTexture_BackgroundBlur,
         pass_samp_GroupInstance_33_PassTexture_BackgroundBlur,
-        (graph_inputs.float_input_44).x,
+        (graph_inputs.node_FloatInput_44_1413f420).x,
     );
     // Final composite
     let _frag_out = background_darken_alpha_material;

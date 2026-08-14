@@ -40,8 +40,8 @@ use super::super::pass_spec::{
     build_depth_resolve_wgsl, make_params,
 };
 use super::super::resource_naming::{
-    infer_materialization_resolution, parse_render_pass_cull_mode, parse_render_pass_depth_test,
-    readable_pass_name_for_node, sampled_render_pass_output_size,
+    infer_materialization_resolution, parse_render_pass_color_load_op, parse_render_pass_cull_mode,
+    parse_render_pass_depth_test, readable_pass_name_for_node, sampled_render_pass_output_size,
     select_effective_msaa_sample_count,
 };
 use super::args::{BuilderState, SceneContext, make_fullscreen_geometry};
@@ -233,6 +233,17 @@ pub(crate) fn assemble_render_pass(
                 crate::dsl::node_display_label_with_id(layer_node)
             )
         })?;
+    let authored_color_load_op =
+        parse_render_pass_color_load_op(&layer_node.params).with_context(|| {
+            format!(
+                "invalid color load operation for {}",
+                crate::dsl::node_display_label_with_id(layer_node)
+            )
+        })?;
+    if let Some(load_op) = authored_color_load_op {
+        bs.authored_color_load_ops_by_pass
+            .insert(pass_name.clone(), load_op);
+    }
 
     let render_geo_node_id = incoming_connection(&prepared.scene, layer_id, "geometry")
         .map(|c| c.from.node_id.clone())
@@ -713,7 +724,7 @@ pub(crate) fn assemble_render_pass(
         texture_bindings,
         sampler_kinds,
         blend_state,
-        color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
+        color_load_op: authored_color_load_op.unwrap_or(wgpu::LoadOp::Clear(Color::TRANSPARENT)),
         sample_count: msaa_sample_count,
     });
     bs.pass_cull_mode_by_name

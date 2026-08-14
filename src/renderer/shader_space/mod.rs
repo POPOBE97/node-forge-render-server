@@ -1,4 +1,5 @@
 mod api;
+pub(crate) mod dynamic_gaussian_blur;
 mod error_space;
 pub(crate) mod finalizer;
 mod headless;
@@ -11,6 +12,7 @@ pub use api::{
     ShaderSpacePresentationMode,
 };
 pub use headless::{
+    render_scene_pass_to_file_headless, render_scene_texture_to_file_headless,
     render_scene_to_file_headless, render_scene_to_file_headless_profiled,
     render_scene_to_png_headless,
 };

@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::session::{AnimationSession, AnimationStep};
 use crate::dsl::SceneDSL;
+use crate::state_machine::{AnimationTraceFrame, AnimationTraceLog};
 use crate::state_machine::{
     EventModifiers, EventSchedule, FiredEvent, MotionChannelDebug, MousePosition, ScheduledEvent,
     TickSchedule, build_initial_values, canonicalize_json_value, round_f64, tracked_override_keys,
 };
-use crate::state_machine::{AnimationTraceFrame, AnimationTraceLog};
 
 const TRACE_REPORT_SCHEMA_VERSION: u32 = 2;
 const ANIMATION_TRACE_LOG_SCHEMA_VERSION: u32 = 1;
@@ -217,7 +217,6 @@ impl KeyFilter {
             }
         }
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -419,8 +418,8 @@ impl TraceRunConfig {
 // ---------------------------------------------------------------------------
 
 pub fn run_trace(scene: &SceneDSL, config: &TraceRunConfig) -> Result<TraceRunResult> {
-    let mut session = AnimationSession::from_scene(scene)?
-        .ok_or_else(|| anyhow!("scene has no stateMachine"))?;
+    let mut session =
+        AnimationSession::from_scene(scene)?.ok_or_else(|| anyhow!("scene has no stateMachine"))?;
 
     let mut routing_forced = config.routing_forced;
     if let Some(state_id) = &config.initial_state {
@@ -429,7 +428,8 @@ pub fn run_trace(scene: &SceneDSL, config: &TraceRunConfig) -> Result<TraceRunRe
     }
 
     let tracked_keys: BTreeSet<String> = tracked_override_keys(session.runtime().definition());
-    let mut current_values = build_initial_values(scene, &tracked_keys.iter().cloned().collect::<Vec<_>>());
+    let mut current_values =
+        build_initial_values(scene, &tracked_keys.iter().cloned().collect::<Vec<_>>());
 
     // Channel availability is discovered after the first recorded step.
     let mut available_channels: BTreeSet<String> = BTreeSet::new();
@@ -592,10 +592,7 @@ pub fn run_trace(scene: &SceneDSL, config: &TraceRunConfig) -> Result<TraceRunRe
                 }
             }
             ScenarioAction::AssertState { state_id } => {
-                let current = session
-                    .runtime()
-                    .current_state_id()
-                    .to_string();
+                let current = session.runtime().current_state_id().to_string();
                 if current != *state_id {
                     assert_error = Some(format!(
                         "assertState failed: expected '{state_id}', got '{current}'"
@@ -713,10 +710,7 @@ fn resolve_step_plan(frames: Option<u64>, seconds: Option<f64>, fps: u32) -> Res
     let dt_step = 1.0 / f64::from(fps);
     match (frames, seconds) {
         (Some(0), None) => Ok(StepPlan::Zero),
-        (Some(count), None) => Ok(StepPlan::FixedFrames {
-            count,
-            dt: dt_step,
-        }),
+        (Some(count), None) => Ok(StepPlan::FixedFrames { count, dt: dt_step }),
         (None, Some(s)) => {
             if !s.is_finite() || s < 0.0 {
                 bail!("step.seconds must be finite and >= 0");
@@ -879,7 +873,8 @@ fn apply_analysis(frames: &mut [TraceReportFrame], analyze: &TraceAnalyzeConfig)
 
             for channel in &frames[i].motion_channels {
                 if let Some(prev) = prev_channels.iter().find(|c| c.key == channel.key) {
-                    for (comp, (cur, old)) in channel.value.iter().zip(prev.value.iter()).enumerate()
+                    for (comp, (cur, old)) in
+                        channel.value.iter().zip(prev.value.iter()).enumerate()
                     {
                         let delta = (cur - old).abs();
                         if delta > analyze.jump_threshold_channel {
@@ -1137,8 +1132,8 @@ pub fn run_schedule_trace(
     event_schedule: &[ScheduledEvent],
     config: &TraceRunConfig,
 ) -> Result<TraceRunResult> {
-    let mut session = AnimationSession::from_scene(scene)?
-        .ok_or_else(|| anyhow!("scene has no stateMachine"))?;
+    let mut session =
+        AnimationSession::from_scene(scene)?.ok_or_else(|| anyhow!("scene has no stateMachine"))?;
 
     let mut routing_forced = config.routing_forced;
     if let Some(state_id) = &config.initial_state {
@@ -1299,16 +1294,15 @@ pub fn format_summary(report: &TraceReport) -> String {
     for jump in channel_jumps {
         lines.push(format!(
             "  jump frame {} {} {}[{:?}] Δ={:.6} ({:.6} -> {:.6})",
-            jump.frame_index,
-            jump.kind,
-            jump.key,
-            jump.component,
-            jump.delta,
-            jump.from,
-            jump.to
+            jump.frame_index, jump.kind, jump.key, jump.component, jump.delta, jump.from, jump.to
         ));
     }
-    if report.summary.jumps.iter().filter(|j| j.kind == "channel" || j.kind == "override").count()
+    if report
+        .summary
+        .jumps
+        .iter()
+        .filter(|j| j.kind == "channel" || j.kind == "override")
+        .count()
         > 20
     {
         lines.push("  ... (more jumps truncated)".into());
@@ -1336,7 +1330,9 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
         let mut rows = 0usize;
         for frame in &report.frames {
             if rows >= max_rows {
-                out.push_str(&format!("| ... | | | | | | | | | | | | ({max_rows} row cap)\n"));
+                out.push_str(&format!(
+                    "| ... | | | | | | | | | | | | ({max_rows} row cap)\n"
+                ));
                 break;
             }
             let Some(ch) = frame.motion_channels.iter().find(|c| c.key == key) else {
@@ -1352,10 +1348,7 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
                 frame.frame_index,
                 frame.time_secs * 1000.0,
                 frame.current_state_id,
-                frame
-                    .active_transition_id
-                    .as_deref()
-                    .unwrap_or("none"),
+                frame.active_transition_id.as_deref().unwrap_or("none"),
                 frame.label.as_deref().unwrap_or(""),
                 s,
                 q,
@@ -1373,9 +1366,8 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
 }
 
 fn format_table_routing_only(report: &TraceReport, max_rows: usize) -> String {
-    let mut out = String::from(
-        "| frame | t_ms | state | transition | label |\n|---:|---:|---|---|---|\n",
-    );
+    let mut out =
+        String::from("| frame | t_ms | state | transition | label |\n|---:|---:|---|---|---|\n");
     for (i, frame) in report.frames.iter().enumerate() {
         if i >= max_rows {
             out.push_str(&format!("| ... | | | | | ({max_rows} row cap)\n"));
@@ -1386,10 +1378,7 @@ fn format_table_routing_only(report: &TraceReport, max_rows: usize) -> String {
             frame.frame_index,
             frame.time_secs * 1000.0,
             frame.current_state_id,
-            frame
-                .active_transition_id
-                .as_deref()
-                .unwrap_or("none"),
+            frame.active_transition_id.as_deref().unwrap_or("none"),
             frame.label.as_deref().unwrap_or(""),
         ));
     }
@@ -1488,7 +1477,7 @@ mod tests {
 
     fn simple_scene() -> dsl::SceneDSL {
         dsl::SceneDSL {
-            version: "5.0".into(),
+            version: "6.0".into(),
             metadata: dsl::Metadata {
                 name: "trace-run".into(),
                 created: None,
@@ -1643,11 +1632,7 @@ mod tests {
             routing_forced: false,
         };
         let result = run_trace(&scene, &config).expect("trace");
-        assert!(
-            result.assert_error.is_none(),
-            "{:?}",
-            result.assert_error
-        );
+        assert!(result.assert_error.is_none(), "{:?}", result.assert_error);
         assert_eq!(result.report.summary.final_state_id, "b");
         assert!(result.report.summary.frame_count > 0);
     }

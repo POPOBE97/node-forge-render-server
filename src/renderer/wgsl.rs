@@ -5,21 +5,24 @@
 //! - Gaussian blur utilities for post-processing effects
 //! - Helper functions for formatting WGSL code
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Result, anyhow, bail};
 
 use crate::{
-    dsl::{Node, SceneDSL, find_node, incoming_connection},
+    dsl::{Node, SceneDSL, find_node, incoming_connection, parse_f32},
     renderer::{
-        node_compiler::compile_material_expr,
+        node_compiler::{compile_material_expr, sdf_nodes::ensure_default_sdf2d_wgsl_lib},
         render_plan::{parse_kernel_source_js_like, resolve_geometry_for_render_pass},
         scene_prep::prepare_scene,
         types::{
             GraphBindingKind, GraphFieldKind, GraphSchema, Kernel2D, KernelSpec,
             MaterialCompileContext, TypedExpr, ValueType, WgslShaderBundle,
         },
-        utils::{cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils, to_vec4_color},
+        utils::{
+            coerce_to_type, cpu_num_f32_min_0, cpu_num_u32_min_1, fmt_f32 as fmt_f32_utils,
+            to_vec4_color,
+        },
         wgsl_bloom::{
             BLOOM_MAX_MIPS, bloom_extract_fragment_body, build_bloom_additive_combine_bundle,
             build_bloom_output_bundle,
@@ -465,6 +468,30 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{
     }
 }
 
+fn with_gaussian_uniform(mut bundle: WgslShaderBundle) -> WgslShaderBundle {
+    const DECL: &str = r#"
+struct GaussianUniform {
+    kernel_0: vec4f,
+    kernel_1: vec4f,
+    offset_0: vec4f,
+    offset_1: vec4f,
+    tap_count: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
+
+@group(0) @binding(4)
+var<uniform> gaussian: GaussianUniform;
+"#;
+    let old_common = bundle.common.clone();
+    bundle.common.push_str(DECL);
+    bundle.vertex = bundle.vertex.replacen(&old_common, &bundle.common, 1);
+    bundle.fragment = bundle.fragment.replacen(&old_common, &bundle.common, 1);
+    bundle.module = bundle.module.replacen(&old_common, &bundle.common, 1);
+    bundle
+}
+
 fn build_static_vertex_fragment_bundle(combined_wgsl: String) -> WgslShaderBundle {
     let vertex_marker = "\n@vertex\n";
     let fragment_marker = "\n@fragment\n";
@@ -833,6 +860,132 @@ pub fn build_pass_wgsl_bundle(
     )
 }
 
+struct RectCornerCoverage {
+    statements: String,
+    expr: String,
+}
+
+/// Follow the geometry-only wrapper chain feeding a pass and return its Rect2DGeometry source.
+/// Group instances have already been expanded by scene preparation before production shaders are
+/// assembled, so this only needs to understand the runtime geometry wrappers.
+fn rect_geometry_for_pass<'a>(
+    scene: &SceneDSL,
+    nodes_by_id: &'a HashMap<String, Node>,
+    pass_id: &str,
+) -> Option<&'a Node> {
+    let mut node_id = incoming_connection(scene, pass_id, "geometry")?
+        .from
+        .node_id
+        .as_str();
+    let mut visited = HashSet::new();
+
+    loop {
+        if !visited.insert(node_id.to_string()) {
+            return None;
+        }
+
+        let node = nodes_by_id.get(node_id)?;
+        match node.node_type.as_str() {
+            "Rect2DGeometry" => return Some(node),
+            "InstancedGeometryStart" => {
+                node_id = incoming_connection(scene, node_id, "base")
+                    .or_else(|| incoming_connection(scene, node_id, "geometry"))?
+                    .from
+                    .node_id
+                    .as_str();
+            }
+            "InstancedGeometryEnd" | "SetTransform" | "TransformGeometry" => {
+                node_id = incoming_connection(scene, node_id, "geometry")?
+                    .from
+                    .node_id
+                    .as_str();
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn compile_rect_f32_input(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    rect: &Node,
+    port: &str,
+    default: f32,
+    material_ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+) -> Result<TypedExpr> {
+    if let Some(conn) = incoming_connection(scene, &rect.id, port) {
+        let value = compile_material_expr(
+            scene,
+            nodes_by_id,
+            &conn.from.node_id,
+            Some(&conn.from.port_id),
+            material_ctx,
+            cache,
+        )?;
+        return coerce_to_type(value, ValueType::F32);
+    }
+
+    Ok(TypedExpr::new(
+        fmt_f32_utils(parse_f32(&rect.params, port).unwrap_or(default)),
+        ValueType::F32,
+    ))
+}
+
+fn compile_rect_corner_coverage(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, Node>,
+    pass_id: &str,
+    material_ctx: &mut MaterialCompileContext,
+    cache: &mut HashMap<(String, String), TypedExpr>,
+) -> Result<Option<RectCornerCoverage>> {
+    let Some(rect) = rect_geometry_for_pass(scene, nodes_by_id, pass_id) else {
+        return Ok(None);
+    };
+
+    // Preserve the zero-radius fast path when radius is entirely static. A connected radius must
+    // keep the mask in the pipeline so ordinary GraphInputs updates do not require recompilation.
+    let radius_is_dynamic = incoming_connection(scene, &rect.id, "radius").is_some();
+    let static_radius = parse_f32(&rect.params, "radius").unwrap_or(0.0);
+    if !radius_is_dynamic && static_radius <= 0.0 {
+        return Ok(None);
+    }
+
+    let radius =
+        compile_rect_f32_input(scene, nodes_by_id, rect, "radius", 0.0, material_ctx, cache)?;
+    let smooth =
+        compile_rect_f32_input(scene, nodes_by_id, rect, "smooth", 1.0, material_ctx, cache)?;
+    let smooth_round_rect_fn = ensure_default_sdf2d_wgsl_lib(material_ctx);
+
+    let statements = format!(
+        r#"    // Rect2DGeometry smooth corner coverage in transformed local pixel space.
+    let _rect_half_size_px = in.geo_size_px * 0.5;
+    let _rect_point_px = abs(in.local_px.xy - _rect_half_size_px);
+    let _rect_radius_limit_px = max(min(_rect_half_size_px.x, _rect_half_size_px.y), 0.0);
+    let _rect_radius_px = clamp({}, 0.0, _rect_radius_limit_px);
+    let _rect_smooth = clamp({}, 0.0, 1.0);
+    let _rect_distance = {}(
+        _rect_point_px,
+        _rect_half_size_px,
+        _rect_radius_px,
+        vec2f(_rect_smooth),
+    ).x;
+    let _rect_pixel_distance = max(fwidth(_rect_distance), 1e-4);
+    let _rect_aa_width = 2.0 * _rect_pixel_distance;
+    let _rect_mask_coverage = select(
+        smoothstep(0.0, _rect_aa_width, -_rect_distance),
+        1.0,
+        _rect_radius_px <= 0.0,
+    );"#,
+        radius.expr, smooth.expr, smooth_round_rect_fn
+    );
+
+    Ok(Some(RectCornerCoverage {
+        statements,
+        expr: "_rect_mask_coverage".to_string(),
+    }))
+}
+
 pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -873,9 +1026,9 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
         preserve_legacy_graph_input_names: !vertex_graph_input_kinds.is_empty(),
         ..Default::default()
     };
+    let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
     let fragment_expr: TypedExpr =
         if let Some(conn) = incoming_connection(scene, pass_id, "material") {
-            let mut cache: HashMap<(String, String), TypedExpr> = HashMap::new();
             compile_material_expr(
                 scene,
                 nodes_by_id,
@@ -892,10 +1045,19 @@ pub(crate) fn build_pass_wgsl_bundle_with_graph_binding(
             )
         };
 
-    let image_textures = material_ctx.image_textures.clone();
-
     let out_color = to_vec4_color(fragment_expr);
-    let fragment_body = material_ctx.build_fragment_body(&out_color.expr);
+    let rect_coverage =
+        compile_rect_corner_coverage(scene, nodes_by_id, pass_id, &mut material_ctx, &mut cache)?;
+    let fragment_body = if let Some(coverage) = rect_coverage.as_ref() {
+        material_ctx.build_fragment_body_with_coverage(
+            &out_color.expr,
+            Some((&coverage.statements, &coverage.expr)),
+        )
+    } else {
+        material_ctx.build_fragment_body(&out_color.expr)
+    };
+
+    let image_textures = material_ctx.image_textures.clone();
 
     let graph_schema = merge_graph_input_kinds(&material_ctx, &vertex_graph_input_kinds);
     let graph_binding_kind = graph_schema
@@ -1885,6 +2047,36 @@ pub fn build_horizontal_blur_bundle_with_tap_count(
     build_fullscreen_textured_bundle(body)
 }
 
+/// Build the same horizontal Gaussian pass with coefficients supplied by a runtime uniform.
+pub(crate) fn build_horizontal_blur_bundle_runtime() -> WgslShaderBundle {
+    let body = r#"
+ let original = vec2f(textureDimensions(src_tex));
+ let xy = in.uv * original;
+ let k = array<f32, 8>(
+     gaussian.kernel_0.x, gaussian.kernel_0.y,
+     gaussian.kernel_0.z, gaussian.kernel_0.w,
+     gaussian.kernel_1.x, gaussian.kernel_1.y,
+     gaussian.kernel_1.z, gaussian.kernel_1.w
+ );
+ let o = array<f32, 8>(
+     gaussian.offset_0.x, gaussian.offset_0.y,
+     gaussian.offset_0.z, gaussian.offset_0.w,
+     gaussian.offset_1.x, gaussian.offset_1.y,
+     gaussian.offset_1.z, gaussian.offset_1.w
+ );
+ let tap_count: u32 = min(gaussian.tap_count, 8u);
+ var color = vec4f(0.0);
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
+     let uv_pos = (xy + vec2f(o[i], 0.0)) / original;
+     let uv_neg = (xy - vec2f(o[i], 0.0)) / original;
+     color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+     color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
+ }
+ return color;
+"#;
+    with_gaussian_uniform(build_fullscreen_textured_bundle(body.to_string()))
+}
+
 /// Build a vertical Gaussian blur shader bundle.
 pub fn build_vertical_blur_bundle(kernel: [f32; 8], offset: [f32; 8]) -> WgslShaderBundle {
     build_vertical_blur_bundle_with_tap_count(kernel, offset, 8)
@@ -1917,6 +2109,36 @@ pub fn build_vertical_blur_bundle_with_tap_count(
 "#
     );
     build_fullscreen_textured_bundle(body)
+}
+
+/// Build the same vertical Gaussian pass with coefficients supplied by a runtime uniform.
+pub(crate) fn build_vertical_blur_bundle_runtime() -> WgslShaderBundle {
+    let body = r#"
+ let original = vec2f(textureDimensions(src_tex));
+ let xy = in.uv * original;
+ let k = array<f32, 8>(
+     gaussian.kernel_0.x, gaussian.kernel_0.y,
+     gaussian.kernel_0.z, gaussian.kernel_0.w,
+     gaussian.kernel_1.x, gaussian.kernel_1.y,
+     gaussian.kernel_1.z, gaussian.kernel_1.w
+ );
+ let o = array<f32, 8>(
+     gaussian.offset_0.x, gaussian.offset_0.y,
+     gaussian.offset_0.z, gaussian.offset_0.w,
+     gaussian.offset_1.x, gaussian.offset_1.y,
+     gaussian.offset_1.z, gaussian.offset_1.w
+ );
+ let tap_count: u32 = min(gaussian.tap_count, 8u);
+ var color = vec4f(0.0);
+ for (var i: u32 = 0u; i < tap_count; i = i + 1u) {
+     let uv_pos = (xy + vec2f(0.0, o[i])) / original;
+     let uv_neg = (xy - vec2f(0.0, o[i])) / original;
+     color = color + textureSampleLevel(src_tex, src_samp, uv_pos, 0.0) * k[i];
+     color = color + textureSampleLevel(src_tex, src_samp, uv_neg, 0.0) * k[i];
+ }
+ return color;
+"#;
+    with_gaussian_uniform(build_fullscreen_textured_bundle(body.to_string()))
 }
 
 /// Build a bilinear upsample shader bundle.
@@ -2054,9 +2276,10 @@ mod tests {
     use super::{
         ERROR_SHADER_WGSL, LanczosAxis, build_bloom_extract_material_bundle,
         build_downsample_pass_wgsl_bundle, build_horizontal_blur_bundle,
-        build_horizontal_blur_bundle_with_tap_count, build_lanczos_downsample_pass_wgsl_bundle,
+        build_horizontal_blur_bundle_runtime, build_horizontal_blur_bundle_with_tap_count,
+        build_lanczos_downsample_pass_wgsl_bundle, build_pass_wgsl_bundle,
         build_pass_wgsl_bundle_with_graph_binding, build_vertical_blur_bundle,
-        build_vertical_blur_bundle_with_tap_count,
+        build_vertical_blur_bundle_runtime, build_vertical_blur_bundle_with_tap_count,
     };
     use crate::dsl::{Connection, Endpoint, Metadata, Node, SceneDSL};
     use crate::renderer::render_plan::geometry::Rect2DDynamicInputs;
@@ -2064,12 +2287,257 @@ mod tests {
     use crate::renderer::validation::validate_wgsl;
     use serde_json::json;
 
+    fn test_node(id: &str, node_type: &str, params: HashMap<String, serde_json::Value>) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            params,
+            inputs: Vec::new(),
+            input_bindings: Vec::new(),
+            outputs: Vec::new(),
+            wgsl_override: None,
+        }
+    }
+
+    fn test_connection(
+        id: &str,
+        from_node: &str,
+        from_port: &str,
+        to_node: &str,
+        to_port: &str,
+    ) -> Connection {
+        Connection {
+            id: id.to_string(),
+            from: Endpoint {
+                node_id: from_node.to_string(),
+                port_id: from_port.to_string(),
+            },
+            to: Endpoint {
+                node_id: to_node.to_string(),
+                port_id: to_port.to_string(),
+            },
+        }
+    }
+
+    fn test_scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
+        SceneDSL {
+            version: "6.0".to_string(),
+            metadata: Metadata {
+                name: "wgsl test".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes,
+            connections,
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        }
+    }
+
+    fn build_test_pass_bundle(scene: &SceneDSL) -> crate::renderer::types::WgslShaderBundle {
+        let nodes_by_id = scene
+            .nodes
+            .iter()
+            .cloned()
+            .map(|node| (node.id.clone(), node))
+            .collect();
+        build_pass_wgsl_bundle(
+            scene,
+            &nodes_by_id,
+            None,
+            None,
+            "pass",
+            false,
+            None,
+            Vec::new(),
+            String::new(),
+            false,
+        )
+        .expect("pass WGSL should build")
+    }
+
+    #[test]
+    fn rect_corner_radius_uses_shared_sdf_and_two_pixel_inward_coverage() {
+        let scene = test_scene(
+            vec![
+                test_node(
+                    "rect",
+                    "Rect2DGeometry",
+                    HashMap::from([
+                        ("radius".to_string(), json!(20.0)),
+                        ("smooth".to_string(), json!(0.5)),
+                    ]),
+                ),
+                test_node("pass", "RenderPass", HashMap::new()),
+            ],
+            vec![test_connection(
+                "rect-pass",
+                "rect",
+                "geometry",
+                "pass",
+                "geometry",
+            )],
+        );
+
+        let bundle = build_test_pass_bundle(&scene);
+
+        assert_eq!(
+            bundle.module.matches("fn sdf2d_smooth_round_rect(").count(),
+            1,
+            "the canonical SDF helper must be emitted exactly once"
+        );
+        assert!(bundle.module.contains("in.geo_size_px * 0.5"));
+        assert!(
+            bundle
+                .module
+                .contains("abs(in.local_px.xy - _rect_half_size_px)")
+        );
+        assert!(bundle.module.contains("vec2f(_rect_smooth)"));
+        assert!(bundle.module.contains("max(fwidth(_rect_distance), 1e-4)"));
+        assert!(
+            bundle
+                .module
+                .contains("let _rect_aa_width = 2.0 * _rect_pixel_distance;")
+        );
+        assert!(bundle.module.contains("discard;"));
+        assert!(
+            bundle
+                .module
+                .contains("return _frag_color * _frag_coverage;")
+        );
+        validate_wgsl(&bundle.module).expect("rounded Rect pass WGSL should validate");
+    }
+
+    #[test]
+    fn rect_static_non_positive_radius_keeps_shader_fast_path() {
+        for radius in [0.0, -4.0] {
+            let scene = test_scene(
+                vec![
+                    test_node(
+                        "rect",
+                        "Rect2DGeometry",
+                        HashMap::from([("radius".to_string(), json!(radius))]),
+                    ),
+                    test_node("pass", "RenderPass", HashMap::new()),
+                ],
+                vec![test_connection(
+                    "rect-pass",
+                    "rect",
+                    "geometry",
+                    "pass",
+                    "geometry",
+                )],
+            );
+
+            let bundle = build_test_pass_bundle(&scene);
+            assert!(!bundle.module.contains("_rect_mask_coverage"));
+            assert!(!bundle.module.contains("fwidth(_rect_distance)"));
+            assert!(!bundle.module.contains("fn sdf2d_smooth_round_rect("));
+            validate_wgsl(&bundle.module).expect("plain Rect pass WGSL should validate");
+        }
+    }
+
+    #[test]
+    fn rect_dynamic_inputs_survive_geometry_wrappers_and_deduplicate_sdf_library() {
+        let scene = test_scene(
+            vec![
+                test_node(
+                    "radius_input",
+                    "FloatInput",
+                    HashMap::from([("value".to_string(), json!(0.0))]),
+                ),
+                test_node(
+                    "smooth_input",
+                    "FloatInput",
+                    HashMap::from([("value".to_string(), json!(0.5))]),
+                ),
+                test_node("rect", "Rect2DGeometry", HashMap::new()),
+                test_node("inst_start", "InstancedGeometryStart", HashMap::new()),
+                test_node("transform", "TransformGeometry", HashMap::new()),
+                test_node("inst_end", "InstancedGeometryEnd", HashMap::new()),
+                test_node("set_transform", "SetTransform", HashMap::new()),
+                test_node(
+                    "sdf",
+                    "Sdf2D",
+                    HashMap::from([
+                        ("shape".to_string(), json!("smooth_round_rect")),
+                        ("position".to_string(), json!([0.0, 0.0])),
+                        ("size".to_string(), json!([100.0, 80.0])),
+                        ("radius".to_string(), json!(12.0)),
+                        ("axisMix".to_string(), json!([0.5, 0.5])),
+                    ]),
+                ),
+                test_node("pass", "RenderPass", HashMap::new()),
+            ],
+            vec![
+                test_connection("radius-rect", "radius_input", "value", "rect", "radius"),
+                test_connection("smooth-rect", "smooth_input", "value", "rect", "smooth"),
+                test_connection("rect-inst-start", "rect", "geometry", "inst_start", "base"),
+                test_connection(
+                    "inst-start-transform",
+                    "inst_start",
+                    "geometry",
+                    "transform",
+                    "geometry",
+                ),
+                test_connection(
+                    "transform-inst-end",
+                    "transform",
+                    "geometry",
+                    "inst_end",
+                    "geometry",
+                ),
+                test_connection(
+                    "inst-end-set-transform",
+                    "inst_end",
+                    "geometry",
+                    "set_transform",
+                    "geometry",
+                ),
+                test_connection(
+                    "set-transform-pass",
+                    "set_transform",
+                    "geometry",
+                    "pass",
+                    "geometry",
+                ),
+                test_connection("sdf-pass", "sdf", "distance", "pass", "material"),
+            ],
+        );
+
+        let bundle = build_test_pass_bundle(&scene);
+        let schema = bundle.graph_schema.as_ref().expect("dynamic Rect schema");
+        assert!(
+            schema
+                .fields
+                .iter()
+                .any(|field| field.node_id == "radius_input")
+        );
+        assert!(
+            schema
+                .fields
+                .iter()
+                .any(|field| field.node_id == "smooth_input")
+        );
+        assert_eq!(
+            bundle.module.matches("fn sdf2d_smooth_round_rect(").count(),
+            1,
+            "Rect mask and Sdf2D node must share one helper declaration"
+        );
+        assert!(bundle.module.contains("_rect_radius_px <= 0.0"));
+        validate_wgsl(&bundle.module)
+            .expect("dynamic wrapped Rect plus Sdf2D WGSL should validate");
+    }
+
     #[test]
     fn pass_wgsl_uses_one_graph_field_name_across_vertex_and_fragment_stages() {
         let graph_node_id = "shared_position_color";
         let graph_field = crate::renderer::graph_uniforms::graph_field_name(graph_node_id);
         let scene = SceneDSL {
-            version: "5.0".to_string(),
+            version: "6.0".to_string(),
             metadata: Metadata {
                 name: "shared vertex and fragment graph input".to_string(),
                 created: None,
@@ -2176,7 +2644,7 @@ mod tests {
                 },
             };
         let scene = SceneDSL {
-            version: "5.0".to_string(),
+            version: "6.0".to_string(),
             metadata: Metadata {
                 name: "bloom tint".to_string(),
                 created: None,
@@ -2265,6 +2733,24 @@ mod tests {
             v.module.contains("let tap_count: u32 = 8u;"),
             "vertical wrapper should keep legacy 8 taps"
         );
+    }
+
+    #[test]
+    fn runtime_blur_bundle_reads_coefficients_from_uniform() {
+        let h = build_horizontal_blur_bundle_runtime();
+        let v = build_vertical_blur_bundle_runtime();
+
+        assert_eq!(
+            core::mem::size_of::<crate::renderer::types::GaussianUniform>(),
+            80,
+            "CPU Gaussian uniform must match the WGSL scalar-padded layout"
+        );
+        for module in [&h.module, &v.module] {
+            assert!(module.contains("@group(0) @binding(4)"));
+            assert!(module.contains("var<uniform> gaussian: GaussianUniform"));
+            assert!(module.contains("min(gaussian.tap_count, 8u)"));
+            validate_wgsl(module).expect("runtime Gaussian WGSL should validate");
+        }
     }
 
     #[test]

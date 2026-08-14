@@ -74,6 +74,27 @@ pub(crate) fn collect_texture_capability_requirements(
                 sample_count,
                 ..
             } => (name.clone(), *format, *usage, (*sample_count).max(1)),
+            FiberTextureSpec::MipmappedTexture {
+                name,
+                format,
+                usage,
+                ..
+            } => (name.clone(), *format, *usage, 1),
+            FiberTextureSpec::TextureView { name, texture, .. } => {
+                let source = requirements_by_name.get(texture).ok_or_else(|| {
+                    anyhow!(
+                        "internal texture capability validation error: view '{}' references undeclared texture '{}'",
+                        name,
+                        texture
+                    )
+                })?;
+                (
+                    name.clone(),
+                    source.format,
+                    source.usage,
+                    source.sample_count,
+                )
+            }
             FiberTextureSpec::Image {
                 name,
                 image,

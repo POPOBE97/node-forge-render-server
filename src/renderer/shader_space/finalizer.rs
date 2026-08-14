@@ -13,6 +13,7 @@ use rust_wgpu_fiber::{
     shader_space::ShaderSpace,
 };
 
+use crate::renderer::render_plan::pass_assemblers::dynamic_gaussian_blur::gaussian_buffer_name;
 use crate::renderer::{
     graph_uniforms::compute_pipeline_signature_for_pass_bindings,
     node_compiler::geometry_nodes::rect2d_geometry_vertices,
@@ -109,6 +110,17 @@ impl ShaderSpaceFinalizer {
                 });
             }
         }
+        for bundle in resources.gaussian_blur_bundles.values() {
+            for uniforms in bundle.current.route_uniforms.values() {
+                for (name, _) in uniforms {
+                    buffer_specs.push(BufferSpec::Sized {
+                        name: name.clone(),
+                        size: core::mem::size_of::<crate::renderer::types::GaussianUniform>(),
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    });
+                }
+            }
+        }
         for plan in resources.shader_parameter_buffers_by_pass.values() {
             buffer_specs.push(BufferSpec::Sized {
                 name: plan.binding.buffer_name.clone(),
@@ -159,11 +171,8 @@ impl ShaderSpaceFinalizer {
         let mut texture_specs: Vec<FiberTextureSpec> = resources
             .textures
             .iter()
-            .map(|texture| FiberTextureSpec::Texture {
-                name: texture.name.clone(),
-                resolution: texture.size,
-                format: texture.format,
-                usage: if texture.sample_count > 1 {
+            .map(|texture| {
+                let usage = if texture.sample_count > 1 {
                     let base = TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
                     if texture.needs_sampling {
                         base | TextureUsages::TEXTURE_BINDING
@@ -174,10 +183,37 @@ impl ShaderSpaceFinalizer {
                     TextureUsages::RENDER_ATTACHMENT
                         | TextureUsages::TEXTURE_BINDING
                         | TextureUsages::COPY_SRC
-                },
-                sample_count: texture.sample_count,
+                };
+                if let Some(mip_level_count) = resources
+                    .texture_mip_level_counts
+                    .get(&texture.name)
+                    .copied()
+                {
+                    FiberTextureSpec::MipmappedTexture {
+                        name: texture.name.clone(),
+                        resolution: texture.size,
+                        format: texture.format,
+                        usage,
+                        mip_level_count,
+                    }
+                } else {
+                    FiberTextureSpec::Texture {
+                        name: texture.name.clone(),
+                        resolution: texture.size,
+                        format: texture.format,
+                        usage,
+                        sample_count: texture.sample_count,
+                    }
+                }
             })
             .collect();
+        texture_specs.extend(resources.texture_views.iter().map(|view| {
+            FiberTextureSpec::TextureView {
+                name: view.name.clone(),
+                texture: view.texture.clone(),
+                base_mip_level: view.base_mip_level,
+            }
+        }));
         texture_specs.extend(resources.image_textures.iter().map(|texture| {
             FiberTextureSpec::Image {
                 name: texture.name.clone(),
@@ -340,9 +376,25 @@ impl ShaderSpaceFinalizer {
                 let mut pass_builder = builder.shader(shader_desc).bind_uniform_buffer(
                     0,
                     0,
-                    params_buffer,
+                    params_buffer.clone(),
                     ShaderStages::VERTEX_FRAGMENT,
                 );
+
+                let gaussian_name = gaussian_buffer_name(&params_buffer);
+                if resources.gaussian_blur_bundles.values().any(|bundle| {
+                    bundle
+                        .current
+                        .route_uniforms
+                        .values()
+                        .any(|uniforms| uniforms.iter().any(|(name, _)| *name == gaussian_name))
+                }) {
+                    pass_builder = pass_builder.bind_uniform_buffer(
+                        0,
+                        4,
+                        gaussian_name,
+                        ShaderStages::FRAGMENT,
+                    );
+                }
 
                 if let Some(baked_data_parse_buffer) = spec.baked_data_parse_buffer.clone() {
                     pass_builder = pass_builder.bind_storage_buffer(
@@ -530,6 +582,9 @@ impl ShaderSpaceFinalizer {
         shader_space
             .composite(move |composer| compose_in_strict_order(composer, &composite_passes));
         shader_space.prepare();
+        for bundle in resources.gaussian_blur_bundles.values() {
+            super::dynamic_gaussian_blur::set_route_enabled(&mut shader_space, &bundle.current)?;
+        }
 
         for spec in &resources.render_pass_specs {
             shader_space.write_buffer(spec.params_buffer.as_str(), 0, as_bytes(&spec.params))?;
@@ -545,6 +600,13 @@ impl ShaderSpaceFinalizer {
                     0,
                     plan.values.as_slice(),
                 )?;
+            }
+        }
+        for bundle in resources.gaussian_blur_bundles.values() {
+            for uniforms in bundle.current.route_uniforms.values() {
+                for (name, value) in uniforms {
+                    shader_space.write_buffer(name.as_str(), 0, as_bytes(value))?;
+                }
             }
         }
         for spec in &resources.image_prepasses {

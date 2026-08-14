@@ -237,6 +237,8 @@ pub struct GraphInputContext {
     pub local_elapsed_time: f64,
     /// Latest mouse position in render-target frag pixel coordinates.
     pub mouse_position: Option<MousePosition>,
+    /// Current full render-target size in bottom-left ScenePx space.
+    pub scene_size: Option<SceneSize>,
     pub dt: f64,
 }
 
@@ -552,6 +554,12 @@ fn resolve_builtin_value(name: &str, ctx: &GraphInputContext) -> Option<GraphVal
     match name {
         "sceneElapsedTime" => Some(ctx.scene_elapsed_time.into()),
         "localElapsedTime" => Some(ctx.local_elapsed_time.into()),
+        "scene.size" => Some(
+            ctx.scene_size
+                .map(|size| [size.width, size.height])
+                .unwrap_or([0.0, 0.0])
+                .into(),
+        ),
         "mouse.position" => Some(
             ctx.mouse_position
                 .map(|p| [p.x, p.y])
@@ -926,7 +934,7 @@ mod value_contract_tests {
     use std::collections::HashMap;
 
     use super::{AnimValue, GraphInputContext, resolve_builtin_value};
-    use crate::state_machine::types::MousePosition;
+    use crate::state_machine::types::{MousePosition, SceneSize};
 
     #[test]
     fn parses_curve_types_without_collapsing_their_identity() {
@@ -950,6 +958,10 @@ mod value_contract_tests {
             scene_elapsed_time: 0.0,
             local_elapsed_time: 0.0,
             mouse_position: Some(MousePosition { x: 321.0, y: 654.0 }),
+            scene_size: Some(SceneSize {
+                width: 1080.0,
+                height: 2400.0,
+            }),
             dt: 0.0,
         };
 
@@ -960,6 +972,10 @@ mod value_contract_tests {
         assert_eq!(
             resolve_builtin_value("mouse.position.y", &ctx),
             Some(AnimValue::Float(654.0))
+        );
+        assert_eq!(
+            resolve_builtin_value("scene.size", &ctx),
+            Some(AnimValue::Vec2([1080.0, 2400.0]))
         );
     }
 }

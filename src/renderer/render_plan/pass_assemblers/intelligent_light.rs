@@ -10,6 +10,7 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
+    color::srgb_to_linear_channel,
     dsl::{Node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
@@ -1018,13 +1019,21 @@ fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
             let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
             let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
             let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
-            Some([r, g, b])
+            Some([
+                srgb_to_linear_channel(r),
+                srgb_to_linear_channel(g),
+                srgb_to_linear_channel(b),
+            ])
         }
         3 => {
             let r = u8::from_str_radix(&s[0..1], 16).ok()? as f32 / 15.0;
             let g = u8::from_str_radix(&s[1..2], 16).ok()? as f32 / 15.0;
             let b = u8::from_str_radix(&s[2..3], 16).ok()? as f32 / 15.0;
-            Some([r, g, b])
+            Some([
+                srgb_to_linear_channel(r),
+                srgb_to_linear_channel(g),
+                srgb_to_linear_channel(b),
+            ])
         }
         _ => None,
     }
@@ -1150,11 +1159,12 @@ mod tests {
     }
 
     #[test]
-    fn intelligent_light_premultiplies_presentation_colors() {
+    fn intelligent_light_consumes_linear_and_premultiplies_presentation_colors() {
         let shader =
             build_intelligent_light_wgsl(&test_node("ilight", "IntelligentLight", HashMap::new()));
 
-        assert!(shader.contains("srgb_to_linear(max(color.rgb, vec3f(0.0))) * color.a"));
+        assert!(shader.contains("max(color.rgb, vec3f(0.0)) * color.a"));
+        assert!(!shader.contains("fn srgb_to_linear"));
         for index in 0..3 {
             assert!(shader.contains(&format!("presentation_color_linear({index}u)")));
         }
@@ -1448,9 +1458,24 @@ mod tests {
         let bytes = cfg.pack_buffer(&scene);
         let (r0, g0, b0) = read_light_color(&bytes, 0);
 
-        assert_near(r0 as f64, 0x44 as f64 / 255.0, 1e-6, "local color0.r");
-        assert_near(g0 as f64, 0xcc as f64 / 255.0, 1e-6, "local color0.g");
-        assert_near(b0 as f64, 0x88 as f64 / 255.0, 1e-6, "local color0.b");
+        assert_near(
+            r0 as f64,
+            srgb_to_linear_channel(0x44 as f32 / 255.0) as f64,
+            1e-6,
+            "local color0.r",
+        );
+        assert_near(
+            g0 as f64,
+            srgb_to_linear_channel(0xcc as f32 / 255.0) as f64,
+            1e-6,
+            "local color0.g",
+        );
+        assert_near(
+            b0 as f64,
+            srgb_to_linear_channel(0x88 as f32 / 255.0) as f64,
+            1e-6,
+            "local color0.b",
+        );
     }
 
     #[test]
@@ -1502,9 +1527,24 @@ mod tests {
         let bytes = cfg.pack_buffer(&scene);
         let (r0, g0, b0) = read_light_color(&bytes, 0);
 
-        assert_near(r0 as f64, 0xab as f64 / 255.0, 1e-6, "connected color0.r");
-        assert_near(g0 as f64, 0xcd as f64 / 255.0, 1e-6, "connected color0.g");
-        assert_near(b0 as f64, 0xef as f64 / 255.0, 1e-6, "connected color0.b");
+        assert_near(
+            r0 as f64,
+            srgb_to_linear_channel(0xab as f32 / 255.0) as f64,
+            1e-6,
+            "connected color0.r",
+        );
+        assert_near(
+            g0 as f64,
+            srgb_to_linear_channel(0xcd as f32 / 255.0) as f64,
+            1e-6,
+            "connected color0.g",
+        );
+        assert_near(
+            b0 as f64,
+            srgb_to_linear_channel(0xef as f32 / 255.0) as f64,
+            1e-6,
+            "connected color0.b",
+        );
     }
 
     #[test]

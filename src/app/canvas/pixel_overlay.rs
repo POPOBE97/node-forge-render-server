@@ -9,7 +9,10 @@ use rust_wgpu_fiber::eframe::{
     wgpu,
 };
 
-use crate::app::types::{App, DiffMetricMode, RefImageMode, RefImageState};
+use crate::{
+    app::types::{App, DiffMetricMode, RefImageMode, RefImageState},
+    color::srgb_to_linear_channel,
+};
 
 const PIXEL_OVERLAY_MIN_ZOOM: f32 = 48.0;
 const PIXEL_OVERLAY_REFERENCE_ZOOM: f32 = 100.0;
@@ -20,6 +23,33 @@ const PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM: f32 =
     (PIXEL_OVERLAY_REFERENCE_ZOOM - PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM * 2.0) / 4.0;
 const PIXEL_OVERLAY_BASE_FONT_SIZE_AT_MAX_ZOOM: f32 =
     PIXEL_OVERLAY_BASE_LINE_HEIGHT_AT_MAX_ZOOM / 1.5;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PixelValueDisplayMode {
+    #[default]
+    Decimal,
+    U8Fraction,
+}
+
+impl PixelValueDisplayMode {
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Decimal => Self::U8Fraction,
+            Self::U8Fraction => Self::Decimal,
+        }
+    }
+}
+
+pub fn is_pixel_overlay_visible_at_zoom(zoom: f32) -> bool {
+    zoom >= PIXEL_OVERLAY_MIN_ZOOM
+}
+
+pub fn supports_u8_fraction(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
+    )
+}
 
 fn pixel_overlay_text_color() -> Color32 {
     Color32::from_rgba_unmultiplied(245, 245, 245, 242)
@@ -172,10 +202,20 @@ pub fn clear_cache(app: &mut App) {
     app.canvas.display.pixel_overlay_last_request_key = None;
 }
 
-fn format_overlay_channel(_label: char, value: f32) -> String {
+fn format_overlay_channel(
+    _label: char,
+    value: f32,
+    display_mode: PixelValueDisplayMode,
+    display_format: wgpu::TextureFormat,
+) -> String {
     let normalized = if value.abs() < 0.0000005 { 0.0 } else { value };
     if !normalized.is_finite() {
         return format!("{normalized}");
+    }
+
+    if display_mode == PixelValueDisplayMode::U8Fraction && supports_u8_fraction(display_format) {
+        let numerator = (normalized * 255.0).round() as i64;
+        return format!("{numerator:>3}/255");
     }
 
     let abs = normalized.abs();
@@ -274,7 +314,7 @@ fn sample_rgba16f_pixel(
 }
 
 fn sample_overlay_pixel(cache: &PixelOverlayCache, x: u32, y: u32) -> Option<[f32; 4]> {
-    match &cache.readback {
+    let mut rgba = match &cache.readback {
         PixelOverlayReadback::Rgba8(bytes) => {
             sample_rgba8_pixel(bytes.as_slice(), cache.width, cache.height, x, y)
         }
@@ -282,7 +322,13 @@ fn sample_overlay_pixel(cache: &PixelOverlayCache, x: u32, y: u32) -> Option<[f3
             sample_rgba16f_pixel(channels.as_slice(), cache.width, cache.height, x, y)
         }
         PixelOverlayReadback::Unavailable | PixelOverlayReadback::UnsupportedFormat => None,
+    }?;
+    if cache.format == wgpu::TextureFormat::Rgba8UnormSrgb {
+        rgba[0] = srgb_to_linear_channel(rgba[0]);
+        rgba[1] = srgb_to_linear_channel(rgba[1]);
+        rgba[2] = srgb_to_linear_channel(rgba[2]);
     }
+    Some(rgba)
 }
 
 fn sample_reference_pixel_rgba(
@@ -430,12 +476,14 @@ pub fn draw_pixel_overlay(
     zoom: f32,
     resolution: [u32; 2],
     cache: Option<&PixelOverlayCache>,
+    display_format: Option<wgpu::TextureFormat>,
+    value_display_mode: PixelValueDisplayMode,
     reference: Option<ValueSamplingReference<'_>>,
     diff_metric_mode: DiffMetricMode,
     diff_output_active: bool,
     clamp_output: bool,
 ) {
-    if zoom < PIXEL_OVERLAY_MIN_ZOOM {
+    if !is_pixel_overlay_visible_at_zoom(zoom) {
         return;
     }
     let [width, height] = resolution;
@@ -497,6 +545,23 @@ pub fn draw_pixel_overlay(
     let Some(cache) = cache else {
         return;
     };
+    let display_format = display_format.unwrap_or(cache.format);
+
+    let domain_label = format!("linear premultiplied RGBA · {:?}", cache.format);
+    let label_pos = visible_image_rect.min + egui::vec2(5.0, 5.0);
+    let label_rect = Rect::from_min_size(label_pos, egui::vec2(260.0, 17.0));
+    painter.rect_filled(
+        label_rect,
+        3.0,
+        Color32::from_rgba_unmultiplied(0, 0, 0, 190),
+    );
+    painter.text(
+        label_pos + egui::vec2(4.0, 2.0),
+        egui::Align2::LEFT_TOP,
+        domain_label,
+        egui::FontId::monospace(10.0),
+        pixel_overlay_text_color(),
+    );
 
     let overlay_scale = pixel_size / PIXEL_OVERLAY_REFERENCE_ZOOM;
     let text_padding_y = PIXEL_OVERLAY_BASE_PADDING_Y_AT_MAX_ZOOM * overlay_scale;
@@ -522,10 +587,22 @@ pub fn draw_pixel_overlay(
                 continue;
             };
             let lines = [
-                ('r', format_overlay_channel('r', rgba[0])),
-                ('g', format_overlay_channel('g', rgba[1])),
-                ('b', format_overlay_channel('b', rgba[2])),
-                ('a', format_overlay_channel('a', rgba[3])),
+                (
+                    'r',
+                    format_overlay_channel('r', rgba[0], value_display_mode, display_format),
+                ),
+                (
+                    'g',
+                    format_overlay_channel('g', rgba[1], value_display_mode, display_format),
+                ),
+                (
+                    'b',
+                    format_overlay_channel('b', rgba[2], value_display_mode, display_format),
+                ),
+                (
+                    'a',
+                    format_overlay_channel('a', rgba[3], value_display_mode, display_format),
+                ),
             ];
 
             let x0 = image_rect.min.x + x as f32 * pixel_size + text_padding_x;
@@ -554,10 +631,11 @@ pub fn draw_pixel_overlay(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffMetricMode, PixelOverlayCache, PixelOverlayReadback, RefImageMode,
-        ValueSamplingReference, compose_reference_over_base, compute_diff_metric_rgba,
-        format_diff_stat_value, format_overlay_channel, rgba8_to_rgba_f32, sample_rgba8_pixel,
-        sample_rgba16f_pixel, sample_rgba16unorm_pixel, sample_value_pixel,
+        DiffMetricMode, PixelOverlayCache, PixelOverlayReadback, PixelValueDisplayMode,
+        RefImageMode, ValueSamplingReference, compose_reference_over_base,
+        compute_diff_metric_rgba, format_diff_stat_value, format_overlay_channel,
+        rgba8_to_rgba_f32, sample_rgba8_pixel, sample_rgba16f_pixel, sample_rgba16unorm_pixel,
+        sample_value_pixel,
     };
 
     fn assert_rgba_approx_eq(actual: [f32; 4], expected: [f32; 4]) {
@@ -588,15 +666,74 @@ mod tests {
 
     #[test]
     fn format_overlay_channel_adapts_to_eight_chars() {
-        assert_eq!(format_overlay_channel('a', 1.0), "1.000000");
-        assert_eq!(format_overlay_channel('a', 10.0), "10.00000");
-        assert_eq!(format_overlay_channel('a', 100.0), "100.0000");
-        assert_eq!(format_overlay_channel('a', 1000.0), "1000.000");
-        assert_eq!(format_overlay_channel('a', 10000.0), "10000.00");
-        assert_eq!(format_overlay_channel('a', 100000.0), "100000.0");
-        assert_eq!(format_overlay_channel('a', 10000000.0), "10000000");
-        assert_eq!(format_overlay_channel('a', -1.0), "-1.00000");
-        assert_eq!(format_overlay_channel('a', -1000.0), "-1000.00");
+        let format = super::wgpu::TextureFormat::Rgba16Float;
+        let mode = PixelValueDisplayMode::Decimal;
+        assert_eq!(format_overlay_channel('a', 1.0, mode, format), "1.000000");
+        assert_eq!(format_overlay_channel('a', 10.0, mode, format), "10.00000");
+        assert_eq!(format_overlay_channel('a', 100.0, mode, format), "100.0000");
+        assert_eq!(
+            format_overlay_channel('a', 1000.0, mode, format),
+            "1000.000"
+        );
+        assert_eq!(
+            format_overlay_channel('a', 10000.0, mode, format),
+            "10000.00"
+        );
+        assert_eq!(
+            format_overlay_channel('a', 100000.0, mode, format),
+            "100000.0"
+        );
+        assert_eq!(
+            format_overlay_channel('a', 10000000.0, mode, format),
+            "10000000"
+        );
+        assert_eq!(format_overlay_channel('a', -1.0, mode, format), "-1.00000");
+        assert_eq!(
+            format_overlay_channel('a', -1000.0, mode, format),
+            "-1000.00"
+        );
+    }
+
+    #[test]
+    fn rgba8_fraction_format_rounds_and_right_aligns_numerator() {
+        let mode = PixelValueDisplayMode::U8Fraction;
+        let format = super::wgpu::TextureFormat::Rgba8Unorm;
+        assert_eq!(format_overlay_channel('a', 0.0, mode, format), "  0/255");
+        assert_eq!(
+            format_overlay_channel('a', 1.0 / 255.0, mode, format),
+            "  1/255"
+        );
+        assert_eq!(
+            format_overlay_channel('a', 128.0 / 255.0, mode, format),
+            "128/255"
+        );
+        assert_eq!(format_overlay_channel('a', 1.0, mode, format), "255/255");
+    }
+
+    #[test]
+    fn fraction_mode_only_applies_to_rgba8_and_preserves_non_finite_values() {
+        let mode = PixelValueDisplayMode::U8Fraction;
+        assert_eq!(
+            format_overlay_channel('a', 1.0, mode, super::wgpu::TextureFormat::Rgba16Float),
+            "1.000000"
+        );
+        assert_eq!(
+            format_overlay_channel(
+                'a',
+                f32::INFINITY,
+                mode,
+                super::wgpu::TextureFormat::Rgba8Unorm,
+            ),
+            "inf"
+        );
+    }
+
+    #[test]
+    fn pixel_value_display_mode_defaults_to_decimal_and_toggles() {
+        let mode = PixelValueDisplayMode::default();
+        assert_eq!(mode, PixelValueDisplayMode::Decimal);
+        assert_eq!(mode.toggled(), PixelValueDisplayMode::U8Fraction);
+        assert_eq!(mode.toggled().toggled(), PixelValueDisplayMode::Decimal);
     }
 
     #[test]
@@ -604,6 +741,37 @@ mod tests {
         assert_eq!(
             rgba8_to_rgba_f32([0, 127, 255, 64]),
             [0.0, 127.0 / 255.0, 1.0, 64.0 / 255.0]
+        );
+    }
+
+    #[test]
+    fn srgb_texture_readback_is_decoded_to_shader_visible_linear_rgb() {
+        let cache = PixelOverlayCache {
+            texture_name: "srgb".to_string(),
+            width: 1,
+            height: 1,
+            format: super::wgpu::TextureFormat::Rgba8UnormSrgb,
+            readback: PixelOverlayReadback::Rgba8(vec![26, 128, 255, 64]),
+        };
+        let sampled = sample_value_pixel(&cache, 0, 0, None, DiffMetricMode::AE, false, false)
+            .expect("sample");
+        assert_rgba_approx_eq(
+            sampled,
+            [
+                super::srgb_to_linear_channel(26.0 / 255.0),
+                super::srgb_to_linear_channel(128.0 / 255.0),
+                1.0,
+                64.0 / 255.0,
+            ],
+        );
+        assert_eq!(
+            format_overlay_channel(
+                'g',
+                sampled[1],
+                PixelValueDisplayMode::U8Fraction,
+                cache.format,
+            ),
+            " 55/255"
         );
     }
 
@@ -680,6 +848,15 @@ mod tests {
                 1.0,
             ],
         );
+        assert_eq!(
+            format_overlay_channel(
+                'r',
+                sampled[0],
+                PixelValueDisplayMode::U8Fraction,
+                super::wgpu::TextureFormat::Rgba8Unorm,
+            ),
+            "192/255"
+        );
     }
 
     #[test]
@@ -755,6 +932,15 @@ mod tests {
         )
         .unwrap();
         assert_rgba_approx_eq(sampled, [0.5, 0.2, 0.1, 1.0]);
+        assert_eq!(
+            format_overlay_channel(
+                'r',
+                sampled[0],
+                PixelValueDisplayMode::U8Fraction,
+                super::wgpu::TextureFormat::Rgba8Unorm,
+            ),
+            "128/255"
+        );
     }
 
     #[test]

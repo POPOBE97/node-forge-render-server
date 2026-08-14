@@ -71,6 +71,35 @@ fn space_event(event_type: &str) -> FiredEvent {
     }
 }
 
+fn settle_session(session: &mut AnimationSession) -> AnimationStep {
+    let mut step = session.step(0.0);
+    for _ in 0..360 {
+        if step.active_transition_id.is_none() {
+            return step;
+        }
+        step = session.step(1.0 / 60.0);
+    }
+    panic!("transition did not settle: {:?}", step.active_transition_id);
+}
+
+fn motion_channel<'a>(
+    step: &'a AnimationStep,
+    key: &str,
+) -> &'a node_forge_render_server::state_machine::MotionChannelDebug {
+    step.motion_channels
+        .iter()
+        .find(|channel| channel.key == key)
+        .unwrap_or_else(|| panic!("missing MotionEngine channel '{key}'"))
+}
+
+fn assert_vec2_near(actual: &[f64], expected: [f64; 2], message: &str) {
+    assert_eq!(actual.len(), 2, "{message}: expected vec2, got {actual:?}");
+    assert!(
+        (actual[0] - expected[0]).abs() <= 1.0e-8 && (actual[1] - expected[1]).abs() <= 1.0e-8,
+        "{message}: expected {expected:?}, got {actual:?}"
+    );
+}
+
 fn state_param_id<'a>(machine: &'a StateMachine, name: &str) -> &'a str {
     machine
         .state_params
@@ -100,12 +129,7 @@ fn state_override<'a>(
         })
 }
 
-fn passthrough_state_param_for_uniform<'a>(
-    machine: &'a StateMachine,
-    state_id: &str,
-    node_id: &str,
-    param_name: &str,
-) -> &'a str {
+fn derivation_for_state<'a>(machine: &'a StateMachine, state_id: &str) -> &'a DerivationDefinition {
     let any_state_id = machine
         .states
         .iter()
@@ -136,32 +160,78 @@ fn passthrough_state_param_for_uniform<'a>(
                 binding.derivation_node_id
             )
         });
-    let derivation = machine
+    machine
         .derivations
         .iter()
         .find(|derivation| derivation.id == derivation_id)
-        .unwrap_or_else(|| panic!("missing Derivation '{derivation_id}'"));
-    let passthrough = derivation
-        .passthrough_bindings
+        .unwrap_or_else(|| panic!("missing Derivation '{derivation_id}'"))
+}
+
+fn state_param_for_uniform<'a>(
+    machine: &'a StateMachine,
+    state_id: &str,
+    node_id: &str,
+    param_name: &str,
+) -> (&'a str, f64) {
+    let derivation = derivation_for_state(machine, state_id);
+    if let Some(passthrough) = derivation.passthrough_bindings.iter().find(|binding| {
+        binding.uniform.node_id == node_id && binding.uniform.param_id == param_name
+    }) {
+        return match &passthrough.source {
+            StateValueSource::StateParam { state_param_id } => (state_param_id, 1.0),
+            StateValueSource::FrameInput { frame_input_id } => {
+                panic!(
+                    "GPU uniform '{node_id}:{param_name}' is sourced from frame input \
+                     '{frame_input_id}', not a State Param"
+                )
+            }
+        };
+    }
+
+    let output = derivation
+        .output_bindings
         .iter()
         .find(|binding| {
             binding.uniform.node_id == node_id && binding.uniform.param_id == param_name
         })
         .unwrap_or_else(|| {
             panic!(
-                "Derivation '{derivation_id}' has no State Param passthrough to \
-                 '{node_id}:{param_name}'"
+                "Derivation '{}' has no output to '{node_id}:{param_name}'",
+                derivation.id
             )
         });
-    match &passthrough.source {
-        StateValueSource::StateParam { state_param_id } => state_param_id,
+    let input_port = match output.from.port_id.as_str() {
+        "inputBarSizeXPx" => "inputBarSizeXDp",
+        "inputBarSizeYPx" => "inputBarSizeYDp",
+        "inputBarPositionXPx" => "inputBarPositionXDp",
+        "inputBarPositionYPx" => "inputBarPositionYDp",
+        "inputBarCornerRadiusPx" => "cornerRadiusDp",
+        "lightBloomSizeXPx" => "lightBloomSizeXDp",
+        "lightBloomSizeYPx" => "lightBloomSizeYDp",
+        "gradientBlurStartYPx" => "gradientBlurStartYDp",
+        "gradientBlurEndYPx" => "gradientBlurEndYDp",
+        "gradientBlurStartSigmaPx" => "gradientBlurStartSigmaDp",
+        "gradientBlurEndSigmaPx" => "gradientBlurEndSigmaDp",
+        other => panic!("no dp source mapping for Derivation output '{other}'"),
+    };
+    let source = derivation
+        .input_bindings
+        .iter()
+        .find(|binding| binding.to.port_id == input_port)
+        .unwrap_or_else(|| panic!("missing Derivation input binding for '{input_port}'"));
+    let state_param_id = match &source.source {
+        StateValueSource::StateParam { state_param_id } => state_param_id.as_str(),
         StateValueSource::FrameInput { frame_input_id } => {
-            panic!(
-                "GPU uniform '{node_id}:{param_name}' is sourced from frame input \
-                 '{frame_input_id}', not a State Param"
-            )
+            panic!("dp input '{input_port}' is sourced from frame input '{frame_input_id}'")
         }
-    }
+    };
+    let scale = machine
+        .state_params
+        .iter()
+        .find(|param| param.name == "PxPerDp")
+        .and_then(|param| param.default_value.as_f64())
+        .expect("PxPerDp State Param");
+    (state_param_id, scale)
 }
 
 fn assert_state_override_values(
@@ -171,8 +241,8 @@ fn assert_state_override_values(
     keys: &[(&str, &str)],
 ) {
     for &(node_id, param_name) in keys {
-        let state_param_id =
-            passthrough_state_param_for_uniform(machine, state_id, node_id, param_name);
+        let (state_param_id, scale) =
+            state_param_for_uniform(machine, state_id, node_id, param_name);
         let expected = state_override(machine, state_id, state_param_id);
         let actual = snapshot
             .active_overrides
@@ -184,9 +254,10 @@ fn assert_state_override_values(
             });
         if let (Some(actual), Some(expected)) = (actual.as_f64(), expected.as_f64()) {
             assert!(
-                (actual - expected).abs() <= 1.0e-9,
+                (actual - expected * scale).abs() <= 1.0e-9,
                 "final snap mismatch for {state_id} {node_id}:{param_name}: \
-                 expected {expected}, got {actual}"
+                 expected {}, got {actual}",
+                expected * scale
             );
         } else {
             assert_eq!(
@@ -390,7 +461,7 @@ fn generate_trace_via_session(
 
 fn sticky_override_test_scene() -> dsl::SceneDSL {
     dsl::SceneDSL {
-        version: "5.0".into(),
+        version: "6.0".into(),
         metadata: dsl::Metadata {
             name: "Sticky Override Test".into(),
             created: None,
@@ -705,13 +776,13 @@ fn doubao_off_to_idle_fixture_uses_per_property_springs_and_snaps() {
         .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
         .collect();
     for name in [
-        "GradientBlurStartSigma",
-        "GradientBlurEndSigma",
-        "InputBarSizePx.x",
-        "InputBarSizePx.y",
-        "InputBarPositionPx.y",
-        "LightBloomSizePx.x",
-        "LightBloomSizePx.y",
+        "GradientBlurStartSigmaDp",
+        "GradientBlurEndSigmaDp",
+        "InputBarSizeDp.x",
+        "InputBarSizeDp.y",
+        "InputBarPositionDp.y",
+        "LightBloomSizeDp.x",
+        "LightBloomSizeDp.y",
     ] {
         let key = state_param_id(machine, name);
         assert_eq!(
@@ -866,11 +937,19 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         .expect("doubao fixture should have a state machine");
     let settled_off = enter_off(&mut off_session);
     assert_eq!(settled_off.current_state_id, "st_mrerw3qg_6");
+    off_session
+        .force_state("st_mrerw3qg_6")
+        .expect("Off should be forceable");
+    settle(&mut off_session);
 
-    off_session.fire_event(space_event("keydown"));
-    off_session.step(0.0);
-    let off_to_listening = off_session.step(0.21);
-    assert_eq!(off_to_listening.current_state_id, "st_listening");
+    let off_to_listening = off_session
+        .force_state("st_listening")
+        .expect("Listening should be forceable from Off");
+    assert_eq!(
+        off_to_listening.current_state_id, "st_listening",
+        "diagnostics={:?}",
+        off_to_listening.diagnostics
+    );
     assert_eq!(
         off_to_listening.active_transition_id.as_deref(),
         Some("tr_off_to_listening")
@@ -881,13 +960,13 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         .map(|channel| (channel.key.as_str(), channel.driver.as_str()))
         .collect();
     for name in [
-        "GradientBlurStartSigma",
-        "GradientBlurEndSigma",
-        "InputBarSizePx.x",
-        "InputBarSizePx.y",
-        "InputBarPositionPx.y",
-        "LightBloomSizePx.x",
-        "LightBloomSizePx.y",
+        "GradientBlurStartSigmaDp",
+        "GradientBlurEndSigmaDp",
+        "InputBarSizeDp.x",
+        "InputBarSizeDp.y",
+        "InputBarPositionDp.y",
+        "LightBloomSizeDp.x",
+        "LightBloomSizeDp.y",
     ] {
         let key = state_param_id(machine, name);
         assert_eq!(
@@ -916,10 +995,14 @@ fn doubao_listening_transitions_animate_ui_opacity_and_snap_all_channels() {
         "st_mrerxocx_8",
         &[("FloatInput_42", "value")],
     );
+    idle_session
+        .force_state("st_mrerxocx_8")
+        .expect("Idle should be forceable");
+    settle(&mut idle_session);
 
-    idle_session.fire_event(space_event("keydown"));
-    idle_session.step(0.0);
-    let idle_to_listening = idle_session.step(0.21);
+    let idle_to_listening = idle_session
+        .force_state("st_listening")
+        .expect("Listening should be forceable from Idle");
     assert_eq!(idle_to_listening.current_state_id, "st_listening");
     assert_eq!(
         idle_to_listening.active_transition_id.as_deref(),
@@ -980,14 +1063,13 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
         .expect("doubao fixture should have an Any State");
     assert_eq!(
         derivation_by_state.keys().copied().collect::<BTreeSet<_>>(),
-        BTreeSet::from([any_state_id, "st_thinking"]),
-        "doubao should use one Any State fallback plus the Thinking override"
+        BTreeSet::from([any_state_id, "st_listening", "st_thinking"]),
+        "doubao should use the Any fallback plus explicit Listening/Thinking bindings"
     );
     let shared_derivation = derivation_by_state[any_state_id];
     for state_id in [
         "st_mrerw3qg_6",
         "st_mrerxocx_8",
-        "st_listening",
         "st_speaking",
         "st_push_to_talk",
         "st_push_to_talk_cancel",
@@ -1007,6 +1089,10 @@ fn doubao_shared_intelligent_light_derivation_advances_with_global_scene_time() 
     assert_ne!(
         derivation_by_state["st_thinking"], shared_derivation,
         "Thinking must own an independent Derivation"
+    );
+    assert_eq!(
+        derivation_by_state["st_listening"], derivation_by_state["st_thinking"],
+        "Listening must share the Thinking Derivation"
     );
     assert_eq!(
         machine
@@ -1222,10 +1308,10 @@ fn doubao_push_to_talk_keeps_bottom_geometry_and_suppresses_white_layers() {
             .unwrap_or_else(|| panic!("missing {param_name} override for {state_id}"))
     };
 
-    assert_eq!(value("st_push_to_talk", "InputBarPositionPx.y"), 144.0);
+    assert_eq!(value("st_push_to_talk", "InputBarPositionDp.y"), 48.0);
     assert_eq!(
-        value("st_push_to_talk_cancel", "InputBarPositionPx.y"),
-        180.0
+        value("st_push_to_talk_cancel", "InputBarPositionDp.y"),
+        60.0
     );
     for state_id in ["st_push_to_talk", "st_push_to_talk_cancel"] {
         assert_eq!(value(state_id, "VoiceDotOpacity"), 0.0);
@@ -1250,27 +1336,124 @@ fn doubao_push_to_talk_keeps_bottom_geometry_and_suppresses_white_layers() {
     }
 
     let prompt_y = scene
-        .groups
+        .nodes
         .iter()
-        .find(|group| group.id == "PttPrompt")
-        .and_then(|group| {
-            group
-                .nodes
-                .iter()
-                .find(|node| node.id == "Rect2DGeometry_PttPrompt")
-        })
-        .and_then(|node| node.params.get("position"))
-        .and_then(serde_json::Value::as_array)
-        .and_then(|position| position.get(1))
+        .find(|node| node.id == "Vector2Input_PttPromptPositionPx")
+        .and_then(|node| node.params.get("y"))
         .and_then(serde_json::Value::as_f64)
         .expect("PTT prompt y position");
     assert_eq!(prompt_y, 300.0);
 }
 
 #[test]
+fn doubao_state_and_shader_scales_are_independent() {
+    let _function_registry = support::function_registry_lock();
+
+    let root_number = |scene: &dsl::SceneDSL, node_id: &str, param_id: &str| {
+        scene
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .and_then(|node| node.params.get(param_id))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or_else(|| panic!("missing numeric root input '{node_id}:{param_id}'"))
+    };
+    let root_vec2 = |scene: &dsl::SceneDSL, node_id: &str| {
+        [
+            root_number(scene, node_id, "x"),
+            root_number(scene, node_id, "y"),
+        ]
+    };
+
+    for (state_scale, render_scale, resolution, input_bar_size, input_bar_position, canvas_size) in [
+        (
+            3.0,
+            4.0,
+            [1440, 3200],
+            [1008.0, 168.0],
+            [540.0, 186.0],
+            [1080.0, 1080.0],
+        ),
+        (
+            4.0,
+            3.0,
+            [1080, 2400],
+            [1344.0, 224.0],
+            [720.0, 248.0],
+            [1440.0, 1440.0],
+        ),
+    ] {
+        let mut scene = support::load_render_case_scene("doubao-voice-interaction");
+        scene
+            .state_machine
+            .as_mut()
+            .expect("doubao fixture should have a state machine")
+            .state_params
+            .iter_mut()
+            .find(|param| param.name == "PxPerDp")
+            .expect("PxPerDp State Param")
+            .default_value = serde_json::json!(state_scale);
+        scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "FloatInput_RenderPxPerDp")
+            .expect("RenderPxPerDp root input")
+            .params
+            .insert("value".into(), serde_json::json!(render_scale));
+
+        assert_eq!(dsl::screen_resolution(&scene), Some(resolution));
+
+        let mut session = AnimationSession::from_scene(&scene)
+            .expect("doubao state machine should compile")
+            .expect("doubao fixture should have a state machine");
+        session
+            .force_state("st_mrerxocx_8")
+            .expect("Idle should be forceable");
+        let idle = settle_session(&mut session);
+        let mut idle_scene = scene.clone();
+        node_forge_render_server::state_machine::apply_overrides(
+            &mut idle_scene,
+            &idle.active_overrides,
+        );
+        assert_eq!(root_vec2(&idle_scene, "Vector2Input_35"), input_bar_size);
+        assert_eq!(
+            root_vec2(&idle_scene, "Vector2Input_36"),
+            input_bar_position
+        );
+        assert_eq!(
+            root_vec2(&idle_scene, "Vector2Input_LightEffectCanvasSizePx"),
+            canvas_size
+        );
+        assert_vec2_near(
+            &motion_channel(&idle, "sp_ptt_object_scene_px").value,
+            [resolution[0] as f64 * 0.5, resolution[1] as f64 * 0.06],
+            "Idle PTT anchor must scale from scene.size",
+        );
+
+        session
+            .force_state("st_push_to_talk")
+            .expect("PushToTalk should be forceable");
+        let active_anchor = [resolution[0] as f64 * 0.5, resolution[1] as f64 / 24.0];
+        session.update_mouse_position(node_forge_render_server::state_machine::MousePosition {
+            x: active_anchor[0],
+            y: active_anchor[1],
+        });
+        let active = settle_session(&mut session);
+        assert_vec2_near(
+            &motion_channel(&active, "sp_ptt_object_scene_px").target_value,
+            active_anchor,
+            "active PTT anchor must scale from scene.size",
+        );
+    }
+}
+
+#[test]
 fn doubao_blob_radius_uses_full_size_state_values_and_target_local_output() {
     let _function_registry = support::function_registry_lock();
-    for (energy, expected_radius) in [(0.0, 26.88), (1.0, 29.4)] {
+    // The current Intelligent Light intermediate is 84x84 (1260px / 15), so full-size radii
+    // cross the render boundary at /15. The previous /30 expectations belonged to the retired
+    // 36x36 reference target and would validate the wrong pipeline size.
+    for (energy, expected_radius) in [(0.0, 53.76), (1.0, 58.8)] {
         let mut scene = support::load_render_case_scene("doubao-voice-interaction");
         scene
             .state_machine
@@ -1281,6 +1464,15 @@ fn doubao_blob_radius_uses_full_size_state_values_and_target_local_output() {
             .find(|param| param.name == "TotalEnergy")
             .expect("TotalEnergy State Param")
             .default_value = serde_json::json!(energy);
+        scene
+            .state_machine
+            .as_mut()
+            .expect("doubao fixture should have a state machine")
+            .state_params
+            .iter_mut()
+            .find(|param| param.name == "PxPerDp")
+            .expect("PxPerDp State Param")
+            .default_value = serde_json::json!(3.0);
         let mut session = AnimationSession::from_scene(&scene)
             .expect("doubao state machine should compile")
             .expect("doubao fixture should have a state machine");

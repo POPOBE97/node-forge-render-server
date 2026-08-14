@@ -13,6 +13,7 @@ use rust_wgpu_fiber::{
 use serde_json::Value;
 
 use crate::{
+    color::srgb_to_linear_channel,
     dsl::{Node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
@@ -784,27 +785,27 @@ fn parse_hex_color(s: &str) -> Option<[f32; 4]> {
     let raw = s.trim().strip_prefix('#')?;
     match raw.len() {
         6 => Some([
-            u8::from_str_radix(&raw[0..2], 16).ok()? as f32 / 255.0,
-            u8::from_str_radix(&raw[2..4], 16).ok()? as f32 / 255.0,
-            u8::from_str_radix(&raw[4..6], 16).ok()? as f32 / 255.0,
+            srgb_to_linear_channel(u8::from_str_radix(&raw[0..2], 16).ok()? as f32 / 255.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[2..4], 16).ok()? as f32 / 255.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[4..6], 16).ok()? as f32 / 255.0),
             1.0,
         ]),
         8 => Some([
-            u8::from_str_radix(&raw[0..2], 16).ok()? as f32 / 255.0,
-            u8::from_str_radix(&raw[2..4], 16).ok()? as f32 / 255.0,
-            u8::from_str_radix(&raw[4..6], 16).ok()? as f32 / 255.0,
+            srgb_to_linear_channel(u8::from_str_radix(&raw[0..2], 16).ok()? as f32 / 255.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[2..4], 16).ok()? as f32 / 255.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[4..6], 16).ok()? as f32 / 255.0),
             u8::from_str_radix(&raw[6..8], 16).ok()? as f32 / 255.0,
         ]),
         3 => Some([
-            u8::from_str_radix(&raw[0..1], 16).ok()? as f32 / 15.0,
-            u8::from_str_radix(&raw[1..2], 16).ok()? as f32 / 15.0,
-            u8::from_str_radix(&raw[2..3], 16).ok()? as f32 / 15.0,
+            srgb_to_linear_channel(u8::from_str_radix(&raw[0..1], 16).ok()? as f32 / 15.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[1..2], 16).ok()? as f32 / 15.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[2..3], 16).ok()? as f32 / 15.0),
             1.0,
         ]),
         4 => Some([
-            u8::from_str_radix(&raw[0..1], 16).ok()? as f32 / 15.0,
-            u8::from_str_radix(&raw[1..2], 16).ok()? as f32 / 15.0,
-            u8::from_str_radix(&raw[2..3], 16).ok()? as f32 / 15.0,
+            srgb_to_linear_channel(u8::from_str_radix(&raw[0..1], 16).ok()? as f32 / 15.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[1..2], 16).ok()? as f32 / 15.0),
+            srgb_to_linear_channel(u8::from_str_radix(&raw[2..3], 16).ok()? as f32 / 15.0),
             u8::from_str_radix(&raw[3..4], 16).ok()? as f32 / 15.0,
         ]),
         _ => None,
@@ -823,6 +824,13 @@ fn wgpu_color(color: [f32; 4]) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mesh_gradient_outputs_linear_premultiplied_color() {
+        let shader = build_mesh_gradient_wgsl();
+        assert!(shader.contains("vec4f(in.color.rgb * in.color.a, in.color.a)"));
+        assert!(!shader.contains("srgb_to_linear"));
+    }
 
     fn default_points(grid_cols: usize, grid_rows: usize, target_size: [f32; 2]) -> Vec<MeshPoint> {
         let point_count = grid_cols * grid_rows;

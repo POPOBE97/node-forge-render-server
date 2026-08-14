@@ -34,7 +34,11 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: FloatInput_44
-    float_input_44: vec4f,
+    node_FloatInput_44_1413f420: vec4f,
+    // Node: Vector2Input_BackgroundPositionPx
+    node_Vector2Input_BackgroundPositionPx_5e1cdc88: vec4f,
+    // Node: Vector2Input_BackgroundSizePx
+    node_Vector2Input_BackgroundSizePx_187f703e: vec4f,
 };
 
 @group(0) @binding(2)
@@ -99,16 +103,20 @@ fn shader_material_GroupInstance_33_ShaderMaterial_BackgroundDarken(
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_Vector2Input_BackgroundSizePx_187f703e).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_BackgroundPositionPx_5e1cdc88).xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
- var p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 
@@ -123,7 +131,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GroupInstance_33_PassTexture_BackgroundBlur,
         pass_samp_GroupInstance_33_PassTexture_BackgroundBlur,
-        (graph_inputs.float_input_44).x,
+        (graph_inputs.node_FloatInput_44_1413f420).x,
     );
     // Final composite
     let _frag_out = background_darken_alpha_material;

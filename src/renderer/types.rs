@@ -613,14 +613,34 @@ impl MaterialCompileContext {
 
     /// Build the fragment body with generated readable statements before the final return.
     pub fn build_fragment_body(&self, return_expr: &str) -> String {
+        self.build_fragment_body_with_coverage(return_expr, None)
+    }
+
+    /// Build the fragment body and optionally apply premultiplied coverage at the final output.
+    ///
+    /// Coverage statements run only after the material has produced its HDR RGB value and its
+    /// alpha has been clamped. Multiplying the complete color keeps transparent pixels black for
+    /// downstream filters, while discard prevents fully masked fragments from writing depth.
+    pub fn build_fragment_body_with_coverage(
+        &self,
+        return_expr: &str,
+        coverage: Option<(&str, &str)>,
+    ) -> String {
         // Clamp alpha to [0,1] coverage — HDR energy lives in RGB only.
         let stmts = if self.inline_stmts.is_empty() {
             String::new()
         } else {
             format!("{}\n", self.inline_stmts.join("\n"))
         };
+
+        let Some((coverage_stmts, coverage_expr)) = coverage else {
+            return format!(
+                "{stmts}    // Final composite\n    let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
+            );
+        };
+
         format!(
-            "{stmts}    // Final composite\n    let _frag_out = {return_expr};\n    return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));"
+            "{stmts}    // Final composite\n    let _frag_out = {return_expr};\n    let _frag_color = vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));\n{coverage_stmts}\n    let _frag_coverage = clamp({coverage_expr}, 0.0, 1.0);\n    if (_frag_coverage <= 0.0) {{\n        discard;\n    }}\n    return _frag_color * _frag_coverage;"
         )
     }
 }
@@ -679,6 +699,30 @@ pub struct Params {
 
     // Camera world-space position (xyz), w = 0 padding for 16-byte alignment.
     pub camera_position: [f32; 4],
+}
+
+/// Runtime Gaussian coefficients shared by the horizontal and vertical passes of one route.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GaussianUniform {
+    pub kernel_0: [f32; 4],
+    pub kernel_1: [f32; 4],
+    pub offset_0: [f32; 4],
+    pub offset_1: [f32; 4],
+    pub tap_count: u32,
+    pub _pad: [u32; 3],
+}
+
+impl GaussianUniform {
+    pub(crate) fn new(kernel: [f32; 8], offset: [f32; 8], tap_count: u32) -> Self {
+        let mut value = Self::default();
+        value.kernel_0.copy_from_slice(&kernel[..4]);
+        value.kernel_1.copy_from_slice(&kernel[4..]);
+        value.offset_0.copy_from_slice(&offset[..4]);
+        value.offset_1.copy_from_slice(&offset[4..]);
+        value.tap_count = tap_count.clamp(1, 8);
+        value
+    }
 }
 
 /// Per-frame custom update configuration for specialized pass types.

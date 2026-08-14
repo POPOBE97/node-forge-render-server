@@ -4,7 +4,15 @@ fn clamp01(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 
-fn linear_to_srgb_channel(x: f32) -> f32 {
+pub(crate) fn srgb_to_linear_channel(x: f32) -> f32 {
+    if x <= 0.040_45 {
+        x / 12.92
+    } else {
+        ((x + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+pub(crate) fn linear_to_srgb_channel(x: f32) -> f32 {
     // https://en.wikipedia.org/wiki/SRGB
     if x <= 0.003_130_8 {
         12.92 * x

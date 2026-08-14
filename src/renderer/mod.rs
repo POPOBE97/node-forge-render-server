@@ -40,10 +40,12 @@ pub use pass_debug::{
     PassDebugAstNode, PassDebugDependencyNode, PassDebugDependencyTarget, PassDebugSource,
     PassDebugSourceRange,
 };
+pub use render_plan::pass_assemblers::dynamic_gaussian_blur::GaussianBlurBundleRuntime;
 pub use scene_prep::{PreparedScene, prepare_scene};
 pub use shader_space::{
     ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
-    ShaderSpacePresentationMode, render_scene_to_file_headless,
+    ShaderSpacePresentationMode, render_scene_pass_to_file_headless,
+    render_scene_texture_to_file_headless, render_scene_to_file_headless,
     render_scene_to_file_headless_profiled, render_scene_to_png_headless, update_pass_params,
 };
 pub use types::{Params, PassBindings, WgslShaderBundle};

@@ -27,5 +27,5 @@ struct VSOut {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    return in.color;
+    return vec4f(in.color.rgb * in.color.a, in.color.a);
 }

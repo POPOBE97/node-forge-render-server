@@ -521,7 +521,9 @@ impl StateMachineRuntime {
         self.motion_engine.reset();
         self.derived_values.clear();
         self.derivation_snapshots.clear();
-        self.runtime_input = RuntimeInputSnapshot::default();
+        // Frame inputs describe the current host environment, not animation-owned history.
+        // Keep the latest snapshot across resets/forced debug state changes so ScenePx
+        // mutations continue to see the actual target size and pointer position.
         self.trigger_holds = TriggerHoldState::default();
         self.finished = false;
     }
@@ -564,6 +566,11 @@ impl StateMachineRuntime {
     /// Update the latest mouse position visible to graph runtime inputs.
     pub fn set_mouse_position(&mut self, position: MousePosition) {
         self.runtime_input.mouse_position = Some(position);
+    }
+
+    /// Update the full render-target size visible to graph runtime inputs.
+    pub fn set_scene_size(&mut self, size: SceneSize) {
+        self.runtime_input.scene_size = Some(size);
     }
 
     /// Advance the state machine by `dt` seconds and produce overrides.
@@ -1145,6 +1152,7 @@ impl StateMachineRuntime {
             scene_elapsed_time: self.scene_time,
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
             mouse_position: self.runtime_input.mouse_position,
+            scene_size: self.runtime_input.scene_size,
             dt,
         };
         graph::evaluate_graph_with_motion_phase(
@@ -1201,6 +1209,7 @@ impl StateMachineRuntime {
             scene_elapsed_time: self.scene_time,
             local_elapsed_time: self.state_local_times.get(state_id).copied().unwrap_or(0.0),
             mouse_position: self.runtime_input.mouse_position,
+            scene_size: self.runtime_input.scene_size,
             dt,
         };
         graph::evaluate_graph_with_motion_phase(

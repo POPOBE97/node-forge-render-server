@@ -99,7 +99,7 @@ mod tests {
 
     fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         SceneDSL {
-            version: "5.0".to_string(),
+            version: "6.0".to_string(),
             metadata: Metadata {
                 name: "pass aliases".to_string(),
                 created: None,

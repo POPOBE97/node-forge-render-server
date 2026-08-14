@@ -16,6 +16,7 @@ use super::{
     graph::{topo_sort, upstream_reachable},
     group_expand::expand_group_instances,
     image_inline::inline_image_file_connections_into_image_textures,
+    image_pass::expand_image_passes,
     pass_dedup::dedup_identical_passes,
     resource_pool::project_selected_resource_pools,
     types::{PreparedScene, ScenePrepReport},
@@ -31,6 +32,7 @@ pub(crate) fn prepare_scene_with_report(
     // Expand group instances before any filtering/validation.
     let mut expanded = input.clone();
     let expanded_group_instances = expand_group_instances(&mut expanded)?;
+    expand_image_passes(&mut expanded)?;
     let matrix_source_scene = expanded.clone();
 
     // 1) Locate the RenderTarget-category node. Without it, the graph has no "main" entry.

@@ -16,6 +16,7 @@ pub enum CanvasAction {
     ExitPassDesign,
     ToggleHdrClamp,
     ToggleWireframe,
+    TogglePixelValueDisplay,
     TogglePause,
     ResetView {
         current_display_ppi: Option<f32>,

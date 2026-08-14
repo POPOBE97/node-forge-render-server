@@ -34,11 +34,15 @@ var<uniform> params: Params;
 
 struct GraphInputs {
     // Node: ColorInput_PttPromptColor
-    color_input_ptt_prompt_color: vec4f,
+    node_ColorInput_PttPromptColor_4cb75d71: vec4f,
     // Node: FloatInput_PttPromptCancel
-    float_input_ptt_prompt_cancel: vec4f,
+    node_FloatInput_PttPromptCancel_d83273ce: vec4f,
     // Node: FloatInput_PttPromptOpacity
-    float_input_ptt_prompt_opacity: vec4f,
+    node_FloatInput_PttPromptOpacity_bb4016c2: vec4f,
+    // Node: Vector2Input_PttPromptPositionPx
+    node_Vector2Input_PttPromptPositionPx_0e4ab36d: vec4f,
+    // Node: Vector2Input_PttPromptSizePx
+    node_Vector2Input_PttPromptSizePx_2821c809: vec4f,
 };
 
 @group(0) @binding(2)
@@ -124,16 +128,20 @@ fn aspect_correct_uv_fill(uv: vec2f, img_dim: vec2f, geo_dim: vec2f) -> vec2f {
  // UV passed as vertex attribute.
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
- out.geo_size_px = params.geo_size;
+ let rect_size_px_base = (graph_inputs.node_Vector2Input_PttPromptSizePx_2821c809).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_PttPromptPositionPx_0e4ab36d).xy;
+ let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
+ out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
  out.local_px = vec3f(uv * out.geo_size_px, 0.0);
 
- var p_local = position;
+ let p_rect_local_px = vec3f(position.xy * rect_dyn.zw, position.z);
+ var p_local = p_rect_local_px;
 
  // Geometry vertices are in local pixel units centered at (0,0).
  // Convert to target pixel coordinates with bottom-left origin.
  out.local_px = vec3f(out.local_px.xy, p_local.z);
- let p_px = params.center + p_local.xy;
+ let p_px = rect_dyn.xy + p_local.xy;
 
  out.position = params.camera * vec4f(p_px, p_local.z, 1.0);
 
@@ -172,9 +180,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         image_texture_sample,
         image_texture_sample_bf885b77,
-        vec4f((graph_inputs.color_input_ptt_prompt_color).rgb * (graph_inputs.color_input_ptt_prompt_color).a, (graph_inputs.color_input_ptt_prompt_color).a),
-        (graph_inputs.float_input_ptt_prompt_opacity).x,
-        (graph_inputs.float_input_ptt_prompt_cancel).x,
+        vec4f((graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).rgb * (graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).a, (graph_inputs.node_ColorInput_PttPromptColor_4cb75d71).a),
+        (graph_inputs.node_FloatInput_PttPromptOpacity_bb4016c2).x,
+        (graph_inputs.node_FloatInput_PttPromptCancel_d83273ce).x,
     );
     // Final composite
     let _frag_out = prompt_opacity_material;

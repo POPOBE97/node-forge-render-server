@@ -69,7 +69,7 @@ fn blend_normal(src: vec4f, dst: vec4f) -> vec4f {
 
 fn presentation_color_linear(index: u32) -> vec3f {
     let color = ilight_data.presentation_colors[index];
-    return srgb_to_linear(max(color.rgb, vec3f(0.0))) * color.a;
+    return max(color.rgb, vec3f(0.0)) * color.a;
 }
 
 fn presentation_color(x: f32) -> vec3f {
@@ -87,12 +87,6 @@ fn presentation_color(x: f32) -> vec3f {
     );
 }
 
-fn srgb_to_linear(value: vec3f) -> vec3f {
-    let low = value / 12.92;
-    let high = pow((value + vec3f(0.055)) / 1.055, vec3f(2.4));
-    return select(high, low, value <= vec3f(0.04045));
-}
-
 // ── Fragment shader ──────────────────────────────────────────────────
 
 @fragment
@@ -104,8 +98,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     let opacity = clamp(ilight_data.params.w, 0.0, 1.0);
 
     var current_color = vec4f(
-        srgb_to_linear(max(ilight_data.base_color.rgb, vec3f(0.0)))
-            * ilight_data.base_color.a,
+        max(ilight_data.base_color.rgb, vec3f(0.0)) * ilight_data.base_color.a,
         ilight_data.base_color.a,
     );
 
@@ -119,8 +112,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
             clamp(1.0 - distance_ratio, 0.0, 1.0),
         );
         let light_color = ilight_data.colors[i];
-        let direct_color =
-            srgb_to_linear(max(light_color.rgb, vec3f(0.0))) * LIGHT_COLOR_GAIN;
+        let direct_color = max(light_color.rgb, vec3f(0.0)) * LIGHT_COLOR_GAIN;
         let presentation =
             presentation_color(light_position_px.x / resolution.x) * LIGHT_COLOR_GAIN;
         let resolved_rgb = mix(direct_color, presentation, power);
@@ -147,7 +139,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     );
     current_color = vec4f(
         current_color.rgb
-            + srgb_to_linear(max(ilight_data.pointer_color.rgb, vec3f(0.0)))
+            + max(ilight_data.pointer_color.rgb, vec3f(0.0))
                 * pointer_gain
                 * pointer_alpha,
         clamp(current_color.a + pointer_alpha, 0.0, 1.0),

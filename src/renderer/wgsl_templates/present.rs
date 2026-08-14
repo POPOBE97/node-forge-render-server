@@ -175,3 +175,29 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {{\n\
 }}\n"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{build_hdr_gamma_encode_wgsl, build_srgb_display_encode_wgsl};
+
+    #[test]
+    fn sdr_present_encodes_linear_rgb_once_and_leaves_alpha_linear() {
+        let shader = build_srgb_display_encode_wgsl("source", "sampler");
+        assert_eq!(shader.matches("linear_to_srgb(c.xyz)").count(), 1);
+        assert!(!shader.contains("srgb_to_linear"));
+        assert!(shader.contains("saturate(c.w)"));
+    }
+
+    #[test]
+    fn hdr_present_uses_one_extended_encode_without_rgb_clamping() {
+        let shader = build_hdr_gamma_encode_wgsl("source", "sampler");
+        assert_eq!(
+            shader
+                .matches("linear_to_srgb_extended(c.xyz)")
+                .count(),
+            1
+        );
+        assert!(!shader.contains("srgb_to_linear"));
+        assert!(shader.contains("let a = abs(x);"));
+    }
+}

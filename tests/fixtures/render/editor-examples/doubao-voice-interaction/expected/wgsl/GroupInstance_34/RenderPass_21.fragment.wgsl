@@ -37,6 +37,12 @@ struct GraphInputs {
     node_FloatInput_37_0eaa0821: vec4f,
     // Node: FloatInput_43
     node_FloatInput_43_6111f420: vec4f,
+    // Node: FloatInput_GlassShapeEdgePx
+    node_FloatInput_GlassShapeEdgePx_648e4831: vec4f,
+    // Node: FloatInput_GlassShapeReflectOffsetPx
+    node_FloatInput_GlassShapeReflectOffsetPx_ada769d3: vec4f,
+    // Node: FloatInput_GlassShapeThicknessPx
+    node_FloatInput_GlassShapeThicknessPx_554d6e7a: vec4f,
     // Node: FloatInput_InputBarRefractionIndex
     node_FloatInput_InputBarRefractionIndex_ce5b6884: vec4f,
     // Node: Vector2Input_35
@@ -622,7 +628,7 @@ fn sdf2d_smooth_round_rect(point: vec2f, center: vec2f, radius: f32, axis_mix: v
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
  // GlassMaterial(GroupInstance_34/GlassMaterial_20)
- var input_bar_refraction_index_material_out: vec4f;
+ var glass_shape_thickness_px_material_out: vec4f;
  {
      let screen_px = in.frag_coord_gl;
      let local_px = in.local_px.xy;
@@ -634,7 +640,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let screen_uv = glass_sample_screen_uv(screen_px, params.target_size);
 
      // --- Shape SDF ---
-     let edge = f32(30.0);
+     let edge = f32((graph_inputs.node_FloatInput_GlassShapeEdgePx_648e4831).x);
      let edge_pow = f32(2.0);
      let radius_px = f32((graph_inputs.node_FloatInput_37_0eaa0821).x);
      let safe_edge = max(edge, 1e-6);
@@ -660,14 +666,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      let incident_ray = normalize(vec3f(0.0, 0.0, -1.0));
      let refractive_index = f32((graph_inputs.node_FloatInput_InputBarRefractionIndex_ce5b6884).x);
      let refract_dir = refract(incident_ray, normal, 1.0 / max(refractive_index, 1e-6));
-     let refract_thickness = mix((f32(80.0) - edge) * 2.0, f32(80.0) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
+     let refract_thickness = mix((f32((graph_inputs.node_FloatInput_GlassShapeThicknessPx_554d6e7a).x) - edge) * 2.0, f32((graph_inputs.node_FloatInput_GlassShapeThicknessPx_554d6e7a).x) * 2.0, clamp(normalized_sdf, 0.0, 1.0));
      let refract_local_px = uv_display_px + refract_dir.xy * refract_thickness;
      let refract_uv = glass_sample_screen_uv(geo_origin_px + refract_local_px, params.target_size);
      let refraction = glass_texture_map(pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, refract_uv, false, 1.0, 0, pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv);
 
      // --- Reflection ---
      let reflect_dir = reflect(incident_ray, normal);
-     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32(750.0), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
+     let reflect_local_px = uv_display_px + reflect_dir.xy * mix(0.0, f32((graph_inputs.node_FloatInput_GlassShapeReflectOffsetPx_ada769d3).x), 1.0 - clamp(normalized_sdf, 0.0, 1.0));
      let reflect_uv = glass_sample_screen_uv(geo_origin_px + reflect_local_px, params.target_size);
      let reflection = glass_texture_map(pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, reflect_uv, false, 1.0, 0, pass_tex_GroupInstance_34_GuassianBlurPass_01206f1b_23, pass_samp_GroupInstance_34_GuassianBlurPass_01206f1b_23, screen_uv);
 
@@ -710,8 +716,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
      glass_mat = vec4f(glass_mat.rgb + vec3f(pow(smoothstep(1.0, 0.0, 1.0 - in.uv.y), 2.0) * 0.0), glass_mat.a);
 
      // --- Directional lighting ---
-     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001), 0.600000024, 0.400000006);
-     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001) * vec3f(-1.0, -1.0, 1.0), 0.400000006, 0.400000006);
+     let lighting1 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001), 0.800000012, 0.400000006);
+     let lighting2 = glass_calculate_lighting(light_normal, vec3f(-0.300000012, -0.600000024, -0.100000001) * vec3f(-1.0, -1.0, 1.0), 0.600000024, 0.400000006);
      let light_ratio = glass_dynamic_add(glass_mat.rgb);
      glass_mat += lighting1 + lighting2;
 
@@ -726,10 +732,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
 
      // --- Premultiply alpha ---
      glass_mat = vec4f(glass_mat.rgb * glass_mat.a, glass_mat.a);
-     input_bar_refraction_index_material_out = glass_mat;
+     glass_shape_thickness_px_material_out = glass_mat;
  }
 
     // Final composite
-    let _frag_out = input_bar_refraction_index_material_out;
+    let _frag_out = glass_shape_thickness_px_material_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

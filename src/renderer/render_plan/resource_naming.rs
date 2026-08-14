@@ -8,10 +8,11 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 use rust_wgpu_fiber::{
     ResourceName,
-    eframe::wgpu::{self, TextureFormat},
+    eframe::wgpu::{self, Color, TextureFormat},
 };
 
 use crate::{
+    color::srgb_to_linear_channel,
     dsl::SceneDSL,
     renderer::{
         camera::legacy_projection_camera_matrix, types::PassOutputRegistry, wgsl::clamp_min_1,
@@ -418,6 +419,84 @@ pub(crate) fn parse_render_pass_depth_test(
     }
 }
 
+fn parse_render_pass_clear_color(value: &serde_json::Value) -> Result<Color> {
+    let number = |value: &serde_json::Value| -> Option<f64> {
+        let value = value
+            .as_f64()
+            .or_else(|| value.as_i64().map(|value| value as f64))
+            .or_else(|| value.as_u64().map(|value| value as f64))?;
+        value.is_finite().then_some(value)
+    };
+
+    if let Some(values) = value.as_array() {
+        if !matches!(values.len(), 3 | 4) {
+            bail!("RenderPass.clearColor array must contain 3 or 4 finite numbers");
+        }
+        let r = values.first().and_then(number);
+        let g = values.get(1).and_then(number);
+        let b = values.get(2).and_then(number);
+        let a = values.get(3).and_then(number).unwrap_or(1.0);
+        let (Some(r), Some(g), Some(b)) = (r, g, b) else {
+            bail!("RenderPass.clearColor array must contain 3 or 4 finite numbers");
+        };
+        return Ok(Color { r, g, b, a });
+    }
+
+    if let Some(hex) = value.as_str() {
+        let hex = hex.strip_prefix('#').unwrap_or(hex);
+        if !matches!(hex.len(), 6 | 8) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            bail!("RenderPass.clearColor must be #RRGGBB or #RRGGBBAA, got {value}");
+        }
+        let component = |range: std::ops::Range<usize>| -> Result<f64> {
+            let encoded = u8::from_str_radix(&hex[range], 16)? as f32 / 255.0;
+            Ok(srgb_to_linear_channel(encoded) as f64)
+        };
+        return Ok(Color {
+            r: component(0..2)?,
+            g: component(2..4)?,
+            b: component(4..6)?,
+            a: if hex.len() == 8 {
+                u8::from_str_radix(&hex[6..8], 16)? as f64 / 255.0
+            } else {
+                1.0
+            },
+        });
+    }
+
+    bail!("RenderPass.clearColor must be an RGB/RGBA array or hex color, got {value}")
+}
+
+/// Parse an authored color attachment load operation.
+///
+/// `None` is the explicit `loadOp=none` policy: the planner selects Clear for the first writer and
+/// Load for later writers. Every other result maps one-to-one to the wgpu attachment operation.
+pub(crate) fn parse_render_pass_color_load_op(
+    params: &HashMap<String, serde_json::Value>,
+) -> Result<Option<wgpu::LoadOp<Color>>> {
+    let load_op = params
+        .get("loadOp")
+        .and_then(|value| value.as_str())
+        .unwrap_or("clear");
+    match load_op {
+        "none" => Ok(None),
+        "clear" => {
+            let color = params
+                .get("clearColor")
+                .map(parse_render_pass_clear_color)
+                .transpose()?
+                .unwrap_or(Color::TRANSPARENT);
+            Ok(Some(wgpu::LoadOp::Clear(color)))
+        }
+        "load" => Ok(Some(wgpu::LoadOp::Load)),
+        "dont-care" => Ok(Some(wgpu::LoadOp::DontCare(
+            // SAFETY: `dont-care` is an explicit authored opt-in. The editor contract documents
+            // that every attachment pixel must be overwritten before blending or storing.
+            unsafe { wgpu::LoadOpDontCare::enabled() },
+        ))),
+        other => bail!("RenderPass.loadOp must be one of none|clear|load|dont-care, got {other}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,6 +522,66 @@ mod tests {
 
         let overflow = bloom_node_with_tint(serde_json::json!([1e100, 1.0, 1.0, 1.0]));
         assert_eq!(parse_tint_param_or_default(&overflow), [1.0; 4]);
+    }
+
+    #[test]
+    fn render_pass_load_op_maps_to_wgpu_attachment_operations() {
+        let clear = HashMap::from([
+            ("loadOp".to_string(), serde_json::json!("clear")),
+            (
+                "clearColor".to_string(),
+                serde_json::json!([0.25, 0.5, 1.5, 1.0]),
+            ),
+        ]);
+        match parse_render_pass_color_load_op(&clear).unwrap() {
+            Some(wgpu::LoadOp::Clear(color)) => {
+                assert_eq!([color.r, color.g, color.b, color.a], [0.25, 0.5, 1.5, 1.0]);
+            }
+            other => panic!("expected clear load op, got {other:?}"),
+        }
+
+        let load = HashMap::from([("loadOp".to_string(), serde_json::json!("load"))]);
+        assert!(matches!(
+            parse_render_pass_color_load_op(&load).unwrap(),
+            Some(wgpu::LoadOp::Load)
+        ));
+
+        let dont_care = HashMap::from([("loadOp".to_string(), serde_json::json!("dont-care"))]);
+        assert!(matches!(
+            parse_render_pass_color_load_op(&dont_care).unwrap(),
+            Some(wgpu::LoadOp::DontCare(_))
+        ));
+
+        let automatic = HashMap::from([("loadOp".to_string(), serde_json::json!("none"))]);
+        assert!(
+            parse_render_pass_color_load_op(&automatic)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn render_pass_clear_color_accepts_hex_and_rejects_invalid_values() {
+        let hex = HashMap::from([
+            ("loadOp".to_string(), serde_json::json!("clear")),
+            ("clearColor".to_string(), serde_json::json!("#1a1a1aff")),
+        ]);
+        match parse_render_pass_color_load_op(&hex).unwrap() {
+            Some(wgpu::LoadOp::Clear(color)) => {
+                let expected = srgb_to_linear_channel(26.0 / 255.0) as f64;
+                assert_eq!(
+                    [color.r, color.g, color.b, color.a],
+                    [expected, expected, expected, 1.0]
+                );
+            }
+            other => panic!("expected clear load op, got {other:?}"),
+        }
+
+        let invalid = HashMap::from([
+            ("loadOp".to_string(), serde_json::json!("clear")),
+            ("clearColor".to_string(), serde_json::json!([0.0, 1.0])),
+        ]);
+        assert!(parse_render_pass_color_load_op(&invalid).is_err());
     }
 
     #[test]

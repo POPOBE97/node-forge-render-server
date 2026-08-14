@@ -389,21 +389,152 @@ fn doubao_nforge_executes_shared_driver_as_physical_p_derivation() {
         0,
         "plain Function outputs must not create explicit Motion drivers"
     );
-    let derivation = scene
+    let thinking_function = state_machine::graph_function::installed_document_functions()
+        .into_iter()
+        .find(|candidate| {
+            candidate.scope == "derivation:mutation_ms2xj2gx_6"
+                && candidate.node_id == "function_ilight_thinking"
+        })
+        .expect("Thinking Intelligent Light Derivation Function must be installed");
+    assert_eq!(
+        function.source, thinking_function.source,
+        "Idle and Thinking must use the same canonical Derivation source"
+    );
+    let machine = scene
         .state_machine
         .as_ref()
-        .and_then(|machine| {
-            machine
-                .derivations
-                .iter()
-                .find(|derivation| derivation.id == "mutation_ilight_idle")
-        })
+        .expect("doubao fixture should have a state machine");
+    assert!(
+        machine
+            .state_params
+            .iter()
+            .all(|param| param.id != "sp_viewport_size_dp" && param.name != "ViewportSizeDp"),
+        "Background sizing must not retain the old State Diagram viewport source"
+    );
+    for removed_name in [
+        "viewportSizeDp",
+        "backgroundPositionXPx",
+        "backgroundPositionYPx",
+        "backgroundWidthPx",
+        "backgroundHeightPx",
+    ] {
+        assert!(
+            !function.source.contains(removed_name),
+            "canonical Derivation must not retain old Background path '{removed_name}'"
+        );
+    }
+    let derivation = machine
+        .derivations
+        .iter()
+        .find(|derivation| derivation.id == "mutation_ilight_idle")
         .expect("shared Intelligent Light Derivation must exist");
     assert_eq!(
         derivation.output_bindings.len(),
-        11,
-        "every computed Intelligent Light field must be an explicit derived output"
+        61,
+        "every computed render field must be an explicit derived output"
     );
+    assert!(
+        derivation.output_bindings.iter().all(|binding| {
+            binding.uniform.node_id != "IntInput_RenderWidthPx"
+                && binding.uniform.node_id != "IntInput_RenderHeightPx"
+        }),
+        "render-target dimensions must come from Shader Diagram wiring, not Derivation"
+    );
+    for (from_node, from_port, to_node, to_port) in [
+        (
+            "MathMultiply_RenderWidthPx",
+            "result",
+            "Vector2Input_BackgroundSizePx",
+            "x",
+        ),
+        (
+            "MathMultiply_RenderHeightPx",
+            "result",
+            "Vector2Input_BackgroundSizePx",
+            "y",
+        ),
+        (
+            "MathMultiply_RenderCenterXPx",
+            "result",
+            "Vector2Input_BackgroundPositionPx",
+            "x",
+        ),
+        (
+            "MathMultiply_RenderCenterYPx",
+            "result",
+            "Vector2Input_BackgroundPositionPx",
+            "y",
+        ),
+        (
+            "MathMultiply_RenderWidthPx",
+            "result",
+            "MathMultiply_RenderCenterXPx",
+            "dynamic_fixed_1",
+        ),
+        (
+            "FloatInput_RenderHalf",
+            "value",
+            "MathMultiply_RenderCenterXPx",
+            "dynamic_fixed_2",
+        ),
+        (
+            "MathMultiply_RenderHeightPx",
+            "result",
+            "MathMultiply_RenderCenterYPx",
+            "dynamic_fixed_1",
+        ),
+        (
+            "FloatInput_RenderHalf",
+            "value",
+            "MathMultiply_RenderCenterYPx",
+            "dynamic_fixed_2",
+        ),
+    ] {
+        assert!(
+            scene.connections.iter().any(|connection| {
+                connection.from.node_id == from_node
+                    && connection.from.port_id == from_port
+                    && connection.to.node_id == to_node
+                    && connection.to.port_id == to_port
+            }),
+            "Background physical input '{to_node}:{to_port}' must be wired directly from Shader Diagram render sizing"
+        );
+    }
+    for node_id in [
+        "Vector2Input_BackgroundPositionPx",
+        "Vector2Input_BackgroundSizePx",
+    ] {
+        let node = scene
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .expect("Background vector assembly node must exist");
+        assert_eq!(node.params["x"], serde_json::json!(0));
+        assert_eq!(node.params["y"], serde_json::json!(0));
+    }
+    for derivation in machine.derivations.iter().filter(|candidate| {
+        matches!(
+            candidate.id.as_str(),
+            "mutation_ilight_idle" | "mutation_ms2xj2gx_6"
+        )
+    }) {
+        for binding in &derivation.passthrough_bindings {
+            if let state_machine::types::StateValueSource::StateParam { state_param_id } =
+                &binding.source
+            {
+                let state_param = machine
+                    .state_params
+                    .iter()
+                    .find(|candidate| candidate.id == *state_param_id)
+                    .expect("passthrough State Param declaration");
+                assert!(
+                    !state_param.name.contains("Dp"),
+                    "authored dimensional State Param '{}' must pass through Derivation conversion",
+                    state_param.name
+                );
+            }
+        }
+    }
     let mut runtime = state_machine::compile_from_scene(&scene)
         .expect("doubao state machine should compile")
         .expect("doubao scene should have a state machine");

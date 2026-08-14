@@ -242,6 +242,7 @@ fn validate_source(sm: &StateMachine, source: &StateValueSource) -> Result<()> {
                 frame_input_id.as_str(),
                 "sceneElapsedTime"
                     | "localElapsedTime"
+                    | "scene.size"
                     | "mouse.position"
                     | "mouse.position.x"
                     | "mouse.position.y"
@@ -281,7 +282,14 @@ fn source_port(sm: &StateMachine, source: &StateValueSource) -> Result<GraphPort
         StateValueSource::FrameInput { frame_input_id } => Ok(GraphPort {
             id: frame_input_id.clone(),
             name: None,
-            port_type: Some("float".into()),
+            port_type: Some(
+                if matches!(frame_input_id.as_str(), "scene.size" | "mouse.position") {
+                    "vector2"
+                } else {
+                    "float"
+                }
+                .into(),
+            ),
             array_length: None,
             motion: None,
         }),
@@ -1252,7 +1260,7 @@ mod tests {
 
     fn scene_with_state_machine(sm: StateMachine, nodes: Vec<Node>) -> SceneDSL {
         SceneDSL {
-            version: "5.0".into(),
+            version: "6.0".into(),
             metadata: crate::dsl::Metadata {
                 name: "Validation test".into(),
                 created: None,

@@ -36,10 +36,9 @@ fn assert_vec2_close(actual: &[f64], expected: [f64; 2], message: &str) {
     );
 }
 
-fn rubber_band_distance(distance: f64) -> f64 {
-    const MAX_DISTANCE: f64 = 400.0;
+fn rubber_band_distance(distance: f64, max_distance: f64) -> f64 {
     const COEFFICIENT: f64 = 0.1;
-    (MAX_DISTANCE * COEFFICIENT * distance) / (MAX_DISTANCE + COEFFICIENT * distance)
+    (max_distance * COEFFICIENT * distance) / (max_distance + COEFFICIENT * distance)
 }
 
 fn session_starting_in(
@@ -101,6 +100,11 @@ fn uniform_number(step: &AnimationStep, node_id: &str, param_id: &str) -> f64 {
 #[test]
 fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
     let scene = support::load_render_case_scene("doubao-voice-interaction");
+    let resolution = node_forge_render_server::dsl::screen_resolution(&scene)
+        .expect("doubao fixture should declare a screen resolution");
+    let active_anchor = [resolution[0] as f64 * 0.5, resolution[1] as f64 / 24.0];
+    let resting_anchor = [resolution[0] as f64 * 0.5, resolution[1] as f64 * 0.06];
+    let max_stretch = f64::from(resolution[0].min(resolution[1])) * 10.0 / 27.0;
     let machine = scene
         .state_machine
         .as_ref()
@@ -117,8 +121,11 @@ fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
         .find(|state| state.id == "st_push_to_talk_cancel")
         .expect("PushToTalkCancel State");
     for (param_id, expected) in [
-        (PTT_ORB_PARAM_ID, serde_json::json!([540, 144])),
-        (PTT_ORB_ANCHOR_PARAM_ID, serde_json::json!([540, 100])),
+        (PTT_ORB_PARAM_ID, serde_json::json!([0, 0])),
+        (
+            PTT_ORB_ANCHOR_PARAM_ID,
+            serde_json::json!([0.5, 1.0 / 24.0]),
+        ),
     ] {
         let push_to_talk_value = push_to_talk
             .state_param_overrides
@@ -194,34 +201,43 @@ fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
             .unwrap_or_else(|error| panic!("'{state_id}' should be forceable: {error}"));
         settle(&mut session);
 
-        session.update_mouse_position(MousePosition { x: 540.0, y: 100.0 });
+        session.update_mouse_position(MousePosition {
+            x: active_anchor[0],
+            y: active_anchor[1],
+        });
         let centered = session.step(1.0 / 60.0);
         let centered_channel = channel(&centered, PTT_ORB_PARAM_ID);
         assert_vec2_close(
             &centered_channel.target_value,
-            [540.0, 100.0],
+            active_anchor,
             "pointer at anchor",
         );
         let centered_local_y =
             uniform_number(&centered, "Vector2Input_PointerLightEffectLocalPx", "y");
 
-        session.update_mouse_position(MousePosition { x: 570.0, y: 100.0 });
+        session.update_mouse_position(MousePosition {
+            x: active_anchor[0] + 30.0,
+            y: active_anchor[1],
+        });
         let near = session.step(1.0 / 60.0);
         let near_channel = channel(&near, PTT_ORB_PARAM_ID);
-        let expected_near_x = 540.0 + rubber_band_distance(30.0);
+        let expected_near_x = active_anchor[0] + rubber_band_distance(30.0, max_stretch);
         assert_vec2_close(
             &near_channel.target_value,
-            [expected_near_x, 100.0],
+            [expected_near_x, active_anchor[1]],
             "near pointer uses the zero-free-radius rubber band",
         );
 
-        session.update_mouse_position(MousePosition { x: 540.0, y: 130.0 });
+        session.update_mouse_position(MousePosition {
+            x: active_anchor[0],
+            y: active_anchor[1] + 30.0,
+        });
         let near_up = session.step(1.0 / 60.0);
         let near_up_channel = channel(&near_up, PTT_ORB_PARAM_ID);
-        let expected_near_y = 100.0 + rubber_band_distance(30.0);
+        let expected_near_y = active_anchor[1] + rubber_band_distance(30.0, max_stretch);
         assert_vec2_close(
             &near_up_channel.target_value,
-            [540.0, expected_near_y],
+            [active_anchor[0], expected_near_y],
             "upward pointer uses the same radial rubber band",
         );
         assert!(
@@ -231,20 +247,20 @@ fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
         );
 
         session.update_mouse_position(MousePosition {
-            x: 1140.0,
-            y: 100.0,
+            x: active_anchor[0] + 600.0,
+            y: active_anchor[1],
         });
         let resisted = session.step(1.0 / 60.0);
-        let expected_far_x = 540.0 + rubber_band_distance(600.0);
+        let expected_far_x = active_anchor[0] + rubber_band_distance(600.0, max_stretch);
         let resisted_channel = channel(&resisted, PTT_ORB_PARAM_ID);
         assert_eq!(resisted_channel.transition_driver, "hold");
         assert_vec2_close(
             &resisted_channel.target_value,
-            [expected_far_x, 100.0],
+            [expected_far_x, active_anchor[1]],
             "far pointer uses the shared rubber band",
         );
-        assert!(expected_far_x - 540.0 < 400.0);
-        assert!(expected_far_x - 540.0 < 600.0);
+        assert!(expected_far_x - active_anchor[0] < max_stretch);
+        assert!(expected_far_x - active_anchor[0] < 600.0);
 
         sampled_targets.push((
             near_channel.target_value.clone(),
@@ -268,7 +284,7 @@ fn doubao_ptt_and_cancel_share_orb_targeting_and_return_spring() {
         let returned_channel = channel(&returned, PTT_ORB_PARAM_ID);
         assert_vec2_close(
             &returned_channel.value,
-            [540.0, 144.0],
+            resting_anchor,
             "return spring settles at the authored resting object position",
         );
     }
@@ -594,9 +610,13 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
             .expect("doubao fixture should have a state machine");
         assert_eq!(settle(&mut session).current_state_id, "st_mrerw3qg_6");
 
-        session.fire_event(space_event("keydown"));
-        session.step(0.0);
-        let entered_listening = session.step(0.21);
+        session
+            .force_state("st_mrerw3qg_6")
+            .expect("Off should be forceable");
+        settle(&mut session);
+        let entered_listening = session
+            .force_state("st_listening")
+            .expect("Listening should be forceable from Off");
         assert_eq!(entered_listening.current_state_id, "st_listening");
         if settle_listening {
             assert_eq!(settle(&mut session).current_state_id, "st_listening");
@@ -607,8 +627,9 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
 
         let outgoing_listening = session.step(0.0);
         let outgoing_snap = channel(&outgoing_listening, SNAP_PRIMARY_PARAM_ID).value[0];
-        session.fire_event(space_event("keyup"));
-        let entered_thinking = session.step(0.0);
+        let entered_thinking = session
+            .force_state("st_thinking")
+            .expect("Thinking should be forceable from Listening");
         assert_eq!(entered_thinking.current_state_id, "st_thinking");
         assert_eq!(
             entered_thinking.active_transition_id.as_deref(),
@@ -668,7 +689,23 @@ fn doubao_listening_to_thinking_solves_q_before_transition_error() {
 
 #[test]
 fn doubao_listening_to_thinking_fixed_time_trace() {
-    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    let mut scene = support::load_render_case_scene("doubao-voice-interaction");
+    scene
+        .state_machine
+        .as_mut()
+        .expect("doubao state machine")
+        .state_params
+        .iter_mut()
+        .find(|param| param.name == "PxPerDp")
+        .expect("PxPerDp State Param")
+        .default_value = serde_json::json!(3.0);
+    scene
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == "FloatInput_RenderPxPerDp")
+        .expect("RenderPxPerDp root input")
+        .params
+        .insert("value".into(), serde_json::json!(3.0));
     let expected_snap_state = scene
         .state_machine
         .as_ref()
@@ -686,12 +723,19 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
         .expect("doubao fixture should have a state machine");
     assert_eq!(settle(&mut session).current_state_id, "st_mrerw3qg_6");
 
-    session.fire_event(space_event("keydown"));
-    session.step(0.21);
+    session
+        .force_state("st_mrerw3qg_6")
+        .expect("Off should be forceable");
+    settle(&mut session);
+    session
+        .force_state("st_listening")
+        .expect("Listening should be forceable from Off");
     assert_eq!(settle(&mut session).current_state_id, "st_listening");
     let outgoing_listening = session.step(0.0);
     let outgoing_snap = channel(&outgoing_listening, SNAP_PRIMARY_PARAM_ID).value[0];
-    session.fire_event(space_event("keyup"));
+    session
+        .force_state("st_thinking")
+        .expect("Thinking should be forceable from Listening");
 
     let sample_frames = [0usize, 6, 12, 18, 33, 48];
     let mut samples = Vec::new();
@@ -709,12 +753,12 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
     // (instant snap + continuous-time orbit) and tracks physical P without a
     // discrete step-convergence residual.
     let expected = [
-        (0.450000, 0.450000, 0.150000, 0.300000, -2.133341),
-        (0.450000, 0.440524, 0.097320, 0.343204, 4.889304),
-        (0.450000, 0.427383, 0.036301, 0.391083, 8.106706),
-        (0.450000, 0.421226, 0.006890, 0.414337, 9.728666),
-        (0.450000, 0.440943, -0.001568, 0.442510, 11.585126),
-        (0.450000, 0.478415, 0.000000, 0.478415, 13.825029),
+        (0.450000, 0.450000, 0.180000, 0.270000, -11.101011),
+        (0.450000, 0.440524, 0.116784, 0.323740, -9.833551),
+        (0.450000, 0.427383, 0.043561, 0.383823, 3.950853),
+        (0.450000, 0.421226, 0.008268, 0.412959, 5.539543),
+        (0.450000, 0.440943, -0.001881, 0.442824, 7.607170),
+        (0.450000, 0.478415, 0.000000, 0.478415, 10.307014),
     ];
     println!("| t | value | S | Q | E | P/render | Mutation | Transition | active |");
     println!("|---:|---|---:|---:|---:|---:|---|---|---|");
@@ -791,7 +835,7 @@ fn doubao_listening_to_thinking_fixed_time_trace() {
         completion_frame * 1000 / 60,
         channel(&completed, SNAP_PRIMARY_PARAM_ID).mutation_driver
     );
-    assert_eq!(completion_frame, 79, "Transition active duration changed");
+    assert_eq!(completion_frame, 94, "Transition active duration changed");
     assert_eq!(completed.active_transition_id, None);
     assert_eq!(
         channel(&completed, SNAP_PRIMARY_PARAM_ID).transition_driver,

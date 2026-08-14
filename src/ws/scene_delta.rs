@@ -868,6 +868,92 @@ mod tests {
     }
 
     #[test]
+    fn delta_updates_only_uniform_values_accepts_rect_corner_input_change() {
+        let scene = SceneDSL {
+            version: "1.0".to_string(),
+            metadata: Metadata {
+                name: "scene".to_string(),
+                created: None,
+                modified: None,
+            },
+            nodes: vec![
+                node("radius", "FloatInput", json!({"value": 12.0})),
+                node("smooth", "FloatInput", json!({"value": 0.5})),
+                node("rect", "Rect2DGeometry", json!({})),
+                node("pass", "RenderPass", json!({})),
+            ],
+            connections: vec![
+                Connection {
+                    id: "radius-rect".to_string(),
+                    from: Endpoint {
+                        node_id: "radius".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "radius".to_string(),
+                    },
+                },
+                Connection {
+                    id: "smooth-rect".to_string(),
+                    from: Endpoint {
+                        node_id: "smooth".to_string(),
+                        port_id: "value".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "smooth".to_string(),
+                    },
+                },
+                Connection {
+                    id: "rect-pass".to_string(),
+                    from: Endpoint {
+                        node_id: "rect".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "pass".to_string(),
+                        port_id: "geometry".to_string(),
+                    },
+                },
+            ],
+            outputs: None,
+            groups: Vec::new(),
+            assets: Default::default(),
+            state_machine: None,
+            debug_artifacts: None,
+        };
+        let cache = SceneCache::from_scene_update(&scene);
+
+        for (node_id, value) in [("radius", 20.0), ("smooth", 0.75)] {
+            let delta = SceneDelta {
+                version: "1.0".to_string(),
+                nodes: SceneDeltaNodes {
+                    added: Vec::new(),
+                    updated: vec![node(node_id, "FloatInput", json!({"value": value}))],
+                    removed: Vec::new(),
+                },
+                connections: SceneDeltaConnections {
+                    added: Vec::new(),
+                    updated: Vec::new(),
+                    removed: Vec::new(),
+                },
+                outputs: None,
+                groups: None,
+                state_machine: None,
+                debug_artifacts: None,
+                assets_added: None,
+                assets_removed: None,
+            };
+
+            assert!(
+                delta_updates_only_uniform_values(&cache, &delta),
+                "Rect {node_id} should update through GraphInputs without a plan rebuild"
+            );
+        }
+    }
+
+    #[test]
     fn delta_updates_only_uniform_values_rejects_rect_position_math_change() {
         let scene = SceneDSL {
             version: "1.0".to_string(),

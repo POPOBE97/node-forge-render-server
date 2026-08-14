@@ -43,19 +43,30 @@ struct GraphInputs {
     node_FloatInput_49_6300f420: vec4f,
     // Node: FloatInput_50
     node_FloatInput_50_d125f720: vec4f,
-    // Node: Vector2Input_35
-    node_Vector2Input_35_093d3fbd: vec4f,
-    // Node: Vector2Input_36
-    node_Vector2Input_36_f0373fbd: vec4f,
+    // Node: FloatInput_LightHardClipFeatherPx
+    node_FloatInput_LightHardClipFeatherPx_fa3b19bf: vec4f,
+    // Node: FloatInput_VoiceDotMaxHeightPx
+    node_FloatInput_VoiceDotMaxHeightPx_0ea7dc97: vec4f,
+    // Node: FloatInput_VoiceDotMinHeightPx
+    node_FloatInput_VoiceDotMinHeightPx_487cf0b9: vec4f,
+    // Node: FloatInput_VoiceDotSdfFeatherPx
+    node_FloatInput_VoiceDotSdfFeatherPx_e33ad04e: vec4f,
+    // Node: FloatInput_VoiceDotSpacingPx
+    node_FloatInput_VoiceDotSpacingPx_6e907c9c: vec4f,
+    // Node: FloatInput_VoiceDotWidthPx
+    node_FloatInput_VoiceDotWidthPx_57608a19: vec4f,
     // Node: Vector2Input_LightEffectCanvasSizePx
     node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c: vec4f,
+    // Node: Vector2Input_LightEffectFrameSizePx
+    node_Vector2Input_LightEffectFrameSizePx_0e8bf3b1: vec4f,
+    // Node: Vector2Input_LightEffectPositionPx
+    node_Vector2Input_LightEffectPositionPx_a9a5e69f: vec4f,
 };
 
 @group(0) @binding(2)
 var<uniform> graph_inputs: GraphInputs;
 
 struct ShaderMaterialParams {
-    shader_GroupInstance_32_ShaderMaterial_voice_dots_density: vec4f,
     shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies: array<vec4f, 16>,
 };
 @group(0) @binding(3)
@@ -225,27 +236,35 @@ fn voice_dot_sample_GroupInstance_32_ShaderMaterial_voice_dots(
     point: vec2f,
     index: f32,
     energy: f32,
-    density: f32,
+    dot_width_px: f32,
+    dot_min_height_px: f32,
+    dot_max_height_px: f32,
+    dot_spacing_px: f32,
+    sdf_feather_px: f32,
     progress: f32,
     response: f32,
 ) -> f32 {
     let center_distance = abs(index - 17.0);
     let mapped_energy = smooth5_map_GroupInstance_32_ShaderMaterial_voice_dots(clamp(energy * response * 1.5, 0.0, 1.0));
-    let dot_size = vec2f(2.4, mix(7.2, 24.0, mapped_energy)) * density;
+    let dot_size = vec2f(dot_width_px, mix(dot_min_height_px, dot_max_height_px, mapped_energy));
     let radius = min(dot_size.x, dot_size.y) * 0.5;
-    let x = (index - 17.0) * 6.0 * density;
+    let x = (index - 17.0) * dot_spacing_px;
     let sdf = -sd_rounded_box_GroupInstance_32_ShaderMaterial_voice_dots(point - vec2f(x, 0.0), dot_size * 0.5, radius);
     let visible = smoothstep(
         (center_distance - 0.5) / 17.5,
         (center_distance + 0.5) / 17.5,
         clamp(progress, 0.0, 1.0),
     );
-    return smoothstep(0.0, 1.0, sdf) * visible;
+    return smoothstep(0.0, max(sdf_feather_px, 0.0001), sdf) * visible;
 }
 
 fn voice_dot_alpha_GroupInstance_32_ShaderMaterial_voice_dots(
     point: vec2f,
-    density: f32,
+    dot_width_px: f32,
+    dot_min_height_px: f32,
+    dot_max_height_px: f32,
+    dot_spacing_px: f32,
+    sdf_feather_px: f32,
     energies: array<f32, 16>,
     opacity: f32,
     progress: f32,
@@ -261,7 +280,11 @@ fn voice_dot_alpha_GroupInstance_32_ShaderMaterial_voice_dots(
                 point,
                 f32(index),
                 energy,
-                density,
+                dot_width_px,
+                dot_min_height_px,
+                dot_max_height_px,
+                dot_spacing_px,
+                sdf_feather_px,
                 progress,
                 response,
             ),
@@ -274,7 +297,12 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
     in: ShaderMaterialInput,
     frame_size_px: vec2f,
     corner_radius_px: f32,
-    density: f32,
+    hard_clip_feather_px: f32,
+    dot_width_px: f32,
+    dot_min_height_px: f32,
+    dot_max_height_px: f32,
+    dot_spacing_px: f32,
+    dot_sdf_feather_px: f32,
     human_voice_energies: array<f32, 16>,
     voice_dot_opacity: f32,
     voice_dot_progress: f32,
@@ -287,13 +315,17 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
     let half_size_px = size_px * 0.5;
     let radius_px = clamp(corner_radius_px, 0.0, min(half_size_px.x, half_size_px.y));
     let hard_clip_alpha = 1.0 - smoothstep(
-        -2.5,
+        -max(hard_clip_feather_px, 0.0001),
         0.0,
         glass_frame_sdf_GroupInstance_32_ShaderMaterial_voice_dots(point, half_size_px, radius_px),
     );
     let dot_alpha = voice_dot_alpha_GroupInstance_32_ShaderMaterial_voice_dots(
         point,
-        density,
+        dot_width_px,
+        dot_min_height_px,
+        dot_max_height_px,
+        dot_spacing_px,
+        dot_sdf_feather_px,
         human_voice_energies,
         voice_dot_opacity,
         voice_dot_progress,
@@ -322,7 +354,7 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
  out.uv = vec2f(uv.x, 1.0 - uv.y);
 
  let rect_size_px_base = (graph_inputs.node_Vector2Input_LightEffectCanvasSizePx_9b9ae39c).xy;
- let rect_center_px = (graph_inputs.node_Vector2Input_36_f0373fbd).xy;
+ let rect_center_px = (graph_inputs.node_Vector2Input_LightEffectPositionPx_a9a5e69f).xy;
  let rect_dyn = vec4f(rect_center_px, rect_size_px_base);
  out.geo_size_px = rect_dyn.zw;
  // Geometry-local pixel coordinate (GeoFragcoord).
@@ -345,11 +377,16 @@ fn shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
     // Shader Material GroupInstance_32/ShaderMaterial_voice_dots.material
-    let voice_dot_response_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
+    let light_hard_clip_feather_px_material = shader_material_GroupInstance_32_ShaderMaterial_voice_dots(
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
-        (graph_inputs.node_Vector2Input_35_093d3fbd).xy,
+        (graph_inputs.node_Vector2Input_LightEffectFrameSizePx_0e8bf3b1).xy,
         (graph_inputs.node_FloatInput_37_0eaa0821).x,
-        (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_density).x,
+        (graph_inputs.node_FloatInput_LightHardClipFeatherPx_fa3b19bf).x,
+        (graph_inputs.node_FloatInput_VoiceDotWidthPx_57608a19).x,
+        (graph_inputs.node_FloatInput_VoiceDotMinHeightPx_487cf0b9).x,
+        (graph_inputs.node_FloatInput_VoiceDotMaxHeightPx_0ea7dc97).x,
+        (graph_inputs.node_FloatInput_VoiceDotSpacingPx_6e907c9c).x,
+        (graph_inputs.node_FloatInput_VoiceDotSdfFeatherPx_e33ad04e).x,
         array<f32,
         16>((shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[0]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[1]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[2]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[3]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[4]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[5]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[6]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[7]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[8]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[9]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[10]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[11]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[12]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[13]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[14]).x, (shader_material_params.shader_GroupInstance_32_ShaderMaterial_voice_dots_human_voice_energies[15]).x),
         (graph_inputs.node_FloatInput_48_b0fef320).x,
@@ -358,6 +395,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         vec4f((graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).rgb * (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a, (graph_inputs.node_ColorInput_VoiceDotColor_dfa3c7da).a),
     );
     // Final composite
-    let _frag_out = voice_dot_response_material;
+    let _frag_out = light_hard_clip_feather_px_material;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

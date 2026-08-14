@@ -38,6 +38,7 @@ pub(crate) fn apply_state_machine_overrides(
     if let Some(uniform_scene) = app.runtime.uniform_scene.as_mut() {
         crate::state_machine::apply_overrides(uniform_scene, overrides);
     }
+    app.runtime.dynamic_gaussian_blur_dirty = !app.core.gaussian_blur_bundles.is_empty();
     if let Some(matrix_source_scene) = app.runtime.matrix_source_scene.as_mut() {
         crate::state_machine::apply_overrides(matrix_source_scene, overrides);
     }
@@ -49,6 +50,37 @@ pub(crate) fn apply_state_machine_overrides(
         );
     }
     app.runtime.scene_redraw_pending = true;
+}
+
+pub(crate) fn update_dynamic_gaussian_blur_bundles(app: &mut App) -> Result<usize> {
+    if !app.runtime.dynamic_gaussian_blur_dirty {
+        return Ok(0);
+    }
+    app.runtime.dynamic_gaussian_blur_dirty = false;
+    let Some(scene) = app.runtime.uniform_scene.clone() else {
+        return Ok(0);
+    };
+    let update =
+        renderer::shader_space::dynamic_gaussian_blur::update_dynamic_gaussian_blur_bundles(
+            &scene,
+            &mut app.core.shader_space,
+            &mut app.core.passes,
+            &mut app.core.gaussian_blur_bundles,
+            &app.shell.pass_shader_overrides,
+        )?;
+    if update.rebuilt > 0 {
+        app.runtime.last_pipeline_signature = Some(
+            renderer::graph_uniforms::compute_pipeline_signature_for_pass_bindings(
+                &scene,
+                &app.core.passes,
+            ),
+        );
+        reconcile_pass_capture_after_shader_space_rebuild(app);
+    }
+    if update.updated > 0 {
+        app.runtime.scene_redraw_pending = true;
+    }
+    Ok(update.updated)
 }
 
 pub(super) fn select_state_control(app: &mut App, selection: StateControlSelection) -> Result<()> {
@@ -407,6 +439,7 @@ fn commit_shader_space_rebuild(
     app.core.scene_output_texture_name = result.scene_output_texture;
     app.core.export_texture_name = result.export_output_texture;
     app.core.export_encode_pass_name = result.export_encode_pass_name;
+    app.core.gaussian_blur_bundles = result.gaussian_blur_bundles;
     sync_wireframe_mode(app);
     update_pass_debug_sources(app, result.pass_debug_sources);
     app.shell.pass_shader_overrides = pass_shader_overrides;
@@ -416,6 +449,7 @@ fn commit_shader_space_rebuild(
         .pass_shader_overrides
         .retain(|pass_name, _| live_pass_names.contains(pass_name));
     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
+    app.runtime.dynamic_gaussian_blur_dirty = false;
     app.runtime.uniform_scene = result.prepared_scene;
     app.runtime.matrix_source_scene = result.matrix_source_scene;
     app.runtime.scene_uses_time = app
@@ -880,6 +914,8 @@ pub fn apply_scene_update(
                     match apply_graph_uniform_updates(app, &prepared_for_fast_path.scene) {
                         Ok(_updated_count) => {
                             app.runtime.last_pipeline_signature = Some(next_pipeline_signature);
+                            app.runtime.dynamic_gaussian_blur_dirty =
+                                !app.core.gaussian_blur_bundles.is_empty();
                             app.runtime.scene_uses_time =
                                 scene_uses_time(&prepared_for_fast_path.scene);
                             app.runtime.uniform_scene = prepared_scene_candidate;
@@ -946,6 +982,7 @@ pub fn apply_scene_update(
                     app.core.scene_output_texture_name = result.scene_output_texture;
                     app.core.export_texture_name = result.export_output_texture;
                     app.core.export_encode_pass_name = result.export_encode_pass_name;
+                    app.core.gaussian_blur_bundles = result.gaussian_blur_bundles;
                     sync_wireframe_mode(app);
                     update_pass_debug_sources(app, result.pass_debug_sources);
                     let live_pass_names: std::collections::HashSet<String> =
@@ -954,6 +991,7 @@ pub fn apply_scene_update(
                         .pass_shader_overrides
                         .retain(|pass_name, _| live_pass_names.contains(pass_name));
                     app.runtime.last_pipeline_signature = Some(result.pipeline_signature);
+                    app.runtime.dynamic_gaussian_blur_dirty = false;
                     app.runtime.uniform_scene = result.prepared_scene.or(prepared_scene_candidate);
                     app.runtime.matrix_source_scene =
                         result.matrix_source_scene.or(matrix_source_scene_candidate);
@@ -996,6 +1034,8 @@ pub fn apply_scene_update(
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
                     app.runtime.matrix_source_scene = None;
+                    app.runtime.dynamic_gaussian_blur_dirty = false;
+                    app.core.gaussian_blur_bundles.clear();
                     app.runtime.animation_session = None;
                     app.runtime.timeline_buffer = None;
                     app.runtime.last_live_overrides = None;
@@ -1025,6 +1065,8 @@ pub fn apply_scene_update(
                     app.runtime.scene_uses_time = scene_uses_time(&scene);
                     app.runtime.uniform_scene = None;
                     app.runtime.matrix_source_scene = None;
+                    app.runtime.dynamic_gaussian_blur_dirty = false;
+                    app.core.gaussian_blur_bundles.clear();
                     app.runtime.animation_session = None;
                     app.runtime.state_control_selection = None;
                     broadcast_error(app, request_id, "PANIC", message);
@@ -1128,6 +1170,8 @@ fn apply_error_plane(app: &mut App, render_state: &egui_wgpu::RenderState) {
         app.core.passes = result.pass_bindings;
         sync_wireframe_mode(app);
         app.runtime.last_pipeline_signature = None;
+        app.runtime.dynamic_gaussian_blur_dirty = false;
+        app.core.gaussian_blur_bundles.clear();
     }
 }
 

@@ -32,7 +32,13 @@ use crate::{
 use super::{
     compute_pass_render_order, forward_root_dependencies_from_roots,
     load_gltf_geometry_pixel_space,
-    pass_assemblers::args::{BuilderState, SceneContext, make_fullscreen_geometry},
+    pass_assemblers::{
+        args::{BuilderState, SceneContext, make_fullscreen_geometry},
+        dynamic_gaussian_blur::{
+            GaussianBlurBundleRuntime, GaussianBlurBundleTemplate,
+            synchronize_route_external_load_ops,
+        },
+    },
     pass_handlers::PassPlannerRegistry,
     pass_spec::{PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params},
     resolve_geometry_for_render_pass,
@@ -158,6 +164,8 @@ impl RenderPlanner {
         let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
         let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
         let mut textures: Vec<TextureDecl> = Vec::new();
+        let mut texture_mip_level_counts = HashMap::new();
+        let mut texture_views = Vec::new();
         let mut image_textures: Vec<ImageTextureSpec> = Vec::new();
         let mut render_pass_specs: Vec<RenderPassSpec> = Vec::new();
         let mut composite_passes: Vec<ResourceName> = Vec::new();
@@ -165,6 +173,8 @@ impl RenderPlanner {
         let mut image_prepasses: Vec<ImagePrepass> = Vec::new();
         let mut prepass_texture_samples: Vec<(String, ResourceName)> = Vec::new();
         let mut pass_cull_mode_by_name: HashMap<ResourceName, Option<wgpu::Face>> = HashMap::new();
+        let mut authored_color_load_ops_by_pass: HashMap<ResourceName, wgpu::LoadOp<Color>> =
+            HashMap::new();
         let mut pass_depth_attachment_by_name: HashMap<ResourceName, ResourceName> = HashMap::new();
         let mut baked_data_parse_meta_by_pass = HashMap::new();
         let mut baked_data_parse_bytes_by_pass = HashMap::new();
@@ -172,6 +182,22 @@ impl RenderPlanner {
         let mut pass_extensions = HashMap::new();
         let mut shader_parameter_buffers_by_pass = HashMap::new();
         let mut pass_output_registry: PassOutputRegistry = Default::default();
+        let mut gaussian_blur_bundles: HashMap<String, GaussianBlurBundleRuntime> = HashMap::new();
+        let dynamic_render_keys = prepared
+            .scene
+            .state_machine
+            .as_ref()
+            .map(|state_machine| {
+                let mut keys = crate::state_machine::trace::tracked_override_keys(state_machine);
+                keys.extend(
+                    state_machine
+                        .state_params
+                        .iter()
+                        .map(|declaration| declaration.id.clone()),
+                );
+                keys
+            })
+            .unwrap_or_default();
 
         for id in order {
             let Some(node) = nodes_by_id.get(id) else {
@@ -366,6 +392,60 @@ impl RenderPlanner {
             let branch_spec_start = render_pass_specs.len();
             let branch_composite_start = composite_passes.len();
             let layer_node = find_node(nodes_by_id, layer_id)?;
+
+            let composition_targets = composition_consumers_by_source
+                .get(layer_id)
+                .into_iter()
+                .flatten()
+                .filter_map(|composition_id| composition_contexts.get(composition_id))
+                .collect::<Vec<_>>();
+            let unique_composition_target = composition_targets.first().copied().filter(|first| {
+                composition_targets.iter().all(|candidate| {
+                    candidate.target_texture_name == first.target_texture_name
+                        && candidate.target_size_px == first.target_size_px
+                })
+            });
+
+            // A pass feeding different composition targets cannot write directly to one of them.
+            // Materialize it once and let the existing per-consumer compose paths route it.
+            if composition_targets.len() > 1 && unique_composition_target.is_none() {
+                sampled_pass_ids.insert(layer_id.clone());
+            }
+
+            let (
+                layer_target_texture_name,
+                layer_target_format,
+                layer_sampled_pass_format,
+                layer_tgt_size,
+                layer_tgt_size_u,
+            ) = if let Some(composition) = unique_composition_target {
+                let target_node = find_node(nodes_by_id, &composition.target_texture_node_id)?;
+                let format = parse_texture_format(&target_node.params)?;
+                let sampled_format = match format {
+                    TextureFormat::Rgba8UnormSrgb => TextureFormat::Rgba8Unorm,
+                    TextureFormat::Bgra8UnormSrgb => TextureFormat::Bgra8Unorm,
+                    other => other,
+                };
+                let size = composition.target_size_px;
+                (
+                    composition.target_texture_name.clone(),
+                    format,
+                    sampled_format,
+                    size,
+                    [
+                        size[0].max(1.0).round() as u32,
+                        size[1].max(1.0).round() as u32,
+                    ],
+                )
+            } else {
+                (
+                    target_texture_name.clone(),
+                    target_format,
+                    sampled_pass_format,
+                    [tgt_w, tgt_h],
+                    [tgt_w_u, tgt_h_u],
+                )
+            };
             let scene_ctx = SceneContext {
                 prepared: &prepared,
                 composition_contexts: &composition_contexts,
@@ -375,19 +455,47 @@ impl RenderPlanner {
                 device: &planning_device,
                 adapter,
             };
+            let blur_radius_key = format!("{layer_id}:radius");
+            let blur_extend_key = format!("{layer_id}:extend");
+            let dynamic_blur_bundle = layer_node.node_type == "GuassianBlurPass"
+                && (incoming_connection(&prepared.scene, layer_id, "radius").is_some()
+                    || dynamic_render_keys.contains(&blur_radius_key)
+                    || dynamic_render_keys.contains(&blur_extend_key));
+            let gaussian_blur_template = dynamic_blur_bundle.then(|| {
+                GaussianBlurBundleTemplate::new(
+                    layer_id.clone(),
+                    prepared.clone(),
+                    composition_contexts.clone(),
+                    composition_consumers_by_source.clone(),
+                    draw_coord_size_by_pass.clone(),
+                    asset_store.cloned(),
+                    planning_device.clone(),
+                    layer_target_texture_name.clone(),
+                    layer_target_format,
+                    layer_sampled_pass_format,
+                    layer_tgt_size,
+                    layer_tgt_size_u,
+                    pass_output_registry.clone(),
+                    sampled_pass_ids.clone(),
+                    baked_data_parse_bytes_by_pass.clone(),
+                )
+            });
             let mut builder_state = BuilderState {
-                target_texture_name: &target_texture_name,
-                target_format,
-                sampled_pass_format,
-                tgt_size: [tgt_w, tgt_h],
-                tgt_size_u: [tgt_w_u, tgt_h_u],
+                target_texture_name: &layer_target_texture_name,
+                target_format: layer_target_format,
+                sampled_pass_format: layer_sampled_pass_format,
+                tgt_size: layer_tgt_size,
+                tgt_size_u: layer_tgt_size_u,
                 geometry_buffers: &mut geometry_buffers,
                 instance_buffers: &mut instance_buffers,
                 textures: &mut textures,
+                texture_mip_level_counts: &mut texture_mip_level_counts,
+                texture_views: &mut texture_views,
                 render_pass_specs: &mut render_pass_specs,
                 composite_passes: &mut composite_passes,
                 depth_resolve_passes: &mut depth_resolve_passes,
                 pass_cull_mode_by_name: &mut pass_cull_mode_by_name,
+                authored_color_load_ops_by_pass: &mut authored_color_load_ops_by_pass,
                 pass_depth_attachment_by_name: &mut pass_depth_attachment_by_name,
                 pass_output_registry: &mut pass_output_registry,
                 sampled_pass_ids: &sampled_pass_ids,
@@ -402,7 +510,19 @@ impl RenderPlanner {
                 pass_extensions: &mut pass_extensions,
                 shader_parameter_buffers_by_pass: &mut shader_parameter_buffers_by_pass,
             };
-            registry.plan_layer(&scene_ctx, &mut builder_state, layer_id, layer_node)?;
+            if let Some(template) = gaussian_blur_template {
+                let bundle = template.build(&prepared.scene)?;
+                gaussian_blur_bundles.insert(
+                    layer_id.clone(),
+                    GaussianBlurBundleRuntime {
+                        template,
+                        current: bundle.clone(),
+                    },
+                );
+                bundle.append_to(&mut builder_state);
+            } else {
+                registry.plan_layer(&scene_ctx, &mut builder_state, layer_id, layer_node)?;
+            }
             drop(builder_state);
 
             if *is_warmup_pass {
@@ -506,7 +626,25 @@ impl RenderPlanner {
             }
         }
 
-        normalize_first_write_load_ops(&composite_passes, &mut render_pass_specs);
+        normalize_first_write_load_ops(
+            &composite_passes,
+            &mut render_pass_specs,
+            &authored_color_load_ops_by_pass,
+        );
+        for runtime in gaussian_blur_bundles.values_mut() {
+            synchronize_route_external_load_ops(&runtime.current, &mut render_pass_specs);
+            let pass_names = runtime.current.pass_names();
+            runtime.current.render_pass_specs = render_pass_specs
+                .iter()
+                .filter(|spec| pass_names.contains(&spec.name))
+                .cloned()
+                .collect();
+            runtime.current.composite_passes = composite_passes
+                .iter()
+                .filter(|name| pass_names.contains(*name))
+                .cloned()
+                .collect();
+        }
         plan_image_textures(
             &prepared,
             asset_store,
@@ -567,6 +705,8 @@ impl RenderPlanner {
                 geometry_buffers,
                 instance_buffers,
                 textures,
+                texture_mip_level_counts,
+                texture_views,
                 image_textures,
                 render_pass_specs,
                 composite_passes,
@@ -581,6 +721,7 @@ impl RenderPlanner {
                 baked_data_parse_buffer_to_pass_id,
                 pass_extensions,
                 shader_parameter_buffers_by_pass,
+                gaussian_blur_bundles,
             },
             pass_debug_sources,
             debug_dump_wgsl_dir: self.options.debug_dump_wgsl_dir.clone(),
@@ -748,6 +889,7 @@ fn collect_processing_source_pass_ids(
 fn normalize_first_write_load_ops(
     composite_passes: &[ResourceName],
     render_pass_specs: &mut [RenderPassSpec],
+    authored_color_load_ops_by_pass: &HashMap<ResourceName, wgpu::LoadOp<Color>>,
 ) {
     let pass_order: HashMap<ResourceName, usize> = composite_passes
         .iter()
@@ -764,7 +906,10 @@ fn normalize_first_write_load_ops(
     let mut seen_targets: HashSet<ResourceName> = HashSet::new();
     for idx in spec_indices_by_exec_order {
         let spec = &mut render_pass_specs[idx];
-        if seen_targets.insert(spec.target_texture.clone()) {
+        let is_first_writer = seen_targets.insert(spec.target_texture.clone());
+        if let Some(load_op) = authored_color_load_ops_by_pass.get(&spec.name) {
+            spec.color_load_op = *load_op;
+        } else if is_first_writer {
             spec.color_load_op = wgpu::LoadOp::Clear(Color::TRANSPARENT);
         } else {
             spec.color_load_op = wgpu::LoadOp::Load;
@@ -1782,6 +1927,161 @@ mod tests {
         assert!(source.module_source.contains("@fragment"));
         assert!(source.parse_error.is_none());
         assert!(!source.ast_tree.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_composite_layers_write_to_their_own_render_texture() -> Result<()> {
+        let scene: SceneDSL = serde_json::from_value(serde_json::json!({
+            "version": "6.0",
+            "metadata": {
+                "name": "nested composite target routing",
+                "created": null,
+                "modified": null
+            },
+            "nodes": [
+                {
+                    "id": "root_rt",
+                    "type": "RenderTexture",
+                    "params": { "width": 400, "height": 300, "format": "rgba8unorm" }
+                },
+                {
+                    "id": "child_rt",
+                    "type": "RenderTexture",
+                    "params": { "width": 100, "height": 50, "format": "rgba8unorm" }
+                },
+                { "id": "child_rect", "type": "Rect2DGeometry" },
+                {
+                    "id": "child_color",
+                    "type": "ColorInput",
+                    "params": { "value": [1.0, 0.0, 0.0, 1.0] }
+                },
+                { "id": "child_pass", "type": "RenderPass" },
+                { "id": "child_comp", "type": "Composite" },
+                { "id": "child_texture", "type": "PassTexture" },
+                {
+                    "id": "placement_size",
+                    "type": "Vector2Input",
+                    "params": { "x": 100.0, "y": 50.0 }
+                },
+                {
+                    "id": "placement_position",
+                    "type": "Vector2Input",
+                    "params": { "x": 200.0, "y": 150.0 }
+                },
+                { "id": "placement_rect", "type": "Rect2DGeometry" },
+                {
+                    "id": "placement_pass",
+                    "type": "RenderPass",
+                    "params": {
+                        "loadOp": "clear",
+                        "clearColor": [0.0, 0.0, 0.0, 1.0]
+                    }
+                },
+                { "id": "root_comp", "type": "Composite" },
+                {
+                    "id": "screen",
+                    "type": "Screen",
+                    "params": { "width": 400, "height": 300 }
+                }
+            ],
+            "connections": [
+                {
+                    "id": "child_geometry",
+                    "from": { "nodeId": "child_rect", "portId": "geometry" },
+                    "to": { "nodeId": "child_pass", "portId": "geometry" }
+                },
+                {
+                    "id": "child_material",
+                    "from": { "nodeId": "child_color", "portId": "color" },
+                    "to": { "nodeId": "child_pass", "portId": "material" }
+                },
+                {
+                    "id": "child_layer",
+                    "from": { "nodeId": "child_pass", "portId": "pass" },
+                    "to": { "nodeId": "child_comp", "portId": "pass" }
+                },
+                {
+                    "id": "child_target",
+                    "from": { "nodeId": "child_rt", "portId": "texture" },
+                    "to": { "nodeId": "child_comp", "portId": "target" }
+                },
+                {
+                    "id": "sample_child",
+                    "from": { "nodeId": "child_comp", "portId": "pass" },
+                    "to": { "nodeId": "child_texture", "portId": "pass" }
+                },
+                {
+                    "id": "placement_geometry",
+                    "from": { "nodeId": "placement_rect", "portId": "geometry" },
+                    "to": { "nodeId": "placement_pass", "portId": "geometry" }
+                },
+                {
+                    "id": "placement_size_edge",
+                    "from": { "nodeId": "placement_size", "portId": "vector" },
+                    "to": { "nodeId": "placement_rect", "portId": "size" }
+                },
+                {
+                    "id": "placement_position_edge",
+                    "from": { "nodeId": "placement_position", "portId": "vector" },
+                    "to": { "nodeId": "placement_rect", "portId": "position" }
+                },
+                {
+                    "id": "placement_material",
+                    "from": { "nodeId": "child_texture", "portId": "color" },
+                    "to": { "nodeId": "placement_pass", "portId": "material" }
+                },
+                {
+                    "id": "root_layer",
+                    "from": { "nodeId": "placement_pass", "portId": "pass" },
+                    "to": { "nodeId": "root_comp", "portId": "pass" }
+                },
+                {
+                    "id": "root_target",
+                    "from": { "nodeId": "root_rt", "portId": "texture" },
+                    "to": { "nodeId": "root_comp", "portId": "target" }
+                },
+                {
+                    "id": "screen_output",
+                    "from": { "nodeId": "root_comp", "portId": "pass" },
+                    "to": { "nodeId": "screen", "portId": "pass" }
+                }
+            ],
+            "outputs": null,
+            "groups": [],
+            "assets": {}
+        }))?;
+
+        let plan =
+            planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(&scene, None, None)?;
+        let child_output = plan
+            .resources
+            .pass_output_registry
+            .get_for_port("child_pass", "pass")
+            .expect("child RenderPass output");
+        assert_eq!(child_output.texture_name.as_str(), "child_rt");
+        assert_eq!(child_output.resolution, [100, 50]);
+
+        let placement_output = plan
+            .resources
+            .pass_output_registry
+            .get_for_port("placement_pass", "pass")
+            .expect("placement RenderPass output");
+        assert_eq!(placement_output.texture_name.as_str(), "root_rt");
+        assert_eq!(placement_output.resolution, [400, 300]);
+        let placement_spec = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .find(|spec| spec.name.as_str() == "placement_pass.pass")
+            .expect("placement RenderPass spec");
+        match placement_spec.color_load_op {
+            wgpu::LoadOp::Clear(color) => {
+                assert_eq!([color.r, color.g, color.b, color.a], [0.0, 0.0, 0.0, 1.0]);
+            }
+            other => panic!("expected authored black clear, got {other:?}"),
+        }
 
         Ok(())
     }

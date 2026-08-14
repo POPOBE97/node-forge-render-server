@@ -92,7 +92,8 @@ fn doubao_listening_to_thinking_scenario_handoff_is_continuous() {
     }
 
     assert_eq!(
-        result.report.summary.identity_violations, 0,
+        result.report.summary.identity_violations,
+        0,
         "P=Q-E violations\n{}",
         format_summary(&result.report)
     );
@@ -136,4 +137,49 @@ fn doubao_pinned_thinking_positions_have_no_snap_period_jumps() {
          (period-flip / step-converge regression); summary:\n{}",
         format_summary(&result.report)
     );
+}
+
+#[test]
+fn doubao_scale_four_trace_uses_the_shader_graph_scene_size() {
+    let mut scene = doubao_scene();
+    scene
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == "FloatInput_RenderPxPerDp")
+        .expect("RenderPxPerDp root input")
+        .params
+        .insert("value".into(), serde_json::json!(4.0));
+    let scenario: TraceScenario = serde_json::from_value(serde_json::json!({
+        "schemaVersion": 1,
+        "name": "doubao-scale-four-ptt",
+        "fps": 60,
+        "track": {
+            "channels": ["sp_ptt_object_scene_px"],
+            "overrides": []
+        },
+        "actions": [
+            { "type": "forceState", "stateId": "st_push_to_talk" },
+            { "type": "mouse", "x": 720.0, "y": 3200.0 / 24.0 },
+            { "type": "settle", "maxFrames": 360 }
+        ]
+    }))
+    .expect("scale-four trace scenario");
+    let result = run_trace(
+        &scene,
+        &scenario.into_run_config(Some("doubao-scale-four".into())),
+    )
+    .expect("run scale-four trace");
+    let channel = result
+        .report
+        .frames
+        .last()
+        .and_then(|frame| {
+            frame
+                .motion_channels
+                .iter()
+                .find(|channel| channel.key == "sp_ptt_object_scene_px")
+        })
+        .expect("final PTT Motion channel");
+    assert!((channel.target_value[0] - 720.0).abs() <= 1.0e-8);
+    assert!((channel.target_value[1] - 3200.0 / 24.0).abs() <= 1.0e-8);
 }
