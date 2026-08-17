@@ -53,9 +53,9 @@ fn deterministic_probe_png() -> (Vec<u8>, Vec<[f64; 3]>) {
             let rgba = [channel(x, y, 1), channel(x, y, 2), channel(x, y, 3)];
             image.put_pixel(x, y, Rgba([rgba[0], rgba[1], rgba[2], 255]));
             linear.push([
-                half::f16::from_f32(rgba[0] as f32 / 255.0).to_f32() as f64,
-                half::f16::from_f32(rgba[1] as f32 / 255.0).to_f32() as f64,
-                half::f16::from_f32(rgba[2] as f32 / 255.0).to_f32() as f64,
+                rgba[0] as f64 / 255.0,
+                rgba[1] as f64 / 255.0,
+                rgba[2] as f64 / 255.0,
             ]);
         }
     }
@@ -269,13 +269,13 @@ fn box2x2_downsample_preserves_phase_across_multiple_passes() {
         .find(|connection| {
             connection.from.node_id == SOURCE_IMAGE_NODE_ID
                 && connection.to.node_id == FIRST_DOWNSAMPLE_NODE_ID
-                && connection.to.port_id == "source"
+                && connection.to.port_id == "texture"
         })
         .expect("raw image source connection to first downsample")
         .id
         .clone();
-    let source_materialization_texture =
-        format!("sys.pass.sys.auto.fullscreen.pass.{source_connection_id}.out");
+    let _ = source_connection_id;
+    let source_materialization_texture = SOURCE_IMAGE_NODE_ID.to_string();
 
     assets.insert_or_replace(
         SOURCE_ASSET_ID,
@@ -407,6 +407,27 @@ fn three_pass_gpu_matches_theoretical_equivalent_kernels() {
         image_node
             .params
             .insert("alphaMode".to_string(), "premultiplied".into());
+        image_node
+            .params
+            .insert("interpolation".to_string(), "linear".into());
+        image_node
+            .params
+            .insert("magFilter".to_string(), "linear".into());
+        image_node
+            .params
+            .insert("minFilter".to_string(), "linear".into());
+        image_node
+            .params
+            .insert("mipmapFilter".to_string(), "linear".into());
+        image_node
+            .params
+            .insert("extension".to_string(), "mirror-repeat".into());
+        image_node
+            .params
+            .insert("addressModeU".to_string(), "mirror-repeat".into());
+        image_node
+            .params
+            .insert("addressModeV".to_string(), "mirror-repeat".into());
         let kernel_node = scene
             .nodes
             .iter_mut()

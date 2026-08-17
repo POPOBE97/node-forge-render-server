@@ -376,19 +376,10 @@ pub struct PassCaptureSidebarState {
     pub enabled: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StateSidebarKind {
-    State,
-    Entry,
-    Any,
-    Exit,
-}
-
 #[derive(Clone, Debug)]
 pub struct StateSidebarItem {
     pub id: String,
     pub name: String,
-    pub kind: StateSidebarKind,
 }
 
 pub struct StateSidebarState<'a> {
@@ -620,34 +611,7 @@ fn show_state_section(
             let column_width = (ui.available_width()
                 - SIDEBAR_GRID_GAP * (STATE_GRID_COLUMNS - 1) as f32)
                 / STATE_GRID_COLUMNS as f32;
-            let control_kinds = [
-                StateSidebarKind::Entry,
-                StateSidebarKind::Any,
-                StateSidebarKind::Exit,
-            ];
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = SIDEBAR_GRID_GAP;
-                for kind in control_kinds {
-                    if let Some(item) = state.items.iter().find(|item| item.kind == kind) {
-                        show_state_button(ui, item, column_width, state.selection, sidebar_action);
-                    } else {
-                        ui.allocate_space(egui::vec2(
-                            column_width,
-                            design_tokens::button_size_token(ButtonSize::Small).height,
-                        ));
-                    }
-                }
-            });
-
-            let ordinary_states = state
-                .items
-                .iter()
-                .filter(|item| item.kind == StateSidebarKind::State)
-                .collect::<Vec<_>>();
-            if !ordinary_states.is_empty() {
-                ui.add_space(SIDEBAR_GRID_ROW_GAP);
-            }
-            for (row_index, row) in ordinary_states.chunks(STATE_GRID_COLUMNS).enumerate() {
+            for (row_index, row) in state.items.chunks(STATE_GRID_COLUMNS).enumerate() {
                 if row_index > 0 {
                     ui.add_space(SIDEBAR_GRID_ROW_GAP);
                 }

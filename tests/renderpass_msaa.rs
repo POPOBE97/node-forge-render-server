@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use node_forge_render_server::{
-    dsl::{Connection, Endpoint, Metadata, Node, SceneDSL, normalize_scene_defaults},
+    dsl::{Connection, Endpoint, Metadata, Node, NodePort, SceneDSL, normalize_scene_defaults},
     schema::{load_default_scheme, validate_scene_against},
 };
 use serde_json::json;
@@ -64,6 +64,17 @@ fn scene(nodes: Vec<Node>, connections: Vec<Connection>) -> SceneDSL {
         state_machine: None,
         debug_artifacts: None,
     }
+}
+
+fn depth_consumer(id: &str) -> Node {
+    let mut value = node(id, "MathClosure", json!({ "source": "output = 0.0;" }));
+    value.inputs.push(NodePort {
+        id: "depthTexture".to_string(),
+        name: Some("Depth Texture".to_string()),
+        port_type: Some("depthTexture".to_string()),
+        array_length: None,
+    });
+    value
 }
 
 #[test]
@@ -231,7 +242,7 @@ fn render_pass_depth_output_rejected_when_depth_test_is_false() {
     let scene = scene(
         vec![
             node("rp", "RenderPass", json!({"depthTest": false})),
-            node("comp", "Composite", json!({})),
+            depth_consumer("consumer"),
         ],
         vec![Connection {
             id: "c_depth".to_string(),
@@ -240,8 +251,8 @@ fn render_pass_depth_output_rejected_when_depth_test_is_false() {
                 port_id: "depth".to_string(),
             },
             to: Endpoint {
-                node_id: "comp".to_string(),
-                port_id: "pass".to_string(),
+                node_id: "consumer".to_string(),
+                port_id: "depthTexture".to_string(),
             },
         }],
     );
@@ -259,7 +270,7 @@ fn render_pass_depth_output_allowed_when_depth_test_is_true() {
     let scene = scene(
         vec![
             node("rp", "RenderPass", json!({"depthTest": true})),
-            node("comp", "Composite", json!({})),
+            depth_consumer("consumer"),
         ],
         vec![Connection {
             id: "c_depth".to_string(),
@@ -268,8 +279,8 @@ fn render_pass_depth_output_allowed_when_depth_test_is_true() {
                 port_id: "depth".to_string(),
             },
             to: Endpoint {
-                node_id: "comp".to_string(),
-                port_id: "pass".to_string(),
+                node_id: "consumer".to_string(),
+                port_id: "depthTexture".to_string(),
             },
         }],
     );

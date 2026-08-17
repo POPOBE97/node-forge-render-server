@@ -1,10 +1,7 @@
 use rust_wgpu_fiber::eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 use crate::{
-    color::{
-        linear_to_srgb_channel as linear_to_srgb,
-        srgb_to_linear_channel as srgb_to_linear,
-    },
+    color::{linear_to_srgb_channel as linear_to_srgb, srgb_to_linear_channel as srgb_to_linear},
     ui::{
         components::{
             number_slider,

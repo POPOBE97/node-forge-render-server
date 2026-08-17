@@ -189,7 +189,7 @@ impl OutputEndpoint {
 
 /// One material sampling site for a pass output.
 ///
-/// `binding_id` identifies the consumer-side read. Multiple `PassTexture`
+/// `binding_id` identifies the consumer-side read. Multiple `TextureSampler`
 /// nodes may therefore sample the same source endpoint with independent
 /// sampler settings.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -197,6 +197,26 @@ pub struct PassTextureRef {
     pub binding_id: String,
     pub source: OutputEndpoint,
     pub sampler_node_id: Option<String>,
+}
+
+/// One native image-texture sampling site. `binding_id` is consumer-side identity, while
+/// `image_node_id` identifies the upload resource.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ImageTextureRef {
+    pub binding_id: String,
+    pub image_node_id: String,
+    pub sampler_node_id: Option<String>,
+}
+
+impl ImageTextureRef {
+    pub fn direct(node_id: impl Into<String>) -> Self {
+        let node_id = node_id.into();
+        Self {
+            binding_id: node_id.clone(),
+            image_node_id: node_id,
+            sampler_node_id: None,
+        }
+    }
 }
 
 impl PassTextureRef {
@@ -212,16 +232,16 @@ impl PassTextureRef {
         }
     }
 
-    pub fn through_pass_texture(
-        pass_texture_node_id: impl Into<String>,
+    pub fn through_texture_sampler(
+        texture_sampler_node_id: impl Into<String>,
         source_node_id: impl Into<String>,
         source_port_id: impl Into<String>,
     ) -> Self {
-        let pass_texture_node_id = pass_texture_node_id.into();
+        let texture_sampler_node_id = texture_sampler_node_id.into();
         Self {
-            binding_id: pass_texture_node_id.clone(),
+            binding_id: texture_sampler_node_id.clone(),
             source: OutputEndpoint::new(source_node_id, source_port_id),
-            sampler_node_id: Some(pass_texture_node_id),
+            sampler_node_id: Some(texture_sampler_node_id),
         }
     }
 }
@@ -244,6 +264,24 @@ impl PassOutputRegistry {
             (spec.endpoint.node_id.clone(), spec.endpoint.port_id.clone()),
             spec,
         );
+    }
+
+    pub fn register_ports(
+        &mut self,
+        node_id: &str,
+        port_ids: &[&str],
+        texture_name: ResourceName,
+        resolution: [u32; 2],
+        format: TextureFormat,
+    ) {
+        for port_id in port_ids {
+            self.register(PassOutputSpec {
+                endpoint: OutputEndpoint::new(node_id, *port_id),
+                texture_name: texture_name.clone(),
+                resolution,
+                format,
+            });
+        }
     }
 
     /// Get the output spec for a node+port pair.
@@ -427,9 +465,9 @@ pub struct MaterialCompileContext {
     /// Set when the compiled shader uses f16 types and requires `enable f16;` at the top.
     pub needs_f16: bool,
 
-    /// List of ImageTexture node IDs referenced in order.
-    pub image_textures: Vec<String>,
-    /// Map from node ID to texture binding index.
+    /// Native image-texture sampling sites referenced in order.
+    pub image_textures: Vec<ImageTextureRef>,
+    /// Map from consumer-side binding identity to texture binding index.
     pub image_index_by_node: HashMap<String, usize>,
     /// Pass-output sampling sites referenced in binding order.
     pub pass_textures: Vec<PassTextureRef>,
@@ -547,12 +585,17 @@ impl MaterialCompileContext {
 
     /// Register an image texture node and return its binding index.
     pub fn register_image_texture(&mut self, node_id: &str) -> usize {
-        if let Some(&idx) = self.image_index_by_node.get(node_id) {
+        self.register_image_texture_ref(ImageTextureRef::direct(node_id))
+    }
+
+    pub fn register_image_texture_ref(&mut self, texture_ref: ImageTextureRef) -> usize {
+        if let Some(&idx) = self.image_index_by_node.get(&texture_ref.binding_id) {
             return idx;
         }
         let idx = self.image_textures.len();
-        self.image_textures.push(node_id.to_string());
-        self.image_index_by_node.insert(node_id.to_string(), idx);
+        self.image_index_by_node
+            .insert(texture_ref.binding_id.clone(), idx);
+        self.image_textures.push(texture_ref);
         idx
     }
 
@@ -770,8 +813,8 @@ pub struct WgslShaderBundle {
     pub compute: Option<String>,
     /// A combined WGSL module containing all emitted entry points.
     pub module: String,
-    /// ImageTexture node ids referenced by this pass's material graph, in binding order.
-    pub image_textures: Vec<String>,
+    /// Native image-texture sampling sites referenced by this pass's material graph.
+    pub image_textures: Vec<ImageTextureRef>,
     /// Pass-output sampling sites referenced by this material graph, in binding order.
     pub pass_textures: Vec<PassTextureRef>,
     /// Optional generated graph schema for input nodes referenced by this pass.

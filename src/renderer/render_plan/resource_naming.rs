@@ -15,10 +15,94 @@ use crate::{
     color::srgb_to_linear_channel,
     dsl::SceneDSL,
     renderer::{
-        camera::legacy_projection_camera_matrix, types::PassOutputRegistry, wgsl::clamp_min_1,
+        camera::legacy_projection_camera_matrix,
+        pass_source::{TextureSourceRef, resolve_texture_source_ref},
+        shader_space::{
+            image_utils::image_node_dimensions, sampler::sampler_kind_from_node_params,
+        },
+        types::PassOutputRegistry,
+        wgsl::clamp_min_1,
         wgsl_bloom::BLOOM_MAX_MIPS,
     },
 };
+
+#[derive(Clone, Debug)]
+pub(crate) struct ResolvedSampledSource {
+    pub texture: ResourceName,
+    pub resolution: [u32; 2],
+    pub format: TextureFormat,
+    pub binding: super::pass_spec::PassTextureBinding,
+    pub sampler: super::pass_spec::SamplerKind,
+    pub surface_ref: Option<crate::renderer::types::PassTextureRef>,
+}
+
+pub(crate) fn resolve_sampled_source(
+    scene: &SceneDSL,
+    nodes_by_id: &HashMap<String, crate::dsl::Node>,
+    ids: &HashMap<String, ResourceName>,
+    pass_output_registry: &PassOutputRegistry,
+    endpoint: &crate::dsl::Endpoint,
+    asset_store: Option<&crate::asset_store::AssetStore>,
+) -> Result<ResolvedSampledSource> {
+    match resolve_texture_source_ref(scene, nodes_by_id, endpoint)? {
+        TextureSourceRef::Image {
+            binding_id: _,
+            image_node_id,
+            sampler_node_id,
+        } => {
+            let node = nodes_by_id
+                .get(&image_node_id)
+                .ok_or_else(|| anyhow::anyhow!("missing ImageTexture node '{image_node_id}'"))?;
+            let resolution = image_node_dimensions(node, asset_store).ok_or_else(|| {
+                anyhow::anyhow!("cannot resolve dimensions for ImageTexture '{image_node_id}'")
+            })?;
+            let texture = ids
+                .get(&image_node_id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("missing image texture name '{image_node_id}'"))?;
+            let sampler_node = sampler_node_id
+                .as_deref()
+                .and_then(|node_id| nodes_by_id.get(node_id))
+                .unwrap_or(node);
+            Ok(ResolvedSampledSource {
+                texture: texture.clone(),
+                resolution,
+                format: TextureFormat::Rgba8Unorm,
+                binding: super::pass_spec::PassTextureBinding {
+                    texture,
+                    image_node_id: Some(image_node_id),
+                },
+                sampler: sampler_kind_from_node_params(&sampler_node.params),
+                surface_ref: None,
+            })
+        }
+        TextureSourceRef::Surface(texture_ref) => {
+            let spec = pass_output_registry
+                .get_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "sampled source {}.{} is not registered",
+                        texture_ref.source.node_id,
+                        texture_ref.source.port_id
+                    )
+                })?;
+            Ok(ResolvedSampledSource {
+                texture: spec.texture_name.clone(),
+                resolution: spec.resolution,
+                format: spec.format,
+                binding: super::pass_spec::PassTextureBinding {
+                    texture: spec.texture_name.clone(),
+                    image_node_id: None,
+                },
+                sampler: crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture(
+                    scene,
+                    &texture_ref,
+                ),
+                surface_ref: Some(texture_ref),
+            })
+        }
+    }
+}
 
 // ── Display encode constants ─────────────────────────────────────────────
 
@@ -124,22 +208,6 @@ pub(crate) fn readable_pass_name_for_node(node: &crate::dsl::Node) -> ResourceNa
 }
 
 // ── Size/resolution helpers ──────────────────────────────────────────────
-
-pub(crate) fn sampled_render_pass_output_size(
-    has_processing_consumer: bool,
-    is_downsample_source: bool,
-    coord_size_u: [u32; 2],
-    geo_size: [f32; 2],
-) -> [u32; 2] {
-    if has_processing_consumer && !is_downsample_source {
-        coord_size_u
-    } else {
-        [
-            geo_size[0].max(1.0).round() as u32,
-            geo_size[1].max(1.0).round() as u32,
-        ]
-    }
-}
 
 pub(crate) fn gaussian_blur_extend_upsample_geo_size(
     src_content_resolution: [u32; 2],
@@ -265,55 +333,6 @@ pub(crate) fn resolve_chain_camera_for_first_pass(
 }
 
 // ── Materialization-pass resolution ──────────────────────────────────────
-
-pub(crate) fn infer_materialization_resolution(
-    materialization_pass_id: &str,
-    pass_texture_refs: &[crate::renderer::types::PassTextureRef],
-    pass_output_registry: &PassOutputRegistry,
-) -> Result<Option<[u32; 2]>> {
-    if pass_texture_refs.is_empty() {
-        return Ok(None);
-    }
-
-    let mut resolved = Vec::with_capacity(pass_texture_refs.len());
-    for texture_ref in pass_texture_refs {
-        let Some(spec) = pass_output_registry
-            .get_for_port(&texture_ref.source.node_id, &texture_ref.source.port_id)
-        else {
-            bail!(
-                "materialization pass {materialization_pass_id} depends on upstream pass {}.{}, \
-but its output is not registered yet",
-                texture_ref.source.node_id,
-                texture_ref.source.port_id
-            );
-        };
-        resolved.push((
-            format!(
-                "{}.{}",
-                texture_ref.source.node_id, texture_ref.source.port_id
-            ),
-            spec.resolution,
-        ));
-    }
-
-    let first_resolution = resolved[0].1;
-    if resolved
-        .iter()
-        .all(|(_, resolution)| *resolution == first_resolution)
-    {
-        return Ok(Some(first_resolution));
-    }
-
-    let details = resolved
-        .iter()
-        .map(|(endpoint, [width, height])| format!("{endpoint}={width}x{height}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    bail!(
-        "materialization pass {materialization_pass_id} samples pass surfaces with mismatched \
-resolutions: {details}"
-    );
-}
 
 // ── MSAA helpers ─────────────────────────────────────────────────────────
 
@@ -605,24 +624,6 @@ mod tests {
     }
 
     #[test]
-    fn sampled_render_pass_output_size_uses_coord_domain_for_processing_consumers() {
-        let got = sampled_render_pass_output_size(true, false, [1080, 2400], [200.0, 200.0]);
-        assert_eq!(got, [1080, 2400]);
-    }
-
-    #[test]
-    fn sampled_render_pass_output_size_keeps_geometry_extent_without_processing_consumers() {
-        let got = sampled_render_pass_output_size(false, false, [1080, 2400], [200.0, 200.0]);
-        assert_eq!(got, [200, 200]);
-    }
-
-    #[test]
-    fn sampled_render_pass_output_size_uses_geometry_extent_for_downsample_sources() {
-        let got = sampled_render_pass_output_size(true, true, [2160, 2400], [1080.0, 2400.0]);
-        assert_eq!(got, [1080, 2400]);
-    }
-
-    #[test]
     fn gaussian_blur_extend_upsample_geo_size_cancels_shrink() {
         let geo_size = gaussian_blur_extend_upsample_geo_size([200, 120], [240, 160]);
         assert!((geo_size[0] - 240.0).abs() < 1e-6);
@@ -651,58 +652,6 @@ mod tests {
         assert!(!should_skip_blur_upsample_pass(1, true, true));
         assert!(!should_skip_blur_upsample_pass(1, false, false));
         assert!(!should_skip_blur_upsample_pass(2, false, true));
-    }
-
-    #[test]
-    fn materialization_resolution_uses_uniform_pass_dependencies() {
-        let mut registry = PassOutputRegistry::new();
-        for pass_id in ["p0", "p1"] {
-            registry.register(PassOutputSpec {
-                endpoint: OutputEndpoint::new(pass_id, "pass"),
-                texture_name: format!("tex.{pass_id}").into(),
-                resolution: [33, 75],
-                format: TextureFormat::Rgba8Unorm,
-            });
-        }
-
-        let resolution = infer_materialization_resolution(
-            "sys.auto.fullscreen.pass.edge",
-            &[
-                PassTextureRef::direct("p0", "pass"),
-                PassTextureRef::direct("p1", "pass"),
-            ],
-            &registry,
-        )
-        .expect("uniform pass dependencies should resolve");
-
-        assert_eq!(resolution, Some([33, 75]));
-    }
-
-    #[test]
-    fn materialization_resolution_rejects_mixed_pass_dependencies() {
-        let mut registry = PassOutputRegistry::new();
-        for (pass_id, resolution) in [("p0", [33, 75]), ("p1", [67, 150])] {
-            registry.register(PassOutputSpec {
-                endpoint: OutputEndpoint::new(pass_id, "pass"),
-                texture_name: format!("tex.{pass_id}").into(),
-                resolution,
-                format: TextureFormat::Rgba8Unorm,
-            });
-        }
-
-        let error = infer_materialization_resolution(
-            "sys.auto.fullscreen.pass.edge",
-            &[
-                PassTextureRef::direct("p0", "pass"),
-                PassTextureRef::direct("p1", "pass"),
-            ],
-            &registry,
-        )
-        .expect_err("mixed pass dependency sizes must fail");
-
-        let message = error.to_string();
-        assert!(message.contains("p0.pass=33x75"));
-        assert!(message.contains("p1.pass=67x150"));
     }
 
     #[test]

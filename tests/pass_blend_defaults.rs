@@ -120,12 +120,12 @@ fn upsample_schema_ports_and_defaults_match_contract() {
     };
 
     assert_input_type("targetSize", "vector2");
-    assert_input_type("source", "pass");
+    assert_input_type("texture", "texture");
     assert_input_type("camera", "mat4");
     assert_input_type("address_mode", "any");
     assert_input_type("filter", "any");
     assert_input_type("blend_preset", "any");
-    assert_output_type("output", "pass");
+    assert_output_type("texture", "texture");
 
     let expected_defaults = [
         ("address_mode", json!("clamp-to-edge")),
@@ -195,10 +195,33 @@ fn convolution_schema_ports_preserve_source_resolution_contract() {
 
     assert_eq!(input_type("sampling"), "any");
     assert_eq!(input_type("kernel"), "kernel");
-    assert_eq!(input_type("source"), "pass");
+    assert_eq!(input_type("texture"), "texture");
     assert_eq!(input_type("camera"), "mat4");
-    assert_eq!(output_type("output"), "pass");
+    assert_eq!(output_type("texture"), "texture");
     assert!(!node_scheme.inputs.contains_key("targetSize"));
+}
+
+#[test]
+fn processing_nodes_are_texture_only() {
+    let scheme = load_default_scheme().expect("load default scheme");
+    for node_type in [
+        "GuassianBlurPass",
+        "BloomNode",
+        "GradientBlur",
+        "Downsample",
+        "Upsample",
+        "Convolution",
+    ] {
+        let node = scheme.nodes.get(node_type).expect("processing node scheme");
+        assert!(
+            matches!(node.inputs.get("texture"), Some(PortTypeSpec::One(value)) if value == "texture")
+        );
+        assert!(
+            matches!(node.outputs.get("texture"), Some(PortTypeSpec::One(value)) if value == "texture")
+        );
+        assert!(!node.inputs.contains_key("pass"));
+        assert!(!node.outputs.contains_key("pass"));
+    }
 }
 
 #[test]

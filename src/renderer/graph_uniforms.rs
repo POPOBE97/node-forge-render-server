@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use rust_wgpu_fiber::{ResourceName, shader_space::ShaderSpace};
 use serde_json::{Value, json};
 
 use crate::dsl::{Connection, GroupDSL, InputBinding, Node, NodePort, SceneDSL, resolve_input_f32};
@@ -8,6 +9,120 @@ use crate::renderer::types::{
     GraphBindingKind, GraphField, GraphFieldKind, GraphSchema, PassBindings,
 };
 use crate::renderer::utils::sanitize_wgsl_ident;
+
+#[derive(Debug)]
+pub(crate) struct GraphBufferUpdate {
+    pub(crate) pass_index: usize,
+    pub(crate) target: GraphBufferTarget,
+    pub(crate) buffer_name: ResourceName,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) hash: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GraphBufferTarget {
+    Graph,
+    ShaderParameters,
+}
+
+/// Repack and upload every graph/ShaderMaterial buffer whose values changed.
+///
+/// Both the interactive renderer and headless runtime-state rendering use this
+/// path so a State override is applied after the same base GPU graph has been
+/// constructed.
+pub fn apply_graph_uniform_updates(
+    passes: &mut [PassBindings],
+    shader_space: &mut ShaderSpace,
+    scene: &SceneDSL,
+) -> Result<usize> {
+    let updates = collect_graph_uniform_updates(scene, passes)?;
+
+    for update in &updates {
+        shader_space
+            .write_buffer(update.buffer_name.as_str(), 0, update.bytes.as_slice())
+            .with_context(|| {
+                format!(
+                    "failed to write graph buffer '{}'",
+                    update.buffer_name.as_str()
+                )
+            })?;
+        match update.target {
+            GraphBufferTarget::Graph => {
+                passes[update.pass_index].last_graph_hash = Some(update.hash);
+            }
+            GraphBufferTarget::ShaderParameters => {
+                passes[update.pass_index].last_shader_parameter_hash = Some(update.hash);
+            }
+        }
+    }
+    Ok(updates.len())
+}
+
+pub(crate) fn collect_graph_uniform_updates(
+    scene: &SceneDSL,
+    passes: &[PassBindings],
+) -> Result<Vec<GraphBufferUpdate>> {
+    let mut updates = Vec::new();
+    for (pass_index, pass) in passes.iter().enumerate() {
+        if let Some(ext) = pass.extension.as_ref() {
+            let bytes = ext.pack_buffer(scene);
+            let hash = hash_bytes(bytes.as_slice());
+            if pass.last_graph_hash != Some(hash) {
+                let buffer_name = pass
+                    .graph_binding
+                    .as_ref()
+                    .map(|binding| binding.buffer_name.clone())
+                    .with_context(|| {
+                        format!(
+                            "extension graph binding missing for pass '{}'",
+                            pass.pass_id
+                        )
+                    })?;
+                updates.push(GraphBufferUpdate {
+                    pass_index,
+                    target: GraphBufferTarget::Graph,
+                    buffer_name,
+                    bytes,
+                    hash,
+                });
+            }
+        } else if let Some(binding) = pass.graph_binding.as_ref() {
+            let bytes = pack_graph_values(scene, &binding.schema).with_context(|| {
+                format!("failed to pack graph values for pass '{}'", pass.pass_id)
+            })?;
+            let hash = hash_bytes(bytes.as_slice());
+            if pass.last_graph_hash != Some(hash) {
+                updates.push(GraphBufferUpdate {
+                    pass_index,
+                    target: GraphBufferTarget::Graph,
+                    buffer_name: binding.buffer_name.clone(),
+                    bytes,
+                    hash,
+                });
+            }
+        }
+        if let Some(binding) = pass.shader_parameter_binding.as_ref() {
+            let bytes = pack_graph_values(scene, &binding.schema).with_context(|| {
+                format!(
+                    "failed to pack ShaderMaterial parameters for pass '{}'",
+                    pass.pass_id
+                )
+            })?;
+            let hash = hash_bytes(bytes.as_slice());
+            if pass.last_shader_parameter_hash != Some(hash) {
+                updates.push(GraphBufferUpdate {
+                    pass_index,
+                    target: GraphBufferTarget::ShaderParameters,
+                    buffer_name: binding.buffer_name.clone(),
+                    bytes,
+                    hash,
+                });
+            }
+        }
+    }
+
+    Ok(updates)
+}
 
 pub fn graph_field_kind_for_node_type(node_type: &str) -> Option<GraphFieldKind> {
     match node_type {

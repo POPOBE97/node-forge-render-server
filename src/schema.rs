@@ -780,7 +780,7 @@ fn validate_connection(
         };
 
         let valid = if port_id.starts_with("resource:") {
-            port_type == "pass"
+            port_type == "texture"
         } else if port_id.starts_with("param:") {
             matches!(
                 port_type.as_str(),
@@ -900,6 +900,19 @@ fn validate_connection(
 
     let to_ty: Cow<'_, PortTypeSpec> = if let Some(t) = to_scheme.inputs.get(&c.to.port_id) {
         Cow::Borrowed(t)
+    } else if to_node.node_type == "ImagePass"
+        && matches!(c.to.port_id.as_str(), "pass" | "texture")
+        && to_node
+            .params
+            .get("sys.imagePassBlurExpanded")
+            .and_then(|value| value.as_bool())
+            == Some(true)
+    {
+        // Scene preparation synthesizes one private source input for the active ImagePass
+        // Gaussian invocation. Pass-domain invocations inherit the downstream TargetContext;
+        // texture-domain invocations use the private RenderPass.texture GeoSize surface. Neither
+        // socket is part of the author-facing ImagePass input ABI.
+        Cow::Owned(PortTypeSpec::One(c.to.port_id.clone()))
     } else if to_node.node_type == "Composite" && c.to.port_id.starts_with("dynamic_") {
         // Composite supports dynamic layer inputs (dynamic_*) that behave like its base pass input.
         // These ports are instance-defined so they won't appear in the static scheme.
@@ -994,5 +1007,24 @@ fn port_type_spec_to_string(t: &PortTypeSpec) -> String {
     match t {
         PortTypeSpec::One(s) => s.clone(),
         PortTypeSpec::Many(v) => format!("[{}]", v.join(", ")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pass_texture_compatibility_is_bidirectional_but_color_is_not_texture() -> Result<()> {
+        let scheme = load_default_scheme()?;
+        let pass = PortTypeSpec::One("pass".to_string());
+        let texture = PortTypeSpec::One("texture".to_string());
+        let color = PortTypeSpec::One("color".to_string());
+
+        assert!(port_types_compatible(&scheme, &pass, &texture));
+        assert!(port_types_compatible(&scheme, &texture, &pass));
+        assert!(port_types_compatible(&scheme, &texture, &texture));
+        assert!(!port_types_compatible(&scheme, &color, &texture));
+        Ok(())
     }
 }

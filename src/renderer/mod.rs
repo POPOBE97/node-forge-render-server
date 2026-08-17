@@ -17,6 +17,7 @@
 //! - `ShaderSpaceBuilder`: Build ShaderSpace resources from a scene
 
 pub mod camera;
+pub(crate) mod gaussian_contract;
 pub mod geometry_resolver;
 pub mod glsl_snippet;
 pub mod graph_uniforms;
@@ -43,10 +44,15 @@ pub use pass_debug::{
 pub use render_plan::pass_assemblers::dynamic_gaussian_blur::GaussianBlurBundleRuntime;
 pub use scene_prep::{PreparedScene, prepare_scene};
 pub use shader_space::{
-    ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
+    HeadlessRuntimeOverrides, ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
     ShaderSpacePresentationMode, render_scene_pass_to_file_headless,
-    render_scene_texture_to_file_headless, render_scene_to_file_headless,
-    render_scene_to_file_headless_profiled, render_scene_to_png_headless, update_pass_params,
+    render_scene_pass_to_file_headless_with_runtime_overrides,
+    render_scene_texture_to_file_headless,
+    render_scene_texture_to_file_headless_with_runtime_overrides, render_scene_to_file_headless,
+    render_scene_to_file_headless_profiled,
+    render_scene_to_file_headless_profiled_with_runtime_overrides,
+    render_scene_to_file_headless_with_runtime_overrides, render_scene_to_png_headless,
+    update_pass_params,
 };
 pub use types::{Params, PassBindings, WgslShaderBundle};
 pub use validation::{validate_wgsl, validate_wgsl_with_context};

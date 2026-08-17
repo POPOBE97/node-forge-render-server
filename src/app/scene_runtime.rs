@@ -268,21 +268,6 @@ enum SceneUpdateMode {
     UniformOnly,
 }
 
-#[derive(Debug)]
-struct GraphBufferUpdate {
-    pass_index: usize,
-    target: GraphBufferTarget,
-    buffer_name: rust_wgpu_fiber::ResourceName,
-    bytes: Vec<u8>,
-    hash: [u8; 32],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GraphBufferTarget {
-    Graph,
-    ShaderParameters,
-}
-
 fn choose_scene_update_mode(
     source: &ws::ParsedSceneSource,
     last_pipeline_signature: Option<[u8; 32]>,
@@ -596,75 +581,12 @@ fn sync_wireframe_mode(app: &mut App) {
     }
 }
 
-fn collect_graph_uniform_updates(
-    scene: &crate::dsl::SceneDSL,
-    passes: &[renderer::PassBindings],
-) -> Result<Vec<GraphBufferUpdate>> {
-    let mut out = Vec::new();
-    for (pass_index, pass) in passes.iter().enumerate() {
-        if let Some(ext) = pass.extension.as_ref() {
-            let bytes = ext.pack_buffer(scene);
-            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
-            if pass.last_graph_hash != Some(hash) {
-                let buffer_name = pass
-                    .graph_binding
-                    .as_ref()
-                    .map(|binding| binding.buffer_name.clone())
-                    .with_context(|| {
-                        format!(
-                            "extension graph binding missing for pass '{}'",
-                            pass.pass_id
-                        )
-                    })?;
-                out.push(GraphBufferUpdate {
-                    pass_index,
-                    target: GraphBufferTarget::Graph,
-                    buffer_name,
-                    bytes,
-                    hash,
-                });
-            }
-        } else if let Some(binding) = pass.graph_binding.as_ref() {
-            let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
-                .with_context(|| {
-                    format!("failed to pack graph values for pass '{}'", pass.pass_id)
-                })?;
-            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
-            if pass.last_graph_hash != Some(hash) {
-                out.push(GraphBufferUpdate {
-                    pass_index,
-                    target: GraphBufferTarget::Graph,
-                    buffer_name: binding.buffer_name.clone(),
-                    bytes,
-                    hash,
-                });
-            }
-        }
-        if let Some(binding) = pass.shader_parameter_binding.as_ref() {
-            let bytes = renderer::graph_uniforms::pack_graph_values(scene, &binding.schema)
-                .with_context(|| {
-                    format!(
-                        "failed to pack ShaderMaterial parameters for pass '{}'",
-                        pass.pass_id
-                    )
-                })?;
-            let hash = renderer::graph_uniforms::hash_bytes(bytes.as_slice());
-            if pass.last_shader_parameter_hash != Some(hash) {
-                out.push(GraphBufferUpdate {
-                    pass_index,
-                    target: GraphBufferTarget::ShaderParameters,
-                    buffer_name: binding.buffer_name.clone(),
-                    bytes,
-                    hash,
-                });
-            }
-        }
-    }
-    Ok(out)
-}
-
 fn apply_graph_uniform_updates(app: &mut App, scene: &crate::dsl::SceneDSL) -> Result<usize> {
-    apply_graph_uniform_updates_inner(&mut app.core.passes, &mut app.core.shader_space, scene)
+    renderer::graph_uniforms::apply_graph_uniform_updates(
+        &mut app.core.passes,
+        &mut app.core.shader_space,
+        scene,
+    )
 }
 
 /// Public variant that accepts split borrows so callers in `mod.rs` can avoid
@@ -674,34 +596,7 @@ pub fn apply_graph_uniform_updates_parts(
     shader_space: &mut rust_wgpu_fiber::shader_space::ShaderSpace,
     scene: &crate::dsl::SceneDSL,
 ) -> Result<usize> {
-    apply_graph_uniform_updates_inner(passes, shader_space, scene)
-}
-
-fn apply_graph_uniform_updates_inner(
-    passes: &mut Vec<renderer::PassBindings>,
-    shader_space: &mut rust_wgpu_fiber::shader_space::ShaderSpace,
-    scene: &crate::dsl::SceneDSL,
-) -> Result<usize> {
-    let updates = collect_graph_uniform_updates(scene, passes)?;
-    for update in &updates {
-        shader_space
-            .write_buffer(update.buffer_name.as_str(), 0, update.bytes.as_slice())
-            .with_context(|| {
-                format!(
-                    "failed to write graph buffer '{}'",
-                    update.buffer_name.as_str()
-                )
-            })?;
-        match update.target {
-            GraphBufferTarget::Graph => {
-                passes[update.pass_index].last_graph_hash = Some(update.hash);
-            }
-            GraphBufferTarget::ShaderParameters => {
-                passes[update.pass_index].last_shader_parameter_hash = Some(update.hash);
-            }
-        }
-    }
-    Ok(updates.len())
+    renderer::graph_uniforms::apply_graph_uniform_updates(passes, shader_space, scene)
 }
 
 pub(crate) fn apply_uniform_node_param_updates(
@@ -727,7 +622,18 @@ fn apply_uniform_node_param_updates_inner(
     ignore_missing: bool,
 ) -> Result<()> {
     for updated in updated_nodes {
-        if let Some(target) = scene.nodes.iter_mut().find(|n| n.id == updated.id) {
+        let mut exact_match = false;
+        let mut mirrored_matches = 0usize;
+        for target in &mut scene.nodes {
+            let is_exact = target.id == updated.id;
+            let is_mirror = target
+                .params
+                .get("__authoredNodeId")
+                .and_then(serde_json::Value::as_str)
+                == Some(updated.id.as_str());
+            if !is_exact && !is_mirror {
+                continue;
+            }
             if target.node_type != updated.node_type {
                 bail!(
                     "uniform delta node type mismatch for '{}': cached='{}' incoming='{}'",
@@ -739,6 +645,10 @@ fn apply_uniform_node_param_updates_inner(
             for (k, v) in &updated.params {
                 target.params.insert(k.clone(), v.clone());
             }
+            exact_match |= is_exact;
+            mirrored_matches += usize::from(is_mirror);
+        }
+        if exact_match || mirrored_matches > 0 {
             continue;
         }
 
@@ -1263,6 +1173,7 @@ fn broadcast_error(app: &App, request_id: Option<String>, code: &str, message: S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::graph_uniforms::{GraphBufferTarget, collect_graph_uniform_updates};
     use crate::renderer::types::{
         GraphBinding, GraphBindingKind, GraphField, GraphFieldKind, GraphSchema, Params,
         PassBindings,

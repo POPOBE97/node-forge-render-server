@@ -68,6 +68,24 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     return _e12;
 }
 
+fn mc_math_closure_550b25db(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
+    var uv_2: vec2<f32>;
+    var uv_3: vec2<f32>;
+    var output: vec4<f32> = vec4(0f);
+
+    uv_2 = uv;
+    uv_3 = uv_1;
+    let _e8: vec2<f32> = uv_3;
+    let _e9: vec4<f32> = sample_pass_texture(_e8);
+    output = _e9;
+    let _e10: vec4<f32> = output;
+    return _e10;
+}
+
+fn sample_pass_texture(uv_in: vec2f) -> vec4f {
+    return textureSample(pass_tex_PassTexture_70, pass_samp_PassTexture_70, uv_in);
+}
+
 
  @vertex
  fn vs_main(
@@ -106,21 +124,22 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
  }
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4f {
-    var math_closure_out: vec2f;
+    var math_closure_out_cbda02b8: vec2f;
     {
         let xy = in.local_px.xy;
         let size = in.geo_size_px;
         var output: vec2f;
         output = mc_math_closure(in.uv, xy, size);
+        math_closure_out_cbda02b8 = output;
+    }
+    var math_closure_out: vec4f;
+    {
+        let uv = math_closure_out_cbda02b8;
+        var output: vec4f;
+        output = mc_math_closure_550b25db(in.uv, uv);
         math_closure_out = output;
     }
-    // Pass Texture PassTexture_70.color
-    let pass_texture = textureSample(
-        pass_tex_PassTexture_70,
-        pass_samp_PassTexture_70,
-        vec2f((math_closure_out).x, 1.0 - (math_closure_out).y),
-    );
     // Final composite
-    let _frag_out = pass_texture;
+    let _frag_out = math_closure_out;
     return vec4f(_frag_out.rgb, clamp(_frag_out.a, 0.0, 1.0));
 }

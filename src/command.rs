@@ -845,13 +845,13 @@ fn write_text_file(path: PathBuf, contents: &str) -> Result<()> {
     std::fs::write(&path, contents).map_err(|e| anyhow!("failed to write {}: {e}", path.display()))
 }
 
-fn apply_headless_state_at_zero(
-    scene: &mut dsl::SceneDSL,
+fn evaluate_headless_state_at_zero(
+    scene: &dsl::SceneDSL,
     selector: Option<&str>,
     overrides_output: Option<&PathBuf>,
-) -> Result<()> {
+) -> Result<Option<renderer::HeadlessRuntimeOverrides>> {
     let Some(selector) = selector else {
-        return Ok(());
+        return Ok(None);
     };
     let state_machine = scene
         .state_machine
@@ -914,9 +914,8 @@ fn apply_headless_state_at_zero(
         )?;
     }
 
-    node_forge_render_server::state_machine::apply_overrides(scene, &step.active_overrides);
     eprintln!("[headless] forced state at t=0: {selector} ({state_id})");
-    Ok(())
+    Ok(Some(step.active_overrides))
 }
 
 fn dump_scene_wgsl(
@@ -1124,8 +1123,8 @@ fn run_headless_json_render_once(
 
     dsl::normalize_scene_defaults(&mut scene)
         .map_err(|e| anyhow!("failed to apply default params: {e:#}"))?;
-    apply_headless_state_at_zero(
-        &mut scene,
+    let runtime_overrides = evaluate_headless_state_at_zero(
+        &scene,
         headless_state.as_deref(),
         headless_overrides_output.as_ref(),
     )?;
@@ -1163,17 +1162,24 @@ fn run_headless_json_render_once(
     ensure_parent_dir_exists(&out_path)?;
 
     if let Some(pass_name) = capture_pass.as_deref() {
-        renderer::render_scene_pass_to_file_headless(&scene, pass_name, &out_path, Some(&store))?;
+        renderer::render_scene_pass_to_file_headless_with_runtime_overrides(
+            &scene,
+            pass_name,
+            &out_path,
+            Some(&store),
+            runtime_overrides.as_ref(),
+        )?;
         println!(
             "[headless] captured pass {pass_name}: {}",
             out_path.display()
         );
     } else if let Some(texture_name) = export_texture.as_deref() {
-        renderer::render_scene_texture_to_file_headless(
+        renderer::render_scene_texture_to_file_headless_with_runtime_overrides(
             &scene,
             texture_name,
             &out_path,
             Some(&store),
+            runtime_overrides.as_ref(),
         )?;
         println!(
             "[headless] saved texture {texture_name}: {}",
@@ -1182,19 +1188,25 @@ fn run_headless_json_render_once(
     } else if let Some(profile) = profile {
         let stdout_profile = profile.output.is_stdout();
         let mut writer = profile::ProfileWriter::new(&profile.output)?;
-        renderer::render_scene_to_file_headless_profiled(
+        renderer::render_scene_to_file_headless_profiled_with_runtime_overrides(
             &scene,
             &out_path,
             Some(&store),
             &profile.config,
             &mut writer,
+            runtime_overrides.as_ref(),
         )?;
         eprintln!("[headless] saved: {}", out_path.display());
         if !stdout_profile {
             eprintln!("[headless] profile saved");
         }
     } else {
-        renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
+        renderer::render_scene_to_file_headless_with_runtime_overrides(
+            &scene,
+            &out_path,
+            Some(&store),
+            runtime_overrides.as_ref(),
+        )?;
         println!("[headless] saved: {}", out_path.display());
     }
     Ok(())
@@ -1212,9 +1224,9 @@ fn run_headless_nforge_render_once(
     export_texture: Option<String>,
     capture_pass: Option<String>,
 ) -> Result<()> {
-    let (mut scene, store) = asset_store::load_from_nforge(nforge_path)?;
-    apply_headless_state_at_zero(
-        &mut scene,
+    let (scene, store) = asset_store::load_from_nforge(nforge_path)?;
+    let runtime_overrides = evaluate_headless_state_at_zero(
+        &scene,
         headless_state.as_deref(),
         headless_overrides_output.as_ref(),
     )?;
@@ -1246,17 +1258,24 @@ fn run_headless_nforge_render_once(
     ensure_parent_dir_exists(&out_path)?;
 
     if let Some(pass_name) = capture_pass.as_deref() {
-        renderer::render_scene_pass_to_file_headless(&scene, pass_name, &out_path, Some(&store))?;
+        renderer::render_scene_pass_to_file_headless_with_runtime_overrides(
+            &scene,
+            pass_name,
+            &out_path,
+            Some(&store),
+            runtime_overrides.as_ref(),
+        )?;
         println!(
             "[headless] captured pass {pass_name}: {}",
             out_path.display()
         );
     } else if let Some(texture_name) = export_texture.as_deref() {
-        renderer::render_scene_texture_to_file_headless(
+        renderer::render_scene_texture_to_file_headless_with_runtime_overrides(
             &scene,
             texture_name,
             &out_path,
             Some(&store),
+            runtime_overrides.as_ref(),
         )?;
         println!(
             "[headless] saved texture {texture_name}: {}",
@@ -1265,19 +1284,25 @@ fn run_headless_nforge_render_once(
     } else if let Some(profile) = profile {
         let stdout_profile = profile.output.is_stdout();
         let mut writer = profile::ProfileWriter::new(&profile.output)?;
-        renderer::render_scene_to_file_headless_profiled(
+        renderer::render_scene_to_file_headless_profiled_with_runtime_overrides(
             &scene,
             &out_path,
             Some(&store),
             &profile.config,
             &mut writer,
+            runtime_overrides.as_ref(),
         )?;
         eprintln!("[headless] saved: {}", out_path.display());
         if !stdout_profile {
             eprintln!("[headless] profile saved");
         }
     } else {
-        renderer::render_scene_to_file_headless(&scene, &out_path, Some(&store))?;
+        renderer::render_scene_to_file_headless_with_runtime_overrides(
+            &scene,
+            &out_path,
+            Some(&store),
+            runtime_overrides.as_ref(),
+        )?;
         println!("[headless] saved: {}", out_path.display());
     }
     Ok(())
@@ -1897,6 +1922,35 @@ pub(crate) fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_state_evaluation_preserves_the_base_scene() {
+        let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("render")
+            .join("editor-examples")
+            .join("back-pin-pin")
+            .join("scene.nforge");
+        let (scene, _assets) = asset_store::load_from_nforge(&archive).unwrap();
+        let state_id = scene
+            .state_machine
+            .as_ref()
+            .unwrap()
+            .states
+            .iter()
+            .find(|state| state.state_type == AnimationStateType::AnimationState)
+            .map(|state| state.id.clone())
+            .expect("fixture must contain a regular state");
+        let base_scene = serde_json::to_value(&scene).unwrap();
+
+        let overrides = evaluate_headless_state_at_zero(&scene, Some(&state_id), None)
+            .unwrap()
+            .expect("forced state must produce runtime overrides");
+
+        let _ = overrides;
+        assert_eq!(serde_json::to_value(&scene).unwrap(), base_scene);
+    }
 
     #[test]
     fn parse_cli_headless_json_outputdir() {

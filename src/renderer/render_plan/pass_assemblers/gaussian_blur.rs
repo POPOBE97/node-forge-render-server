@@ -14,9 +14,10 @@ use crate::{
     dsl::{Node, incoming_connection},
     renderer::{
         camera::pass_node_uses_custom_camera,
+        gaussian_contract::gaussian_radius_port_id,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
-        pass_source::resolve_pass_source_ref,
-        types::{GraphBinding, PassOutputSpec},
+        pass_source::processing_input_connection,
+        types::GraphBinding,
         utils::{cpu_num_f32_min_0, cpu_num_u32_min_1},
         wgsl::{
             build_blur_image_wgsl_bundle, build_blur_image_wgsl_bundle_with_graph_binding,
@@ -79,6 +80,13 @@ fn assemble_gaussian_blur_impl(
     let ids = sc.ids();
     let asset_store = sc.asset_store;
     let device = sc.device;
+    let radius_port_id = gaussian_radius_port_id(&layer_node.node_type).ok_or_else(|| {
+        anyhow!(
+            "node {} ({}) is not backed by the Gaussian processing contract",
+            layer_id,
+            layer_node.node_type
+        )
+    })?;
 
     let target_texture_name = bs.target_texture_name.clone();
     let target_format = bs.target_format;
@@ -94,7 +102,13 @@ fn assemble_gaussian_blur_impl(
 
     let radius_px = match radius_override {
         Some(radius) => radius.max(0.0),
-        None => cpu_num_f32_min_0(&prepared.scene, nodes_by_id, layer_node, "radius", 0.0)?,
+        None => cpu_num_f32_min_0(
+            &prepared.scene,
+            nodes_by_id,
+            layer_node,
+            radius_port_id,
+            0.0,
+        )?,
     };
     let extend_enabled = layer_node
         .params
@@ -113,10 +127,21 @@ fn assemble_gaussian_blur_impl(
     // directly consume an existing texture resource as the blur source.
     let mut initial_blur_source_texture: Option<ResourceName> = None;
     let mut initial_blur_source_sampler_kind: Option<SamplerKind> = None;
-    if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "pass") {
-        let src_texture_ref =
-            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
-        if let Some(src_node) = nodes_by_id.get(&src_texture_ref.source.node_id) {
+    let mut initial_blur_source_image_node_id: Option<String> = None;
+    if let Ok((src_conn, _)) = processing_input_connection(&prepared.scene, layer_id) {
+        let src = super::super::resource_naming::resolve_sampled_source(
+            &prepared.scene,
+            nodes_by_id,
+            ids,
+            bs.pass_output_registry,
+            &src_conn.from,
+            asset_store,
+        )?;
+        if let Some(src_node) = src
+            .surface_ref
+            .as_ref()
+            .and_then(|texture_ref| nodes_by_id.get(&texture_ref.source.node_id))
+        {
             if src_node.node_type == "RenderPass" {
                 if let Some(geo_conn) =
                     incoming_connection(&prepared.scene, &src_node.id, "geometry")
@@ -138,26 +163,13 @@ fn assemble_gaussian_blur_impl(
             }
         }
 
-        let src_spec = bs
-            .pass_output_registry
-            .get_for_port(
-                &src_texture_ref.source.node_id,
-                &src_texture_ref.source.port_id,
-            )
-            .ok_or_else(|| {
-                anyhow!(
-                    "GuassianBlurPass {layer_id} source {}.{} is not registered",
-                    src_texture_ref.source.node_id,
-                    src_texture_ref.source.port_id
-                )
-            })?;
-        base_resolution = src_spec.resolution;
-        if can_direct_bypass && src_spec.format == sampled_pass_format {
-            initial_blur_source_texture = Some(src_spec.texture_name.clone());
-            initial_blur_source_sampler_kind = Some(sampler_kind_for_pass_texture(
-                &prepared.scene,
-                &src_texture_ref,
-            ));
+        base_resolution = src.resolution;
+        if can_direct_bypass
+            && (src.format == sampled_pass_format || src.binding.image_node_id.is_some())
+        {
+            initial_blur_source_image_node_id = src.binding.image_node_id.clone();
+            initial_blur_source_texture = Some(src.texture);
+            initial_blur_source_sampler_kind = Some(src.sampler);
         }
     }
     let src_content_resolution = base_resolution;
@@ -264,16 +276,20 @@ fn assemble_gaussian_blur_impl(
         let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
         let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
 
-        for id in src_bundle.image_textures.iter() {
-            let Some(tex) = ids.get(id).cloned() else {
+        for texture_ref in src_bundle.image_textures.iter() {
+            let Some(tex) = ids.get(&texture_ref.image_node_id).cloned() else {
                 continue;
             };
             src_texture_bindings.push(PassTextureBinding {
                 texture: tex,
-                image_node_id: Some(id.clone()),
+                image_node_id: Some(texture_ref.image_node_id.clone()),
             });
+            let sampler_node_id = texture_ref
+                .sampler_node_id
+                .as_deref()
+                .unwrap_or(&texture_ref.image_node_id);
             let kind = nodes_by_id
-                .get(id)
+                .get(sampler_node_id)
                 .map(|n| sampler_kind_from_node_params(&n.params))
                 .unwrap_or(SamplerKind::LinearClamp);
             src_sampler_kinds.push(kind);
@@ -336,10 +352,10 @@ fn assemble_gaussian_blur_impl(
     let (kernel, offset, tap_count) = gaussian_kernel_8(sigma_p.max(1e-6));
     let tap_count = tap_count.clamp(1, 8);
     let downsample_factor: u32 = 1 << mip_level;
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
     let skip_factor1_downsample = should_skip_blur_downsample_pass(downsample_factor);
     let skip_factor1_upsample =
-        should_skip_blur_upsample_pass(downsample_factor, extend_enabled, is_sampled_output);
+        should_skip_blur_upsample_pass(downsample_factor, extend_enabled, materializes_texture);
     let emit_upsample_pass = !skip_factor1_upsample;
 
     let downsample_steps: Vec<u32> = if skip_factor1_downsample {
@@ -402,7 +418,7 @@ fn assemble_gaussian_blur_impl(
     });
 
     // Output texture: sampled downstream → intermediate; else → composite target.
-    let output_tex: ResourceName = if is_sampled_output {
+    let output_tex: ResourceName = if materializes_texture {
         if emit_upsample_pass {
             let out_tex: ResourceName = format!("sys.blur.{layer_id}.out").into();
             bs.textures.push(TextureDecl {
@@ -493,6 +509,10 @@ fn assemble_gaussian_blur_impl(
             None => initial_blur_source_texture.clone(),
             Some(t) => t.clone(),
         };
+        let source_image_node_id = prev_tex
+            .is_none()
+            .then(|| initial_blur_source_image_node_id.clone())
+            .flatten();
 
         let baked_buf: ResourceName = format!("sys.pass.{layer_id}.baked_data_parse").into();
         bs.baked_data_parse_buffer_to_pass_id
@@ -517,7 +537,7 @@ fn assemble_gaussian_blur_impl(
             shader_wgsl: bundle.module,
             texture_bindings: vec![PassTextureBinding {
                 texture: src_tex,
-                image_node_id: None,
+                image_node_id: source_image_node_id,
             }],
             sampler_kinds: vec![sampler_kind],
             blend_state: BlendState::REPLACE,
@@ -528,6 +548,10 @@ fn assemble_gaussian_blur_impl(
         prev_tex = Some(tex.clone());
     }
 
+    let h_source_image_node_id = prev_tex
+        .is_none()
+        .then(|| initial_blur_source_image_node_id.clone())
+        .flatten();
     let ds_src_tex = prev_tex.unwrap_or_else(|| initial_blur_source_texture.clone());
 
     // 2) Horizontal blur: ds_src_tex -> h_tex
@@ -573,7 +597,7 @@ fn assemble_gaussian_blur_impl(
         shader_wgsl: bundle_h.module,
         texture_bindings: vec![PassTextureBinding {
             texture: ds_src_tex.clone(),
-            image_node_id: None,
+            image_node_id: h_source_image_node_id,
         }],
         sampler_kinds: vec![SamplerKind::LinearMirror],
         blend_state: BlendState::REPLACE,
@@ -695,18 +719,25 @@ fn assemble_gaussian_blur_impl(
         bs.composite_passes.push(pass_name_u);
     }
 
-    // Register this GuassianBlurPass output for potential downstream chaining.
+    // Raster processors expose only texture. ImagePass is a draw-producer macro and retains its
+    // public dual-domain ABI; planner-local route splitting gives each invocation one domain.
     let blur_output_tex = output_tex.clone();
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
-        texture_name: blur_output_tex.clone(),
-        resolution: [blur_w, blur_h],
-        format: if is_sampled_output {
+    let output_ports: &[&str] = if layer_node.node_type == "ImagePass" {
+        &["pass", "texture"]
+    } else {
+        &["texture"]
+    };
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        output_ports,
+        blur_output_tex.clone(),
+        [blur_w, blur_h],
+        if materializes_texture {
             sampled_pass_format
         } else {
             target_format
         },
-    });
+    );
 
     let composition_consumers = sc
         .composition_consumers_by_source

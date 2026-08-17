@@ -12,10 +12,7 @@ use rust_wgpu_fiber::{
 
 use crate::{
     dsl::{find_node, parse_texture_format},
-    renderer::{
-        camera::legacy_projection_camera_matrix, types::PassOutputSpec,
-        wgsl::build_fullscreen_textured_bundle,
-    },
+    renderer::{camera::legacy_projection_camera_matrix, wgsl::build_fullscreen_textured_bundle},
 };
 
 use super::super::pass_spec::{PassTextureBinding, RenderPassSpec, SamplerKind, make_params};
@@ -49,15 +46,16 @@ pub(crate) fn assemble_composite(
                 )
             })?;
 
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
-        texture_name: comp_ctx.target_texture_name.clone(),
-        resolution: [
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["pass", "texture"],
+        comp_ctx.target_texture_name.clone(),
+        [
             comp_ctx.target_size_px[0].max(1.0).round() as u32,
             comp_ctx.target_size_px[1].max(1.0).round() as u32,
         ],
-        format: comp_target_format,
-    });
+        comp_target_format,
+    );
 
     // Implicit Composition -> Composition fullscreen blit.
     let consumers = sc

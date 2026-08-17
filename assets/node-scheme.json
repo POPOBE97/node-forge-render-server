@@ -76,7 +76,6 @@
     "OrthographicCamera",
     "PBRMaterial",
     "PackedInput",
-    "PassTexture",
     "PerspectiveCamera",
     "PrincipledBSDF",
     "Rect2DGeometry",
@@ -94,6 +93,7 @@
     "Sin",
     "Tan",
     "TextureInput",
+    "TextureSampler",
     "TimeInput",
     "TransformGeometry",
     "Upsample",
@@ -110,6 +110,7 @@
     "bezierCurve",
     "bool",
     "color",
+    "depthTexture",
     "float",
     "float[]",
     "geometry",
@@ -488,7 +489,18 @@
       "motion": "none",
       "editor": null,
       "acceptedOutputs": [
-        "texture"
+        "texture",
+        "pass"
+      ]
+    },
+    "depthTexture": {
+      "kind": "opaque",
+      "literal": false,
+      "stateParam": false,
+      "motion": "none",
+      "editor": null,
+      "acceptedOutputs": [
+        "depthTexture"
       ]
     },
     "ImageFile": {
@@ -654,6 +666,7 @@
         "vector3[]",
         "vector4[]",
         "texture",
+        "depthTexture",
         "ImageFile",
         "renderTexture",
         "material",
@@ -852,7 +865,11 @@
       "vector4[]"
     ],
     "texture": [
-      "texture"
+      "texture",
+      "pass"
+    ],
+    "depthTexture": [
+      "depthTexture"
     ],
     "ImageFile": [
       "ImageFile"
@@ -924,6 +941,7 @@
       "vector3[]",
       "vector4[]",
       "texture",
+      "depthTexture",
       "ImageFile",
       "renderTexture",
       "material",
@@ -1116,12 +1134,12 @@
       "type": "BloomNode",
       "label": "Bloom",
       "category": "Filter",
-      "description": "Apply bloom/glare post-processing to a source pass",
+      "description": "Apply bloom/glare post-processing to a texture",
       "inputs": [
         {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -1281,9 +1299,9 @@
       ],
       "outputs": [
         {
-          "id": "glare",
-          "name": "Glare",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -1545,6 +1563,11 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -1571,7 +1594,7 @@
       "type": "Convolution",
       "label": "Convolution",
       "category": "Filter",
-      "description": "Convolve a source pass with a kernel while preserving its resolution",
+      "description": "Convolve a texture with a kernel while preserving its resolution",
       "inputs": [
         {
           "id": "sampling",
@@ -1585,9 +1608,9 @@
           "type": "kernel"
         },
         {
-          "id": "source",
-          "name": "Source",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -1615,9 +1638,9 @@
       ],
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -1736,7 +1759,7 @@
       "type": "Downsample",
       "label": "Downsample",
       "category": "Filter",
-      "description": "Downsample a pass using a kernel to a target size",
+      "description": "Downsample a texture using a kernel to a target size",
       "inputs": [
         {
           "id": "sampling",
@@ -1755,9 +1778,9 @@
           "type": "vector2"
         },
         {
-          "id": "source",
-          "name": "Source",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -1785,9 +1808,9 @@
       ],
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -1957,17 +1980,17 @@
         {
           "id": "uBgTex",
           "name": "Background",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uLightTex",
           "name": "Light",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uSdfTex",
           "name": "SDF",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uAlpha",
@@ -2410,12 +2433,12 @@
       "type": "GradientBlur",
       "label": "Gradient Blur",
       "category": "Filter",
-      "description": "Apply gradient-based blur to a source pass using a mask material",
+      "description": "Apply gradient-based blur to a texture using a mask material",
       "inputs": [
         {
-          "id": "source",
-          "name": "Source",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -2448,9 +2471,9 @@
       ],
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -2520,9 +2543,9 @@
           "default": false
         },
         {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -2561,9 +2584,9 @@
       ],
       "outputs": [
         {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
@@ -2631,17 +2654,17 @@
         {
           "id": "uBgTex",
           "name": "Background",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uLightTex",
           "name": "Light",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uSdfTex",
           "name": "SDF",
-          "type": "pass"
+          "type": "texture"
         },
         {
           "id": "uBlendLuminanceValues",
@@ -3133,12 +3156,12 @@
       "type": "ImagePass",
       "label": "Image Pass",
       "category": "PipelineControl",
-      "description": "Render an image directly into a positioned, optionally rounded rectangle",
+      "description": "Render a texture directly into a positioned, optionally rounded rectangle",
       "inputs": [
         {
           "id": "image",
           "name": "Image",
-          "type": "ImageFile"
+          "type": "texture"
         },
         {
           "id": "size",
@@ -3160,6 +3183,17 @@
           "range": {
             "min": 0,
             "max": 1,
+            "step": 0.01
+          }
+        },
+        {
+          "id": "blurRadius",
+          "name": "Blur Radius (px)",
+          "type": "int",
+          "default": 0,
+          "range": {
+            "min": 0,
+            "max": 1000,
             "step": 0.01
           }
         },
@@ -3194,26 +3228,21 @@
           "type": "pass"
         },
         {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        },
+        {
           "id": "depth",
           "name": "Depth",
-          "type": "pass"
+          "type": "depthTexture"
         }
       ],
       "defaultParams": {
         "name": "Image Pass",
-        "radius": 0,
+        "cornerRadius": 0,
         "smooth": 1,
-        "assetId": "",
-        "interpolation": "linear",
-        "extension": "clamp-to-edge",
-        "addressModeU": "clamp-to-edge",
-        "addressModeV": "clamp-to-edge",
-        "magFilter": "linear",
-        "minFilter": "linear",
-        "mipmapFilter": "linear",
-        "encoderSpace": "srgb",
-        "alphaMode": "straight",
-        "aspectCorrection": "fill",
+        "blurRadius": 0,
         "blend_preset": "premul_alpha",
         "blendfunc": "add",
         "src_factor": "one",
@@ -3669,6 +3698,11 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {}
@@ -4141,6 +4175,16 @@
       "category": "Gradient",
       "description": "A 3-10 by 3-10 smooth mesh gradient with color control points and pixel-space positions",
       "inputs": [
+        {
+          "id": "geoSize",
+          "name": "Geo Size · LocalPx",
+          "type": "vector2",
+          "default": [
+            1024,
+            1024
+          ],
+          "coordinateSpace": "local-px"
+        },
         {
           "id": "camera",
           "name": "Camera",
@@ -5398,9 +5442,18 @@
           "id": "pass",
           "name": "Pass",
           "type": "pass"
+        },
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {
+        "geoSize": [
+          1024,
+          1024
+        ],
         "width": 3,
         "height": 3,
         "patchDivCountU": 20,
@@ -5688,44 +5741,6 @@
       ],
       "defaultParams": {
         "elementType": "float"
-      }
-    },
-    {
-      "type": "PassTexture",
-      "label": "Pass Texture",
-      "category": "Texture",
-      "description": "Alias an upstream pass with sampler settings, or explicitly sample it as a color",
-      "inputs": [
-        {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
-        },
-        {
-          "id": "uv",
-          "name": "UV · LocalUV",
-          "type": "vector2",
-          "coordinateSpace": "local-uv"
-        }
-      ],
-      "outputs": [
-        {
-          "id": "color",
-          "name": "Color",
-          "type": "color"
-        },
-        {
-          "id": "pass",
-          "name": "Pass",
-          "type": "pass"
-        }
-      ],
-      "defaultParams": {
-        "addressModeU": "clamp-to-edge",
-        "addressModeV": "clamp-to-edge",
-        "magFilter": "nearest",
-        "minFilter": "nearest",
-        "mipmapFilter": "nearest"
       }
     },
     {
@@ -6236,9 +6251,14 @@
           "type": "pass"
         },
         {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        },
+        {
           "id": "depth",
           "name": "Depth",
-          "type": "pass"
+          "type": "depthTexture"
         }
       ],
       "defaultParams": {
@@ -6598,6 +6618,33 @@
       }
     },
     {
+      "type": "TextureSampler",
+      "label": "Texture Sampler",
+      "category": "Texture",
+      "description": "Apply sampler settings to a texture resource",
+      "inputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
+        }
+      ],
+      "defaultParams": {
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest"
+      }
+    },
+    {
       "type": "TimeInput",
       "label": "Time Input",
       "category": "Input",
@@ -6674,12 +6721,12 @@
       "type": "Upsample",
       "label": "Upsample",
       "category": "Filter",
-      "description": "Upsample a source pass to a target size using sampler filtering",
+      "description": "Upsample a texture to a target size using sampler filtering",
       "inputs": [
         {
-          "id": "source",
-          "name": "Source",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         },
         {
           "id": "camera",
@@ -6730,9 +6777,9 @@
       ],
       "outputs": [
         {
-          "id": "output",
-          "name": "Output",
-          "type": "pass"
+          "id": "texture",
+          "name": "Texture",
+          "type": "texture"
         }
       ],
       "defaultParams": {

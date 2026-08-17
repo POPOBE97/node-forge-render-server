@@ -224,17 +224,9 @@ pub(super) fn run(
                 .iter()
                 .filter_map(|state| {
                     use crate::state_machine::types::AnimationStateType;
-                    let kind = match state.resolved_type() {
-                        AnimationStateType::AnimationState => {
-                            ui::debug_sidebar::StateSidebarKind::State
-                        }
-                        AnimationStateType::EntryState => {
-                            ui::debug_sidebar::StateSidebarKind::Entry
-                        }
-                        AnimationStateType::AnyState => ui::debug_sidebar::StateSidebarKind::Any,
-                        AnimationStateType::ExitState => ui::debug_sidebar::StateSidebarKind::Exit,
-                        AnimationStateType::DerivationNode => return None,
-                    };
+                    if state.resolved_type() != AnimationStateType::AnimationState {
+                        return None;
+                    }
                     Some(ui::debug_sidebar::StateSidebarItem {
                         id: state.id.clone(),
                         name: if state.name.trim().is_empty() {
@@ -242,7 +234,6 @@ pub(super) fn run(
                         } else {
                             state.name.clone()
                         },
-                        kind,
                     })
                 })
                 .collect::<Vec<_>>()

@@ -22,6 +22,7 @@ pub(crate) trait PassPlanner {
 struct RenderPassPlanner;
 struct BloomPassPlanner;
 struct GaussianBlurPassPlanner;
+struct ImagePassBlurPlanner;
 struct GradientBlurPlanner;
 struct DownsamplePassPlanner;
 struct ConvolutionPassPlanner;
@@ -65,6 +66,22 @@ impl PassPlanner for BloomPassPlanner {
 impl PassPlanner for GaussianBlurPassPlanner {
     fn node_type(&self) -> &'static str {
         "GuassianBlurPass"
+    }
+
+    fn plan(
+        &self,
+        scene_ref: &SceneContext<'_>,
+        ctx: &mut BuilderState<'_>,
+        layer_id: &str,
+        layer_node: &Node,
+    ) -> Result<()> {
+        pass_assemblers::gaussian_blur::assemble_gaussian_blur(scene_ref, ctx, layer_id, layer_node)
+    }
+}
+
+impl PassPlanner for ImagePassBlurPlanner {
+    fn node_type(&self) -> &'static str {
+        "ImagePass"
     }
 
     fn plan(
@@ -203,6 +220,7 @@ impl Default for PassPlannerRegistry {
                 Box::new(RenderPassPlanner),
                 Box::new(BloomPassPlanner),
                 Box::new(GaussianBlurPassPlanner),
+                Box::new(ImagePassBlurPlanner),
                 Box::new(GradientBlurPlanner),
                 Box::new(DownsamplePassPlanner),
                 Box::new(ConvolutionPassPlanner),
@@ -229,7 +247,7 @@ impl PassPlannerRegistry {
             .find(|planner| planner.node_type() == layer_node.node_type)
         else {
             bail!(
-                "Composite layer must be a pass node (RenderPass/GuassianBlurPass/Downsample/Convolution/Upsample/GradientBlur/Composite/BloomNode/IntelligentLight/MeshGradient), got {} for {}. \
+                "Composite layer must be a pass node (RenderPass/ImagePass/GuassianBlurPass/Downsample/Convolution/Upsample/GradientBlur/Composite/BloomNode/IntelligentLight/MeshGradient), got {} for {}. \
                  To enable chain support for new pass types, update the pass planner registry.",
                 layer_node.node_type,
                 layer_id

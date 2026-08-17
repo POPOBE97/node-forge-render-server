@@ -82,17 +82,11 @@ pub(crate) struct BuilderState<'b> {
     pub authored_color_load_ops_by_pass: &'b mut HashMap<ResourceName, wgpu::LoadOp<wgpu::Color>>,
     pub pass_depth_attachment_by_name: &'b mut HashMap<ResourceName, ResourceName>,
     pub pass_output_registry: &'b mut PassOutputRegistry,
-    pub sampled_pass_ids: &'b HashSet<String>,
+    pub materialized_texture_output_ids: &'b HashSet<String>,
 
     pub baked_data_parse_meta_by_pass: &'b mut HashMap<String, Arc<BakedDataParseMeta>>,
     pub baked_data_parse_bytes_by_pass: &'b mut HashMap<String, Arc<[u8]>>,
     pub baked_data_parse_buffer_to_pass_id: &'b mut HashMap<ResourceName, String>,
-
-    pub downsample_source_pass_ids: &'b mut HashSet<String>,
-    pub upsample_source_pass_ids: &'b mut HashSet<String>,
-    pub gaussian_source_pass_ids: &'b mut HashSet<String>,
-    pub bloom_source_pass_ids: &'b mut HashSet<String>,
-    pub gradient_source_pass_ids: &'b mut HashSet<String>,
 
     pub pass_extensions: &'b mut HashMap<String, PassExtension>,
     pub shader_parameter_buffers_by_pass: &'b mut HashMap<String, ShaderParameterBufferPlan>,

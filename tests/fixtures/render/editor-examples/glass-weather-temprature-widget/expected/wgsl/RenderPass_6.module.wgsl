@@ -166,6 +166,20 @@ fn mc_math_closure_351f4b6e(uv: vec2<f32>, c: vec4<f32>) -> vec4<f32> {
     return _e19;
 }
 
+fn mc_math_closure_4214e9c9_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
+    var uv_2: vec2<f32>;
+    var uv_3: vec2<f32>;
+    var output: vec4<f32> = vec4(0f);
+
+    uv_2 = uv;
+    uv_3 = uv_1;
+    let _e8: vec2<f32> = uv_3;
+    let _e9: vec4<f32> = sample_pass_texture(_e8);
+    output = _e9;
+    let _e10: vec4<f32> = output;
+    return _e10;
+}
+
 fn mc_math_closure_50134b6e(uv: vec2<f32>, n: vec3<f32>, i: vec3<f32>) -> f32 {
     var uv_1: vec2<f32>;
     var n_1: vec3<f32>;
@@ -417,6 +431,10 @@ fn mc_math_closure_edaa49ef(uv: vec2<f32>, uv_1: vec2<f32>, scale: f32) -> vec2<
     return _e18;
 }
 
+fn sample_pass_texture(uv_in: vec2f) -> vec4f {
+    return textureSample(pass_tex_PassTexture_86, pass_samp_PassTexture_86, uv_in);
+}
+
 
 // ---- 2D SDF bevel helpers (generated) ----
 // 2D SDF bevel helper template.
@@ -664,15 +682,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_math_closure_edaa49ef(in.uv, uv, scale);
         math_closure_out_6d67ad2c = output;
     }
-    // Pass Texture PassTexture_86.color
-    let pass_texture = textureSample(
-        pass_tex_PassTexture_86,
-        pass_samp_PassTexture_86,
-        vec2f((math_closure_out_6d67ad2c).x, 1.0 - (math_closure_out_6d67ad2c).y),
-    );
+    var math_closure_out_5ad381c9: vec4f;
+    {
+        let uv = math_closure_out_6d67ad2c;
+        var output: vec4f;
+        output = mc_math_closure_4214e9c9_(in.uv, uv);
+        math_closure_out_5ad381c9 = output;
+    }
     var math_closure_out_26a5cccc: vec4f;
     {
-        let c = pass_texture;
+        let c = math_closure_out_5ad381c9;
         var output: vec4f;
         output = mc_math_closure_821d4b6e(in.uv, c);
         math_closure_out_26a5cccc = output;

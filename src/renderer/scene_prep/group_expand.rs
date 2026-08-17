@@ -285,7 +285,11 @@ pub(crate) fn expand_group_instances(scene: &mut SceneDSL) -> Result<usize> {
 
             // Special-case: ImageFile -> ImageTexture.image is not part of the bundled node scheme.
             // Instead, inline by copying ImageFile params into the ImageTexture node.
-            if !any && b.to.port_id == "image" {
+            let target_is_image_texture = group
+                .nodes
+                .iter()
+                .any(|node| node.id == b.to.node_id && node.node_type == "ImageTexture");
+            if !any && b.to.port_id == "image" && target_is_image_texture {
                 // Use the first available source.
                 let src_ep = sources.first().cloned().ok_or_else(|| {
                     anyhow!(

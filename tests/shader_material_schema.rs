@@ -54,7 +54,7 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
         },
         nodes: vec![
             node("IntelligentLight_30", "IntelligentLight"),
-            node("PassTexture_31", "PassTexture"),
+            node("TextureSampler_31", "TextureSampler"),
             shader,
         ],
         connections: vec![
@@ -62,13 +62,13 @@ fn scene(shader_input: NodePort, to_port: &str) -> SceneDSL {
                 "sys.group.edge.4",
                 "IntelligentLight_30",
                 "pass",
-                "PassTexture_31",
-                "pass",
+                "TextureSampler_31",
+                "texture",
             ),
             connection(
                 "sys.group.edge.5",
-                "PassTexture_31",
-                "pass",
+                "TextureSampler_31",
+                "texture",
                 "GroupInstance_32/ShaderMaterial_32",
                 to_port,
             ),
@@ -87,12 +87,12 @@ fn accepts_direct_pass_to_shader_material_resource() {
         NodePort {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
-            port_type: Some("pass".to_string()),
+            port_type: Some("texture".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
     );
-    scene.nodes.retain(|node| node.id != "PassTexture_31");
+    scene.nodes.retain(|node| node.id != "TextureSampler_31");
     scene.connections = vec![connection(
         "sys.group.edge.5",
         "IntelligentLight_30",
@@ -106,12 +106,78 @@ fn accepts_direct_pass_to_shader_material_resource() {
 }
 
 #[test]
+fn accepts_image_pass_texture_to_shader_material_resource() {
+    let mut shader = node("shader", "ShaderMaterial");
+    shader.inputs.push(NodePort {
+        id: "resource:image".to_string(),
+        name: Some("image".to_string()),
+        port_type: Some("texture".to_string()),
+        array_length: None,
+    });
+    let scene = SceneDSL {
+        version: "6.0".to_string(),
+        metadata: Metadata {
+            name: "image-pass-shader-resource".to_string(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![node("image_pass", "ImagePass"), shader],
+        connections: vec![connection(
+            "image-pass-resource",
+            "image_pass",
+            "texture",
+            "shader",
+            "resource:image",
+        )],
+        outputs: None,
+        groups: Vec::new(),
+        assets: Default::default(),
+        state_machine: None,
+        debug_artifacts: None,
+    };
+
+    validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
+        .expect("ImagePass.texture should satisfy a custom shader texture resource");
+}
+
+#[test]
+fn accepts_texture_source_for_image_pass_image_input() {
+    let scene = SceneDSL {
+        version: "6.0".to_string(),
+        metadata: Metadata {
+            name: "image-pass-texture-input".to_string(),
+            created: None,
+            modified: None,
+        },
+        nodes: vec![
+            node("source", "ImageTexture"),
+            node("image_pass", "ImagePass"),
+        ],
+        connections: vec![connection(
+            "image-pass-input",
+            "source",
+            "texture",
+            "image_pass",
+            "image",
+        )],
+        outputs: None,
+        groups: Vec::new(),
+        assets: Default::default(),
+        state_machine: None,
+        debug_artifacts: None,
+    };
+
+    validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
+        .expect("ImagePass.image should accept a texture");
+}
+
+#[test]
 fn accepts_reflected_shader_material_resource_port_after_group_expansion() {
     let scene = scene(
         NodePort {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
-            port_type: Some("pass".to_string()),
+            port_type: Some("texture".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
@@ -127,7 +193,7 @@ fn rejects_shader_material_port_not_present_in_reflected_inputs() {
         NodePort {
             id: "resource:other".to_string(),
             name: Some("other".to_string()),
-            port_type: Some("pass".to_string()),
+            port_type: Some("texture".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
@@ -155,24 +221,24 @@ fn rejects_shader_material_resource_with_forged_value_type() {
     );
 
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect_err("resource port must use pass");
+        .expect_err("resource port must use texture");
     assert!(error.to_string().contains("uses unknown to port"));
 }
 
 #[test]
-fn rejects_custom_shader_resource_exposed_as_texture() {
+fn rejects_custom_shader_resource_exposed_as_pass() {
     let scene = scene(
         NodePort {
             id: "resource:intelli_tex".to_string(),
             name: Some("intelli_tex".to_string()),
-            port_type: Some("texture".to_string()),
+            port_type: Some("pass".to_string()),
             array_length: None,
         },
         "resource:intelli_tex",
     );
 
     let error = validate_scene_against(&scene, &load_default_scheme().expect("load scheme"))
-        .expect_err("custom shader resources must be exposed as pass");
+        .expect_err("custom shader resources must be exposed as texture");
     assert!(error.to_string().contains("uses unknown to port"));
 }
 

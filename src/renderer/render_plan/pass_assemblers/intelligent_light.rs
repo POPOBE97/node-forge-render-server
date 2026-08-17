@@ -14,7 +14,7 @@ use crate::{
     dsl::{Node, incoming_connection},
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
-        types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension, PassOutputSpec},
+        types::{GraphBinding, GraphBindingKind, GraphSchema, PassExtension},
         utils::cpu_num_f32,
         wgsl::build_fullscreen_textured_bundle,
     },
@@ -820,12 +820,13 @@ pub(crate) fn assemble_intelligent_light(
     // IntelligentLight's natural output is its low-resolution computation
     // texture. Presentation scaling belongs to each explicit Composite edge.
 
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
-        texture_name: inter_tex.clone(),
-        resolution: [inter_w, inter_h],
-        format: bs.sampled_pass_format,
-    });
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["pass", "texture"],
+        inter_tex.clone(),
+        [inter_w, inter_h],
+        bs.sampled_pass_format,
+    );
 
     // ── Composition consumers ───────────────────────────────────────────
 

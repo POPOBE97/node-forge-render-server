@@ -11,12 +11,12 @@ use rust_wgpu_fiber::{
 };
 
 use crate::{
-    dsl::{Node, incoming_connection},
+    dsl::Node,
     renderer::{
         camera::resolve_effective_camera_for_pass_node,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
-        pass_source::resolve_pass_source_ref,
-        types::{GraphBinding, Kernel2D, PassOutputSpec},
+        pass_source::processing_input_connection,
+        types::{GraphBinding, Kernel2D},
         utils::cpu_num_f32,
         wgsl::{
             build_bloom_extract_material_bundle, build_downsample_pass_wgsl_bundle,
@@ -55,23 +55,16 @@ pub(crate) fn assemble_bloom(
     let tgt_w = bs.tgt_size[0];
     let tgt_h = bs.tgt_size[1];
 
-    let src_conn = incoming_connection(scene, layer_id, "pass")
-        .ok_or_else(|| anyhow!("BloomNode.pass missing for {layer_id}"))?;
-    let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
-    let src_spec = bs
-        .pass_output_registry
-        .get_for_port(
-            &src_texture_ref.source.node_id,
-            &src_texture_ref.source.port_id,
-        )
-        .ok_or_else(|| {
-            anyhow!(
-                "BloomNode.pass references upstream pass {}, but its output is not registered yet",
-                src_texture_ref.source.node_id
-            )
-        })?;
-
-    let base_resolution = src_spec.resolution;
+    let (src_conn, _) = processing_input_connection(scene, layer_id)?;
+    let src = super::super::resource_naming::resolve_sampled_source(
+        scene,
+        nodes_by_id,
+        ids,
+        bs.pass_output_registry,
+        &src_conn.from,
+        sc.asset_store,
+    )?;
+    let base_resolution = src.resolution;
     let base_w = base_resolution[0].max(1) as f32;
     let base_h = base_resolution[1].max(1) as f32;
 
@@ -102,7 +95,7 @@ pub(crate) fn assemble_bloom(
     let (kernel, offset, num) = gaussian_kernel_8(sigma_p.max(1e-6));
     let tap_count = num.clamp(1, 8);
 
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
     let pass_blend_state =
         crate::renderer::render_plan::parse_render_pass_blend_state(&layer_node.params)
             .with_context(|| {
@@ -112,7 +105,7 @@ pub(crate) fn assemble_bloom(
                 )
             })?;
 
-    let output_tex: ResourceName = if is_sampled_output {
+    let output_tex: ResourceName = if materializes_texture {
         let out: ResourceName = format!("sys.bloom.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: out.clone(),
@@ -209,7 +202,8 @@ pub(crate) fn assemble_bloom(
 
     let mut extract_texture_bindings = Vec::new();
     let mut extract_sampler_kinds = Vec::new();
-    for image_node_id in &extract_bundle.image_textures {
+    for texture_ref in &extract_bundle.image_textures {
+        let image_node_id = &texture_ref.image_node_id;
         let texture = ids
             .get(image_node_id)
             .cloned()
@@ -220,7 +214,12 @@ pub(crate) fn assemble_bloom(
         });
         extract_sampler_kinds.push(
             nodes_by_id
-                .get(image_node_id)
+                .get(
+                    texture_ref
+                        .sampler_node_id
+                        .as_deref()
+                        .unwrap_or(image_node_id),
+                )
                 .map(|node| sampler_kind_from_node_params(&node.params))
                 .unwrap_or(SamplerKind::LinearClamp),
         );
@@ -711,16 +710,17 @@ pub(crate) fn assemble_bloom(
         bs.composite_passes.push(copy_pass_name);
     }
 
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "glare"),
-        texture_name: output_tex.clone(),
-        resolution: base_resolution,
-        format: if is_sampled_output {
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["texture"],
+        output_tex.clone(),
+        base_resolution,
+        if materializes_texture {
             bs.sampled_pass_format
         } else {
             bs.target_format
         },
-    });
+    );
 
     Ok(())
 }

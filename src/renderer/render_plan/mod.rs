@@ -1,4 +1,5 @@
 pub mod blend;
+pub(crate) mod coercion;
 pub mod geometry;
 pub mod kernel;
 pub(crate) mod pass_assemblers;
@@ -14,5 +15,4 @@ pub(crate) use geometry::{load_gltf_geometry_pixel_space, resolve_geometry_for_r
 pub(crate) use kernel::parse_kernel_source_js_like;
 pub(crate) use pass_graph::{
     compute_pass_render_order, forward_root_dependencies_from_roots, resolve_pass_texture_bindings,
-    sampled_pass_node_ids_from_roots,
 };

@@ -214,7 +214,7 @@ pub(crate) fn dedup_identical_passes(scene: &mut SceneDSL) -> DedupReport {
         let canonical_original = &members[0];
 
         // Derive canonical name from dedup metadata when both fields exist.
-        // For non-group-generated passes (e.g. sys.auto.fullscreen.pass.*), keep
+        // For non-group-generated passes (e.g. sys.coercion.fullscreen.pass.*), keep
         // the original canonical ID to avoid unstable sys.group.unknown renames.
         let canonical_name = if let Some(node) = nodes_by_id.get(canonical_original.as_str()) {
             let group_id = node.params.get("__dedup_group_id").and_then(|v| v.as_str());
@@ -618,12 +618,12 @@ mod tests {
             },
             nodes: vec![
                 make_node(
-                    "sys.auto.fullscreen.pass.edge_1",
+                    "sys.coercion.fullscreen.pass.edge_1",
                     "RenderPass",
                     HashMap::new(),
                 ),
                 make_node(
-                    "sys.auto.fullscreen.pass.edge_2",
+                    "sys.coercion.fullscreen.pass.edge_2",
                     "RenderPass",
                     HashMap::new(),
                 ),
@@ -632,14 +632,14 @@ mod tests {
             connections: vec![
                 make_conn(
                     "c1",
-                    "sys.auto.fullscreen.pass.edge_1",
+                    "sys.coercion.fullscreen.pass.edge_1",
                     "output",
                     "downstream",
                     "in_0",
                 ),
                 make_conn(
                     "c2",
-                    "sys.auto.fullscreen.pass.edge_2",
+                    "sys.coercion.fullscreen.pass.edge_2",
                     "output",
                     "downstream",
                     "in_1",
@@ -662,7 +662,9 @@ mod tests {
             .collect();
         assert_eq!(pass_nodes.len(), 1);
         assert!(
-            pass_nodes[0].id.starts_with("sys.auto.fullscreen.pass."),
+            pass_nodes[0]
+                .id
+                .starts_with("sys.coercion.fullscreen.pass."),
             "canonical non-group pass should keep sys.auto.* id, got {}",
             pass_nodes[0].id
         );

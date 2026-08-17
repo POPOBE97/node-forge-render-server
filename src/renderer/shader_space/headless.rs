@@ -1,4 +1,4 @@
-use std::{io::Write, path::Path};
+use std::{collections::HashMap, io::Write, path::Path};
 
 use anyhow::{Result, anyhow, bail};
 use rust_wgpu_fiber::HeadlessRenderer;
@@ -11,9 +11,57 @@ use rust_wgpu_fiber::shader_space::{
 use crate::asset_store::AssetStore;
 use crate::dsl::SceneDSL;
 use crate::profile::{self, ProfileAccumulator, ProfileRunConfig, ProfileWriter};
+use crate::state_machine::OverrideKey;
 use crate::ui::resource_tree::ResourceSnapshot;
 
-use super::api::{ShaderSpaceBuildOptions, ShaderSpaceBuilder, ShaderSpacePresentationMode};
+use super::api::{
+    ShaderSpaceBuildOptions, ShaderSpaceBuildResult, ShaderSpaceBuilder,
+    ShaderSpacePresentationMode,
+};
+
+pub type HeadlessRuntimeOverrides = HashMap<OverrideKey, serde_json::Value>;
+
+fn build_headless_shader_space(
+    renderer: &HeadlessRenderer,
+    scene: &SceneDSL,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+) -> Result<ShaderSpaceBuildResult> {
+    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
+        .with_adapter(renderer.adapter.clone())
+        .with_options(ShaderSpaceBuildOptions {
+            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
+            ..Default::default()
+        });
+    if let Some(store) = asset_store {
+        builder = builder.with_asset_store(store.clone());
+    }
+    let mut result = builder.build(scene)?;
+
+    let Some(runtime_overrides) = runtime_overrides else {
+        return Ok(result);
+    };
+    let prepared_scene = result
+        .prepared_scene
+        .as_mut()
+        .ok_or_else(|| anyhow!("headless runtime overrides require a prepared scene"))?;
+    crate::state_machine::apply_overrides(prepared_scene, runtime_overrides);
+    crate::renderer::graph_uniforms::apply_graph_uniform_updates(
+        &mut result.pass_bindings,
+        &mut result.shader_space,
+        prepared_scene,
+    )?;
+    if !result.gaussian_blur_bundles.is_empty() {
+        super::dynamic_gaussian_blur::update_dynamic_gaussian_blur_bundles(
+            prepared_scene,
+            &mut result.shader_space,
+            &mut result.pass_bindings,
+            &mut result.gaussian_blur_bundles,
+            &HashMap::new(),
+        )?;
+    }
+    Ok(result)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeadlessOutputKind {
@@ -106,23 +154,22 @@ pub fn render_scene_to_file_headless(
     output_path: impl AsRef<Path>,
     asset_store: Option<&AssetStore>,
 ) -> Result<()> {
+    render_scene_to_file_headless_with_runtime_overrides(scene, output_path, asset_store, None)
+}
+
+pub fn render_scene_to_file_headless_with_runtime_overrides(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
-    // Use UiSdrDisplayEncode so the assembler creates a display-encode pass
-    // that bakes linear→sRGB into a presentation texture.  PNG export reads
-    // that texture for correct gamma.  EXR stays on the raw scene output.
-    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
-        .with_adapter(renderer.adapter.clone())
-        .with_options(ShaderSpaceBuildOptions {
-            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
-            ..Default::default()
-        });
-    if let Some(store) = asset_store {
-        builder = builder.with_asset_store(store.clone());
-    }
-    let result = builder.build(scene)?;
+    // Build the default GPU graph first, matching the interactive app. State
+    // values are uploaded only after resource allocation and pipeline build.
+    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
 
     result.shader_space.render();
     let output_info = result
@@ -162,19 +209,26 @@ pub fn render_scene_texture_to_file_headless(
     output_path: impl AsRef<Path>,
     asset_store: Option<&AssetStore>,
 ) -> Result<()> {
+    render_scene_texture_to_file_headless_with_runtime_overrides(
+        scene,
+        texture_name,
+        output_path,
+        asset_store,
+        None,
+    )
+}
+
+pub fn render_scene_texture_to_file_headless_with_runtime_overrides(
+    scene: &SceneDSL,
+    texture_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|error| anyhow!("failed to create headless renderer: {error}"))?;
-    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
-        .with_adapter(renderer.adapter.clone())
-        .with_options(ShaderSpaceBuildOptions {
-            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
-            ..Default::default()
-        });
-    if let Some(store) = asset_store {
-        builder = builder.with_asset_store(store.clone());
-    }
-    let result = builder.build(scene)?;
+    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
     result.shader_space.render();
 
     let texture_info = result
@@ -210,19 +264,26 @@ pub fn render_scene_pass_to_file_headless(
     output_path: impl AsRef<Path>,
     asset_store: Option<&AssetStore>,
 ) -> Result<()> {
+    render_scene_pass_to_file_headless_with_runtime_overrides(
+        scene,
+        pass_name,
+        output_path,
+        asset_store,
+        None,
+    )
+}
+
+pub fn render_scene_pass_to_file_headless_with_runtime_overrides(
+    scene: &SceneDSL,
+    pass_name: &str,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|error| anyhow!("failed to create headless renderer: {error}"))?;
-    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
-        .with_adapter(renderer.adapter.clone())
-        .with_options(ShaderSpaceBuildOptions {
-            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
-            ..Default::default()
-        });
-    if let Some(store) = asset_store {
-        builder = builder.with_asset_store(store.clone());
-    }
-    let mut result = builder.build(scene)?;
+    let mut result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
     let request = PassCaptureRequest::new(pass_name, PassCaptureMode::Solo);
     let capture = result
         .shader_space
@@ -257,20 +318,29 @@ pub fn render_scene_to_file_headless_profiled(
     profile_config: &ProfileRunConfig,
     writer: &mut ProfileWriter,
 ) -> Result<()> {
+    render_scene_to_file_headless_profiled_with_runtime_overrides(
+        scene,
+        output_path,
+        asset_store,
+        profile_config,
+        writer,
+        None,
+    )
+}
+
+pub fn render_scene_to_file_headless_profiled_with_runtime_overrides(
+    scene: &SceneDSL,
+    output_path: impl AsRef<Path>,
+    asset_store: Option<&AssetStore>,
+    profile_config: &ProfileRunConfig,
+    writer: &mut ProfileWriter,
+    runtime_overrides: Option<&HeadlessRuntimeOverrides>,
+) -> Result<()> {
     let output_path = output_path.as_ref();
     let renderer = HeadlessRenderer::new(HeadlessRendererConfig::default())
         .map_err(|e| anyhow!("failed to create headless renderer: {e}"))?;
 
-    let mut builder = ShaderSpaceBuilder::new(renderer.device.clone(), renderer.queue.clone())
-        .with_adapter(renderer.adapter.clone())
-        .with_options(ShaderSpaceBuildOptions {
-            presentation_mode: ShaderSpacePresentationMode::UiSdrDisplayEncode,
-            ..Default::default()
-        });
-    if let Some(store) = asset_store {
-        builder = builder.with_asset_store(store.clone());
-    }
-    let result = builder.build(scene)?;
+    let result = build_headless_shader_space(&renderer, scene, asset_store, runtime_overrides)?;
     let snapshot = ResourceSnapshot::capture(
         &result.shader_space,
         &result.pass_bindings,

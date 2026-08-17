@@ -980,15 +980,9 @@ fn compile_expr(
             cache,
             compile_fn,
         )?,
-        "PassTexture" => texture_nodes::compile_pass_texture(
-            scene,
-            nodes_by_id,
-            node,
-            out_port,
-            ctx,
-            cache,
-            compile_fn,
-        )?,
+        "TextureSampler" => {
+            bail!("TextureSampler.texture is a resource output and cannot be compiled as a value")
+        }
         "Matcap" => texture_nodes::compile_matcap(
             scene,
             nodes_by_id,

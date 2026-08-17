@@ -10,8 +10,8 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::dsl::{Node, NodePort, SceneDSL, incoming_connection};
 use crate::renderer::glsl_snippet::{GlslParam, GlslSnippetSpec, compile_glsl_snippet};
-use crate::renderer::pass_source::resolve_pass_source_ref;
-use crate::renderer::types::{MaterialCompileContext, TypedExpr, ValueType};
+use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
+use crate::renderer::types::{ImageTextureRef, MaterialCompileContext, TypedExpr, ValueType};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 use crate::renderer::validation::GlslShaderStage;
 
@@ -27,8 +27,9 @@ fn map_port_type(s: Option<&str>) -> Result<ValueType> {
         "vector2" | "vec2" => Ok(ValueType::Vec2),
         "vector3" | "vec3" => Ok(ValueType::Vec3),
         "vector4" | "vec4" | "color" => Ok(ValueType::Vec4),
-        // Pass texture reference - used for multi-tap sampling inside MathClosure.
-        "pass" | "texture" => Ok(ValueType::Texture2D),
+        // Raster sampling inputs are canonical texture resources. Pass producers may connect via
+        // planner-level pass -> texture coercion, but `pass` is not a MathClosure resource type.
+        "texture" => Ok(ValueType::Texture2D),
         // Array types — size 0 means "infer at compile time".
         "float[]" | "f32[]" => Ok(ValueType::F32Array(0)),
         "vector2[]" | "vec2[]" => Ok(ValueType::Vec2Array(0)),
@@ -43,8 +44,22 @@ fn map_port_type(s: Option<&str>) -> Result<ValueType> {
 struct PassTextureInput {
     /// Variable name used in the snippet (e.g., "mip0").
     var_name: String,
-    /// Consumer-side binding identity.
-    binding_id: String,
+    tex_var: String,
+    samp_var: String,
+    extra_args: usize,
+}
+
+fn referenced_helper_name(wgsl_fn_decl: &str, source_name: &str) -> Option<String> {
+    let start = wgsl_fn_decl.find(source_name)?;
+    let rest = &wgsl_fn_decl[start..];
+    let end = rest
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .unwrap_or(rest.len());
+    let name = &rest[..end];
+    rest[end..]
+        .trim_start()
+        .starts_with('(')
+        .then(|| name.to_string())
 }
 
 fn default_value_for(ty: ValueType) -> TypedExpr {
@@ -459,15 +474,46 @@ where
 
         // Handle pass texture inputs specially.
         if port_ty == ValueType::Texture2D {
-            let conn = incoming_connection(scene, &node.id, &port.id)
-                .ok_or_else(|| anyhow!("MathClosure pass input '{}' is not connected", port.id))?;
-            let texture_ref = resolve_pass_source_ref(scene, nodes_by_id, &conn.from)
-                .with_context(|| format!("resolve MathClosure pass input '{param_name}'"))?;
-            ctx.register_pass_texture_ref(texture_ref.clone());
+            let conn = incoming_connection(scene, &node.id, &port.id).ok_or_else(|| {
+                anyhow!(
+                    "MathClosure '{}' texture input '{}' is not connected",
+                    node.id,
+                    port.id
+                )
+            })?;
+            let texture_source = resolve_texture_source_ref(scene, nodes_by_id, &conn.from)
+                .with_context(|| format!("resolve MathClosure texture input '{param_name}'"))?;
+            let (tex_var, samp_var) = match texture_source {
+                TextureSourceRef::Image {
+                    binding_id,
+                    image_node_id,
+                    sampler_node_id,
+                } => {
+                    ctx.register_image_texture_ref(ImageTextureRef {
+                        binding_id: binding_id.clone(),
+                        image_node_id,
+                        sampler_node_id,
+                    });
+                    (
+                        MaterialCompileContext::tex_var_name(&binding_id),
+                        MaterialCompileContext::sampler_var_name(&binding_id),
+                    )
+                }
+                TextureSourceRef::Surface(texture_ref) => {
+                    let binding_id = texture_ref.binding_id.clone();
+                    ctx.register_pass_texture_ref(texture_ref);
+                    (
+                        MaterialCompileContext::pass_tex_var_name(&binding_id),
+                        MaterialCompileContext::pass_sampler_var_name(&binding_id),
+                    )
+                }
+            };
 
             pass_texture_inputs.push(PassTextureInput {
                 var_name: param_name.clone(),
-                binding_id: texture_ref.binding_id,
+                tex_var,
+                samp_var,
+                extra_args: 0,
             });
 
             // Don't add a parameter binding for pass inputs - they're sampled directly.
@@ -521,11 +567,8 @@ where
         // Build a prefix with helper function declarations for pass texture sampling.
         let mut glsl_helper_prefix = String::new();
 
-        for pti in &pass_texture_inputs {
-            let tex_var = MaterialCompileContext::pass_tex_var_name(&pti.binding_id);
-            let samp_var = MaterialCompileContext::pass_sampler_var_name(&pti.binding_id);
-            let helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.binding_id));
-            let helper_name_with_suffix = format!("{helper_name}_");
+        for pti in &mut pass_texture_inputs {
+            let helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.var_name));
 
             let extra_args = {
                 let pat = format!("samplePass({}, ", pti.var_name);
@@ -551,6 +594,7 @@ where
                     0
                 }
             };
+            pti.extra_args = extra_args;
 
             let pattern = format!("samplePass({}, ", pti.var_name);
             let replacement = format!("{helper_name}(");
@@ -560,27 +604,10 @@ where
                 glsl_helper_prefix.push_str(&format!(
                     "vec4 {helper_name}(vec2 xy_arg, vec2 res_arg) {{ return vec4(0.0); }}\n"
                 ));
-                let helper_fn = format!(
-                    r#"fn {helper_name_with_suffix}(xy_in: vec2f, res_in: vec2f) -> vec4f {{
-    let uv = xy_in / res_in;
-    return textureSample({tex_var}, {samp_var}, uv);
-}}
-"#,
-                );
-                ctx.extra_wgsl_decls
-                    .insert(helper_name_with_suffix, helper_fn);
             } else {
                 glsl_helper_prefix.push_str(&format!(
                     "vec4 {helper_name}(vec2 uv_arg) {{ return vec4(0.0); }}\n"
                 ));
-                let helper_fn = format!(
-                    r#"fn {helper_name_with_suffix}(uv_in: vec2f) -> vec4f {{
-    return textureSample({tex_var}, {samp_var}, uv_in);
-}}
-"#,
-                );
-                ctx.extra_wgsl_decls
-                    .insert(helper_name_with_suffix, helper_fn);
             }
         }
 
@@ -644,6 +671,41 @@ where
             helper_prefix,
         })
         .map_err(|e| anyhow!("MathClosure GLSL->WGSL failed (node={}): {e:#}", node.id))?;
+
+        for pti in &pass_texture_inputs {
+            let source_helper_name = format!("sample_pass_{}", sanitize_wgsl_ident(&pti.var_name));
+            let generated_helper_name = referenced_helper_name(
+                &compiled.wgsl_fn_decl,
+                &source_helper_name,
+            )
+            .ok_or_else(|| {
+                anyhow!(
+                    "MathClosure {} lost generated texture helper '{}' during GLSL->WGSL conversion",
+                    node.id,
+                    source_helper_name
+                )
+            })?;
+            let tex_var = &pti.tex_var;
+            let samp_var = &pti.samp_var;
+            let helper_fn = if pti.extra_args >= 1 {
+                format!(
+                    r#"fn {generated_helper_name}(xy_in: vec2f, res_in: vec2f) -> vec4f {{
+    let uv = xy_in / res_in;
+    return textureSample({tex_var}, {samp_var}, uv);
+}}
+"#,
+                )
+            } else {
+                format!(
+                    r#"fn {generated_helper_name}(uv_in: vec2f) -> vec4f {{
+    return textureSample({tex_var}, {samp_var}, uv_in);
+}}
+"#,
+                )
+            };
+            ctx.extra_wgsl_decls
+                .insert(generated_helper_name, helper_fn);
+        }
 
         (
             compiled.wgsl_fn_name,

@@ -533,6 +533,7 @@ fn run_case(case: &Case) {
     // Render in-process so we can dump intermediate textures for all cases.
     #[allow(unused_assignments)]
     let mut output_is_hdr = false;
+    let output_dimensions;
     let out_result;
     {
         let headless =
@@ -572,10 +573,12 @@ fn run_case(case: &Case) {
         let pass_bindings = build.pass_bindings;
 
         // Detect HDR output to choose EXR vs PNG for frame dumps and baselines.
-        output_is_hdr = shader_space
+        let output_info = shader_space
             .texture_info(output_texture_name.as_str())
-            .map(|info| info.format == rust_wgpu_fiber::eframe::wgpu::TextureFormat::Rgba16Float)
-            .unwrap_or(false);
+            .unwrap_or_else(|| panic!("case {}: missing output texture info", case.name));
+        output_is_hdr =
+            output_info.format == rust_wgpu_fiber::eframe::wgpu::TextureFormat::Rgba16Float;
+        output_dimensions = (output_info.size.width, output_info.size.height);
         let output_ext = if output_is_hdr { "exr" } else { "png" };
 
         // NOTE: Keep baseline images immutable.
@@ -1007,12 +1010,12 @@ fn run_case(case: &Case) {
             image_ok = false;
         }
     } else if !uses_time {
-        // If there is no baseline/expected image and it's static,
-        // at least compare to prepared scene resolution.
+        // If there is no baseline/expected image and it's static, verify that the persisted file
+        // has the exact dimensions of the planner-selected scene output texture. Calling raw
+        // `prepare_scene` here would bypass consumer-scoped coercion planning and is not a valid
+        // representation of the real render path.
         let actual = load_rgba8(&out_result);
-        let prepared = renderer::scene_prep::prepare_scene(&scene)
-            .unwrap_or_else(|e| panic!("case {}: failed to prepare scene: {e}", case.name));
-        if actual.dimensions() != (prepared.resolution[0], prepared.resolution[1]) {
+        if actual.dimensions() != output_dimensions {
             image_ok = false;
         }
     }

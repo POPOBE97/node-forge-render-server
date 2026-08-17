@@ -10,6 +10,7 @@ use crate::{
     asset_store::AssetStore,
     dsl::{Node, SceneDSL, incoming_connection, parse_f32, parse_u32},
     renderer::{
+        gaussian_contract::gaussian_radius_port_id,
         geometry_resolver::types::ResolvedCompositionContext,
         scene_prep::PreparedScene,
         types::{
@@ -49,7 +50,7 @@ pub struct GaussianBlurBundleTemplate {
     target_size: [f32; 2],
     target_size_u: [u32; 2],
     pass_output_registry_seed: PassOutputRegistry,
-    sampled_pass_ids: HashSet<String>,
+    materialized_texture_output_ids: HashSet<String>,
     baked_data_parse_bytes_by_pass_seed: HashMap<String, Arc<[u8]>>,
 }
 
@@ -105,7 +106,7 @@ impl GaussianBlurBundleTemplate {
         target_size: [f32; 2],
         target_size_u: [u32; 2],
         pass_output_registry_seed: PassOutputRegistry,
-        sampled_pass_ids: HashSet<String>,
+        materialized_texture_output_ids: HashSet<String>,
         baked_data_parse_bytes_by_pass_seed: HashMap<String, Arc<[u8]>>,
     ) -> Self {
         Self {
@@ -122,7 +123,7 @@ impl GaussianBlurBundleTemplate {
             target_size,
             target_size_u,
             pass_output_registry_seed,
-            sampled_pass_ids,
+            materialized_texture_output_ids,
             baked_data_parse_bytes_by_pass_seed,
         }
     }
@@ -133,11 +134,18 @@ impl GaussianBlurBundleTemplate {
             .iter()
             .find(|node| node.id == self.layer_id)
             .ok_or_else(|| anyhow!("missing dynamic Gaussian blur node '{}'", self.layer_id))?;
-        let radius_px = if incoming_connection(scene, &self.layer_id, "radius").is_none() {
+        let radius_port_id = gaussian_radius_port_id(&layer_node.node_type).ok_or_else(|| {
+            anyhow!(
+                "dynamic Gaussian blur '{}' has unsupported node type '{}'",
+                self.layer_id,
+                layer_node.node_type
+            )
+        })?;
+        let radius_px = if incoming_connection(scene, &self.layer_id, radius_port_id).is_none() {
             // State/Mutation animation writes the authored radius directly into this param. Keep
             // that 60 Hz path allocation-free; only graph-connected CPU inputs need an id map.
-            parse_f32(&layer_node.params, "radius")
-                .or_else(|| parse_u32(&layer_node.params, "radius").map(|value| value as f32))
+            parse_f32(&layer_node.params, radius_port_id)
+                .or_else(|| parse_u32(&layer_node.params, radius_port_id).map(|value| value as f32))
                 .unwrap_or(0.0)
                 .max(0.0)
         } else {
@@ -147,7 +155,7 @@ impl GaussianBlurBundleTemplate {
                 .cloned()
                 .map(|node| (node.id.clone(), node))
                 .collect::<HashMap<String, Node>>();
-            cpu_num_f32_min_0(scene, &nodes_by_id, layer_node, "radius", 0.0)?
+            cpu_num_f32_min_0(scene, &nodes_by_id, layer_node, radius_port_id, 0.0)?
         };
         let extend_enabled = layer_node
             .params
@@ -280,11 +288,6 @@ impl GaussianBlurBundleTemplate {
             HashMap::new();
         let mut baked_data_parse_bytes_by_pass = self.baked_data_parse_bytes_by_pass_seed.clone();
         let mut baked_data_parse_buffer_to_pass_id = HashMap::new();
-        let mut downsample_source_pass_ids = HashSet::new();
-        let mut upsample_source_pass_ids = HashSet::new();
-        let mut gaussian_source_pass_ids = HashSet::new();
-        let mut bloom_source_pass_ids = HashSet::new();
-        let mut gradient_source_pass_ids = HashSet::new();
         let mut pass_extensions: HashMap<String, PassExtension> = HashMap::new();
         let mut shader_parameter_buffers_by_pass: HashMap<String, ShaderParameterBufferPlan> =
             HashMap::new();
@@ -316,15 +319,10 @@ impl GaussianBlurBundleTemplate {
             authored_color_load_ops_by_pass: &mut authored_color_load_ops_by_pass,
             pass_depth_attachment_by_name: &mut pass_depth_attachment_by_name,
             pass_output_registry: &mut pass_output_registry,
-            sampled_pass_ids: &self.sampled_pass_ids,
+            materialized_texture_output_ids: &self.materialized_texture_output_ids,
             baked_data_parse_meta_by_pass: &mut baked_data_parse_meta_by_pass,
             baked_data_parse_bytes_by_pass: &mut baked_data_parse_bytes_by_pass,
             baked_data_parse_buffer_to_pass_id: &mut baked_data_parse_buffer_to_pass_id,
-            downsample_source_pass_ids: &mut downsample_source_pass_ids,
-            upsample_source_pass_ids: &mut upsample_source_pass_ids,
-            gaussian_source_pass_ids: &mut gaussian_source_pass_ids,
-            bloom_source_pass_ids: &mut bloom_source_pass_ids,
-            gradient_source_pass_ids: &mut gradient_source_pass_ids,
             pass_extensions: &mut pass_extensions,
             shader_parameter_buffers_by_pass: &mut shader_parameter_buffers_by_pass,
         };
@@ -337,7 +335,7 @@ impl GaussianBlurBundleTemplate {
         )?;
 
         let output_spec = pass_output_registry
-            .get_for_port(&self.layer_id, "pass")
+            .get_for_port(&self.layer_id, "texture")
             .cloned()
             .ok_or_else(|| anyhow!("dynamic Gaussian blur '{}' has no output", self.layer_id))?;
         let referenced_baked_pass_ids = baked_data_parse_buffer_to_pass_id

@@ -1,4 +1,3 @@
-mod auto_wrap;
 mod composite;
 mod data_parse;
 pub(crate) mod data_parse_runtime;
@@ -11,10 +10,9 @@ mod pipeline;
 mod resource_pool;
 mod types;
 
-#[cfg(test)]
-pub(crate) use auto_wrap::materialize_pass_inputs;
 pub use composite::{composite_layers_in_draw_order, composition_layers_by_id};
 pub(crate) use data_parse::bake_data_parse_nodes;
+pub(crate) use image_pass::IMAGE_PASS_TEXTURE_SIZE_SOURCE_PARAM;
 pub use pipeline::prepare_scene;
 pub(crate) use pipeline::prepare_scene_with_report;
 pub use types::{PreparedScene, ScenePrepReport};

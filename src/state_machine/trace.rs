@@ -173,6 +173,20 @@ pub fn tracked_override_keys(sm: &StateMachine) -> BTreeSet<String> {
     keys
 }
 
+/// Render parameters that may change without a SceneDSL topology edit.
+///
+/// Derivation targets are explicit GPU/render outputs. State Param ids are also included because
+/// declaration ids may directly use the canonical `nodeId:paramId` identity.
+pub fn dynamic_render_keys(sm: &StateMachine) -> BTreeSet<String> {
+    let mut keys = tracked_override_keys(sm);
+    keys.extend(
+        sm.state_params
+            .iter()
+            .map(|declaration| declaration.id.clone()),
+    );
+    keys
+}
+
 pub fn build_initial_values(
     scene: &SceneDSL,
     tracked_keys: &[String],

@@ -1,12 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 
 use crate::{
-    dsl::{SceneDSL, incoming_connection},
+    dsl::SceneDSL,
     renderer::{
-        geometry_resolver::is_pass_like_node_type,
-        pass_source::resolve_pass_source_ref,
+        pass_source::{TextureSourceRef, processing_input_connection, resolve_texture_source_ref},
         scene_prep::composite_layers_in_draw_order,
         types::{PassOutputRegistry, PassTextureRef},
         wgsl::{
@@ -15,6 +14,9 @@ use crate::{
         },
     },
 };
+
+#[cfg(test)]
+use crate::renderer::geometry_resolver::is_pass_like_node_type;
 
 use super::types::PassTextureBinding;
 
@@ -72,7 +74,7 @@ fn deps_for_pass_node(
                 .map(|texture_ref| texture_ref.source.node_id)
                 .collect())
         }
-        "GuassianBlurPass" => {
+        "GuassianBlurPass" | "ImagePass" => {
             let bundle = build_blur_image_wgsl_bundle(scene, nodes_by_id, pass_node_id)?;
             Ok(bundle
                 .pass_textures
@@ -100,39 +102,15 @@ fn deps_for_pass_node(
                 .into_iter()
                 .collect())
         }
-        "Downsample" | "Convolution" => {
-            // Kernel passes depend on the upstream pass provided on their `source` input.
-            let source_conn = incoming_connection(scene, pass_node_id, "source")
-                .ok_or_else(|| anyhow!("{}.source missing for {pass_node_id}", node.node_type))?;
-            Ok(vec![
-                resolve_pass_source_ref(scene, nodes_by_id, &source_conn.from)?
-                    .source
-                    .node_id,
-            ])
-        }
-        "Upsample" => {
-            // Upsample depends on the upstream pass provided on its `source` input.
-            let source_conn = incoming_connection(scene, pass_node_id, "source")
-                .ok_or_else(|| anyhow!("Upsample.source missing for {pass_node_id}"))?;
-            Ok(vec![
-                resolve_pass_source_ref(scene, nodes_by_id, &source_conn.from)?
-                    .source
-                    .node_id,
-            ])
+        "Downsample" | "Convolution" | "Upsample" | "GradientBlur" => {
+            let (source_conn, _) = processing_input_connection(scene, pass_node_id)?;
+            match resolve_texture_source_ref(scene, nodes_by_id, &source_conn.from)? {
+                TextureSourceRef::Image { .. } => Ok(Vec::new()),
+                TextureSourceRef::Surface(texture_ref) => Ok(vec![texture_ref.source.node_id]),
+            }
         }
         "Composite" => composite_layers_in_draw_order(scene, nodes_by_id, pass_node_id),
         "IntelligentLight" | "MeshGradient" => Ok(Vec::new()),
-        "GradientBlur" => {
-            // GradientBlur reads "source" input (not "pass").
-            let Some(conn) = incoming_connection(scene, pass_node_id, "source") else {
-                return Ok(Vec::new());
-            };
-            Ok(vec![
-                resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?
-                    .source
-                    .node_id,
-            ])
-        }
         other => bail!("expected a pass node id, got node type {other} for {pass_node_id}"),
     }
 }
@@ -330,6 +308,7 @@ pub(crate) fn forward_root_dependencies_from_roots(
     Ok(forward_roots)
 }
 
+#[cfg(test)]
 pub(crate) fn sampled_pass_node_ids_from_roots(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, crate::dsl::Node>,
@@ -414,14 +393,14 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "upsample".to_string(),
-                        port_id: "source".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
                 Connection {
                     id: "c_out".to_string(),
                     from: Endpoint {
                         node_id: "upsample".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "out_comp".to_string(),
@@ -471,14 +450,14 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "convolution".to_string(),
-                        port_id: "source".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
                 Connection {
                     id: "c_out".to_string(),
                     from: Endpoint {
                         node_id: "convolution".to_string(),
-                        port_id: "output".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "out_comp".to_string(),
@@ -532,14 +511,14 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "bloom".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
                 Connection {
                     id: "c_out".to_string(),
                     from: Endpoint {
                         node_id: "bloom".to_string(),
-                        port_id: "glare".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "out_comp".to_string(),
@@ -612,14 +591,14 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "ds_live".to_string(),
-                        port_id: "source".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
                 Connection {
                     id: "c_out".to_string(),
                     from: Endpoint {
                         node_id: "ds_live".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "out".to_string(),
@@ -659,7 +638,7 @@ mod tests {
 
     #[test]
     fn sampled_pass_ids_from_roots_tracks_materialized_blur_source_transitive_deps() -> Result<()> {
-        let mut scene = SceneDSL {
+        let scene = SceneDSL {
             version: "1".to_string(),
             metadata: Metadata {
                 name: "sampled-from-roots-blur-mathclosure".to_string(),
@@ -670,6 +649,7 @@ mod tests {
                 node("blur", "GuassianBlurPass"),
                 node("p0", "RenderPass"),
                 node("p1", "RenderPass"),
+                node("materialized", "RenderPass"),
                 Node {
                     id: "mc".to_string(),
                     node_type: "MathClosure".to_string(),
@@ -683,13 +663,13 @@ mod tests {
                         NodePort {
                             id: "dynamic_l0".to_string(),
                             name: Some("l0".to_string()),
-                            port_type: Some("pass".to_string()),
+                            port_type: Some("texture".to_string()),
                             array_length: None,
                         },
                         NodePort {
                             id: "dynamic_l1".to_string(),
                             name: Some("l1".to_string()),
-                            port_type: Some("pass".to_string()),
+                            port_type: Some("texture".to_string()),
                             array_length: None,
                         },
                     ],
@@ -727,14 +707,25 @@ mod tests {
                     },
                 },
                 Connection {
-                    id: "c_blur".to_string(),
+                    id: "c_material".to_string(),
                     from: Endpoint {
                         node_id: "mc".to_string(),
                         port_id: "output".to_string(),
                     },
                     to: Endpoint {
-                        node_id: "blur".to_string(),
+                        node_id: "materialized".to_string(),
+                        port_id: "material".to_string(),
+                    },
+                },
+                Connection {
+                    id: "c_blur".to_string(),
+                    from: Endpoint {
+                        node_id: "materialized".to_string(),
                         port_id: "pass".to_string(),
+                    },
+                    to: Endpoint {
+                        node_id: "blur".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
             ],
@@ -744,11 +735,6 @@ mod tests {
             state_machine: None,
             debug_artifacts: None,
         };
-
-        crate::renderer::scene_prep::materialize_pass_inputs(
-            &mut scene,
-            &crate::schema::load_default_scheme()?,
-        );
 
         let nodes_by_id: HashMap<String, Node> = scene
             .nodes
@@ -832,7 +818,7 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "ds_dead".to_string(),
-                        port_id: "source".to_string(),
+                        port_id: "pass".to_string(),
                     },
                 },
             ],
@@ -1046,14 +1032,14 @@ mod tests {
                     },
                     to: Endpoint {
                         node_id: "ds".to_string(),
-                        port_id: "source".to_string(),
+                        port_id: "texture".to_string(),
                     },
                 },
                 Connection {
                     id: "c_out".to_string(),
                     from: Endpoint {
                         node_id: "ds".to_string(),
-                        port_id: "pass".to_string(),
+                        port_id: "texture".to_string(),
                     },
                     to: Endpoint {
                         node_id: "comp_b".to_string(),

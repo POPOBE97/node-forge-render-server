@@ -4,12 +4,13 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::{
     dsl::{Endpoint, Node, SceneDSL, incoming_connection},
-    renderer::pass_source::resolve_pass_source_ref,
+    renderer::pass_source::{resolve_pass_source_ref, resolve_texture_source_ref},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProjectedResourceKind {
     Pass,
+    Texture,
     Kernel,
 }
 
@@ -17,6 +18,7 @@ impl ProjectedResourceKind {
     fn port_type(self) -> &'static str {
         match self {
             Self::Pass => "pass",
+            Self::Texture => "texture",
             Self::Kernel => "kernel",
         }
     }
@@ -138,6 +140,7 @@ fn projected_resource_pool_kind(node: &Node) -> Option<ProjectedResourceKind> {
         .and_then(|output| output.port_type.as_deref())
     {
         Some("pass") => Some(ProjectedResourceKind::Pass),
+        Some("texture") => Some(ProjectedResourceKind::Texture),
         Some("kernel") => Some(ProjectedResourceKind::Kernel),
         _ => None,
     }
@@ -157,8 +160,9 @@ fn resolve_selected_resource_endpoint(
     let pool = nodes_by_id
         .get(pool_id)
         .ok_or_else(|| anyhow!("ResourcePool node '{pool_id}' does not exist"))?;
-    let pool_kind = projected_resource_pool_kind(pool)
-        .ok_or_else(|| anyhow!("node '{pool_id}' is not a pass- or kernel-typed ResourcePool"))?;
+    let pool_kind = projected_resource_pool_kind(pool).ok_or_else(|| {
+        anyhow!("node '{pool_id}' is not a pass-, texture-, or kernel-typed ResourcePool")
+    })?;
     if !visiting.insert(pool_id.to_string()) {
         bail!(
             "cycle detected while resolving {} ResourcePool '{pool_id}'",
@@ -229,6 +233,15 @@ fn validate_selected_endpoint(
             resolve_pass_source_ref(scene, nodes_by_id, endpoint).map_err(|error| {
                 anyhow!(
                     "pass ResourcePool '{pool_id}' selected invalid source '{}.{}': {error}",
+                    endpoint.node_id,
+                    endpoint.port_id
+                )
+            })?;
+        }
+        ProjectedResourceKind::Texture => {
+            resolve_texture_source_ref(scene, nodes_by_id, endpoint).map_err(|error| {
+                anyhow!(
+                    "texture ResourcePool '{pool_id}' selected invalid source '{}.{}': {error}",
                     endpoint.node_id,
                     endpoint.port_id
                 )
@@ -371,6 +384,33 @@ mod tests {
             assert_eq!(output.from.node_id, expected);
             assert_eq!(output.from.port_id, "pass");
         }
+    }
+
+    #[test]
+    fn projects_selected_texture_resources() {
+        let mut scene = scene(
+            vec![
+                node("image", "ImageTexture"),
+                resource_pool("pool", "texture", 0, 1),
+                node("sampler", "TextureSampler"),
+            ],
+            vec![
+                edge("image-pool", "image", "texture", "pool", "input_0"),
+                edge("pool-out", "pool", "output", "sampler", "texture"),
+            ],
+        );
+
+        assert_eq!(
+            project_selected_resource_pools(&mut scene, "sampler").unwrap(),
+            1
+        );
+        let output = scene
+            .connections
+            .iter()
+            .find(|connection| connection.id == "pool-out")
+            .unwrap();
+        assert_eq!(output.from.node_id, "image");
+        assert_eq!(output.from.port_id, "texture");
     }
 
     #[test]

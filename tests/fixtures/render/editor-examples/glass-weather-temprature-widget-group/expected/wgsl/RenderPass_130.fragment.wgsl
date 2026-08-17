@@ -319,6 +319,20 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, re
     return _e24;
 }
 
+fn mc_math_closure_05401580_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
+    var uv_2: vec2<f32>;
+    var uv_3: vec2<f32>;
+    var output: vec4<f32> = vec4(0f);
+
+    uv_2 = uv;
+    uv_3 = uv_1;
+    let _e8: vec2<f32> = uv_3;
+    let _e9: vec4<f32> = sample_pass_texture(_e8);
+    output = _e9;
+    let _e10: vec4<f32> = output;
+    return _e10;
+}
+
 fn mc_math_closure_26a57d04_(uv: vec2<f32>, x: f32) -> f32 {
     var uv_1: vec2<f32>;
     var x_1: f32;
@@ -541,6 +555,10 @@ fn mc_thumb_t(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
     return _e18;
 }
 
+fn sample_pass_texture(uv_in: vec2f) -> vec4f {
+    return textureSample(pass_tex_GroupInstance_135_PassTexture_86, pass_samp_GroupInstance_135_PassTexture_86, uv_in);
+}
+
 
 // ---- 2D SDF bevel helpers (generated) ----
 // 2D SDF bevel helper template.
@@ -751,12 +769,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_math_closure_68747b04_(in.uv, uv, scale);
         math_closure_out_4ae96100 = output;
     }
-    // Pass Texture GroupInstance_135/PassTexture_86.color
-    let pass_texture = textureSample(
-        pass_tex_GroupInstance_135_PassTexture_86,
-        pass_samp_GroupInstance_135_PassTexture_86,
-        vec2f((math_closure_out_4ae96100).x, 1.0 - (math_closure_out_4ae96100).y),
-    );
+    var math_closure_out_9ba70cac: vec4f;
+    {
+        let uv = math_closure_out_4ae96100;
+        var output: vec4f;
+        output = mc_math_closure_05401580_(in.uv, uv);
+        math_closure_out_9ba70cac = output;
+    }
     // Remap GroupInstance_135/Remap_64.result
     let remap = smoothstep(
         0.0,
@@ -803,12 +822,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var math_closure_out: vec4f;
     {
-        let c_edge = pass_texture;
+        let c_edge = math_closure_out_9ba70cac;
         let e = remap;
         let f = smoothstep(0.0, 0.015, math_closure_out_589e41e9);
         let l = math_closure_out_958b420d;
         let selection = show_thumb_out;
-        let lumin_edge = clamp(dot((pass_texture).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        let lumin_edge = clamp(dot((math_closure_out_9ba70cac).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
         output = mc_math_closure_3faa7d04_(in.uv, c_edge, e, f, l, selection, lumin_edge);
         math_closure_out = output;

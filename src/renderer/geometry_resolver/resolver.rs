@@ -408,7 +408,7 @@ mod tests {
         let scene = scene(
             nodes.clone(),
             vec![
-                conn("c1", "rp", "pass", "ds", "source"),
+                conn("c1", "rp", "pass", "ds", "pass"),
                 conn("c2", "ds", "pass", "comp_a", "pass"),
                 conn("c3", "rp", "pass", "comp_b", "pass"),
                 conn("c4", "rt_a", "texture", "comp_a", "target"),
@@ -489,7 +489,7 @@ mod tests {
             nodes.clone(),
             vec![
                 conn("c1", "rect", "geometry", "rp", "geometry"),
-                conn("c2", "rp", "pass", "ds", "source"),
+                conn("c2", "rp", "pass", "ds", "pass"),
                 conn("c3", "ds", "pass", "comp", "pass"),
                 conn("c4", "rt", "texture", "comp", "target"),
             ],
@@ -523,7 +523,7 @@ mod tests {
             vec![
                 conn("c1", "rp_live", "pass", "comp", "pass"),
                 conn("c2", "rt", "texture", "comp", "target"),
-                conn("c3", "rp_dead", "pass", "ds_dead", "source"),
+                conn("c3", "rp_dead", "pass", "ds_dead", "pass"),
             ],
         );
         let nodes_by_id: HashMap<String, Node> =

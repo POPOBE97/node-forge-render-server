@@ -17,8 +17,8 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
-        pass_source::resolve_pass_source_ref,
-        types::{MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
+        pass_source::processing_input_connection,
+        types::{MaterialCompileContext, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_f32},
         wgsl::{build_fullscreen_textured_bundle, build_upsample_bilinear_bundle},
     },
@@ -28,7 +28,6 @@ use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
 use super::args::{BuilderState, SceneContext};
-use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
 
 /// Assemble an `"Upsample"` layer.
 pub(crate) fn assemble_upsample(
@@ -54,20 +53,16 @@ pub(crate) fn assemble_upsample(
                 )
             })?;
 
-    let src_conn = incoming_connection(scene, layer_id, "source")
-        .ok_or_else(|| anyhow!("Upsample.source missing for {layer_id}"))?;
-    let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
-    let src_pass_id = src_texture_ref.source.node_id.clone();
-    let src_tex = bs
-        .pass_output_registry
-        .get_texture_for_port(&src_pass_id, &src_texture_ref.source.port_id)
-        .cloned()
-        .ok_or_else(|| {
-            anyhow!(
-                "Upsample.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
-                src_texture_ref.source.port_id
-            )
-        })?;
+    let (src_conn, _) = processing_input_connection(scene, layer_id)?;
+    let src = super::super::resource_naming::resolve_sampled_source(
+        scene,
+        nodes_by_id,
+        sc.ids(),
+        bs.pass_output_registry,
+        &src_conn.from,
+        sc.asset_store,
+    )?;
+    let src_binding = src.binding.clone();
 
     fn parse_json_number_f32(v: &serde_json::Value) -> Option<f32> {
         v.as_f64()
@@ -200,16 +195,16 @@ pub(crate) fn assemble_upsample(
         }
     };
 
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
-    let needs_intermediate = is_sampled_output || (out_w != tgt_w_u || out_h != tgt_h_u);
-    let writes_scene_output_target = !is_sampled_output;
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
+    let needs_intermediate = materializes_texture || (out_w != tgt_w_u || out_h != tgt_h_u);
+    let writes_scene_output_target = !materializes_texture;
 
     let upsample_out_tex: ResourceName = if needs_intermediate {
         let tex: ResourceName = format!("sys.upsample.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: tex.clone(),
             size: [out_w, out_h],
-            format: if is_sampled_output {
+            format: if materializes_texture {
                 bs.sampled_pass_format
             } else {
                 bs.target_format
@@ -269,8 +264,13 @@ pub(crate) fn assemble_upsample(
         (false, "repeat") => SamplerKind::LinearRepeat,
         (false, _) => SamplerKind::LinearClamp,
     };
-    let sampler_kind = if src_texture_ref.sampler_node_id.is_some() {
-        sampler_kind_for_pass_texture(scene, &src_texture_ref)
+    let sampler_kind = if src
+        .surface_ref
+        .as_ref()
+        .is_some_and(|value| value.sampler_node_id.is_some())
+        || src.binding.image_node_id.is_some()
+    {
+        src.sampler
     } else {
         node_sampler_kind
     };
@@ -292,10 +292,7 @@ pub(crate) fn assemble_upsample(
         graph_binding: None,
         graph_values: None,
         shader_wgsl: bundle.module,
-        texture_bindings: vec![PassTextureBinding {
-            texture: src_tex.clone(),
-            image_node_id: None,
-        }],
+        texture_bindings: vec![src_binding],
         sampler_kinds: vec![sampler_kind],
         blend_state: if upsample_out_tex == *bs.target_texture_name {
             pass_blend_state
@@ -308,7 +305,7 @@ pub(crate) fn assemble_upsample(
     bs.composite_passes.push(pass_name);
 
     // If output size differs from target and not sampled, add a fit pass.
-    if !is_sampled_output && upsample_out_tex != *bs.target_texture_name {
+    if !materializes_texture && upsample_out_tex != *bs.target_texture_name {
         let fit_pass_name: ResourceName = format!("sys.upsample.{layer_id}.fit.pass").into();
         let fit_geo: ResourceName = format!("sys.upsample.{layer_id}.fit.geo").into();
         bs.push_fullscreen_geometry(fit_geo.clone(), tgt_w, tgt_h);
@@ -356,14 +353,25 @@ pub(crate) fn assemble_upsample(
     }
 
     let upsample_output_tex = upsample_out_tex.clone();
-    if is_sampled_output {
-        bs.pass_output_registry.register(PassOutputSpec {
-            endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "output"),
-            texture_name: upsample_output_tex.clone(),
-            resolution: [out_w, out_h],
-            format: bs.sampled_pass_format,
-        });
-    }
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["texture"],
+        if materializes_texture {
+            upsample_output_tex.clone()
+        } else {
+            bs.target_texture_name.clone()
+        },
+        if materializes_texture {
+            [out_w, out_h]
+        } else {
+            [tgt_w_u, tgt_h_u]
+        },
+        if materializes_texture {
+            bs.sampled_pass_format
+        } else {
+            bs.target_format
+        },
+    );
 
     // Composition consumer blits.
     let composition_consumers = sc

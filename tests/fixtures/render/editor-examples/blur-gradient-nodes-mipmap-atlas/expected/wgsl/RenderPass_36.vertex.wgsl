@@ -68,6 +68,24 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
     return _e12;
 }
 
+fn mc_math_closure_d21bfdb4_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
+    var uv_2: vec2<f32>;
+    var uv_3: vec2<f32>;
+    var output: vec4<f32> = vec4(0f);
+
+    uv_2 = uv;
+    uv_3 = uv_1;
+    let _e8: vec2<f32> = uv_3;
+    let _e9: vec4<f32> = sample_pass_texture(_e8);
+    output = _e9;
+    let _e10: vec4<f32> = output;
+    return _e10;
+}
+
+fn sample_pass_texture(uv_in: vec2f) -> vec4f {
+    return textureSample(pass_tex_PassTexture_37, pass_samp_PassTexture_37, uv_in);
+}
+
 
  @vertex
  fn vs_main(

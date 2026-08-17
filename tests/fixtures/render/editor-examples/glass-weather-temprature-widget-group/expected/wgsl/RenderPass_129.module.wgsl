@@ -319,6 +319,20 @@ fn mc_math_closure(uv: vec2<f32>, xy: vec2<f32>, size: vec2<f32>, depth: f32, re
     return _e24;
 }
 
+fn mc_math_closure_40113672_(uv: vec2<f32>, uv_1: vec2<f32>) -> vec4<f32> {
+    var uv_2: vec2<f32>;
+    var uv_3: vec2<f32>;
+    var output: vec4<f32> = vec4(0f);
+
+    uv_2 = uv;
+    uv_3 = uv_1;
+    let _e8: vec2<f32> = uv_3;
+    let _e9: vec4<f32> = sample_pass_texture(_e8);
+    output = _e9;
+    let _e10: vec4<f32> = output;
+    return _e10;
+}
+
 fn mc_math_closure_49e6f1a2_(uv: vec2<f32>, x: f32) -> f32 {
     var uv_1: vec2<f32>;
     var x_1: f32;
@@ -539,6 +553,10 @@ fn mc_thumb_t(uv: vec2<f32>, t: f32, size: vec2<f32>) -> vec2<f32> {
     output = vec2<f32>((_e9.x * _e11), (_e13.y / 2f));
     let _e18: vec2<f32> = output;
     return _e18;
+}
+
+fn sample_pass_texture(uv_in: vec2f) -> vec4f {
+    return textureSample(pass_tex_GroupInstance_132_PassTexture_86, pass_samp_GroupInstance_132_PassTexture_86, uv_in);
 }
 
 
@@ -786,12 +804,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         output = mc_math_closure_b70bf5a2_(in.uv, uv, scale);
         math_closure_out_934748a9 = output;
     }
-    // Pass Texture GroupInstance_132/PassTexture_86.color
-    let pass_texture = textureSample(
-        pass_tex_GroupInstance_132_PassTexture_86,
-        pass_samp_GroupInstance_132_PassTexture_86,
-        vec2f((math_closure_out_934748a9).x, 1.0 - (math_closure_out_934748a9).y),
-    );
+    var math_closure_out_dc1f87d4: vec4f;
+    {
+        let uv = math_closure_out_934748a9;
+        var output: vec4f;
+        output = mc_math_closure_40113672_(in.uv, uv);
+        math_closure_out_dc1f87d4 = output;
+    }
     // Remap GroupInstance_132/Remap_64.result
     let remap = smoothstep(
         0.0,
@@ -838,12 +857,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
     }
     var math_closure_out: vec4f;
     {
-        let c_edge = pass_texture;
+        let c_edge = math_closure_out_dc1f87d4;
         let e = remap;
         let f = smoothstep(0.0, 0.015, math_closure_out_e535303d);
         let l = math_closure_out_0a8925a8;
         let selection = show_thumb_out;
-        let lumin_edge = clamp(dot((pass_texture).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        let lumin_edge = clamp(dot((math_closure_out_dc1f87d4).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
         var output: vec4f;
         output = mc_math_closure_fce7f1a2_(in.uv, c_edge, e, f, l, selection, lumin_edge);
         math_closure_out = output;

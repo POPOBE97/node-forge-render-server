@@ -16,6 +16,7 @@ use crate::{
     renderer::{
         ShaderSpacePresentationMode,
         camera::legacy_projection_camera_matrix,
+        gaussian_contract::gaussian_radius_port_id,
         geometry_resolver::resolve_scene_draw_contexts,
         graph_uniforms::{compute_pipeline_signature_for_pass_bindings, hash_bytes},
         node_compiler::geometry_nodes::{rect2d_geometry_vertices, rect2d_unit_geometry_vertices},
@@ -46,7 +47,6 @@ use super::{
         UI_PRESENT_HDR_GAMMA_SUFFIX, UI_PRESENT_SDR_SRGB_SUFFIX, build_hdr_gamma_encode_wgsl,
         build_srgb_display_encode_wgsl,
     },
-    sampled_pass_node_ids_from_roots,
     types::{
         ImagePrepass, ImageTextureSpec, PlanBuildOptions, PlanningDevice, RenderPlan, ResourcePlans,
     },
@@ -67,7 +67,10 @@ impl RenderPlanner {
         asset_store: Option<&AssetStore>,
         adapter: Option<&wgpu::Adapter>,
     ) -> Result<RenderPlan> {
-        let (prepared, scene_report) = prepare_scene_with_report(scene)?;
+        let mut execution_scene = scene.clone();
+        let coercion_count = super::coercion::plan_consumer_scoped_coercions(&mut execution_scene)?;
+        let (prepared, mut scene_report) = prepare_scene_with_report(&execution_scene)?;
+        scene_report.consumer_scoped_coercions = coercion_count;
         self.plan_prepared(prepared, scene_report, asset_store, adapter)
     }
 
@@ -148,19 +151,8 @@ impl RenderPlanner {
             self.options.gpu_caps.limits.clone(),
         );
 
-        let mut sampled_pass_ids = sampled_pass_node_ids_from_roots(
-            &prepared.scene,
-            nodes_by_id,
-            composite_layers_in_order,
-        )?;
-        let (
-            mut downsample_source_pass_ids,
-            mut upsample_source_pass_ids,
-            mut gaussian_source_pass_ids,
-            mut bloom_source_pass_ids,
-            mut gradient_source_pass_ids,
-        ) = collect_processing_source_pass_ids(&prepared)?;
-
+        let materialized_texture_output_ids =
+            super::coercion::materialized_texture_output_ids(&prepared.scene);
         let mut geometry_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
         let mut instance_buffers: Vec<(ResourceName, Arc<[u8]>)> = Vec::new();
         let mut textures: Vec<TextureDecl> = Vec::new();
@@ -187,16 +179,7 @@ impl RenderPlanner {
             .scene
             .state_machine
             .as_ref()
-            .map(|state_machine| {
-                let mut keys = crate::state_machine::trace::tracked_override_keys(state_machine);
-                keys.extend(
-                    state_machine
-                        .state_params
-                        .iter()
-                        .map(|declaration| declaration.id.clone()),
-                );
-                keys
-            })
+            .map(crate::state_machine::dynamic_render_keys)
             .unwrap_or_default();
 
         for id in order {
@@ -358,7 +341,6 @@ impl RenderPlanner {
             nodes_by_id,
             composite_layers_in_order,
         )?;
-        sampled_pass_ids.extend(warmup_root_ids.iter().cloned());
 
         let warmup_items: Vec<(String, bool)> = composite_layers_in_order
             .iter()
@@ -406,12 +388,6 @@ impl RenderPlanner {
                 })
             });
 
-            // A pass feeding different composition targets cannot write directly to one of them.
-            // Materialize it once and let the existing per-consumer compose paths route it.
-            if composition_targets.len() > 1 && unique_composition_target.is_none() {
-                sampled_pass_ids.insert(layer_id.clone());
-            }
-
             let (
                 layer_target_texture_name,
                 layer_target_format,
@@ -455,12 +431,15 @@ impl RenderPlanner {
                 device: &planning_device,
                 adapter,
             };
-            let blur_radius_key = format!("{layer_id}:radius");
-            let blur_extend_key = format!("{layer_id}:extend");
-            let dynamic_blur_bundle = layer_node.node_type == "GuassianBlurPass"
-                && (incoming_connection(&prepared.scene, layer_id, "radius").is_some()
-                    || dynamic_render_keys.contains(&blur_radius_key)
-                    || dynamic_render_keys.contains(&blur_extend_key));
+            let dynamic_blur_bundle =
+                gaussian_radius_port_id(&layer_node.node_type).is_some_and(|radius_port_id| {
+                    let blur_radius_key = format!("{layer_id}:{radius_port_id}");
+                    let blur_extend_key = format!("{layer_id}:extend");
+                    incoming_connection(&prepared.scene, layer_id, radius_port_id).is_some()
+                        || dynamic_render_keys.contains(&blur_radius_key)
+                        || (layer_node.node_type == "GuassianBlurPass"
+                            && dynamic_render_keys.contains(&blur_extend_key))
+                });
             let gaussian_blur_template = dynamic_blur_bundle.then(|| {
                 GaussianBlurBundleTemplate::new(
                     layer_id.clone(),
@@ -476,7 +455,7 @@ impl RenderPlanner {
                     layer_tgt_size,
                     layer_tgt_size_u,
                     pass_output_registry.clone(),
-                    sampled_pass_ids.clone(),
+                    materialized_texture_output_ids.clone(),
                     baked_data_parse_bytes_by_pass.clone(),
                 )
             });
@@ -498,15 +477,10 @@ impl RenderPlanner {
                 authored_color_load_ops_by_pass: &mut authored_color_load_ops_by_pass,
                 pass_depth_attachment_by_name: &mut pass_depth_attachment_by_name,
                 pass_output_registry: &mut pass_output_registry,
-                sampled_pass_ids: &sampled_pass_ids,
+                materialized_texture_output_ids: &materialized_texture_output_ids,
                 baked_data_parse_meta_by_pass: &mut baked_data_parse_meta_by_pass,
                 baked_data_parse_bytes_by_pass: &mut baked_data_parse_bytes_by_pass,
                 baked_data_parse_buffer_to_pass_id: &mut baked_data_parse_buffer_to_pass_id,
-                downsample_source_pass_ids: &mut downsample_source_pass_ids,
-                upsample_source_pass_ids: &mut upsample_source_pass_ids,
-                gaussian_source_pass_ids: &mut gaussian_source_pass_ids,
-                bloom_source_pass_ids: &mut bloom_source_pass_ids,
-                gradient_source_pass_ids: &mut gradient_source_pass_ids,
                 pass_extensions: &mut pass_extensions,
                 shader_parameter_buffers_by_pass: &mut shader_parameter_buffers_by_pass,
             };
@@ -790,102 +764,6 @@ fn target_size_from_params(target_size: [f32; 2]) -> Option<[u32; 2]> {
     }
 }
 
-fn collect_processing_source_pass_ids(
-    prepared: &PreparedScene,
-) -> Result<(
-    HashSet<String>,
-    HashSet<String>,
-    HashSet<String>,
-    HashSet<String>,
-    HashSet<String>,
-)> {
-    let mut downsample_source_pass_ids: HashSet<String> = HashSet::new();
-    let mut upsample_source_pass_ids: HashSet<String> = HashSet::new();
-    let mut gaussian_source_pass_ids: HashSet<String> = HashSet::new();
-    let mut bloom_source_pass_ids: HashSet<String> = HashSet::new();
-    let mut gradient_source_pass_ids: HashSet<String> = HashSet::new();
-
-    for (node_id, node) in &prepared.nodes_by_id {
-        if node.node_type == "Downsample" || node.node_type == "Convolution" {
-            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                downsample_source_pass_ids.insert(
-                    crate::renderer::pass_source::resolve_pass_source_ref(
-                        &prepared.scene,
-                        &prepared.nodes_by_id,
-                        &conn.from,
-                    )?
-                    .source
-                    .node_id,
-                );
-            }
-            continue;
-        }
-        if node.node_type == "Upsample" {
-            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                upsample_source_pass_ids.insert(
-                    crate::renderer::pass_source::resolve_pass_source_ref(
-                        &prepared.scene,
-                        &prepared.nodes_by_id,
-                        &conn.from,
-                    )?
-                    .source
-                    .node_id,
-                );
-            }
-            continue;
-        }
-        if node.node_type == "GuassianBlurPass" {
-            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
-                gaussian_source_pass_ids.insert(
-                    crate::renderer::pass_source::resolve_pass_source_ref(
-                        &prepared.scene,
-                        &prepared.nodes_by_id,
-                        &conn.from,
-                    )?
-                    .source
-                    .node_id,
-                );
-            }
-            continue;
-        }
-        if node.node_type == "BloomNode" {
-            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "pass") {
-                bloom_source_pass_ids.insert(
-                    crate::renderer::pass_source::resolve_pass_source_ref(
-                        &prepared.scene,
-                        &prepared.nodes_by_id,
-                        &conn.from,
-                    )?
-                    .source
-                    .node_id,
-                );
-            }
-            continue;
-        }
-        if node.node_type == "GradientBlur" {
-            if let Some(conn) = incoming_connection(&prepared.scene, node_id, "source") {
-                gradient_source_pass_ids.insert(
-                    crate::renderer::pass_source::resolve_pass_source_ref(
-                        &prepared.scene,
-                        &prepared.nodes_by_id,
-                        &conn.from,
-                    )?
-                    .source
-                    .node_id,
-                );
-            }
-        }
-    }
-
-    Ok((
-        downsample_source_pass_ids,
-        upsample_source_pass_ids,
-        gaussian_source_pass_ids,
-        bloom_source_pass_ids,
-        gradient_source_pass_ids,
-    ))
-}
-
 fn normalize_first_write_load_ops(
     composite_passes: &[ResourceName],
     render_pass_specs: &mut [RenderPassSpec],
@@ -1149,6 +1027,223 @@ mod tests {
             .clone()
     }
 
+    fn image_pass_texture_size_scene() -> SceneDSL {
+        serde_json::from_value(serde_json::json!({
+            "version": "6.0",
+            "metadata": { "name": "image-pass-texture-size" },
+            "nodes": [
+                {
+                    "id": "source",
+                    "type": "ImageTexture",
+                    "params": {
+                        "assetId": "source-image",
+                        "encoderSpace": "srgb",
+                        "alphaMode": "premultiplied"
+                    }
+                },
+                {
+                    "id": "image_pass",
+                    "type": "ImagePass",
+                    "params": { "blurRadius": 0 }
+                },
+                {
+                    "id": "sample",
+                    "type": "MathClosure",
+                    "params": { "source": "output = samplePass(texture, uv);" },
+                    "inputs": [{ "id": "texture", "type": "texture" }],
+                    "outputs": [{ "id": "output", "type": "color" }]
+                },
+                {
+                    "id": "sink_geometry",
+                    "type": "Rect2DGeometry",
+                    "params": {
+                        "size": [37.0, 19.0],
+                        "position": [18.5, 9.5]
+                    }
+                },
+                { "id": "sink_pass", "type": "RenderPass" },
+                {
+                    "id": "target",
+                    "type": "RenderTexture",
+                    "params": { "width": 200, "height": 100, "format": "rgba8unorm" }
+                },
+                { "id": "composite", "type": "Composite" },
+                {
+                    "id": "screen",
+                    "type": "Screen",
+                    "params": { "width": 200, "height": 100 }
+                }
+            ],
+            "connections": [
+                {
+                    "id": "image-input",
+                    "from": { "nodeId": "source", "portId": "texture" },
+                    "to": { "nodeId": "image_pass", "portId": "image" }
+                },
+                {
+                    "id": "sample-image-pass",
+                    "from": { "nodeId": "image_pass", "portId": "texture" },
+                    "to": { "nodeId": "sample", "portId": "texture" }
+                },
+                {
+                    "id": "sink-material",
+                    "from": { "nodeId": "sample", "portId": "output" },
+                    "to": { "nodeId": "sink_pass", "portId": "material" }
+                },
+                {
+                    "id": "sink-geometry",
+                    "from": { "nodeId": "sink_geometry", "portId": "geometry" },
+                    "to": { "nodeId": "sink_pass", "portId": "geometry" }
+                },
+                {
+                    "id": "sink-layer",
+                    "from": { "nodeId": "sink_pass", "portId": "pass" },
+                    "to": { "nodeId": "composite", "portId": "pass" }
+                },
+                {
+                    "id": "target-texture",
+                    "from": { "nodeId": "target", "portId": "texture" },
+                    "to": { "nodeId": "composite", "portId": "target" }
+                },
+                {
+                    "id": "present",
+                    "from": { "nodeId": "composite", "portId": "pass" },
+                    "to": { "nodeId": "screen", "portId": "pass" }
+                }
+            ],
+            "outputs": null,
+            "groups": [],
+            "assets": {}
+        }))
+        .expect("ImagePass texture-size scene")
+    }
+
+    #[test]
+    fn image_pass_texture_output_inherits_unconnected_geometry_size_from_input_texture()
+    -> Result<()> {
+        use image::ImageEncoder;
+
+        let image = image::RgbaImage::from_pixel(37, 19, image::Rgba([255, 255, 255, 255]));
+        let mut png_bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png_bytes).write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            image::ExtendedColorType::Rgba8,
+        )?;
+        let assets = AssetStore::new();
+        assets.insert(
+            "source-image",
+            asset_store::AssetData {
+                bytes: png_bytes,
+                mime_type: "image/png".to_string(),
+                original_name: "source.png".to_string(),
+            },
+        );
+
+        let scene = image_pass_texture_size_scene();
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            Some(&assets),
+            None,
+        )?;
+        let inferred = plan
+            .resources
+            .pass_output_registry
+            .get_for_port("image_pass", "texture")
+            .expect("ImagePass texture output");
+        assert_eq!(inferred.resolution, [37, 19]);
+
+        let mut explicit_scene = scene;
+        explicit_scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "image_pass")
+            .expect("ImagePass")
+            .params
+            .insert("size".to_string(), serde_json::json!([23.0, 11.0]));
+        let explicit = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &explicit_scene,
+            Some(&assets),
+            None,
+        )?;
+        assert_eq!(
+            explicit
+                .resources
+                .pass_output_registry
+                .get_for_port("image_pass", "texture")
+                .expect("explicit ImagePass texture output")
+                .resolution,
+            [23, 11]
+        );
+
+        let mut blurred_scene = image_pass_texture_size_scene();
+        blurred_scene
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "image_pass")
+            .expect("ImagePass")
+            .params
+            .insert("blurRadius".to_string(), serde_json::json!(10));
+        let blurred = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &blurred_scene,
+            Some(&assets),
+            None,
+        )?;
+        assert_eq!(
+            blurred
+                .resources
+                .pass_output_registry
+                .get_for_port("image_pass", "texture")
+                .expect("blurred ImagePass texture output")
+                .resolution,
+            [37, 19]
+        );
+
+        let mut surface_scene = image_pass_texture_size_scene();
+        surface_scene.nodes.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "upstream_pass",
+                "type": "ImagePass",
+                "params": { "size": [29.0, 13.0], "blurRadius": 0 }
+            }))
+            .expect("upstream ImagePass"),
+        );
+        surface_scene
+            .connections
+            .iter_mut()
+            .find(|connection| connection.id == "image-input")
+            .expect("source image connection")
+            .to
+            .node_id = "upstream_pass".to_string();
+        surface_scene.connections.push(crate::dsl::Connection {
+            id: "upstream-texture-input".to_string(),
+            from: crate::dsl::Endpoint {
+                node_id: "upstream_pass".to_string(),
+                port_id: "texture".to_string(),
+            },
+            to: crate::dsl::Endpoint {
+                node_id: "image_pass".to_string(),
+                port_id: "image".to_string(),
+            },
+        });
+        let surface = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &surface_scene,
+            Some(&assets),
+            None,
+        )?;
+        assert_eq!(
+            surface
+                .resources
+                .pass_output_registry
+                .get_for_port("image_pass", "texture")
+                .expect("surface-fed ImagePass texture output")
+                .resolution,
+            [29, 13]
+        );
+        Ok(())
+    }
+
     #[test]
     fn intelligent_light_composite_uses_intrinsic_output_and_edge_compose() -> Result<()> {
         let (scene, assets) = load_case("intelligent-light")?;
@@ -1216,12 +1311,8 @@ mod tests {
         let horizontal_pass_name = format!("sys.downsample.{}.h.pass", downsample.id);
         let vertical_pass_name = format!("sys.downsample.{}.pass", downsample.id);
         let horizontal_texture_name = format!("sys.downsample.{}.h", downsample.id);
-        let source_connection = incoming_connection(&scene, &downsample.id, "source")
-            .expect("fixture should connect an image to Downsample.source");
-        let source_materialization_name = format!(
-            "sys.pass.sys.auto.fullscreen.pass.{}.out",
-            source_connection.id
-        );
+        let source_connection = incoming_connection(&scene, &downsample.id, "texture")
+            .expect("Downsample should consume its source through the texture domain");
 
         let horizontal = plan
             .resources
@@ -1241,18 +1332,33 @@ mod tests {
             .iter()
             .find(|texture| texture.name.as_str() == horizontal_texture_name)
             .expect("Lanczos should allocate a signed horizontal intermediate");
-        let source_materialization = plan
+        let source_texture = ResourceName::from(source_connection.from.node_id.as_str());
+        let source_resolution = plan
             .resources
             .textures
             .iter()
-            .find(|texture| texture.name.as_str() == source_materialization_name)
-            .expect("Lanczos should materialize the image at its native resolution");
-
-        assert_eq!(source_materialization.size, [1080, 2400]);
-        assert_eq!(
-            source_materialization.format,
-            wgpu::TextureFormat::Rgba16Float
-        );
+            .find(|texture| texture.name.as_str() == source_texture.as_str())
+            .map(|texture| texture.size)
+            .or_else(|| {
+                plan.resources
+                    .image_textures
+                    .iter()
+                    .find(|texture| {
+                        texture.name.as_str() == source_texture.as_str()
+                            || texture.name.as_str()
+                                == format!("sys.image.{}.src", source_connection.from.node_id)
+                    })
+                    .map(|texture| [texture.image.width(), texture.image.height()])
+            })
+            .expect("native source texture declaration");
+        assert_eq!(source_resolution, [1080, 2400]);
+        assert!(plan.resources.textures.iter().all(|texture| {
+            texture.name.as_str()
+                != format!(
+                    "sys.pass.sys.coercion.fullscreen.pass.{}.out",
+                    source_connection.id
+                )
+        }));
         assert_eq!(horizontal_texture.size, [540, 2400]);
         assert_eq!(horizontal_texture.format, wgpu::TextureFormat::Rgba16Float);
         assert_eq!(horizontal.sampler_kinds, vec![SamplerKind::NearestMirror]);
@@ -1307,11 +1413,11 @@ mod tests {
             id: "convolution-chain".to_string(),
             from: crate::dsl::Endpoint {
                 node_id: first_id.clone(),
-                port_id: "output".to_string(),
+                port_id: "texture".to_string(),
             },
             to: crate::dsl::Endpoint {
                 node_id: final_id.clone(),
-                port_id: "source".to_string(),
+                port_id: "texture".to_string(),
             },
         });
         scene.connections.push(crate::dsl::Connection {
@@ -1322,12 +1428,11 @@ mod tests {
                 port_id: "kernel".to_string(),
             },
         });
-
         Ok((scene, assets, first_id, final_id))
     }
 
     #[test]
-    fn convolution_preserves_source_resolution_and_blits_to_composition() -> Result<()> {
+    fn convolution_texture_chain_preserves_source_resolution() -> Result<()> {
         let (scene, assets, first_id, final_id) = convolution_chain_case()?;
         let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
             &scene,
@@ -1338,7 +1443,7 @@ mod tests {
         let first_output = plan
             .resources
             .pass_output_registry
-            .get_for_port(&first_id, "output")
+            .get_for_port(&first_id, "texture")
             .expect("sampled Convolution should register its output");
         assert_eq!(first_output.resolution, [1080, 2400]);
         assert_eq!(
@@ -1352,8 +1457,15 @@ mod tests {
             .textures
             .iter()
             .find(|texture| texture.name.as_str() == final_texture_name)
-            .expect("final Convolution should keep a source-sized intermediate");
+            .expect("final texture-domain Convolution should allocate its output");
         assert_eq!(final_texture.size, [1080, 2400]);
+        let final_output = plan
+            .resources
+            .pass_output_registry
+            .get_for_port(&final_id, "texture")
+            .expect("final texture-domain Convolution should register its output");
+        assert_eq!(final_output.resolution, [1080, 2400]);
+        assert_eq!(final_output.texture_name.as_str(), final_texture_name);
 
         let pass_names: HashSet<&str> = plan
             .resources
@@ -1363,7 +1475,7 @@ mod tests {
             .collect();
         assert!(pass_names.contains(format!("sys.convolution.{first_id}.pass").as_str()));
         assert!(pass_names.contains(format!("sys.convolution.{final_id}.pass").as_str()));
-        assert!(pass_names.contains(format!("sys.convolution.{final_id}.blit.pass").as_str()));
+        assert!(!pass_names.contains(format!("sys.convolution.{final_id}.blit.pass").as_str()));
         for spec in plan.resources.render_pass_specs.iter().filter(|spec| {
             spec.name.as_str() == format!("sys.convolution.{first_id}.pass")
                 || spec.name.as_str() == format!("sys.convolution.{final_id}.pass")
@@ -1419,7 +1531,7 @@ mod tests {
         assert_eq!(
             plan.resources
                 .pass_output_registry
-                .get_for_port(&first_id, "output")
+                .get_for_port(&first_id, "texture")
                 .expect("sampled Lanczos Convolution output")
                 .resolution,
             [1080, 2400]
@@ -1490,7 +1602,10 @@ mod tests {
 
         let mut pass_outputs: Vec<String> = Vec::new();
         for node_id in &plan.prepared.topo_order {
-            for port_id in ["pass", "depth", "output", "glare"] {
+            // Historical summaries keep one line per physical output surface. The dual-domain
+            // ABI aliases are asserted in focused registry tests instead of duplicating every
+            // pass line here.
+            for port_id in ["pass", "depth"] {
                 if let Some(spec) = plan
                     .resources
                     .pass_output_registry
@@ -1604,8 +1719,6 @@ mod tests {
         "sys.blur.GuassianBlurPass_18.h:Rgba8Unorm:1080x2400:samples=1",
         "sys.blur.GuassianBlurPass_18.v:Rgba8Unorm:1080x2400:samples=1",
         "sys.pass.node_11.out:Rgba8Unorm:1080x2400:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_22.out:Rgba8Unorm:1080x2400:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_25.out:Rgba8Unorm:1080x2400:samples=1",
     ],
     image_textures: [
         "sys.image.node_15.src",
@@ -1615,25 +1728,21 @@ mod tests {
     ],
     pass_order: [
         "node_11.pass",
-        "sys.auto.fullscreen.pass.edge_22.pass",
         "sys.blur.GuassianBlurPass_17.h.ds1.pass",
         "sys.blur.GuassianBlurPass_17.v.ds1.pass",
-        "sys.auto.fullscreen.pass.edge_25.pass",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass",
-        "sys.blur.GuassianBlurPass_18.upsample_bilinear.ds1.pass",
+        "sys.coercion.fullscreen.pass.edge_26.pass",
         "node_2.pass",
         "node_5.present.sdr.srgb.pass",
     ],
     load_ops: [
         "node_11.pass->sys.pass.node_11.out/Clear",
-        "sys.auto.fullscreen.pass.edge_22.pass->sys.pass.sys.auto.fullscreen.pass.edge_22.out/Clear",
         "sys.blur.GuassianBlurPass_17.h.ds1.pass->sys.blur.GuassianBlurPass_17.h/Clear",
         "sys.blur.GuassianBlurPass_17.v.ds1.pass->sys.blur.GuassianBlurPass_17.v/Clear",
-        "sys.auto.fullscreen.pass.edge_25.pass->sys.pass.sys.auto.fullscreen.pass.edge_25.out/Clear",
         "sys.blur.GuassianBlurPass_18.h.ds1.pass->sys.blur.GuassianBlurPass_18.h/Clear",
         "sys.blur.GuassianBlurPass_18.v.ds1.pass->sys.blur.GuassianBlurPass_18.v/Clear",
-        "sys.blur.GuassianBlurPass_18.upsample_bilinear.ds1.pass->node_5/Clear",
+        "sys.coercion.fullscreen.pass.edge_26.pass->node_5/Clear",
         "node_2.pass->node_5/Load",
         "node_5.present.sdr.srgb.pass->node_5.present.sdr.srgb/Clear",
     ],
@@ -1641,15 +1750,50 @@ mod tests {
         "node_2.pass",
     ],
     pass_outputs: [
-        "GuassianBlurPass_17:pass->sys.blur.GuassianBlurPass_17.v:1080x2400:Rgba8Unorm",
-        "GuassianBlurPass_18:pass->node_5:1080x2400:Rgba8UnormSrgb",
         "node_11:pass->sys.pass.node_11.out:1080x2400:Rgba8Unorm",
         "node_2:pass->node_5:1080x2400:Rgba8UnormSrgb",
-        "sys.auto.fullscreen.pass.edge_22:pass->sys.pass.sys.auto.fullscreen.pass.edge_22.out:1080x2400:Rgba8Unorm",
-        "sys.auto.fullscreen.pass.edge_25:pass->sys.pass.sys.auto.fullscreen.pass.edge_25.out:1080x2400:Rgba8Unorm",
+        "sys.coercion.fullscreen.pass.edge_26:pass->node_5:1080x2400:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn texture_coercion_layers_preserve_composite_draw_order() -> Result<()> {
+        let (scene, assets) = load_case("blend-blurs-alpha")?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+        let layers = plan
+            .resources
+            .render_pass_specs
+            .iter()
+            .filter(|spec| spec.target_texture.as_str() == "node_5")
+            .map(|spec| {
+                let load = match spec.color_load_op {
+                    wgpu::LoadOp::Clear(_) => "Clear",
+                    wgpu::LoadOp::Load => "Load",
+                    wgpu::LoadOp::DontCare(_) => "DontCare",
+                };
+                (spec.name.as_str().to_string(), load)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            layers,
+            vec![
+                (
+                    "sys.coercion.fullscreen.pass.edge_35.pass".to_string(),
+                    "Clear"
+                ),
+                (
+                    "sys.coercion.fullscreen.pass.edge_40.pass".to_string(),
+                    "Load"
+                ),
+            ]
+        );
         Ok(())
     }
 
@@ -1697,11 +1841,11 @@ mod tests {
         "sys.downsample.Downsample_20.out:Rgba16Float:16x37:samples=1",
         "sys.msaa.sys.pass.RenderPass_4.out.4.color:Rgba16Float:1080x2400:samples=4",
         "sys.pass.RenderPass_4.out:Rgba16Float:1080x2400:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_52.out:Rgba16Float:33x75:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_54.out:Rgba16Float:67x150:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_59.out:Rgba16Float:135x300:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_64.out:Rgba16Float:270x600:samples=1",
-        "sys.pass.sys.auto.fullscreen.pass.edge_69.out:Rgba16Float:540x1200:samples=1",
+        "sys.pass.RenderPass_BloomMerge_29.out:Rgba16Float:67x150:samples=1",
+        "sys.pass.RenderPass_BloomMerge_30.out:Rgba16Float:33x75:samples=1",
+        "sys.pass.RenderPass_BloomMerge_33.out:Rgba16Float:135x300:samples=1",
+        "sys.pass.RenderPass_BloomMerge_36.out:Rgba16Float:270x600:samples=1",
+        "sys.pass.RenderPass_BloomMerge_39.out:Rgba16Float:540x1200:samples=1",
         "sys.upsample.Upsample_24.out:Rgba16Float:33x75:samples=1",
         "sys.upsample.Upsample_28.out:Rgba16Float:67x150:samples=1",
         "sys.upsample.Upsample_32.out:Rgba16Float:135x300:samples=1",
@@ -1722,27 +1866,27 @@ mod tests {
         "sys.blur.GuassianBlurPass_23.h.ds1.pass",
         "sys.blur.GuassianBlurPass_23.v.ds1.pass",
         "sys.upsample.Upsample_24.pass",
-        "sys.auto.fullscreen.pass.edge_52.pass",
+        "render.pass.erge30.pass",
         "sys.blur.GuassianBlurPass_27.h.ds1.pass",
         "sys.blur.GuassianBlurPass_27.v.ds1.pass",
         "sys.upsample.Upsample_28.pass",
-        "sys.auto.fullscreen.pass.edge_54.pass",
+        "render.pass.erge29.pass",
         "sys.blur.GuassianBlurPass_31.h.ds1.pass",
         "sys.blur.GuassianBlurPass_31.v.ds1.pass",
         "sys.upsample.Upsample_32.pass",
-        "sys.auto.fullscreen.pass.edge_59.pass",
+        "render.pass.erge33.pass",
         "sys.blur.GuassianBlurPass_34.h.ds1.pass",
         "sys.blur.GuassianBlurPass_34.v.ds1.pass",
         "sys.upsample.Upsample_35.pass",
-        "sys.auto.fullscreen.pass.edge_64.pass",
+        "render.pass.erge36.pass",
         "sys.blur.GuassianBlurPass_37.h.ds1.pass",
         "sys.blur.GuassianBlurPass_37.v.ds1.pass",
         "sys.upsample.Upsample_38.pass",
-        "sys.auto.fullscreen.pass.edge_69.pass",
+        "render.pass.erge39.pass",
         "sys.blur.GuassianBlurPass_40.h.ds1.pass",
         "sys.blur.GuassianBlurPass_40.v.ds1.pass",
         "sys.upsample.Upsample_41.pass",
-        "sys.auto.fullscreen.pass.edge_75.pass",
+        "sys.coercion.fullscreen.pass.edge_75.pass",
     ],
     load_ops: [
         "rende.rpass4.pass->sys.msaa.sys.pass.RenderPass_4.out.4.color/Clear",
@@ -1755,27 +1899,27 @@ mod tests {
         "sys.blur.GuassianBlurPass_23.h.ds1.pass->sys.blur.GuassianBlurPass_23.h/Clear",
         "sys.blur.GuassianBlurPass_23.v.ds1.pass->sys.blur.GuassianBlurPass_23.v/Clear",
         "sys.upsample.Upsample_24.pass->sys.upsample.Upsample_24.out/Clear",
-        "sys.auto.fullscreen.pass.edge_52.pass->sys.pass.sys.auto.fullscreen.pass.edge_52.out/Clear",
+        "render.pass.erge30.pass->sys.pass.RenderPass_BloomMerge_30.out/Clear",
         "sys.blur.GuassianBlurPass_27.h.ds1.pass->sys.blur.GuassianBlurPass_27.h/Clear",
         "sys.blur.GuassianBlurPass_27.v.ds1.pass->sys.blur.GuassianBlurPass_27.v/Clear",
         "sys.upsample.Upsample_28.pass->sys.upsample.Upsample_28.out/Clear",
-        "sys.auto.fullscreen.pass.edge_54.pass->sys.pass.sys.auto.fullscreen.pass.edge_54.out/Clear",
+        "render.pass.erge29.pass->sys.pass.RenderPass_BloomMerge_29.out/Clear",
         "sys.blur.GuassianBlurPass_31.h.ds1.pass->sys.blur.GuassianBlurPass_31.h/Clear",
         "sys.blur.GuassianBlurPass_31.v.ds1.pass->sys.blur.GuassianBlurPass_31.v/Clear",
         "sys.upsample.Upsample_32.pass->sys.upsample.Upsample_32.out/Clear",
-        "sys.auto.fullscreen.pass.edge_59.pass->sys.pass.sys.auto.fullscreen.pass.edge_59.out/Clear",
+        "render.pass.erge33.pass->sys.pass.RenderPass_BloomMerge_33.out/Clear",
         "sys.blur.GuassianBlurPass_34.h.ds1.pass->sys.blur.GuassianBlurPass_34.h/Clear",
         "sys.blur.GuassianBlurPass_34.v.ds1.pass->sys.blur.GuassianBlurPass_34.v/Clear",
         "sys.upsample.Upsample_35.pass->sys.upsample.Upsample_35.out/Clear",
-        "sys.auto.fullscreen.pass.edge_64.pass->sys.pass.sys.auto.fullscreen.pass.edge_64.out/Clear",
+        "render.pass.erge36.pass->sys.pass.RenderPass_BloomMerge_36.out/Clear",
         "sys.blur.GuassianBlurPass_37.h.ds1.pass->sys.blur.GuassianBlurPass_37.h/Clear",
         "sys.blur.GuassianBlurPass_37.v.ds1.pass->sys.blur.GuassianBlurPass_37.v/Clear",
         "sys.upsample.Upsample_38.pass->sys.upsample.Upsample_38.out/Clear",
-        "sys.auto.fullscreen.pass.edge_69.pass->sys.pass.sys.auto.fullscreen.pass.edge_69.out/Clear",
+        "render.pass.erge39.pass->sys.pass.RenderPass_BloomMerge_39.out/Clear",
         "sys.blur.GuassianBlurPass_40.h.ds1.pass->sys.blur.GuassianBlurPass_40.h/Clear",
         "sys.blur.GuassianBlurPass_40.v.ds1.pass->sys.blur.GuassianBlurPass_40.v/Clear",
         "sys.upsample.Upsample_41.pass->sys.upsample.Upsample_41.out/Clear",
-        "sys.auto.fullscreen.pass.edge_75.pass->RenderTexture_6/Clear",
+        "sys.coercion.fullscreen.pass.edge_75.pass->RenderTexture_6/Clear",
         "RenderTexture_6.present.sdr.srgb.pass->RenderTexture_6.present.sdr.srgb/Clear",
         "RenderTexture_6.present.hdr.gamma.pass->RenderTexture_6.present.hdr.gamma/Clear",
     ],
@@ -1783,31 +1927,13 @@ mod tests {
         "rende.rpass4.pass",
     ],
     pass_outputs: [
-        "Downsample_10:output->sys.downsample.Downsample_10.out:540x1200:Rgba16Float",
-        "Downsample_12:output->sys.downsample.Downsample_12.out:270x600:Rgba16Float",
-        "Downsample_14:output->sys.downsample.Downsample_14.out:135x300:Rgba16Float",
-        "Downsample_16:output->sys.downsample.Downsample_16.out:67x150:Rgba16Float",
-        "Downsample_18:output->sys.downsample.Downsample_18.out:33x75:Rgba16Float",
-        "Downsample_20:output->sys.downsample.Downsample_20.out:16x37:Rgba16Float",
-        "GuassianBlurPass_23:pass->sys.blur.GuassianBlurPass_23.v:16x37:Rgba16Float",
-        "GuassianBlurPass_27:pass->sys.blur.GuassianBlurPass_27.v:33x75:Rgba16Float",
-        "GuassianBlurPass_31:pass->sys.blur.GuassianBlurPass_31.v:67x150:Rgba16Float",
-        "GuassianBlurPass_34:pass->sys.blur.GuassianBlurPass_34.v:135x300:Rgba16Float",
-        "GuassianBlurPass_37:pass->sys.blur.GuassianBlurPass_37.v:270x600:Rgba16Float",
-        "GuassianBlurPass_40:pass->sys.blur.GuassianBlurPass_40.v:540x1200:Rgba16Float",
         "RenderPass_4:pass->sys.pass.RenderPass_4.out:1080x2400:Rgba16Float",
-        "Upsample_24:output->sys.upsample.Upsample_24.out:33x75:Rgba16Float",
-        "Upsample_28:output->sys.upsample.Upsample_28.out:67x150:Rgba16Float",
-        "Upsample_32:output->sys.upsample.Upsample_32.out:135x300:Rgba16Float",
-        "Upsample_35:output->sys.upsample.Upsample_35.out:270x600:Rgba16Float",
-        "Upsample_38:output->sys.upsample.Upsample_38.out:540x1200:Rgba16Float",
-        "Upsample_41:output->sys.upsample.Upsample_41.out:1080x2400:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_52:pass->sys.pass.sys.auto.fullscreen.pass.edge_52.out:33x75:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_54:pass->sys.pass.sys.auto.fullscreen.pass.edge_54.out:67x150:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_59:pass->sys.pass.sys.auto.fullscreen.pass.edge_59.out:135x300:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_64:pass->sys.pass.sys.auto.fullscreen.pass.edge_64.out:270x600:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_69:pass->sys.pass.sys.auto.fullscreen.pass.edge_69.out:540x1200:Rgba16Float",
-        "sys.auto.fullscreen.pass.edge_75:pass->RenderTexture_6:1080x2400:Rgba16Float",
+        "RenderPass_BloomMerge_29:pass->sys.pass.RenderPass_BloomMerge_29.out:67x150:Rgba16Float",
+        "RenderPass_BloomMerge_30:pass->sys.pass.RenderPass_BloomMerge_30.out:33x75:Rgba16Float",
+        "RenderPass_BloomMerge_33:pass->sys.pass.RenderPass_BloomMerge_33.out:135x300:Rgba16Float",
+        "RenderPass_BloomMerge_36:pass->sys.pass.RenderPass_BloomMerge_36.out:270x600:Rgba16Float",
+        "RenderPass_BloomMerge_39:pass->sys.pass.RenderPass_BloomMerge_39.out:540x1200:Rgba16Float",
+        "sys.coercion.fullscreen.pass.edge_75:pass->RenderTexture_6:1080x2400:Rgba16Float",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1844,16 +1970,16 @@ mod tests {
         "sys.image.ImageTexture_9.premultiply.pass",
     ],
     pass_order: [
-        "sys.auto.fullscreen.pass.edge_7.pass",
+        "sys.coercion.fullscreen.pass.edge_7.pass",
         "RenderTexture_7.present.sdr.srgb.pass",
     ],
     load_ops: [
-        "sys.auto.fullscreen.pass.edge_7.pass->RenderTexture_7/Clear",
+        "sys.coercion.fullscreen.pass.edge_7.pass->RenderTexture_7/Clear",
         "RenderTexture_7.present.sdr.srgb.pass->RenderTexture_7.present.sdr.srgb/Clear",
     ],
     graph_bound_passes: [],
     pass_outputs: [
-        "sys.auto.fullscreen.pass.edge_7:pass->RenderTexture_7:1080x2400:Rgba8UnormSrgb",
+        "sys.coercion.fullscreen.pass.edge_7:pass->RenderTexture_7:1080x2400:Rgba8UnormSrgb",
     ],
 }"#;
         assert_eq!(summary, expected);
@@ -1951,7 +2077,11 @@ mod tests {
                     "type": "RenderTexture",
                     "params": { "width": 100, "height": 50, "format": "rgba8unorm" }
                 },
-                { "id": "child_rect", "type": "Rect2DGeometry" },
+                {
+                    "id": "child_rect",
+                    "type": "Rect2DGeometry",
+                    "params": { "size": [64.0, 32.0], "position": [32.0, 16.0] }
+                },
                 {
                     "id": "child_color",
                     "type": "ColorInput",
@@ -1959,7 +2089,14 @@ mod tests {
                 },
                 { "id": "child_pass", "type": "RenderPass" },
                 { "id": "child_comp", "type": "Composite" },
-                { "id": "child_texture", "type": "PassTexture" },
+                { "id": "child_texture", "type": "TextureSampler" },
+                {
+                    "id": "child_sample",
+                    "type": "MathClosure",
+                    "params": { "source": "output = samplePass(texture, uv);" },
+                    "inputs": [{ "id": "texture", "type": "texture" }],
+                    "outputs": [{ "id": "output", "type": "color" }]
+                },
                 {
                     "id": "placement_size",
                     "type": "Vector2Input",
@@ -1999,7 +2136,7 @@ mod tests {
                 },
                 {
                     "id": "child_layer",
-                    "from": { "nodeId": "child_pass", "portId": "pass" },
+                    "from": { "nodeId": "child_pass", "portId": "texture" },
                     "to": { "nodeId": "child_comp", "portId": "pass" }
                 },
                 {
@@ -2010,7 +2147,12 @@ mod tests {
                 {
                     "id": "sample_child",
                     "from": { "nodeId": "child_comp", "portId": "pass" },
-                    "to": { "nodeId": "child_texture", "portId": "pass" }
+                    "to": { "nodeId": "child_texture", "portId": "texture" }
+                },
+                {
+                    "id": "sample_child_texture",
+                    "from": { "nodeId": "child_texture", "portId": "texture" },
+                    "to": { "nodeId": "child_sample", "portId": "texture" }
                 },
                 {
                     "id": "placement_geometry",
@@ -2029,7 +2171,7 @@ mod tests {
                 },
                 {
                     "id": "placement_material",
-                    "from": { "nodeId": "child_texture", "portId": "color" },
+                    "from": { "nodeId": "child_sample", "portId": "output" },
                     "to": { "nodeId": "placement_pass", "portId": "material" }
                 },
                 {
@@ -2058,10 +2200,21 @@ mod tests {
         let child_output = plan
             .resources
             .pass_output_registry
-            .get_for_port("child_pass", "pass")
+            .get_for_port("child_pass", "texture")
             .expect("child RenderPass output");
-        assert_eq!(child_output.texture_name.as_str(), "child_rt");
-        assert_eq!(child_output.resolution, [100, 50]);
+        assert_eq!(
+            child_output.texture_name.as_str(),
+            "sys.pass.child_pass.out"
+        );
+        assert_eq!(child_output.resolution, [64, 32]);
+
+        let child_fullscreen = plan
+            .resources
+            .pass_output_registry
+            .get_for_port("sys.coercion.fullscreen.pass.child_layer", "pass")
+            .expect("texture-to-pass fullscreen invocation");
+        assert_eq!(child_fullscreen.texture_name.as_str(), "child_rt");
+        assert_eq!(child_fullscreen.resolution, [100, 50]);
 
         let placement_output = plan
             .resources

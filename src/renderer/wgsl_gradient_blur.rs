@@ -42,8 +42,8 @@ pub fn gradient_blur_padded_size(w: u32, h: u32) -> [u32; 2] {
 
 /// Build WGSL for the GradientBlur source pass.
 ///
-/// This is analogous to `build_blur_image_wgsl_bundle` in wgsl.rs, but reads
-/// the `"source"` input instead of `"pass"`.
+/// This is analogous to `build_blur_image_wgsl_bundle` in wgsl.rs and follows the
+/// invocation's canonical `pass`/`texture` input selected by the planner.
 pub fn build_gradient_blur_source_wgsl_bundle(
     scene: &SceneDSL,
     nodes_by_id: &HashMap<String, Node>,
@@ -58,16 +58,32 @@ pub fn build_gradient_blur_source_wgsl_bundle_with_graph_binding(
     gb_node_id: &str,
     _forced_graph_binding_kind: Option<GraphBindingKind>,
 ) -> Result<WgslShaderBundle> {
-    let Some(conn) = incoming_connection(scene, gb_node_id, "source") else {
+    let Some(conn) = incoming_connection(scene, gb_node_id, "pass")
+        .or_else(|| incoming_connection(scene, gb_node_id, "texture"))
+    else {
         return Ok(build_fullscreen_textured_bundle(
             "return vec4f(0.0, 0.0, 0.0, 0.0);".to_string(),
         ));
     };
 
-    let texture_ref =
-        crate::renderer::pass_source::resolve_pass_source_ref(scene, nodes_by_id, &conn.from)?;
     let mut bundle = crate::renderer::wgsl_templates::fullscreen::build_fullscreen_sampled_bundle();
-    bundle.pass_textures = vec![texture_ref];
+    match crate::renderer::pass_source::resolve_texture_source_ref(scene, nodes_by_id, &conn.from)?
+    {
+        crate::renderer::pass_source::TextureSourceRef::Image {
+            binding_id,
+            image_node_id,
+            sampler_node_id,
+        } => bundle
+            .image_textures
+            .push(crate::renderer::types::ImageTextureRef {
+                binding_id,
+                image_node_id,
+                sampler_node_id,
+            }),
+        crate::renderer::pass_source::TextureSourceRef::Surface(texture_ref) => {
+            bundle.pass_textures = vec![texture_ref];
+        }
+    }
     Ok(bundle)
 }
 
@@ -178,6 +194,7 @@ pub fn build_gradient_blur_composite_wgsl_bundle_with_graph_binding(
         mask_upstream.node_type.as_str(),
         "RenderPass"
             | "BloomNode"
+            | "ImagePass"
             | "GuassianBlurPass"
             | "Downsample"
             | "Convolution"

@@ -16,7 +16,7 @@ use crate::renderer::types::PassBindings;
 pub(crate) fn sampler_kind_from_node_params(
     params: &HashMap<String, serde_json::Value>,
 ) -> SamplerKind {
-    // Scene DSL uses ImageTexture/PassTexture params like:
+    // Scene DSL uses ImageTexture/TextureSampler params like:
     // - addressModeU/V: "mirror-repeat" | "repeat" | "clamp-to-edge"
     // - magFilter/minFilter: "linear" | "nearest"
     // Legacy fields used by some scenes:
@@ -102,10 +102,10 @@ mod tests {
     use super::*;
     use crate::{dsl::Node, renderer::node_compiler::test_utils::test_scene};
 
-    fn pass_texture_node(id: &str, filter: &str) -> Node {
+    fn texture_sampler_node(id: &str, filter: &str) -> Node {
         Node {
             id: id.to_string(),
-            node_type: "PassTexture".to_string(),
+            node_type: "TextureSampler".to_string(),
             params: HashMap::from([
                 (
                     "addressModeU".to_string(),
@@ -132,16 +132,16 @@ mod tests {
     }
 
     #[test]
-    fn pass_texture_sampling_sites_keep_independent_samplers() {
+    fn texture_sampler_sites_keep_independent_samplers() {
         let scene = test_scene(
             vec![
-                pass_texture_node("nearest_read", "nearest"),
-                pass_texture_node("linear_read", "linear"),
+                texture_sampler_node("nearest_read", "nearest"),
+                texture_sampler_node("linear_read", "linear"),
             ],
             Vec::new(),
         );
-        let nearest = PassTextureRef::through_pass_texture("nearest_read", "source", "pass");
-        let linear = PassTextureRef::through_pass_texture("linear_read", "source", "pass");
+        let nearest = PassTextureRef::through_texture_sampler("nearest_read", "source", "pass");
+        let linear = PassTextureRef::through_texture_sampler("linear_read", "source", "pass");
 
         assert_eq!(
             sampler_kind_for_pass_texture(&scene, &nearest),

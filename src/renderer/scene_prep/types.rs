@@ -29,5 +29,6 @@ pub struct PreparedScene {
 pub struct ScenePrepReport {
     pub expanded_group_instances: usize,
     pub auto_wrapped_pass_inputs: usize,
+    pub consumer_scoped_coercions: usize,
     pub inlined_image_file_bindings: usize,
 }

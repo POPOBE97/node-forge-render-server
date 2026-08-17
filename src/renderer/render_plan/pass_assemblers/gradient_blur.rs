@@ -15,7 +15,7 @@ use crate::{
     renderer::{
         camera::pass_node_uses_custom_camera,
         graph_uniforms::{choose_graph_binding_kind, pack_graph_values},
-        pass_source::resolve_pass_source_ref,
+        pass_source::processing_input_connection,
         types::{GraphBinding, PassOutputSpec},
         wgsl::{build_fullscreen_textured_bundle, clamp_min_1},
         wgsl_gradient_blur::*,
@@ -57,11 +57,26 @@ pub(crate) fn assemble_gradient_blur(
     // ---------- resolve source dimensions ----------
     let mut gb_src_resolution: [u32; 2] = [tgt_w_u, tgt_h_u];
     let mut gb_output_center: Option<[f32; 2]> = None;
+    let sampled_source = processing_input_connection(&prepared.scene, layer_id)
+        .ok()
+        .map(|(connection, _)| {
+            super::super::resource_naming::resolve_sampled_source(
+                &prepared.scene,
+                nodes_by_id,
+                ids,
+                bs.pass_output_registry,
+                &connection.from,
+                asset_store,
+            )
+        })
+        .transpose()?;
 
-    if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
-        let src_texture_ref =
-            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
-        if let Some(src_node) = nodes_by_id.get(&src_texture_ref.source.node_id) {
+    if let Some(source) = sampled_source.as_ref() {
+        if let Some(src_node) = source
+            .surface_ref
+            .as_ref()
+            .and_then(|texture_ref| nodes_by_id.get(&texture_ref.source.node_id))
+        {
             if src_node.node_type == "RenderPass" {
                 if let Some(geo_conn) =
                     incoming_connection(&prepared.scene, &src_node.id, "geometry")
@@ -83,20 +98,7 @@ pub(crate) fn assemble_gradient_blur(
             }
         }
 
-        let src_spec = bs
-            .pass_output_registry
-            .get_for_port(
-                &src_texture_ref.source.node_id,
-                &src_texture_ref.source.port_id,
-            )
-            .ok_or_else(|| {
-                anyhow!(
-                    "GradientBlur {layer_id} source {}.{} is not registered",
-                    src_texture_ref.source.node_id,
-                    src_texture_ref.source.port_id
-                )
-            })?;
-        gb_src_resolution = src_spec.resolution;
+        gb_src_resolution = source.resolution;
     }
 
     let [padded_w, padded_h] =
@@ -108,35 +110,19 @@ pub(crate) fn assemble_gradient_blur(
     let pad_offset_x = (pad_w - src_w) * 0.5;
     let pad_offset_y = (pad_h - src_h) * 0.5;
 
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
     let mut gradient_chain_first_camera_consumed = false;
 
     // ---------- source pass ----------
     let mut initial_source_texture: Option<ResourceName> = None;
     let mut initial_source_sampler_kind: Option<SamplerKind> = None;
+    let mut initial_source_image_node_id: Option<String> = None;
 
-    if let Some(src_conn) = incoming_connection(&prepared.scene, layer_id, "source") {
-        let src_texture_ref =
-            resolve_pass_source_ref(&prepared.scene, nodes_by_id, &src_conn.from)?;
-        let spec = bs
-            .pass_output_registry
-            .get_for_port(
-                &src_texture_ref.source.node_id,
-                &src_texture_ref.source.port_id,
-            )
-            .ok_or_else(|| {
-                anyhow!(
-                    "GradientBlur {layer_id} source {}.{} is not registered",
-                    src_texture_ref.source.node_id,
-                    src_texture_ref.source.port_id
-                )
-            })?;
-        if spec.format == sampled_pass_format {
-            initial_source_texture = Some(spec.texture_name.clone());
-            initial_source_sampler_kind = Some(sampler_kind_for_pass_texture(
-                &prepared.scene,
-                &src_texture_ref,
-            ));
+    if let Some(source) = sampled_source.as_ref() {
+        if source.format == sampled_pass_format || source.binding.image_node_id.is_some() {
+            initial_source_texture = Some(source.texture.clone());
+            initial_source_sampler_kind = Some(source.sampler);
+            initial_source_image_node_id = source.binding.image_node_id.clone();
         }
     }
 
@@ -146,6 +132,7 @@ pub(crate) fn assemble_gradient_blur(
     if force_source_pass_for_custom_camera {
         initial_source_texture = None;
         initial_source_sampler_kind = None;
+        initial_source_image_node_id = None;
     }
 
     let source_texture: ResourceName = if let Some(existing_tex) = initial_source_texture {
@@ -215,16 +202,20 @@ pub(crate) fn assemble_gradient_blur(
         let mut src_texture_bindings: Vec<PassTextureBinding> = Vec::new();
         let mut src_sampler_kinds: Vec<SamplerKind> = Vec::new();
 
-        for id in src_bundle.image_textures.iter() {
-            let Some(tex) = ids.get(id).cloned() else {
+        for texture_ref in src_bundle.image_textures.iter() {
+            let Some(tex) = ids.get(&texture_ref.image_node_id).cloned() else {
                 continue;
             };
             src_texture_bindings.push(PassTextureBinding {
                 texture: tex,
-                image_node_id: Some(id.clone()),
+                image_node_id: Some(texture_ref.image_node_id.clone()),
             });
+            let sampler_node_id = texture_ref
+                .sampler_node_id
+                .as_deref()
+                .unwrap_or(&texture_ref.image_node_id);
             let kind = nodes_by_id
-                .get(id)
+                .get(sampler_node_id)
                 .map(|n| sampler_kind_from_node_params(&n.params))
                 .unwrap_or(SamplerKind::LinearClamp);
             src_sampler_kinds.push(kind);
@@ -312,7 +303,7 @@ pub(crate) fn assemble_gradient_blur(
         shader_wgsl: pad_bundle.module,
         texture_bindings: vec![PassTextureBinding {
             texture: source_texture.clone(),
-            image_node_id: None,
+            image_node_id: initial_source_image_node_id,
         }],
         sampler_kinds: vec![initial_source_sampler_kind.unwrap_or(SamplerKind::LinearMirror)],
         blend_state: BlendState::REPLACE,
@@ -418,7 +409,7 @@ pub(crate) fn assemble_gradient_blur(
     }
 
     // ---------- composite/final pass ----------
-    let output_tex: ResourceName = if is_sampled_output {
+    let output_tex: ResourceName = if materializes_texture {
         let out: ResourceName = format!("sys.gb.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: out.clone(),
@@ -508,16 +499,20 @@ pub(crate) fn assemble_gradient_blur(
     let mut final_sampler_kinds: Vec<SamplerKind> = Vec::new();
 
     // Image textures from mask expression.
-    for id in composite_bundle.image_textures.iter() {
-        let Some(tex) = ids.get(id).cloned() else {
+    for texture_ref in composite_bundle.image_textures.iter() {
+        let Some(tex) = ids.get(&texture_ref.image_node_id).cloned() else {
             continue;
         };
         final_texture_bindings.push(PassTextureBinding {
             texture: tex,
-            image_node_id: Some(id.clone()),
+            image_node_id: Some(texture_ref.image_node_id.clone()),
         });
+        let sampler_node_id = texture_ref
+            .sampler_node_id
+            .as_deref()
+            .unwrap_or(&texture_ref.image_node_id);
         let kind = nodes_by_id
-            .get(id)
+            .get(sampler_node_id)
             .map(|n| sampler_kind_from_node_params(&n.params))
             .unwrap_or(SamplerKind::LinearClamp);
         final_sampler_kinds.push(kind);
@@ -579,16 +574,17 @@ pub(crate) fn assemble_gradient_blur(
 
     // Register GradientBlur output for downstream chaining.
     let gradient_output_tex = output_tex.clone();
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "output"),
-        texture_name: gradient_output_tex.clone(),
-        resolution: gb_src_resolution,
-        format: if is_sampled_output {
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["texture"],
+        gradient_output_tex.clone(),
+        gb_src_resolution,
+        if materializes_texture {
             sampled_pass_format
         } else {
             target_format
         },
-    });
+    );
 
     let composition_consumers = sc
         .composition_consumers_by_source

@@ -49,8 +49,8 @@ pub use runtime::{ExternalParams, FiredEvent, FiredEvents, StateMachineRuntime, 
 pub use timeline::{TickSample, TickSchedule, evenly_spaced_samples};
 pub use trace::{
     AnimationTraceFrame, AnimationTraceLog, EventSchedule, ScheduledEvent, build_initial_values,
-    canonicalize_json_value, generate_trace_for_scene, generate_trace_for_scene_with_events,
-    round_f64, tracked_override_keys,
+    canonicalize_json_value, dynamic_render_keys, generate_trace_for_scene,
+    generate_trace_for_scene_with_events, round_f64, tracked_override_keys,
 };
 pub use types::{
     EventModifiers, MousePosition, OverrideKey, RuntimeInputSnapshot, SceneSize, StateMachine,
@@ -188,9 +188,9 @@ pub(crate) fn collect_scene_current_values(
 /// matches a node in the scene.  Used to inject runtime animation
 /// values before uniform packing.
 ///
-/// Override keys are declaration-side identities and therefore match only
-/// exact node IDs. Group expansion and consumer topology must not create an
-/// implicit animation or Mutation target.
+/// Override keys are declaration-side identities. Planner-generated consumer invocations may
+/// mirror the authored node through `__authoredNodeId`; those execution instances receive the
+/// same resolved value without becoming independent animation or Mutation targets.
 pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, serde_json::Value>) {
     if overrides.is_empty() {
         return;
@@ -198,7 +198,11 @@ pub fn apply_overrides(scene: &mut SceneDSL, overrides: &HashMap<OverrideKey, se
 
     for (key, value) in overrides {
         for node in &mut scene.nodes {
-            if key.node_id == node.id {
+            let authored_node_id = node
+                .params
+                .get("__authoredNodeId")
+                .and_then(serde_json::Value::as_str);
+            if key.node_id == node.id || authored_node_id == Some(key.node_id.as_str()) {
                 node.params.insert(key.param_name.clone(), value.clone());
             }
         }

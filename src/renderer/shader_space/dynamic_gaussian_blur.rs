@@ -676,6 +676,309 @@ mod tests {
         result.shader_space.render();
     }
 
+    #[test]
+    fn animated_image_pass_zero_through_ten_reuses_prebuilt_pipeline() {
+        let scene: crate::dsl::SceneDSL = serde_json::from_value(serde_json::json!({
+            "version": "6.0",
+            "metadata": { "name": "animated-image-pass-blur" },
+            "nodes": [
+                {
+                    "id": "target",
+                    "type": "RenderTexture",
+                    "params": { "width": 320, "height": 180, "format": "rgba8unorm" }
+                },
+                {
+                    "id": "size",
+                    "type": "Vector2Input",
+                    "params": { "x": 160.0, "y": 90.0 }
+                },
+                {
+                    "id": "position",
+                    "type": "Vector2Input",
+                    "params": { "x": 160.0, "y": 90.0 }
+                },
+                {
+                    "id": "source",
+                    "type": "ImageTexture",
+                    "params": {
+                        "assetId": "pixel",
+                        "encoderSpace": "srgb",
+                        "alphaMode": "straight"
+                    }
+                },
+                {
+                    "id": "hero",
+                    "type": "ImagePass",
+                    "params": {
+                        "cornerRadius": 8.0,
+                        "smooth": 1.0,
+                        "blurRadius": 0,
+                        "depthTest": false,
+                        "msaaSampleCount": 1,
+                        "loadOp": "clear",
+                        "clearColor": [0.0, 0.0, 0.0, 0.0],
+                        "blend_preset": "premul_alpha",
+                        "blendfunc": "add",
+                        "src_factor": "one",
+                        "dst_factor": "one-minus-src-alpha",
+                        "src_alpha_factor": "one",
+                        "dst_alpha_factor": "one-minus-src-alpha"
+                    }
+                },
+                { "id": "composite", "type": "Composite" },
+                { "id": "screen", "type": "Screen", "params": { "width": 320, "height": 180 } }
+            ],
+            "connections": [
+                {
+                    "id": "image-edge",
+                    "from": { "nodeId": "source", "portId": "texture" },
+                    "to": { "nodeId": "hero", "portId": "image" }
+                },
+                {
+                    "id": "size-edge",
+                    "from": { "nodeId": "size", "portId": "vector" },
+                    "to": { "nodeId": "hero", "portId": "size" }
+                },
+                {
+                    "id": "position-edge",
+                    "from": { "nodeId": "position", "portId": "vector" },
+                    "to": { "nodeId": "hero", "portId": "position" }
+                },
+                {
+                    "id": "hero-layer",
+                    "from": { "nodeId": "hero", "portId": "pass" },
+                    "to": { "nodeId": "composite", "portId": "pass" }
+                },
+                {
+                    "id": "target-edge",
+                    "from": { "nodeId": "target", "portId": "texture" },
+                    "to": { "nodeId": "composite", "portId": "target" }
+                },
+                {
+                    "id": "screen-edge",
+                    "from": { "nodeId": "composite", "portId": "pass" },
+                    "to": { "nodeId": "screen", "portId": "pass" }
+                }
+            ],
+            "outputs": null,
+            "groups": [],
+            "assets": {},
+            "stateMachine": {
+                "id": "sm",
+                "name": "animated blur",
+                "stateParams": [{
+                    "id": "hero:blurRadius",
+                    "name": "Blur Radius",
+                    "type": "int",
+                    "defaultValue": 0
+                }],
+                "stateParamGraph": {
+                    "rootNodePosition": { "x": 0.0, "y": 0.0 },
+                    "declarationPositions": {}
+                },
+                "states": [],
+                "transitions": [],
+                "derivations": [],
+                "motionGraphs": []
+            }
+        }))
+        .expect("animated ImagePass scene");
+
+        let headless = match HeadlessRenderer::new(HeadlessRendererConfig::default()) {
+            Ok(renderer) => renderer,
+            Err(error) => {
+                eprintln!("No adapter available for animated ImagePass blur test: {error:?}");
+                return;
+            }
+        };
+        if headless.adapter.get_info().backend == wgpu::Backend::Noop {
+            eprintln!("Native GPU unavailable; skipping animated ImagePass blur integration test");
+            return;
+        }
+
+        use image::ImageEncoder;
+        let pixel = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+        let mut png_bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png_bytes)
+            .write_image(pixel.as_raw(), 1, 1, image::ExtendedColorType::Rgba8)
+            .expect("encode test pixel");
+        let assets = crate::asset_store::AssetStore::new();
+        assets.insert(
+            "pixel",
+            crate::asset_store::AssetData {
+                bytes: png_bytes,
+                mime_type: "image/png".to_string(),
+                original_name: "pixel.png".to_string(),
+            },
+        );
+
+        let mut result = crate::renderer::ShaderSpaceBuilder::new(
+            headless.device.clone(),
+            headless.queue.clone(),
+        )
+        .with_adapter(headless.adapter.clone())
+        .with_asset_store(assets)
+        .build(&scene)
+        .expect("build animated ImagePass blur");
+        let bundle = result
+            .gaussian_blur_bundles
+            .get("hero")
+            .expect("initial zero radius must still prebuild ImagePass Gaussian routes");
+        assert_eq!(bundle.current.active_factor, 1);
+        let mut route_factors = bundle
+            .current
+            .route_passes
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        route_factors.sort_unstable();
+        assert_eq!(route_factors, vec![1, 2, 4, 8, 16]);
+        let output_before = bundle.current.output_spec.texture_name.clone();
+        let output_texture_before = result
+            .shader_space
+            .textures
+            .get(output_before.as_str())
+            .map(|texture| std::ptr::from_ref(texture) as usize)
+            .expect("prebuilt Gaussian output texture");
+        let pipelines_before = bundle
+            .current
+            .pass_names()
+            .into_iter()
+            .map(|name| {
+                let pipeline = pipeline_debug(
+                    result
+                        .shader_space
+                        .passes
+                        .inner
+                        .get(name.as_str())
+                        .expect("prebuilt Gaussian pass"),
+                );
+                (name, pipeline)
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        let prepare_generation_before = result.shader_space.prepare_generation;
+        let mut animated_scene = result.prepared_scene.take().expect("prepared scene");
+
+        for radius in 0..=10 {
+            crate::state_machine::apply_overrides(
+                &mut animated_scene,
+                &std::collections::HashMap::from([(
+                    crate::state_machine::OverrideKey::new("hero", "blurRadius"),
+                    serde_json::json!(radius),
+                )]),
+            );
+            let update = update_dynamic_gaussian_blur_bundles(
+                &animated_scene,
+                &mut result.shader_space,
+                &mut result.pass_bindings,
+                &mut result.gaussian_blur_bundles,
+                &Default::default(),
+            )
+            .expect("update animated ImagePass blur");
+            assert_eq!(update.rebuilt, 0, "radius {radius} rebuilt GPU state");
+            assert_eq!(
+                update.updated,
+                usize::from(radius > 0),
+                "unexpected update count for radius {radius}"
+            );
+            let current = &result.gaussian_blur_bundles["hero"].current;
+            assert_eq!(current.radius_px, radius as f32);
+            assert_eq!(current.active_factor, 1, "radius {radius} changed route");
+            assert_eq!(current.output_spec.texture_name, output_before);
+            assert_eq!(
+                result
+                    .shader_space
+                    .textures
+                    .get(output_before.as_str())
+                    .map(|texture| std::ptr::from_ref(texture) as usize),
+                Some(output_texture_before),
+                "radius {radius} replaced the output texture"
+            );
+            assert_eq!(
+                result.shader_space.prepare_generation,
+                prepare_generation_before
+            );
+            for (name, pipeline_before) in &pipelines_before {
+                assert_eq!(
+                    pipeline_debug(
+                        result
+                            .shader_space
+                            .passes
+                            .inner
+                            .get(name.as_str())
+                            .expect("prebuilt Gaussian pass remains allocated")
+                    ),
+                    *pipeline_before,
+                    "radius {radius} replaced pipeline {name}"
+                );
+            }
+        }
+
+        let current = &result.gaussian_blur_bundles["hero"].current;
+        assert_eq!(current.radius_px, 10.0);
+
+        crate::state_machine::apply_overrides(
+            &mut animated_scene,
+            &std::collections::HashMap::from([(
+                crate::state_machine::OverrideKey::new("hero", "blurRadius"),
+                serde_json::json!(100),
+            )]),
+        );
+        let update = update_dynamic_gaussian_blur_bundles(
+            &animated_scene,
+            &mut result.shader_space,
+            &mut result.pass_bindings,
+            &mut result.gaussian_blur_bundles,
+            &Default::default(),
+        )
+        .expect("switch animated ImagePass blur route");
+        assert_eq!(update.updated, 1);
+        assert_eq!(update.rebuilt, 0, "route switch rebuilt GPU state");
+        let current = &result.gaussian_blur_bundles["hero"].current;
+        assert!(
+            current.active_factor > 1,
+            "large radius should cross a downsample threshold"
+        );
+        assert_eq!(current.output_spec.texture_name, output_before);
+        assert_eq!(
+            result
+                .shader_space
+                .textures
+                .get(output_before.as_str())
+                .map(|texture| std::ptr::from_ref(texture) as usize),
+            Some(output_texture_before),
+            "route switch replaced the output texture"
+        );
+        assert_eq!(
+            result.shader_space.prepare_generation,
+            prepare_generation_before
+        );
+        for (factor, passes) in &current.route_passes {
+            for pass_name in passes {
+                assert_eq!(
+                    result.shader_space.passes.inner[pass_name.as_str()].enabled,
+                    *factor == current.active_factor,
+                    "route enable state must switch without rebuilding"
+                );
+            }
+        }
+        for (name, pipeline_before) in &pipelines_before {
+            assert_eq!(
+                pipeline_debug(
+                    result
+                        .shader_space
+                        .passes
+                        .inner
+                        .get(name.as_str())
+                        .expect("prebuilt Gaussian pass remains allocated")
+                ),
+                *pipeline_before,
+                "route switch replaced pipeline {name}"
+            );
+        }
+        result.shader_space.render();
+    }
+
     fn pipeline_debug(pass: &rust_wgpu_fiber::pass::Pass) -> String {
         match &pass.pipeline {
             Pipeline::Render(Some(pipeline)) => format!("{pipeline:?}"),

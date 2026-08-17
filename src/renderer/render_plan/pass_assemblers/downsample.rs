@@ -17,8 +17,8 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         graph_uniforms::graph_field_name,
-        pass_source::resolve_pass_source_ref,
-        types::{KernelSpec, MaterialCompileContext, PassOutputSpec, TypedExpr, ValueType},
+        pass_source::processing_input_connection,
+        types::{KernelSpec, MaterialCompileContext, TypedExpr, ValueType},
         utils::{coerce_to_type, cpu_num_u32_min_1},
         wgsl::{
             LanczosAxis, build_downsample_pass_wgsl_bundle, build_fullscreen_textured_bundle,
@@ -31,7 +31,6 @@ use super::super::pass_spec::{
     PassTextureBinding, RenderPassSpec, SamplerKind, TextureDecl, make_params,
 };
 use super::args::{BuilderState, SceneContext};
-use crate::renderer::shader_space::sampler::sampler_kind_for_pass_texture;
 
 #[derive(Clone, Copy)]
 enum KernelPassKind {
@@ -109,22 +108,17 @@ fn assemble_kernel_pass(
             })?;
 
     // Resolve inputs.
-    let src_conn = incoming_connection(scene, layer_id, "source")
-        .ok_or_else(|| anyhow!("{node_type}.source missing for {layer_id}"))?;
-    let src_texture_ref = resolve_pass_source_ref(scene, &nodes_by_id, &src_conn.from)?;
-    let src_pass_id = src_texture_ref.source.node_id.clone();
-    let src_spec = bs
-        .pass_output_registry
-        .get_for_port(&src_pass_id, &src_texture_ref.source.port_id)
-        .cloned()
-        .ok_or_else(|| {
-            anyhow!(
-                "{node_type}.source references upstream output {src_pass_id}.{}, but its texture is not registered yet",
-                src_texture_ref.source.port_id
-            )
-        })?;
-    let src_tex = src_spec.texture_name;
-    let src_resolution = src_spec.resolution;
+    let (src_conn, _) = processing_input_connection(scene, layer_id)?;
+    let src = super::super::resource_naming::resolve_sampled_source(
+        scene,
+        nodes_by_id,
+        sc.ids(),
+        bs.pass_output_registry,
+        &src_conn.from,
+        sc.asset_store,
+    )?;
+    let src_resolution = src.resolution;
+    let src_binding = src.binding.clone();
 
     let kernel_conn = incoming_connection(scene, layer_id, "kernel")
         .ok_or_else(|| anyhow!("{node_type}.kernel missing for {layer_id}"))?;
@@ -231,17 +225,17 @@ fn assemble_kernel_pass(
         }
     };
 
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
-    let needs_target_blit = !is_sampled_output && (out_w != tgt_w_u || out_h != tgt_h_u);
-    let writes_scene_output_target = !is_sampled_output;
-    let needs_intermediate = is_sampled_output || needs_target_blit;
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
+    let needs_target_blit = !materializes_texture && (out_w != tgt_w_u || out_h != tgt_h_u);
+    let writes_scene_output_target = !materializes_texture;
+    let needs_intermediate = materializes_texture || needs_target_blit;
 
     let downsample_out_tex: ResourceName = if needs_intermediate {
         let tex: ResourceName = format!("{resource_prefix}.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: tex.clone(),
             size: [out_w, out_h],
-            format: if is_sampled_output {
+            format: if materializes_texture {
                 bs.sampled_pass_format
             } else {
                 bs.target_format
@@ -265,8 +259,14 @@ fn assemble_kernel_pass(
         "ClampToBorder" => SamplerKind::LinearClamp,
         other => bail!("{node_type}.sampling unsupported: {other}"),
     };
-    let sampler_kind = if src_texture_ref.sampler_node_id.is_some() {
-        sampler_kind_for_pass_texture(scene, &src_texture_ref)
+    let sampler_kind = if src
+        .surface_ref
+        .as_ref()
+        .is_some_and(|value| value.sampler_node_id.is_some())
+    {
+        src.sampler
+    } else if src.binding.image_node_id.is_some() {
+        src.sampler
     } else {
         node_sampler_kind
     };
@@ -311,10 +311,7 @@ fn assemble_kernel_pass(
                 graph_binding: None,
                 graph_values: None,
                 shader_wgsl: bundle.module,
-                texture_bindings: vec![PassTextureBinding {
-                    texture: src_tex.clone(),
-                    image_node_id: None,
-                }],
+                texture_bindings: vec![src_binding.clone()],
                 sampler_kinds: vec![sampler_kind],
                 blend_state: final_blend_state,
                 color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
@@ -375,10 +372,7 @@ fn assemble_kernel_pass(
                 graph_binding: None,
                 graph_values: None,
                 shader_wgsl: h_bundle.module,
-                texture_bindings: vec![PassTextureBinding {
-                    texture: src_tex.clone(),
-                    image_node_id: None,
-                }],
+                texture_bindings: vec![src_binding.clone()],
                 sampler_kinds: vec![nearest_sampler_kind],
                 blend_state: BlendState::REPLACE,
                 color_load_op: wgpu::LoadOp::Clear(Color::TRANSPARENT),
@@ -469,16 +463,28 @@ fn assemble_kernel_pass(
         bs.composite_passes.push(target_blit_pass_name);
     }
 
-    // Register the logical output for chaining.
+    // Register the invocation result. A texture-domain invocation exposes its logical-sized RT;
+    // a pass-domain invocation exposes the downstream TargetContext after any required blit.
     let downsample_output_tex = downsample_out_tex.clone();
-    if is_sampled_output {
-        bs.pass_output_registry.register(PassOutputSpec {
-            endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "output"),
-            texture_name: downsample_output_tex.clone(),
-            resolution: [out_w, out_h],
-            format: bs.sampled_pass_format,
-        });
-    }
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["texture"],
+        if materializes_texture {
+            downsample_output_tex.clone()
+        } else {
+            bs.target_texture_name.clone()
+        },
+        if materializes_texture {
+            [out_w, out_h]
+        } else {
+            [tgt_w_u, tgt_h_u]
+        },
+        if materializes_texture {
+            bs.sampled_pass_format
+        } else {
+            bs.target_format
+        },
+    );
 
     // Composition consumer blits.
     let composition_consumers = sc

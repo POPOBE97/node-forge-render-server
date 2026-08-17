@@ -12,9 +12,13 @@ pub use api::{
     ShaderSpacePresentationMode,
 };
 pub use headless::{
-    render_scene_pass_to_file_headless, render_scene_texture_to_file_headless,
-    render_scene_to_file_headless, render_scene_to_file_headless_profiled,
-    render_scene_to_png_headless,
+    HeadlessRuntimeOverrides, render_scene_pass_to_file_headless,
+    render_scene_pass_to_file_headless_with_runtime_overrides,
+    render_scene_texture_to_file_headless,
+    render_scene_texture_to_file_headless_with_runtime_overrides, render_scene_to_file_headless,
+    render_scene_to_file_headless_profiled,
+    render_scene_to_file_headless_profiled_with_runtime_overrides,
+    render_scene_to_file_headless_with_runtime_overrides, render_scene_to_png_headless,
 };
 pub(crate) use image_utils::image_node_dimensions;
 pub use sampler::update_pass_params;

@@ -18,7 +18,6 @@ use crate::{
     renderer::{
         camera::{legacy_projection_camera_matrix, resolve_effective_camera_for_pass_node},
         node_compiler::template_loader,
-        types::PassOutputSpec,
         utils::{as_bytes_slice, cpu_num_f32, cpu_num_u32_min_1},
         wgsl::build_fullscreen_textured_bundle,
     },
@@ -76,10 +75,17 @@ pub(crate) fn assemble_mesh_gradient(
 ) -> Result<()> {
     let scene = sc.scene();
     let nodes_by_id = sc.nodes_by_id();
-    let tgt_w = bs.tgt_size[0];
-    let tgt_h = bs.tgt_size[1];
-    let tgt_w_u = bs.tgt_size_u[0];
-    let tgt_h_u = bs.tgt_size_u[1];
+    let uses_local_texture_output = scene.connections.iter().any(|connection| {
+        connection.from.node_id == layer_id && connection.from.port_id == "texture"
+    });
+    let local_size = resolve_position_input(sc, layer_node, layer_id, "geoSize", bs.tgt_size)?;
+    let [tgt_w, tgt_h] = if uses_local_texture_output {
+        [local_size[0].max(1.0), local_size[1].max(1.0)]
+    } else {
+        bs.tgt_size
+    };
+    let tgt_w_u = tgt_w.round() as u32;
+    let tgt_h_u = tgt_h.round() as u32;
     let target_size = [tgt_w, tgt_h];
     let center = [tgt_w * 0.5, tgt_h * 0.5];
 
@@ -146,10 +152,10 @@ pub(crate) fn assemble_mesh_gradient(
     bs.geometry_buffers
         .push((geo.clone(), Arc::from(as_bytes_slice(&vertices).to_vec())));
 
-    let is_sampled_output = bs.sampled_pass_ids.contains(layer_id);
-    let writes_scene_output_target = !is_sampled_output;
+    let materializes_texture = bs.materialized_texture_output_ids.contains(layer_id);
+    let writes_scene_output_target = !materializes_texture;
 
-    let output_tex: ResourceName = if is_sampled_output {
+    let output_tex: ResourceName = if materializes_texture {
         let tex: ResourceName = format!("sys.mesh_gradient.{layer_id}.out").into();
         bs.textures.push(TextureDecl {
             name: tex.clone(),
@@ -190,16 +196,17 @@ pub(crate) fn assemble_mesh_gradient(
     });
     bs.composite_passes.push(pass_name);
 
-    bs.pass_output_registry.register(PassOutputSpec {
-        endpoint: crate::renderer::types::OutputEndpoint::new(layer_id, "pass"),
-        texture_name: output_tex.clone(),
-        resolution: [tgt_w_u, tgt_h_u],
-        format: if is_sampled_output {
+    bs.pass_output_registry.register_ports(
+        layer_id,
+        &["pass", "texture"],
+        output_tex.clone(),
+        [tgt_w_u, tgt_h_u],
+        if materializes_texture {
             bs.sampled_pass_format
         } else {
             bs.target_format
         },
-    });
+    );
 
     let composition_consumers = sc
         .composition_consumers_by_source

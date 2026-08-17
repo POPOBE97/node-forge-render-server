@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, anyhow, bail};
 use naga::{ArraySize, ImageClass, ImageDimension, ScalarKind, TypeInner, VectorSize};
 
-use super::super::types::{GraphFieldKind, MaterialCompileContext, TypedExpr, ValueType};
+use super::super::types::{
+    GraphFieldKind, ImageTextureRef, MaterialCompileContext, TypedExpr, ValueType,
+};
 use crate::dsl::{Node, SceneDSL, incoming_connection};
-use crate::renderer::pass_source::resolve_pass_source_ref;
+use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
 use crate::renderer::utils::{coerce_to_type, sanitize_wgsl_ident};
 
 const SYSTEM_DECL_KEY: &str = "00.shader_material.system";
@@ -393,7 +395,12 @@ fn graph_value_expression(
     value_type: ValueType,
     kind: GraphFieldKind,
 ) -> TypedExpr {
-    let parameter_key = format!("{}::param:{parameter_name}", node.id);
+    let authored_node_id = node
+        .params
+        .get("__authoredNodeId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(&node.id);
+    let parameter_key = format!("{authored_node_id}::param:{parameter_name}");
     let preferred = format!(
         "shader_{}_{}",
         sanitize_wgsl_ident(&node.id),
@@ -451,14 +458,33 @@ fn resolve_resource(
 ) -> Result<(String, String)> {
     let connection = incoming_connection(scene, &node.id, port_id)
         .ok_or_else(|| anyhow!("ShaderMaterial resource '{port_id}' is not connected"))?;
-    let texture_ref = resolve_pass_source_ref(scene, nodes_by_id, &connection.from)
-        .with_context(|| format!("ShaderMaterial resource '{port_id}' expects a pass"))?;
-    let binding_id = texture_ref.binding_id.clone();
-    ctx.register_pass_texture_ref(texture_ref);
-    Ok((
-        MaterialCompileContext::pass_tex_var_name(&binding_id),
-        MaterialCompileContext::pass_sampler_var_name(&binding_id),
-    ))
+    match resolve_texture_source_ref(scene, nodes_by_id, &connection.from)
+        .with_context(|| format!("ShaderMaterial resource '{port_id}' expects a texture"))?
+    {
+        TextureSourceRef::Image {
+            binding_id,
+            image_node_id,
+            sampler_node_id,
+        } => {
+            ctx.register_image_texture_ref(ImageTextureRef {
+                binding_id: binding_id.clone(),
+                image_node_id,
+                sampler_node_id,
+            });
+            Ok((
+                MaterialCompileContext::tex_var_name(&binding_id),
+                MaterialCompileContext::sampler_var_name(&binding_id),
+            ))
+        }
+        TextureSourceRef::Surface(texture_ref) => {
+            let binding_id = texture_ref.binding_id.clone();
+            ctx.register_pass_texture_ref(texture_ref);
+            Ok((
+                MaterialCompileContext::pass_tex_var_name(&binding_id),
+                MaterialCompileContext::pass_sampler_var_name(&binding_id),
+            ))
+        }
+    }
 }
 
 fn renamed_source(source: &str, suffix: &str) -> Result<String> {

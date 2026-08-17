@@ -191,12 +191,7 @@ mod tests {
     #[test]
     fn hdr_present_uses_one_extended_encode_without_rgb_clamping() {
         let shader = build_hdr_gamma_encode_wgsl("source", "sampler");
-        assert_eq!(
-            shader
-                .matches("linear_to_srgb_extended(c.xyz)")
-                .count(),
-            1
-        );
+        assert_eq!(shader.matches("linear_to_srgb_extended(c.xyz)").count(), 1);
         assert!(!shader.contains("srgb_to_linear"));
         assert!(shader.contains("let a = abs(x);"));
     }

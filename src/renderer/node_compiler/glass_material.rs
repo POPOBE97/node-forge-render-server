@@ -14,9 +14,9 @@
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 
-use super::super::types::{MaterialCompileContext, PassTextureRef, TypedExpr, ValueType};
+use super::super::types::{ImageTextureRef, MaterialCompileContext, TypedExpr, ValueType};
 use crate::dsl::{Node, SceneDSL, incoming_connection, parse_f32};
-use crate::renderer::geometry_resolver::is_pass_like_node_type;
+use crate::renderer::pass_source::{TextureSourceRef, resolve_texture_source_ref};
 use crate::renderer::utils::fmt_f32;
 
 fn substitute_template(template: &str, vars: &[(&str, String)]) -> String {
@@ -203,24 +203,31 @@ fn resolve_pass_binding(
         return Ok(None);
     };
 
-    let upstream_id = conn.from.node_id.clone();
-    let upstream = nodes_by_id.get(&upstream_id).ok_or_else(|| {
-        anyhow::anyhow!("GlassMaterial: upstream node not found for {port_id}: {upstream_id}")
-    })?;
-
-    // Only pass-producing nodes are valid.
-    if !is_pass_like_node_type(&upstream.node_type) {
-        bail!(
-            "GlassMaterial.{port_id} must be connected to a pass node, got {}",
-            upstream.node_type
-        );
-    }
-
-    let texture_ref = PassTextureRef::direct(&upstream_id, &conn.from.port_id);
-    ctx.register_pass_texture_ref(texture_ref.clone());
-    let tex_var = MaterialCompileContext::pass_tex_var_name(&texture_ref.binding_id);
-    let samp_var = MaterialCompileContext::pass_sampler_var_name(&texture_ref.binding_id);
-    Ok(Some((texture_ref.binding_id, tex_var, samp_var)))
+    Ok(Some(
+        match resolve_texture_source_ref(scene, nodes_by_id, &conn.from)? {
+            TextureSourceRef::Image {
+                binding_id,
+                image_node_id,
+                sampler_node_id,
+            } => {
+                ctx.register_image_texture_ref(ImageTextureRef {
+                    binding_id: binding_id.clone(),
+                    image_node_id,
+                    sampler_node_id,
+                });
+                let tex_var = MaterialCompileContext::tex_var_name(&binding_id);
+                let samp_var = MaterialCompileContext::sampler_var_name(&binding_id);
+                (binding_id, tex_var, samp_var)
+            }
+            TextureSourceRef::Surface(texture_ref) => {
+                ctx.register_pass_texture_ref(texture_ref.clone());
+                let tex_var = MaterialCompileContext::pass_tex_var_name(&texture_ref.binding_id);
+                let samp_var =
+                    MaterialCompileContext::pass_sampler_var_name(&texture_ref.binding_id);
+                (texture_ref.binding_id, tex_var, samp_var)
+            }
+        },
+    ))
 }
 
 const GLASS_WGSL_LIB_KEY: &str = "glass_material_lib";
