@@ -176,21 +176,42 @@ On entry:
 6. Evaluate the bound Derivation as `D(P, frame_inputs)` and send absolute render values to uniform
    packing and rendering.
 
-Each tick first updates Motion `Q,Qdot`, advances the Transition ErrorDriver toward zero, stores
-`P=Q-E` and `V=Qdot-Edot`, and finally recomputes derived values from P. Spring, timeline, and
-instant Transition nodes operate on the residual selected by the authored State route:
-spring/timeline decay it to zero; instant sets it to zero.
+Each tick first updates Motion `Q,Qdot`, advances the active Transition plan, stores `P=Q-E` and
+`V=Qdot-Edot`, and finally recomputes derived values from P. A direct authored route compiles to one
+Segment and keeps the prior ErrorDriver behavior exactly: spring/timeline decay residual `E` to
+zero; instant sets it to zero.
 
-Transition completion tests only `E,Edot`. A Mutation spring may continue after
-`active_transition_id` clears. If Mutation and Transition both use springs, they drive different
-systems: Mutation drives `Q`; Transition drives `E`. Interruption snapshots that frame's final
-`P,V`, establishes the new target `Q,Qdot`, and rebuilds error, preserving physical continuity.
+Transition Timing paths alternate `State In/Waypoint → Timing → Waypoint/State Out` and each
+property must reduce to a two-terminal `Segment / Sequence / Parallel` tree. A Segment ending at
+State Out runs in residual space toward `E=0`. A Segment ending at a typed Waypoint runs in physical
+space toward absolute `P=Waypoint`; every sample derives `E=Q-P` and `Edot=Qdot-V`, so a moving
+Mutation target cannot move the authored Waypoint.
+
+Sequence starts the next child only after the prior child completes. Spring hands off with snapped
+zero velocity. Timeline/instant children consume exact remaining frame time; Spring activates its
+successor with `dt=0` on the first frame in which completion is observed. Every delay is relative to
+its parent activation time.
+
+Parallel schedules every sibling before any sibling owns the channel. A pending delay owns no
+output. When a sibling actually starts, it snapshots current composite `P,V`, takes ownership, and
+cancels the earlier owner's whole subtree, including dormant sequence successors; later pending
+siblings remain scheduled. Same-time starts follow persisted binding/connection order and the later
+one wins. The group completes only when no later sibling is pending and the current owner has
+completed.
+
+Transition completion tests the whole plan for every participating property. A Mutation spring may
+continue after `active_transition_id` clears. If Mutation and Transition both use springs, they
+drive different systems: Mutation drives `Q`; State-Out Transition segments drive `E`. Interruption
+atomically discards the old plan tree, pending starts, canceled branches, and completion callbacks;
+it snapshots that frame's final composite `P,V`, establishes the new target `Q,Qdot`, and starts the
+new tree from that snapshot. There is no independent persistent Cancel API.
 
 #### Debug and trace
 
 Per-channel diagnostics expose target `Q,Qdot`, transition error `E,Edot`, final `P,V`, Mutation
-driver kind, Transition driver kind, completion, and active transition identity. Debugging must not
-infer any of these from renderer uniforms.
+driver kind, Transition driver kind, completion, active Timing node ID, pending Timing IDs, canceled
+Timing IDs, and active transition identity. Debugging must not infer any of these from renderer
+uniforms.
 
 #### Forbidden models
 

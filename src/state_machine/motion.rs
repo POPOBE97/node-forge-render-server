@@ -36,6 +36,12 @@ pub struct MotionChannelDebug {
     pub transition_driver: String,
     pub timeline_progress: Option<f64>,
     pub blending_progress: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_timing_node_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_timing_node_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub canceled_timing_node_ids: Vec<String>,
     pub completed: bool,
 }
 
@@ -154,7 +160,7 @@ impl MotionEngine {
                 .get(&key_string(&key))
                 .or(plans.fallback.as_ref())
                 .cloned()
-                .unwrap_or(MotionPlan::Instant);
+                .unwrap_or_else(PlanTemplate::instant);
             channel.start_error(previous_sample, plan);
             let value = publish_numeric_value(
                 self.publication_types.get(&key).map(String::as_str),
@@ -420,6 +426,9 @@ impl MotionEngine {
                 transition_driver: error.driver.to_string(),
                 timeline_progress: sample.timeline_progress,
                 blending_progress: sample.blending_progress,
+                current_timing_node_id: channel.current_timing_node_id(),
+                pending_timing_node_ids: channel.pending_timing_node_ids(),
+                canceled_timing_node_ids: channel.canceled_timing_node_ids(),
                 completed: sample.completed,
             });
             all_completed &= error.completed;
@@ -477,54 +486,350 @@ fn round_json_numbers(value: serde_json::Value) -> serde_json::Value {
 
 #[derive(Debug, Clone)]
 struct CompiledPlans {
-    fallback: Option<MotionPlan>,
-    specific: HashMap<String, MotionPlan>,
+    fallback: Option<PlanTemplate>,
+    specific: HashMap<String, PlanTemplate>,
 }
 
 fn compile_channel_plans(graph: &TransitionMotionGraph) -> CompiledPlans {
+    #[derive(Clone)]
+    struct Candidate {
+        anchor: String,
+        order: usize,
+    }
+
+    #[derive(Clone)]
+    struct ReducedEdge {
+        source: String,
+        target: String,
+        order: usize,
+        plan: PlanTemplate,
+    }
+
+    fn input_anchor(property: &str) -> String {
+        format!("input:{property}")
+    }
+
+    fn output_anchor(property: &str) -> String {
+        format!("output:{property}")
+    }
+
+    fn waypoint_anchor(node_id: &str) -> String {
+        format!("waypoint:{node_id}")
+    }
+
+    fn reduce_plan(source: &str, target: &str, active: Vec<ReducedEdge>) -> Option<PlanTemplate> {
+        let mut edges = active;
+        while edges.len() > 1 {
+            let mut parallel_group = None;
+            'outer: for left in 0..edges.len() {
+                let group = (left..edges.len())
+                    .filter(|right| {
+                        edges[*right].source == edges[left].source
+                            && edges[*right].target == edges[left].target
+                    })
+                    .collect::<Vec<_>>();
+                if group.len() > 1 {
+                    parallel_group = Some(group);
+                    break 'outer;
+                }
+            }
+            if let Some(mut indices) = parallel_group {
+                indices.sort_unstable();
+                let mut members = indices
+                    .iter()
+                    .map(|index| edges[*index].clone())
+                    .collect::<Vec<_>>();
+                members.sort_by_key(|edge| edge.order);
+                let source = members[0].source.clone();
+                let target = members[0].target.clone();
+                let order = members.iter().map(|edge| edge.order).min().unwrap_or(0);
+                let mut children = Vec::new();
+                for member in members {
+                    match member.plan {
+                        PlanTemplate::Parallel(nested) => children.extend(nested),
+                        plan => children.push(plan),
+                    }
+                }
+                for index in indices.into_iter().rev() {
+                    edges.remove(index);
+                }
+                edges.push(ReducedEdge {
+                    source,
+                    target,
+                    order,
+                    plan: PlanTemplate::Parallel(children),
+                });
+                continue;
+            }
+
+            let mut anchors = edges
+                .iter()
+                .flat_map(|edge| [edge.source.clone(), edge.target.clone()])
+                .filter(|anchor| {
+                    anchor != source && anchor != target && anchor.starts_with("waypoint:")
+                })
+                .collect::<Vec<_>>();
+            anchors.sort();
+            anchors.dedup();
+            let serial = anchors.into_iter().find_map(|anchor| {
+                let incoming = edges
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, edge)| edge.target == anchor)
+                    .map(|(index, _)| index)
+                    .collect::<Vec<_>>();
+                let outgoing = edges
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, edge)| edge.source == anchor)
+                    .map(|(index, _)| index)
+                    .collect::<Vec<_>>();
+                (incoming.len() == 1 && outgoing.len() == 1).then_some((incoming[0], outgoing[0]))
+            });
+            let Some((incoming_index, outgoing_index)) = serial else {
+                break;
+            };
+            let incoming = edges[incoming_index].clone();
+            let outgoing = edges[outgoing_index].clone();
+            let mut children = Vec::new();
+            match incoming.plan {
+                PlanTemplate::Sequence(nested) => children.extend(nested),
+                plan => children.push(plan),
+            }
+            match outgoing.plan {
+                PlanTemplate::Sequence(nested) => children.extend(nested),
+                plan => children.push(plan),
+            }
+            let mut remove = [incoming_index, outgoing_index];
+            remove.sort_unstable();
+            for index in remove.into_iter().rev() {
+                edges.remove(index);
+            }
+            edges.push(ReducedEdge {
+                source: incoming.source,
+                target: outgoing.target,
+                order: incoming.order,
+                plan: PlanTemplate::Sequence(children),
+            });
+        }
+        (edges.len() == 1 && edges[0].source == source && edges[0].target == target)
+            .then(|| edges.remove(0).plan)
+    }
+
     let nodes: HashMap<&str, &TransitionMotionNode> =
         graph.nodes.iter().map(|node| (node.id(), node)).collect();
-    let inputs_by_node: HashMap<&str, &str> = graph
-        .input_bindings
-        .iter()
-        .map(|binding| (binding.to.node_id.as_str(), binding.source.id()))
-        .collect();
+    let mut sources: HashMap<&str, Vec<Candidate>> = HashMap::new();
+    let mut targets: HashMap<&str, Vec<Candidate>> = HashMap::new();
+    for (index, binding) in graph.input_bindings.iter().enumerate() {
+        if nodes
+            .get(binding.to.node_id.as_str())
+            .is_some_and(|node| node.is_timing())
+            && let Some(property) = binding.source.state_param_id()
+        {
+            sources
+                .entry(binding.to.node_id.as_str())
+                .or_default()
+                .push(Candidate {
+                    anchor: input_anchor(property),
+                    order: index,
+                });
+        }
+    }
+    for (index, binding) in graph.output_bindings.iter().enumerate() {
+        if nodes
+            .get(binding.from.node_id.as_str())
+            .is_some_and(|node| node.is_timing())
+        {
+            targets
+                .entry(binding.from.node_id.as_str())
+                .or_default()
+                .push(Candidate {
+                    anchor: output_anchor(&binding.state_param_id),
+                    order: index,
+                });
+        }
+    }
+    for (index, connection) in graph.connections.iter().enumerate() {
+        let source = nodes.get(connection.from.node_id.as_str()).copied();
+        let target = nodes.get(connection.to.node_id.as_str()).copied();
+        if source.is_some_and(TransitionMotionNode::is_timing)
+            && matches!(target, Some(TransitionMotionNode::Waypoint { .. }))
+            && connection.from.port_id == "value"
+            && connection.to.port_id == "in"
+        {
+            targets
+                .entry(connection.from.node_id.as_str())
+                .or_default()
+                .push(Candidate {
+                    anchor: waypoint_anchor(&connection.to.node_id),
+                    order: index,
+                });
+        } else if matches!(source, Some(TransitionMotionNode::Waypoint { .. }))
+            && target.is_some_and(TransitionMotionNode::is_timing)
+            && connection.from.port_id == "value"
+            && connection.to.port_id == "value"
+        {
+            sources
+                .entry(connection.to.node_id.as_str())
+                .or_default()
+                .push(Candidate {
+                    anchor: waypoint_anchor(&connection.from.node_id),
+                    order: index,
+                });
+        }
+    }
+
+    let mut edges = Vec::new();
+    for node in graph.nodes.iter().filter(|node| node.is_timing()) {
+        let node_sources = sources.get(node.id()).cloned().unwrap_or_default();
+        let node_targets = targets.get(node.id()).cloned().unwrap_or_default();
+        if node_sources.len() != 1 || node_targets.len() != 1 {
+            continue;
+        }
+        let source = &node_sources[0];
+        let target = &node_targets[0];
+        let Some(motion) = MotionPlan::from_node(node) else {
+            continue;
+        };
+        let endpoint = target
+            .anchor
+            .strip_prefix("waypoint:")
+            .and_then(|node_id| nodes.get(node_id))
+            .and_then(|node| match node {
+                TransitionMotionNode::Waypoint { value, .. } => {
+                    NumericValue::from_json(value).map(PlanTarget::Waypoint)
+                }
+                _ => None,
+            })
+            .unwrap_or(PlanTarget::StateOut);
+        edges.push(ReducedEdge {
+            source: source.anchor.clone(),
+            target: target.anchor.clone(),
+            order: source.order,
+            plan: PlanTemplate::Segment(SegmentTemplate {
+                timing_node_id: node.id().to_string(),
+                motion,
+                target: endpoint,
+            }),
+        });
+    }
+
     let mut plans = CompiledPlans {
         fallback: None,
         specific: HashMap::new(),
     };
-
-    for binding in &graph.output_bindings {
-        let Some(node) = nodes.get(binding.from.node_id.as_str()) else {
-            continue;
-        };
-        let input_port = inputs_by_node
-            .get(binding.from.node_id.as_str())
-            .copied()
-            .unwrap_or(binding.state_param_id.as_str());
-        if input_port != binding.state_param_id {
-            continue;
+    let mut properties = edges
+        .iter()
+        .filter_map(|edge| edge.source.strip_prefix("input:"))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    properties.sort();
+    properties.dedup();
+    for property in properties {
+        let source = input_anchor(&property);
+        let target = output_anchor(&property);
+        let mut forward = HashSet::from([source.clone()]);
+        loop {
+            let before = forward.len();
+            for edge in &edges {
+                if forward.contains(&edge.source) {
+                    forward.insert(edge.target.clone());
+                }
+            }
+            if forward.len() == before {
+                break;
+            }
         }
-        let plan = MotionPlan::from_node(node);
-        let Some(plan) = plan else {
+        let mut backward = HashSet::from([target.clone()]);
+        loop {
+            let before = backward.len();
+            for edge in &edges {
+                if backward.contains(&edge.target) {
+                    backward.insert(edge.source.clone());
+                }
+            }
+            if backward.len() == before {
+                break;
+            }
+        }
+        let active = edges
+            .iter()
+            .filter(|edge| forward.contains(&edge.source) && backward.contains(&edge.target))
+            .cloned()
+            .collect::<Vec<_>>();
+        let Some(plan) = reduce_plan(&source, &target, active) else {
             continue;
         };
-        if binding.state_param_id == ANY_CHANNEL {
+        if property == ANY_CHANNEL {
             plans.fallback = Some(plan);
         } else {
-            plans.specific.insert(binding.state_param_id.clone(), plan);
+            plans.specific.insert(property, plan);
         }
     }
     for passthrough in &graph.passthrough_bindings {
+        let plan = PlanTemplate::Segment(SegmentTemplate {
+            timing_node_id: "__passthrough__".into(),
+            motion: MotionPlan::Instant,
+            target: PlanTarget::StateOut,
+        });
         if passthrough.state_param_id == ANY_CHANNEL {
-            plans.fallback = Some(MotionPlan::Instant);
+            plans.fallback = Some(plan);
         } else {
             plans
                 .specific
-                .insert(passthrough.state_param_id.clone(), MotionPlan::Instant);
+                .insert(passthrough.state_param_id.clone(), plan);
         }
     }
     plans
+}
+
+#[derive(Debug, Clone)]
+enum PlanTemplate {
+    Segment(SegmentTemplate),
+    Sequence(Vec<PlanTemplate>),
+    Parallel(Vec<PlanTemplate>),
+}
+
+impl PlanTemplate {
+    fn instant() -> Self {
+        Self::Segment(SegmentTemplate {
+            timing_node_id: "__instant__".into(),
+            motion: MotionPlan::Instant,
+            target: PlanTarget::StateOut,
+        })
+    }
+
+    fn direct_state_out(&self) -> Option<&SegmentTemplate> {
+        match self {
+            Self::Segment(segment) if matches!(segment.target, PlanTarget::StateOut) => {
+                Some(segment)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl From<MotionPlan> for PlanTemplate {
+    fn from(motion: MotionPlan) -> Self {
+        Self::Segment(SegmentTemplate {
+            timing_node_id: "__test__".into(),
+            motion,
+            target: PlanTarget::StateOut,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SegmentTemplate {
+    timing_node_id: String,
+    motion: MotionPlan,
+    target: PlanTarget,
+}
+
+#[derive(Debug, Clone)]
+enum PlanTarget {
+    Waypoint(NumericValue),
+    StateOut,
 }
 
 #[derive(Debug, Clone)]
@@ -568,12 +873,546 @@ impl MotionPlan {
             _ => return None,
         })
     }
+
+    fn delay(&self) -> f64 {
+        match self {
+            Self::Spring { delay, .. } | Self::Timeline { delay, .. } => *delay,
+            Self::Instant => 0.0,
+        }
+    }
+
+    fn without_delay(&self) -> Self {
+        match self {
+            Self::Spring {
+                duration, bounce, ..
+            } => Self::Spring {
+                duration: *duration,
+                bounce: *bounce,
+                delay: 0.0,
+            },
+            Self::Timeline {
+                duration,
+                curve,
+                blending,
+                ..
+            } => Self::Timeline {
+                duration: *duration,
+                delay: 0.0,
+                curve: *curve,
+                blending: blending.clone(),
+            },
+            Self::Instant => Self::Instant,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanStatus {
+    Dormant,
+    Pending,
+    Running,
+    Completed,
+    Canceled,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimePlanNode {
+    parent: Option<usize>,
+    status: PlanStatus,
+    kind: RuntimePlanKind,
+}
+
+#[derive(Debug, Clone)]
+enum RuntimePlanKind {
+    Segment(SegmentTemplate),
+    Sequence {
+        children: Vec<usize>,
+    },
+    Parallel {
+        children: Vec<usize>,
+        owner: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct StartEvent {
+    at: f64,
+    order: u64,
+    segment_id: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SegmentMode {
+    Physical,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveSegment {
+    node_id: usize,
+    mode: SegmentMode,
+    driver: Driver,
+}
+
+#[derive(Debug, Clone)]
+struct PlanExecutor {
+    nodes: Vec<RuntimePlanNode>,
+    root: usize,
+    events: Vec<StartEvent>,
+    next_event_order: u64,
+    active: Option<ActiveSegment>,
+    physical: NumericSample,
+    canceled_timing_node_ids: Vec<String>,
+    time: f64,
+}
+
+impl PlanExecutor {
+    fn new(plan: PlanTemplate, current: DriverSample, target: &DriverSample) -> Self {
+        fn build(
+            template: PlanTemplate,
+            parent: Option<usize>,
+            nodes: &mut Vec<RuntimePlanNode>,
+        ) -> usize {
+            match template {
+                PlanTemplate::Segment(segment) => {
+                    let id = nodes.len();
+                    nodes.push(RuntimePlanNode {
+                        parent,
+                        status: PlanStatus::Dormant,
+                        kind: RuntimePlanKind::Segment(segment),
+                    });
+                    id
+                }
+                PlanTemplate::Sequence(templates) => {
+                    let id = nodes.len();
+                    nodes.push(RuntimePlanNode {
+                        parent,
+                        status: PlanStatus::Dormant,
+                        kind: RuntimePlanKind::Sequence { children: vec![] },
+                    });
+                    let children = templates
+                        .into_iter()
+                        .map(|template| build(template, Some(id), nodes))
+                        .collect();
+                    nodes[id].kind = RuntimePlanKind::Sequence { children };
+                    id
+                }
+                PlanTemplate::Parallel(templates) => {
+                    let id = nodes.len();
+                    nodes.push(RuntimePlanNode {
+                        parent,
+                        status: PlanStatus::Dormant,
+                        kind: RuntimePlanKind::Parallel {
+                            children: vec![],
+                            owner: None,
+                        },
+                    });
+                    let children = templates
+                        .into_iter()
+                        .map(|template| build(template, Some(id), nodes))
+                        .collect();
+                    nodes[id].kind = RuntimePlanKind::Parallel {
+                        children,
+                        owner: None,
+                    };
+                    id
+                }
+            }
+        }
+
+        let physical = NumericSample {
+            value: current.value,
+            velocity: current.velocity,
+        };
+        let mut nodes = Vec::new();
+        let root = build(plan, None, &mut nodes);
+        let mut executor = Self {
+            nodes,
+            root,
+            events: vec![],
+            next_event_order: 0,
+            active: None,
+            physical,
+            canceled_timing_node_ids: vec![],
+            time: 0.0,
+        };
+        executor.activate_node(root, 0.0);
+        executor.settle(target);
+        executor
+    }
+
+    fn activate_node(&mut self, node_id: usize, at: f64) {
+        if matches!(
+            self.nodes[node_id].status,
+            PlanStatus::Canceled | PlanStatus::Completed
+        ) {
+            return;
+        }
+        let kind = self.nodes[node_id].kind.clone();
+        match kind {
+            RuntimePlanKind::Segment(segment) => {
+                self.nodes[node_id].status = PlanStatus::Pending;
+                let order = self.next_event_order;
+                self.next_event_order += 1;
+                self.events.push(StartEvent {
+                    at: at + segment.motion.delay(),
+                    order,
+                    segment_id: node_id,
+                });
+            }
+            RuntimePlanKind::Sequence { children } => {
+                self.nodes[node_id].status = PlanStatus::Running;
+                if let Some(first) = children.first() {
+                    self.activate_node(*first, at);
+                } else {
+                    self.complete_node(node_id, at);
+                }
+            }
+            RuntimePlanKind::Parallel { children, .. } => {
+                self.nodes[node_id].status = PlanStatus::Running;
+                if children.is_empty() {
+                    self.complete_node(node_id, at);
+                } else {
+                    for child in children {
+                        self.activate_node(child, at);
+                    }
+                }
+            }
+        }
+    }
+
+    fn cancel_subtree(&mut self, node_id: usize) {
+        if self.nodes[node_id].status == PlanStatus::Canceled {
+            return;
+        }
+        let kind = self.nodes[node_id].kind.clone();
+        self.nodes[node_id].status = PlanStatus::Canceled;
+        match kind {
+            RuntimePlanKind::Segment(segment) => {
+                if !self
+                    .canceled_timing_node_ids
+                    .contains(&segment.timing_node_id)
+                {
+                    self.canceled_timing_node_ids
+                        .push(segment.timing_node_id.clone());
+                }
+                if self
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.node_id == node_id)
+                {
+                    self.active = None;
+                }
+            }
+            RuntimePlanKind::Sequence { children } | RuntimePlanKind::Parallel { children, .. } => {
+                for child in children {
+                    self.cancel_subtree(child);
+                }
+            }
+        }
+    }
+
+    fn claim_parallel_owners(&mut self, segment_id: usize) {
+        let mut ancestry = Vec::new();
+        let mut child = segment_id;
+        while let Some(parent) = self.nodes[child].parent {
+            ancestry.push((parent, child));
+            child = parent;
+        }
+        ancestry.reverse();
+        for (parent, direct_child) in ancestry {
+            let old_owner = match &self.nodes[parent].kind {
+                RuntimePlanKind::Parallel { owner, .. } => *owner,
+                _ => continue,
+            };
+            if old_owner == Some(direct_child) {
+                continue;
+            }
+            if let Some(old_owner) = old_owner {
+                self.cancel_subtree(old_owner);
+            }
+            if let RuntimePlanKind::Parallel { owner, .. } = &mut self.nodes[parent].kind {
+                *owner = Some(direct_child);
+            }
+        }
+    }
+
+    fn start_segment(&mut self, node_id: usize, target: &DriverSample) {
+        if self.nodes[node_id].status != PlanStatus::Pending {
+            return;
+        }
+        let RuntimePlanKind::Segment(segment) = self.nodes[node_id].kind.clone() else {
+            return;
+        };
+        let current = self.physical_sample(target);
+        self.physical = NumericSample {
+            value: current.value.clone(),
+            velocity: current.velocity.clone(),
+        };
+        self.claim_parallel_owners(node_id);
+        self.nodes[node_id].status = PlanStatus::Running;
+
+        let (mode, source, source_velocity, destination) = match &segment.target {
+            PlanTarget::Waypoint(value) => (
+                SegmentMode::Physical,
+                current.value,
+                current.velocity,
+                value.clone(),
+            ),
+            PlanTarget::StateOut => {
+                let error = subtract_values(&target.value, &current.value);
+                let error_velocity = subtract_values(&target.velocity, &current.velocity);
+                let zero = error.same_shape(vec![0.0; error.len()]);
+                (SegmentMode::Error, error, error_velocity, zero)
+            }
+        };
+        let outgoing = Driver::Hold(NumericSample {
+            value: source.clone(),
+            velocity: source_velocity.clone(),
+        });
+        let motion = segment.motion.without_delay();
+        let driver = if matches!(motion, MotionPlan::Spring { .. })
+            && same_components(&source, &destination)
+            && source_velocity
+                .components()
+                .iter()
+                .all(|velocity| *velocity == 0.0)
+        {
+            Driver::Hold(NumericSample {
+                value: destination.clone(),
+                velocity: destination.same_shape(vec![0.0; destination.len()]),
+            })
+        } else {
+            Driver::start_numeric(Some(outgoing), source, destination, motion)
+                .with_initial_velocity(source_velocity)
+        };
+        self.active = Some(ActiveSegment {
+            node_id,
+            mode,
+            driver,
+        });
+    }
+
+    fn complete_node(&mut self, node_id: usize, at: f64) {
+        if matches!(
+            self.nodes[node_id].status,
+            PlanStatus::Completed | PlanStatus::Canceled
+        ) {
+            return;
+        }
+        self.nodes[node_id].status = PlanStatus::Completed;
+        let Some(parent) = self.nodes[node_id].parent else {
+            return;
+        };
+        if self.nodes[parent].status == PlanStatus::Canceled {
+            return;
+        }
+        match self.nodes[parent].kind.clone() {
+            RuntimePlanKind::Sequence { children } => {
+                let Some(index) = children.iter().position(|child| *child == node_id) else {
+                    return;
+                };
+                if let Some(next) = children.get(index + 1) {
+                    self.activate_node(*next, at);
+                } else {
+                    self.complete_node(parent, at);
+                }
+            }
+            RuntimePlanKind::Parallel {
+                children, owner, ..
+            } => {
+                if owner != Some(node_id) {
+                    return;
+                }
+                let waiting = children.iter().any(|child| {
+                    !matches!(
+                        self.nodes[*child].status,
+                        PlanStatus::Completed | PlanStatus::Canceled
+                    )
+                });
+                if !waiting {
+                    self.complete_node(parent, at);
+                }
+            }
+            RuntimePlanKind::Segment(_) => {}
+        }
+    }
+
+    fn next_due_event_index(&self) -> Option<usize> {
+        self.events
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| {
+                self.nodes[event.segment_id].status == PlanStatus::Pending
+                    && event.at <= self.time + f64::EPSILON
+            })
+            .min_by(|(_, left), (_, right)| {
+                left.at
+                    .total_cmp(&right.at)
+                    .then(left.order.cmp(&right.order))
+            })
+            .map(|(index, _)| index)
+    }
+
+    fn next_event_time(&self) -> Option<f64> {
+        self.events
+            .iter()
+            .filter(|event| self.nodes[event.segment_id].status == PlanStatus::Pending)
+            .map(|event| event.at)
+            .min_by(f64::total_cmp)
+    }
+
+    fn complete_active_if_ready(&mut self, target: &DriverSample) -> bool {
+        let Some(active) = &self.active else {
+            return false;
+        };
+        if !active.driver.sample().completed {
+            return false;
+        }
+        let physical = self.physical_sample(target);
+        self.physical = NumericSample {
+            value: physical.value,
+            velocity: physical.velocity,
+        };
+        let node_id = self.active.take().map(|active| active.node_id).unwrap_or(0);
+        self.complete_node(node_id, self.time);
+        true
+    }
+
+    fn settle(&mut self, target: &DriverSample) -> bool {
+        let mut any = false;
+        loop {
+            if self.complete_active_if_ready(target) {
+                any = true;
+                continue;
+            }
+            let Some(index) = self.next_due_event_index() else {
+                break;
+            };
+            let event = self.events.remove(index);
+            self.start_segment(event.segment_id, target);
+            any = true;
+        }
+        any
+    }
+
+    fn step(&mut self, dt: f64, target: &DriverSample) {
+        self.settle(target);
+        let end = self.time + dt.max(0.0);
+        while self.time < end && self.nodes[self.root].status != PlanStatus::Completed {
+            let remaining = end - self.time;
+            let event_delta = self.next_event_time().map(|at| (at - self.time).max(0.0));
+            let completion_delta = self
+                .active
+                .as_ref()
+                .and_then(|active| active.driver.remaining_duration());
+            let mut advance = remaining;
+            if let Some(delta) = event_delta {
+                advance = advance.min(delta);
+            }
+            if let Some(delta) = completion_delta {
+                advance = advance.min(delta.max(0.0));
+            }
+            if advance > 0.0 {
+                if let Some(active) = &mut self.active {
+                    active.driver.step(advance);
+                }
+                self.time += advance;
+                let physical = self.physical_sample(target);
+                self.physical = NumericSample {
+                    value: physical.value,
+                    velocity: physical.velocity,
+                };
+            }
+            let progressed = self.settle(target);
+            if advance <= 0.0 && !progressed {
+                break;
+            }
+        }
+        if self.time < end {
+            self.time = end;
+        }
+    }
+
+    fn physical_sample(&self, target: &DriverSample) -> DriverSample {
+        let completed = self.nodes[self.root].status == PlanStatus::Completed;
+        let Some(active) = &self.active else {
+            return DriverSample::numeric(self.physical.clone(), "hold", completed, None, None);
+        };
+        let sample = active.driver.sample();
+        match active.mode {
+            SegmentMode::Physical => DriverSample {
+                completed,
+                ..sample
+            },
+            SegmentMode::Error => DriverSample {
+                value: subtract_values(&target.value, &sample.value),
+                velocity: subtract_values(&target.velocity, &sample.velocity),
+                driver: sample.driver,
+                completed,
+                persistent: false,
+                timeline_progress: sample.timeline_progress,
+                blending_progress: sample.blending_progress,
+            },
+        }
+    }
+
+    fn error_sample(&self, target: &DriverSample) -> DriverSample {
+        let physical = self.physical_sample(target);
+        DriverSample {
+            value: subtract_values(&target.value, &physical.value),
+            velocity: subtract_values(&target.velocity, &physical.velocity),
+            driver: physical.driver,
+            completed: physical.completed,
+            persistent: false,
+            timeline_progress: physical.timeline_progress,
+            blending_progress: physical.blending_progress,
+        }
+    }
+
+    fn current_timing_node_id(&self) -> Option<String> {
+        self.active.as_ref().and_then(|active| {
+            let RuntimePlanKind::Segment(segment) = &self.nodes[active.node_id].kind else {
+                return None;
+            };
+            Some(segment.timing_node_id.clone())
+        })
+    }
+
+    fn pending_timing_node_ids(&self) -> Vec<String> {
+        let mut events = self
+            .events
+            .iter()
+            .filter(|event| self.nodes[event.segment_id].status == PlanStatus::Pending)
+            .collect::<Vec<_>>();
+        events.sort_by(|left, right| {
+            left.at
+                .total_cmp(&right.at)
+                .then(left.order.cmp(&right.order))
+        });
+        events
+            .into_iter()
+            .filter_map(|event| match &self.nodes[event.segment_id].kind {
+                RuntimePlanKind::Segment(segment) => Some(segment.timing_node_id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+enum TransitionDriver {
+    Legacy {
+        timing_node_id: Option<String>,
+        driver: Driver,
+    },
+    Plan(PlanExecutor),
 }
 
 #[derive(Debug, Clone)]
 struct Channel {
     target: Driver,
-    transition_error: Driver,
+    transition: TransitionDriver,
 }
 
 impl Channel {
@@ -582,36 +1421,51 @@ impl Channel {
         let zero = zero_driver_like(&target.sample().value);
         Self {
             target,
-            transition_error: zero,
+            transition: TransitionDriver::Legacy {
+                timing_node_id: None,
+                driver: zero,
+            },
         }
     }
 
     fn set_static_target(&mut self, value: serde_json::Value) {
         self.target = hold_driver(value);
         if !self.transition_active() {
-            self.transition_error = zero_driver_like(&self.target.sample().value);
+            self.transition = TransitionDriver::Legacy {
+                timing_node_id: None,
+                driver: zero_driver_like(&self.target.sample().value),
+            };
         }
     }
 
-    fn start_error(&mut self, current: DriverSample, plan: MotionPlan) {
+    fn start_error(&mut self, current: DriverSample, plan: impl Into<PlanTemplate>) {
+        let plan = plan.into();
         let target = self.target.sample();
-        self.transition_error = match (&current.value, &current.velocity) {
-            (current_value, current_velocity)
-                if current_value.has_same_shape(&target.value)
-                    && current_velocity.has_same_shape(&target.velocity) =>
-            {
-                let error_value = subtract_values(&target.value, current_value);
-                let error_velocity = subtract_values(&target.velocity, current_velocity);
-                Driver::start_numeric(
-                    None,
-                    error_value.clone(),
-                    error_value.same_shape(vec![0.0; error_value.len()]),
-                    plan,
-                )
-                .with_initial_velocity(error_velocity)
-            }
-            _ => zero_driver_like(&target.value),
-        };
+        if let Some(segment) = plan.direct_state_out() {
+            let driver = match (&current.value, &current.velocity) {
+                (current_value, current_velocity)
+                    if current_value.has_same_shape(&target.value)
+                        && current_velocity.has_same_shape(&target.velocity) =>
+                {
+                    let error_value = subtract_values(&target.value, current_value);
+                    let error_velocity = subtract_values(&target.velocity, current_velocity);
+                    Driver::start_numeric(
+                        None,
+                        error_value.clone(),
+                        error_value.same_shape(vec![0.0; error_value.len()]),
+                        segment.motion.clone(),
+                    )
+                    .with_initial_velocity(error_velocity)
+                }
+                _ => zero_driver_like(&target.value),
+            };
+            self.transition = TransitionDriver::Legacy {
+                timing_node_id: Some(segment.timing_node_id.clone()),
+                driver,
+            };
+        } else {
+            self.transition = TransitionDriver::Plan(PlanExecutor::new(plan, current, &target));
+        }
     }
 
     fn set_to(
@@ -676,7 +1530,11 @@ impl Channel {
     }
 
     fn step(&mut self, dt: f64) {
-        self.transition_error.step(dt);
+        let target = self.target.sample();
+        match &mut self.transition {
+            TransitionDriver::Legacy { driver, .. } => driver.step(dt),
+            TransitionDriver::Plan(plan) => plan.step(dt, &target),
+        }
     }
 
     fn target_sample(&self) -> DriverSample {
@@ -684,29 +1542,66 @@ impl Channel {
     }
 
     fn error_sample(&self) -> DriverSample {
-        self.transition_error.sample()
+        let target = self.target.sample();
+        match &self.transition {
+            TransitionDriver::Legacy { driver, .. } => driver.sample(),
+            TransitionDriver::Plan(plan) => plan.error_sample(&target),
+        }
     }
 
     fn sample(&self) -> DriverSample {
         let target = self.target.sample();
-        let error = self.transition_error.sample();
-        DriverSample {
-            value: subtract_values(&target.value, &error.value),
-            velocity: subtract_values(&target.velocity, &error.velocity),
-            driver: error.driver,
-            completed: error.completed,
-            persistent: false,
-            timeline_progress: error.timeline_progress,
-            blending_progress: error.blending_progress,
+        match &self.transition {
+            TransitionDriver::Legacy { driver, .. } => {
+                let error = driver.sample();
+                DriverSample {
+                    value: subtract_values(&target.value, &error.value),
+                    velocity: subtract_values(&target.velocity, &error.velocity),
+                    driver: error.driver,
+                    completed: error.completed,
+                    persistent: false,
+                    timeline_progress: error.timeline_progress,
+                    blending_progress: error.blending_progress,
+                }
+            }
+            TransitionDriver::Plan(plan) => plan.physical_sample(&target),
         }
     }
 
     fn transition_active(&self) -> bool {
-        !self.transition_error.sample().completed
+        !self.error_sample().completed
     }
 
     fn finish_transition(&mut self) {
-        self.transition_error = zero_driver_like(&self.target.sample().value);
+        self.transition = TransitionDriver::Legacy {
+            timing_node_id: None,
+            driver: zero_driver_like(&self.target.sample().value),
+        };
+    }
+
+    fn current_timing_node_id(&self) -> Option<String> {
+        match &self.transition {
+            TransitionDriver::Legacy {
+                timing_node_id,
+                driver,
+            } if !driver.sample().completed => timing_node_id.clone(),
+            TransitionDriver::Legacy { .. } => None,
+            TransitionDriver::Plan(plan) => plan.current_timing_node_id(),
+        }
+    }
+
+    fn pending_timing_node_ids(&self) -> Vec<String> {
+        match &self.transition {
+            TransitionDriver::Legacy { .. } => vec![],
+            TransitionDriver::Plan(plan) => plan.pending_timing_node_ids(),
+        }
+    }
+
+    fn canceled_timing_node_ids(&self) -> Vec<String> {
+        match &self.transition {
+            TransitionDriver::Legacy { .. } => vec![],
+            TransitionDriver::Plan(plan) => plan.canceled_timing_node_ids.clone(),
+        }
     }
 }
 
@@ -962,6 +1857,29 @@ impl Driver {
             Self::Blend(driver) => driver.sample(),
             Self::Delayed(driver) => driver.sample(),
             Self::Discrete(driver) => driver.sample(),
+        }
+    }
+
+    fn remaining_duration(&self) -> Option<f64> {
+        match self {
+            Self::Hold(_) => Some(0.0),
+            Self::Spring(_) => None,
+            Self::Timeline(driver) => Some((driver.duration - driver.elapsed).max(0.0)),
+            Self::Blend(driver) => {
+                let blend = (driver.duration - driver.elapsed).max(0.0);
+                driver
+                    .incoming
+                    .remaining_duration()
+                    .map(|incoming| incoming.max(blend))
+            }
+            Self::Delayed(driver) => {
+                let delay = (driver.delay - driver.elapsed).max(0.0);
+                driver
+                    .incoming
+                    .remaining_duration()
+                    .map(|incoming| delay + incoming)
+            }
+            Self::Discrete(driver) => driver.timing.remaining_duration(),
         }
     }
 
@@ -2467,6 +3385,513 @@ mod tests {
                 .physical_value(&key)
                 .and_then(|value| value.as_i64())
                 .is_some()
+        );
+    }
+
+    fn timeline_node(id: &str, duration: f64, delay: f64) -> TransitionMotionNode {
+        TransitionMotionNode::Linear {
+            timeline: super::super::types::TimelineMotionNode {
+                id: id.into(),
+                position: Default::default(),
+                label: None,
+                duration,
+                delay,
+                blending: None,
+            },
+        }
+    }
+
+    fn endpoint(node_id: &str, port_id: &str) -> super::super::types::GraphEndpoint {
+        super::super::types::GraphEndpoint {
+            node_id: node_id.into(),
+            port_id: port_id.into(),
+        }
+    }
+
+    fn serial_waypoint_graph() -> TransitionMotionGraph {
+        TransitionMotionGraph {
+            id: "serial".into(),
+            name: "Serial waypoint".into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![
+                timeline_node("to_waypoint", 0.1, 0.0),
+                TransitionMotionNode::Waypoint {
+                    id: "peak".into(),
+                    position: Default::default(),
+                    label: None,
+                    port_type: "float".into(),
+                    value: serde_json::json!(64.0),
+                    array_length: None,
+                },
+                timeline_node("to_target", 0.1, 0.0),
+            ],
+            connections: vec![
+                super::super::types::GraphConnection {
+                    id: "to_peak".into(),
+                    from: endpoint("to_waypoint", "value"),
+                    to: endpoint("peak", "in"),
+                },
+                super::super::types::GraphConnection {
+                    id: "from_peak".into(),
+                    from: endpoint("peak", "value"),
+                    to: endpoint("to_target", "value"),
+                },
+            ],
+            input_bindings: vec![super::super::types::TransitionMotionInputBinding {
+                source: StateValueSource::StateParam {
+                    state_param_id: "Blur:value".into(),
+                },
+                to: endpoint("to_waypoint", "value"),
+            }],
+            output_bindings: vec![super::super::types::TransitionMotionOutputBinding {
+                state_param_id: "Blur:value".into(),
+                from: endpoint("to_target", "value"),
+            }],
+            passthrough_bindings: vec![],
+            condition_binding: None,
+            layout: None,
+            viewport: None,
+        }
+    }
+
+    #[test]
+    fn serial_waypoint_reaches_absolute_value_then_final_target() {
+        let graph = serial_waypoint_graph();
+        let key = StateParamKey::new("Blur:value");
+        let source = HashMap::from([(key.clone(), serde_json::json!(0.0))]);
+        let target = HashMap::from([(key.clone(), serde_json::json!(0.0))]);
+        let mut engine = MotionEngine::new();
+        engine.start_transition("transition", &graph, &source, &target, &HashMap::new());
+
+        let peak = engine.step(0.1);
+        let peak_channel = peak
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Blur:value")
+            .unwrap();
+        assert!(
+            (peak_channel.value[0] - 64.0).abs() <= 1.0e-6,
+            "{peak_channel:?}"
+        );
+        assert_eq!(
+            peak_channel.current_timing_node_id.as_deref(),
+            Some("to_target")
+        );
+
+        let final_step = engine.step(0.1);
+        let final_channel = final_step
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Blur:value")
+            .unwrap();
+        assert!(final_channel.value[0].abs() <= 1.0e-6, "{final_channel:?}");
+        assert!(!final_step.active);
+    }
+
+    #[test]
+    fn waypoint_is_absolute_while_mutation_target_moves() {
+        let graph = serial_waypoint_graph();
+        let plan = compile_channel_plans(&graph)
+            .specific
+            .get("Blur:value")
+            .cloned()
+            .expect("compiled serial plan");
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(0.0));
+        channel.start_error(previous, plan);
+        channel.set_static_target(serde_json::json!(100.0));
+        channel.step(0.1);
+        assert!((channel.sample().value.components()[0] - 64.0).abs() <= 1.0e-6);
+        assert!((channel.error_sample().value.components()[0] - 36.0).abs() <= 1.0e-6);
+    }
+
+    fn parallel_takeover_graph(second_delay: f64) -> TransitionMotionGraph {
+        TransitionMotionGraph {
+            id: "parallel".into(),
+            name: "Parallel takeover".into(),
+            inputs: vec![],
+            outputs: vec![],
+            nodes: vec![
+                timeline_node("early", 1.0, 0.0),
+                timeline_node("late", 0.1, second_delay),
+            ],
+            connections: vec![],
+            input_bindings: vec![
+                super::super::types::TransitionMotionInputBinding {
+                    source: StateValueSource::StateParam {
+                        state_param_id: "Value:x".into(),
+                    },
+                    to: endpoint("early", "value"),
+                },
+                super::super::types::TransitionMotionInputBinding {
+                    source: StateValueSource::StateParam {
+                        state_param_id: "Value:x".into(),
+                    },
+                    to: endpoint("late", "value"),
+                },
+            ],
+            output_bindings: vec![
+                super::super::types::TransitionMotionOutputBinding {
+                    state_param_id: "Value:x".into(),
+                    from: endpoint("early", "value"),
+                },
+                super::super::types::TransitionMotionOutputBinding {
+                    state_param_id: "Value:x".into(),
+                    from: endpoint("late", "value"),
+                },
+            ],
+            passthrough_bindings: vec![],
+            condition_binding: None,
+            layout: None,
+            viewport: None,
+        }
+    }
+
+    #[test]
+    fn delayed_parallel_branch_takes_over_and_cancels_earlier_owner() {
+        let graph = parallel_takeover_graph(0.2);
+        let key = StateParamKey::new("Value:x");
+        let source = HashMap::from([(key.clone(), serde_json::json!(0.0))]);
+        let target = HashMap::from([(key.clone(), serde_json::json!(10.0))]);
+        let mut engine = MotionEngine::new();
+        engine.start_transition("transition", &graph, &source, &target, &HashMap::new());
+
+        let before = engine.step(0.1);
+        let before_channel = before
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Value:x")
+            .unwrap();
+        assert_eq!(
+            before_channel.current_timing_node_id.as_deref(),
+            Some("early")
+        );
+        assert_eq!(before_channel.pending_timing_node_ids, vec!["late"]);
+
+        let takeover = engine.step(0.1);
+        let takeover_channel = takeover
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Value:x")
+            .unwrap();
+        assert_eq!(
+            takeover_channel.current_timing_node_id.as_deref(),
+            Some("late")
+        );
+        assert_eq!(takeover_channel.canceled_timing_node_ids, vec!["early"]);
+        assert!(
+            (takeover_channel.value[0] - 2.0).abs() <= 1.0e-6,
+            "{takeover_channel:?}"
+        );
+
+        let completed = engine.step(0.1);
+        let completed_channel = completed
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Value:x")
+            .unwrap();
+        assert!((completed_channel.value[0] - 10.0).abs() <= 1.0e-6);
+        assert!(!completed.active);
+    }
+
+    #[test]
+    fn same_start_parallel_order_uses_later_persisted_binding() {
+        let graph = parallel_takeover_graph(0.0);
+        let plan = compile_channel_plans(&graph)
+            .specific
+            .get("Value:x")
+            .cloned()
+            .expect("compiled parallel plan");
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(10.0));
+        channel.start_error(previous, plan);
+        assert_eq!(channel.current_timing_node_id().as_deref(), Some("late"));
+        assert_eq!(channel.canceled_timing_node_ids(), vec!["early"]);
+    }
+
+    fn timeline_segment(id: &str, duration: f64, delay: f64, target: PlanTarget) -> PlanTemplate {
+        PlanTemplate::Segment(SegmentTemplate {
+            timing_node_id: id.into(),
+            motion: MotionPlan::Timeline {
+                duration,
+                delay,
+                curve: TimelinePreset::Linear,
+                blending: None,
+            },
+            target,
+        })
+    }
+
+    fn spring_segment(id: &str, target: PlanTarget) -> PlanTemplate {
+        PlanTemplate::Segment(SegmentTemplate {
+            timing_node_id: id.into(),
+            motion: MotionPlan::Spring {
+                duration: 0.4,
+                bounce: 0.0,
+                delay: 0.0,
+            },
+            target,
+        })
+    }
+
+    fn instant_segment(id: &str, target: PlanTarget) -> PlanTemplate {
+        PlanTemplate::Segment(SegmentTemplate {
+            timing_node_id: id.into(),
+            motion: MotionPlan::Instant,
+            target,
+        })
+    }
+
+    #[test]
+    fn mixed_instant_timeline_and_spring_sequence_hands_off_in_order() {
+        let plan = PlanTemplate::Sequence(vec![
+            instant_segment(
+                "instant_peak",
+                PlanTarget::Waypoint(NumericValue::from_json(&serde_json::json!(64.0)).unwrap()),
+            ),
+            timeline_segment(
+                "timeline_mid",
+                0.1,
+                0.0,
+                PlanTarget::Waypoint(NumericValue::from_json(&serde_json::json!(32.0)).unwrap()),
+            ),
+            spring_segment("spring_target", PlanTarget::StateOut),
+        ]);
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(0.0));
+        channel.start_error(previous, plan);
+
+        assert_eq!(
+            channel.current_timing_node_id().as_deref(),
+            Some("timeline_mid")
+        );
+        assert!((channel.sample().value.components()[0] - 64.0).abs() <= 1.0e-9);
+
+        channel.step(0.1);
+        assert_eq!(
+            channel.current_timing_node_id().as_deref(),
+            Some("spring_target")
+        );
+        assert!((channel.sample().value.components()[0] - 32.0).abs() <= 1.0e-9);
+
+        for _ in 0..240 {
+            if !channel.transition_active() {
+                break;
+            }
+            channel.step(1.0 / 60.0);
+        }
+        assert!(!channel.transition_active());
+        assert!(channel.sample().value.components()[0].abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn large_dt_crosses_parallel_takeover_and_continues_outer_sequence() {
+        let waypoint = NumericValue::from_json(&serde_json::json!(64.0)).unwrap();
+        let plan = PlanTemplate::Sequence(vec![
+            PlanTemplate::Parallel(vec![
+                timeline_segment("early", 1.0, 0.0, PlanTarget::Waypoint(waypoint.clone())),
+                timeline_segment("late", 0.1, 0.1, PlanTarget::Waypoint(waypoint)),
+            ]),
+            timeline_segment("final", 0.1, 0.0, PlanTarget::StateOut),
+        ]);
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(0.0));
+        channel.start_error(previous, plan);
+
+        channel.step(0.25);
+        let midway = channel.sample();
+        assert!(
+            (midway.value.components()[0] - 32.0).abs() <= 1.0e-6,
+            "{midway:?}"
+        );
+        assert_eq!(channel.current_timing_node_id().as_deref(), Some("final"));
+        assert_eq!(channel.canceled_timing_node_ids(), vec!["early"]);
+
+        channel.step(0.06);
+        assert!(channel.sample().value.components()[0].abs() <= 1.0e-6);
+        assert!(!channel.transition_active());
+    }
+
+    #[test]
+    fn zero_distance_final_spring_completes_in_the_waypoint_frame() {
+        let mut graph = serial_waypoint_graph();
+        graph.nodes[2] = TransitionMotionNode::Spring {
+            id: "to_target".into(),
+            position: Default::default(),
+            label: None,
+            duration: 0.1,
+            bounce: 0.0,
+            delay: 0.0,
+        };
+        let key = StateParamKey::new("Blur:value");
+        let source = HashMap::from([(key.clone(), serde_json::json!(0.0))]);
+        let target = HashMap::from([(key.clone(), serde_json::json!(64.0))]);
+        let mut engine = MotionEngine::new();
+        engine.start_transition("transition", &graph, &source, &target, &HashMap::new());
+
+        let step = engine.step(0.11);
+        let channel = step
+            .channels
+            .iter()
+            .find(|channel| channel.key == "Blur:value")
+            .unwrap();
+        assert!((channel.value[0] - 64.0).abs() <= 1.0e-6);
+        assert!(!step.active);
+    }
+
+    #[test]
+    fn replacing_a_plan_snapshots_physical_value_and_velocity_and_drops_old_nodes() {
+        let old_plan = PlanTemplate::Sequence(vec![
+            spring_segment(
+                "old_first",
+                PlanTarget::Waypoint(NumericValue::from_json(&serde_json::json!(64.0)).unwrap()),
+            ),
+            spring_segment("old_second", PlanTarget::StateOut),
+        ]);
+        let new_plan = PlanTemplate::Sequence(vec![
+            spring_segment(
+                "new_first",
+                PlanTarget::Waypoint(NumericValue::from_json(&serde_json::json!(32.0)).unwrap()),
+            ),
+            spring_segment("new_second", PlanTarget::StateOut),
+        ]);
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(0.0));
+        channel.start_error(previous, old_plan);
+        channel.step(0.05);
+        let outgoing = channel.sample();
+        assert!(outgoing.velocity.components()[0].abs() > 1.0e-6);
+
+        channel.set_static_target(serde_json::json!(10.0));
+        channel.start_error(outgoing.clone(), new_plan);
+        let incoming = channel.sample();
+        assert!((incoming.value.components()[0] - outgoing.value.components()[0]).abs() <= 1.0e-9);
+        assert!(
+            (incoming.velocity.components()[0] - outgoing.velocity.components()[0]).abs() <= 1.0e-9
+        );
+        assert_eq!(
+            channel.current_timing_node_id().as_deref(),
+            Some("new_first")
+        );
+        assert!(
+            channel
+                .pending_timing_node_ids()
+                .iter()
+                .all(|id| !id.starts_with("old_"))
+        );
+        assert!(channel.canceled_timing_node_ids().is_empty());
+    }
+
+    #[test]
+    fn replacing_a_plan_is_continuous_during_delay_both_segments_and_waypoint_handoff() {
+        for elapsed in [0.1, 0.3, 0.4, 0.55] {
+            let old_plan = PlanTemplate::Sequence(vec![
+                timeline_segment(
+                    "old_first",
+                    0.2,
+                    0.2,
+                    PlanTarget::Waypoint(
+                        NumericValue::from_json(&serde_json::json!(64.0)).unwrap(),
+                    ),
+                ),
+                timeline_segment("old_second", 0.4, 0.0, PlanTarget::StateOut),
+            ]);
+            let new_plan = PlanTemplate::Sequence(vec![
+                spring_segment(
+                    "new_first",
+                    PlanTarget::Waypoint(
+                        NumericValue::from_json(&serde_json::json!(32.0)).unwrap(),
+                    ),
+                ),
+                spring_segment("new_second", PlanTarget::StateOut),
+            ]);
+            let previous = Channel::hold(serde_json::json!(0.0)).sample();
+            let mut channel = Channel::hold(serde_json::json!(0.0));
+            channel.start_error(previous, old_plan);
+            channel.step(elapsed);
+            let outgoing = channel.sample();
+
+            channel.set_static_target(serde_json::json!(10.0));
+            channel.start_error(outgoing.clone(), new_plan);
+            let incoming = channel.sample();
+            assert!(
+                (incoming.value.components()[0] - outgoing.value.components()[0]).abs() <= 1.0e-9,
+                "value discontinuity at t={elapsed}: {outgoing:?} -> {incoming:?}"
+            );
+            assert!(
+                (incoming.velocity.components()[0] - outgoing.velocity.components()[0]).abs()
+                    <= 1.0e-9,
+                "velocity discontinuity at t={elapsed}: {outgoing:?} -> {incoming:?}"
+            );
+            assert_eq!(
+                channel.current_timing_node_id().as_deref(),
+                Some("new_first")
+            );
+            assert!(
+                channel
+                    .pending_timing_node_ids()
+                    .iter()
+                    .all(|id| !id.starts_with("old_"))
+            );
+        }
+    }
+
+    #[test]
+    fn replacing_a_plan_during_tween_preserves_the_full_composite_derivative() {
+        let tween = TimelineBlending {
+            blend_type: super::super::types::TimelineBlendingType::Tween,
+            duration: 0.2,
+            easing: EasingKind::EaseInOut,
+        };
+        let old_plan = PlanTemplate::Sequence(vec![
+            PlanTemplate::Segment(SegmentTemplate {
+                timing_node_id: "old_tween".into(),
+                motion: MotionPlan::Timeline {
+                    duration: 0.4,
+                    delay: 0.0,
+                    curve: TimelinePreset::EaseInOut,
+                    blending: Some(tween.clone()),
+                },
+                target: PlanTarget::Waypoint(
+                    NumericValue::from_json(&serde_json::json!(64.0)).unwrap(),
+                ),
+            }),
+            spring_segment("old_final", PlanTarget::StateOut),
+        ]);
+        let new_plan = PlanTemplate::Sequence(vec![
+            PlanTemplate::Segment(SegmentTemplate {
+                timing_node_id: "new_first".into(),
+                motion: MotionPlan::Timeline {
+                    duration: 0.2,
+                    delay: 0.0,
+                    curve: TimelinePreset::Linear,
+                    blending: Some(tween),
+                },
+                target: PlanTarget::Waypoint(
+                    NumericValue::from_json(&serde_json::json!(32.0)).unwrap(),
+                ),
+            }),
+            spring_segment("new_final", PlanTarget::StateOut),
+        ]);
+        let previous = Channel::hold(serde_json::json!(0.0)).sample();
+        let mut channel = Channel::hold(serde_json::json!(0.0));
+        channel.start_error(previous, old_plan);
+        channel.step(0.1);
+        let outgoing = channel.sample();
+        assert_eq!(outgoing.blending_progress, Some(0.5));
+        assert!(outgoing.velocity.components()[0].abs() > 1.0e-6);
+
+        channel.set_static_target(serde_json::json!(10.0));
+        channel.start_error(outgoing.clone(), new_plan);
+        let incoming = channel.sample();
+        assert!((incoming.value.components()[0] - outgoing.value.components()[0]).abs() <= 1.0e-9);
+        assert!(
+            (incoming.velocity.components()[0] - outgoing.velocity.components()[0]).abs() <= 1.0e-9
+        );
+        assert_eq!(
+            channel.current_timing_node_id().as_deref(),
+            Some("new_first")
         );
     }
 }

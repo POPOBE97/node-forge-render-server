@@ -178,7 +178,10 @@ Shipped examples live under `scenarios/`:
           "value": [0.30],
           "velocity": [0.0],
           "mutationDriver": "spring",
-          "transitionDriver": "spring"
+          "transitionDriver": "spring",
+          "currentTimingNodeId": "spring_to_waypoint",
+          "pendingTimingNodeIds": ["spring_to_target"],
+          "canceledTimingNodeIds": []
         }
       ],
       "values": { "…": "…" },
@@ -189,7 +192,9 @@ Shipped examples live under `scenarios/`:
 ```
 
 Field names on `motionChannels` use camelCase (`stateValue` = S, `targetValue` = Q,
-`transitionError` = E, `value` = P).
+`transitionError` = E, `value` = P). Plan-tree traces additionally expose the active Timing node,
+delay-pending Timing nodes in activation order, and Timing nodes canceled by parallel takeover.
+The table format includes the same data in its `timing`, `pending`, and `canceled` columns.
 
 ## Interpreting results
 

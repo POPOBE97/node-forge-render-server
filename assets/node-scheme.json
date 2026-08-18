@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "dslPackage": {
     "name": "@node-forge/dsl",
     "version": "0.1.0"
@@ -7186,18 +7186,28 @@
     ],
     "transitionMotion": {
       "nodeTypes": [
-        "spring",
-        "linear",
-        "ease-in",
-        "ease-out",
-        "ease-in-out",
-        "sine-in",
-        "sine-out",
-        "sine-in-out",
+        "BoolInput",
+        "EventTrigger",
+        "FloatInput",
+        "Lerp",
+        "Logic",
+        "MathAdd",
+        "MathDivide",
+        "MathMultiply",
+        "MathSubtract",
+        "Waypoint",
         "cosine-in",
-        "cosine-out",
         "cosine-in-out",
-        "instant"
+        "cosine-out",
+        "ease-in",
+        "ease-in-out",
+        "ease-out",
+        "instant",
+        "linear",
+        "sine-in",
+        "sine-in-out",
+        "sine-out",
+        "spring"
       ],
       "anyPropertyKey": "*",
       "springDefaults": {
@@ -7221,6 +7231,41 @@
         "cosine-out",
         "cosine-in-out"
       ],
+      "timingNodeTypes": [
+        "spring",
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "sine-in",
+        "sine-out",
+        "sine-in-out",
+        "cosine-in",
+        "cosine-out",
+        "cosine-in-out",
+        "instant"
+      ],
+      "waypoint": {
+        "nodeType": "Waypoint",
+        "portTypes": [
+          "float",
+          "int",
+          "vector2",
+          "vector3",
+          "vector4",
+          "color",
+          "packed<float>",
+          "packed<int>",
+          "packed<vector2>",
+          "packed<vector3>",
+          "packed<vector4>",
+          "packed<color>",
+          "bezierCurve",
+          "normalizedBezierCurve"
+        ],
+        "defaultPortType": "float",
+        "defaultValue": 0
+      },
       "blending": {
         "ownerNodeTypes": [
           "linear",

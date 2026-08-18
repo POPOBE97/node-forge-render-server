@@ -1325,13 +1325,13 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
     let mut out = String::new();
     for key in channel_keys {
         out.push_str(&format!(
-            "### channel {key}\n| frame | t_ms | state | transition | label | S | Q | E | P | V | mut | tr |\n|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|---|\n"
+            "### channel {key}\n| frame | t_ms | state | transition | label | S | Q | E | P | V | mut | tr | timing | pending | canceled |\n|---:|---:|---|---|---|---:|---:|---:|---:|---:|---|---|---|---|---|\n"
         ));
         let mut rows = 0usize;
         for frame in &report.frames {
             if rows >= max_rows {
                 out.push_str(&format!(
-                    "| ... | | | | | | | | | | | | ({max_rows} row cap)\n"
+                    "| ... | | | | | | | | | | | | | | | ({max_rows} row cap)\n"
                 ));
                 break;
             }
@@ -1344,7 +1344,7 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
             let p = ch.value.first().copied().unwrap_or(f64::NAN);
             let v = ch.velocity.first().copied().unwrap_or(f64::NAN);
             out.push_str(&format!(
-                "| {} | {:.0} | {} | {} | {} | {:.6} | {:.6} | {:.6} | {:.6} | {:.6} | {} | {} |\n",
+                "| {} | {:.0} | {} | {} | {} | {:.6} | {:.6} | {:.6} | {:.6} | {:.6} | {} | {} | {} | {} | {} |\n",
                 frame.frame_index,
                 frame.time_secs * 1000.0,
                 frame.current_state_id,
@@ -1357,6 +1357,9 @@ pub fn format_table(report: &TraceReport, max_rows: usize) -> String {
                 v,
                 ch.mutation_driver,
                 ch.transition_driver,
+                ch.current_timing_node_id.as_deref().unwrap_or(""),
+                ch.pending_timing_node_ids.join(","),
+                ch.canceled_timing_node_ids.join(","),
             ));
             rows += 1;
         }
@@ -1665,6 +1668,9 @@ mod tests {
                     transition_driver: "spring".into(),
                     timeline_progress: None,
                     blending_progress: None,
+                    current_timing_node_id: None,
+                    pending_timing_node_ids: vec![],
+                    canceled_timing_node_ids: vec![],
                     completed: false,
                 }],
                 values: BTreeMap::new(),
@@ -1695,6 +1701,9 @@ mod tests {
                     transition_driver: "spring".into(),
                     timeline_progress: None,
                     blending_progress: None,
+                    current_timing_node_id: None,
+                    pending_timing_node_ids: vec![],
+                    canceled_timing_node_ids: vec![],
                     completed: false,
                 }],
                 values: BTreeMap::new(),

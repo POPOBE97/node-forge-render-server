@@ -775,20 +775,93 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
         }
         let node_by_id: HashMap<&str, &TransitionMotionNode> =
             graph.nodes.iter().map(|node| (node.id(), node)).collect();
-        for connection in &graph.connections {
-            let from = node_by_id.get(connection.from.node_id.as_str()).copied();
-            let to = node_by_id.get(connection.to.node_id.as_str()).copied();
-            if from.is_some_and(TransitionMotionNode::is_timing)
-                || to.is_some_and(TransitionMotionNode::is_timing)
-            {
-                bail!(
-                    "state_machine validation: transition motion graph '{}' timing nodes bind directly to boundary channels",
-                    graph.id
-                );
-            }
+
+        #[derive(Clone)]
+        struct TimingEdge {
+            source: String,
+            target: String,
+            timing_node_id: String,
         }
 
-        let mut input_channel_by_node: HashMap<&str, &str> = HashMap::new();
+        fn reducible(source: &str, target: &str, active: &[TimingEdge]) -> bool {
+            #[derive(Clone)]
+            struct Edge {
+                source: String,
+                target: String,
+            }
+            let mut edges = active
+                .iter()
+                .map(|edge| Edge {
+                    source: edge.source.clone(),
+                    target: edge.target.clone(),
+                })
+                .collect::<Vec<_>>();
+            while edges.len() > 1 {
+                let mut parallel = None;
+                for left in 0..edges.len() {
+                    let group = (left..edges.len())
+                        .filter(|right| {
+                            edges[*right].source == edges[left].source
+                                && edges[*right].target == edges[left].target
+                        })
+                        .collect::<Vec<_>>();
+                    if group.len() > 1 {
+                        parallel = Some(group);
+                        break;
+                    }
+                }
+                if let Some(indices) = parallel {
+                    let replacement = edges[indices[0]].clone();
+                    for index in indices.into_iter().rev() {
+                        edges.remove(index);
+                    }
+                    edges.push(replacement);
+                    continue;
+                }
+                let mut anchors = edges
+                    .iter()
+                    .flat_map(|edge| [edge.source.clone(), edge.target.clone()])
+                    .filter(|anchor| {
+                        anchor != source && anchor != target && anchor.starts_with("waypoint:")
+                    })
+                    .collect::<Vec<_>>();
+                anchors.sort();
+                anchors.dedup();
+                let serial = anchors.into_iter().find_map(|anchor| {
+                    let incoming = edges
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, edge)| edge.target == anchor)
+                        .map(|(index, _)| index)
+                        .collect::<Vec<_>>();
+                    let outgoing = edges
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, edge)| edge.source == anchor)
+                        .map(|(index, _)| index)
+                        .collect::<Vec<_>>();
+                    (incoming.len() == 1 && outgoing.len() == 1)
+                        .then_some((incoming[0], outgoing[0]))
+                });
+                let Some((incoming, outgoing)) = serial else {
+                    break;
+                };
+                let replacement = Edge {
+                    source: edges[incoming].source.clone(),
+                    target: edges[outgoing].target.clone(),
+                };
+                let mut remove = [incoming, outgoing];
+                remove.sort_unstable();
+                for index in remove.into_iter().rev() {
+                    edges.remove(index);
+                }
+                edges.push(replacement);
+            }
+            edges.len() == 1 && edges[0].source == source && edges[0].target == target
+        }
+
+        let mut timing_sources: HashMap<&str, Vec<String>> = HashMap::new();
+        let mut timing_targets: HashMap<&str, Vec<String>> = HashMap::new();
         for binding in &graph.input_bindings {
             validate_source(sm, &binding.source)?;
             if !node_ids.contains(binding.to.node_id.as_str()) {
@@ -802,27 +875,70 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                 .get(binding.to.node_id.as_str())
                 .is_some_and(|node| node.is_timing())
             {
+                if matches!(
+                    node_by_id.get(binding.to.node_id.as_str()),
+                    Some(TransitionMotionNode::Waypoint { .. })
+                ) {
+                    bail!(
+                        "state_machine validation: transition motion graph '{}' Waypoint '{}' must be reached from a Timing node",
+                        graph.id,
+                        binding.to.node_id
+                    );
+                }
                 continue;
             }
-            if binding.source.state_param_id().is_none() {
+            let Some(property) = binding.source.state_param_id() else {
                 bail!(
                     "state_machine validation: transition motion graph '{}' timing node '{}' requires a State Param input",
                     graph.id,
                     binding.to.node_id
                 );
-            }
-            if input_channel_by_node
-                .insert(binding.to.node_id.as_str(), binding.source.id())
-                .is_some()
-            {
+            };
+            if binding.to.port_id != "value" {
                 bail!(
-                    "state_machine validation: transition motion graph '{}' node '{}' has multiple property inputs",
+                    "state_machine validation: transition motion graph '{}' timing node '{}' input must use value",
                     graph.id,
                     binding.to.node_id
                 );
             }
+            timing_sources
+                .entry(binding.to.node_id.as_str())
+                .or_default()
+                .push(format!("input:{property}"));
         }
-        let mut covered_outputs = HashSet::new();
+        for connection in &graph.connections {
+            let from = node_by_id.get(connection.from.node_id.as_str()).copied();
+            let to = node_by_id.get(connection.to.node_id.as_str()).copied();
+            if from.is_some_and(TransitionMotionNode::is_timing)
+                && matches!(to, Some(TransitionMotionNode::Waypoint { .. }))
+                && connection.from.port_id == "value"
+                && connection.to.port_id == "in"
+            {
+                timing_targets
+                    .entry(connection.from.node_id.as_str())
+                    .or_default()
+                    .push(format!("waypoint:{}", connection.to.node_id));
+            } else if matches!(from, Some(TransitionMotionNode::Waypoint { .. }))
+                && to.is_some_and(TransitionMotionNode::is_timing)
+                && connection.from.port_id == "value"
+                && connection.to.port_id == "value"
+            {
+                timing_sources
+                    .entry(connection.to.node_id.as_str())
+                    .or_default()
+                    .push(format!("waypoint:{}", connection.from.node_id));
+            } else if from.is_some_and(TransitionMotionNode::is_timing)
+                || to.is_some_and(TransitionMotionNode::is_timing)
+                || matches!(from, Some(TransitionMotionNode::Waypoint { .. }))
+                || matches!(to, Some(TransitionMotionNode::Waypoint { .. }))
+            {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' connection '{}' must alternate Anchor -> Timing -> Anchor",
+                    graph.id,
+                    connection.id
+                );
+            }
+        }
         for binding in &graph.output_bindings {
             if (binding.state_param_id != "*"
                 && !state_param_ids.contains(binding.state_param_id.as_str()))
@@ -844,30 +960,193 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                     binding.state_param_id
                 );
             }
-            let input_channel = input_channel_by_node
-                .get(binding.from.node_id.as_str())
-                .copied()
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "state_machine validation: transition motion graph '{}' node '{}' has an output without a State In binding",
-                        graph.id,
-                        binding.from.node_id
-                    )
-                })?;
-            if input_channel != binding.state_param_id {
+            if binding.from.port_id != "value" {
                 bail!(
-                    "state_machine validation: transition motion graph '{}' crosses property '{}' to '{}'",
+                    "state_machine validation: transition motion graph '{}' output '{}' must use Timing value",
                     graph.id,
-                    input_channel,
                     binding.state_param_id
                 );
             }
-            if !covered_outputs.insert(binding.state_param_id.as_str()) {
+            timing_targets
+                .entry(binding.from.node_id.as_str())
+                .or_default()
+                .push(format!("output:{}", binding.state_param_id));
+        }
+
+        let mut timing_edges = Vec::new();
+        for node in graph.nodes.iter().filter(|node| node.is_timing()) {
+            let sources = timing_sources.get(node.id()).cloned().unwrap_or_default();
+            let targets = timing_targets.get(node.id()).cloned().unwrap_or_default();
+            if sources.len() > 1 || targets.len() > 1 {
                 bail!(
-                    "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
+                    "state_machine validation: transition motion graph '{}' timing node '{}' must have one input anchor and one output anchor",
                     graph.id,
-                    binding.state_param_id
+                    node.id()
                 );
+            }
+            if sources.len() == 1 && targets.len() == 1 {
+                timing_edges.push(TimingEdge {
+                    source: sources[0].clone(),
+                    target: targets[0].clone(),
+                    timing_node_id: node.id().to_string(),
+                });
+            }
+        }
+
+        let mut properties = timing_edges
+            .iter()
+            .filter_map(|edge| edge.source.strip_prefix("input:"))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        properties.sort();
+        properties.dedup();
+        let mut covered_outputs = HashSet::new();
+        let mut timing_memberships: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut waypoint_memberships: HashMap<String, HashSet<String>> = HashMap::new();
+        for property in properties {
+            let source = format!("input:{property}");
+            let target = format!("output:{property}");
+            let mut forward = HashSet::from([source.clone()]);
+            loop {
+                let before = forward.len();
+                for edge in &timing_edges {
+                    if forward.contains(&edge.source) {
+                        forward.insert(edge.target.clone());
+                    }
+                }
+                if forward.len() == before {
+                    break;
+                }
+            }
+            if let Some(other) = forward.iter().find_map(|anchor| {
+                anchor
+                    .strip_prefix("output:")
+                    .filter(|output| *output != property)
+            }) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' crosses property '{}' to '{}'",
+                    graph.id,
+                    property,
+                    other
+                );
+            }
+            let mut backward = HashSet::from([target.clone()]);
+            loop {
+                let before = backward.len();
+                for edge in &timing_edges {
+                    if backward.contains(&edge.target) {
+                        backward.insert(edge.source.clone());
+                    }
+                }
+                if backward.len() == before {
+                    break;
+                }
+            }
+            let active = timing_edges
+                .iter()
+                .filter(|edge| forward.contains(&edge.source) && backward.contains(&edge.target))
+                .cloned()
+                .collect::<Vec<_>>();
+            if active.is_empty() {
+                continue;
+            }
+            if !reducible(&source, &target, &active) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' property '{}' is not a two-terminal series-parallel DAG",
+                    graph.id,
+                    property
+                );
+            }
+            covered_outputs.insert(property.clone());
+            for edge in active {
+                timing_memberships
+                    .entry(edge.timing_node_id)
+                    .or_default()
+                    .insert(property.clone());
+                for anchor in [&edge.source, &edge.target] {
+                    if let Some(node_id) = anchor.strip_prefix("waypoint:") {
+                        waypoint_memberships
+                            .entry(node_id.to_string())
+                            .or_default()
+                            .insert(property.clone());
+                    }
+                }
+            }
+        }
+        for (node_id, memberships) in timing_memberships.iter().chain(&waypoint_memberships) {
+            if memberships.len() > 1 {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' node '{}' crosses properties",
+                    graph.id,
+                    node_id
+                );
+            }
+        }
+        for (node_id, memberships) in &waypoint_memberships {
+            let Some(TransitionMotionNode::Waypoint {
+                port_type,
+                value,
+                array_length,
+                ..
+            }) = node_by_id.get(node_id.as_str()).copied()
+            else {
+                continue;
+            };
+            if !matches!(
+                port_type.as_str(),
+                "float"
+                    | "int"
+                    | "vector2"
+                    | "vector3"
+                    | "vector4"
+                    | "color"
+                    | "packed<float>"
+                    | "packed<int>"
+                    | "packed<vector2>"
+                    | "packed<vector3>"
+                    | "packed<vector4>"
+                    | "packed<color>"
+                    | "bezierCurve"
+                    | "normalizedBezierCurve"
+            ) {
+                bail!(
+                    "state_machine validation: transition motion graph '{}' Waypoint '{}' has non-numeric type '{}'",
+                    graph.id,
+                    node_id,
+                    port_type
+                );
+            }
+            validate_canonical_state_value(
+                port_type,
+                value,
+                *array_length,
+                &format!(
+                    "Transition motion graph '{}' Waypoint '{}' value",
+                    graph.id, node_id
+                ),
+            )?;
+            for property in memberships {
+                if property == "*" {
+                    bail!(
+                        "state_machine validation: transition motion graph '{}' wildcard path cannot contain Waypoint '{}'",
+                        graph.id,
+                        node_id
+                    );
+                }
+                let declaration = sm
+                    .state_params
+                    .iter()
+                    .find(|declaration| declaration.id == *property)
+                    .ok_or_else(|| anyhow::anyhow!("missing State Param '{property}'"))?;
+                if declaration.param_type != *port_type || declaration.array_length != *array_length
+                {
+                    bail!(
+                        "state_machine validation: transition motion graph '{}' Waypoint '{}' does not exactly match State Param '{}'",
+                        graph.id,
+                        node_id,
+                        property
+                    );
+                }
             }
         }
         for passthrough in &graph.passthrough_bindings {
@@ -879,7 +1158,7 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                     graph.id
                 );
             }
-            if !covered_outputs.insert(passthrough.state_param_id.as_str()) {
+            if !covered_outputs.insert(passthrough.state_param_id.clone()) {
                 bail!(
                     "state_machine validation: transition motion graph '{}' has conflicting outputs for '{}'",
                     graph.id,
@@ -967,6 +1246,47 @@ fn validate_motion_graphs(sm: &StateMachine) -> Result<()> {
                     if !value.is_finite() {
                         bail!("state_machine validation: FloatInput value must be finite");
                     }
+                }
+                TransitionMotionNode::Waypoint {
+                    id,
+                    port_type,
+                    value,
+                    array_length,
+                    ..
+                } => {
+                    if !matches!(
+                        port_type.as_str(),
+                        "float"
+                            | "int"
+                            | "vector2"
+                            | "vector3"
+                            | "vector4"
+                            | "color"
+                            | "packed<float>"
+                            | "packed<int>"
+                            | "packed<vector2>"
+                            | "packed<vector3>"
+                            | "packed<vector4>"
+                            | "packed<color>"
+                            | "bezierCurve"
+                            | "normalizedBezierCurve"
+                    ) {
+                        bail!(
+                            "state_machine validation: transition motion graph '{}' Waypoint '{}' has non-numeric type '{}'",
+                            graph.id,
+                            id,
+                            port_type
+                        );
+                    }
+                    validate_canonical_state_value(
+                        port_type,
+                        value,
+                        *array_length,
+                        &format!(
+                            "Transition motion graph '{}' Waypoint '{}' value",
+                            graph.id, id
+                        ),
+                    )?;
                 }
                 _ => unreachable!("timeline motion nodes returned above"),
             }
@@ -1619,6 +1939,109 @@ mod tests {
 
         let err = validate(&sm).unwrap_err().to_string();
         assert!(err.contains("crosses property"), "{err}");
+    }
+
+    fn serial_waypoint_sm() -> StateMachine {
+        let mut sm = minimal_sm();
+        sm.state_params
+            .push(float_state_param("Blur:value", "Blur"));
+        sm.state_param_graph
+            .declaration_positions
+            .insert("Blur:value".into(), Position::default());
+        let graph = &mut sm.motion_graphs[0];
+        graph.nodes = vec![
+            TransitionMotionNode::Instant {
+                id: "first".into(),
+                position: Position::default(),
+                label: None,
+            },
+            TransitionMotionNode::Waypoint {
+                id: "peak".into(),
+                position: Position::default(),
+                label: None,
+                port_type: "float".into(),
+                value: serde_json::json!(64.0),
+                array_length: None,
+            },
+            TransitionMotionNode::Instant {
+                id: "second".into(),
+                position: Position::default(),
+                label: None,
+            },
+        ];
+        graph.connections = vec![
+            GraphConnection {
+                id: "to_peak".into(),
+                from: GraphEndpoint {
+                    node_id: "first".into(),
+                    port_id: "value".into(),
+                },
+                to: GraphEndpoint {
+                    node_id: "peak".into(),
+                    port_id: "in".into(),
+                },
+            },
+            GraphConnection {
+                id: "from_peak".into(),
+                from: GraphEndpoint {
+                    node_id: "peak".into(),
+                    port_id: "value".into(),
+                },
+                to: GraphEndpoint {
+                    node_id: "second".into(),
+                    port_id: "value".into(),
+                },
+            },
+        ];
+        graph.input_bindings = vec![TransitionMotionInputBinding {
+            source: StateValueSource::StateParam {
+                state_param_id: "Blur:value".into(),
+            },
+            to: GraphEndpoint {
+                node_id: "first".into(),
+                port_id: "value".into(),
+            },
+        }];
+        graph.output_bindings = vec![TransitionMotionOutputBinding {
+            state_param_id: "Blur:value".into(),
+            from: GraphEndpoint {
+                node_id: "second".into(),
+                port_id: "value".into(),
+            },
+        }];
+        sm
+    }
+
+    #[test]
+    fn motion_graph_accepts_a_typed_serial_waypoint_plan() {
+        validate_motion_graphs(&serial_waypoint_sm()).expect("serial plan should validate");
+    }
+
+    #[test]
+    fn motion_graph_rejects_wildcard_and_boolean_waypoints() {
+        let mut wildcard = serial_waypoint_sm();
+        let graph = &mut wildcard.motion_graphs[0];
+        graph.input_bindings[0].source = StateValueSource::StateParam {
+            state_param_id: "*".into(),
+        };
+        graph.output_bindings[0].state_param_id = "*".into();
+        let error = validate_motion_graphs(&wildcard).unwrap_err().to_string();
+        assert!(
+            error.contains("wildcard path cannot contain Waypoint"),
+            "{error}"
+        );
+
+        let mut boolean = serial_waypoint_sm();
+        let TransitionMotionNode::Waypoint {
+            port_type, value, ..
+        } = &mut boolean.motion_graphs[0].nodes[1]
+        else {
+            unreachable!()
+        };
+        *port_type = "bool".into();
+        *value = serde_json::json!(false);
+        let error = validate_motion_graphs(&boolean).unwrap_err().to_string();
+        assert!(error.contains("non-numeric type 'bool'"), "{error}");
     }
 
     #[test]

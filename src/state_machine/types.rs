@@ -346,6 +346,20 @@ pub enum TransitionMotionNode {
         #[serde(default)]
         label: Option<String>,
     },
+    #[serde(rename = "Waypoint")]
+    Waypoint {
+        id: String,
+        #[serde(default)]
+        position: Position,
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(default = "default_waypoint_port_type", rename = "portType")]
+        port_type: String,
+        #[serde(default)]
+        value: serde_json::Value,
+        #[serde(default, rename = "arrayLength")]
+        array_length: Option<usize>,
+    },
     #[serde(rename = "EventTrigger")]
     EventTrigger {
         id: String,
@@ -437,6 +451,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_waypoint_port_type() -> String {
+    "float".into()
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EventModifiers {
     #[serde(default)]
@@ -488,6 +506,7 @@ impl TransitionMotionNode {
         match self {
             Self::Spring { id, .. }
             | Self::Instant { id, .. }
+            | Self::Waypoint { id, .. }
             | Self::EventTrigger { id, .. }
             | Self::Logic { id, .. }
             | Self::BoolInput { id, .. }
@@ -524,6 +543,7 @@ impl TransitionMotionNode {
             Self::CosineInOut { timeline } => (TimelinePreset::CosineInOut, timeline),
             Self::Spring { .. }
             | Self::Instant { .. }
+            | Self::Waypoint { .. }
             | Self::EventTrigger { .. }
             | Self::Logic { .. }
             | Self::BoolInput { .. }
