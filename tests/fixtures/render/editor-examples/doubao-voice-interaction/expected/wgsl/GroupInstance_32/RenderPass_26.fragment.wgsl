@@ -140,6 +140,50 @@ fn sample_texture_local_uv(
 // Port of intelligent_light_upsample.agsl's processed IntelligentLight layer.
 // Node Forge supplies ShaderMaterialInput in linear extended-sRGB coordinates.
 
+// The original particle treatment intentionally mixed and boosted authored colors in encoded
+// sRGB before decoding the result to scene-linear. Canonical color inputs are now linear and
+// premultiplied, so reconstruct that legacy artistic domain locally instead of changing the
+// SceneDSL color ABI or decoding every material color input.
+fn legacy_particle_linear_to_srgb_channel_GroupInstance_32_ShaderMaterial_32(value: f32) -> f32 {
+    let nonnegative = max(value, 0.0);
+    let low = nonnegative * 12.92;
+    let high = 1.055 * pow(nonnegative, 1.0 / 2.4) - 0.055;
+    return select(high, low, nonnegative <= 0.0031308);
+}
+
+fn legacy_particle_linear_to_srgb_GroupInstance_32_ShaderMaterial_32(value: vec3f) -> vec3f {
+    return vec3f(
+        legacy_particle_linear_to_srgb_channel_GroupInstance_32_ShaderMaterial_32(value.x),
+        legacy_particle_linear_to_srgb_channel_GroupInstance_32_ShaderMaterial_32(value.y),
+        legacy_particle_linear_to_srgb_channel_GroupInstance_32_ShaderMaterial_32(value.z),
+    );
+}
+
+fn legacy_particle_srgb_to_linear_channel_GroupInstance_32_ShaderMaterial_32(value: f32) -> f32 {
+    let nonnegative = max(value, 0.0);
+    let low = nonnegative / 12.92;
+    let high = pow((nonnegative + 0.055) / 1.055, 2.4);
+    return select(high, low, nonnegative <= 0.04045);
+}
+
+fn legacy_particle_srgb_to_linear_GroupInstance_32_ShaderMaterial_32(value: vec3f) -> vec3f {
+    return vec3f(
+        legacy_particle_srgb_to_linear_channel_GroupInstance_32_ShaderMaterial_32(value.x),
+        legacy_particle_srgb_to_linear_channel_GroupInstance_32_ShaderMaterial_32(value.y),
+        legacy_particle_srgb_to_linear_channel_GroupInstance_32_ShaderMaterial_32(value.z),
+    );
+}
+
+fn legacy_particle_linear_premul_to_srgb_premul_GroupInstance_32_ShaderMaterial_32(value: vec4f) -> vec4f {
+    let alpha = clamp(value.a, 0.0, 1.0);
+    let straight_linear = select(
+        vec3f(0.0),
+        max(value.rgb / max(alpha, 0.000001), vec3f(0.0)),
+        alpha > 0.000001,
+    );
+    return vec4f(legacy_particle_linear_to_srgb_GroupInstance_32_ShaderMaterial_32(straight_linear) * alpha, alpha);
+}
+
 fn sd_rounded_box_GroupInstance_32_ShaderMaterial_32(point: vec2f, half_size: vec2f, radius: f32) -> f32 {
     let q = abs(point) - half_size + vec2f(radius);
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2f(0.0))) - radius;
@@ -447,9 +491,15 @@ fn apply_particles_GroupInstance_32_ShaderMaterial_32(
         particle_edge_sigma_px,
     ) * clamp(particle_opacity, 0.0, 1.0);
     let noise = particle_noise_mask_GroupInstance_32_ShaderMaterial_32(point, canvas_size, time);
-    let working = mix(particle_noise_color, particle_color, noise);
+    let particle_color_srgb = legacy_particle_linear_premul_to_srgb_premul_GroupInstance_32_ShaderMaterial_32(particle_color);
+    let particle_noise_color_srgb = legacy_particle_linear_premul_to_srgb_premul_GroupInstance_32_ShaderMaterial_32(
+        particle_noise_color,
+    );
+    let working = mix(particle_noise_color_srgb, particle_color_srgb, noise);
     let alpha = clamp(working.a, 0.0, 1.0);
-    let linear = max(working.rgb * max(particle_gain, 0.0), vec3f(0.0)) * alpha;
+    let linear = legacy_particle_srgb_to_linear_GroupInstance_32_ShaderMaterial_32(
+        max(working.rgb * max(particle_gain, 0.0), vec3f(0.0)),
+    ) * alpha;
     return mix(current_color, vec4f(linear, alpha), mask);
 }
 

@@ -9,7 +9,6 @@
       "sp_island_width_dp",
       "sp_effect_offset_dp",
       "param_charging_glow_color",
-      "sp_effect_mid_color",
       "sp_effect_outer_sigma_dp",
       "sp_effect_glow_gain",
       "sp_effect_medium_outer_occlusion",
@@ -25,11 +24,11 @@
       "EffectPlacementCenterPx:x",
       "EffectPlacementCenterPx:y",
       "ChargingGlowColor:value",
-      "EffectMidColor:value",
       "EffectOuterSigmaDp:value",
       "EffectGlowGain:value",
       "EffectMediumOuterOcclusion:value",
       "EffectOuterMediumOcclusion:value",
+      "EffectWaveRadiusDp:value",
       "IslandSizePx:x",
       "IslandSizePx:y",
       "SideTextureSizePx:x",
@@ -47,11 +46,12 @@
   "actions": [
     { "type": "step", "frames": 0 },
     { "type": "label", "name": "to-collapsed" },
-    { "type": "event", "eventType": "keydown", "key": "s" },
+    { "type": "event", "eventType": "keydown", "key": "f" },
     { "type": "settle", "maxFrames": 360 },
     { "type": "label", "name": "to-charging" },
     { "type": "event", "eventType": "keydown", "key": "a" },
     { "type": "settle", "maxFrames": 360 },
+    { "type": "step", "frames": 300 },
     { "type": "label", "name": "to-supercharge" },
     { "type": "event", "eventType": "keydown", "key": "d" },
     { "type": "settle", "maxFrames": 360 },
@@ -59,7 +59,7 @@
     { "type": "event", "eventType": "keydown", "key": "a" },
     { "type": "settle", "maxFrames": 360 },
     { "type": "label", "name": "back-to-collapsed" },
-    { "type": "event", "eventType": "keydown", "key": "s" },
+    { "type": "event", "eventType": "keydown", "key": "f" },
     { "type": "settle", "maxFrames": 360 }
   ]
 }

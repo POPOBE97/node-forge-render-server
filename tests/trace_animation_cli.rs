@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use node_forge_render_server::animation::{TraceScenario, format_summary, run_trace};
 use node_forge_render_server::asset_store;
+use node_forge_render_server::state_machine::types::{GraphInnerNodeType, StateValueSource};
 
 const POSITIONS_OVERRIDE: &str = "Vector2ArrayInput_IntelligentLightPositions:value";
 
@@ -148,23 +149,152 @@ fn doubao_pinned_thinking_positions_have_no_snap_period_jumps() {
 }
 
 #[test]
+fn lalaland_wave_radius_is_motion_and_effect_cycle_is_derived() {
+    let scene = lalaland_scene();
+    let state_machine = scene
+        .state_machine
+        .as_ref()
+        .expect("Lalaland state machine");
+    let state_param_ids = state_machine
+        .state_params
+        .iter()
+        .map(|param| param.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        state_param_ids.contains(&"sp_effect_wave_radius_dp"),
+        "wave radius must be an Animation Engine State Param"
+    );
+    for id in [
+        "sp_effect_wave_width_dp",
+        "sp_effect_wave_alpha",
+        "sp_effect_pulse_gain",
+        "sp_effect_wave_dispersion",
+        "sp_effect_outer_mid_occlusion",
+    ] {
+        assert!(
+            !state_param_ids.contains(&id),
+            "derived or constant render property {id} must not allocate a State Param"
+        );
+    }
+    for (state_id, node_id) in [
+        ("island", "effect_cycle_island"),
+        ("supercharge", "effect_cycle_supercharge"),
+        ("st_msybtf2o_m", "effect_cycle_fastcharge"),
+    ] {
+        let state = state_machine
+            .states
+            .iter()
+            .find(|state| state.id == state_id)
+            .unwrap_or_else(|| panic!("missing state {state_id}"));
+        assert!(
+            !state
+                .state_param_overrides
+                .contains_key("sp_effect_wave_radius_dp"),
+            "mutation-only wave radius must not become Transition-eligible in {state_id}"
+        );
+        let graph = state
+            .mutation_graph
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing mutation graph for {state_id}"));
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .unwrap_or_else(|| panic!("missing wave radius Mutation Function in {state_id}"));
+        assert_eq!(node.node_type, GraphInnerNodeType::MutationFunction);
+        assert_eq!(
+            node.outputs
+                .iter()
+                .filter(|port| port.motion == Some(true))
+                .map(|port| port.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["waveRadiusDp"]
+        );
+        assert!(graph.input_bindings.iter().any(|binding| {
+            matches!(
+                &binding.source,
+                StateValueSource::FrameInput { frame_input_id }
+                    if frame_input_id == "sceneElapsedTime"
+            ) && binding.to.node_id == node_id
+                && binding.to.port_id == "localElapsedTime"
+        }));
+        assert!(graph.input_bindings.iter().any(|binding| {
+            binding.source.state_param_id() == Some("sp_effect_wave_travel_dp")
+                && binding.to.node_id == node_id
+                && binding.to.port_id == "waveTravelDp"
+        }));
+        assert!(graph.output_bindings.iter().any(|binding| {
+            binding.state_param_id == "sp_effect_wave_radius_dp"
+                && binding.from.node_id == node_id
+                && binding.from.port_id == "waveRadiusDp"
+        }));
+    }
+    let island_layout = state_machine
+        .derivations
+        .iter()
+        .find(|derivation| derivation.id == "island_layout")
+        .expect("Island Layout Derivation");
+    assert!(island_layout.input_bindings.iter().any(|binding| {
+        binding.source.state_param_id() == Some("sp_effect_wave_radius_dp")
+            && binding.to.node_id == "derive_island_layout"
+            && binding.to.port_id == "waveRadiusDp"
+    }));
+    assert!(
+        island_layout.input_bindings.iter().all(|binding| {
+            !matches!(
+                &binding.source,
+                StateValueSource::FrameInput { frame_input_id }
+                    if frame_input_id == "sceneElapsedTime"
+            )
+        }),
+        "Effect Cycle Derivation must derive phase from physical wave radius, not frame time"
+    );
+    for (port_id, uniform_node_id) in [
+        ("waveRadiusDp", "EffectWaveRadiusDp"),
+        ("waveWidthDp", "EffectWaveWidthDp"),
+        ("waveAlpha", "EffectWaveAlpha"),
+        ("pulseGain", "EffectPulseGain"),
+        ("waveDispersion", "EffectWaveDispersion"),
+    ] {
+        assert!(
+            island_layout.output_bindings.iter().any(|binding| {
+                binding.from.node_id == "derive_island_layout"
+                    && binding.from.port_id == port_id
+                    && binding.uniform.node_id == uniform_node_id
+                    && binding.uniform.param_id == "value"
+            }),
+            "Island Layout Derivation output {port_id} is not bound to {uniform_node_id}.value"
+        );
+    }
+    let outer_mid_occlusion = scene
+        .nodes
+        .iter()
+        .find(|node| node.id == "EffectOuterMidOcclusion")
+        .expect("constant Effect Outer by Mid input");
+    assert_eq!(
+        outer_mid_occlusion.params["value"],
+        serde_json::json!(1),
+        "constant outer-by-mid occlusion should remain a root render parameter"
+    );
+}
+
+#[test]
 fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
     let scenario_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("scenarios/doubao-lalaland-blur-waypoint.json");
     let scenario = TraceScenario::from_path(&scenario_path).expect("parse Lalaland scenario");
     let scene = lalaland_scene();
-    let state_param_ids = scene
+    let state_machine = scene
         .state_machine
         .as_ref()
-        .expect("Lalaland state machine")
+        .expect("Lalaland state machine");
+    let state_param_ids = state_machine
         .state_params
         .iter()
         .map(|param| param.id.as_str())
         .collect::<Vec<_>>();
     assert!(state_param_ids.contains(&"sp_content_scale"));
     for id in [
-        "sp_effect_mid_color",
-        "sp_effect_outer_color",
         "sp_effect_medium_gain",
         "sp_effect_outer_sigma_dp",
         "sp_effect_outer_gain",
@@ -176,7 +306,6 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
         "sp_effect_absorption_gain",
         "sp_effect_medium_outer_occlusion",
         "sp_effect_medium_mid_occlusion",
-        "sp_effect_outer_mid_occlusion",
         "sp_effect_outer_medium_occlusion",
         "sp_effect_mid_medium_occlusion",
     ] {
@@ -193,8 +322,6 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
         .find(|node| node.id == "ChargingEffectMaterial")
         .expect("Shared Effect ShaderMaterial");
     for (port_id, source_node_id) in [
-        ("param:mid_color", "EffectMidColor"),
-        ("param:outer_color", "EffectOuterColor"),
         ("param:medium_gain", "EffectMediumGain"),
         ("param:outer_sigma_dp", "EffectOuterSigmaDp"),
         ("param:outer_gain", "EffectOuterGain"),
@@ -251,6 +378,34 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
             "tr_msx1vbpw_s".to_string(),
             "tr_msx1vd4o_v".to_string(),
         ]
+    );
+    let wave_radius_values = result
+        .report
+        .frames
+        .iter()
+        .filter(|frame| frame.label.as_deref() == Some("to-charging"))
+        .filter_map(|frame| {
+            frame
+                .values
+                .get("EffectWaveRadiusDp:value")
+                .and_then(serde_json::Value::as_f64)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        wave_radius_values.iter().copied().fold(0.0, f64::max) >= 39.0,
+        "wave radius never reached its State-driven travel distance"
+    );
+    assert!(
+        wave_radius_values
+            .windows(2)
+            .any(|values| values[1] - values[0] > 0.1),
+        "wave radius did not travel outward"
+    );
+    assert!(
+        wave_radius_values
+            .windows(2)
+            .any(|values| values[0] - values[1] > 0.1),
+        "wave radius cycle did not restart after reaching its travel distance"
     );
     for (label, waypoint, final_target) in [
         ("to-collapsed", 64.0, 64.0),
@@ -375,7 +530,6 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
 
             for (channel_key, uniform_key) in [
                 ("param_charging_glow_color", "ChargingGlowColor:value"),
-                ("sp_effect_mid_color", "EffectMidColor:value"),
                 ("sp_effect_outer_sigma_dp", "EffectOuterSigmaDp:value"),
                 ("sp_effect_glow_gain", "EffectGlowGain:value"),
                 (

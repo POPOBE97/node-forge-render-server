@@ -244,6 +244,7 @@ fn rejects_custom_shader_resource_exposed_as_pass() {
 
 #[test]
 fn aligned_voice_interaction_shaders_compile_without_a_gpu() {
+    let _function_registry = support::function_registry_lock();
     for case_name in ["intelligent-light", "doubao-voice-interaction"] {
         let (scene, assets) = support::load_render_case(case_name);
         let bundles =
@@ -281,6 +282,226 @@ fn aligned_voice_interaction_shaders_compile_without_a_gpu() {
                         .module
                         .contains("clamp(intelligent_light.a * light_gain, 0.0, 1.0)")
                 );
+                assert_eq!(
+                    bundle
+                        .module
+                        .matches("fn legacy_particle_linear_to_srgb_channel_")
+                        .count(),
+                    1,
+                    "the legacy OETF must remain local to the voice particle material"
+                );
+                assert_eq!(
+                    bundle
+                        .module
+                        .matches("fn legacy_particle_srgb_to_linear_channel_")
+                        .count(),
+                    1,
+                    "the legacy EOTF must remain local to the voice particle material"
+                );
+                assert!(
+                    bundle
+                        .module
+                        .contains("legacy_particle_linear_premul_to_srgb_premul_")
+                );
+                assert!(bundle.module.contains("legacy_particle_srgb_to_linear_"));
+                assert!(
+                    !bundle
+                        .module
+                        .contains("fn srgb_to_linear_GroupInstance_32_ShaderMaterial_32"),
+                    "canonical color inputs must not regain a generic shader-local decode"
+                );
+                assert!(
+                    !bundle
+                        .module
+                        .contains("fn linear_to_srgb_GroupInstance_32_ShaderMaterial_32"),
+                    "encoded-domain conversion must stay explicitly particle-scoped"
+                );
+            }
+        }
+    }
+}
+
+fn srgb_to_linear_channel(value: f32) -> f32 {
+    let nonnegative = value.max(0.0);
+    if nonnegative <= 0.04045 {
+        nonnegative / 12.92
+    } else {
+        ((nonnegative + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb_channel(value: f32) -> f32 {
+    let nonnegative = value.max(0.0);
+    if nonnegative <= 0.0031308 {
+        nonnegative * 12.92
+    } else {
+        1.055 * nonnegative.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn premultiply(color: [f32; 4]) -> [f32; 4] {
+    let alpha = color[3].clamp(0.0, 1.0);
+    [color[0] * alpha, color[1] * alpha, color[2] * alpha, alpha]
+}
+
+fn mix_color(from: [f32; 4], to: [f32; 4], amount: f32) -> [f32; 4] {
+    std::array::from_fn(|channel| from[channel] + (to[channel] - from[channel]) * amount)
+}
+
+fn historical_particle_color(
+    noise_srgb: [f32; 4],
+    particle_srgb: [f32; 4],
+    noise_amount: f32,
+    gain: f32,
+) -> [f32; 4] {
+    let working = mix_color(
+        premultiply(noise_srgb),
+        premultiply(particle_srgb),
+        noise_amount,
+    );
+    let alpha = working[3].clamp(0.0, 1.0);
+    [
+        srgb_to_linear_channel((working[0] * gain.max(0.0)).max(0.0)) * alpha,
+        srgb_to_linear_channel((working[1] * gain.max(0.0)).max(0.0)) * alpha,
+        srgb_to_linear_channel((working[2] * gain.max(0.0)).max(0.0)) * alpha,
+        alpha,
+    ]
+}
+
+fn migrate_color_to_linear(color_srgb: [f32; 4]) -> [f32; 4] {
+    [
+        srgb_to_linear_channel(color_srgb[0]),
+        srgb_to_linear_channel(color_srgb[1]),
+        srgb_to_linear_channel(color_srgb[2]),
+        color_srgb[3],
+    ]
+}
+
+fn reconstruct_srgb_premul(linear_premul: [f32; 4]) -> [f32; 4] {
+    let alpha = linear_premul[3].clamp(0.0, 1.0);
+    if alpha <= 0.000001 {
+        return [0.0; 4];
+    }
+    [
+        linear_to_srgb_channel((linear_premul[0] / alpha).max(0.0)) * alpha,
+        linear_to_srgb_channel((linear_premul[1] / alpha).max(0.0)) * alpha,
+        linear_to_srgb_channel((linear_premul[2] / alpha).max(0.0)) * alpha,
+        alpha,
+    ]
+}
+
+fn migrated_particle_color_with_legacy_domain(
+    noise_linear: [f32; 4],
+    particle_linear: [f32; 4],
+    noise_amount: f32,
+    gain: f32,
+) -> [f32; 4] {
+    let noise_linear_premul = premultiply(noise_linear);
+    let particle_linear_premul = premultiply(particle_linear);
+    let working = mix_color(
+        reconstruct_srgb_premul(noise_linear_premul),
+        reconstruct_srgb_premul(particle_linear_premul),
+        noise_amount,
+    );
+    let alpha = working[3].clamp(0.0, 1.0);
+    [
+        srgb_to_linear_channel((working[0] * gain.max(0.0)).max(0.0)) * alpha,
+        srgb_to_linear_channel((working[1] * gain.max(0.0)).max(0.0)) * alpha,
+        srgb_to_linear_channel((working[2] * gain.max(0.0)).max(0.0)) * alpha,
+        alpha,
+    ]
+}
+
+#[test]
+fn voice_particle_legacy_srgb_domain_survives_linear_color_migration() {
+    const TOLERANCE: f32 = 1.0 / 512.0;
+    const NOISE_RGB: [f32; 3] = [0.4, 0.239_215_69, 0.890_196_1];
+    const PARTICLE_RGB: [f32; 3] = [1.0, 1.0, 1.0];
+    const NOISE_PARAM_ID: &str = "sp_65594896dc81803a";
+    const PARTICLE_PARAM_ID: &str = "sp_0a32fb88e75b5264";
+
+    let _function_registry = support::function_registry_lock();
+    let scene = support::load_render_case_scene("doubao-voice-interaction");
+    let state = scene
+        .state_machine
+        .as_ref()
+        .and_then(|state_machine| {
+            state_machine
+                .states
+                .iter()
+                .find(|state| state.id == "st_push_to_talk")
+        })
+        .expect("PushToTalk state");
+    let fixture_color = |state_param_id: &str| -> [f32; 4] {
+        let channels = state
+            .state_param_overrides
+            .get(state_param_id)
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| panic!("missing color override {state_param_id}"));
+        std::array::from_fn(|channel| {
+            channels[channel]
+                .as_f64()
+                .unwrap_or_else(|| panic!("invalid color channel {state_param_id}[{channel}]"))
+                as f32
+        })
+    };
+    let fixture_noise_linear = fixture_color(NOISE_PARAM_ID);
+    let fixture_particle_linear = fixture_color(PARTICLE_PARAM_ID);
+    let historical_noise_srgb = [NOISE_RGB[0], NOISE_RGB[1], NOISE_RGB[2], 1.0];
+    let historical_particle_srgb = [PARTICLE_RGB[0], PARTICLE_RGB[1], PARTICLE_RGB[2], 1.0];
+    for (fixture, expected) in [
+        (
+            fixture_noise_linear,
+            migrate_color_to_linear(historical_noise_srgb),
+        ),
+        (
+            fixture_particle_linear,
+            migrate_color_to_linear(historical_particle_srgb),
+        ),
+    ] {
+        for channel in 0..4 {
+            assert!(
+                (fixture[channel] - expected[channel]).abs() <= f32::EPSILON * 4.0,
+                "fixture channel {channel} was not migrated with the sRGB EOTF"
+            );
+        }
+    }
+
+    for alpha in [0.0_f32, 0.5, 1.0] {
+        let noise_srgb = [NOISE_RGB[0], NOISE_RGB[1], NOISE_RGB[2], alpha];
+        let particle_srgb = [PARTICLE_RGB[0], PARTICLE_RGB[1], PARTICLE_RGB[2], alpha];
+        let noise_linear = [
+            fixture_noise_linear[0],
+            fixture_noise_linear[1],
+            fixture_noise_linear[2],
+            alpha,
+        ];
+        let particle_linear = [
+            fixture_particle_linear[0],
+            fixture_particle_linear[1],
+            fixture_particle_linear[2],
+            alpha,
+        ];
+        for noise_amount in [0.0_f32, 0.25, 0.5, 0.75, 1.0] {
+            for gain in [0.0_f32, 1.0, 1.55] {
+                let historical =
+                    historical_particle_color(noise_srgb, particle_srgb, noise_amount, gain);
+                let migrated = migrated_particle_color_with_legacy_domain(
+                    noise_linear,
+                    particle_linear,
+                    noise_amount,
+                    gain,
+                );
+                for channel in 0..4 {
+                    let delta = (historical[channel] - migrated[channel]).abs();
+                    assert!(
+                        delta <= TOLERANCE,
+                        "alpha={alpha}, noise={noise_amount}, gain={gain}, channel={channel}: \
+                         historical={}, migrated={}, delta={delta}",
+                        historical[channel],
+                        migrated[channel],
+                    );
+                }
             }
         }
     }

@@ -1027,6 +1027,54 @@ mod tests {
             .clone()
     }
 
+    #[test]
+    fn doubao_voice_fixture_preserves_geo_and_target_context_sizes() -> Result<()> {
+        let (scene, assets) = load_case("doubao-voice-interaction")?;
+        let plan = planner_for_mode(ShaderSpacePresentationMode::SceneLinear).plan(
+            &scene,
+            assets.as_ref(),
+            None,
+        )?;
+
+        let output_size = |node_id: &str, port_id: &str| {
+            plan.resources
+                .pass_output_registry
+                .get_for_port(node_id, port_id)
+                .unwrap_or_else(|| panic!("missing {node_id}.{port_id} output"))
+                .resolution
+        };
+
+        let background_materializer = "GroupInstance_33/sys.migrate.processing.pass.edge_1";
+        let background_blur = "GroupInstance_33/GradientBlur_11";
+        let caustic_pass = "GroupInstance_60/RenderPass_9a874ffe_53";
+        let caustic_blur_source = "sys.blur.GroupInstance_60/GuassianBlurPass_b9da1676_59.src";
+
+        assert_eq!(
+            output_size(background_materializer, "texture"),
+            [1260, 2800]
+        );
+        assert_eq!(output_size(background_blur, "texture"), [1260, 2800]);
+        assert_ne!(
+            output_size(background_materializer, "texture"),
+            [1024, 1024]
+        );
+        assert_ne!(output_size(background_blur, "texture"), [1024, 1024]);
+
+        assert_eq!(output_size(caustic_pass, "texture"), [1008, 208]);
+        assert_ne!(output_size(caustic_pass, "texture"), [1260, 2800]);
+        let caustic_blur_source_size = plan
+            .resources
+            .textures
+            .iter()
+            .find(|texture| texture.name.as_str() == caustic_blur_source)
+            .expect("Caustic extended Gaussian blur source texture")
+            .size;
+        assert_eq!(caustic_blur_source_size, [1308, 508]);
+        assert_ne!(caustic_blur_source_size, [1560, 3100]);
+
+        Ok(())
+    }
+
     fn image_pass_texture_size_scene() -> SceneDSL {
         serde_json::from_value(serde_json::json!({
             "version": "6.0",
