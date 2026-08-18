@@ -33,12 +33,12 @@ var<uniform> params: Params;
 
 
 struct GraphInputs {
-    // Node: FloatInput_b737552d_23
-    node_FloatInput_b737552d_23_7dc40e09: vec4f,
     // Node: IslandRadiusPx
     node_IslandRadiusPx_1aff0e03: vec4f,
     // Node: IslandSizePx
     node_IslandSizePx_b573a1f9: vec4f,
+    // Node: OuterContentScale
+    node_OuterContentScale_1527e730: vec4f,
     // Node: Vector2Input_8e46d6bc_18
     node_Vector2Input_8e46d6bc_18_134a73ed: vec4f,
 };
@@ -87,12 +87,21 @@ fn shader_material_ShaderMaterial_faaaafde_35(
 ) -> vec4f {
     let safe_geometry_size = max(in.geometry_size, vec2f(1.0));
     let source_size = max(vec2f(textureDimensions(texture)), vec2f(1.0));
-    let safe_scale = max(abs(content_scale), 0.001);
-    let local_uv = in.local_position.xy / safe_geometry_size;
-    let source_uv = vec2f(0.5)
-        + (local_uv - vec2f(0.5)) / safe_scale
-            * (safe_geometry_size / source_size);
-    return sample_texture_local_uv(texture, texture_sampler, source_uv);
+    let safe_content_scale = max(content_scale, 0.001);
+    let geometry_center = safe_geometry_size * 0.5;
+    let source_center = source_size * 0.5;
+    let source_px = source_center
+        + (in.local_position.xy - geometry_center) / safe_content_scale;
+    let source_uv = source_px / source_size;
+
+    var content = vec4f(0.0);
+    if all(source_uv >= vec2f(0.0)) && all(source_uv <= vec2f(1.0)) {
+        content = sample_texture_local_uv(texture, texture_sampler, source_uv);
+    }
+
+    // Scale the complete outer-composite result around the island center. The
+    // opaque black shell and rounded geometry remain at their authored size.
+    return vec4f(content.rgb, 1.0);
 }
 
 
@@ -207,7 +216,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4f {
         ShaderMaterialInput(vec2f(in.uv.x, 1.0 - in.uv.y), in.frag_coord_gl, in.local_px, in.geo_size_px, params.target_size, params.time),
         pass_tex_GuassianBlurPass_c0928d59_36,
         pass_samp_GuassianBlurPass_c0928d59_36,
-        (graph_inputs.node_FloatInput_b737552d_23_7dc40e09).x,
+        (graph_inputs.node_OuterContentScale_1527e730).x,
     );
     // Final composite
     let _frag_out = shader_material_material;
