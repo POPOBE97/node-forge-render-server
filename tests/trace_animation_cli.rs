@@ -322,6 +322,15 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
         .find(|node| node.id == "ChargingEffectMaterial")
         .expect("Shared Effect ShaderMaterial");
     for (port_id, source_node_id) in [
+        ("param:icon_variant", "EffectIconVariant"),
+        ("param:glow_color", "ChargingGlowColor"),
+        ("param:wave_radius_dp_animated", "EffectWaveRadiusDp"),
+        ("param:wave_width_dp_animated", "EffectWaveWidthDp"),
+        ("param:wave_alpha_animated", "EffectWaveAlpha"),
+        ("param:wave_opacity", "EffectWaveOpacity"),
+        ("param:wave_dispersion_animated", "EffectWaveDispersion"),
+        ("param:pulse_gain_animated", "EffectPulseGain"),
+        ("param:content_alpha", "FloatInput_e581097c_28"),
         ("param:medium_gain", "EffectMediumGain"),
         ("param:outer_sigma_dp", "EffectOuterSigmaDp"),
         ("param:outer_gain", "EffectOuterGain"),
@@ -351,6 +360,60 @@ fn lalaland_outer_resolve_uses_safe_area_and_state_driven_shared_effect() {
             source_node_id
         );
     }
+    assert_eq!(
+        effect_material
+            .inputs
+            .iter()
+            .filter(|input| input.id.ends_with("_animated"))
+            .map(|input| input.id.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "param:wave_radius_dp_animated",
+            "param:wave_width_dp_animated",
+            "param:wave_alpha_animated",
+            "param:wave_dispersion_animated",
+            "param:pulse_gain_animated",
+        ],
+        "only Mutation/Derivation outputs may use the animated suffix"
+    );
+    for static_port_id in [
+        "param:px_per_dp",
+        "param:wave_center_gate_width",
+        "param:outer_mid_occlusion",
+    ] {
+        assert!(
+            effect_material
+                .inputs
+                .iter()
+                .any(|input| input.id == static_port_id),
+            "non-animated Shared Effect input {static_port_id} changed naming"
+        );
+    }
+    assert!(
+        effect_material
+            .inputs
+            .iter()
+            .all(|input| input.id != "param:animated_pulse_gain"),
+        "CPU-animated uniforms use a suffix, never the animated_ prefix"
+    );
+    let outer_resolve = scene
+        .nodes
+        .iter()
+        .find(|node| node.id == "ShaderMaterial_faaaafde_35")
+        .expect("Outer Island Resolve ShaderMaterial");
+    let content_scale_binding = outer_resolve
+        .input_bindings
+        .iter()
+        .find(|binding| binding.port_id == "param:content_scale")
+        .expect("Outer Resolve Transition-driven content scale input");
+    assert_eq!(
+        content_scale_binding
+            .source_binding
+            .as_ref()
+            .expect("Outer Resolve content scale source")
+            .node_id,
+        "OuterContentScale"
+    );
     for id in [
         "RenderTexture_8e46d6bc_9",
         "ChargingIslandRT",
